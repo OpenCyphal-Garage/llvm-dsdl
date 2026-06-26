@@ -1,0 +1,9 @@
+# 6-DOF measured joint state for a robotic arm.
+# limit_flags bit assignment per joint: bit0=lower_limit, bit1=upper_limit.
+
+uavcan.si.unit.angle.Scalar.1.0[6] position
+uavcan.si.unit.angular_velocity.Scalar.1.0[6] velocity
+uavcan.si.unit.torque.Scalar.1.0[6] torque
+uint8[6] limit_flags
+
+@sealed

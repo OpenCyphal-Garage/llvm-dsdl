@@ -28,6 +28,7 @@ __pycache__/
 *.pyd
 .python-version
 .venv/
+.venv-docs/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -46,3 +47,6 @@ nunavut_out
 
 #dsdlc
 dsdl_out
+
+# MkDocs output
+site/

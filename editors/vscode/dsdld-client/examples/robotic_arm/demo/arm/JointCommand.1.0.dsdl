@@ -1,0 +1,13 @@
+# 6-DOF joint-space command for a robotic arm.
+# All arrays are ordered from joint 1 (base) to joint 6 (wrist roll).
+
+uint8 MODE_POSITION = 0
+uint8 MODE_VELOCITY = 1
+uint8 MODE_TORQUE   = 2
+
+uint8 mode
+uavcan.si.unit.angle.Scalar.1.0[6] position
+uavcan.si.unit.angular_velocity.Scalar.1.0[6] velocity
+uavcan.si.unit.torque.Scalar.1.0[6] torque_limit
+
+@sealed

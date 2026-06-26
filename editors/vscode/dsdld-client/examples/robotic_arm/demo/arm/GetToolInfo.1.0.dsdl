@@ -1,0 +1,12 @@
+# Returns capabilities for the tool mounted on the hand interface.
+
+uint8 slot_id
+
+@sealed
+
+---
+
+bool present
+ToolInfo.1.0 tool
+
+@sealed

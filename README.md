@@ -245,3 +245,24 @@ For build internals, workflows, tests, and contribution standards, use:
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Runtime semantic-wrapper exception allowlist: [`runtime/semantic_wrapper_allowlist.json`](./runtime/semantic_wrapper_allowlist.json)
 - Runtime semantic-wrapper generator: [`tools/runtime/generate_runtime_semantic_wrappers.py`](./tools/runtime/generate_runtime_semantic_wrappers.py)
+
+## User manual (MkDocs)
+
+This repository ships a MkDocs + Material documentation site under [`docs/`](./docs).
+
+Local preview:
+
+```bash
+python -m pip install -r docs/requirements.txt
+mkdocs serve
+```
+
+Build the static site:
+
+```bash
+mkdocs build --strict
+```
+
+GitHub Pages deployment is handled by:
+
+- [`.github/workflows/docs.yml`](./.github/workflows/docs.yml)

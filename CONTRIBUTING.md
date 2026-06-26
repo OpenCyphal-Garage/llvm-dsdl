@@ -39,7 +39,7 @@ Required:
 Common optional tools (enable more checks/lanes):
 
 - Python 3
-- `llvm-lit` or `lit` Python module
+- `llvm-lit` or `lit` Python module. LLVM tester
 - `clang-format`
 - `clang-tidy`
 - `include-what-you-use`

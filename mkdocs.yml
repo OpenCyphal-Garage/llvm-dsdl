@@ -1,0 +1,114 @@
+site_name: llvm-dsdl User Manual
+site_description: Compiler and language tooling for OpenCyphal DSDL
+site_url: https://thirtytwobits.github.io/llvm-dsdl/
+repo_url: https://github.com/thirtytwobits/llvm-dsdl
+repo_name: thirtytwobits/llvm-dsdl
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Install: getting-started/install.md
+      - Quick Start: getting-started/quickstart.md
+  - CLI:
+      - dsdlc: cli/dsdlc.md
+      - dsdl-opt: cli/dsdl-opt.md
+      - dsdld: cli/dsdld.md
+  - Backends:
+      - Backend Overview: backends/overview.md
+      - Object Backend: backends/object.md
+  - Design:
+      - Architecture: design/architecture.md
+      - Dialect and Contracts: design/dialect-contracts.md
+  - Validation:
+      - Parity Matrix: PARITY_MATRIX.md
+      - Malformed Input Matrix: MALFORMED_INPUT_CONTRACT_MATRIX.md
+      - Convergence Scorecard: CONVERGENCE_SCORECARD.md
+  - LSP Guides:
+      - AI Operator Guide: LSP_AI_OPERATOR_GUIDE.md
+      - Index Schema: LSP_INDEX_SCHEMA.md
+      - Lint Rules: LSP_LINT_RULES.md
+      - Lint Rule Authoring: LSP_LINT_RULE_AUTHORING.md
+      - Ranking Model: LSP_RANKING_MODEL.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Testing and CI: development/testing.md
+  - Project:
+      - Page Map: PAGE_MAP.md
+
+theme:
+  name: material
+  logo: llvm-dsdl.png
+  favicon: llvm-dsdl.png
+  language: en
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.action.edit
+    - content.code.copy
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+extra:
+  homepage: index.md
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/thirtytwobits/llvm-dsdl
+      name: GitHub Repository
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - assets/javascripts/extra.js

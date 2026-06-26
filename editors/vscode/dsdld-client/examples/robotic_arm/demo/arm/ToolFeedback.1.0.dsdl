@@ -1,0 +1,14 @@
+# Generic end-effector ("hand") feedback.
+
+uint8 STATE_OFF    = 0
+uint8 STATE_READY  = 1
+uint8 STATE_ACTIVE = 2
+uint8 STATE_FAULT  = 3
+
+uint8 state
+float16[<=8] analog
+bool[<=16] digital
+uint16 fault_code
+uint8[<=32] vendor_specific_payload
+
+@sealed
