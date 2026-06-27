@@ -9,6 +9,7 @@
 
 bool runLexerTests();
 bool runParserTests();
+bool runConformanceTests();
 bool runBitLengthSetTests();
 bool runEvaluatorTests();
 bool runDepfileRenderTests();
@@ -62,6 +63,7 @@ int main()
     bool ok = true;
     ok      = runLexerTests() && ok;
     ok      = runParserTests() && ok;
+    ok      = runConformanceTests() && ok;
     ok      = runBitLengthSetTests() && ok;
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;
