@@ -139,6 +139,16 @@ bool isDecimalIntegerToken(const std::string& text)
     return std::regex_match(text, kDecimal);
 }
 
+/// @brief True when token @p b immediately follows token @p a with no
+/// intervening whitespace (the lexer advances one column per byte, so adjacency
+/// means same line and b starts exactly where a ends). Used to enforce the
+/// grammar's mandatory/forbidden `_` (whitespace) between specific tokens.
+bool tokensAdjacent(const Token& a, const Token& b)
+{
+    return a.location.line == b.location.line &&
+           b.location.column == a.location.column + static_cast<std::uint32_t>(a.text.size());
+}
+
 std::optional<Rational> parseRealLiteral(const std::string& in)
 {
     std::string s    = removeUnderscores(in);
@@ -481,6 +491,16 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
         attachDocToStatement(*stmt, std::move(leadingTrivia.doc));
 
         def.statements.push_back(*stmt);
+
+        // line = statement? _? comment? (production 2): at most one statement per
+        // line. After a statement (and its optional trailing comment), the only
+        // valid continuation is an end_of_line or end of file; anything else is a
+        // second statement crammed onto the same physical line.
+        if (!check(TokenKind::Newline) && !check(TokenKind::Eof) && !check(TokenKind::Comment))
+        {
+            diagnostics_.error(current().location, "expected end of line after statement");
+            syncToNextLine();
+        }
     }
 
     if (diagnostics_.hasErrors())
@@ -525,9 +545,17 @@ std::optional<DirectiveAST> Parser::parseDirective()
         diagnostics_.error(current().location, "expected directive name");
         return std::nullopt;
     }
+    // statement_directive_* = "@" identifier ... (productions 20-21): the
+    // grammar concatenates "@" and the identifier with no whitespace.
+    if (!tokensAdjacent(previous(), current()))
+    {
+        diagnostics_.error(current().location, "no whitespace allowed between '@' and the directive name");
+        return std::nullopt;
+    }
 
-    const std::string name = advance().text;
-    out.rawName            = name;
+    const Token       nameTok = advance();
+    const std::string name    = nameTok.text;
+    out.rawName               = name;
     if (name == "union")
     {
         out.kind = DirectiveKind::Union;
@@ -559,6 +587,14 @@ std::optional<DirectiveAST> Parser::parseDirective()
 
     if (!check(TokenKind::Newline) && !check(TokenKind::Comment) && !check(TokenKind::Eof))
     {
+        // statement_directive_with_expression = "@" identifier _ expression
+        // (production 20): the `_` between the directive name and the expression
+        // is mandatory whitespace.
+        if (tokensAdjacent(nameTok, current()))
+        {
+            diagnostics_.error(current().location, "expected whitespace before directive expression");
+            return std::nullopt;
+        }
         out.expression = parseExpression();
     }
     return out;
@@ -575,6 +611,14 @@ std::optional<StatementAST> Parser::parseAttribute()
 
     if (check(TokenKind::Identifier))
     {
+        // statement_field/constant = type _ identifier ... (productions 14-15):
+        // the `_` is mandatory one-or-more whitespace, so the type and the name
+        // may not be directly adjacent (e.g. `uint8[2]name`).
+        if (tokensAdjacent(previous(), current()))
+        {
+            diagnostics_.error(current().location, "expected whitespace between type and name");
+            return std::nullopt;
+        }
         const Token nameTok = advance();
         if (match(TokenKind::Equal))
         {
@@ -604,6 +648,13 @@ std::optional<StatementAST> Parser::parseAttribute()
 
     if (type->isVoid())
     {
+        // statement_padding_field = type_void "" (production 16): a void padding
+        // field is a bare scalar void with no array specifier.
+        if (type->arrayKind != ArrayKind::None)
+        {
+            diagnostics_.error(type->location, "a void (padding) field cannot be an array");
+            return std::nullopt;
+        }
         FieldDeclAST f;
         f.location     = type->location;
         f.type         = *type;
