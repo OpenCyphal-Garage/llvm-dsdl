@@ -551,13 +551,16 @@ std::optional<DirectiveAST> Parser::parseDirective()
     {
         return std::nullopt;
     }
-    if (!check(TokenKind::Identifier))
+    // statement_directive_* = "@" identifier (productions 20-21). The directive
+    // name is a plain identifier (production 6), which also matches the spellings
+    // the lexer reserves as the boolean keywords true/false; those are only
+    // special inside expressions, so accept them as directive names too.
+    if (!check(TokenKind::Identifier) && !check(TokenKind::True) && !check(TokenKind::False))
     {
         diagnostics_.error(current().location, "expected directive name");
         return std::nullopt;
     }
-    // statement_directive_* = "@" identifier ... (productions 20-21): the
-    // grammar concatenates "@" and the identifier with no whitespace.
+    // The grammar concatenates "@" and the identifier with no whitespace.
     if (!tokensAdjacent(previous(), current()))
     {
         diagnostics_.error(current().location, "no whitespace allowed between '@' and the directive name");

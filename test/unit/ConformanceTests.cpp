@@ -162,6 +162,13 @@ bool runConformanceTests()
         // ---- Reserved identifiers (§3.2.5 / table 3.5) must not name entities ----
         {"uint8.Foo.1.0 x\n@sealed\n", false},       // 'uint8' is a reserved pattern
         {"uint8 true\n@sealed\n", false},            // 'true' is reserved
+
+        // ---- Trailing-dot real with exponent (productions 128-129) ----
+        {"@assert 3.e2 == 300.0\n@sealed\n", true},  // 3.e2 is a single real
+        {"@assert 3.E+2 == 300.0\n@sealed\n", true},
+        // ---- Boolean keywords are valid directive names (productions 6, 21) ----
+        {"@true\n@sealed\n", true},
+        {"@false\n@sealed\n", true},
     };
 
     bool ok = true;

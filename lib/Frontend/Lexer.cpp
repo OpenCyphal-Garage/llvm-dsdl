@@ -264,6 +264,16 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
         }
     }
 
+    // Trailing-dot real immediately followed by an exponent, e.g. "3.e2": the
+    // grammar's literal_real_exponent_notation accepts (literal_real_digits ".")
+    // as the mantissa (productions 128-129), so consume the '.' here and let the
+    // exponent branch below complete the literal.
+    if (!hasDot && peek() == '.' && (peek(1) == 'e' || peek(1) == 'E'))
+    {
+        hasDot = true;
+        text.push_back(advance());
+    }
+
     if (peek() == 'e' || peek() == 'E')
     {
         hasExp = true;
