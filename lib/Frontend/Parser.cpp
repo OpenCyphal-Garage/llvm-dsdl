@@ -615,6 +615,30 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
     const Token        baseTok = advance();
     const std::string& name    = baseTok.text;
 
+    // Safely parses a primitive/void bit-length suffix. The leading regex
+    // guarantees the suffix is all digits, so the only failure mode is a value
+    // too large for the field: std::stoul would throw std::out_of_range (which,
+    // uncaught, aborts the process), and even an in-range unsigned long can
+    // overflow the std::uint32_t bit-length field. Both cases are reported as a
+    // diagnostic and turned into a parse failure instead of a crash.
+    auto parseBitLength = [&](const std::string& digits) -> std::optional<std::uint32_t> {
+        try
+        {
+            const unsigned long value = std::stoul(digits);
+            if (value <= std::numeric_limits<std::uint32_t>::max())
+            {
+                return static_cast<std::uint32_t>(value);
+            }
+        } catch (...)
+        {
+        }
+        if (!silent)
+        {
+            diagnostics_.error(baseTok.location, "primitive type bit length is out of range");
+        }
+        return std::nullopt;
+    };
+
     if (name == "bool" || name == "byte" || name == "utf8" ||
         std::regex_match(name, std::regex(R"(^u?int[1-9][0-9]*$)")) ||
         std::regex_match(name, std::regex(R"(^float[1-9][0-9]*$)")) ||
@@ -623,7 +647,12 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
         if (name.rfind("void", 0) == 0)
         {
             VoidTypeExprAST v;
-            v.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(4)));
+            const auto      bits = parseBitLength(name.substr(4));
+            if (!bits)
+            {
+                return fail();
+            }
+            v.bitLength = *bits;
             type.scalar = v;
         }
         else
@@ -650,18 +679,33 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             }
             else if (name.rfind("uint", 0) == 0)
             {
-                p.kind      = PrimitiveKind::UnsignedInt;
-                p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(4)));
+                p.kind          = PrimitiveKind::UnsignedInt;
+                const auto bits = parseBitLength(name.substr(4));
+                if (!bits)
+                {
+                    return fail();
+                }
+                p.bitLength = *bits;
             }
             else if (name.rfind("int", 0) == 0)
             {
-                p.kind      = PrimitiveKind::SignedInt;
-                p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(3)));
+                p.kind          = PrimitiveKind::SignedInt;
+                const auto bits = parseBitLength(name.substr(3));
+                if (!bits)
+                {
+                    return fail();
+                }
+                p.bitLength = *bits;
             }
             else if (name.rfind("float", 0) == 0)
             {
-                p.kind      = PrimitiveKind::Float;
-                p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(5)));
+                p.kind          = PrimitiveKind::Float;
+                const auto bits = parseBitLength(name.substr(5));
+                if (!bits)
+                {
+                    return fail();
+                }
+                p.bitLength = *bits;
             }
             type.scalar = p;
         }

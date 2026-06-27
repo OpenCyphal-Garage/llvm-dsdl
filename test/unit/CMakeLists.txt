@@ -46,6 +46,8 @@ add_executable(llvmdsdl-unit-tests
   LspServerTests.cpp
   LspRobustnessTests.cpp
   LspJsonRpcFuzzTests.cpp
+  LexerFuzzTests.cpp
+  ParserFuzzTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests

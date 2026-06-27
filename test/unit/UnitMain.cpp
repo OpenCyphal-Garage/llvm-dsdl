@@ -53,6 +53,8 @@ bool runLspRankingTests();
 bool runLspServerTests();
 bool runLspRobustnessTests();
 bool runLspJsonRpcFuzzTests();
+bool runLexerFuzzTests();
+bool runParserFuzzTests();
 
 int main()
 {
@@ -103,6 +105,8 @@ int main()
     ok      = runLspServerTests() && ok;
     ok      = runLspRobustnessTests() && ok;
     ok      = runLspJsonRpcFuzzTests() && ok;
+    ok      = runLexerFuzzTests() && ok;
+    ok      = runParserFuzzTests() && ok;
     if (!ok)
     {
         std::cerr << "unit tests failed\n";

@@ -103,6 +103,18 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
         return;
     }
 
+    // KNOWN CONFORMANCE GAP (DSDL spec v1.0, section 3.2.4): the grammar's
+    // `literal_real_point_notation` makes the integer part optional and allows a
+    // bare trailing dot, so `.5` and `3.` are both valid real literals. This
+    // branch implements the leading-dot ("`.5`") case, but it is currently dead:
+    // `lex()` only dispatches into lexNumber() on a leading digit, so `.` is
+    // emitted as a standalone Dot token and `.5` lexes as `Dot Integer(5)`.
+    // Likewise the loop below requires a digit after the dot, so `3.` lexes as
+    // `Integer(3) Dot`. The reference grammar is a scannerless PEG that
+    // disambiguates `.` between real literals, `type_version_specifier`
+    // (`Type.1.0`), and `op2_attrib` (`x.field`) by context; this context-free
+    // lexer cannot, so the fix belongs in the parser (recognize the real only in
+    // literal-expecting positions). See test/unit/LexerFuzzTests.cpp.
     if (peek() == '.')
     {
         hasDot = true;
