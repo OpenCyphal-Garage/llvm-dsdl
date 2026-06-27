@@ -357,5 +357,56 @@ bool runParserTests()
         }
     }
 
+    // Operator precedence & associativity must mirror the spec grammar
+    // (productions 64-107). The directive expression is rendered fully
+    // parenthesized by ExprAST::str(), so we can assert exact structure.
+    {
+        const auto exprStr = [](const std::string& expr) -> std::string {
+            const std::string          text = "@assert " + expr + "\n@sealed\n";
+            llvmdsdl::DiagnosticEngine diag;
+            llvmdsdl::Lexer            lexer("prec.dsdl", text);
+            auto                       tokens = lexer.lex();
+            llvmdsdl::Parser           parser("prec.dsdl", std::move(tokens), diag);
+            auto                       def = parser.parseDefinition();
+            if (!def || def->statements.empty())
+            {
+                return "<parse-failed>";
+            }
+            const auto* directive = std::get_if<llvmdsdl::DirectiveAST>(&def->statements[0]);
+            return (directive && directive->expression) ? directive->expression->str() : "<no-expr>";
+        };
+
+        const std::pair<std::string, std::string> precedenceCases[] = {
+            // Unary `!` is the loosest unary (binds looser than comparison/arithmetic).
+            {"!a == b", "(!(a == b))"},
+            {"!a + b", "(!(a + b))"},
+            {"!a.b", "(!(a . b))"},
+            {"!!a", "(!(!a))"},
+            // Unary +/- bind looser than ** but tighter than * (inversion level).
+            {"-2 ** 2", "(-(2 ** 2))"},
+            {"-a ** b", "(-(a ** b))"},
+            {"+2 ** 2", "(+(2 ** 2))"},
+            {"-a * b", "((-a) * b)"},
+            {"2 * -3", "(2 * (-3))"},
+            // Binary precedence ladder and associativity.
+            {"1 + 2 * 3", "(1 + (2 * 3))"},
+            {"a == b | c", "(a == (b | c))"},
+            {"a || b && c", "((a || b) && c)"},  // || and && share a level (left-assoc)
+            {"a ** b ** c", "(a ** (b ** c))"},  // ** is right-associative
+            {"a - b - c", "((a - b) - c)"},      // additive is left-associative
+            {"a.b + c", "((a . b) + c)"},        // attribute binds tightest
+        };
+        for (const auto& precedenceCase : precedenceCases)
+        {
+            const std::string actual = exprStr(precedenceCase.first);
+            if (actual != precedenceCase.second)
+            {
+                std::cerr << "operator-precedence regression: '" << precedenceCase.first << "' expected "
+                          << precedenceCase.second << " got '" << actual << "'\n";
+                return false;
+            }
+        }
+    }
+
     return true;
 }

@@ -18,6 +18,8 @@
 
 #include <cctype>
 #include <cstdint>
+#include <optional>
+#include <regex>
 #include <string>
 #include <utility>
 
@@ -26,6 +28,48 @@ namespace llvmdsdl
 
 namespace
 {
+
+/// @brief Returns true when @p text exactly matches the grammar for a numeric
+/// literal of the indicated kind (DSDL spec v1.0 productions 121-132).
+/// @param[in] text Full numeric token spelling (including any 0x/0b/0o prefix).
+/// @param[in] isReal True to validate against literal_real, false for an integer.
+bool numericLiteralConforms(const std::string& text, bool isReal)
+{
+    // digits = [0-9](_?[0-9])* — a single optional underscore separates digits.
+    static const std::string kDigits   = "[0-9](?:_?[0-9])*";
+    static const std::string kPoint    = "(?:(?:" + kDigits + ")?\\." + kDigits + "|" + kDigits + "\\.)";
+    static const std::string kExponent = "[eE][+-]?" + kDigits;
+
+    static const std::regex kBinary("0[bB](?:_?[01])+");
+    static const std::regex kOctal("0[oO](?:_?[0-7])+");
+    static const std::regex kHex("0[xX](?:_?[0-9a-fA-F])+");
+    static const std::regex kDecimal("(?:0(?:_?0)*)+|(?:[1-9](?:_?[0-9])*)");
+    // literal_real = (point|digits) exponent  |  point
+    static const std::regex kReal("(?:(?:" + kPoint + "|" + kDigits + ")" + kExponent + ")|" + kPoint);
+
+    if (isReal)
+    {
+        return std::regex_match(text, kReal);
+    }
+    if (text.size() >= 2 && text[0] == '0')
+    {
+        switch (text[1])
+        {
+        case 'b':
+        case 'B':
+            return std::regex_match(text, kBinary);
+        case 'o':
+        case 'O':
+            return std::regex_match(text, kOctal);
+        case 'x':
+        case 'X':
+            return std::regex_match(text, kHex);
+        default:
+            break;
+        }
+    }
+    return std::regex_match(text, kDecimal);
+}
 
 /// @brief Appends a Unicode scalar value to @p out encoded as UTF-8.
 void appendUtf8(std::string& out, std::uint32_t codePoint)
@@ -180,6 +224,10 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
         {
             text.push_back(advance());
         }
+        if (!numericLiteralConforms(text, false))
+        {
+            recordError(line, column, "malformed integer literal '" + text + "'");
+        }
         emit(TokenKind::Integer, text, line, column);
         return;
     }
@@ -230,14 +278,22 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
         }
     }
 
-    emit((hasDot || hasExp) ? TokenKind::Real : TokenKind::Integer, text, line, column);
+    const bool isReal = hasDot || hasExp;
+    if (!numericLiteralConforms(text, isReal))
+    {
+        recordError(line, column, "malformed " + std::string(isReal ? "real" : "integer") + " literal '" + text + "'");
+    }
+    emit(isReal ? TokenKind::Real : TokenKind::Integer, text, line, column);
 }
 
 void Lexer::lexString(std::uint32_t line, std::uint32_t column, char quote)
 {
     std::string value;
     (void) advance();
-    while (!isAtEnd() && peek() != quote && peek() != '\n' && peek() != '\r')
+    // The string content class is [^'\\] / [^"\\] (productions 136-137): it
+    // excludes only the closing quote and backslash, so a raw CR or LF is valid
+    // string content and a string literal may span multiple physical lines.
+    while (!isAtEnd() && peek() != quote)
     {
         const std::uint32_t charLine   = line_;
         const std::uint32_t charColumn = column_;
@@ -306,6 +362,15 @@ std::vector<Token> Lexer::lex()
 
         if (c == '\r')
         {
+            // end_of_line = ~r"\r?\n" (production 4): a CR is only valid as the
+            // optional prefix of a line feed. Consume `\r\n` as one line break
+            // (the `\n` case below emits the Newline); a lone CR is invalid.
+            if (peek(1) == '\n')
+            {
+                (void) advance();
+                continue;
+            }
+            recordError(tokLine, tokCol, "stray carriage return (line endings must be '\\n' or '\\r\\n')");
             (void) advance();
             continue;
         }
@@ -413,7 +478,7 @@ std::vector<Token> Lexer::lex()
             continue;
         }
 
-        const TokenKind kind = [&]() {
+        const std::optional<TokenKind> kind = [&]() -> std::optional<TokenKind> {
             switch (c)
             {
             case '@':
@@ -459,12 +524,34 @@ std::vector<Token> Lexer::lex()
             case '>':
                 return TokenKind::Greater;
             default:
-                return TokenKind::Identifier;
+                return std::nullopt;
             }
         }();
 
         (void) advance();
-        emit(kind, std::string(1, c), tokLine, tokCol);
+        if (kind)
+        {
+            emit(*kind, std::string(1, c), tokLine, tokCol);
+        }
+        else
+        {
+            // A byte that begins no DSDL token. The grammar is ASCII-only
+            // (identifier = ~r"[a-zA-Z_]..."), so non-ASCII bytes and stray
+            // ASCII punctuation (?, $, \, `, ~, etc.) are lexical errors rather
+            // than single-character identifiers.
+            static const char* const kHex = "0123456789ABCDEF";
+            const unsigned char      byte = static_cast<unsigned char>(c);
+            std::string              desc;
+            if (byte >= 0x20 && byte < 0x7F)
+            {
+                desc = std::string("'") + c + "'";
+            }
+            else
+            {
+                desc = std::string("0x") + kHex[byte >> 4] + kHex[byte & 0x0F];
+            }
+            recordError(tokLine, tokCol, "unexpected character " + desc + " in source");
+        }
     }
 
     emit(TokenKind::Eof, "", line_, column_);

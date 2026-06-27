@@ -89,23 +89,44 @@ private:
     /// @brief Parses a type expression.
     std::optional<TypeExprAST> parseTypeExpr(bool silent = false);
 
-    /// @brief Parses an expression using precedence climbing.
-    std::shared_ptr<ExprAST> parseExpression(int precedence = 0);
+    /// @brief Parses an expression (grammar `expression` = `ex_logical`).
+    /// @details The expression grammar (productions 64-107) is implemented as one
+    /// method per precedence level, mirroring the spec's PEG exactly so that
+    /// operator precedence and associativity are conformant by construction.
+    std::shared_ptr<ExprAST> parseExpression();
 
-    /// @brief Parses a unary expression.
-    std::shared_ptr<ExprAST> parseUnary();
+    /// @brief `ex_logical` (productions 64): `||`/`&&`, left-associative.
+    std::shared_ptr<ExprAST> parseLogical();
 
-    /// @brief Parses a primary expression.
+    /// @brief `ex_logical_not` (productions 65, 74): prefix `!`, the loosest unary.
+    std::shared_ptr<ExprAST> parseLogicalNot();
+
+    /// @brief `ex_comparison` (production 66): `== != <= >= < >`, left-associative.
+    std::shared_ptr<ExprAST> parseComparison();
+
+    /// @brief `ex_bitwise` (production 67): `| ^ &`, left-associative.
+    std::shared_ptr<ExprAST> parseBitwise();
+
+    /// @brief `ex_additive` (production 68): `+ -`, left-associative.
+    std::shared_ptr<ExprAST> parseAdditive();
+
+    /// @brief `ex_multiplicative` (production 69): `* / %`, left-associative.
+    std::shared_ptr<ExprAST> parseMultiplicative();
+
+    /// @brief `ex_inversion` (productions 70, 75, 76): prefix unary `+`/`-`.
+    std::shared_ptr<ExprAST> parseInversion();
+
+    /// @brief `ex_exponential` (production 71): `**`, right-associative.
+    std::shared_ptr<ExprAST> parseExponential();
+
+    /// @brief `ex_attribute` (production 72): `.` identifier, left-associative.
+    std::shared_ptr<ExprAST> parseAttributeAccess();
+
+    /// @brief Parses a primary expression (`expression_atom`, productions 58-61).
     std::shared_ptr<ExprAST> parsePrimary();
 
     /// @brief Parses a set literal expression.
     std::shared_ptr<ExprAST> parseSetLiteral(const SourceLocation& location);
-
-    /// @brief Returns precedence for a token kind.
-    static int precedenceOf(TokenKind kind);
-
-    /// @brief Returns true for right-associative operators.
-    static bool isRightAssociative(TokenKind kind);
 
     /// @brief Maps token kind to binary operator enum.
     static std::optional<BinaryOp> toBinaryOp(TokenKind kind);

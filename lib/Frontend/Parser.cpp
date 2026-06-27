@@ -129,6 +129,16 @@ bool isDecimalIntegerLiteral(const std::string& text)
               text[1] == 'O'));
 }
 
+/// @brief True when @p text exactly matches `literal_integer_decimal`
+/// (production 124): either an all-zero run or a non-zero-led digit run, with
+/// single optional underscores between digits. Used to validate version
+/// specifier components, which the grammar restricts to decimal integers.
+bool isDecimalIntegerToken(const std::string& text)
+{
+    static const std::regex kDecimal("(?:0(?:_?0)*)+|(?:[1-9](?:_?[0-9])*)");
+    return std::regex_match(text, kDecimal);
+}
+
 std::optional<Rational> parseRealLiteral(const std::string& in)
 {
     std::string s    = removeUnderscores(in);
@@ -236,8 +246,16 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseVersionTokenAsMajorM
         return std::nullopt;
     }
 
-    const auto major = parseIntegerLiteral(text.substr(0, dot));
-    const auto minor = parseIntegerLiteral(text.substr(dot + 1));
+    const std::string majorText = text.substr(0, dot);
+    const std::string minorText = text.substr(dot + 1);
+    // Version components must be decimal integers (production 35), so reject a
+    // real-digit spelling with a leading zero such as "01.0".
+    if (!isDecimalIntegerToken(majorText) || !isDecimalIntegerToken(minorText))
+    {
+        return std::nullopt;
+    }
+    const auto major = parseIntegerLiteral(majorText);
+    const auto minor = parseIntegerLiteral(minorText);
     if (!major || !minor || *major < 0 || *minor < 0)
     {
         return std::nullopt;
@@ -611,10 +629,17 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
     TypeExprAST type;
     type.location = current().location;
 
-    CastMode castMode = CastMode::Saturated;
-    if (check(TokenKind::Identifier) && (current().text == "saturated" || current().text == "truncated"))
+    // A cast prefix `truncated`/`saturated` only applies when it is immediately
+    // followed by another identifier (the primitive type name). When followed by
+    // a '.', the word is an ordinary namespace component of a versioned type
+    // (e.g. `saturated.Foo.1.0`), not a cast keyword.
+    CastMode castMode    = CastMode::Saturated;
+    bool     castApplied = false;
+    if (check(TokenKind::Identifier) && (current().text == "saturated" || current().text == "truncated") &&
+        cursor_ + 1 < tokens_.size() && tokens_[cursor_ + 1].kind == TokenKind::Identifier)
     {
-        castMode = current().text == "truncated" ? CastMode::Truncated : CastMode::Saturated;
+        castMode    = current().text == "truncated" ? CastMode::Truncated : CastMode::Saturated;
+        castApplied = true;
         (void) advance();
     }
 
@@ -649,6 +674,20 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
         }
         return std::nullopt;
     };
+
+    // A cast mode may only precede a numeric primitive (type_primitive_name =
+    // uint/int/float, productions 44-51); it is invalid on bool/byte/utf8, void,
+    // or composite (versioned) types.
+    if (castApplied && !std::regex_match(name, std::regex(R"(^u?int[1-9][0-9]*$)")) &&
+        !std::regex_match(name, std::regex(R"(^float[1-9][0-9]*$)")))
+    {
+        if (!silent)
+        {
+            diagnostics_.error(baseTok.location,
+                               "a cast mode ('saturated'/'truncated') may only precede an integer or floating-point type");
+        }
+        return fail();
+    }
 
     if (name == "bool" || name == "byte" || name == "utf8" ||
         std::regex_match(name, std::regex(R"(^u?int[1-9][0-9]*$)")) ||
@@ -733,10 +772,16 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 tokens_[cursor_ + 2].kind == TokenKind::Dot && tokens_[cursor_ + 3].kind == TokenKind::Integer)
             {
                 (void) advance();
-                const auto maybeMajor = parseIntegerLiteral(advance().text);
+                const Token majorTok = advance();
                 (void) expect(TokenKind::Dot, "expected '.' between major/minor version");
-                const auto maybeMinor = parseIntegerLiteral(advance().text);
-                if (!maybeMajor || !maybeMinor || *maybeMajor < 0 || *maybeMinor < 0)
+                const Token minorTok   = advance();
+                const auto  maybeMajor = parseIntegerLiteral(majorTok.text);
+                const auto  maybeMinor = parseIntegerLiteral(minorTok.text);
+                // type_version_specifier = literal_integer_decimal "."
+                // literal_integer_decimal (production 35): the major and minor
+                // components must be DECIMAL integers, not 0x/0b/0o literals.
+                if (!maybeMajor || !maybeMinor || *maybeMajor < 0 || *maybeMinor < 0 ||
+                    !isDecimalIntegerToken(majorTok.text) || !isDecimalIntegerToken(minorTok.text))
                 {
                     if (!silent)
                     {
@@ -817,75 +862,232 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
     return type;
 }
 
-std::shared_ptr<ExprAST> Parser::parseExpression(int precedence)
+// Helper: builds a left-associative chain `next (op next)*` where the operator
+// must be one of `ops`. Mirrors the PEG shape `level = lower (_? op2 _? lower)*`.
+std::shared_ptr<ExprAST> Parser::parseExpression()
 {
-    auto lhs = parseUnary();
+    return parseLogical();
+}
+
+namespace
+{
+
+std::shared_ptr<ExprAST> makeBinaryNode(BinaryOp op, std::shared_ptr<ExprAST> lhs, std::shared_ptr<ExprAST> rhs,
+                                        const SourceLocation& location)
+{
+    auto node      = std::make_shared<ExprAST>();
+    node->location = location;
+    node->value    = ExprAST::Binary{op, std::move(lhs), std::move(rhs)};
+    return node;
+}
+
+std::shared_ptr<ExprAST> makeUnaryNode(UnaryOp op, std::shared_ptr<ExprAST> operand, const SourceLocation& location)
+{
+    auto node      = std::make_shared<ExprAST>();
+    node->location = location;
+    node->value    = ExprAST::Unary{op, std::move(operand)};
+    return node;
+}
+
+}  // namespace
+
+// `ex_logical = ex_logical_not (_? op2_log _? ex_logical_not)*` (production 64).
+// `||` and `&&` share this level and are left-associative.
+std::shared_ptr<ExprAST> Parser::parseLogical()
+{
+    auto lhs = parseLogicalNot();
     if (!lhs)
     {
         return nullptr;
     }
-
-    while (true)
+    while (check(TokenKind::PipePipe) || check(TokenKind::AmpAmp))
     {
-        const TokenKind tk     = current().kind;
-        const int       opPrec = precedenceOf(tk);
-        if (opPrec < precedence)
-        {
-            break;
-        }
-        const auto maybeOp = toBinaryOp(tk);
-        if (!maybeOp)
-        {
-            break;
-        }
-        const SourceLocation loc = current().location;
-        (void) advance();
-
-        const int rhsPrec = opPrec + (isRightAssociative(tk) ? 0 : 1);
-        auto      rhs     = parseExpression(rhsPrec);
+        const Token op  = advance();
+        auto        rhs = parseLogicalNot();
         if (!rhs)
         {
-            diagnostics_.error(loc, "expected right-hand side expression");
+            diagnostics_.error(op.location, "expected right-hand side expression");
             return lhs;
         }
-
-        auto node      = std::make_shared<ExprAST>();
-        node->location = loc;
-        node->value    = ExprAST::Binary{*maybeOp, lhs, rhs};
-        lhs            = node;
+        lhs = makeBinaryNode(*toBinaryOp(op.kind), lhs, rhs, op.location);
     }
-
     return lhs;
 }
 
-std::shared_ptr<ExprAST> Parser::parseUnary()
+// `ex_logical_not = op1_form_log_not / ex_comparison`, `op1_form_log_not = "!"
+// _? ex_logical_not` (productions 65, 74). `!` is the LOOSEST unary operator:
+// its operand is a whole `ex_logical_not`, so `!a == b` parses as `!(a == b)`.
+std::shared_ptr<ExprAST> Parser::parseLogicalNot()
 {
-    if (matchAny({TokenKind::Plus, TokenKind::Minus, TokenKind::Bang}))
+    if (check(TokenKind::Bang))
     {
-        const Token opTok   = previous();
-        auto        operand = parseUnary();
+        const Token op      = advance();
+        auto        operand = parseLogicalNot();
         if (!operand)
         {
-            diagnostics_.error(opTok.location, "expected expression after unary operator");
+            diagnostics_.error(op.location, "expected expression after unary operator");
             return nullptr;
         }
-
-        UnaryOp op = UnaryOp::Plus;
-        if (opTok.kind == TokenKind::Minus)
-        {
-            op = UnaryOp::Minus;
-        }
-        else if (opTok.kind == TokenKind::Bang)
-        {
-            op = UnaryOp::LogicalNot;
-        }
-
-        auto node      = std::make_shared<ExprAST>();
-        node->location = opTok.location;
-        node->value    = ExprAST::Unary{op, operand};
-        return node;
+        return makeUnaryNode(UnaryOp::LogicalNot, operand, op.location);
     }
-    return parsePrimary();
+    return parseComparison();
+}
+
+// `ex_comparison = ex_bitwise (_? op2_cmp _? ex_bitwise)*` (production 66).
+std::shared_ptr<ExprAST> Parser::parseComparison()
+{
+    auto lhs = parseBitwise();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    while (check(TokenKind::EqualEqual) || check(TokenKind::BangEqual) || check(TokenKind::LessEqual) ||
+           check(TokenKind::GreaterEqual) || check(TokenKind::Less) || check(TokenKind::Greater))
+    {
+        const Token op  = advance();
+        auto        rhs = parseBitwise();
+        if (!rhs)
+        {
+            diagnostics_.error(op.location, "expected right-hand side expression");
+            return lhs;
+        }
+        lhs = makeBinaryNode(*toBinaryOp(op.kind), lhs, rhs, op.location);
+    }
+    return lhs;
+}
+
+// `ex_bitwise = ex_additive (_? op2_bit _? ex_additive)*` (production 67).
+std::shared_ptr<ExprAST> Parser::parseBitwise()
+{
+    auto lhs = parseAdditive();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    while (check(TokenKind::Pipe) || check(TokenKind::Caret) || check(TokenKind::Amp))
+    {
+        const Token op  = advance();
+        auto        rhs = parseAdditive();
+        if (!rhs)
+        {
+            diagnostics_.error(op.location, "expected right-hand side expression");
+            return lhs;
+        }
+        lhs = makeBinaryNode(*toBinaryOp(op.kind), lhs, rhs, op.location);
+    }
+    return lhs;
+}
+
+// `ex_additive = ex_multiplicative (_? op2_add _? ex_multiplicative)*` (prod 68).
+std::shared_ptr<ExprAST> Parser::parseAdditive()
+{
+    auto lhs = parseMultiplicative();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    while (check(TokenKind::Plus) || check(TokenKind::Minus))
+    {
+        const Token op  = advance();
+        auto        rhs = parseMultiplicative();
+        if (!rhs)
+        {
+            diagnostics_.error(op.location, "expected right-hand side expression");
+            return lhs;
+        }
+        lhs = makeBinaryNode(*toBinaryOp(op.kind), lhs, rhs, op.location);
+    }
+    return lhs;
+}
+
+// `ex_multiplicative = ex_inversion (_? op2_mul _? ex_inversion)*` (prod 69).
+std::shared_ptr<ExprAST> Parser::parseMultiplicative()
+{
+    auto lhs = parseInversion();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    while (check(TokenKind::Star) || check(TokenKind::Slash) || check(TokenKind::Percent))
+    {
+        const Token op  = advance();
+        auto        rhs = parseInversion();
+        if (!rhs)
+        {
+            diagnostics_.error(op.location, "expected right-hand side expression");
+            return lhs;
+        }
+        lhs = makeBinaryNode(*toBinaryOp(op.kind), lhs, rhs, op.location);
+    }
+    return lhs;
+}
+
+// `ex_inversion = op1_form_inv_pos / op1_form_inv_neg / ex_exponential`, where
+// `op1_form_inv_{pos,neg} = ("+"|"-") _? ex_exponential` (productions 70, 75,
+// 76). Unary `+`/`-` bind TIGHTER than `*` but LOOSER than `**`: their operand
+// is a whole `ex_exponential`, so `-2 ** 2` parses as `-(2 ** 2)`.
+std::shared_ptr<ExprAST> Parser::parseInversion()
+{
+    if (check(TokenKind::Plus) || check(TokenKind::Minus))
+    {
+        const Token op      = advance();
+        auto        operand = parseExponential();
+        if (!operand)
+        {
+            diagnostics_.error(op.location, "expected expression after unary operator");
+            return nullptr;
+        }
+        const UnaryOp unaryOp = op.kind == TokenKind::Minus ? UnaryOp::Minus : UnaryOp::Plus;
+        return makeUnaryNode(unaryOp, operand, op.location);
+    }
+    return parseExponential();
+}
+
+// `ex_exponential = ex_attribute (_? op2_exp _? ex_inversion)?` (production 71).
+// A single `**` whose right side recurses through `ex_inversion`, making `**`
+// right-associative: `a ** b ** c` parses as `a ** (b ** c)`.
+std::shared_ptr<ExprAST> Parser::parseExponential()
+{
+    auto lhs = parseAttributeAccess();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    if (check(TokenKind::StarStar))
+    {
+        const Token op  = advance();
+        auto        rhs = parseInversion();
+        if (!rhs)
+        {
+            diagnostics_.error(op.location, "expected right-hand side expression");
+            return lhs;
+        }
+        return makeBinaryNode(BinaryOp::Pow, lhs, rhs, op.location);
+    }
+    return lhs;
+}
+
+// `ex_attribute = expression_atom (_? op2_attrib _? identifier)*` (production
+// 72). The attribute operator `.` is left-associative and its right operand is
+// strictly an identifier.
+std::shared_ptr<ExprAST> Parser::parseAttributeAccess()
+{
+    auto lhs = parsePrimary();
+    if (!lhs)
+    {
+        return nullptr;
+    }
+    while (check(TokenKind::Dot) && cursor_ + 1 < tokens_.size() &&
+           tokens_[cursor_ + 1].kind == TokenKind::Identifier)
+    {
+        const Token op    = advance();  // '.'
+        const Token ident = advance();  // identifier
+        auto        rhs   = std::make_shared<ExprAST>();
+        rhs->location     = ident.location;
+        rhs->value        = ExprAST::Identifier{ident.text};
+        lhs               = makeBinaryNode(BinaryOp::Attribute, lhs, rhs, op.location);
+    }
+    return lhs;
 }
 
 std::shared_ptr<ExprAST> Parser::parsePrimary()
@@ -929,9 +1131,13 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
         (void) advance();  // consume '.'
         const Token fraction = advance();
         const auto  value    = parseRealLiteral("." + fraction.text);
-        auto        node     = std::make_shared<ExprAST>();
-        node->location       = loc;
-        node->value          = value.value_or(Rational(0, 1));
+        if (!value)
+        {
+            diagnostics_.error(loc, "real literal cannot be represented");
+        }
+        auto node      = std::make_shared<ExprAST>();
+        node->location = loc;
+        node->value    = value.value_or(Rational(0, 1));
         return node;
     }
 
@@ -956,25 +1162,38 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
         {
             (void) advance();  // consume '.'
             const auto value = parseRealLiteral(intToken.text + ".");
-            auto       node  = std::make_shared<ExprAST>();
-            node->location   = intToken.location;
-            node->value      = value.value_or(Rational(0, 1));
+            if (!value)
+            {
+                diagnostics_.error(intToken.location, "real literal cannot be represented");
+            }
+            auto node      = std::make_shared<ExprAST>();
+            node->location = intToken.location;
+            node->value    = value.value_or(Rational(0, 1));
             return node;
         }
 
         const auto maybe = parseIntegerLiteral(intToken.text);
-        auto       n     = std::make_shared<ExprAST>();
-        n->location      = intToken.location;
-        n->value         = Rational(maybe.value_or(0), 1);
+        if (!maybe)
+        {
+            diagnostics_.error(intToken.location, "integer literal '" + intToken.text + "' cannot be represented");
+        }
+        auto n      = std::make_shared<ExprAST>();
+        n->location = intToken.location;
+        n->value    = Rational(maybe.value_or(0), 1);
         return n;
     }
 
     if (match(TokenKind::Real))
     {
-        const auto maybe = parseRealLiteral(previous().text);
-        auto       n     = std::make_shared<ExprAST>();
-        n->location      = previous().location;
-        n->value         = maybe.value_or(Rational(0, 1));
+        const Token realToken = previous();
+        const auto  maybe     = parseRealLiteral(realToken.text);
+        if (!maybe)
+        {
+            diagnostics_.error(realToken.location, "real literal '" + realToken.text + "' cannot be represented");
+        }
+        auto n      = std::make_shared<ExprAST>();
+        n->location = realToken.location;
+        n->value    = maybe.value_or(Rational(0, 1));
         return n;
     }
 
@@ -1050,45 +1269,6 @@ std::shared_ptr<ExprAST> Parser::parseSetLiteral(const SourceLocation& location)
     n->location = location;
     n->value    = ExprAST::SetLiteral{elements};
     return n;
-}
-
-int Parser::precedenceOf(TokenKind kind)
-{
-    switch (kind)
-    {
-    case TokenKind::Dot:
-        return 90;
-    case TokenKind::StarStar:
-        return 80;
-    case TokenKind::Star:
-    case TokenKind::Slash:
-    case TokenKind::Percent:
-        return 70;
-    case TokenKind::Plus:
-    case TokenKind::Minus:
-        return 60;
-    case TokenKind::Pipe:
-    case TokenKind::Caret:
-    case TokenKind::Amp:
-        return 50;
-    case TokenKind::EqualEqual:
-    case TokenKind::BangEqual:
-    case TokenKind::LessEqual:
-    case TokenKind::GreaterEqual:
-    case TokenKind::Less:
-    case TokenKind::Greater:
-        return 40;
-    case TokenKind::PipePipe:
-    case TokenKind::AmpAmp:
-        return 30;
-    default:
-        return -1;
-    }
-}
-
-bool Parser::isRightAssociative(TokenKind kind)
-{
-    return kind == TokenKind::StarStar;
 }
 
 std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind)
