@@ -1174,22 +1174,6 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
         const std::size_t index = cursor_ + ahead;
         return index < tokens_.size() ? tokens_[index].kind : TokenKind::Eof;
     };
-    const auto startsAtom = [](TokenKind kind) {
-        switch (kind)
-        {
-        case TokenKind::Integer:
-        case TokenKind::Real:
-        case TokenKind::Identifier:
-        case TokenKind::True:
-        case TokenKind::False:
-        case TokenKind::String:
-        case TokenKind::LParen:
-        case TokenKind::LBrace:
-            return true;
-        default:
-            return false;
-        }
-    };
 
     // DSDL spec v1.0 section 3.2.4 permits real literals with an omitted integer
     // part (".5") or a bare trailing point ("3."): literal_real_point_notation =
@@ -1232,12 +1216,16 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
     {
         const Token intToken = previous();
 
-        // Trailing point: Integer '.' that forms a real "3.". The attribute
-        // operator is always '.' followed by an identifier, so a '.' here that is
-        // not followed by any atom (it precedes an operator, newline, bracket, or
-        // EOF) cannot be attribute access and is the fractional point of a real.
-        // Restricted to decimal integer spellings; hex/bin/oct cannot take a '.'.
-        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) && !startsAtom(peekKind(1)) &&
+        // Trailing point: a decimal integer immediately followed by '.' forms a
+        // real "3.". The reference grammar is a possessive PEG in which
+        // expression_atom tries literal_real before identifier, and
+        // literal_real_point_notation's `(literal_real_digits ".")` alternative
+        // greedily consumes the digits-and-dot. So whenever the '.' is adjacent
+        // to the digits it belongs to the real literal, NOT to attribute access
+        // (`3.field` therefore becomes real `3.` followed by a dangling `field`,
+        // a parse error). Only a '.' separated from the digits by whitespace
+        // (`3 . field`) is attribute access. Hex/bin/oct cannot take a '.'.
+        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) &&
             tokensAdjacent(intToken, current()))
         {
             (void) advance();  // consume '.'

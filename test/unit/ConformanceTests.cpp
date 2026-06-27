@@ -166,6 +166,10 @@ bool runConformanceTests()
         // ---- Trailing-dot real with exponent (productions 128-129) ----
         {"@assert 3.e2 == 300.0\n@sealed\n", true},  // 3.e2 is a single real
         {"@assert 3.E+2 == 300.0\n@sealed\n", true},
+        // Possessive PEG: an integer adjacent to '.' is a real `3.`, so the
+        // trailing identifier dangles; only a space makes it attribute access.
+        {"@assert 3.field == 0\n@sealed\n", false},
+        {"@assert 3 . field == 0\n@sealed\n", true},
         // ---- Boolean keywords are valid directive names (productions 6, 21) ----
         {"@true\n@sealed\n", true},
         {"@false\n@sealed\n", true},
