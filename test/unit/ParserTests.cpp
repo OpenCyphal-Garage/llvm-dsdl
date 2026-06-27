@@ -306,5 +306,56 @@ bool runParserTests()
         return false;
     }
 
+    // Regression (DSDL spec v1.0 section 3.2.4): real literals with an omitted
+    // integer part (".5") or a bare trailing point ("3.") must parse as reals,
+    // while the '.' used for attribute access and version specifiers stays
+    // unaffected.
+    {
+        const auto constValueStr = [](const std::string& body) -> std::string {
+            const std::string          text = body + "\n@sealed\n";
+            llvmdsdl::DiagnosticEngine diag;
+            llvmdsdl::Lexer            lexer("reallit.dsdl", text);
+            auto                       tokens = lexer.lex();
+            llvmdsdl::Parser           parser("reallit.dsdl", std::move(tokens), diag);
+            auto                       def = parser.parseDefinition();
+            if (!def || def->statements.empty())
+            {
+                return "";
+            }
+            const auto* constant = std::get_if<llvmdsdl::ConstantDeclAST>(&def->statements[0]);
+            return (constant && constant->value) ? constant->value->str() : "";
+        };
+
+        const std::pair<std::string, std::string> realCases[] = {
+            {"float32 A = .5", "1/2"},     // leading point
+            {"float32 B = 3.", "3"},       // trailing point
+            {"float32 C = .5e3", "500"},   // leading point with exponent
+            {"float32 D = 1.5", "3/2"},    // unchanged single-token form
+        };
+        for (const auto& realCase : realCases)
+        {
+            const std::string actual = constValueStr(realCase.first);
+            if (actual != realCase.second)
+            {
+                std::cerr << "real-literal regression: '" << realCase.first << "' expected " << realCase.second
+                          << " got '" << actual << "'\n";
+                return false;
+            }
+        }
+
+        // Attribute access must not be consumed by the trailing-point rule.
+        const std::string          attrText = "@assert reserved.x == 0\n@sealed\n";
+        llvmdsdl::DiagnosticEngine attrDiag;
+        llvmdsdl::Lexer            attrLexer("attr.dsdl", attrText);
+        auto                       attrTokens = attrLexer.lex();
+        llvmdsdl::Parser           attrParser("attr.dsdl", std::move(attrTokens), attrDiag);
+        auto                       attrDef = attrParser.parseDefinition();
+        if (!attrDef || attrDiag.hasErrors())
+        {
+            std::cerr << "attribute-access regression: '@assert reserved.x == 0' failed to parse\n";
+            return false;
+        }
+    }
+
     return true;
 }

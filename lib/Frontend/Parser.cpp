@@ -118,6 +118,17 @@ std::optional<std::int64_t> parseIntegerLiteral(const std::string& in)
     return out;
 }
 
+/// @brief True when an Integer token spelling is a plain decimal literal.
+/// @details Hexadecimal/binary/octal literals (`0x..`, `0b..`, `0o..`) cannot
+/// carry a fractional point, so only decimal spellings may participate in the
+/// `.5` / `3.` real-literal reassembly performed by the expression parser.
+bool isDecimalIntegerLiteral(const std::string& text)
+{
+    return !(text.size() >= 2 && text[0] == '0' &&
+             (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B' || text[1] == 'o' ||
+              text[1] == 'O'));
+}
+
 std::optional<Rational> parseRealLiteral(const std::string& in)
 {
     std::string s    = removeUnderscores(in);
@@ -879,6 +890,51 @@ std::shared_ptr<ExprAST> Parser::parseUnary()
 
 std::shared_ptr<ExprAST> Parser::parsePrimary()
 {
+    const auto peekKind = [&](std::size_t ahead) -> TokenKind {
+        const std::size_t index = cursor_ + ahead;
+        return index < tokens_.size() ? tokens_[index].kind : TokenKind::Eof;
+    };
+    const auto startsAtom = [](TokenKind kind) {
+        switch (kind)
+        {
+        case TokenKind::Integer:
+        case TokenKind::Real:
+        case TokenKind::Identifier:
+        case TokenKind::True:
+        case TokenKind::False:
+        case TokenKind::String:
+        case TokenKind::LParen:
+        case TokenKind::LBrace:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    // DSDL spec v1.0 section 3.2.4 permits real literals with an omitted integer
+    // part (".5") or a bare trailing point ("3."): literal_real_point_notation =
+    // (literal_real_digits? literal_real_fraction) / (literal_real_digits ".").
+    // The context-free lexer cannot fold these into single Real tokens without
+    // breaking the '.' used by attribute access (op2_attrib = "." identifier) and
+    // type version specifiers (Type.major.minor), so they are reassembled here,
+    // in expression-atom position, where a '.' adjacent to digits is
+    // unambiguously fractional. Forms with an explicit integer part (1.5, 1e9,
+    // 1.5e-3) already arrive as single Real tokens and are handled below.
+    //
+    // Leading point: '.' Integer  or  '.' Real   (".5", ".5e3").
+    if (check(TokenKind::Dot) && (peekKind(1) == TokenKind::Integer || peekKind(1) == TokenKind::Real) &&
+        (peekKind(1) != TokenKind::Integer || isDecimalIntegerLiteral(tokens_[cursor_ + 1].text)))
+    {
+        const SourceLocation loc = current().location;
+        (void) advance();  // consume '.'
+        const Token fraction = advance();
+        const auto  value    = parseRealLiteral("." + fraction.text);
+        auto        node     = std::make_shared<ExprAST>();
+        node->location       = loc;
+        node->value          = value.value_or(Rational(0, 1));
+        return node;
+    }
+
     if (match(TokenKind::True) || match(TokenKind::False))
     {
         auto n      = std::make_shared<ExprAST>();
@@ -889,9 +945,26 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
 
     if (match(TokenKind::Integer))
     {
-        const auto maybe = parseIntegerLiteral(previous().text);
+        const Token intToken = previous();
+
+        // Trailing point: Integer '.' that forms a real "3.". The attribute
+        // operator is always '.' followed by an identifier, so a '.' here that is
+        // not followed by any atom (it precedes an operator, newline, bracket, or
+        // EOF) cannot be attribute access and is the fractional point of a real.
+        // Restricted to decimal integer spellings; hex/bin/oct cannot take a '.'.
+        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) && !startsAtom(peekKind(1)))
+        {
+            (void) advance();  // consume '.'
+            const auto value = parseRealLiteral(intToken.text + ".");
+            auto       node  = std::make_shared<ExprAST>();
+            node->location   = intToken.location;
+            node->value      = value.value_or(Rational(0, 1));
+            return node;
+        }
+
+        const auto maybe = parseIntegerLiteral(intToken.text);
         auto       n     = std::make_shared<ExprAST>();
-        n->location      = previous().location;
+        n->location      = intToken.location;
         n->value         = Rational(maybe.value_or(0), 1);
         return n;
     }
