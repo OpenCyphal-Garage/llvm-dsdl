@@ -159,6 +159,18 @@ struct Token
     SourceLocation location;
 };
 
+/// @brief Lexical error recovered during tokenization (e.g. a malformed string
+/// escape). The lexer is otherwise permissive; callers drain @ref Lexer::errors
+/// into their diagnostic engine to surface these to the user.
+struct LexerError
+{
+    /// @brief Location of the offending construct.
+    SourceLocation location;
+
+    /// @brief Human-readable description.
+    std::string message;
+};
+
 /// @brief Converts DSDL source text into a token stream.
 class Lexer final
 {
@@ -171,6 +183,10 @@ public:
     /// @brief Tokenizes the input source.
     /// @return Token sequence terminated by @ref TokenKind::Eof.
     [[nodiscard]] std::vector<Token> lex();
+
+    /// @brief Lexical errors discovered during the most recent @ref lex call.
+    /// @return Recorded errors, in source order.
+    [[nodiscard]] const std::vector<LexerError>& errors() const;
 
 private:
     /// @brief Returns true when all input characters are consumed.
@@ -200,6 +216,16 @@ private:
     /// @brief Lexes a quoted string literal token.
     void lexString(std::uint32_t line, std::uint32_t column, char quote);
 
+    /// @brief Decodes a `\u????` / `\U????????` escape into @p value as UTF-8.
+    /// @param[in,out] value Destination string receiving the decoded bytes.
+    /// @param[in] hexDigits Number of hexadecimal digits to consume (4 or 8).
+    /// @param[in] line Source line of the escape, for diagnostics.
+    /// @param[in] column Source column of the escape, for diagnostics.
+    void decodeUnicodeEscape(std::string& value, int hexDigits, std::uint32_t line, std::uint32_t column);
+
+    /// @brief Records a lexical error.
+    void recordError(std::uint32_t line, std::uint32_t column, std::string message);
+
     /// @brief Logical file name for token locations.
     std::string file_;
 
@@ -217,6 +243,9 @@ private:
 
     /// @brief Output token buffer.
     std::vector<Token> tokens_;
+
+    /// @brief Lexical errors recorded during tokenization.
+    std::vector<LexerError> errors_;
 };
 
 }  // namespace llvmdsdl

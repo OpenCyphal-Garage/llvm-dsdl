@@ -7,6 +7,7 @@
 
 #include <iostream>
 
+bool runLexerTests();
 bool runParserTests();
 bool runBitLengthSetTests();
 bool runEvaluatorTests();
@@ -59,6 +60,7 @@ bool runParserFuzzTests();
 int main()
 {
     bool ok = true;
+    ok      = runLexerTests() && ok;
     ok      = runParserTests() && ok;
     ok      = runBitLengthSetTests() && ok;
     ok      = runEvaluatorTests() && ok;

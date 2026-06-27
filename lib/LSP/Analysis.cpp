@@ -750,8 +750,12 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
 
         DiagnosticEngine              parseDiagnostics;
         Lexer                         lexer(current->second.filePath, current->second.text);
-        std::vector<Token>            lexTokens    = lexer.lex();
-        std::vector<Token>            parserTokens = lexTokens;
+        std::vector<Token>            lexTokens = lexer.lex();
+        for (const LexerError& lexError : lexer.errors())
+        {
+            parseDiagnostics.error(lexError.location, lexError.message);
+        }
+        std::vector<Token> parserTokens = lexTokens;
         Parser                        parser(current->second.filePath, std::move(parserTokens), parseDiagnostics);
         llvm::Expected<DefinitionAST> parsed = parser.parseDefinition();
         if (!parsed)

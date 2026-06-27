@@ -1145,8 +1145,12 @@ llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootN
 
     for (const auto& def : defs)
     {
-        Lexer  lexer(def.filePath, def.text);
-        auto   tokens = lexer.lex();
+        Lexer lexer(def.filePath, def.text);
+        auto  tokens = lexer.lex();
+        for (const LexerError& lexError : lexer.errors())
+        {
+            diagnostics.error(lexError.location, lexError.message);
+        }
         Parser parser(def.filePath, std::move(tokens), diagnostics);
 
         auto parsed = parser.parseDefinition();

@@ -17,15 +17,96 @@
 #include "llvmdsdl/Frontend/Lexer.h"
 
 #include <cctype>
+#include <cstdint>
+#include <string>
 #include <utility>
 
 namespace llvmdsdl
 {
 
+namespace
+{
+
+/// @brief Appends a Unicode scalar value to @p out encoded as UTF-8.
+void appendUtf8(std::string& out, std::uint32_t codePoint)
+{
+    if (codePoint <= 0x7Fu)
+    {
+        out.push_back(static_cast<char>(codePoint));
+    }
+    else if (codePoint <= 0x7FFu)
+    {
+        out.push_back(static_cast<char>(0xC0u | (codePoint >> 6)));
+        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+    }
+    else if (codePoint <= 0xFFFFu)
+    {
+        out.push_back(static_cast<char>(0xE0u | (codePoint >> 12)));
+        out.push_back(static_cast<char>(0x80u | ((codePoint >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+    }
+    else
+    {
+        out.push_back(static_cast<char>(0xF0u | (codePoint >> 18)));
+        out.push_back(static_cast<char>(0x80u | ((codePoint >> 12) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | ((codePoint >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+    }
+}
+
+}  // namespace
+
 Lexer::Lexer(std::string file, std::string text)
     : file_(std::move(file))
     , text_(std::move(text))
 {
+}
+
+const std::vector<LexerError>& Lexer::errors() const
+{
+    return errors_;
+}
+
+void Lexer::recordError(std::uint32_t line, std::uint32_t column, std::string message)
+{
+    errors_.push_back(LexerError{SourceLocation{file_, line, column}, std::move(message)});
+}
+
+void Lexer::decodeUnicodeEscape(std::string& value, int hexDigits, std::uint32_t line, std::uint32_t column)
+{
+    std::uint32_t codePoint = 0;
+    for (int i = 0; i < hexDigits; ++i)
+    {
+        const char digit = peek();
+        int        nibble;
+        if (digit >= '0' && digit <= '9')
+        {
+            nibble = digit - '0';
+        }
+        else if (digit >= 'a' && digit <= 'f')
+        {
+            nibble = 10 + (digit - 'a');
+        }
+        else if (digit >= 'A' && digit <= 'F')
+        {
+            nibble = 10 + (digit - 'A');
+        }
+        else
+        {
+            recordError(line, column, "incomplete unicode escape sequence in string literal");
+            return;
+        }
+        codePoint = (codePoint << 4) | static_cast<std::uint32_t>(nibble);
+        (void) advance();
+    }
+
+    // Reject values outside the Unicode scalar range (surrogates and > U+10FFFF).
+    if (codePoint > 0x10FFFFu || (codePoint >= 0xD800u && codePoint <= 0xDFFFu))
+    {
+        recordError(line, column, "invalid unicode code point in string literal");
+        return;
+    }
+    appendUtf8(value, codePoint);
 }
 
 bool Lexer::isAtEnd() const
@@ -158,39 +239,59 @@ void Lexer::lexString(std::uint32_t line, std::uint32_t column, char quote)
     (void) advance();
     while (!isAtEnd() && peek() != quote && peek() != '\n' && peek() != '\r')
     {
-        char c = advance();
-        if (c == '\\' && !isAtEnd())
-        {
-            const char esc = advance();
-            switch (esc)
-            {
-            case 'n':
-                value.push_back('\n');
-                break;
-            case 'r':
-                value.push_back('\r');
-                break;
-            case 't':
-                value.push_back('\t');
-                break;
-            case '\\':
-            case '\'':
-            case '"':
-                value.push_back(esc);
-                break;
-            default:
-                value.push_back(esc);
-                break;
-            }
-        }
-        else
+        const std::uint32_t charLine   = line_;
+        const std::uint32_t charColumn = column_;
+        const char          c          = advance();
+        if (c != '\\')
         {
             value.push_back(c);
+            continue;
+        }
+
+        // Escape sequence. DSDL spec v1.0 table 3.4 defines the only valid forms:
+        // \\ \r \n \t \' \" \u???? \U????????. A backslash before EOF or a line
+        // break (grammar: \\[^\r\n]) and any other escape are errors.
+        if (isAtEnd() || peek() == '\n' || peek() == '\r')
+        {
+            recordError(charLine, charColumn, "unterminated escape sequence in string literal");
+            break;
+        }
+        const char esc = advance();
+        switch (esc)
+        {
+        case 'n':
+            value.push_back('\n');
+            break;
+        case 'r':
+            value.push_back('\r');
+            break;
+        case 't':
+            value.push_back('\t');
+            break;
+        case '\\':
+        case '\'':
+        case '"':
+            value.push_back(esc);
+            break;
+        case 'u':
+            decodeUnicodeEscape(value, 4, charLine, charColumn);
+            break;
+        case 'U':
+            decodeUnicodeEscape(value, 8, charLine, charColumn);
+            break;
+        default:
+            recordError(charLine, charColumn, std::string("invalid escape sequence '\\") + esc + "' in string literal");
+            value.push_back(esc);
+            break;
         }
     }
     if (peek() == quote)
     {
         (void) advance();
+    }
+    else
+    {
+        recordError(line, column, "unterminated string literal");
     }
     emit(TokenKind::String, value, line, column);
 }
