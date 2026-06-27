@@ -147,6 +147,21 @@ bool runConformanceTests()
         {"", true},                                  // empty file is valid
         {"\n\n\n", true},                            // only blank lines
         {"# just a comment\n", true},
+        {"   # indented comment\n@sealed\n", true},  // leading ws before comment is ok
+        {"  uint8 a\n@sealed\n", false},             // leading ws before a statement is not
+
+        // ---- Whitespace adjacency inside literals and type names ----
+        {"float64 X = . 5\n@sealed\n", false},       // space between '.' and digits
+        {"float64 X = 3 .\n@sealed\n", false},       // space between digits and '.'
+        {"a.b.C.1.0 x\n@sealed\n", true},
+        {"Name .1.0 x\n@sealed\n", false},           // space before version dot
+        {"Name. 1.0 x\n@sealed\n", false},           // space after namespace dot
+        {"Name.1 .0 x\n@sealed\n", false},           // space inside version
+        {"@assert 3 . foo == 0\n@sealed\n", true},   // '.' + identifier is attribute access
+
+        // ---- Reserved identifiers (§3.2.5 / table 3.5) must not name entities ----
+        {"uint8.Foo.1.0 x\n@sealed\n", false},       // 'uint8' is a reserved pattern
+        {"uint8 true\n@sealed\n", false},            // 'true' is reserved
     };
 
     bool ok = true;

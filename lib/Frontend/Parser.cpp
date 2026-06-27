@@ -474,6 +474,17 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
             break;
         }
 
+        // line = statement? _? comment? (production 2): the optional whitespace
+        // `_?` follows the statement, so a statement may not be preceded by
+        // leading whitespace (the lexer discards leading whitespace, which shows
+        // up as a first-token column greater than 1).
+        if (current().location.column != 1)
+        {
+            diagnostics_.error(current().location, "a statement must begin at the start of the line");
+            syncToNextLine();
+            continue;
+        }
+
         auto stmt = parseStatement();
         if (!stmt)
         {
@@ -816,28 +827,45 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
         VersionedTypeExprAST v;
         v.nameComponents.push_back(name);
 
-        bool seenVersion = false;
+        // type_versioned (production 34) and type_version_specifier (35) are pure
+        // concatenation: no whitespace is permitted between namespace components,
+        // around the separating dots, or between the major/minor version digits.
+        const auto rejectVersioned = [&](const SourceLocation& location, const char* message) {
+            if (!silent)
+            {
+                diagnostics_.error(location, message);
+            }
+        };
+
+        bool  seenVersion = false;
+        Token lastTok     = baseTok;
         while (check(TokenKind::Dot))
         {
+            const Token dotTok = current();
+            if (!tokensAdjacent(lastTok, dotTok))
+            {
+                rejectVersioned(dotTok.location, "no whitespace allowed in a versioned type name");
+                return fail();
+            }
+
             if (cursor_ + 3 < tokens_.size() && tokens_[cursor_ + 1].kind == TokenKind::Integer &&
                 tokens_[cursor_ + 2].kind == TokenKind::Dot && tokens_[cursor_ + 3].kind == TokenKind::Integer)
             {
                 (void) advance();
                 const Token majorTok = advance();
+                const Token midDot   = current();
                 (void) expect(TokenKind::Dot, "expected '.' between major/minor version");
                 const Token minorTok   = advance();
                 const auto  maybeMajor = parseIntegerLiteral(majorTok.text);
                 const auto  maybeMinor = parseIntegerLiteral(minorTok.text);
-                // type_version_specifier = literal_integer_decimal "."
-                // literal_integer_decimal (production 35): the major and minor
-                // components must be DECIMAL integers, not 0x/0b/0o literals.
+                // The version is `literal_integer_decimal "." literal_integer_decimal`
+                // (production 35): decimal-only, character-adjacent components.
                 if (!maybeMajor || !maybeMinor || *maybeMajor < 0 || *maybeMinor < 0 ||
-                    !isDecimalIntegerToken(majorTok.text) || !isDecimalIntegerToken(minorTok.text))
+                    !isDecimalIntegerToken(majorTok.text) || !isDecimalIntegerToken(minorTok.text) ||
+                    !tokensAdjacent(dotTok, majorTok) || !tokensAdjacent(majorTok, midDot) ||
+                    !tokensAdjacent(midDot, minorTok))
                 {
-                    if (!silent)
-                    {
-                        diagnostics_.error(baseTok.location, "invalid version specifier");
-                    }
+                    rejectVersioned(baseTok.location, "invalid version specifier");
                     return fail();
                 }
                 v.major     = static_cast<std::uint32_t>(*maybeMajor);
@@ -849,13 +877,11 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             if (cursor_ + 1 < tokens_.size() && tokens_[cursor_ + 1].kind == TokenKind::Real)
             {
                 (void) advance();
-                const auto version = parseVersionTokenAsMajorMinor(advance().text);
-                if (!version)
+                const Token realTok = advance();
+                const auto  version = parseVersionTokenAsMajorMinor(realTok.text);
+                if (!version || !tokensAdjacent(dotTok, realTok))
                 {
-                    if (!silent)
-                    {
-                        diagnostics_.error(baseTok.location, "invalid version specifier");
-                    }
+                    rejectVersioned(baseTok.location, "invalid version specifier");
                     return fail();
                 }
                 v.major     = version->first;
@@ -865,14 +891,12 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             }
 
             (void) advance();
-            if (!check(TokenKind::Identifier))
+            if (!check(TokenKind::Identifier) || !tokensAdjacent(dotTok, current()))
             {
-                if (!silent)
-                {
-                    diagnostics_.error(current().location, "expected identifier in versioned type name");
-                }
+                rejectVersioned(current().location, "expected identifier in versioned type name");
                 return fail();
             }
+            lastTok = current();
             v.nameComponents.push_back(advance().text);
         }
 
@@ -1176,7 +1200,8 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
     //
     // Leading point: '.' Integer  or  '.' Real   (".5", ".5e3").
     if (check(TokenKind::Dot) && (peekKind(1) == TokenKind::Integer || peekKind(1) == TokenKind::Real) &&
-        (peekKind(1) != TokenKind::Integer || isDecimalIntegerLiteral(tokens_[cursor_ + 1].text)))
+        (peekKind(1) != TokenKind::Integer || isDecimalIntegerLiteral(tokens_[cursor_ + 1].text)) &&
+        tokensAdjacent(current(), tokens_[cursor_ + 1]))
     {
         const SourceLocation loc = current().location;
         (void) advance();  // consume '.'
@@ -1209,7 +1234,8 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
         // not followed by any atom (it precedes an operator, newline, bracket, or
         // EOF) cannot be attribute access and is the fractional point of a real.
         // Restricted to decimal integer spellings; hex/bin/oct cannot take a '.'.
-        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) && !startsAtom(peekKind(1)))
+        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) && !startsAtom(peekKind(1)) &&
+            tokensAdjacent(intToken, current()))
         {
             (void) advance();  // consume '.'
             const auto value = parseRealLiteral(intToken.text + ".");
