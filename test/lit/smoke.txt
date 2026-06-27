@@ -1,8 +1,8 @@
 # RUN: %dsdlc --target-language ast %S/fixtures | FileCheck %s --check-prefix=AST
 # RUN: %dsdlc --target-language mlir %S/fixtures | FileCheck %s --check-prefix=MLIR
 # RUN: rm -rf %t && mkdir -p %t && %dsdlc --target-language c %S/fixtures --outdir %t
-# RUN: test -f %t/fixtures/vendor/Type_1_0.h
-# RUN: test -f %t/fixtures/vendor/Type_1_0.c
+# RUN: test -f %t/fixtures/vendor/Widget_1_0.h
+# RUN: test -f %t/fixtures/vendor/Widget_1_0.c
 
-# AST: definition "fixtures.vendor.Type.1.0"
+# AST: definition "fixtures.vendor.Widget.1.0"
 # MLIR: dsdl.schema

@@ -15,6 +15,7 @@
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/ReservedIdentifiers.h"
 #include "llvm/Support/Error.h"
 #include "llvmdsdl/Frontend/AST.h"
 
@@ -221,7 +222,7 @@ bool runAnalyzerTests()
 
     const std::string          docText = "# type docs\n"
                                          "uint8 field # field docs\n"
-                                         "uint8 CONST = 1 # const docs\n"
+                                         "uint8 LIMIT = 1 # const docs\n"
                                          "@sealed\n";
     llvmdsdl::DiagnosticEngine docParseDiag;
     llvmdsdl::Lexer            docLexer("uavcan.test.Docs.1.0.dsdl", docText);
@@ -288,6 +289,92 @@ bool runAnalyzerTests()
     {
         std::cerr << "constant docs did not propagate into semantic model\n";
         return false;
+    }
+
+    // Reserved identifier predicate (DSDL spec v1.0 section 3.2.5 / table 3.5).
+    {
+        const char* const reservedNames[] = {
+            "truncated", "saturated", "true", "false", "bool",  "byte", "utf8",  "int",   "uint",  "int8",
+            "uint64",    "float",     "float32", "void", "void8", "q16_8", "const", "type", "self",  "and",
+            "or",        "not",       "enum",  "com1", "lpt9",  "nul",  "_offset_", "TRUE", "UInt8", "VOID3",
+        };
+        for (const char* name : reservedNames)
+        {
+            if (!llvmdsdl::isReservedIdentifier(name))
+            {
+                std::cerr << "isReservedIdentifier missed reserved name: " << name << "\n";
+                return false;
+            }
+        }
+        const char* const allowedNames[] = {
+            "value", "flag", "Heartbeat", "x", "_", "uint8x", "intensity", "format", "node_id", "myType", "_x",
+        };
+        for (const char* name : allowedNames)
+        {
+            if (llvmdsdl::isReservedIdentifier(name))
+            {
+                std::cerr << "isReservedIdentifier wrongly flagged allowed name: " << name << "\n";
+                return false;
+            }
+        }
+    }
+
+    // The analyzer rejects reserved attribute names (section 3.5.1) but accepts
+    // ordinary ones, and a padding field (no name) is exempt.
+    {
+        const auto analyzerRejects = [](const std::string& body) -> bool {
+            llvmdsdl::DiagnosticEngine parse;
+            llvmdsdl::Lexer           lex("uavcan.test.Reserved.1.0.dsdl", body);
+            auto                      toks = lex.lex();
+            llvmdsdl::Parser          parse2("uavcan.test.Reserved.1.0.dsdl", std::move(toks), parse);
+            auto                      ast = parse2.parseDefinition();
+            if (!ast)
+            {
+                llvm::consumeError(ast.takeError());
+                return true;
+            }
+            if (parse.hasErrors())
+            {
+                return true;
+            }
+            llvmdsdl::DiscoveredDefinition disc;
+            disc.filePath            = "uavcan/test/Reserved.1.0.dsdl";
+            disc.rootNamespacePath   = "uavcan";
+            disc.fullName            = "uavcan.test.Reserved";
+            disc.shortName           = "Reserved";
+            disc.namespaceComponents = {"uavcan", "test"};
+            disc.majorVersion        = 1;
+            disc.minorVersion        = 0;
+            disc.text                = body;
+            llvmdsdl::ASTModule mod;
+            mod.definitions.push_back(llvmdsdl::ParsedDefinition{disc, *ast});
+            llvmdsdl::DiagnosticEngine sem;
+            auto                       model = llvmdsdl::analyze(mod, sem);
+            if (!model)
+            {
+                llvm::consumeError(model.takeError());
+                return true;
+            }
+            return sem.hasErrors();
+        };
+
+        const std::pair<std::string, bool> attrCases[] = {
+            {"uint8 value\n@sealed\n", false},      // ordinary field name
+            {"uint8 X = 1\n@sealed\n", false},      // ordinary constant name
+            {"uint8 type\n@sealed\n", true},        // reserved field name
+            {"uint8 uint8 = 1\n@sealed\n", true},   // reserved constant name
+            {"bool true\n@sealed\n", true},         // reserved (parser also rejects)
+            {"uint8 _offset_\n@sealed\n", true},    // matches the _.*_ pattern
+            {"void3\n@sealed\n", false},            // padding field has no name -> exempt
+        };
+        for (const auto& attrCase : attrCases)
+        {
+            if (analyzerRejects(attrCase.first) != attrCase.second)
+            {
+                std::cerr << "reserved-attribute analysis mismatch for: " << attrCase.first << "\n";
+                return false;
+            }
+        }
     }
 
     return true;

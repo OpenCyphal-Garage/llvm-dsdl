@@ -52,36 +52,36 @@ set(family_message "")
 
 if(FAMILY STREQUAL "runtime")
   file(WRITE
-    "${fixture_root}/Type.1.0.dsdl"
+    "${fixture_root}/Widget.1.0.dsdl"
     "uint8 foo\n"
     "uint16 bar\n"
     "@sealed\n"
   )
 
   set(c_sources
-    "demo/Type_1_0.c"
+    "demo/Widget_1_0.c"
   )
   set(c_harness_content
     [=[
 #include <stdint.h>
 #include <stdio.h>
-#include "demo/Type_1_0.h"
+#include "demo/Widget_1_0.h"
 
 int main(void) {
-  demo__Type in_obj;
+  demo__Widget in_obj;
   in_obj.foo = 0x12U;
   in_obj.bar = 0x3456U;
 
   uint8_t out_bytes[3] = {0};
   size_t out_size = sizeof(out_bytes);
-  if ((demo__Type__serialize_(&in_obj, out_bytes, &out_size) != 0) || (out_size != 3U)) {
+  if ((demo__Widget__serialize_(&in_obj, out_bytes, &out_size) != 0) || (out_size != 3U)) {
     return 2;
   }
   printf("%u %u %u\n", (unsigned) out_bytes[0], (unsigned) out_bytes[1], (unsigned) out_bytes[2]);
 
-  demo__Type out_obj = {0};
+  demo__Widget out_obj = {0};
   size_t consumed = out_size;
-  if ((demo__Type__deserialize_(&out_obj, out_bytes, &consumed) != 0) || (consumed != 3U)) {
+  if ((demo__Widget__deserialize_(&out_obj, out_bytes, &consumed) != 0) || (consumed != 3U)) {
     return 3;
   }
   printf("%u %u %u\n", (unsigned) out_obj.foo, (unsigned) out_obj.bar, (unsigned) consumed);
@@ -94,14 +94,14 @@ int main(void) {
 import importlib
 
 pkg = "@PY_PACKAGE@"
-Type_1_0 = importlib.import_module(f"{pkg}.demo.type_1_0").Type_1_0
+Widget_1_0 = importlib.import_module(f"{pkg}.demo.widget_1_0").Widget_1_0
 
-in_obj = Type_1_0(foo=0x12, bar=0x3456)
+in_obj = Widget_1_0(foo=0x12, bar=0x3456)
 out_bytes = in_obj.serialize()
 assert len(out_bytes) == 3
 print(f"{out_bytes[0]} {out_bytes[1]} {out_bytes[2]}")
 
-out_obj = Type_1_0.deserialize(out_bytes)
+out_obj = Widget_1_0.deserialize(out_bytes)
 print(f"{out_obj.foo} {out_obj.bar} {len(out_bytes)}")
 ]=]
   )

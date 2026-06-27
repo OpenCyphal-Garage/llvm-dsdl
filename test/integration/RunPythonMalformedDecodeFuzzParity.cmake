@@ -141,8 +141,8 @@ def load_variant(name: str, output_root: str, package: str, runtime_mode: str) -
     runtime_loader = importlib.import_module(f"{package}._runtime_loader")
     classes: Dict[str, type] = {}
     classes["type"] = importlib.import_module(
-        f"{package}.fixtures.vendor.type_1_0"
-    ).Type_1_0
+        f"{package}.fixtures.vendor.widget_1_0"
+    ).Widget_1_0
     classes["helpers"] = importlib.import_module(
         f"{package}.fixtures.vendor.helpers_1_0"
     ).Helpers_1_0

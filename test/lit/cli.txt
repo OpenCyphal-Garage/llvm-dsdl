@@ -74,37 +74,37 @@
 # OBJ_CPP_OUTPUTS: Delimited_1_0_abi.o
 # OBJ_CPP_OUTPUTS: EmptyService_1_0_abi.o
 # OBJ_CPP_OUTPUTS: Helpers_1_0_abi.o
-# OBJ_CPP_OUTPUTS: Type_1_0_abi.o
 # OBJ_CPP_OUTPUTS: UnionTag_1_0_abi.o
 # OBJ_CPP_OUTPUTS: UsesDelimited_1_0_abi.o
+# OBJ_CPP_OUTPUTS: Widget_1_0_abi.o
 # OBJ_CPP_OUTPUTS: Delimited_1_0_c_shim.o
 # OBJ_CPP_OUTPUTS: EmptyService_1_0_c_shim.o
 # OBJ_CPP_OUTPUTS: Helpers_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: Type_1_0_c_shim.o
 # OBJ_CPP_OUTPUTS: UnionTag_1_0_c_shim.o
 # OBJ_CPP_OUTPUTS: UsesDelimited_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: Widget_1_0_c_shim.o
 # OBJ_CPP_OUTPUTS: Delimited_1_0.o
 # OBJ_CPP_OUTPUTS: EmptyService_1_0.o
 # OBJ_CPP_OUTPUTS: Helpers_1_0.o
-# OBJ_CPP_OUTPUTS: Type_1_0.o
 # OBJ_CPP_OUTPUTS: UnionTag_1_0.o
 # OBJ_CPP_OUTPUTS: UsesDelimited_1_0.o
+# OBJ_CPP_OUTPUTS: Widget_1_0.o
 # OBJ_CPP_OUTPUTS: llvmdsdl_generated.a
 
 # OBJ_OUTPUTS: Delimited_1_0.o
 # OBJ_OUTPUTS: EmptyService_1_0.o
 # OBJ_OUTPUTS: Helpers_1_0.o
-# OBJ_OUTPUTS: Type_1_0.o
 # OBJ_OUTPUTS: UnionTag_1_0.o
 # OBJ_OUTPUTS: UsesDelimited_1_0.o
+# OBJ_OUTPUTS: Widget_1_0.o
 # OBJ_OUTPUTS: llvmdsdl_generated.a
 
 # OBJ_NO_ARCHIVE: Delimited_1_0.o
 # OBJ_NO_ARCHIVE: EmptyService_1_0.o
 # OBJ_NO_ARCHIVE: Helpers_1_0.o
-# OBJ_NO_ARCHIVE: Type_1_0.o
 # OBJ_NO_ARCHIVE: UnionTag_1_0.o
 # OBJ_NO_ARCHIVE: UsesDelimited_1_0.o
+# OBJ_NO_ARCHIVE: Widget_1_0.o
 # OBJ_NO_ARCHIVE-NOT: llvmdsdl_generated.a
 
 # MISSING_VALUE_CPP: missing value for --cpp-profile

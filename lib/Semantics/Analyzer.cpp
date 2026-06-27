@@ -39,6 +39,7 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
+#include "llvmdsdl/Support/ReservedIdentifiers.h"
 
 namespace llvmdsdl
 {
@@ -1027,6 +1028,11 @@ private:
                 {
                     diagnostics_.error(c.location, "attributes cannot follow @extent/@sealed");
                 }
+                if (isReservedIdentifier(c.name))
+                {
+                    diagnostics_.error(c.location, "attribute name is a reserved identifier: " + c.name);
+                    continue;
+                }
                 if (names.contains(c.name))
                 {
                     diagnostics_.error(c.location, "duplicate attribute name: " + c.name);
@@ -1058,6 +1064,11 @@ private:
                     diagnostics_.error(f.location, "attributes cannot follow @extent/@sealed");
                 }
 
+                if (!f.isPadding && isReservedIdentifier(f.name))
+                {
+                    diagnostics_.error(f.location, "attribute name is a reserved identifier: " + f.name);
+                    continue;
+                }
                 if (!f.isPadding && names.contains(f.name))
                 {
                     diagnostics_.error(f.location, "duplicate attribute name: " + f.name);

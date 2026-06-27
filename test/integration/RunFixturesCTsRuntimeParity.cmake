@@ -75,9 +75,9 @@ if(NOT EXISTS "${ts_index}")
   message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
 endif()
 file(READ "${ts_index}" ts_index_content)
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./vendor/type_+1_0\";" ts_type_export "${ts_index_content}")
+string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./vendor/widget_+1_0\";" ts_type_export "${ts_index_content}")
 if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate vendor/Type_1_0 export alias in ${ts_index}")
+  message(FATAL_ERROR "failed to locate vendor/Widget_1_0 export alias in ${ts_index}")
 endif()
 set(ts_type_module "${CMAKE_MATCH_1}")
 
@@ -86,26 +86,26 @@ file(WRITE
   "${c_harness_src}"
   "#include <stdint.h>\n"
   "#include <stdio.h>\n"
-  "#include \"vendor/Type_1_0.h\"\n"
+  "#include \"vendor/Widget_1_0.h\"\n"
   "\n"
   "int main(void) {\n"
-  "  vendor__Type in_obj;\n"
+  "  vendor__Widget in_obj;\n"
   "  in_obj.foo = 0x12U;\n"
   "  in_obj.bar = 0x3456U;\n"
   "\n"
   "  uint8_t out_bytes[3] = {0};\n"
   "  size_t out_size = sizeof(out_bytes);\n"
-  "  const int8_t ser_rc = vendor__Type__serialize_(&in_obj, out_bytes, &out_size);\n"
+  "  const int8_t ser_rc = vendor__Widget__serialize_(&in_obj, out_bytes, &out_size);\n"
   "  if ((ser_rc != 0) || (out_size != 3U)) {\n"
   "    return 2;\n"
   "  }\n"
   "  printf(\"%u %u %u\\n\", (unsigned) out_bytes[0], (unsigned) out_bytes[1], (unsigned) out_bytes[2]);\n"
   "\n"
-  "  vendor__Type out_obj;\n"
+  "  vendor__Widget out_obj;\n"
   "  out_obj.foo = 0U;\n"
   "  out_obj.bar = 0U;\n"
   "  size_t consumed = out_size;\n"
-  "  const int8_t de_rc = vendor__Type__deserialize_(&out_obj, out_bytes, &consumed);\n"
+  "  const int8_t de_rc = vendor__Widget__deserialize_(&out_obj, out_bytes, &consumed);\n"
   "  if ((de_rc != 0) || (consumed != 3U)) {\n"
   "    return 3;\n"
   "  }\n"
@@ -124,7 +124,7 @@ execute_process(
       -Werror
       -I "${c_out}"
       "${c_harness_src}"
-      "${c_out}/vendor/Type_1_0.c"
+      "${c_out}/vendor/Widget_1_0.c"
       -o "${c_harness_bin}"
   RESULT_VARIABLE c_cc_result
   OUTPUT_VARIABLE c_cc_stdout
@@ -152,14 +152,14 @@ file(WRITE
   "${ts_out}/runtime_parity_smoke.ts"
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
-  "const inObj: ${ts_type_module}.Type_1_0 = { foo: 0x12, bar: 0x3456 };\n"
-  "const outBytes = ${ts_type_module}.serializeType_1_0(inObj);\n"
+  "const inObj: ${ts_type_module}.Widget_1_0 = { foo: 0x12, bar: 0x3456 };\n"
+  "const outBytes = ${ts_type_module}.serializeWidget_1_0(inObj);\n"
   "if (outBytes.length !== 3) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeType_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.deserializeWidget_1_0(outBytes);\n"
   "console.log(decoded.value.foo + \" \" + decoded.value.bar + \" \" + decoded.consumed);\n"
 )
 

@@ -1,24 +1,24 @@
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --version | FileCheck %s --check-prefix=CLI_VERSION
 # RUN: %dsdlc --target-language c %S/fixtures --outdir %t/c 2>&1 | FileCheck %s --check-prefix=C_SUMMARY
-# RUN: test -f %t/c/fixtures/vendor/Type_1_0.h
-# RUN: cat %t/c/fixtures/vendor/Type_1_0.h | FileCheck %s --check-prefix=C_TYPE
+# RUN: test -f %t/c/fixtures/vendor/Widget_1_0.h
+# RUN: cat %t/c/fixtures/vendor/Widget_1_0.h | FileCheck %s --check-prefix=C_TYPE
 
 # RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile both --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=CPP_SUMMARY
-# RUN: test -f %t/cpp/std/fixtures/vendor/Type_1_0.hpp
-# RUN: test -f %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp
-# RUN: cat %t/cpp/std/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_STD
-# RUN: cat %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
+# RUN: test -f %t/cpp/std/fixtures/vendor/Widget_1_0.hpp
+# RUN: test -f %t/cpp/pmr/fixtures/vendor/Widget_1_0.hpp
+# RUN: cat %t/cpp/std/fixtures/vendor/Widget_1_0.hpp | FileCheck %s --check-prefix=CPP_STD
+# RUN: cat %t/cpp/pmr/fixtures/vendor/Widget_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
 # RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile autosar --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=CPP_AUTOSAR_SUMMARY
 # RUN: test -f %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp
 # RUN: cat %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR
 
 # RUN: %dsdlc --target-language rust %S/fixtures --rust-profile std --rust-crate-name llvmdsdl_smoke_std --outdir %t/rust-std 2>&1 | FileCheck %s --check-prefix=RUST_STD_SUMMARY
 # RUN: test -f %t/rust-std/src/fixtures/vendor/helpers_1_0.rs
-# RUN: test -f %t/rust-std/src/fixtures/vendor/type__1_0.rs
+# RUN: test -f %t/rust-std/src/fixtures/vendor/widget_1_0.rs
 # RUN: cat %t/rust-std/Cargo.toml | FileCheck %s --check-prefix=RUST_STD
 # RUN: cat %t/rust-std/src/fixtures/vendor/helpers_1_0.rs | FileCheck %s --check-prefix=RUST_STD_TYPE
-# RUN: cat %t/rust-std/src/fixtures/vendor/type__1_0.rs | FileCheck %s --check-prefix=RUST_STD_VIEW
+# RUN: cat %t/rust-std/src/fixtures/vendor/widget_1_0.rs | FileCheck %s --check-prefix=RUST_STD_VIEW
 
 # RUN: %dsdlc --target-language rust %S/fixtures --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name llvmdsdl_smoke_fast --outdir %t/rust-fast 2>&1 | FileCheck %s --check-prefix=RUST_FAST_SUMMARY
 # RUN: test -f %t/rust-fast/src/fixtures/vendor/helpers_1_0.rs
@@ -28,18 +28,18 @@
 # RUN: test -f %t/go/go.mod
 # RUN: test -f %t/go/dsdlruntime/dsdl_runtime.go
 # RUN: test -f %t/go/fixtures/vendor/helpers_1_0.go
-# RUN: test -f %t/go/fixtures/vendor/type__1_0.go
+# RUN: test -f %t/go/fixtures/vendor/widget_1_0.go
 # RUN: cat %t/go/go.mod | FileCheck %s --check-prefix=GO_MODULE
-# RUN: cat %t/go/fixtures/vendor/type__1_0.go | FileCheck %s --check-prefix=GO_TYPE
+# RUN: cat %t/go/fixtures/vendor/widget_1_0.go | FileCheck %s --check-prefix=GO_TYPE
 
 # RUN: %dsdlc --target-language ts %S/fixtures --ts-module demo_ts_smoke_portable --ts-runtime-specialization portable --outdir %t/ts-portable 2>&1 | FileCheck %s --check-prefix=TS_PORTABLE_SUMMARY
 # RUN: test -f %t/ts-portable/dsdl_runtime.ts
 # RUN: test -f %t/ts-portable/fixtures/vendor/helpers_1_0.ts
-# RUN: test -f %t/ts-portable/fixtures/vendor/type__1_0.ts
+# RUN: test -f %t/ts-portable/fixtures/vendor/widget_1_0.ts
 # RUN: cat %t/ts-portable/package.json | FileCheck %s --check-prefix=TS_PORTABLE_PACKAGE
 # RUN: cat %t/ts-portable/dsdl_runtime.ts | FileCheck %s --check-prefix=TS_PORTABLE_RUNTIME
 # RUN: cat %t/ts-portable/fixtures/vendor/helpers_1_0.ts | FileCheck %s --check-prefix=TS_HELPERS
-# RUN: cat %t/ts-portable/fixtures/vendor/type__1_0.ts | FileCheck %s --check-prefix=TS_TYPE
+# RUN: cat %t/ts-portable/fixtures/vendor/widget_1_0.ts | FileCheck %s --check-prefix=TS_TYPE
 
 # RUN: %dsdlc --target-language ts %S/fixtures --ts-module demo_ts_smoke_fast --ts-runtime-specialization fast --outdir %t/ts-fast 2>&1 | FileCheck %s --check-prefix=TS_FAST_SUMMARY
 # RUN: test -f %t/ts-fast/dsdl_runtime.ts
@@ -54,12 +54,12 @@
 # RUN: test -f %t/python-portable/demo_py_smoke/py.typed
 # RUN: test -f %t/python-portable/demo_py_smoke/llvmdsdl_codegen.json
 # RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py
-# RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/type_1_0.py
+# RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/widget_1_0.py
 # RUN: cat %t/python-portable/pyproject.toml | FileCheck %s --check-prefix=PY_PYPROJECT
 # RUN: cat %t/python-portable/demo_py_smoke/llvmdsdl_codegen.json | FileCheck %s --check-prefix=PY_PORTABLE_PACKAGE
 # RUN: cat %t/python-portable/demo_py_smoke/_dsdl_runtime.py | FileCheck %s --check-prefix=PY_PORTABLE_RUNTIME
 # RUN: cat %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py | FileCheck %s --check-prefix=PY_HELPERS
-# RUN: cat %t/python-portable/demo_py_smoke/fixtures/vendor/type_1_0.py | FileCheck %s --check-prefix=PY_TYPE
+# RUN: cat %t/python-portable/demo_py_smoke/fixtures/vendor/widget_1_0.py | FileCheck %s --check-prefix=PY_TYPE
 
 # RUN: %dsdlc --target-language python %S/fixtures --py-package demo_py_smoke --py-runtime-specialization fast --outdir %t/python-fast 2>&1 | FileCheck %s --check-prefix=PY_FAST_SUMMARY
 # RUN: test -f %t/python-fast/pyproject.toml
@@ -75,10 +75,10 @@
 # C_SUMMARY: Run summary:
 # C_SUMMARY: command: c
 # C_SUMMARY: files generated:
-# C_TYPE: #define fixtures__vendor__Type_ZOH_ALIAS_ELIGIBLE_ true
-# C_TYPE: #define fixtures__vendor__Type_ZOH_ALIAS_REASON_ "eligible"
-# C_TYPE: static inline int8_t fixtures__vendor__Type__try_deserialize_view_
-# C_TYPE: static inline int8_t fixtures__vendor__Type__try_serialize_view_
+# C_TYPE: #define fixtures__vendor__Widget_ZOH_ALIAS_ELIGIBLE_ true
+# C_TYPE: #define fixtures__vendor__Widget_ZOH_ALIAS_REASON_ "eligible"
+# C_TYPE: static inline int8_t fixtures__vendor__Widget__try_deserialize_view_
+# C_TYPE: static inline int8_t fixtures__vendor__Widget__try_serialize_view_
 
 # CPP_SUMMARY: Run summary:
 # CPP_SUMMARY: command: cpp
@@ -133,8 +133,8 @@
 # GO_SUMMARY: command: go
 # GO_SUMMARY: files generated:
 # GO_MODULE: module demo/generated/smoke
-# GO_TYPE: const TYPE_1_0_ZOH_ALIAS_ELIGIBLE = true
-# GO_TYPE: const TYPE_1_0_ZOH_ALIAS_REASON = "eligible"
+# GO_TYPE: const WIDGET_1_0_ZOH_ALIAS_ELIGIBLE = true
+# GO_TYPE: const WIDGET_1_0_ZOH_ALIAS_REASON = "eligible"
 
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts

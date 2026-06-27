@@ -118,8 +118,8 @@ class PythonEmitterRuntimeUnitTests(unittest.TestCase):
             self.assertEqual(metadata["llvmdsdl"]["pythonRuntimeSpecialization"], specialization)
 
     def test_generated_type_contract(self) -> None:
-        mod = import_from_generated(PORTABLE_OUT, PORTABLE_PACKAGE, "fixtures.vendor.type_1_0")
-        type_cls = mod.Type_1_0
+        mod = import_from_generated(PORTABLE_OUT, PORTABLE_PACKAGE, "fixtures.vendor.widget_1_0")
+        type_cls = mod.Widget_1_0
         self.assertTrue(hasattr(type_cls, "__slots__"))
 
         value = type_cls(foo=0x12, bar=0x3456)

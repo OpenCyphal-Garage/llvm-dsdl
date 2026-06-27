@@ -10,6 +10,7 @@
 add_library(llvmdsdlSupport
   Diagnostics.cpp
   Rational.cpp
+  ReservedIdentifiers.cpp
   SourceLocation.cpp
 )
 

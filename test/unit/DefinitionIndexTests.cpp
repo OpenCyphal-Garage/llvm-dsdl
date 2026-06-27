@@ -15,7 +15,7 @@ bool runDefinitionIndexTests()
     llvmdsdl::SemanticModule module;
 
     llvmdsdl::SemanticDefinition alpha;
-    alpha.info.fullName     = "vendor.alpha.Type";
+    alpha.info.fullName     = "vendor.alpha.Widget";
     alpha.info.majorVersion = 1;
     alpha.info.minorVersion = 0;
     alpha.info.shortName    = "Type";
@@ -31,12 +31,12 @@ bool runDefinitionIndexTests()
     llvmdsdl::DefinitionIndex index(module);
 
     llvmdsdl::SemanticTypeRef alphaRef;
-    alphaRef.fullName     = "vendor.alpha.Type";
+    alphaRef.fullName     = "vendor.alpha.Widget";
     alphaRef.majorVersion = 1;
     alphaRef.minorVersion = 0;
 
     const auto* const foundAlpha = index.find(alphaRef);
-    if (foundAlpha == nullptr || foundAlpha->info.fullName != "vendor.alpha.Type")
+    if (foundAlpha == nullptr || foundAlpha->info.fullName != "vendor.alpha.Widget")
     {
         std::cerr << "definition index failed to resolve existing definition\n";
         return false;

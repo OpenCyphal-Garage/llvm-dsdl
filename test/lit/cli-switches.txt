@@ -1,17 +1,17 @@
-# RUN: rm -rf %t.default && mkdir -p %t.default && (cd %t.default && %dsdlc --target-language c %S/fixtures >/dev/null 2>&1) && test -f %t.default/dsdl_out/fixtures/vendor/Type_1_0.h
-# RUN: rm -rf %t.custom && %dsdlc --target-language c --outdir %t.custom %S/fixtures >/dev/null 2>&1 && test -f %t.custom/fixtures/vendor/Type_1_0.h
+# RUN: rm -rf %t.default && mkdir -p %t.default && (cd %t.default && %dsdlc --target-language c %S/fixtures >/dev/null 2>&1) && test -f %t.default/dsdl_out/fixtures/vendor/Widget_1_0.h
+# RUN: rm -rf %t.custom && %dsdlc --target-language c --outdir %t.custom %S/fixtures >/dev/null 2>&1 && test -f %t.custom/fixtures/vendor/Widget_1_0.h
 # RUN: rm -rf %t.no-overwrite && %dsdlc --target-language c --outdir %t.no-overwrite %S/fixtures >/dev/null 2>&1
 # RUN: not %dsdlc --target-language c --no-overwrite --outdir %t.no-overwrite %S/fixtures 2>&1 | FileCheck %s --check-prefix=NO_OVERWRITE
 # RUN: rm -rf %t.mode && %dsdlc --target-language c --file-mode 0o640 --outdir %t.mode %S/fixtures >/dev/null 2>&1
-# RUN: python3 -c "import os; m = os.stat(r'%t.mode/fixtures/vendor/Type_1_0.h').st_mode & 0o777; assert m == 0o640, oct(m)"
+# RUN: python3 -c "import os; m = os.stat(r'%t.mode/fixtures/vendor/Widget_1_0.h').st_mode & 0o777; assert m == 0o640, oct(m)"
 # RUN: not %dsdlc --target-language c --file-mode 0o --outdir %t.mode-bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_FILE_MODE
-# RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md %S/fixtures >/dev/null 2>&1 && test -f %t.md/fixtures/vendor/Type_1_0.h.d
-# RUN: cat %t.md/fixtures/vendor/Type_1_0.h.d | FileCheck %s --check-prefix=MD_DEPFILE
+# RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md %S/fixtures >/dev/null 2>&1 && test -f %t.md/fixtures/vendor/Widget_1_0.h.d
+# RUN: cat %t.md/fixtures/vendor/Widget_1_0.h.d | FileCheck %s --check-prefix=MD_DEPFILE
 # RUN: cat %t.md/fixtures/vendor/UsesDelimited_1_0.h.d | FileCheck %s --check-prefix=MD_DEPFILE_USES_DELIMITED
 # RUN: cat %t.md/fixtures/vendor/Delimited_1_0.h.d | FileCheck %s --check-prefix=MD_DEPFILE_DELIMITED
 # RUN: cat %t.md/dsdl_runtime.h.d | FileCheck %s --check-prefix=MD_RUNTIME_EMPTY
 # RUN: rm -rf %t.md-mode && %dsdlc --target-language c -MD --file-mode 0o640 --outdir %t.md-mode %S/fixtures >/dev/null 2>&1
-# RUN: python3 -c "import os; m = os.stat(r'%t.md-mode/fixtures/vendor/Type_1_0.h.d').st_mode & 0o777; assert m == 0o640, oct(m)"
+# RUN: python3 -c "import os; m = os.stat(r'%t.md-mode/fixtures/vendor/Widget_1_0.h.d').st_mode & 0o777; assert m == 0o640, oct(m)"
 # RUN: not %dsdlc --target-language ast %S/fixtures_unregulated 2>&1 | FileCheck %s --check-prefix=UNREG
 # RUN: %dsdlc --target-language ast --allow-unregulated-fixed-port-id %S/fixtures_unregulated 2>&1 | FileCheck %s --check-prefix=ALLOW_UNREG
 # RUN: %dsdlc --target-language c --list-outputs --omit-dependencies --outdir %t.omit --lookup-dir %S/fixtures %S/fixtures/vendor/UsesDelimited.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=OMIT_DEPS
@@ -29,32 +29,32 @@
 # RUN: test -f %t.md-omit/fixtures/vendor/UsesDelimited_1_0.h.d
 # RUN: test ! -e %t.md-omit/fixtures/vendor/Delimited_1_0.h
 # RUN: cat %t.md-omit/fixtures/vendor/UsesDelimited_1_0.h.d | FileCheck %s --check-prefix=MD_OMIT_DEPS
-# RUN: %dsdlc --target-language ast --list-inputs --lookup-dir %S/fixtures %S/fixtures/vendor/Type.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=LOOKUP_INFER
-# RUN: %dsdlc --target-language ast --list-inputs %S/fixtures:vendor/Type.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=COLON_TARGET
-# RUN: env DSDL_INCLUDE_PATH=%S/fixtures %dsdlc --target-language ast --list-inputs %S/fixtures/vendor/Type.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=ENV_INCLUDE
-# RUN: rm -rf %t.cyphal && mkdir -p %t.cyphal/fixtures/vendor && cp %S/fixtures/vendor/Type.1.0.dsdl %t.cyphal/fixtures/vendor/Type.1.0.dsdl
-# RUN: env CYPHAL_PATH=%t.cyphal %dsdlc --target-language ast --list-inputs %t.cyphal/fixtures/vendor/Type.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=ENV_CYPHAL
-# RUN: not %dsdlc --target-language ast --list-inputs %S/fixtures/vendor/Type.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=INFER_FAIL
-# RUN: not %dsdlc --target-language ast --list-inputs --lookup-dir %S --lookup-dir %S/fixtures %S/fixtures/vendor/Type.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=INFER_AMBIGUOUS
+# RUN: %dsdlc --target-language ast --list-inputs --lookup-dir %S/fixtures %S/fixtures/vendor/Widget.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=LOOKUP_INFER
+# RUN: %dsdlc --target-language ast --list-inputs %S/fixtures:vendor/Widget.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=COLON_TARGET
+# RUN: env DSDL_INCLUDE_PATH=%S/fixtures %dsdlc --target-language ast --list-inputs %S/fixtures/vendor/Widget.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=ENV_INCLUDE
+# RUN: rm -rf %t.cyphal && mkdir -p %t.cyphal/fixtures/vendor && cp %S/fixtures/vendor/Widget.1.0.dsdl %t.cyphal/fixtures/vendor/Widget.1.0.dsdl
+# RUN: env CYPHAL_PATH=%t.cyphal %dsdlc --target-language ast --list-inputs %t.cyphal/fixtures/vendor/Widget.1.0.dsdl 2>/dev/null | FileCheck %s --check-prefix=ENV_CYPHAL
+# RUN: not %dsdlc --target-language ast --list-inputs %S/fixtures/vendor/Widget.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=INFER_FAIL
+# RUN: not %dsdlc --target-language ast --list-inputs --lookup-dir %S --lookup-dir %S/fixtures %S/fixtures/vendor/Widget.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=INFER_AMBIGUOUS
 
 # NO_OVERWRITE: refusing to overwrite existing output file:
 
 # BAD_FILE_MODE: invalid --file-mode value: 0o
 
-# MD_DEPFILE: Type_1_0.h:
-# MD_DEPFILE: Type.1.0.dsdl
+# MD_DEPFILE: Widget_1_0.h:
+# MD_DEPFILE: Widget.1.0.dsdl
 # MD_DEPFILE-NOT: Delimited.1.0.dsdl
 # MD_DEPFILE-NOT: UsesDelimited.1.0.dsdl
 
 # MD_DEPFILE_USES_DELIMITED: UsesDelimited_1_0.h:
 # MD_DEPFILE_USES_DELIMITED: Delimited.1.0.dsdl
 # MD_DEPFILE_USES_DELIMITED: UsesDelimited.1.0.dsdl
-# MD_DEPFILE_USES_DELIMITED-NOT: Type.1.0.dsdl
+# MD_DEPFILE_USES_DELIMITED-NOT: Widget.1.0.dsdl
 
 # MD_DEPFILE_DELIMITED: Delimited_1_0.h:
 # MD_DEPFILE_DELIMITED: Delimited.1.0.dsdl
 # MD_DEPFILE_DELIMITED-NOT: UsesDelimited.1.0.dsdl
-# MD_DEPFILE_DELIMITED-NOT: Type.1.0.dsdl
+# MD_DEPFILE_DELIMITED-NOT: Widget.1.0.dsdl
 
 # MD_RUNTIME_EMPTY: dsdl_runtime.h:
 # MD_RUNTIME_EMPTY-NOT: .dsdl
@@ -67,7 +67,7 @@
 # OMIT_DEPS: {{.*/}}dsdl_runtime.h;{{.*/}}UsesDelimited_1_0.c;{{.*/}}UsesDelimited_1_0.h
 # OMIT_DEPS-NOT: /Delimited_1_0.
 
-# MD_LIST_OUTPUTS: {{.*Type_1_0\.h;.*Type_1_0\.h\.d.*}}
+# MD_LIST_OUTPUTS: {{.*Widget_1_0\.h;.*Widget_1_0\.h\.d.*}}
 
 # VERBOSE: [dsdlc] resolving target paths
 # VERBOSE: [dsdlc] discovering and parsing definitions
@@ -82,13 +82,13 @@
 
 # MD_OMIT_DEPS: {{.*UsesDelimited_1_0\.h: .*Delimited\.1\.0\.dsdl.*UsesDelimited\.1\.0\.dsdl.*}}
 
-# LOOKUP_INFER: {{.*/}}Type.1.0.dsdl
+# LOOKUP_INFER: {{.*/}}Widget.1.0.dsdl
 
-# COLON_TARGET: {{.*/}}Type.1.0.dsdl
+# COLON_TARGET: {{.*/}}Widget.1.0.dsdl
 
-# ENV_INCLUDE: {{.*/}}Type.1.0.dsdl
+# ENV_INCLUDE: {{.*/}}Widget.1.0.dsdl
 
-# ENV_CYPHAL: {{.*/}}Type.1.0.dsdl
+# ENV_CYPHAL: {{.*/}}Widget.1.0.dsdl
 
 # INFER_FAIL: cannot infer root namespace for target file; specify --lookup-dir or use colon syntax
 

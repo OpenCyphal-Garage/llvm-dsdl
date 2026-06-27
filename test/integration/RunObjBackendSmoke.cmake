@@ -25,7 +25,7 @@ set(little_out "${OUT_DIR}/little")
 set(big_out "${OUT_DIR}/big")
 set(no_archive_out "${OUT_DIR}/no-archive")
 set(archive_name "fixtures_obj")
-set(type_object_rel "fixtures/vendor/Type_1_0.o")
+set(type_object_rel "fixtures/vendor/Widget_1_0.o")
 
 foreach(out_dir IN ITEMS "${little_out}" "${big_out}" "${no_archive_out}")
   file(MAKE_DIRECTORY "${out_dir}")
@@ -108,9 +108,9 @@ if(LLVMDSDL_AR_TOOL)
     message(STATUS "ar stderr (little):\n${little_ar_stderr}")
     message(FATAL_ERROR "failed to inspect little-endian archive members")
   endif()
-  string(FIND "${little_ar_stdout}" "Type_1_0.o" little_type_hit)
+  string(FIND "${little_ar_stdout}" "Widget_1_0.o" little_type_hit)
   if(little_type_hit EQUAL -1)
-    message(FATAL_ERROR "little-endian archive missing Type_1_0.o member")
+    message(FATAL_ERROR "little-endian archive missing Widget_1_0.o member")
   endif()
 
   execute_process(
@@ -123,9 +123,9 @@ if(LLVMDSDL_AR_TOOL)
     message(STATUS "ar stderr (big):\n${big_ar_stderr}")
     message(FATAL_ERROR "failed to inspect big-endian archive members")
   endif()
-  string(FIND "${big_ar_stdout}" "Type_1_0.o" big_type_hit)
+  string(FIND "${big_ar_stdout}" "Widget_1_0.o" big_type_hit)
   if(big_type_hit EQUAL -1)
-    message(FATAL_ERROR "big-endian archive missing Type_1_0.o member")
+    message(FATAL_ERROR "big-endian archive missing Widget_1_0.o member")
   endif()
 else()
   message(STATUS "Skipping archive member inspection: 'ar' not found")
@@ -139,29 +139,29 @@ file(
   "#include <stddef.h>\n"
   "#include <stdio.h>\n"
   "#include <string.h>\n"
-  "#include \"fixtures/vendor/Type_1_0.h\"\n"
+  "#include \"fixtures/vendor/Widget_1_0.h\"\n"
   "#include \"fixtures/vendor/Helpers_1_0.h\"\n"
   "#include \"fixtures/vendor/UnionTag_1_0.h\"\n"
   "\n"
   "static int check_type(void) {\n"
-  "  fixtures__vendor__Type obj = {0};\n"
+  "  fixtures__vendor__Widget obj = {0};\n"
   "  obj.foo = 0x12U;\n"
   "  obj.bar = 0x3456U;\n"
-  "  uint8_t buf[fixtures__vendor__Type_SERIALIZATION_BUFFER_SIZE_BYTES_] = {0};\n"
+  "  uint8_t buf[fixtures__vendor__Widget_SERIALIZATION_BUFFER_SIZE_BYTES_] = {0};\n"
   "  size_t size = sizeof(buf);\n"
-  "  int8_t rc = fixtures__vendor__Type__serialize_(&obj, buf, &size);\n"
+  "  int8_t rc = fixtures__vendor__Widget__serialize_(&obj, buf, &size);\n"
   "  if ((rc != 0) || (size != 3U) || (buf[0] != 0x12U) || (buf[1] != 0x56U) || (buf[2] != 0x34U)) {\n"
   "    return 1;\n"
   "  }\n"
-  "  fixtures__vendor__Type out = {0};\n"
+  "  fixtures__vendor__Widget out = {0};\n"
   "  size_t in_size = size;\n"
-  "  rc = fixtures__vendor__Type__deserialize_(&out, buf, &in_size);\n"
+  "  rc = fixtures__vendor__Widget__deserialize_(&out, buf, &in_size);\n"
   "  if ((rc != 0) || (in_size != size) || (out.foo != obj.foo) || (out.bar != obj.bar)) {\n"
   "    return 2;\n"
   "  }\n"
   "  const uint8_t* view = NULL;\n"
   "  size_t view_size = size;\n"
-  "  rc = fixtures__vendor__Type__try_deserialize_view_(buf, &view_size, &view);\n"
+  "  rc = fixtures__vendor__Widget__try_deserialize_view_(buf, &view_size, &view);\n"
   "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)\n"
   "  if ((rc != -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT) || (view_size != 0U) || (view != NULL)) {\n"
   "    return 3;\n"
@@ -170,9 +170,9 @@ file(
   "  if ((rc != DSDL_RUNTIME_SUCCESS) || (view_size != size) || (view != buf)) {\n"
   "    return 4;\n"
   "  }\n"
-  "  uint8_t copied[fixtures__vendor__Type_SERIALIZATION_BUFFER_SIZE_BYTES_] = {0};\n"
+  "  uint8_t copied[fixtures__vendor__Widget_SERIALIZATION_BUFFER_SIZE_BYTES_] = {0};\n"
   "  size_t copied_size = sizeof(copied);\n"
-  "  rc = fixtures__vendor__Type__try_serialize_view_(view, view_size, copied, &copied_size);\n"
+  "  rc = fixtures__vendor__Widget__try_serialize_view_(view, view_size, copied, &copied_size);\n"
   "  if ((rc != DSDL_RUNTIME_SUCCESS) || (copied_size != size) || (memcmp(copied, buf, size) != 0)) {\n"
   "    return 5;\n"
   "  }\n"

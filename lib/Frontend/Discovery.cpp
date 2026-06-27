@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/ReservedIdentifiers.h"
 
 #include <algorithm>
 #include <cctype>
@@ -145,6 +146,18 @@ void discoverInRoot(const std::filesystem::path&       root,
                 diagnostics.error({path.string(), 1, 1}, "invalid namespace component: " + comp);
                 validNamespace = false;
             }
+            else if (isReservedIdentifier(comp))
+            {
+                // DSDL spec v1.0 section 3.2.5 / table 3.5: a name component may
+                // not match a reserved identifier pattern.
+                diagnostics.error({path.string(), 1, 1}, "namespace component is a reserved identifier: " + comp);
+                validNamespace = false;
+            }
+        }
+        if (isReservedIdentifier(def.shortName))
+        {
+            diagnostics.error({path.string(), 1, 1}, "type name is a reserved identifier: " + def.shortName);
+            validNamespace = false;
         }
         if (!validNamespace)
         {

@@ -87,11 +87,11 @@ if(EXISTS "${no_archive_out}/llvmdsdl_generated.a")
   message(FATAL_ERROR "obj-cpp --obj-no-archive unexpectedly emitted archive")
 endif()
 
-if(NOT EXISTS "${little_out}/abi/fixtures/vendor/Type_1_0_abi.o")
-  message(FATAL_ERROR "missing canonical C++ ABI object for Type.1.0")
+if(NOT EXISTS "${little_out}/abi/fixtures/vendor/Widget_1_0_abi.o")
+  message(FATAL_ERROR "missing canonical C++ ABI object for Widget.1.0")
 endif()
-if(NOT EXISTS "${little_out}/c_shim/fixtures/vendor/Type_1_0_c_shim.o")
-  message(FATAL_ERROR "missing C shim object for Type.1.0")
+if(NOT EXISTS "${little_out}/c_shim/fixtures/vendor/Widget_1_0_c_shim.o")
+  message(FATAL_ERROR "missing C shim object for Widget.1.0")
 endif()
 
 set(cpp_harness "${OUT_DIR}/obj_cpp_harness.cpp")
@@ -99,15 +99,15 @@ file(WRITE "${cpp_harness}" [=[
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include "std/fixtures/vendor/Type_1_0.hpp"
+#include "std/fixtures/vendor/Widget_1_0.hpp"
 #include "std/fixtures/vendor/Helpers_1_0.hpp"
 
 int main() {
-  fixtures::vendor::Type obj{};
+  fixtures::vendor::Widget obj{};
   obj.foo = 0x12U;
   obj.bar = 0x3456U;
 
-  std::uint8_t buffer[fixtures::vendor::Type::SERIALIZATION_BUFFER_SIZE_BYTES]{};
+  std::uint8_t buffer[fixtures::vendor::Widget::SERIALIZATION_BUFFER_SIZE_BYTES]{};
   std::size_t size = sizeof(buffer);
   const std::int8_t ser_rc = obj.serialize(buffer, &size);
   if (ser_rc != 0 || size != 3U || buffer[0] != 0x12U || buffer[1] != 0x56U || buffer[2] != 0x34U) {
@@ -115,7 +115,7 @@ int main() {
     return 1;
   }
 
-  fixtures::vendor::Type out{};
+  fixtures::vendor::Widget out{};
   std::size_t in_size = size;
   const std::int8_t des_rc = out.deserialize(buffer, &in_size);
   if (des_rc != 0 || in_size != size || out.foo != obj.foo || out.bar != obj.bar) {
@@ -125,7 +125,7 @@ int main() {
 
   const std::uint8_t* view = nullptr;
   std::size_t view_size = size;
-  const std::int8_t view_rc = fixtures::vendor::Type::try_deserialize_view(buffer, &view_size, &view);
+  const std::int8_t view_rc = fixtures::vendor::Widget::try_deserialize_view(buffer, &view_size, &view);
 #if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)
   if (view_rc != -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT || view_size != 0U || view != nullptr) {
     std::fprintf(stderr, "big-endian view behavior mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
@@ -157,22 +157,22 @@ file(WRITE "${c_harness}" [=[
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "c_shim/fixtures/vendor/Type_1_0_c_shim.h"
+#include "c_shim/fixtures/vendor/Widget_1_0_c_shim.h"
 
 int main(void) {
-  llvmdsdl_cppabi__fixtures__vendor__Type obj = {0};
+  llvmdsdl_cppabi__fixtures__vendor__Widget obj = {0};
   obj.foo = 0x12U;
   obj.bar = 0x3456U;
   uint8_t buf[3] = {0};
   size_t size = sizeof(buf);
-  int8_t rc = llvmdsdl_cppabi_fixtures_vendor_Type_1_0__serialize_(&obj, buf, &size);
+  int8_t rc = llvmdsdl_cppabi_fixtures_vendor_Widget_1_0__serialize_(&obj, buf, &size);
   if ((rc != 0) || (size != 3U) || (buf[0] != 0x12U) || (buf[1] != 0x56U) || (buf[2] != 0x34U)) {
     fprintf(stderr, "shim serialize mismatch rc=%d size=%zu\n", (int)rc, size);
     return 1;
   }
-  llvmdsdl_cppabi__fixtures__vendor__Type out = {0};
+  llvmdsdl_cppabi__fixtures__vendor__Widget out = {0};
   size_t in_size = size;
-  rc = llvmdsdl_cppabi_fixtures_vendor_Type_1_0__deserialize_(&out, buf, &in_size);
+  rc = llvmdsdl_cppabi_fixtures_vendor_Widget_1_0__deserialize_(&out, buf, &in_size);
   if ((rc != 0) || (in_size != size) || (out.foo != obj.foo) || (out.bar != obj.bar)) {
     fprintf(stderr, "shim deserialize mismatch rc=%d in_size=%zu\n", (int)rc, in_size);
     return 2;
@@ -184,11 +184,11 @@ int main(void) {
 
 set(adapter_smoke "${OUT_DIR}/adapter_smoke.cpp")
 file(WRITE "${adapter_smoke}" [=[
-#include "std/fixtures/vendor/Type_1_0.hpp"
-#include "pmr/fixtures/vendor/Type_1_0.hpp"
-#include "autosar/fixtures/vendor/Type_1_0.hpp"
+#include "std/fixtures/vendor/Widget_1_0.hpp"
+#include "pmr/fixtures/vendor/Widget_1_0.hpp"
+#include "autosar/fixtures/vendor/Widget_1_0.hpp"
 int main() {
-  fixtures::vendor::Type a{};
+  fixtures::vendor::Widget a{};
   (void)a;
   return 0;
 }

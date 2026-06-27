@@ -1,5 +1,5 @@
 # Type doc line1
 # Type doc line2
 uint8 a # field doc
-uint8 CONST = 1 # const doc
+uint8 LIMIT = 1 # const doc
 @sealed
