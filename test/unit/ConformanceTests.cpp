@@ -90,6 +90,10 @@ bool runConformanceTests()
         {"float64 X = 1e+\n@sealed\n", false},
         {"float64 X = 1_.5\n@sealed\n", false},      // underscore before point
         {"float64 X = 1.5_\n@sealed\n", false},      // trailing underscore
+        {"float64 X = .05\n@sealed\n", true},        // leading-zero fraction is a valid real
+        {"float64 X = .007\n@sealed\n", true},
+        {"float64 X = 05.\n@sealed\n", true},        // leading-zero integer part of a real
+        {"uint64 X = 05\n@sealed\n", false},         // but a standalone leading-zero int is not
         {"uint64 X = 99999999999999999999999999\n@sealed\n", false},  // not representable
 
         // ---- Operator precedence is exercised by ParserTests; here just sanity ----

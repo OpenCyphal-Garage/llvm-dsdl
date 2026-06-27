@@ -289,7 +289,26 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
     }
 
     const bool isReal = hasDot || hasExp;
-    if (!numericLiteralConforms(text, isReal))
+    bool       conforms;
+    if (isReal)
+    {
+        conforms = numericLiteralConforms(text, true);
+    }
+    else
+    {
+        // A bare digit run that is adjacent to a '.' -- preceded by one (".05")
+        // or followed by one ("05.") -- is the digit component of a real literal
+        // reassembled in the parser, so it follows literal_real_digits, which
+        // (unlike literal_integer_decimal) permits leading zeros. Otherwise it is
+        // a standalone integer, where a decimal leading zero is invalid.
+        const bool precededByDot = !tokens_.empty() && tokens_.back().kind == TokenKind::Dot &&
+                                   tokens_.back().location.line == line &&
+                                   tokens_.back().location.column + 1U == column;
+        const bool followedByDot = peek() == '.';
+        conforms = (precededByDot || followedByDot) ? numericLiteralConforms("." + text, true)
+                                                    : numericLiteralConforms(text, false);
+    }
+    if (!conforms)
     {
         recordError(line, column, "malformed " + std::string(isReal ? "real" : "integer") + " literal '" + text + "'");
     }
