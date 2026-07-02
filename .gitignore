@@ -50,3 +50,4 @@ dsdl_out
 
 # MkDocs output
 site/
+.actrc

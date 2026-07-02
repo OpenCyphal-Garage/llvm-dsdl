@@ -38,6 +38,7 @@ nav:
       - Testing and CI: development/testing.md
   - Project:
       - Page Map: PAGE_MAP.md
+      - Review & Release Roadmap: PROJECT_REPORT_AND_RELEASE_ROADMAP.md
 
 theme:
   name: material

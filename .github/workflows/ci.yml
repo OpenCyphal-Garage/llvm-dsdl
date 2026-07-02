@@ -1,0 +1,201 @@
+name: CI
+
+# Full, unabridged test + report run for the core tools (dsdlc, dsdl-opt, dsdld)
+# across every supported host platform and every generated-output language.
+#
+# The Linux job runs INSIDE the project's own toolshed image
+# (ghcr.io/opencyphal/toolshed:ts24.4.3 — the same image .devcontainer uses), so
+# LLVM/MLIR 19, clang, cmake and ninja are already present: no per-run toolchain
+# install of LLVM. The setup action only adds what the image lacks (MLIR dev libs,
+# Go, Rust, tsc, lit). This job runs identically under `act` locally (see .actrc)
+# and on GitHub-hosted runners.
+#
+# The integration suite registers a language's tests only when its toolchain is
+# found at configure time, so installing the full toolchain set is what makes the
+# run actually unabridged.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: "ci-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Full suite (linux / toolshed)
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts24.4.3
+    timeout-minutes: 120
+    env:
+      LLVM_DIR: /usr/lib/llvm-19/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-19/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-19
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare toolchains
+        uses: ./.github/actions/setup-language-toolchains
+
+      - name: Configure (ci preset)
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+
+      - name: Build (Debug)
+        run: cmake --build --preset build-ci
+
+      - name: Build Python runtime accelerator
+        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
+
+      - name: Run full unabridged test suite
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/test-results"
+          ctest --preset test-ci-full \
+            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
+
+      - name: Generate convergence / parity / determinism / contract reports
+        if: always()
+        run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
+
+      - name: Collect reports
+        if: always()
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/reports"
+          [ -d build/matrix/ci/convergence ] && cp -R build/matrix/ci/convergence "${GITHUB_WORKSPACE}/reports/" || true
+
+      # GitHub-only reporting: skipped under `act` (which sets ACT=true) so local
+      # runs don't hit the GitHub API or need an artifact server.
+      - name: Publish test results
+        if: ${{ always() && !env.ACT }}
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: "test-results/junit-linux.xml"
+          check_name: "Test results (linux)"
+          include_passed: true
+          detailed_summary: true
+          fail_on_failure: false
+
+      - name: Upload JUnit results
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-linux
+          path: test-results/junit-linux.xml
+          if-no-files-found: warn
+
+      - name: Upload reports
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-linux
+          path: reports/
+          if-no-files-found: warn
+
+  macos:
+    name: Full suite (macos / homebrew)
+    # Containers are Linux-only, so macOS can't use the toolshed image; it is a
+    # GitHub-hosted job. Local `act` has no macos-14 runner image and skips it.
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install LLVM/MLIR 19 + toolchains (Homebrew)
+        run: |
+          set -euxo pipefail
+          brew update
+          brew install llvm@19 ninja zstd
+          npm install -g typescript@5.4
+          python3 -m pip install --upgrade --break-system-packages lit || python3 -m pip install --upgrade lit
+          rustup toolchain install stable --profile minimal --no-self-update || true
+          rustup default stable || true
+          LLVM_PREFIX="$(brew --prefix llvm@19)"
+          {
+            echo "LLVM_DIR=${LLVM_PREFIX}/lib/cmake/llvm"
+            echo "MLIR_DIR=${LLVM_PREFIX}/lib/cmake/mlir"
+            echo "CMAKE_PREFIX_PATH=${LLVM_PREFIX}"
+            echo "CC=${LLVM_PREFIX}/bin/clang"
+            echo "CXX=${LLVM_PREFIX}/bin/clang++"
+          } >> "${GITHUB_ENV}"
+
+      - name: Configure (ci preset)
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+
+      - name: Build (Debug)
+        run: cmake --build --preset build-ci
+
+      - name: Build Python runtime accelerator
+        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
+
+      - name: Run full unabridged test suite
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/test-results"
+          ctest --preset test-ci-full \
+            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
+
+      - name: Generate convergence / parity / determinism / contract reports
+        if: always()
+        run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
+
+      - name: Collect reports
+        if: always()
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/reports"
+          [ -d build/matrix/ci/convergence ] && cp -R build/matrix/ci/convergence "${GITHUB_WORKSPACE}/reports/" || true
+
+      - name: Publish test results
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: "test-results/junit-macos.xml"
+          check_name: "Test results (macos)"
+          include_passed: true
+          detailed_summary: true
+          fail_on_failure: false
+
+      - name: Upload JUnit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-macos
+          path: test-results/junit-macos.xml
+          if-no-files-found: warn
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-macos
+          path: reports/
+          if-no-files-found: warn

@@ -1,0 +1,270 @@
+# BitLengthSet — Deep Analysis, Specification, and Regression Work
+
+**Date:** 2026-07-02
+**Scope:** `include/llvmdsdl/Semantics/BitLengthSet.h`, `lib/Semantics/BitLengthSet.cpp`,
+`test/unit/BitLengthSetTests.cpp`
+**Constraint honored:** the implementation (`.cpp` executable code) was **not** modified beyond
+adding specification comments. All behavioral changes proposed here are deferred to the TODO
+section below.
+
+---
+
+## Summary of delivered work
+
+| File | Change | Kind |
+|---|---|---|
+| [`BitLengthSet.h`](include/llvmdsdl/Semantics/BitLengthSet.h) | Full behavioral specification as class/member documentation | Comments only |
+| [`BitLengthSet.cpp`](lib/Semantics/BitLengthSet.cpp) | Node-algebra spec + per-kind exactness/truncation policies | Comments only |
+| [`BitLengthSetTests.cpp`](test/unit/BitLengthSetTests.cpp) | Rewritten as a specification-driven regression suite | Test code |
+
+`git diff` on the two source files shows only comment additions plus clang-format whitespace
+realignment (inserting a comment split an assignment-alignment group). The project rebuilds
+cleanly and the full `llvmdsdl-unit-tests` binary passes (exit 0). The `dsdl.io` / `dsdl.schema`
+"missing required attribute" lines emitted during the run are **pre-existing expected-error
+output** from the MLIR hardening tests — the stale pre-change Debug binary prints the identical
+nine lines.
+
+---
+
+## 1. Specification (now embedded in the header)
+
+`BitLengthSet` denotes a **finite, non-empty set `S` of non-negative integers** — the possible
+serialized lengths, in bits, of a DSDL entity (field, section, or definition). It is the C++
+analogue of pydsdl's `BitLengthSet` and implements the OpenCyphal serialization length algebra.
+
+The representation is a **persistent, immutable expression DAG**. Leaves hold explicit value
+sets; interior nodes denote sum, union, padding, and repetition. `min()`, `max()`, and `fixed()`
+are answered symbolically without enumeration; `expand()` and `modulo()` materialize values
+subject to an expansion limit.
+
+### Denotational semantics
+
+| Expression | Denoted set `S` |
+|---|---|
+| `BitLengthSet()` | `{0}` (zero-length entity — **not** the empty set) |
+| `BitLengthSet(v)` | `{v}` |
+| `BitLengthSet(values)` | `values`, or `{0}` when empty |
+| `a + b` | `{ x + y : x ∈ S(a), y ∈ S(b) }` (Minkowski sum) |
+| `a \| b` | `S(a) ∪ S(b)` |
+| `x.padToAlignment(a)` | `{ ceil(v / a) · a : v ∈ S(x) }` |
+| `x.repeat(k)` | `{ v₁ + … + v_k : vᵢ ∈ S(x) }`; `{0}` when `k ≤ 0` |
+| `x.repeatRange(k)` | `⋃` over `i ∈ [0, k]` of `x.repeat(i)` |
+| `x.modulo(d)` | `{ v mod d : v ∈ S(x) }`; `{0}` when `d ≤ 0` |
+
+### Invariants
+
+- **I1 (non-empty):** `S` is never empty. Default construction and empty-input coercion both
+  yield `{0}`; therefore `min()`/`max()` are always defined.
+- **I2 (ordered bounds):** `min() ≤ max()`, and both are elements of `S`.
+- **I3 (immutability / persistence):** objects are immutable values; operations return new
+  objects and never mutate operands. Copies are O(1) and share structure safely.
+- **I4 (no hidden expansion):** `min()`, `max()`, `fixed()`, and `str()` never enumerate `S`.
+
+### Exactness model
+
+- `min()` / `max()` / `fixed()` are **exact** for any set size.
+- `expand(limit)` returns a **sound under-approximation** (subset of `S`): exact when every
+  intermediate subexpression's cardinality `≤ limit`; otherwise an **unspecified** subset, with
+  no error reported and no guarantee of returning the smallest elements.
+- `modulo(d)` is the exact residue set **only within** the `expand()` exactness envelope,
+  because it is derived from `expand()` at the default limit.
+
+### Preconditions
+
+- Every value supplied to a constructor must be **non-negative** (unvalidated).
+- All arithmetic is **unchecked `int64`**; no derivable sum/product/round-up may exceed
+  `INT64_MAX` (unvalidated).
+- `expand()` `limit` must be `≥ 1`.
+- A moved-from object may only be destroyed or assigned to.
+
+### Algebraic laws (all now executable tests)
+
+- `+` commutative and associative; `BitLengthSet(0)` is its identity.
+- `|` commutative, associative, idempotent.
+- `+` distributes over `|`.
+- `x.repeat(0) == BitLengthSet(0)`; `x.repeat(1) == x`; `x.repeat(k) == x + … + x` (k addends).
+- `x.repeatRange(k)` always contains 0; `x.repeatRange(0) == BitLengthSet(0)`.
+- `padToAlignment` is idempotent, is the identity for `a == 1` and for aligned sets, and every
+  result element is a multiple of `a`.
+
+---
+
+## 2. Defect enumeration
+
+Sixteen findings. Every item tagged **(probe)** was reproduced empirically by compiling test
+programs directly against the class; the rest are code-inspection findings. Defect IDs are
+cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
+
+### Functional correctness
+
+- **BLS-D1 — `modulo()` silently incomplete past the expansion limit. (High) (probe)**
+  A union of 20,000 multiples of 16 plus the single value `320007` returns residues `{0}` mod 8;
+  the misaligned member's residue `7` vanishes. Because `modulo()` exists for alignment
+  reasoning, this can make a sometimes-misaligned layout appear always-aligned. Root cause: it
+  is derived from `expand()`, whose Union node discards the largest members on truncation.
+
+- **BLS-D2 — `expand()` truncation keeps an arbitrary subset, and it feeds `_offset_`
+  evaluation. (High) (probe)**
+  `expand(3)` of an 8-element sum returns `{0,10,20}` — retaining 20 while dropping 5.
+  [`Analyzer.cpp:204`](lib/Semantics/Analyzer.cpp:204) (`bitLengthSetToValueSet`) passes
+  `expand(4096)` into DSDL `_offset_` expression evaluation, so `@assert` expressions over
+  `_offset_` are evaluated against a wrong (truncated, non-sorted) set for types with more than
+  4096 distinct lengths. Probe: expansion max 32,760 vs. true symbolic max 80,000.
+
+- **BLS-D3 — `expand(0)` returns the empty set. (Medium) (probe)** The Union node's trim loop
+  erases every element, violating invariant I1. **XFAIL'd** in the suite.
+
+- **BLS-D4 — Leaf expansion ignores `limit`. (Low) (probe)** A leaf constructed with more than
+  `limit` values is returned whole. **XFAIL'd** in the suite.
+
+### Unvalidated preconditions / undefined behavior
+
+- **BLS-D5 — Negative values accepted and mishandled. (Medium) (probe)** `pad({-3},8)` yields
+  `{8}` (should be 0); `modulo({-3},8)` returns `{-3}`; `repeatRange({-8},3)` reports
+  `min()=0, max()=-24` — an inverted range violating I2.
+
+- **BLS-D6 — Unchecked `int64` overflow. (Medium) (probe)** `padToAlignment(8)` on
+  `INT64_MAX-2` wraps to `-2⁶³` in a plain build and traps under UBSan. Reachable via
+  adversarial-but-parseable DSDL (huge capacities / deep nesting). Parallels the roadmap's known
+  `Rational` overflow item.
+
+- **BLS-D7 — Moved-from use dereferences null. (Low/Medium) (probe)** Any member call on a
+  moved-from object segfaults (`root_` is null). Documented as UB; cheap to harden.
+
+### Compile-time DoS (performance)
+
+- **BLS-D8 — `repeat` / `repeatRange` expansion is Θ(count) with no early exit. (High) (probe)**
+  `repeat({0}, 2·10⁷).expand()` takes 0.56 s to produce `{0}`; `repeatRange({8},
+  2·10⁷).expand(4096)` takes 1.9 s after saturating in the first 4096 iterations. The count is
+  user-controlled — array capacity, and `extent/8` at
+  [`Analyzer.cpp:556`](lib/Semantics/Analyzer.cpp:556) — making this a compiler-hang vector.
+  This is the roadmap's "unbounded `repeatRange` expansion", now precisely characterized.
+
+- **BLS-D9 — No memoization ⇒ exponential DAG traversal. (Medium) (probe)** `min()` over an
+  n-fold `s = s + s` DAG: 2.6 ms at n=20, 47 ms at n=24, 179 ms at n=26 (~4× per two levels).
+
+- **BLS-D10 — Unbounded recursion, including at destruction. (Medium) (probe)** A 300k-deep `+`
+  chain overflows the stack — during traversal and again in the destructor.
+
+- **BLS-D11 — `Add.expand` can perform |l|·|r| inserts. (Low)** Up to ~2.7·10⁸ set inserts
+  before reaching the cap when sums collide heavily.
+
+### API / design
+
+- **BLS-D12 — Silent clamps mask caller bugs. (Low)** Negative counts, sub-1 alignments, and
+  non-positive divisors are silently normalized with no diagnostic (now specified, not fixed).
+
+- **BLS-D13 — Missing `operator==` / `is_aligned_at()`. (Info)** pydsdl parity gaps.
+  `UavcanEmbeddedCatalog` reconstructs a `{min,max}` two-value approximation — sound for its
+  consumers but previously undocumented.
+
+- **BLS-D14 — Default constructor double-allocates. (Info)** Allocates a node, then immediately
+  replaces it.
+
+- **BLS-D15 — `fixed() ≡ min()==max()` unsound off-domain. (Info)** Correct only on the
+  specified non-negative domain; breaks under BLS-D5.
+
+- **BLS-D16 — No exactness signal on `expand()` / `modulo()`. (Medium, root cause)** Callers
+  cannot detect truncation. This is the structural cause behind BLS-D1 and BLS-D2.
+
+---
+
+## 3. Regression test suite
+
+The suite tests the **specification**, not the implementation. Expected values come from an
+independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeatRange`,
+`refModulo`) that transcribes the denotational definitions directly. Twelve sections cover:
+
+1. Construction and invariants (I1, `{0}` coercion, `fixed()`).
+2. Bound exactness (`min`/`max`/`fixed` vs. exact expansion across a 9-expression battery).
+3. Addition semantics (Minkowski sum, identity, commutativity, associativity, reference model).
+4. Union semantics (union, idempotence, commutativity, associativity, `+` distributes over `|`).
+5. `padToAlignment` (denotation, clamp to 1, idempotence, alignment postcondition, bounds).
+6. `repeat` (clamps, `repeat(1)==x`, `repeat(3)==s+s+s`, scaled bounds).
+7. `repeatRange` (clamps, always-contains-0, bounds, reference model).
+8. `modulo` (residues, sentinel, completeness **exactly at** the 16384 boundary, soundness).
+9. `expand` (exactness at `|S|==limit`, soundness + cap under truncation, `≤ symbolic max`).
+10. `str` (grammar, ascending leaf order, post-clamp parameters).
+11. Persistence / value semantics (I3).
+12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
+    actual shapes the Analyzer builds.
+
+The three assertions of the original test file are preserved as a subset.
+
+**XFAIL mechanism.** Spec clauses the implementation currently violates (BLS-D1, D3, D4) are
+wrapped in `expectDefect(id, specHolds, what)`. While the defect reproduces the marker prints a
+note and does **not** fail the suite; when a fix lands, `specHolds` becomes true and the marker
+announces it should be promoted to an enforced `expect()`. This lets the suite ship green today
+while precisely tracking the known gaps.
+
+**Result:** all ~190 enforced assertions pass; exactly the three known defects reproduce; the
+full unit binary exits 0.
+
+---
+
+## TODO — follow-up work to correct defects and improve the class
+
+Ordered by priority. Each item names the defect(s) it closes and the XFAIL marker to promote.
+
+### P0 — correctness of layout/alignment reasoning
+
+- [ ] **Make `modulo()` exact via per-node symbolic residues (BLS-D1, BLS-D16).**
+  Compute residue sets bottom-up mod `d` instead of expanding first — residue sets are bounded
+  by `d`, so this is both exact and cheap, and never truncates. This is what pydsdl's
+  `_bit_length_set/_symbolic.py` does (`__mod__` over the symbolic tree). After the fix, promote
+  the `BLS-D1` XFAIL in `testModulo` to an enforced `expect()`.
+- [ ] **Give `expand()` an exact-or-signal contract (BLS-D2, BLS-D16).**
+  Return truncation status (e.g. `std::optional`, an out-param `bool exact`, or a small result
+  struct) so callers can react. Then make
+  [`bitLengthSetToValueSet`](lib/Semantics/Analyzer.cpp:204) **fail loudly** (diagnostic) instead
+  of silently evaluating `_offset_` against a truncated, arbitrarily-ordered set for
+  large-cardinality types.
+
+### P1 — denial-of-service hardening (adversarial DSDL)
+
+- [ ] **Add convergence/saturation early-exit to `repeat` / `repeatRange` expansion (BLS-D8).**
+  Break the round loop once the accumulator stops changing or the result saturates at `limit`.
+  Alternatively (or additionally) **cap counts at the semantic layer** where array capacity and
+  `extent/8` enter ([`Analyzer.cpp:556`](lib/Semantics/Analyzer.cpp:556)).
+- [ ] **Checked / `__int128` arithmetic for sums, products, and pad round-ups (BLS-D6).**
+  Detect overflow and surface a diagnostic rather than wrapping into UB. Track alongside the
+  roadmap's `Rational` overflow hardening.
+- [ ] **Memoize node evaluation and/or convert traversals to iterative form (BLS-D9, BLS-D10).**
+  A per-node result cache (keyed by node pointer, exploiting DAG sharing) removes the exponential
+  blowup; an explicit worklist removes the stack-overflow risk in traversal and destruction. A
+  cheaper partial mitigation for D10 alone is an iterative destructor that unlinks a node chain
+  without recursion.
+
+### P2 — input validation and robustness
+
+- [ ] **Validate or reject negative construction values (BLS-D5, BLS-D15).**
+  Either assert non-negativity at construction or define and implement correct negative-domain
+  behavior. Current `pad`/`modulo`/`repeatRange` disagree with the math and can invert
+  `min`/`max`. If validated, `fixed() ≡ min()==max()` becomes unconditionally sound.
+- [ ] **Harden moved-from state (BLS-D7).**
+  Either restore the `{0}` leaf on move (so the object stays usable per I1) or make member
+  functions assert on a null `root_` with a clear message instead of segfaulting.
+- [ ] **Fix `expand(0)` to honor I1 (BLS-D3).**
+  Never return the empty set; clamp `limit` to `≥ 1` internally (or assert). Promote the `BLS-D3`
+  XFAIL in `testExpand`.
+- [ ] **Cap leaf expansion at `limit` (BLS-D4).**
+  Truncate oversized leaves consistently with interior nodes. Promote the `BLS-D4` XFAIL.
+
+### P3 — API ergonomics and diagnostics
+
+- [ ] **Reconsider silent clamps (BLS-D12).**
+  Add debug assertions or optional diagnostics for negative counts, sub-1 alignment, and
+  non-positive divisor so caller bugs surface instead of being normalized away.
+- [ ] **Add `operator==` and `is_aligned_at(alignment)` (BLS-D13).**
+  Close the pydsdl parity gap; `is_aligned_at` becomes trivial and exact once symbolic `modulo`
+  (P0) lands. Value equality needs a canonical comparison (expand-and-compare within the exact
+  envelope, or structural normalization).
+- [ ] **Drop the default constructor's double allocation (BLS-D14).**
+  Construct the `{0}` leaf once.
+
+### Test-suite maintenance
+
+- [ ] **Promote each XFAIL to an enforced assertion as its defect is fixed.** The suite prints a
+  "promote this check" note automatically when a defect stops reproducing.
+- [ ] **Add overflow, deep-recursion, and large-count tests as guarded (non-DoS) cases** once the
+  P1 hardening is in place, so the fixes are themselves regression-locked.

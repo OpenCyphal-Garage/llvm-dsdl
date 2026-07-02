@@ -1,0 +1,99 @@
+name: Coverage
+
+# LLVM source-based coverage for the core tools (dsdlc, dsdl-opt, unit tests),
+# measured while running the full instrumented suite. Runs inside the toolshed
+# image (clang-19 present), so there is no per-run LLVM install. All language
+# toolchains are added so the complete suite runs under instrumentation.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "coverage-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: LLVM source coverage
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts24.4.3
+    timeout-minutes: 120
+    env:
+      LLVM_DIR: /usr/lib/llvm-19/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-19/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-19
+      CC: clang-19
+      CXX: clang++-19
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare toolchains
+        uses: ./.github/actions/setup-language-toolchains
+
+      - name: Configure (coverage instrumentation)
+        run: |
+          cmake -S . -B build/coverage -G "Ninja Multi-Config" \
+            -DCMAKE_CONFIGURATION_TYPES="Debug;RelWithDebInfo;Release" \
+            -DLLVM_DIR="${LLVM_DIR}" \
+            -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON \
+            -DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON
+
+      - name: Build tools + accelerator (RelWithDebInfo)
+        run: |
+          cmake --build build/coverage --config RelWithDebInfo \
+            --target dsdlc dsdl-opt llvmdsdl-unit-tests build-python-runtime-accelerator
+
+      - name: Run instrumented suite + generate coverage report
+        run: cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j1
+
+      - name: Write coverage summary
+        if: always()
+        run: |
+          SUMMARY="build/coverage/coverage/RelWithDebInfo/summary.txt"
+          {
+            echo "## LLVM source coverage"
+            if [ -f "${SUMMARY}" ]; then
+              echo '```'; tail -n 40 "${SUMMARY}"; echo '```'
+            else
+              echo "Coverage summary not found at ${SUMMARY}"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload coverage artifacts
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage/coverage/RelWithDebInfo/summary.txt
+            build/coverage/coverage/RelWithDebInfo/coverage.lcov
+            build/coverage/coverage/RelWithDebInfo/html/
+          if-no-files-found: warn
+
+      - name: Check for Codecov token
+        id: codecov
+        run: |
+          if [ -n "${{ secrets.CODECOV_TOKEN }}" ]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload to Codecov
+        if: ${{ steps.codecov.outputs.available == 'true' && !env.ACT }}
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: build/coverage/coverage/RelWithDebInfo/coverage.lcov
+          fail_ci_if_error: false

@@ -1,0 +1,86 @@
+name: "Prepare toolshed container for a full run"
+description: >-
+  Add everything the OpenCyphal toolshed image is missing for a full, unabridged
+  run: MLIR dev libraries (from the image's preconfigured LLVM apt repo) plus the
+  generated-output language toolchains the integration lanes detect at configure
+  time (Go, Rust, TypeScript/tsc, llvm-lit). Node/npm, clang-19, cmake and ninja
+  are already in the image. Every install is guarded so `act --reuse` re-runs are
+  effectively no-ops.
+
+inputs:
+  go-version:
+    description: "Go toolchain version"
+    default: "1.22.10"
+  typescript-version:
+    description: "Global TypeScript (tsc) version"
+    default: "5.4"
+  rust-toolchain:
+    description: "Rust toolchain channel"
+    default: "stable"
+
+runs:
+  using: "composite"
+  steps:
+    - name: MLIR dev libraries + zstd
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -f /usr/lib/llvm-19/lib/cmake/mlir/MLIRConfig.cmake ]; then
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            libmlir-19-dev mlir-19-tools libzstd-dev
+        fi
+
+    - name: Go
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v go >/dev/null 2>&1 && [ ! -x /usr/local/go/bin/go ]; then
+          arch="$(dpkg --print-architecture)"
+          curl -sSL "https://go.dev/dl/go${{ inputs.go-version }}.linux-${arch}.tar.gz" -o /tmp/go.tgz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tgz
+        fi
+        echo "/usr/local/go/bin" >> "${GITHUB_PATH}"
+
+    - name: Rust
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -x "${HOME}/.cargo/bin/cargo" ]; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain "${{ inputs.rust-toolchain }}"
+        fi
+        echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+    - name: TypeScript (tsc)
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v tsc >/dev/null 2>&1; then
+          npm install -g --silent "typescript@${{ inputs.typescript-version }}"
+        fi
+
+    - name: llvm-lit
+      shell: bash
+      run: |
+        set -euo pipefail
+        command -v lit >/dev/null 2>&1 || pip install --break-system-packages -q lit
+
+    - name: Report toolchain versions
+      shell: bash
+      run: |
+        export PATH="/usr/local/go/bin:${HOME}/.cargo/bin:${PATH}"
+        {
+          echo "## Toolchains"
+          echo '```'
+          echo "cmake:  $(cmake --version | head -1)"
+          echo "clang:  $(clang-19 --version | head -1)"
+          echo "python: $(python3 --version 2>&1)"
+          echo "lit:    $(lit --version 2>&1 || echo missing)"
+          echo "go:     $(go version 2>&1)"
+          echo "node:   $(node --version 2>&1)  npm $(npm --version 2>&1)"
+          echo "tsc:    $(tsc --version 2>&1)"
+          echo "cargo:  $(cargo --version 2>&1)"
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
