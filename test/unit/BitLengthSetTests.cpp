@@ -540,6 +540,44 @@ void testValueDomainSafety(TestContext& t)
     t.expect(!sat.empty() && *sat.begin() >= 0, "saturated expansion is non-empty and non-negative");
 }
 
+// BLS-D9/D10: evaluation is memoized (shared DAGs are not re-walked exponentially) and iterative
+// (deep expressions do not overflow the stack, including at destruction).
+void testDeepAndSharedGraphs(TestContext& t)
+{
+    // BLS-D9: `s = s + s` for n levels denotes 2^n paths to the leaf. Correct results at n = 40
+    // are only reachable with memoization — a per-path walk would not finish. A timing guard
+    // pins down that it is sub-exponential.
+    const auto   dagStart = std::chrono::steady_clock::now();
+    BitLengthSet dag(ValueSet{0, 1});
+    for (int i = 0; i < 40; ++i)
+    {
+        dag = dag + dag;
+    }
+    t.expect(dag.min() == 0 && dag.max() == (std::int64_t{1} << 40), "shared DAG min/max are correct (BLS-D9)");
+    t.expectSetEq(dag.modulo(8), {0, 1, 2, 3, 4, 5, 6, 7}, "shared DAG modulo is correct (BLS-D9)");
+    const double dagSecs = std::chrono::duration<double>(std::chrono::steady_clock::now() - dagStart).count();
+    t.expect(dagSecs < 2.0, "shared DAG evaluation is sub-exponential (BLS-D9)");
+
+    // BLS-D10: an N-deep chain of `+` must evaluate every operation and then destruct without
+    // overflowing the call stack.
+    const int  depth     = 200000;
+    const auto deepStart = std::chrono::steady_clock::now();
+    {
+        BitLengthSet chain(0);
+        for (int i = 0; i < depth; ++i)
+        {
+            chain = chain + BitLengthSet(1);
+        }
+        t.expect(chain.min() == depth && chain.max() == depth, "deep chain min/max computed iteratively (BLS-D10)");
+        t.expect(chain.fixed(), "deep chain is fixed-size");
+        t.expectSetEq(chain.modulo(4), {0}, "deep chain modulo computed iteratively (BLS-D10)");
+        t.expect(!chain.expand(8).empty(), "deep chain expand computed iteratively (BLS-D10)");
+        t.expect(chain.str().size() > static_cast<std::size_t>(depth), "deep chain str rendered iteratively (BLS-D10)");
+    }  // chain destructor runs here — must not overflow the stack
+    const double deepSecs = std::chrono::duration<double>(std::chrono::steady_clock::now() - deepStart).count();
+    t.expect(deepSecs < 10.0, "deep chain build/eval/teardown completes without stack overflow (BLS-D10)");
+}
+
 // Spec: str() grammar (leaf ascending order, post-clamp parameters, operator spellings).
 void testStr(TestContext& t)
 {
@@ -643,6 +681,7 @@ bool runBitLengthSetTests()
     testExpandChecked(t);
     testExpandBoundedRepeat(t);
     testValueDomainSafety(t);
+    testDeepAndSharedGraphs(t);
     testStr(t);
     testPersistence(t);
     testDsdlCompositionPatterns(t);

@@ -184,11 +184,20 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
   (4536 value-parity + soundness cases vs. an independent reference, UBSan-clean), a 5·10⁷ count
   now expands in well under a second, and a wall-clock guard test locks the bound in.
 
-- **BLS-D9 — No memoization ⇒ exponential DAG traversal. (Medium) (probe)** `min()` over an
-  n-fold `s = s + s` DAG: 2.6 ms at n=20, 47 ms at n=24, 179 ms at n=26 (~4× per two levels).
+- **BLS-D9 — No memoization ⇒ exponential DAG traversal. (Medium) (probe) — ✅ FIXED 2026-07-02.**
+  `min()` over an n-fold `s = s + s` DAG cost O(2ⁿ) (179 ms at n=26; hopeless beyond). **Fix:**
+  `min`/`max`/`expand`/`modulo`/`str` now collect the distinct reachable nodes in post-order
+  (`collectPostOrder`) and compute each **once** into a memo keyed by node pointer (for `modulo`,
+  by `(node, modulus)`, since `Pad` widens the child's modulus). The same DAG is now O(nodes):
+  `modulo(8)` on a 2⁵⁰-path DAG is instant.
 
-- **BLS-D10 — Unbounded recursion, including at destruction. (Medium) (probe)** A 300k-deep `+`
-  chain overflows the stack — during traversal and again in the destructor.
+- **BLS-D10 — Unbounded recursion, including at destruction. (Medium) (probe) — ✅ FIXED
+  2026-07-02.** A deep `+` chain overflowed the stack during traversal and again in the
+  `shared_ptr` destructor cascade. **Fix:** all evaluations use the iterative post-order driver
+  (no call-stack recursion), and a custom `~Node` tears the graph down iteratively (moving children
+  into a worklist, stealing a node's children before it dies whenever we hold its last reference).
+  A 1M-deep chain now evaluates `min`/`max`/`expand`/`modulo`/`str` and destructs without
+  overflowing; a `testDeepAndSharedGraphs` case (200k depth) locks it in.
 
 - **BLS-D11 — `Add.expand` can perform |l|·|r| inserts. (Low)** Up to ~2.7·10⁸ set inserts
   before reaching the cap when sums collide heavily.
@@ -242,6 +251,8 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
 11. Persistence / value semantics (I3), including moved-from safety (moved-from denotes `{0}`,
     usable in every operation — BLS-D7).
+11b. `deepAndSharedGraphs` (a 2⁴⁰-path shared DAG evaluates in O(nodes) with a timing guard — BLS-D9;
+     a 200k-deep chain evaluates every op and destructs without overflow — BLS-D10).
 12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
     actual shapes the Analyzer builds.
 
@@ -289,11 +300,11 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
   All derivable arithmetic now saturates at `INT64_MAX` via `satAdd`/`satMul`/`satRoundUp`
   (`__builtin_*_overflow` + fallback) instead of wrapping into UB; verified with a UBSan-trap run
   of the former trapping probe and a `testValueDomainSafety` case.
-- [ ] **Memoize node evaluation and/or convert traversals to iterative form (BLS-D9, BLS-D10).**
-  A per-node result cache (keyed by node pointer, exploiting DAG sharing) removes the exponential
-  blowup; an explicit worklist removes the stack-overflow risk in traversal and destruction. A
-  cheaper partial mitigation for D10 alone is an iterative destructor that unlinks a node chain
-  without recursion.
+- [x] **Memoize node evaluation and convert traversals to iterative form (BLS-D9, BLS-D10).**
+  *(done 2026-07-02)* `min`/`max`/`expand`/`modulo`/`str` use an iterative post-order driver with a
+  per-node (per-`(node, modulus)` for `modulo`) memo, so shared DAGs are O(nodes) not O(2ⁿ) and no
+  traversal recurses; a custom iterative `~Node` removes the destructor stack-overflow. Verified on
+  2⁵⁰-path DAGs and 1M-deep chains; `testDeepAndSharedGraphs` guards it.
 
 ### P2 — input validation and robustness
 

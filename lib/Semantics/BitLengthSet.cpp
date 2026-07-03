@@ -29,6 +29,8 @@
 #include <numeric>
 #include <sstream>
 #include <iterator>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -331,9 +333,12 @@ ResidueSet unionUpToKSumMod(const ResidueSet& r, const std::int64_t countMax, co
 /// Nodes are immutable after construction and shared via `shared_ptr<const Node>`, which is
 /// what makes copies of `BitLengthSet` O(1) and concurrent reads safe (invariant I3).
 ///
-/// Evaluation walks the DAG recursively WITHOUT memoization: a subgraph shared by m paths is
-/// evaluated m times, and recursion depth equals expression depth (see the complexity caveats
-/// in the header: BLS-D8..D10).
+/// Evaluation is ITERATIVE and MEMOIZED: `min`/`max`/`expand`/`str`/`residues` first collect the
+/// distinct reachable nodes in post-order (`collectPostOrder`) and then compute each node once
+/// from its already-computed children. This visits a subgraph shared by m paths a single time
+/// (not m — fixes the exponential blow-up BLS-D9) and uses no call-stack recursion, so arbitrarily
+/// deep expressions do not overflow the stack (BLS-D10). Teardown is likewise iterative — see the
+/// custom destructor — so destroying a deep chain does not recurse either.
 struct BitLengthSet::Node final
 {
     enum class Kind
@@ -351,6 +356,81 @@ struct BitLengthSet::Node final
     std::shared_ptr<const Node> rhs;
     std::int64_t                param{0};
 
+    Node() = default;
+
+    /// @brief Iterative teardown so destroying a deep chain does not recurse (BLS-D10).
+    ///
+    /// The default destructor would release `lhs`/`rhs` recursively: freeing the head of an
+    /// N-deep chain would nest N destructor calls and overflow the stack. Instead, move children
+    /// into an explicit worklist and release them one at a time; whenever we hold the last
+    /// reference to a node, steal ITS children first so its own destruction finds nothing to
+    /// recurse into. The `const_cast` is safe: `use_count() == 1` means we are the sole owner of a
+    /// node that is about to be destroyed, so mutating it is unobservable.
+    ~Node()
+    {
+        std::vector<std::shared_ptr<const Node>> pending;
+        if (lhs)
+        {
+            pending.push_back(std::move(lhs));
+        }
+        if (rhs)
+        {
+            pending.push_back(std::move(rhs));
+        }
+        while (!pending.empty())
+        {
+            std::shared_ptr<const Node> node = std::move(pending.back());
+            pending.pop_back();
+            if (node.use_count() == 1)
+            {
+                Node* const owned = const_cast<Node*>(node.get());
+                if (owned->lhs)
+                {
+                    pending.push_back(std::move(owned->lhs));
+                }
+                if (owned->rhs)
+                {
+                    pending.push_back(std::move(owned->rhs));
+                }
+            }
+            // `node` drops here; its children (if any) were already stolen, so no recursion.
+        }
+    }
+
+    /// @brief Collects every distinct node reachable from `root` in post-order (children before
+    ///        parents), deduplicating shared subgraphs. Iterative — no recursion (BLS-D9/D10).
+    [[nodiscard]] static std::vector<const Node*> collectPostOrder(const Node* root)
+    {
+        std::vector<const Node*>                  order;
+        std::unordered_set<const Node*>           seen;
+        std::vector<std::pair<const Node*, bool>> stack;
+        stack.emplace_back(root, false);
+        while (!stack.empty())
+        {
+            const auto entry = stack.back();
+            stack.pop_back();
+            if (entry.second)
+            {
+                order.push_back(entry.first);
+                continue;
+            }
+            if ((entry.first == nullptr) || !seen.insert(entry.first).second)
+            {
+                continue;
+            }
+            stack.emplace_back(entry.first, true);
+            if (entry.first->lhs)
+            {
+                stack.emplace_back(entry.first->lhs.get(), false);
+            }
+            if (entry.first->rhs)
+            {
+                stack.emplace_back(entry.first->rhs.get(), false);
+            }
+        }
+        return order;
+    }
+
     /// @brief Exact symbolic minimum of S (never enumerates; invariant I4).
     ///
     /// Per-kind derivation, exact on the non-negative value domain:
@@ -363,22 +443,36 @@ struct BitLengthSet::Node final
     /// leaf (I1).
     [[nodiscard]] std::int64_t min() const
     {
-        switch (kind)
+        const auto                                    order = collectPostOrder(this);
+        std::unordered_map<const Node*, std::int64_t> memo;
+        memo.reserve(order.size() * 2);
+        for (const Node* const n : order)
         {
-        case Kind::Leaf:
-            return values.empty() ? 0 : *values.begin();
-        case Kind::Add:
-            return satAdd(lhs->min(), rhs->min());
-        case Kind::Union:
-            return std::min(lhs->min(), rhs->min());
-        case Kind::Pad:
-            return satRoundUp(lhs->min(), std::max<std::int64_t>(1, param));
-        case Kind::Repeat:
-            return satMul(lhs->min(), std::max<std::int64_t>(0, param));
-        case Kind::RepeatRange:
-            return 0;
+            std::int64_t v = 0;
+            switch (n->kind)
+            {
+            case Kind::Leaf:
+                v = n->values.empty() ? 0 : *n->values.begin();
+                break;
+            case Kind::Add:
+                v = satAdd(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
+                break;
+            case Kind::Union:
+                v = std::min(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
+                break;
+            case Kind::Pad:
+                v = satRoundUp(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
+                break;
+            case Kind::Repeat:
+                v = satMul(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
+                break;
+            case Kind::RepeatRange:
+                v = 0;
+                break;
+            }
+            memo.emplace(n, v);
         }
-        return 0;
+        return memo.at(this);
     }
 
     /// @brief Exact symbolic maximum of S (never enumerates; invariant I4).
@@ -386,25 +480,37 @@ struct BitLengthSet::Node final
     /// Mirrors `min()`: Leaf takes the largest stored value; Add sums the maxima; Union takes
     /// the larger maximum; Pad rounds the child maximum up (monotone); Repeat and RepeatRange
     /// both yield param * max(lhs) — for RepeatRange this is the k = param term, the maximum
-    /// only on the non-negative value domain.
+    /// only on the non-negative value domain. Iterative and memoized (BLS-D9/D10).
     [[nodiscard]] std::int64_t max() const
     {
-        switch (kind)
+        const auto                                    order = collectPostOrder(this);
+        std::unordered_map<const Node*, std::int64_t> memo;
+        memo.reserve(order.size() * 2);
+        for (const Node* const n : order)
         {
-        case Kind::Leaf:
-            return values.empty() ? 0 : *values.rbegin();
-        case Kind::Add:
-            return satAdd(lhs->max(), rhs->max());
-        case Kind::Union:
-            return std::max(lhs->max(), rhs->max());
-        case Kind::Pad:
-            return satRoundUp(lhs->max(), std::max<std::int64_t>(1, param));
-        case Kind::Repeat:
-            return satMul(lhs->max(), std::max<std::int64_t>(0, param));
-        case Kind::RepeatRange:
-            return satMul(lhs->max(), std::max<std::int64_t>(0, param));
+            std::int64_t v = 0;
+            switch (n->kind)
+            {
+            case Kind::Leaf:
+                v = n->values.empty() ? 0 : *n->values.rbegin();
+                break;
+            case Kind::Add:
+                v = satAdd(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
+                break;
+            case Kind::Union:
+                v = std::max(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
+                break;
+            case Kind::Pad:
+                v = satRoundUp(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
+                break;
+            case Kind::Repeat:
+            case Kind::RepeatRange:
+                v = satMul(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
+                break;
+            }
+            memo.emplace(n, v);
         }
-        return 0;
+        return memo.at(this);
     }
 
     /// @brief Materializes S bottom-up with a completeness flag, capping intermediates at `limit`.
@@ -430,21 +536,31 @@ struct BitLengthSet::Node final
     ///     `param * min` back. `RepeatRange` additionally stops once every later term's minimum
     ///     (`k * min`) has moved past the kept window. Exact iff the child is exact and no round
     ///     overflowed `limit`.
-    [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
+    /// @brief Computes one node's expansion from its children's (already-computed) expansions.
+    ///
+    /// Same per-kind logic as the recursive form, but children are read from `memo` (populated in
+    /// post-order) instead of recursing — so `expandChecked` visits each node once (BLS-D9) and
+    /// uses no call stack (BLS-D10). See the method doc for the per-kind semantics and BLS-D8's
+    /// bounded `Repeat`/`RepeatRange`.
+    [[nodiscard]] static BitLengthSet::Expansion expandNode(
+        const Node*                                                     n,
+        std::size_t                                                     limit,
+        const std::unordered_map<const Node*, BitLengthSet::Expansion>& memo)
     {
-        switch (kind)
+        switch (n->kind)
         {
         case Kind::Leaf: {
-            if (values.size() <= limit)
+            if (n->values.size() <= limit)
             {
-                return {values, true};
+                return {n->values, true};
             }
-            std::set<std::int64_t> out(values.begin(), std::next(values.begin(), static_cast<std::ptrdiff_t>(limit)));
+            std::set<std::int64_t> out(n->values.begin(),
+                                       std::next(n->values.begin(), static_cast<std::ptrdiff_t>(limit)));
             return {std::move(out), false};
         }
         case Kind::Add: {
-            const auto             l = lhs->expandChecked(limit);
-            const auto             r = rhs->expandChecked(limit);
+            const auto&            l = memo.at(n->lhs.get());
+            const auto&            r = memo.at(n->rhs.get());
             std::set<std::int64_t> out;
             bool                   overflow = false;
             for (const auto lv : l.values)
@@ -467,20 +583,21 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Union: {
-            auto       l = lhs->expandChecked(limit);
-            const auto r = rhs->expandChecked(limit);
-            l.values.insert(r.values.begin(), r.values.end());
+            const auto&            l   = memo.at(n->lhs.get());
+            const auto&            r   = memo.at(n->rhs.get());
+            std::set<std::int64_t> out = l.values;
+            out.insert(r.values.begin(), r.values.end());
             bool overflow = false;
-            while (l.values.size() > limit)
+            while (out.size() > limit)
             {
-                l.values.erase(std::prev(l.values.end()));
+                out.erase(std::prev(out.end()));
                 overflow = true;
             }
-            return {std::move(l.values), l.exact && r.exact && !overflow};
+            return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Pad: {
-            const auto             l = lhs->expandChecked(limit);
-            const auto             a = std::max<std::int64_t>(1, param);
+            const auto&            l = memo.at(n->lhs.get());
+            const auto             a = std::max<std::int64_t>(1, n->param);
             std::set<std::int64_t> out;
             for (const auto v : l.values)
             {
@@ -489,11 +606,11 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact};
         }
         case Kind::Repeat: {
-            if (param <= 0)
+            if (n->param <= 0)
             {
                 return {{0}, true};
             }
-            const auto         item  = lhs->expandChecked(limit);
+            const auto&        item  = memo.at(n->lhs.get());
             bool               exact = item.exact;
             const std::int64_t base  = *item.values.begin();  // min; item.values is non-empty (I1)
             // Work in the 0-shifted domain V' = { v - base }, which contains 0. The exactly-k
@@ -505,7 +622,7 @@ struct BitLengthSet::Node final
                 shifted.insert(v - base);
             }
             auto acc = std::set<std::int64_t>{0};  // A'_0
-            for (std::int64_t i = 0; i < param; ++i)
+            for (std::int64_t i = 0; i < n->param; ++i)
             {
                 std::set<std::int64_t> next;
                 bool                   overflow = false;
@@ -535,7 +652,7 @@ struct BitLengthSet::Node final
                 }
             }
             // Undo the shift: the exactly-param sumset of the original set is `param*base + A'_param`.
-            const std::int64_t     shift = satMul(param, base);
+            const std::int64_t     shift = satMul(n->param, base);
             std::set<std::int64_t> out;
             for (const auto x : acc)
             {
@@ -544,12 +661,12 @@ struct BitLengthSet::Node final
             return {std::move(out), exact};
         }
         case Kind::RepeatRange: {
-            const auto maxCount = std::max<std::int64_t>(0, param);
+            const auto maxCount = std::max<std::int64_t>(0, n->param);
             if (maxCount == 0)
             {
                 return {{0}, true};
             }
-            const auto             item  = lhs->expandChecked(limit);
+            const auto&            item  = memo.at(n->lhs.get());
             bool                   exact = item.exact;
             const std::int64_t     base  = *item.values.begin();  // min; item.values is non-empty (I1)
             std::set<std::int64_t> shifted;
@@ -615,12 +732,25 @@ struct BitLengthSet::Node final
         return {{0}, true};
     }
 
+    /// @brief Iterative, memoized driver for `expandNode` (BLS-D9/D10).
+    [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
+    {
+        const auto                                               order = collectPostOrder(this);
+        std::unordered_map<const Node*, BitLengthSet::Expansion> memo;
+        memo.reserve(order.size() * 2);
+        for (const Node* const n : order)
+        {
+            memo.emplace(n, expandNode(n, limit, memo));
+        }
+        return std::move(memo.at(this));
+    }
+
     /// @brief Exact residue mask `{ v mod modulus : v in S }`, computed symbolically.
     ///
     /// Works entirely in the `ResidueSet` bitmask domain and never enumerates S: every
     /// intermediate result is a subset of Z/modulus (at most `modulus` bits), so it is exact and
     /// cheap even when S is astronomically large. This is what makes `modulo()` complete (fixes
-    /// BLS-D1). Accumulates into `out` (so `Union` is a plain mask union of the two children).
+    /// BLS-D1). On success the root's residues are unioned into `out`.
     ///
     /// Per-kind derivation (modulus `m >= 1`):
     ///   - Leaf: reduce each stored value mod `m`.
@@ -632,78 +762,117 @@ struct BitLengthSet::Node final
     ///   - Repeat / RepeatRange: cycle-detecting sumset iteration over Z/m (see the helpers).
     ///
     /// @return False when a required modulus exceeds `kResidueModulusCap` (the caller then falls
-    ///         back to the `expand()`-based approximation); on false, `out` is left partial and
-    ///         must be discarded.
+    ///         back to the `expand()`-based approximation); on false, `out` is left unchanged.
+    ///
+    /// Iterative and memoized over `(node, modulus)` contexts (a `Pad` evaluates its child at the
+    /// widened modulus `lcm(a, modulus)`, so one node can appear at several moduli): this visits a
+    /// shared subgraph once per distinct context (BLS-D9) and uses no call stack (BLS-D10). The
+    /// root's residues are unioned into `out` on success.
     [[nodiscard]] bool residues(std::int64_t modulus, ResidueSet& out) const
     {
-        if (modulus > kResidueModulusCap)
+        using Ctx = std::pair<const Node*, std::int64_t>;  // (node, working modulus)
+
+        // Discovery: collect (node, modulus) contexts in post-order, deduplicated. Bail if any
+        // working modulus would exceed the cap (a `Pad` with an alignment coprime to a large mod).
+        std::vector<Ctx>                  order;
+        std::set<Ctx>                     seen;
+        std::vector<std::pair<Ctx, bool>> stack;
+        stack.push_back({{this, modulus}, false});
+        while (!stack.empty())
         {
-            return false;
+            const auto item = stack.back();
+            stack.pop_back();
+            const Node* const  node = item.first.first;
+            const std::int64_t mod  = item.first.second;
+            if (mod > kResidueModulusCap)
+            {
+                return false;
+            }
+            if (item.second)
+            {
+                order.push_back(item.first);
+                continue;
+            }
+            if (!seen.insert(item.first).second)
+            {
+                continue;
+            }
+            stack.push_back({item.first, true});
+            switch (node->kind)
+            {
+            case Kind::Leaf:
+                break;
+            case Kind::Add:
+            case Kind::Union:
+                stack.push_back({{node->lhs.get(), mod}, false});
+                stack.push_back({{node->rhs.get(), mod}, false});
+                break;
+            case Kind::Pad: {
+                std::int64_t widened = 0;
+                if (!cappedLcm(std::max<std::int64_t>(1, node->param), mod, widened))
+                {
+                    return false;
+                }
+                stack.push_back({{node->lhs.get(), widened}, false});
+                break;
+            }
+            case Kind::Repeat:
+            case Kind::RepeatRange:
+                stack.push_back({{node->lhs.get(), mod}, false});
+                break;
+            }
         }
-        switch (kind)
+
+        // Evaluation: compute each context once, children before parents.
+        std::map<Ctx, ResidueSet> memo;
+        for (const auto& ctx : order)
         {
-        case Kind::Leaf: {
-            for (const auto v : values)
+            const Node* const  node = ctx.first;
+            const std::int64_t mod  = ctx.second;
+            ResidueSet         rs(mod);
+            switch (node->kind)
             {
-                out.add(((v % modulus) + modulus) % modulus);  // normalize sign into [0, m)
+            case Kind::Leaf:
+                for (const auto v : node->values)
+                {
+                    rs.add(((v % mod) + mod) % mod);  // normalize sign into [0, mod)
+                }
+                if (node->values.empty())
+                {
+                    rs.add(0);  // invariant I1: an empty leaf denotes {0}
+                }
+                break;
+            case Kind::Add:
+                rs = minkowskiSumMod(memo.at({node->lhs.get(), mod}), memo.at({node->rhs.get(), mod}));
+                break;
+            case Kind::Union:
+                rs.unionWith(memo.at({node->lhs.get(), mod}));
+                rs.unionWith(memo.at({node->rhs.get(), mod}));
+                break;
+            case Kind::Pad: {
+                const auto   a       = std::max<std::int64_t>(1, node->param);
+                std::int64_t widened = 0;
+                (void) cappedLcm(a, mod, widened);  // succeeded during discovery
+                memo.at({node->lhs.get(), widened}).forEach([&](const std::int64_t r) {
+                    const auto rem    = r % a;
+                    const auto padded = (rem == 0) ? r : r + (a - rem);
+                    rs.add(padded % mod);
+                });
+                break;
             }
-            if (values.empty())
-            {
-                out.add(0);  // invariant I1: an empty leaf denotes {0}
+            case Kind::Repeat:
+                rs.unionWith(
+                    exactlyKSumMod(memo.at({node->lhs.get(), mod}), std::max<std::int64_t>(0, node->param), mod));
+                break;
+            case Kind::RepeatRange:
+                rs.unionWith(
+                    unionUpToKSumMod(memo.at({node->lhs.get(), mod}), std::max<std::int64_t>(0, node->param), mod));
+                break;
             }
-            return true;
+            memo.emplace(ctx, std::move(rs));
         }
-        case Kind::Add: {
-            ResidueSet l(modulus);
-            ResidueSet r(modulus);
-            if (!lhs->residues(modulus, l) || !rhs->residues(modulus, r))
-            {
-                return false;
-            }
-            out.unionWith(minkowskiSumMod(l, r));
-            return true;
-        }
-        case Kind::Union:
-            return lhs->residues(modulus, out) && rhs->residues(modulus, out);
-        case Kind::Pad: {
-            const auto   a = std::max<std::int64_t>(1, param);
-            std::int64_t widened{};
-            if (!cappedLcm(a, modulus, widened))
-            {
-                return false;
-            }
-            ResidueSet child(widened);
-            if (!lhs->residues(widened, child))
-            {
-                return false;
-            }
-            child.forEach([&](const std::int64_t r) {
-                const auto rem    = r % a;
-                const auto padded = (rem == 0) ? r : r + (a - rem);
-                out.add(padded % modulus);
-            });
-            return true;
-        }
-        case Kind::Repeat: {
-            ResidueSet r(modulus);
-            if (!lhs->residues(modulus, r))
-            {
-                return false;
-            }
-            out.unionWith(exactlyKSumMod(r, std::max<std::int64_t>(0, param), modulus));
-            return true;
-        }
-        case Kind::RepeatRange: {
-            ResidueSet r(modulus);
-            if (!lhs->residues(modulus, r))
-            {
-                return false;
-            }
-            out.unionWith(unionUpToKSumMod(r, std::max<std::int64_t>(0, param), modulus));
-            return true;
-        }
-        }
-        out.add(0);
+
+        out.unionWith(memo.at({this, modulus}));
         return true;
     }
 
@@ -713,39 +882,76 @@ struct BitLengthSet::Node final
     /// aid only — not a stable serialization format.
     [[nodiscard]] std::string str() const
     {
-        std::ostringstream out;
-        switch (kind)
+        // Iterative token stack so a deep chain does not overflow the call stack (BLS-D10). Each
+        // frame is either "expand this node" (non-null node) or "emit this literal" (null node).
+        // Composite tokens are pushed in REVERSE so the LIFO stack emits them left-to-right; this
+        // reproduces the recursive tree rendering exactly (shared subgraphs still print per
+        // occurrence, since `str()` renders the tree, not the DAG).
+        std::ostringstream                               out;
+        std::vector<std::pair<const Node*, std::string>> stack;
+        const auto pushLit  = [&stack](std::string s) { stack.emplace_back(nullptr, std::move(s)); };
+        const auto pushNode = [&stack](const Node* p) { stack.emplace_back(p, std::string{}); };
+        stack.emplace_back(this, std::string{});
+        while (!stack.empty())
         {
-        case Kind::Leaf: {
-            out << '{';
-            bool first = true;
-            for (auto v : values)
+            const auto frame = std::move(stack.back());
+            stack.pop_back();
+            const Node* const n = frame.first;
+            if (n == nullptr)
             {
-                if (!first)
-                {
-                    out << ',';
-                }
-                out << v;
-                first = false;
+                out << frame.second;
+                continue;
             }
-            out << '}';
-            break;
-        }
-        case Kind::Add:
-            out << "concat(" << lhs->str() << "," << rhs->str() << ")";
-            break;
-        case Kind::Union:
-            out << "union(" << lhs->str() << "," << rhs->str() << ")";
-            break;
-        case Kind::Pad:
-            out << "pad(" << lhs->str() << "," << param << ")";
-            break;
-        case Kind::Repeat:
-            out << "repeat(" << lhs->str() << "," << param << ")";
-            break;
-        case Kind::RepeatRange:
-            out << "repeat_range(" << lhs->str() << "," << param << ")";
-            break;
+            switch (n->kind)
+            {
+            case Kind::Leaf: {
+                out << '{';
+                bool first = true;
+                for (const auto v : n->values)
+                {
+                    if (!first)
+                    {
+                        out << ',';
+                    }
+                    out << v;
+                    first = false;
+                }
+                out << '}';
+                break;
+            }
+            case Kind::Add:
+                pushLit(")");
+                pushNode(n->rhs.get());
+                pushLit(",");
+                pushNode(n->lhs.get());
+                pushLit("concat(");
+                break;
+            case Kind::Union:
+                pushLit(")");
+                pushNode(n->rhs.get());
+                pushLit(",");
+                pushNode(n->lhs.get());
+                pushLit("union(");
+                break;
+            case Kind::Pad:
+                pushLit(")");
+                pushLit("," + std::to_string(n->param));
+                pushNode(n->lhs.get());
+                pushLit("pad(");
+                break;
+            case Kind::Repeat:
+                pushLit(")");
+                pushLit("," + std::to_string(n->param));
+                pushNode(n->lhs.get());
+                pushLit("repeat(");
+                break;
+            case Kind::RepeatRange:
+                pushLit(")");
+                pushLit("," + std::to_string(n->param));
+                pushNode(n->lhs.get());
+                pushLit("repeat_range(");
+                break;
+            }
         }
         return out.str();
     }

@@ -130,11 +130,13 @@ namespace llvmdsdl
 ///
 ///   - Construction operations (`+`, `|`, `padToAlignment`, `repeat`, `repeatRange`) are O(1):
 ///     they allocate one node and share children.
-///   - `min()`, `max()`, `expand()`, and `str()` recurse over the expression graph as a TREE:
-///     shared subexpressions are re-visited once per path (no memoization), so heavily shared
-///     graphs (e.g. `s = s + s` applied n times) cost O(2^n) (BLS-D9). Recursion depth is
-///     proportional to expression depth; extremely deep chains (hundreds of thousands of
-///     `+` applications) overflow the stack, including at destruction (BLS-D10).
+///   - `min()`, `max()`, `expand()`, `modulo()`, and `str()` evaluate ITERATIVELY and MEMOIZED:
+///     each distinct node (for `modulo()`, each distinct `(node, modulus)`) is computed once, so a
+///     heavily shared graph (e.g. `s = s + s` applied n times) costs O(nodes), not O(2^n)
+///     (BLS-D9). No call-stack recursion is used, so arbitrarily deep expressions do not overflow
+///     the stack — and neither does destruction, which is likewise iterative (BLS-D10). `str()`
+///     still renders the tree, so its OUTPUT length is unbounded for a shared graph, but it uses
+///     bounded stack.
 ///   - `repeat(k)`/`repeatRange(k)` expansion is bounded to O(convergence) rounds — the
 ///     truncated shifted sumset reaches a fixpoint (and `repeatRange` also stops once later
 ///     terms move past the kept window) — so a large `k` no longer drives the loop count
