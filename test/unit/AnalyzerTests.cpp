@@ -294,9 +294,9 @@ bool runAnalyzerTests()
     // Reserved identifier predicate (DSDL spec v1.0 section 3.2.5 / table 3.5).
     {
         const char* const reservedNames[] = {
-            "truncated", "saturated", "true", "false", "bool",  "byte", "utf8",  "int",   "uint",  "int8",
-            "uint64",    "float",     "float32", "void", "void8", "q16_8", "const", "type", "self",  "and",
-            "or",        "not",       "enum",  "com1", "lpt9",  "nul",  "_offset_", "TRUE", "UInt8", "VOID3",
+            "truncated", "saturated", "true",    "false", "bool",  "byte",  "utf8",     "int",  "uint",  "int8",
+            "uint64",    "float",     "float32", "void",  "void8", "q16_8", "const",    "type", "self",  "and",
+            "or",        "not",       "enum",    "com1",  "lpt9",  "nul",   "_offset_", "TRUE", "UInt8", "VOID3",
         };
         for (const char* name : reservedNames)
         {
@@ -307,7 +307,17 @@ bool runAnalyzerTests()
             }
         }
         const char* const allowedNames[] = {
-            "value", "flag", "Heartbeat", "x", "_", "uint8x", "intensity", "format", "node_id", "myType", "_x",
+            "value",
+            "flag",
+            "Heartbeat",
+            "x",
+            "_",
+            "uint8x",
+            "intensity",
+            "format",
+            "node_id",
+            "myType",
+            "_x",
         };
         for (const char* name : allowedNames)
         {
@@ -324,10 +334,10 @@ bool runAnalyzerTests()
     {
         const auto analyzerRejects = [](const std::string& body) -> bool {
             llvmdsdl::DiagnosticEngine parse;
-            llvmdsdl::Lexer           lex("uavcan.test.Reserved.1.0.dsdl", body);
-            auto                      toks = lex.lex();
-            llvmdsdl::Parser          parse2("uavcan.test.Reserved.1.0.dsdl", std::move(toks), parse);
-            auto                      ast = parse2.parseDefinition();
+            llvmdsdl::Lexer            lex("uavcan.test.Reserved.1.0.dsdl", body);
+            auto                       toks = lex.lex();
+            llvmdsdl::Parser           parse2("uavcan.test.Reserved.1.0.dsdl", std::move(toks), parse);
+            auto                       ast = parse2.parseDefinition();
             if (!ast)
             {
                 llvm::consumeError(ast.takeError());
@@ -359,13 +369,13 @@ bool runAnalyzerTests()
         };
 
         const std::pair<std::string, bool> attrCases[] = {
-            {"uint8 value\n@sealed\n", false},      // ordinary field name
-            {"uint8 X = 1\n@sealed\n", false},      // ordinary constant name
-            {"uint8 type\n@sealed\n", true},        // reserved field name
-            {"uint8 uint8 = 1\n@sealed\n", true},   // reserved constant name
-            {"bool true\n@sealed\n", true},         // reserved (parser also rejects)
-            {"uint8 _offset_\n@sealed\n", true},    // matches the _.*_ pattern
-            {"void3\n@sealed\n", false},            // padding field has no name -> exempt
+            {"uint8 value\n@sealed\n", false},     // ordinary field name
+            {"uint8 X = 1\n@sealed\n", false},     // ordinary constant name
+            {"uint8 type\n@sealed\n", true},       // reserved field name
+            {"uint8 uint8 = 1\n@sealed\n", true},  // reserved constant name
+            {"bool true\n@sealed\n", true},        // reserved (parser also rejects)
+            {"uint8 _offset_\n@sealed\n", true},   // matches the _.*_ pattern
+            {"void3\n@sealed\n", false},           // padding field has no name -> exempt
         };
         for (const auto& attrCase : attrCases)
         {
@@ -374,6 +384,63 @@ bool runAnalyzerTests()
                 std::cerr << "reserved-attribute analysis mismatch for: " << attrCase.first << "\n";
                 return false;
             }
+        }
+    }
+
+    // BLS-D2: when the set of possible `_offset_` values exceeds the analyzer's expansion limit,
+    // the analyzer must warn rather than silently evaluate assertions over a truncated offset set.
+    {
+        const auto hasOffsetWarning = [](const std::string& source) -> bool {
+            llvmdsdl::DiagnosticEngine parse;
+            llvmdsdl::Lexer            lexer("uavcan.test.OffsetLimit.1.0.dsdl", source);
+            auto                       tokens = lexer.lex();
+            llvmdsdl::Parser           parser("uavcan.test.OffsetLimit.1.0.dsdl", std::move(tokens), parse);
+            auto                       parsed = parser.parseDefinition();
+            if (!parsed)
+            {
+                llvm::consumeError(parsed.takeError());
+                return false;
+            }
+            llvmdsdl::DiscoveredDefinition discovered;
+            discovered.filePath            = "uavcan/test/OffsetLimit.1.0.dsdl";
+            discovered.rootNamespacePath   = "uavcan";
+            discovered.fullName            = "uavcan.test.OffsetLimit";
+            discovered.shortName           = "OffsetLimit";
+            discovered.namespaceComponents = {"uavcan", "test"};
+            discovered.majorVersion        = 1;
+            discovered.minorVersion        = 0;
+            discovered.text                = source;
+            llvmdsdl::ASTModule module;
+            module.definitions.push_back(llvmdsdl::ParsedDefinition{discovered, *parsed});
+            llvmdsdl::DiagnosticEngine sem;
+            auto                       semantic = llvmdsdl::analyze(module, sem);
+            if (!semantic)
+            {
+                llvm::consumeError(semantic.takeError());
+            }
+            for (const llvmdsdl::Diagnostic& d : sem.diagnostics())
+            {
+                if (d.level == llvmdsdl::DiagnosticLevel::Warning && d.message.find("_offset_") != std::string::npos)
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // ~5001 distinct offsets after the variable-length array exceed the 4096 expansion limit.
+        const std::string wide = "uint8[<=5000] payload\n@assert _offset_.max >= 0\n@sealed\n";
+        if (!hasOffsetWarning(wide))
+        {
+            std::cerr << "expected an _offset_ truncation warning for a wide offset set (BLS-D2)\n";
+            return false;
+        }
+        // A small type's offset set fits the limit, so no warning must be produced.
+        const std::string small = "uint8 a\nuint16 b\n@assert _offset_.max >= 0\n@sealed\n";
+        if (hasOffsetWarning(small))
+        {
+            std::cerr << "did not expect an _offset_ warning for a small offset set (BLS-D2)\n";
+            return false;
         }
     }
 

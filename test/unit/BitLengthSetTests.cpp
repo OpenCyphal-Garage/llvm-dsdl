@@ -422,16 +422,48 @@ void testExpand(TestContext& t)
         t.expect(v % 8 == 0, "large expansion values are sound (multiples of 8)");
     }
 
-    // BLS-D4: a leaf larger than the limit is returned whole; spec caps the result at limit.
-    t.expectDefect("BLS-D4",
-                   BitLengthSet(ValueSet{1, 2, 3}).expand(2).size() <= 2,
-                   "leaf expansion must respect the limit");
+    // BLS-D4 (FIXED): a leaf larger than the limit is truncated to `limit` of its values.
+    const auto leafTrunc = BitLengthSet(ValueSet{1, 2, 3}).expand(2);
+    t.expect(leafTrunc.size() <= 2, "leaf expansion respects the limit (BLS-D4 fixed)");
+    t.expect(isSubset(leafTrunc, ValueSet{1, 2, 3}), "truncated leaf expansion is sound");
 
-    // BLS-D3: I1 robustness — expansion should never be empty, even at the (precondition-
-    // violating) limit of 0, where the union trim currently erases every element.
-    t.expectDefect("BLS-D3",
-                   !(BitLengthSet(5) | BitLengthSet(3)).expand(0).empty(),
-                   "expansion must never return the empty set (I1)");
+    // BLS-D3 (FIXED): I1 robustness — the limit is clamped to >= 1, so expand(0) is never empty.
+    t.expect(!(BitLengthSet(5) | BitLengthSet(3)).expand(0).empty(),
+             "expansion never returns the empty set, even for limit 0 (BLS-D3 fixed)");
+    t.expect(BitLengthSet(ValueSet{1, 2, 3}).expand(0).size() == 1, "expand(0) clamps to a one-element result");
+}
+
+// Spec: expandChecked() reports exactness (true iff values == S); BLS-D2 exactness signal.
+void testExpandChecked(TestContext& t)
+{
+    // Exact: the whole set fits under the limit at every node.
+    const auto ok = (BitLengthSet(ValueSet{0, 4}) + BitLengthSet(ValueSet{0, 1, 2, 3})).expandChecked(8);
+    t.expect(ok.exact, "expandChecked reports exact when |S| == limit");
+    t.expectSetEq(ok.values, {0, 1, 2, 3, 4, 5, 6, 7}, "expandChecked exact values equal S");
+
+    // No false positive at the exact boundary: |S| == limit is still exact, |S| == limit+1 is not.
+    const BitLengthSet boundary = BitLengthSet(ValueSet{0, 5}) + BitLengthSet(ValueSet{0, 10, 20, 30});  // |S| = 8
+    t.expect(boundary.expandChecked(8).exact, "expandChecked exact when |S| exactly equals limit (no false negative)");
+    t.expect(!boundary.expandChecked(7).exact, "expandChecked inexact when |S| exceeds limit by one");
+
+    // Inexact: truncation anywhere flips the flag; values stay a sound subset within the cap.
+    const auto trunc = boundary.expandChecked(3);
+    t.expect(!trunc.exact, "expandChecked reports inexact under truncation");
+    t.expect(trunc.values.size() <= 3 && !trunc.values.empty(), "inexact values respect the cap and are non-empty");
+    t.expect(isSubset(trunc.values, ValueSet{0, 5, 10, 15, 20, 25, 30, 35}), "inexact values are a sound subset");
+
+    // Inexactness propagates up through composition (a truncated child taints the parent).
+    const BitLengthSet widePayload = BitLengthSet(8).repeatRange(10000);  // ~10001 distinct values
+    t.expect(!(BitLengthSet(32) + widePayload).expandChecked(4096).exact,
+             "inexactness propagates through Add from a truncated child");
+
+    // Leaf exactness tracks the limit precisely (BLS-D4 companion).
+    t.expect(BitLengthSet(ValueSet{1, 2, 3}).expandChecked(3).exact, "leaf exact when it fits the limit");
+    t.expect(!BitLengthSet(ValueSet{1, 2, 3}).expandChecked(2).exact, "leaf inexact when truncated");
+
+    // A fixed/small set is always exact regardless of a generous limit.
+    t.expect(BitLengthSet(8).expandChecked(1).exact, "singleton is exact at limit 1");
+    t.expect(BitLengthSet(8).repeat(3).expandChecked(16).exact, "fixed repeat is exact");
 }
 
 // Spec: str() grammar (leaf ascending order, post-clamp parameters, operator spellings).
@@ -517,6 +549,7 @@ bool runBitLengthSetTests()
     testRepeatRange(t);
     testModulo(t);
     testExpand(t);
+    testExpandChecked(t);
     testStr(t);
     testPersistence(t);
     testDsdlCompositionPatterns(t);

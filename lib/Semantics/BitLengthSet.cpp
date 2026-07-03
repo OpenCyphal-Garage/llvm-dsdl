@@ -360,127 +360,148 @@ struct BitLengthSet::Node final
         return 0;
     }
 
-    /// @brief Materializes S bottom-up, capping every intermediate set at `limit` elements.
+    /// @brief Materializes S bottom-up with a completeness flag, capping intermediates at `limit`.
     ///
-    /// Contract (see header): the result is a subset of S, exact when no intermediate set
-    /// exceeds `limit`; otherwise an unspecified subset. The per-kind truncation policies —
-    /// implementation details, deliberately unspecified publicly — are:
+    /// Returns `{values, exact}` where `values` is a subset of S with `|values| <= limit` and
+    /// `exact` is true iff `values == S`. `limit` is assumed `>= 1` (the public entry point
+    /// clamps it), which keeps every result non-empty (invariant I1) and fixes the former
+    /// empty-set corner (BLS-D3). Truncation favours the smaller elements and always flips
+    /// `exact` to false. Per-kind:
     ///
-    ///   - Leaf: returns the stored set whole, IGNORING `limit` (BLS-D4).
-    ///   - Add: enumerates lhs-major, rhs-minor over the (already capped) child expansions and
-    ///     stops as soon as `limit` distinct sums exist; because enumeration order is not
-    ///     globally sorted, the kept subset is arbitrary (may retain large sums while dropping
-    ///     smaller ones). Cost can reach |lhs| * |rhs| inserts when sums collide (BLS-D11).
-    ///   - Union: merges both (capped) child expansions, then discards the LARGEST elements
-    ///     down to `limit` — note `limit == 0` discards everything, the empty-set corner
-    ///     behind the `limit >= 1` precondition (BLS-D3).
-    ///   - Pad: rounds each child value up; monotone, so effectively keeps the smallest.
-    ///   - Repeat: iterated Minkowski self-sum, capping the accumulator each round; runs
-    ///     exactly `param` rounds even when the accumulator has converged (e.g. on {0}) or
-    ///     saturated at `limit` (BLS-D8).
-    ///   - RepeatRange: like Repeat, additionally unioning every round's partial sums into the
-    ///     result (seeded with {0} for k = 0) and trimming the largest elements to `limit`;
-    ///     also runs exactly `param` rounds (BLS-D8).
-    [[nodiscard]] std::set<std::int64_t> expand(std::size_t limit) const
+    ///   - Leaf: the stored set, truncated to its smallest `limit` values if larger (BLS-D4);
+    ///     exact iff it fit.
+    ///   - Add: distinct sums of the children's (already capped) expansions, keeping the smallest
+    ///     `limit`; exact iff both children are exact and no (limit+1)-th distinct sum appeared.
+    ///   - Union: union of the children, trimmed to the smallest `limit`; exact iff both children
+    ///     are exact and no trim was needed.
+    ///   - Pad: each child value rounded up; non-expansive, so it never itself truncates; exact
+    ///     iff the child is exact.
+    ///   - Repeat / RepeatRange: iterated self-sum; exact iff the child is exact and no round
+    ///     overflowed `limit`. (These still run `param` rounds — BLS-D8 is unaddressed here.)
+    [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
     {
         switch (kind)
         {
-        case Kind::Leaf:
-            return values;
-        case Kind::Add: {
-            std::set<std::int64_t> out;
-            const auto             l = lhs->expand(limit);
-            const auto             r = rhs->expand(limit);
-            for (const auto lv : l)
+        case Kind::Leaf: {
+            if (values.size() <= limit)
             {
-                for (const auto rv : r)
+                return {values, true};
+            }
+            std::set<std::int64_t> out(values.begin(), std::next(values.begin(), static_cast<std::ptrdiff_t>(limit)));
+            return {std::move(out), false};
+        }
+        case Kind::Add: {
+            const auto             l = lhs->expandChecked(limit);
+            const auto             r = rhs->expandChecked(limit);
+            std::set<std::int64_t> out;
+            bool                   overflow = false;
+            for (const auto lv : l.values)
+            {
+                for (const auto rv : r.values)
                 {
                     out.insert(lv + rv);
-                    if (out.size() >= limit)
+                    if (out.size() > limit)
                     {
-                        return out;
+                        out.erase(std::prev(out.end()));  // keep the smallest `limit`
+                        overflow = true;
+                        break;
                     }
                 }
+                if (overflow)
+                {
+                    break;
+                }
             }
-            return out;
+            return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Union: {
-            auto       out = lhs->expand(limit);
-            const auto r   = rhs->expand(limit);
-            out.insert(r.begin(), r.end());
-            while (out.size() > limit)
+            auto       l = lhs->expandChecked(limit);
+            const auto r = rhs->expandChecked(limit);
+            l.values.insert(r.values.begin(), r.values.end());
+            bool overflow = false;
+            while (l.values.size() > limit)
             {
-                out.erase(std::prev(out.end()));
+                l.values.erase(std::prev(l.values.end()));
+                overflow = true;
             }
-            return out;
+            return {std::move(l.values), l.exact && r.exact && !overflow};
         }
         case Kind::Pad: {
-            std::set<std::int64_t> out;
-            const auto             l = lhs->expand(limit);
+            const auto             l = lhs->expandChecked(limit);
             const auto             a = std::max<std::int64_t>(1, param);
-            for (auto v : l)
+            std::set<std::int64_t> out;
+            for (auto v : l.values)
             {
                 const auto rem = v % a;
                 if (rem != 0)
                 {
                     v += (a - rem);
                 }
-                out.insert(v);
-                if (out.size() >= limit)
-                {
-                    return out;
-                }
+                out.insert(v);  // padding is non-expansive: |out| <= |l.values| <= limit
             }
-            return out;
+            return {std::move(out), l.exact};
         }
         case Kind::Repeat: {
             if (param <= 0)
             {
-                return {0};
+                return {{0}, true};
             }
-            auto       acc  = std::set<std::int64_t>{0};
-            const auto item = lhs->expand(limit);
+            const auto item  = lhs->expandChecked(limit);
+            bool       exact = item.exact;
+            auto       acc   = std::set<std::int64_t>{0};
             for (std::int64_t i = 0; i < param; ++i)
             {
                 std::set<std::int64_t> next;
+                bool                   overflow = false;
                 for (const auto a : acc)
                 {
-                    for (const auto b : item)
+                    for (const auto b : item.values)
                     {
                         next.insert(a + b);
-                        if (next.size() >= limit)
+                        if (next.size() > limit)
                         {
+                            next.erase(std::prev(next.end()));
+                            overflow = true;
                             break;
                         }
                     }
-                    if (next.size() >= limit)
+                    if (overflow)
                     {
                         break;
                     }
                 }
-                acc = std::move(next);
+                exact = exact && !overflow;
+                acc   = std::move(next);
             }
-            return acc;
+            return {std::move(acc), exact};
         }
         case Kind::RepeatRange: {
+            const auto maxCount = std::max<std::int64_t>(0, param);
+            if (maxCount == 0)
+            {
+                return {{0}, true};
+            }
+            const auto             item  = lhs->expandChecked(limit);
+            bool                   exact = item.exact;
             std::set<std::int64_t> out{0};
-            auto                   acc      = std::set<std::int64_t>{0};
-            const auto             item     = lhs->expand(limit);
-            const auto             maxCount = std::max<std::int64_t>(0, param);
+            auto                   acc = std::set<std::int64_t>{0};
             for (std::int64_t i = 1; i <= maxCount; ++i)
             {
                 std::set<std::int64_t> next;
+                bool                   overflow = false;
                 for (const auto a : acc)
                 {
-                    for (const auto b : item)
+                    for (const auto b : item.values)
                     {
                         next.insert(a + b);
-                        if (next.size() >= limit)
+                        if (next.size() > limit)
                         {
+                            next.erase(std::prev(next.end()));
+                            overflow = true;
                             break;
                         }
                     }
-                    if (next.size() >= limit)
+                    if (overflow)
                     {
                         break;
                     }
@@ -489,13 +510,15 @@ struct BitLengthSet::Node final
                 while (out.size() > limit)
                 {
                     out.erase(std::prev(out.end()));
+                    overflow = true;
                 }
-                acc = std::move(next);
+                exact = exact && !overflow;
+                acc   = std::move(next);
             }
-            return out;
+            return {std::move(out), exact};
         }
         }
-        return {0};
+        return {{0}, true};
     }
 
     /// @brief Exact residue mask `{ v mod modulus : v in S }`, computed symbolically.
@@ -740,7 +763,13 @@ std::set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
 
 std::set<std::int64_t> BitLengthSet::expand(std::size_t limit) const
 {
-    return root_->expand(limit);
+    return expandChecked(limit).values;
+}
+
+BitLengthSet::Expansion BitLengthSet::expandChecked(std::size_t limit) const
+{
+    // Clamp to >= 1 so the result is never empty (invariant I1; fixes BLS-D3's expand(0) corner).
+    return root_->expandChecked(std::max<std::size_t>(1, limit));
 }
 
 std::string BitLengthSet::str() const

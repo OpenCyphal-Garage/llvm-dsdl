@@ -103,10 +103,16 @@ namespace llvmdsdl
 ///       * exact (== S) whenever the cardinality of every intermediate subexpression's set is
 ///         <= `limit`; in particular exact whenever |S| <= `limit` holds for every node of
 ///         the expression;
-///       * when truncation occurs, WHICH subset is returned is unspecified (it is NOT
-///         guaranteed to be the smallest `limit` elements), and no error is reported;
-///       * `limit` MUST be >= 1; `expand(0)` is a precondition violation (see D3 in the
-///         defect log: it can currently return an empty set).
+///       * when truncation occurs it keeps (at most) `limit` of the smaller elements; WHICH
+///         subset survives across a truncating `Add`/`Repeat` is not fully specified, but the
+///         result never exceeds `limit` elements and is never empty;
+///       * `limit` is clamped to `>= 1` internally, so `expand(0)` returns a one-element sound
+///         subset rather than the empty set (invariant I1).
+///     `expand()` reports no completeness signal; use `expandChecked()` when the caller must
+///     know whether the result equals S (e.g. before evaluating an assertion over the values).
+///   - `expandChecked(limit)` returns the same values plus an `exact` flag that is true iff the
+///     returned set equals S (no truncation occurred anywhere in the expression). This is the
+///     exactness signal callers need to avoid silently reasoning over an incomplete set.
 ///   - `modulo(d)` returns the EXACT residue set of S for any set size. It is computed by
 ///     symbolic per-node residue propagation (each intermediate set is a subset of Z/d, so it
 ///     never truncates), NOT by expanding S. The sole exception is a defensive internal cap on
@@ -218,18 +224,36 @@ public:
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
     [[nodiscard]] std::set<std::int64_t> modulo(std::int64_t divisor) const;
 
+    /// @brief An expansion together with a completeness signal.
+    struct Expansion final
+    {
+        /// @brief A subset of S; equals S exactly iff `exact` is true. Never empty, never larger
+        ///        than the requested (clamped-to-`>= 1`) limit.
+        std::set<std::int64_t> values;
+
+        /// @brief True iff `values == S` — i.e. no node in the expression was truncated.
+        bool exact{true};
+    };
+
     /// @brief Materializes the denoted set as concrete values.
-    /// @param[in] limit Expansion safety limit; MUST be `>= 1`.
-    /// @return A subset of S (sound under-approximation), never empty for `limit >= 1`:
-    ///         exactly S when every intermediate subexpression's cardinality is `<= limit`;
-    ///         otherwise an unspecified subset (no error is reported, and the subset is not
-    ///         guaranteed to contain the smallest or the largest elements — in particular
-    ///         `max()` of the expansion may be less than `max()` of the set).
-    /// @note The result size does not exceed `limit`, except that a single leaf constructed
-    ///       with more than `limit` explicit values is returned whole (BLS-D4).
+    /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.
+    /// @return A subset of S (sound under-approximation), never empty and never larger than the
+    ///         clamped limit: exactly S when every intermediate subexpression's cardinality is
+    ///         `<= limit`; otherwise a truncated subset (favouring the smaller elements — in
+    ///         particular `max()` of the expansion may be less than `max()` of the set). No
+    ///         completeness signal is reported; use `expandChecked()` when that matters.
     /// @warning Expansion cost is NOT bounded by `limit` alone; see class-level complexity
     ///          caveats (BLS-D8, BLS-D11).
     [[nodiscard]] std::set<std::int64_t> expand(std::size_t limit = 16384) const;
+
+    /// @brief Like `expand()`, but also reports whether the result is complete (`== S`).
+    /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.
+    /// @return `{ values, exact }` where `values` is the same sound subset `expand()` returns and
+    ///         `exact` is true iff no truncation occurred anywhere in the expression (so
+    ///         `values == S`). Callers that reason over the value set (e.g. evaluating an
+    ///         assertion) MUST consult `exact` before trusting completeness — an `exact == false`
+    ///         result means some values are missing and any all/any/count reasoning is unsound.
+    [[nodiscard]] Expansion expandChecked(std::size_t limit = 16384) const;
 
     /// @brief Returns a compact textual rendering of the symbolic expression (diagnostics only).
     /// @return String over the grammar:

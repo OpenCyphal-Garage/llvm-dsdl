@@ -117,19 +117,30 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
   algorithm the bitmask measured ~9x faster (m = 8), with far better cache locality and no
   per-element allocation.
 
-- **BLS-D2 — `expand()` truncation keeps an arbitrary subset, and it feeds `_offset_`
-  evaluation. (High) (probe)**
-  `expand(3)` of an 8-element sum returns `{0,10,20}` — retaining 20 while dropping 5.
-  [`Analyzer.cpp:204`](lib/Semantics/Analyzer.cpp:204) (`bitLengthSetToValueSet`) passes
-  `expand(4096)` into DSDL `_offset_` expression evaluation, so `@assert` expressions over
-  `_offset_` are evaluated against a wrong (truncated, non-sorted) set for types with more than
-  4096 distinct lengths. Probe: expansion max 32,760 vs. true symbolic max 80,000.
+- **BLS-D2 — `expand()` truncation kept an arbitrary subset, and it fed `_offset_`
+  evaluation. (High) (probe) — ✅ FIXED 2026-07-02.**
+  `expand(3)` of an 8-element sum returned `{0,10,20}` — retaining 20 while dropping 5.
+  `bitLengthSetToValueSet` passed `expand(4096)` into DSDL `_offset_` expression evaluation, so
+  `@assert` expressions over `_offset_` were evaluated against a wrong (truncated) set for types
+  with more than 4096 distinct offsets — silently.
+  **Fix:** added `BitLengthSet::expandChecked(limit) -> {values, exact}`, an exact-or-signal
+  contract; each node reports whether it truncated and the flag propagates up (an `Add`/`Union`
+  that drops a `(limit+1)`-th element, or an inexact child, taints the parent; verified there is
+  no false negative at the exact `|S| == limit` boundary). `expand()` is now a thin wrapper.
+  `bitLengthSetToValueSet` consumes the flag and the analyzer emits a **warning** (once per
+  section) when `_offset_` is materialized inexactly ([Analyzer.cpp](lib/Semantics/Analyzer.cpp)),
+  turning a silent unsound assertion into a visible diagnostic. A warning, not an error, because
+  pydsdl evaluates such offsets exactly — we only lack the capacity, we do not reject the type.
+  Covered by a new `AnalyzerTests` case (wide type warns, small type does not) and
+  `testExpandChecked` in the BitLengthSet suite.
 
-- **BLS-D3 — `expand(0)` returns the empty set. (Medium) (probe)** The Union node's trim loop
-  erases every element, violating invariant I1. **XFAIL'd** in the suite.
+- **BLS-D3 — `expand(0)` returned the empty set. (Medium) (probe) — ✅ FIXED 2026-07-02.** The
+  `Union` trim loop erased every element, violating invariant I1. **Fix:** `expandChecked` clamps
+  the limit to `>= 1`, so the result is never empty; the XFAIL was promoted to an enforced check.
 
-- **BLS-D4 — Leaf expansion ignores `limit`. (Low) (probe)** A leaf constructed with more than
-  `limit` values is returned whole. **XFAIL'd** in the suite.
+- **BLS-D4 — Leaf expansion ignored `limit`. (Low) (probe) — ✅ FIXED 2026-07-02.** A leaf with
+  more than `limit` values was returned whole. **Fix:** leaves now truncate to their smallest
+  `limit` values and report `exact == false`; the XFAIL was promoted to an enforced check.
 
 ### Unvalidated preconditions / undefined behavior
 
@@ -178,8 +189,10 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
 - **BLS-D15 — `fixed() ≡ min()==max()` unsound off-domain. (Info)** Correct only on the
   specified non-negative domain; breaks under BLS-D5.
 
-- **BLS-D16 — No exactness signal on `expand()` / `modulo()`. (Medium, root cause)** Callers
-  cannot detect truncation. This is the structural cause behind BLS-D1 and BLS-D2.
+- **BLS-D16 — No exactness signal on `expand()` / `modulo()`. (Medium, root cause) — ✅ FIXED
+  2026-07-02.** Callers could not detect truncation, the structural cause behind BLS-D1 and
+  BLS-D2. `modulo()` is now exact (BLS-D1) and `expandChecked()` reports an `exact` flag (BLS-D2),
+  so both surfaces now let callers detect incompleteness.
 
 ---
 
@@ -198,7 +211,10 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 7. `repeatRange` (clamps, always-contains-0, bounds, reference model).
 8. `modulo` (residues, sentinel, **exact completeness for a ~20000-element set — BLS-D1
    regression**, composed/large-count/pad-widened trees, reference model).
-9. `expand` (exactness at `|S|==limit`, soundness + cap under truncation, `≤ symbolic max`).
+9. `expand` (exactness at `|S|==limit`, soundness + cap under truncation, `≤ symbolic max`,
+   never-empty at limit 0 — BLS-D3, leaf respects limit — BLS-D4).
+8b. `expandChecked` (the `exact` flag: true when `|S| <= limit`, false under truncation, no false
+    negative at the `|S| == limit` boundary, propagation through composition — BLS-D2/D16).
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
 11. Persistence / value semantics (I3).
 12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
@@ -206,14 +222,14 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 
 The three assertions of the original test file are preserved as a subset.
 
-**XFAIL mechanism.** Spec clauses the implementation still violates (BLS-D3, D4 — BLS-D1 has
-since been fixed and its check promoted) are wrapped in `expectDefect(id, specHolds, what)`.
-While the defect reproduces the marker prints a note and does **not** fail the suite; when a fix
-lands, `specHolds` becomes true and the marker announces it should be promoted to an enforced
-`expect()`. This lets the suite ship green today while precisely tracking the known gaps.
+**XFAIL mechanism.** The `expectDefect(id, specHolds, what)` marker remains available for tracking
+future gaps, but **no BitLengthSet defects are currently XFAIL'd** — BLS-D1 (modulo), BLS-D2/D16
+(expandChecked), BLS-D3, and BLS-D4 have all been fixed and their checks promoted to enforced
+`expect()`s. When a defect reproduces, the marker prints a note and does not fail the suite; when
+fixed it announces it should be promoted.
 
-**Result:** all enforced assertions pass (including the promoted BLS-D1 completeness check);
-exactly the two remaining known defects (BLS-D3, BLS-D4) reproduce; the full unit binary exits 0.
+**Result:** all enforced assertions pass, including the promoted BLS-D1/D2/D3/D4 checks and the new
+`AnalyzerTests` D2 diagnostic case; no known defects reproduce; the full unit binary exits 0.
 
 ---
 
@@ -228,13 +244,14 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
   set is bounded by `d`, so it is exact and cheap and never truncates — mirroring pydsdl's
   `_bit_length_set/_symbolic.py` `__mod__`. The `BLS-D1` XFAIL in `testModulo` was promoted to an
   enforced `expectSetEq`, and coverage was added for composed/large-count/pad-widened trees.
-  (BLS-D16 remains open for `expand()`, which still has no exactness signal.)
-- [ ] **Give `expand()` an exact-or-signal contract (BLS-D2, BLS-D16).**
-  Return truncation status (e.g. `std::optional`, an out-param `bool exact`, or a small result
-  struct) so callers can react. Then make
-  [`bitLengthSetToValueSet`](lib/Semantics/Analyzer.cpp:204) **fail loudly** (diagnostic) instead
-  of silently evaluating `_offset_` against a truncated, arbitrarily-ordered set for
-  large-cardinality types.
+- [x] **Give `expand()` an exact-or-signal contract (BLS-D2, BLS-D16, and BLS-D3/D4).** *(done
+  2026-07-02)* Added `expandChecked(limit) -> {values, exact}`; `expand()` wraps it. Truncation is
+  tracked precisely per node and propagated (no false negative at `|S| == limit`). The limit is
+  clamped to `>= 1` (fixes BLS-D3's empty-set corner) and leaves truncate to their smallest
+  `limit` values (fixes BLS-D4) — both XFAILs promoted. `bitLengthSetToValueSet` now consumes the
+  flag and the analyzer emits a once-per-section **warning** when `_offset_` is materialized
+  inexactly, instead of silently evaluating assertions over a truncated set. Regression tests:
+  `testExpandChecked` and a new `AnalyzerTests` case.
 
 ### P1 — denial-of-service hardening (adversarial DSDL)
 
