@@ -43,22 +43,141 @@ namespace
 /// that widens the working modulus is `Pad`, which lifts it to `lcm(alignment, divisor)` —
 /// still a small power of two. This cap is never approached in practice; it exists solely so
 /// the pathological case (a `Pad` whose alignment is coprime to a large divisor) bails out to
-/// the `expand()`-based fallback instead of allocating an enormous residue set.
+/// the `expand()`-based fallback instead of allocating an enormous residue set. It also bounds a
+/// `ResidueSet` to `kResidueModulusCap` bits = 8 KiB.
 constexpr std::int64_t kResidueModulusCap = 1 << 16;
 
-/// @brief `{ (x + y) mod m : x in a, y in b }`. Operands are residues in `[0, m)`.
-std::set<std::int64_t> minkowskiSumMod(const std::set<std::int64_t>& a,
-                                       const std::set<std::int64_t>& b,
-                                       const std::int64_t            m)
+/// @brief Index of the lowest set bit of a non-zero 64-bit word (count of trailing zeros).
+inline int countTrailingZeros(const std::uint64_t v)
 {
-    std::set<std::int64_t> out;
-    for (const auto x : a)
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_ctzll(v);
+#else
+    int n = 0;
+    for (std::uint64_t x = v; (x & 1ULL) == 0ULL; x >>= 1)
     {
-        for (const auto y : b)
+        ++n;
+    }
+    return n;
+#endif
+}
+
+/// @brief Dense bitmask over the residues `{0, ..., m-1}` of Z/m: bit `i` is set iff `i` is in
+///        the set.
+///
+/// This is the working representation for `modulo()`. Residues live in a small bounded range
+/// (`m <= kResidueModulusCap`, and `m <= 64` for realistic power-of-two alignments), so a bitmask
+/// gives O(1) membership, contiguous cache-resident storage, and word-parallel union — versus the
+/// pointer-chasing, per-element heap allocation of a node-based `std::set`. The first 64 residues
+/// live inline in `low`, so the common `m <= 64` case performs NO heap allocation (`high` stays an
+/// empty vector); wider moduli spill the remaining words into `high`. All arithmetic keeps the
+/// bits above `m` clear, so `(low, high)` is a canonical key for cycle detection.
+struct ResidueSet final
+{
+    std::int64_t               modulus{1};
+    std::uint64_t              low{0};  ///< residues [0, 64)
+    std::vector<std::uint64_t> high;    ///< residues [64, modulus); empty when modulus <= 64
+
+    explicit ResidueSet(const std::int64_t m)
+        : modulus(m)
+    {
+        const std::size_t words = static_cast<std::size_t>((m + 63) / 64);
+        if (words > 1)
         {
-            out.insert((x + y) % m);
+            high.assign(words - 1, 0ULL);
         }
     }
+
+    [[nodiscard]] std::size_t wordCount() const
+    {
+        return 1 + high.size();
+    }
+
+    [[nodiscard]] std::uint64_t word(const std::size_t i) const
+    {
+        return i == 0 ? low : high[i - 1];
+    }
+
+    void add(const std::int64_t residue)
+    {
+        const std::size_t   wi  = static_cast<std::size_t>(residue) >> 6U;
+        const std::uint64_t bit = std::uint64_t{1} << (static_cast<std::size_t>(residue) & 63U);
+        if (wi == 0)
+        {
+            low |= bit;
+        }
+        else
+        {
+            high[wi - 1] |= bit;
+        }
+    }
+
+    void unionWith(const ResidueSet& other)
+    {
+        low |= other.low;
+        for (std::size_t i = 0; i < high.size(); ++i)
+        {
+            high[i] |= other.high[i];
+        }
+    }
+
+    /// @brief Applies `fn(residue)` to each present residue in ascending order.
+    template <typename Fn>
+    void forEach(Fn&& fn) const
+    {
+        for (std::size_t wi = 0; wi < wordCount(); ++wi)
+        {
+            std::uint64_t w = word(wi);
+            while (w != 0)
+            {
+                fn(static_cast<std::int64_t>(wi * 64) + countTrailingZeros(w));
+                w &= w - 1;  // clear lowest set bit
+            }
+        }
+    }
+
+    // Ordering / equality so a ResidueSet can key a std::map / std::set during cycle detection.
+    // Every key in one detection shares the same modulus, so comparing (low, high) is sound.
+    bool operator==(const ResidueSet& other) const
+    {
+        return low == other.low && high == other.high;
+    }
+    bool operator<(const ResidueSet& other) const
+    {
+        return low != other.low ? low < other.low : high < other.high;
+    }
+};
+
+/// @brief Materializes a `ResidueSet` as the `std::set` the public `modulo()` API returns.
+std::set<std::int64_t> toStdSet(const ResidueSet& s)
+{
+    std::set<std::int64_t> out;
+    s.forEach([&out](const std::int64_t r) { out.insert(r); });
+    return out;
+}
+
+/// @brief The singleton residue mask `{0}` modulo `m`.
+ResidueSet zeroResidue(const std::int64_t m)
+{
+    ResidueSet s(m);
+    s.add(0);
+    return s;
+}
+
+/// @brief `{ (x + y) mod m : x in a, y in b }`, computed by bit-scan over both masks.
+ResidueSet minkowskiSumMod(const ResidueSet& a, const ResidueSet& b)
+{
+    ResidueSet out(a.modulus);
+    a.forEach([&](const std::int64_t x) {
+        b.forEach([&](const std::int64_t y) {
+            std::int64_t s = x + y;  // each operand < m, so the sum is < 2m
+            if (s >= a.modulus)
+            {
+                s -= a.modulus;
+            }
+            out.add(s);
+        });
+    });
     return out;
 }
 
@@ -84,20 +203,20 @@ bool cappedLcm(const std::int64_t a, const std::int64_t b, std::int64_t& result)
 ///
 /// The sequence A_0 = {0}, A_k = A_{k-1} (+) r (mod m) is a deterministic walk over subsets of
 /// Z/m, hence eventually periodic. Cycle detection answers arbitrarily large `count` in
-/// O(preperiod + period) set operations, so a huge fixed-array repeat count cannot blow up this
+/// O(preperiod + period) mask operations, so a huge fixed-array repeat count cannot blow up this
 /// path (contrast BLS-D8 on `expand()`). The result is exact.
-std::set<std::int64_t> exactlyKSumMod(const std::set<std::int64_t>& r, const std::int64_t count, const std::int64_t m)
+ResidueSet exactlyKSumMod(const ResidueSet& r, const std::int64_t count, const std::int64_t m)
 {
-    std::set<std::int64_t> cur{0};  // A_0
+    ResidueSet cur = zeroResidue(m);  // A_0
     if (count <= 0)
     {
         return cur;
     }
-    std::vector<std::set<std::int64_t>>            seq{cur};
-    std::map<std::set<std::int64_t>, std::int64_t> seen{{cur, 0}};
+    std::vector<ResidueSet>            seq{cur};
+    std::map<ResidueSet, std::int64_t> seen{{cur, 0}};
     for (std::int64_t i = 1; i <= count; ++i)
     {
-        cur           = minkowskiSumMod(cur, r, m);
+        cur           = minkowskiSumMod(cur, r);
         const auto it = seen.find(cur);
         if (it != seen.end())
         {
@@ -117,21 +236,19 @@ std::set<std::int64_t> exactlyKSumMod(const std::set<std::int64_t>& r, const std
 /// The union is monotone and bounded by `m` elements; once the underlying sumset sequence A_k
 /// repeats a previously seen value, every later term is already accounted for, so the loop stops
 /// there. Exact, and O(preperiod + period) regardless of `countMax` (contrast BLS-D8).
-std::set<std::int64_t> unionUpToKSumMod(const std::set<std::int64_t>& r,
-                                        const std::int64_t            countMax,
-                                        const std::int64_t            m)
+ResidueSet unionUpToKSumMod(const ResidueSet& r, const std::int64_t countMax, const std::int64_t m)
 {
-    std::set<std::int64_t> u{0};  // the k = 0 term
+    ResidueSet u = zeroResidue(m);  // the k = 0 term
     if (countMax <= 0)
     {
         return u;
     }
-    std::set<std::int64_t>           cur{0};
-    std::set<std::set<std::int64_t>> seen{cur};
+    ResidueSet           cur = zeroResidue(m);
+    std::set<ResidueSet> seen{cur};
     for (std::int64_t i = 1; i <= countMax; ++i)
     {
-        cur = minkowskiSumMod(cur, r, m);
-        u.insert(cur.begin(), cur.end());
+        cur = minkowskiSumMod(cur, r);
+        u.unionWith(cur);
         if (!seen.insert(cur).second)
         {
             break;  // A_i repeats an earlier A_j; all subsequent terms are already in `u`
@@ -381,13 +498,12 @@ struct BitLengthSet::Node final
         return {0};
     }
 
-    /// @brief Exact residue set `{ v mod modulus : v in S }`, computed symbolically.
+    /// @brief Exact residue mask `{ v mod modulus : v in S }`, computed symbolically.
     ///
-    /// Unlike a residue derived from `expand()`, this never truncates the underlying value set:
-    /// every intermediate result is a subset of Z/modulus (at most `modulus` elements), so it is
-    /// exact and cheap even when S is astronomically large. This is what makes `modulo()`
-    /// complete (fixes BLS-D1). Accumulates into `out` (so `Union` is a plain set union of the
-    /// two children's residues).
+    /// Works entirely in the `ResidueSet` bitmask domain and never enumerates S: every
+    /// intermediate result is a subset of Z/modulus (at most `modulus` bits), so it is exact and
+    /// cheap even when S is astronomically large. This is what makes `modulo()` complete (fixes
+    /// BLS-D1). Accumulates into `out` (so `Union` is a plain mask union of the two children).
     ///
     /// Per-kind derivation (modulus `m >= 1`):
     ///   - Leaf: reduce each stored value mod `m`.
@@ -401,7 +517,7 @@ struct BitLengthSet::Node final
     /// @return False when a required modulus exceeds `kResidueModulusCap` (the caller then falls
     ///         back to the `expand()`-based approximation); on false, `out` is left partial and
     ///         must be discarded.
-    [[nodiscard]] bool residues(std::int64_t modulus, std::set<std::int64_t>& out) const
+    [[nodiscard]] bool residues(std::int64_t modulus, ResidueSet& out) const
     {
         if (modulus > kResidueModulusCap)
         {
@@ -412,23 +528,22 @@ struct BitLengthSet::Node final
         case Kind::Leaf: {
             for (const auto v : values)
             {
-                out.insert(((v % modulus) + modulus) % modulus);  // normalize sign into [0, m)
+                out.add(((v % modulus) + modulus) % modulus);  // normalize sign into [0, m)
             }
             if (values.empty())
             {
-                out.insert(0);  // invariant I1: an empty leaf denotes {0}
+                out.add(0);  // invariant I1: an empty leaf denotes {0}
             }
             return true;
         }
         case Kind::Add: {
-            std::set<std::int64_t> l;
-            std::set<std::int64_t> r;
+            ResidueSet l(modulus);
+            ResidueSet r(modulus);
             if (!lhs->residues(modulus, l) || !rhs->residues(modulus, r))
             {
                 return false;
             }
-            const auto sum = minkowskiSumMod(l, r, modulus);
-            out.insert(sum.begin(), sum.end());
+            out.unionWith(minkowskiSumMod(l, r));
             return true;
         }
         case Kind::Union:
@@ -440,41 +555,38 @@ struct BitLengthSet::Node final
             {
                 return false;
             }
-            std::set<std::int64_t> child;
+            ResidueSet child(widened);
             if (!lhs->residues(widened, child))
             {
                 return false;
             }
-            for (const auto r : child)
-            {
+            child.forEach([&](const std::int64_t r) {
                 const auto rem    = r % a;
                 const auto padded = (rem == 0) ? r : r + (a - rem);
-                out.insert(padded % modulus);
-            }
+                out.add(padded % modulus);
+            });
             return true;
         }
         case Kind::Repeat: {
-            std::set<std::int64_t> r;
+            ResidueSet r(modulus);
             if (!lhs->residues(modulus, r))
             {
                 return false;
             }
-            const auto res = exactlyKSumMod(r, std::max<std::int64_t>(0, param), modulus);
-            out.insert(res.begin(), res.end());
+            out.unionWith(exactlyKSumMod(r, std::max<std::int64_t>(0, param), modulus));
             return true;
         }
         case Kind::RepeatRange: {
-            std::set<std::int64_t> r;
+            ResidueSet r(modulus);
             if (!lhs->residues(modulus, r))
             {
                 return false;
             }
-            const auto res = unionUpToKSumMod(r, std::max<std::int64_t>(0, param), modulus);
-            out.insert(res.begin(), res.end());
+            out.unionWith(unionUpToKSumMod(r, std::max<std::int64_t>(0, param), modulus));
             return true;
         }
         }
-        out.insert(0);
+        out.add(0);
         return true;
     }
 
@@ -606,18 +718,19 @@ std::set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
     {
         return {0};
     }
-    // Primary path: exact per-node symbolic residues (bounded by `divisor`, never truncated).
-    // This makes the result complete for every set, however large — the fix for BLS-D1.
-    std::set<std::int64_t> out;
-    if (root_->residues(divisor, out))
+    // Primary path: exact per-node symbolic residues in a dense bitmask (bounded by `divisor`,
+    // never truncated). This makes the result complete for every set, however large — the fix
+    // for BLS-D1.
+    ResidueSet mask(divisor);
+    if (root_->residues(divisor, mask))
     {
-        return out;
+        return toStdSet(mask);
     }
     // Fallback (not reached for realistic, alignment-driven divisors): symbolic evaluation
     // required a modulus exceeding kResidueModulusCap. Degrade to the older expand()-based
     // approximation, which may be incomplete for very large sets. See kResidueModulusCap.
-    out.clear();
-    const auto expanded = expand();
+    std::set<std::int64_t> out;
+    const auto             expanded = expand();
     for (const auto v : expanded)
     {
         out.insert(v % divisor);
