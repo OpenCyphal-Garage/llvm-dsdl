@@ -376,8 +376,13 @@ struct BitLengthSet::Node final
     ///     are exact and no trim was needed.
     ///   - Pad: each child value rounded up; non-expansive, so it never itself truncates; exact
     ///     iff the child is exact.
-    ///   - Repeat / RepeatRange: iterated self-sum; exact iff the child is exact and no round
-    ///     overflowed `limit`. (These still run `param` rounds — BLS-D8 is unaddressed here.)
+    ///   - Repeat / RepeatRange: iterated self-sum, but bounded to O(convergence) rounds rather
+    ///     than O(`param`) so a huge count cannot hang the compiler (BLS-D8). The item is shifted
+    ///     to contain 0 (`V' = item - min`), which makes the shifted k-fold sumset monotone in k;
+    ///     its smallest-`limit` view reaches a fixpoint, and `Repeat` stops there and adds
+    ///     `param * min` back. `RepeatRange` additionally stops once every later term's minimum
+    ///     (`k * min`) has moved past the kept window. Exact iff the child is exact and no round
+    ///     overflowed `limit`.
     [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
     {
         switch (kind)
@@ -446,16 +451,25 @@ struct BitLengthSet::Node final
             {
                 return {{0}, true};
             }
-            const auto item  = lhs->expandChecked(limit);
-            bool       exact = item.exact;
-            auto       acc   = std::set<std::int64_t>{0};
+            const auto         item  = lhs->expandChecked(limit);
+            bool               exact = item.exact;
+            const std::int64_t base  = *item.values.begin();  // min; item.values is non-empty (I1)
+            // Work in the 0-shifted domain V' = { v - base }, which contains 0. The exactly-k
+            // sumset of V' is then monotone in k, so its smallest-`limit` view reaches a fixpoint
+            // in O(convergence) rounds; detecting it removes the O(param) dependence (BLS-D8).
+            std::set<std::int64_t> shifted;
+            for (const auto v : item.values)
+            {
+                shifted.insert(v - base);
+            }
+            auto acc = std::set<std::int64_t>{0};  // A'_0
             for (std::int64_t i = 0; i < param; ++i)
             {
                 std::set<std::int64_t> next;
                 bool                   overflow = false;
                 for (const auto a : acc)
                 {
-                    for (const auto b : item.values)
+                    for (const auto b : shifted)
                     {
                         next.insert(a + b);
                         if (next.size() > limit)
@@ -470,10 +484,21 @@ struct BitLengthSet::Node final
                         break;
                     }
                 }
-                exact = exact && !overflow;
-                acc   = std::move(next);
+                exact                = exact && !overflow;
+                const bool converged = (next == acc);  // fixpoint: further rounds reproduce `acc`
+                acc                  = std::move(next);
+                if (converged)
+                {
+                    break;
+                }
             }
-            return {std::move(acc), exact};
+            // Undo the shift: the exactly-param sumset of the original set is `param*base + A'_param`.
+            std::set<std::int64_t> out;
+            for (const auto x : acc)
+            {
+                out.insert(param * base + x);
+            }
+            return {std::move(out), exact};
         }
         case Kind::RepeatRange: {
             const auto maxCount = std::max<std::int64_t>(0, param);
@@ -483,15 +508,30 @@ struct BitLengthSet::Node final
             }
             const auto             item  = lhs->expandChecked(limit);
             bool                   exact = item.exact;
-            std::set<std::int64_t> out{0};
-            auto                   acc = std::set<std::int64_t>{0};
+            const std::int64_t     base  = *item.values.begin();  // min; item.values is non-empty (I1)
+            std::set<std::int64_t> shifted;
+            for (const auto v : item.values)
+            {
+                shifted.insert(v - base);
+            }
+            std::set<std::int64_t> out{0};                           // the k = 0 term
+            auto                   acc = std::set<std::int64_t>{0};  // A'_0
             for (std::int64_t i = 1; i <= maxCount; ++i)
             {
+                // Term k = i starts at `i*base`; once that passes the kept window, and every later
+                // term starts even higher, none can enter the smallest-`limit` result (BLS-D8).
+                // Those later terms are non-empty elements of S that we are dropping, so the result
+                // is a proper subset — mark it inexact before bailing.
+                if (base > 0 && out.size() >= limit && i * base > *out.rbegin())
+                {
+                    exact = false;
+                    break;
+                }
                 std::set<std::int64_t> next;
                 bool                   overflow = false;
                 for (const auto a : acc)
                 {
-                    for (const auto b : item.values)
+                    for (const auto b : shifted)
                     {
                         next.insert(a + b);
                         if (next.size() > limit)
@@ -506,14 +546,24 @@ struct BitLengthSet::Node final
                         break;
                     }
                 }
-                out.insert(next.begin(), next.end());
-                while (out.size() > limit)
+                for (const auto x : next)  // A_i (original) = i*base + A'_i
                 {
-                    out.erase(std::prev(out.end()));
-                    overflow = true;
+                    out.insert(i * base + x);
+                    if (out.size() > limit)
+                    {
+                        out.erase(std::prev(out.end()));
+                        overflow = true;
+                    }
                 }
-                exact = exact && !overflow;
-                acc   = std::move(next);
+                exact                = exact && !overflow;
+                const bool converged = (next == acc);
+                acc                  = std::move(next);
+                // base == 0: every term equals A'_i and out is their nested union, so once the
+                // shifted sumset is a fixpoint the union can no longer grow.
+                if (base == 0 && converged)
+                {
+                    break;
+                }
             }
             return {std::move(out), exact};
         }

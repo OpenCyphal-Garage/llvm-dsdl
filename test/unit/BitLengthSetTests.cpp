@@ -24,6 +24,8 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <set>
@@ -466,6 +468,46 @@ void testExpandChecked(TestContext& t)
     t.expect(BitLengthSet(8).repeat(3).expandChecked(16).exact, "fixed repeat is exact");
 }
 
+// BLS-D8: repeat/repeatRange expansion is bounded by convergence, not by the count, so a huge
+// count is both correct (exact values) and fast (does not run `count` rounds).
+void testExpandBoundedRepeat(TestContext& t)
+{
+    // Enormous counts still produce exact values via the shift/convergence path.
+    t.expectSetEq(BitLengthSet(8).repeat(1000000).expand(), {8000000}, "repeat(1e6) of {8} is exactly {8e6}");
+    t.expect(BitLengthSet(8).repeat(1000000).expandChecked().exact, "huge fixed repeat stays exact");
+
+    // Multi-value item: the smallest window of the exactly-N sumset of {8,9} is {8N .. 8N+k-1}.
+    t.expectSetEq(BitLengthSet(ValueSet{8, 9}).repeat(1000000).expand(4),
+                  {8000000, 8000001, 8000002, 8000003},
+                  "repeat(1e6) of {8,9} keeps the smallest window, shifted by count*min");
+
+    // A small count still matches the reference model (guards the shifted path against regressions).
+    t.expectSetEq(BitLengthSet(ValueSet{1, 3}).repeat(5).expand(), refRepeat({1, 3}, 5), "repeat(5) vs reference");
+    t.expectSetEq(BitLengthSet(ValueSet{2, 3}).repeatRange(6).expand(),
+                  refRepeatRange({2, 3}, 6),
+                  "repeatRange(6) vs reference");
+
+    // Huge repeatRange: sound, bounded by the symbolic max, retains the k = 0 term, reported inexact.
+    const BitLengthSet wide = BitLengthSet(8).repeatRange(50000000);
+    const auto         w    = wide.expand(4096);
+    t.expect(w.size() <= 4096 && !w.empty(), "huge repeatRange expansion respects the cap");
+    t.expect(w.count(0) == 1, "huge repeatRange retains the k = 0 term");
+    t.expect(*w.rbegin() <= wide.max(), "huge repeatRange expansion stays within the symbolic max");
+    for (const auto v : w)
+    {
+        t.expect(v % 8 == 0, "huge repeatRange values are sound multiples of 8");
+    }
+    t.expect(!wide.expandChecked(4096).exact, "huge repeatRange expansion is reported inexact");
+
+    // Wall-clock guard: 50e6 rounds would take minutes; the bounded loop finishes near-instantly.
+    const auto  start = std::chrono::steady_clock::now();
+    std::size_t sink  = BitLengthSet(8).repeat(50000000).expand(256).size();
+    sink += BitLengthSet(ValueSet{8, 16}).repeatRange(50000000).expand(256).size();
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    t.expect(sink > 0, "bounded-repeat sink is used");
+    t.expect(secs < 2.0, "huge repeat/repeatRange expansion completes quickly (BLS-D8 bound)");
+}
+
 // Spec: str() grammar (leaf ascending order, post-clamp parameters, operator spellings).
 void testStr(TestContext& t)
 {
@@ -550,6 +592,7 @@ bool runBitLengthSetTests()
     testModulo(t);
     testExpand(t);
     testExpandChecked(t);
+    testExpandBoundedRepeat(t);
     testStr(t);
     testPersistence(t);
     testDsdlCompositionPatterns(t);

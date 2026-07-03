@@ -130,9 +130,11 @@ namespace llvmdsdl
 ///     graphs (e.g. `s = s + s` applied n times) cost O(2^n) (BLS-D9). Recursion depth is
 ///     proportional to expression depth; extremely deep chains (hundreds of thousands of
 ///     `+` applications) overflow the stack, including at destruction (BLS-D10).
-///   - `repeat(k)`/`repeatRange(k)` expansion loops execute Theta(k) iterations even after the
-///     result has converged or saturated at `limit`; user-controlled large `k` is a
-///     compile-time DoS vector (BLS-D8).
+///   - `repeat(k)`/`repeatRange(k)` expansion is bounded to O(convergence) rounds — the
+///     truncated shifted sumset reaches a fixpoint (and `repeatRange` also stops once later
+///     terms move past the kept window) — so a large `k` no longer drives the loop count
+///     (former compile-time DoS BLS-D8). Cost still depends on `limit` and the item values, not
+///     on `k`.
 ///
 /// ## Concurrency
 ///

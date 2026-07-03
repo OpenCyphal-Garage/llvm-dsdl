@@ -158,12 +158,20 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
 
 ### Compile-time DoS (performance)
 
-- **BLS-D8 — `repeat` / `repeatRange` expansion is Θ(count) with no early exit. (High) (probe)**
-  `repeat({0}, 2·10⁷).expand()` takes 0.56 s to produce `{0}`; `repeatRange({8},
-  2·10⁷).expand(4096)` takes 1.9 s after saturating in the first 4096 iterations. The count is
-  user-controlled — array capacity, and `extent/8` at
-  [`Analyzer.cpp:556`](lib/Semantics/Analyzer.cpp:556) — making this a compiler-hang vector.
-  This is the roadmap's "unbounded `repeatRange` expansion", now precisely characterized.
+- **BLS-D8 — `repeat` / `repeatRange` expansion was Θ(count) with no early exit. (High) (probe)
+  — ✅ FIXED 2026-07-02.**
+  `repeatRange({8}, 2·10⁷).expand(4096)` used to run 2·10⁷ rounds after saturating in the first
+  4096; the count is user-controlled (array capacity, and `extent/8` at
+  [`Analyzer.cpp`](lib/Semantics/Analyzer.cpp)), making it a compiler-hang vector — the roadmap's
+  "unbounded `repeatRange` expansion".
+  **Fix:** the expansion is now bounded to O(convergence) rounds, independent of the count. The
+  item is shifted so it contains 0 (`V' = item − min`), which makes the shifted k-fold sumset
+  monotone in k; its smallest-`limit` view reaches a fixpoint, so `repeat` iterates until the
+  set stops changing and then adds `count·min` back, and `repeatRange` additionally stops once
+  every later term's minimum (`k·min`) has passed the kept window (marking the result inexact,
+  since those dropped terms are real elements of S). Correctness was checked exhaustively
+  (4536 value-parity + soundness cases vs. an independent reference, UBSan-clean), a 5·10⁷ count
+  now expands in well under a second, and a wall-clock guard test locks the bound in.
 
 - **BLS-D9 — No memoization ⇒ exponential DAG traversal. (Medium) (probe)** `min()` over an
   n-fold `s = s + s` DAG: 2.6 ms at n=20, 47 ms at n=24, 179 ms at n=26 (~4× per two levels).
@@ -215,6 +223,8 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
    never-empty at limit 0 — BLS-D3, leaf respects limit — BLS-D4).
 8b. `expandChecked` (the `exact` flag: true when `|S| <= limit`, false under truncation, no false
     negative at the `|S| == limit` boundary, propagation through composition — BLS-D2/D16).
+8c. `expandBoundedRepeat` (huge `repeat`/`repeatRange` counts are exact and fast: value parity for
+    a 10⁶ count, inexact flag for a truncated 5·10⁷ count, wall-clock guard — BLS-D8).
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
 11. Persistence / value semantics (I3).
 12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
@@ -255,10 +265,11 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
 
 ### P1 — denial-of-service hardening (adversarial DSDL)
 
-- [ ] **Add convergence/saturation early-exit to `repeat` / `repeatRange` expansion (BLS-D8).**
-  Break the round loop once the accumulator stops changing or the result saturates at `limit`.
-  Alternatively (or additionally) **cap counts at the semantic layer** where array capacity and
-  `extent/8` enter ([`Analyzer.cpp:556`](lib/Semantics/Analyzer.cpp:556)).
+- [x] **Add convergence/saturation early-exit to `repeat` / `repeatRange` expansion (BLS-D8).**
+  *(done 2026-07-02)* Bounded to O(convergence) rounds via the 0-shift/fixpoint trick (`repeat`)
+  and a window early-exit (`repeatRange`); count no longer drives the loop. Exhaustively verified
+  against a reference model and guarded by a wall-clock test. Capping counts at the semantic layer
+  remains a possible defence-in-depth follow-up but is no longer required for this hang.
 - [ ] **Checked / `__int128` arithmetic for sums, products, and pad round-ups (BLS-D6).**
   Detect overflow and surface a diagnostic rather than wrapping into UB. Track alongside the
   roadmap's `Rational` overflow hardening.
