@@ -144,14 +144,21 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
 
 ### Unvalidated preconditions / undefined behavior
 
-- **BLS-D5 — Negative values accepted and mishandled. (Medium) (probe)** `pad({-3},8)` yields
-  `{8}` (should be 0); `modulo({-3},8)` returns `{-3}`; `repeatRange({-8},3)` reports
-  `min()=0, max()=-24` — an inverted range violating I2.
+- **BLS-D5 — Negative values accepted and mishandled. (Medium) (probe) — ✅ FIXED 2026-07-02.**
+  `pad({-3},8)` yielded `{8}` (should be 0); `modulo({-3},8)` returned `{-3}`; `repeatRange({-8},3)`
+  reported `min()=0, max()=-24` — an inverted range violating I2. **Fix:** the constructors clamp
+  any negative element to 0, keeping the set in the non-negative bit-length domain; the former
+  symptoms are gone (`min() <= max()` restored) and the clamp also makes the saturating arithmetic
+  in D6 sound (overflow is always toward `INT64_MAX`).
 
-- **BLS-D6 — Unchecked `int64` overflow. (Medium) (probe)** `padToAlignment(8)` on
-  `INT64_MAX-2` wraps to `-2⁶³` in a plain build and traps under UBSan. Reachable via
-  adversarial-but-parseable DSDL (huge capacities / deep nesting). Parallels the roadmap's known
-  `Rational` overflow item.
+- **BLS-D6 — Unchecked `int64` overflow. (Medium) (probe) — ✅ FIXED 2026-07-02.**
+  `padToAlignment(8)` on `INT64_MAX-2` wrapped to `-2⁶³` in a plain build and trapped under UBSan;
+  reachable via adversarial-but-parseable DSDL (huge capacities / deep nesting). **Fix:** all
+  derivable arithmetic (`min`/`max` sums and products, alignment round-ups, and the value sums in
+  `expand`) now goes through saturating helpers (`satAdd`/`satMul`/`satRoundUp`, built on
+  `__builtin_*_overflow` with a portable fallback) that clamp to `INT64_MAX` instead of wrapping.
+  The old probe now returns `INT64_MAX` and exits cleanly under UBSan-trap; a `testValueDomainSafety`
+  case locks it in. Parallels the roadmap's `Rational` overflow item.
 
 - **BLS-D7 — Moved-from use dereferences null. (Low/Medium) (probe)** Any member call on a
   moved-from object segfaults (`root_` is null). Documented as UB; cheap to harden.
@@ -194,8 +201,9 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
 - **BLS-D14 — Default constructor double-allocates. (Info)** Allocates a node, then immediately
   replaces it.
 
-- **BLS-D15 — `fixed() ≡ min()==max()` unsound off-domain. (Info)** Correct only on the
-  specified non-negative domain; breaks under BLS-D5.
+- **BLS-D15 — `fixed() ≡ min()==max()` unsound off-domain. (Info) — ✅ FIXED 2026-07-02** as a
+  consequence of BLS-D5: negatives are clamped, so the domain is always non-negative and
+  `fixed()` is unconditionally sound.
 
 - **BLS-D16 — No exactness signal on `expand()` / `modulo()`. (Medium, root cause) — ✅ FIXED
   2026-07-02.** Callers could not detect truncation, the structural cause behind BLS-D1 and
@@ -223,6 +231,8 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
    never-empty at limit 0 — BLS-D3, leaf respects limit — BLS-D4).
 8b. `expandChecked` (the `exact` flag: true when `|S| <= limit`, false under truncation, no false
     negative at the `|S| == limit` boundary, propagation through composition — BLS-D2/D16).
+8d. `valueDomainSafety` (negatives clamp to 0 — BLS-D5/D15; sums/products/round-ups saturate at
+    INT64_MAX instead of wrapping, no UB — BLS-D6).
 8c. `expandBoundedRepeat` (huge `repeat`/`repeatRange` counts are exact and fast: value parity for
     a 10⁶ count, inexact flag for a truncated 5·10⁷ count, wall-clock guard — BLS-D8).
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
@@ -270,9 +280,10 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
   and a window early-exit (`repeatRange`); count no longer drives the loop. Exhaustively verified
   against a reference model and guarded by a wall-clock test. Capping counts at the semantic layer
   remains a possible defence-in-depth follow-up but is no longer required for this hang.
-- [ ] **Checked / `__int128` arithmetic for sums, products, and pad round-ups (BLS-D6).**
-  Detect overflow and surface a diagnostic rather than wrapping into UB. Track alongside the
-  roadmap's `Rational` overflow hardening.
+- [x] **Checked arithmetic for sums, products, and pad round-ups (BLS-D6).** *(done 2026-07-02)*
+  All derivable arithmetic now saturates at `INT64_MAX` via `satAdd`/`satMul`/`satRoundUp`
+  (`__builtin_*_overflow` + fallback) instead of wrapping into UB; verified with a UBSan-trap run
+  of the former trapping probe and a `testValueDomainSafety` case.
 - [ ] **Memoize node evaluation and/or convert traversals to iterative form (BLS-D9, BLS-D10).**
   A per-node result cache (keyed by node pointer, exploiting DAG sharing) removes the exponential
   blowup; an explicit worklist removes the stack-overflow risk in traversal and destruction. A
@@ -281,10 +292,10 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
 
 ### P2 — input validation and robustness
 
-- [ ] **Validate or reject negative construction values (BLS-D5, BLS-D15).**
-  Either assert non-negativity at construction or define and implement correct negative-domain
-  behavior. Current `pad`/`modulo`/`repeatRange` disagree with the math and can invert
-  `min`/`max`. If validated, `fixed() ≡ min()==max()` becomes unconditionally sound.
+- [x] **Handle negative construction values (BLS-D5, and BLS-D15).** *(done 2026-07-02)* The
+  constructors clamp negatives to 0, defining the previously-unspecified regime; `pad`/`modulo`/
+  `repeatRange` no longer invert `min`/`max`, and `fixed() ≡ min()==max()` is now unconditionally
+  sound (BLS-D15).
 - [ ] **Harden moved-from state (BLS-D7).**
   Either restore the `{0}` leaf on move (so the object stays usable per I1) or make member
   functions assert on a null `root_` with a clear message instead of segfaulting.

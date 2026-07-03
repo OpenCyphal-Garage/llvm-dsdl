@@ -24,6 +24,7 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <sstream>
@@ -36,6 +37,59 @@ namespace llvmdsdl
 
 namespace
 {
+
+/// @brief Saturating signed addition for the non-negative bit-length domain.
+///
+/// On overflow the result clamps to `INT64_MAX` instead of wrapping, so a pathological definition
+/// (huge `@extent`, array capacity, or deep nesting) yields a defined, saturated length rather
+/// than signed-overflow undefined behaviour (BLS-D6). Operands are non-negative bit lengths (the
+/// constructors clamp negatives to 0 — BLS-D5), so overflow is always toward `INT64_MAX`.
+/// Realistic bit lengths are far below the ceiling, so this never triggers in practice.
+inline std::int64_t satAdd(const std::int64_t a, const std::int64_t b)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    std::int64_t r = 0;
+    if (__builtin_add_overflow(a, b, &r))
+    {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return r;
+#else
+    const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+    if (a > 0 && b > 0 && a > kMax - b)
+    {
+        return kMax;
+    }
+    return a + b;
+#endif
+}
+
+/// @brief Saturating signed multiplication for the non-negative bit-length domain (see `satAdd`).
+inline std::int64_t satMul(const std::int64_t a, const std::int64_t b)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    std::int64_t r = 0;
+    if (__builtin_mul_overflow(a, b, &r))
+    {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return r;
+#else
+    const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+    if (a != 0 && b > kMax / a)
+    {
+        return kMax;
+    }
+    return a * b;
+#endif
+}
+
+/// @brief Rounds `v >= 0` up to the next multiple of `a >= 1`, saturating on overflow (see `satAdd`).
+inline std::int64_t satRoundUp(const std::int64_t v, const std::int64_t a)
+{
+    const std::int64_t rem = v % a;
+    return rem == 0 ? v : satAdd(v, a - rem);
+}
 
 /// @brief Hard ceiling on any modulus used during symbolic residue evaluation (`modulo()`).
 ///
@@ -304,8 +358,9 @@ struct BitLengthSet::Node final
     ///   Pad: roundUp(min(lhs), a) — correct because rounding-up is monotone.
     ///   Repeat: param * min(lhs) — picking the minimum for every draw minimizes the sum.
     ///   RepeatRange: 0 — the k = 0 term; the smallest element only for non-negative domains.
-    /// The `values.empty()` guard on Leaf is defensive: public constructors never produce an
-    /// empty leaf (I1).
+    /// Sums and products saturate at INT64_MAX rather than overflowing (BLS-D6). The
+    /// `values.empty()` guard on Leaf is defensive: public constructors never produce an empty
+    /// leaf (I1).
     [[nodiscard]] std::int64_t min() const
     {
         switch (kind)
@@ -313,17 +368,13 @@ struct BitLengthSet::Node final
         case Kind::Leaf:
             return values.empty() ? 0 : *values.begin();
         case Kind::Add:
-            return lhs->min() + rhs->min();
+            return satAdd(lhs->min(), rhs->min());
         case Kind::Union:
             return std::min(lhs->min(), rhs->min());
-        case Kind::Pad: {
-            const auto v   = lhs->min();
-            const auto a   = std::max<std::int64_t>(1, param);
-            const auto rem = v % a;
-            return rem == 0 ? v : v + (a - rem);
-        }
+        case Kind::Pad:
+            return satRoundUp(lhs->min(), std::max<std::int64_t>(1, param));
         case Kind::Repeat:
-            return lhs->min() * std::max<std::int64_t>(0, param);
+            return satMul(lhs->min(), std::max<std::int64_t>(0, param));
         case Kind::RepeatRange:
             return 0;
         }
@@ -343,19 +394,15 @@ struct BitLengthSet::Node final
         case Kind::Leaf:
             return values.empty() ? 0 : *values.rbegin();
         case Kind::Add:
-            return lhs->max() + rhs->max();
+            return satAdd(lhs->max(), rhs->max());
         case Kind::Union:
             return std::max(lhs->max(), rhs->max());
-        case Kind::Pad: {
-            const auto v   = lhs->max();
-            const auto a   = std::max<std::int64_t>(1, param);
-            const auto rem = v % a;
-            return rem == 0 ? v : v + (a - rem);
-        }
+        case Kind::Pad:
+            return satRoundUp(lhs->max(), std::max<std::int64_t>(1, param));
         case Kind::Repeat:
-            return lhs->max() * std::max<std::int64_t>(0, param);
+            return satMul(lhs->max(), std::max<std::int64_t>(0, param));
         case Kind::RepeatRange:
-            return lhs->max() * std::max<std::int64_t>(0, param);
+            return satMul(lhs->max(), std::max<std::int64_t>(0, param));
         }
         return 0;
     }
@@ -404,7 +451,7 @@ struct BitLengthSet::Node final
             {
                 for (const auto rv : r.values)
                 {
-                    out.insert(lv + rv);
+                    out.insert(satAdd(lv, rv));
                     if (out.size() > limit)
                     {
                         out.erase(std::prev(out.end()));  // keep the smallest `limit`
@@ -435,14 +482,9 @@ struct BitLengthSet::Node final
             const auto             l = lhs->expandChecked(limit);
             const auto             a = std::max<std::int64_t>(1, param);
             std::set<std::int64_t> out;
-            for (auto v : l.values)
+            for (const auto v : l.values)
             {
-                const auto rem = v % a;
-                if (rem != 0)
-                {
-                    v += (a - rem);
-                }
-                out.insert(v);  // padding is non-expansive: |out| <= |l.values| <= limit
+                out.insert(satRoundUp(v, a));  // padding is non-expansive: |out| <= |l.values|
             }
             return {std::move(out), l.exact};
         }
@@ -471,7 +513,7 @@ struct BitLengthSet::Node final
                 {
                     for (const auto b : shifted)
                     {
-                        next.insert(a + b);
+                        next.insert(satAdd(a, b));
                         if (next.size() > limit)
                         {
                             next.erase(std::prev(next.end()));
@@ -493,10 +535,11 @@ struct BitLengthSet::Node final
                 }
             }
             // Undo the shift: the exactly-param sumset of the original set is `param*base + A'_param`.
+            const std::int64_t     shift = satMul(param, base);
             std::set<std::int64_t> out;
             for (const auto x : acc)
             {
-                out.insert(param * base + x);
+                out.insert(satAdd(shift, x));
             }
             return {std::move(out), exact};
         }
@@ -522,7 +565,8 @@ struct BitLengthSet::Node final
                 // term starts even higher, none can enter the smallest-`limit` result (BLS-D8).
                 // Those later terms are non-empty elements of S that we are dropping, so the result
                 // is a proper subset — mark it inexact before bailing.
-                if (base > 0 && out.size() >= limit && i * base > *out.rbegin())
+                const std::int64_t shift = satMul(i, base);  // term k = i is `shift + A'_i`
+                if (base > 0 && out.size() >= limit && shift > *out.rbegin())
                 {
                     exact = false;
                     break;
@@ -533,7 +577,7 @@ struct BitLengthSet::Node final
                 {
                     for (const auto b : shifted)
                     {
-                        next.insert(a + b);
+                        next.insert(satAdd(a, b));
                         if (next.size() > limit)
                         {
                             next.erase(std::prev(next.end()));
@@ -548,7 +592,7 @@ struct BitLengthSet::Node final
                 }
                 for (const auto x : next)  // A_i (original) = i*base + A'_i
                 {
-                    out.insert(i * base + x);
+                    out.insert(satAdd(shift, x));
                     if (out.size() > limit)
                     {
                         out.erase(std::prev(out.end()));
@@ -723,9 +767,31 @@ BitLengthSet::BitLengthSet(std::int64_t value)
 
 BitLengthSet::BitLengthSet(std::set<std::int64_t> values)
 {
-    auto leaf    = std::make_shared<Node>();
-    leaf->kind   = Node::Kind::Leaf;
-    leaf->values = std::move(values);
+    auto leaf  = std::make_shared<Node>();
+    leaf->kind = Node::Kind::Leaf;
+    // Value domain: bit lengths are non-negative. A negative element is a caller precondition
+    // violation; clamp it to 0 so the set stays in-domain and the saturating arithmetic in
+    // min()/max()/expand() remains sound (BLS-D5). Realistic inputs never hit this.
+    bool hasNegative = false;
+    for (const auto v : values)
+    {
+        if (v < 0)
+        {
+            hasNegative = true;
+            break;
+        }
+    }
+    if (hasNegative)
+    {
+        for (const auto v : values)
+        {
+            leaf->values.insert(v < 0 ? 0 : v);
+        }
+    }
+    else
+    {
+        leaf->values = std::move(values);
+    }
     // Invariant I1: the denoted set is never empty; an empty input denotes {0}.
     if (leaf->values.empty())
     {

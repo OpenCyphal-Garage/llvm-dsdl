@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <string>
@@ -508,6 +509,36 @@ void testExpandBoundedRepeat(TestContext& t)
     t.expect(secs < 2.0, "huge repeat/repeatRange expansion completes quickly (BLS-D8 bound)");
 }
 
+// BLS-D5/D6: value-domain safety — negatives clamp to 0, and arithmetic saturates instead of
+// overflowing (no UB). Realistic inputs never reach these regimes; the point is defined behavior.
+void testValueDomainSafety(TestContext& t)
+{
+    // BLS-D5: negative construction values are clamped to 0, keeping the set in-domain.
+    t.expectSetEq(BitLengthSet(-3).expand(), {0}, "negative singleton clamps to {0}");
+    t.expectSetEq(BitLengthSet(ValueSet{-5, -1, 4}).expand(), {0, 4}, "negative elements clamp to 0");
+    t.expect(BitLengthSet(-8).min() == 0 && BitLengthSet(-8).max() == 0, "clamped singleton bounds are 0");
+    // The former inverted-range symptom is gone: min() <= max() holds (I2).
+    const BitLengthSet negRange = BitLengthSet(-8).repeatRange(3);
+    t.expect(negRange.min() == 0 && negRange.max() == 0 && negRange.min() <= negRange.max(),
+             "repeatRange over a clamped negative keeps min <= max (I2)");
+    // Padding and modulo behave on the clamped (non-negative) value.
+    t.expectSetEq(BitLengthSet(-3).padToAlignment(8).expand(), {0}, "pad of a clamped negative is 0");
+    t.expectSetEq(BitLengthSet(-3).modulo(8), {0}, "modulo of a clamped negative is {0}");
+
+    // BLS-D6: arithmetic saturates at INT64_MAX rather than wrapping (no signed-overflow UB).
+    const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+    const BitLengthSet huge(kMax - 2);
+    t.expect(huge.padToAlignment(8).max() == kMax, "pad near INT64_MAX saturates instead of wrapping");
+    t.expect(huge.padToAlignment(8).min() >= huge.min(), "saturated pad stays monotone (no wrap to negative)");
+    t.expect((huge + BitLengthSet(10)).max() == kMax, "sum past INT64_MAX saturates");
+    t.expect((huge + BitLengthSet(10)).min() >= 0, "saturated sum never wraps negative");
+    t.expect(BitLengthSet(kMax / 2 + 1).repeat(4).max() == kMax, "product past INT64_MAX saturates");
+    t.expect(BitLengthSet(kMax).repeat(1000000).max() == kMax, "large repeat product saturates, no UB");
+    // Saturated expansion is still a well-formed, non-empty set of non-negative values.
+    const auto sat = (huge + BitLengthSet(ValueSet{0, 10})).expand();
+    t.expect(!sat.empty() && *sat.begin() >= 0, "saturated expansion is non-empty and non-negative");
+}
+
 // Spec: str() grammar (leaf ascending order, post-clamp parameters, operator spellings).
 void testStr(TestContext& t)
 {
@@ -593,6 +624,7 @@ bool runBitLengthSetTests()
     testExpand(t);
     testExpandChecked(t);
     testExpandBoundedRepeat(t);
+    testValueDomainSafety(t);
     testStr(t);
     testPersistence(t);
     testDsdlCompositionPatterns(t);

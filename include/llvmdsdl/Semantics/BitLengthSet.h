@@ -60,21 +60,26 @@ namespace llvmdsdl
 ///
 /// ## Value domain (precondition)
 ///
-/// Elements model bit counts: every value supplied to a constructor MUST be non-negative.
-/// The class does not validate this precondition; behavior for negative elements is
-/// unspecified (rounding, `min()`/`max()`, and `modulo()` are known to disagree with the
-/// mathematical definitions above in that regime).
+/// Elements model bit counts: every value supplied to a constructor SHOULD be non-negative. A
+/// negative element is a caller precondition violation; rather than leave behavior undefined, the
+/// constructors clamp any negative value to 0 (BLS-D5), keeping the set in-domain so `min()`,
+/// `max()`, and `modulo()` stay well-defined. Realistic inputs never trigger this.
 ///
-/// All arithmetic is unchecked `std::int64_t`. Callers MUST ensure that no derivable value —
-/// including intermediate sums `max(a) + max(b)`, products `max(x) * k`, and alignment
-/// round-ups — exceeds `INT64_MAX`; violation is signed-overflow undefined behavior.
+/// Arithmetic is `std::int64_t` but SATURATES at `INT64_MAX` instead of overflowing: any derivable
+/// value that would exceed the range — an intermediate sum `max(a) + max(b)`, a product
+/// `max(x) * k`, or an alignment round-up — clamps to `INT64_MAX` rather than invoking
+/// signed-overflow undefined behavior (BLS-D6). Bit lengths of real definitions are far below the
+/// ceiling, so saturation is a safety net, not an expected result; when it does engage, a
+/// saturated `max()` simply reads as "astronomically large" to callers (e.g. extent checks).
 ///
 /// ## Invariants
 ///
 ///   - I1 (non-empty): S is never empty. The default constructor and the coercion of an empty
 ///     input set both yield {0}. Consequently `min()` and `max()` are always defined.
 ///   - I2 (ordered bounds): `min() <= max()`, and both are elements of S (exactness of the
-///     symbolic bounds; holds on the specified non-negative domain).
+///     symbolic bounds). Always holds now that inputs are clamped non-negative; in the (unreached
+///     for real inputs) saturation regime a bound may read `INT64_MAX` without being a true
+///     element, but `min() <= max()` is still guaranteed.
 ///   - I3 (immutability / persistence): objects are immutable values. Every operation returns
 ///     a new object and never observes or mutates its operands afterwards. Copies are O(1)
 ///     and share structure safely.
@@ -158,13 +163,13 @@ public:
     BitLengthSet();
 
     /// @brief Constructs a singleton set {value}.
-    /// @param[in] value Single bit-length value.
-    /// @pre `value >= 0` (not validated; see class-level "Value domain").
+    /// @param[in] value Single bit-length value; a negative value is clamped to 0 (see "Value
+    ///            domain").
     explicit BitLengthSet(std::int64_t value);
 
     /// @brief Constructs a concrete set from expanded values.
-    /// @param[in] values Explicit value set; an empty set is coerced to {0} (invariant I1).
-    /// @pre Every element is `>= 0` (not validated; see class-level "Value domain").
+    /// @param[in] values Explicit value set; an empty set is coerced to {0} (invariant I1) and any
+    ///            negative element is clamped to 0 (see "Value domain").
     explicit BitLengthSet(std::set<std::int64_t> values);
 
     /// @brief Returns the exact minimum of the denoted set.
@@ -274,7 +279,7 @@ public:
     /// Denotes `{ x + y : x in S(lhs), y in S(rhs) }` — the bit-length set of two entities
     /// serialized back-to-back. Commutative and associative in value-set semantics;
     /// `BitLengthSet(0)` is the identity. O(1): allocates one node, shares operand structure.
-    /// @pre No derivable sum overflows `std::int64_t` (unchecked).
+    /// @note Derived sums saturate at `INT64_MAX` rather than overflowing (see "Value domain").
     friend BitLengthSet operator+(const BitLengthSet& lhs, const BitLengthSet& rhs);
 
     /// @brief Set union of two symbolic sets.
