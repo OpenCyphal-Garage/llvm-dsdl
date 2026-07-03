@@ -32,6 +32,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
@@ -572,6 +573,23 @@ void testPersistence(TestContext& t)
     mutated                    = mutated + s;
     t.expectSetEq(copy.expand(), {24}, "copies keep their value when the source is reassigned");
     t.expectSetEq(mutated.expand(), {32}, "reassigned variable holds the new value");
+
+    // BLS-D7: a moved-from object is left denoting {0} — every call on it is well-defined, not a
+    // null-root crash. Both move-construction and move-assignment reset the source.
+    BitLengthSet       movedFromCtor(ValueSet{8, 16, 24});
+    const BitLengthSet movedIntoCtor = std::move(movedFromCtor);
+    t.expectSetEq(movedIntoCtor.expand(), {8, 16, 24}, "move-constructed target keeps the value");
+    t.expectSetEq(movedFromCtor.expand(), {0}, "move-constructed source is left denoting {0} (BLS-D7)");
+    t.expect(movedFromCtor.min() == 0 && movedFromCtor.max() == 0 && movedFromCtor.fixed(),
+             "moved-from source has well-defined bounds, not a null-root crash");
+    t.expect(movedFromCtor.str() == "{0}", "moved-from source renders as {0}");
+    t.expectSetEq((movedFromCtor + BitLengthSet(8)).expand(), {8}, "moved-from source is still usable in operators");
+
+    BitLengthSet movedFromAssign(40);
+    BitLengthSet assignTarget(1);
+    assignTarget = std::move(movedFromAssign);
+    t.expectSetEq(assignTarget.expand(), {40}, "move-assigned target keeps the value");
+    t.expectSetEq(movedFromAssign.expand(), {0}, "move-assigned source is left denoting {0} (BLS-D7)");
 }
 
 // Spec examples: the composition patterns the semantic analyzer builds (structs, unions,

@@ -149,9 +149,10 @@ namespace llvmdsdl
 ///
 /// ## Move semantics
 ///
-/// A moved-from `BitLengthSet` holds no state and MUST NOT be used except to destroy or
-/// assign to it; any other member call dereferences a null root (undefined behavior,
-/// currently a crash — BLS-D7).
+/// A moved-from `BitLengthSet` is left denoting `{0}` — a valid, usable state (invariant I1),
+/// not a null/unspecified one. Every member call on it is well-defined; `root_` is never null
+/// (BLS-D7). Moves remain O(1): the source is reset to a shared zero-leaf singleton, no
+/// allocation.
 ///
 class BitLengthSet final
 {
@@ -161,6 +162,17 @@ public:
     /// Note this denotes "the entity serializes to exactly zero bits", not "no information":
     /// the denoted set is never empty (invariant I1), and {0} is the identity of `operator+`.
     BitLengthSet();
+
+    /// @name Special members
+    /// Copies share structure (O(1)). Moves are O(1) and leave the source denoting `{0}` — a
+    /// valid, usable state rather than a null one (see "Move semantics"; BLS-D7).
+    /// @{
+    BitLengthSet(const BitLengthSet&)            = default;
+    BitLengthSet& operator=(const BitLengthSet&) = default;
+    BitLengthSet(BitLengthSet&& other) noexcept;
+    BitLengthSet& operator=(BitLengthSet&& other) noexcept;
+    ~BitLengthSet() = default;
+    /// @}
 
     /// @brief Constructs a singleton set {value}.
     /// @param[in] value Single bit-length value; a negative value is clamped to 0 (see "Value
@@ -296,9 +308,12 @@ private:
     /// @brief Constructs from internal node root.
     explicit BitLengthSet(std::shared_ptr<const Node> root);
 
-    /// @brief Root of the persistent symbolic expression tree.
-    ///
-    /// Never null except in a moved-from object (see class-level "Move semantics").
+    /// @brief Process-wide shared leaf denoting `{0}`, used to reset moved-from objects (BLS-D7).
+    /// @return A stable, non-null root shared by all `{0}`-valued moved-from sources.
+    static const std::shared_ptr<const Node>& zeroLeaf();
+
+    /// @brief Root of the persistent symbolic expression tree. Never null (BLS-D7): constructed
+    ///        objects hold a real node, and moves reset the source to `zeroLeaf()`.
     std::shared_ptr<const Node> root_;
 };
 

@@ -805,6 +805,36 @@ BitLengthSet::BitLengthSet(std::shared_ptr<const Node> root)
 {
 }
 
+const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
+{
+    // One immutable, shared {0} leaf for the whole process. Immutability makes sharing safe, and
+    // resetting a moved-from source to it is a refcount bump — moves stay O(1) and allocation-free.
+    static const std::shared_ptr<const Node> leaf = [] {
+        auto n    = std::make_shared<Node>();
+        n->kind   = Node::Kind::Leaf;
+        n->values = {0};
+        return std::shared_ptr<const Node>(std::move(n));
+    }();
+    return leaf;
+}
+
+BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
+    : root_(std::move(other.root_))
+{
+    // Leave the source denoting {0} rather than null, so any later use is well-defined (BLS-D7).
+    other.root_ = zeroLeaf();
+}
+
+BitLengthSet& BitLengthSet::operator=(BitLengthSet&& other) noexcept
+{
+    if (this != &other)
+    {
+        root_       = std::move(other.root_);
+        other.root_ = zeroLeaf();
+    }
+    return *this;
+}
+
 std::int64_t BitLengthSet::min() const
 {
     return root_->min();

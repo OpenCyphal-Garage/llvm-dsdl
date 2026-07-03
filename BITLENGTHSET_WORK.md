@@ -160,8 +160,12 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
   The old probe now returns `INT64_MAX` and exits cleanly under UBSan-trap; a `testValueDomainSafety`
   case locks it in. Parallels the roadmap's `Rational` overflow item.
 
-- **BLS-D7 — Moved-from use dereferences null. (Low/Medium) (probe)** Any member call on a
-  moved-from object segfaults (`root_` is null). Documented as UB; cheap to harden.
+- **BLS-D7 — Moved-from use dereferences null. (Low/Medium) (probe) — ✅ FIXED 2026-07-02.** Any
+  member call on a moved-from object segfaulted (`root_` was null after the defaulted move).
+  **Fix:** user-defined move constructor / move assignment reset the source to a process-wide
+  shared zero-leaf, so a moved-from object denotes `{0}` — a valid, usable state (invariant I1),
+  never null. Moves stay O(1) (a refcount bump, no allocation). The former crashing probe now
+  reports `{0}` and exits cleanly; a `testPersistence` case covers both move paths.
 
 ### Compile-time DoS (performance)
 
@@ -236,7 +240,8 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 8c. `expandBoundedRepeat` (huge `repeat`/`repeatRange` counts are exact and fast: value parity for
     a 10⁶ count, inexact flag for a truncated 5·10⁷ count, wall-clock guard — BLS-D8).
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
-11. Persistence / value semantics (I3).
+11. Persistence / value semantics (I3), including moved-from safety (moved-from denotes `{0}`,
+    usable in every operation — BLS-D7).
 12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
     actual shapes the Analyzer builds.
 
@@ -296,9 +301,9 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
   constructors clamp negatives to 0, defining the previously-unspecified regime; `pad`/`modulo`/
   `repeatRange` no longer invert `min`/`max`, and `fixed() ≡ min()==max()` is now unconditionally
   sound (BLS-D15).
-- [ ] **Harden moved-from state (BLS-D7).**
-  Either restore the `{0}` leaf on move (so the object stays usable per I1) or make member
-  functions assert on a null `root_` with a clear message instead of segfaulting.
+- [x] **Harden moved-from state (BLS-D7).** *(done 2026-07-02)* User-defined move ctor/assignment
+  reset the source to a shared `{0}` leaf, so a moved-from object stays usable (I1) and `root_` is
+  never null. O(1), no allocation. Covered by `testPersistence`.
 - [ ] **Fix `expand(0)` to honor I1 (BLS-D3).**
   Never return the empty set; clamp `limit` to `≥ 1` internally (or assert). Promote the `BLS-D3`
   XFAIL in `testExpand`.
