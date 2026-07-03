@@ -15,6 +15,7 @@
 #define LLVMDSDL_SEMANTICS_BITLENGTHSET_H
 
 #include <cstdint>
+#include <flat_set>
 #include <memory>
 #include <set>
 #include <string>
@@ -62,30 +63,29 @@ namespace llvmdsdl
 ///
 /// Elements model bit counts: every value supplied to a constructor SHOULD be non-negative. A
 /// negative element is a caller precondition violation; rather than leave behavior undefined, the
-/// constructors clamp any negative value to 0 (BLS-D5), keeping the set in-domain so `min()`,
-/// `max()`, and `modulo()` stay well-defined. Realistic inputs never trigger this.
+/// constructors clamp any negative value to 0, keeping the set in-domain so `min()`, `max()`, and
+/// `modulo()` stay well-defined. Realistic inputs never trigger this.
 ///
 /// Arithmetic is `std::int64_t` but SATURATES at `INT64_MAX` instead of overflowing: any derivable
 /// value that would exceed the range — an intermediate sum `max(a) + max(b)`, a product
 /// `max(x) * k`, or an alignment round-up — clamps to `INT64_MAX` rather than invoking
-/// signed-overflow undefined behavior (BLS-D6). Bit lengths of real definitions are far below the
-/// ceiling, so saturation is a safety net, not an expected result; when it does engage, a
-/// saturated `max()` simply reads as "astronomically large" to callers (e.g. extent checks).
+/// signed-overflow undefined behavior. Bit lengths of real definitions are far below the ceiling,
+/// so saturation is a safety net, not an expected result; when it does engage, a saturated `max()`
+/// simply reads as "astronomically large" to callers (e.g. extent checks).
 ///
 /// The out-of-domain clamps throughout the API — negative element -> 0, `alignment < 1` -> 1,
-/// `count < 0` -> 0, `divisor <= 0` -> `{0}` — are INTENTIONAL, defined recovery, not silent bugs
-/// (BLS-D12). This layer has no diagnostic channel; validating inputs against DSDL limits is the
-/// caller's responsibility (e.g. the analyzer), and the clamps guarantee this class stays
-/// well-defined regardless.
+/// `count < 0` -> 0, `divisor <= 0` -> `{0}` — are INTENTIONAL, defined recovery. This layer has no
+/// diagnostic channel; validating inputs against DSDL limits is the caller's responsibility (e.g.
+/// the analyzer), and the clamps guarantee this class stays well-defined regardless.
 ///
 /// ## Invariants
 ///
 ///   - I1 (non-empty): S is never empty. The default constructor and the coercion of an empty
 ///     input set both yield {0}. Consequently `min()` and `max()` are always defined.
-///   - I2 (ordered bounds): `min() <= max()`, and both are elements of S (exactness of the
-///     symbolic bounds). Always holds now that inputs are clamped non-negative; in the (unreached
-///     for real inputs) saturation regime a bound may read `INT64_MAX` without being a true
-///     element, but `min() <= max()` is still guaranteed.
+///   - I2 (ordered bounds): `min() <= max()` is guaranteed unconditionally, and on the
+///     non-negative value domain both are true elements of S (the symbolic bounds are exact). In
+///     the saturation regime (unreached by real inputs) a bound may read `INT64_MAX` without being
+///     a true element of S.
 ///   - I3 (immutability / persistence): objects are immutable values. Every operation returns
 ///     a new object and never observes or mutates its operands afterwards. Copies are O(1)
 ///     and share structure safely.
@@ -129,8 +129,7 @@ namespace llvmdsdl
 ///     never truncates), NOT by expanding S. The sole exception is a defensive internal cap on
 ///     the working modulus (only ever widened by padding with an alignment coprime to `d`,
 ///     which does not occur for the power-of-two alignments used in practice): beyond that cap
-///     the result degrades to the `expand()`-based approximation and may be incomplete. This
-///     is the fix for former defect BLS-D1.
+///     the result degrades to the `expand()`-based approximation and may be incomplete.
 ///
 /// ## Complexity and robustness caveats (as implemented)
 ///
@@ -138,16 +137,16 @@ namespace llvmdsdl
 ///     they allocate one node and share children.
 ///   - `min()`, `max()`, `expand()`, `modulo()`, and `str()` evaluate ITERATIVELY and MEMOIZED:
 ///     each distinct node (for `modulo()`, each distinct `(node, modulus)`) is computed once, so a
-///     heavily shared graph (e.g. `s = s + s` applied n times) costs O(nodes), not O(2^n)
-///     (BLS-D9). No call-stack recursion is used, so arbitrarily deep expressions do not overflow
-///     the stack — and neither does destruction, which is likewise iterative (BLS-D10). `str()`
-///     still renders the tree, so its OUTPUT length is unbounded for a shared graph, but it uses
-///     bounded stack.
-///   - `repeat(k)`/`repeatRange(k)` expansion is bounded to O(convergence) rounds — the
-///     truncated shifted sumset reaches a fixpoint (and `repeatRange` also stops once later
-///     terms move past the kept window) — so a large `k` no longer drives the loop count
-///     (former compile-time DoS BLS-D8). Cost still depends on `limit` and the item values, not
-///     on `k`.
+///     heavily shared graph (e.g. `s = s + s` applied n times) costs O(nodes), not O(2^n). No
+///     call-stack recursion is used, so arbitrarily deep expressions do not overflow the stack —
+///     and neither does destruction, which is likewise iterative. `str()` renders the tree, so its
+///     OUTPUT length is unbounded for a shared graph, though it uses bounded stack.
+///   - `repeat(k)`/`repeatRange(k)` expansion is bounded to O(convergence) rounds — the truncated
+///     shifted sumset reaches a fixpoint (and `repeatRange` also stops once later terms move past
+///     the kept window) — so a large `k` does not drive the loop count. Cost depends on `limit`
+///     and the item values, not on `k`. A single truncating `Add` can still cost up to O(limit^2)
+///     in the rare case where both children have ~limit/2 elements forming a minimal sumset (the
+///     full sumset must be visited); the common truncating case is O(limit).
 ///
 /// ## Concurrency
 ///
@@ -158,9 +157,8 @@ namespace llvmdsdl
 /// ## Move semantics
 ///
 /// A moved-from `BitLengthSet` is left denoting `{0}` — a valid, usable state (invariant I1),
-/// not a null/unspecified one. Every member call on it is well-defined; `root_` is never null
-/// (BLS-D7). Moves remain O(1): the source is reset to a shared zero-leaf singleton, no
-/// allocation.
+/// not a null/unspecified one. Every member call on it is well-defined; `root_` is never null.
+/// Moves remain O(1): the source is reset to a shared zero-leaf singleton, no allocation.
 ///
 class BitLengthSet final
 {
@@ -173,7 +171,7 @@ public:
 
     /// @name Special members
     /// Copies share structure (O(1)). Moves are O(1) and leave the source denoting `{0}` — a
-    /// valid, usable state rather than a null one (see "Move semantics"; BLS-D7).
+    /// valid, usable state rather than a null one (see "Move semantics").
     /// @{
     BitLengthSet(const BitLengthSet&)            = default;
     BitLengthSet& operator=(const BitLengthSet&) = default;
@@ -251,19 +249,20 @@ public:
     /// @return `{ v mod d : v in S }`, complete for any set size.
     /// @note Computed by symbolic per-node residue propagation (each intermediate residue set is
     ///       a subset of Z/divisor), so it does NOT depend on `expand()` and never silently
-    ///       omits residues — the fix for former defect BLS-D1. The only non-exact case is a
-    ///       defensive internal modulus cap that a realistic (power-of-two-alignment) query
-    ///       never reaches; see the class-level "Exactness model".
+    ///       omits residues. The only non-exact case is a defensive internal modulus cap that a
+    ///       realistic (power-of-two-alignment) query never reaches; see the class-level
+    ///       "Exactness model".
     /// @note Intended for alignment reasoning (e.g. "can this offset be misaligned?"),
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
-    [[nodiscard]] std::set<std::int64_t> modulo(std::int64_t divisor) const;
+    [[nodiscard]] std::flat_set<std::int64_t> modulo(std::int64_t divisor) const;
 
     /// @brief An expansion together with a completeness signal.
     struct Expansion final
     {
         /// @brief A subset of S; equals S exactly iff `exact` is true. Never empty, never larger
-        ///        than the requested (clamped-to-`>= 1`) limit.
-        std::set<std::int64_t> values;
+        ///        than the requested (clamped-to-`>= 1`) limit. A `std::flat_set` (sorted, contiguous)
+        ///        — these sets are built once and iterated, so the flat layout beats a node-based set.
+        std::flat_set<std::int64_t> values;
 
         /// @brief True iff `values == S` — i.e. no node in the expression was truncated.
         bool exact{true};
@@ -276,9 +275,8 @@ public:
     ///         `<= limit`; otherwise a truncated subset (favouring the smaller elements — in
     ///         particular `max()` of the expansion may be less than `max()` of the set). No
     ///         completeness signal is reported; use `expandChecked()` when that matters.
-    /// @warning Expansion cost is NOT bounded by `limit` alone; see class-level complexity
-    ///          caveats (BLS-D8, BLS-D11).
-    [[nodiscard]] std::set<std::int64_t> expand(std::size_t limit = 16384) const;
+    /// @warning Expansion cost is NOT bounded by `limit` alone; see class-level complexity caveats.
+    [[nodiscard]] std::flat_set<std::int64_t> expand(std::size_t limit = 16384) const;
 
     /// @brief Like `expand()`, but also reports whether the result is complete (`== S`).
     /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.
@@ -333,12 +331,13 @@ private:
     /// @brief Constructs from internal node root.
     explicit BitLengthSet(std::shared_ptr<const Node> root);
 
-    /// @brief Process-wide shared leaf denoting `{0}`, used to reset moved-from objects (BLS-D7).
+    /// @brief Process-wide shared leaf denoting `{0}`; a moved-from object is reset to it so its
+    ///        root is never null and it keeps denoting `{0}`.
     /// @return A stable, non-null root shared by all `{0}`-valued moved-from sources.
     static const std::shared_ptr<const Node>& zeroLeaf();
 
-    /// @brief Root of the persistent symbolic expression tree. Never null (BLS-D7): constructed
-    ///        objects hold a real node, and moves reset the source to `zeroLeaf()`.
+    /// @brief Root of the persistent symbolic expression tree. Never null: constructed objects hold
+    ///        a real node, and moves reset the source to `zeroLeaf()`.
     std::shared_ptr<const Node> root_;
 };
 

@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <flat_set>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -45,8 +46,8 @@ namespace
 ///
 /// On overflow the result clamps to `INT64_MAX` instead of wrapping, so a pathological definition
 /// (huge `@extent`, array capacity, or deep nesting) yields a defined, saturated length rather
-/// than signed-overflow undefined behaviour (BLS-D6). Operands are non-negative bit lengths (the
-/// constructors clamp negatives to 0 — BLS-D5), so overflow is always toward `INT64_MAX`.
+/// than signed-overflow undefined behaviour. Operands are non-negative bit lengths (the
+/// constructors clamp negatives to 0), so overflow is always toward `INT64_MAX`.
 /// Realistic bit lengths are far below the ceiling, so this never triggers in practice.
 inline std::int64_t satAdd(const std::int64_t a, const std::int64_t b)
 {
@@ -192,10 +193,11 @@ struct ResidueSet final
     }
 };
 
-/// @brief Materializes a `ResidueSet` as the `std::set` the public `modulo()` API returns.
-std::set<std::int64_t> toStdSet(const ResidueSet& s)
+/// @brief Materializes a `ResidueSet` as the `std::flat_set` the public `modulo()` API returns.
+///        `forEach` yields residues ascending, so each insert appends (no shift).
+std::flat_set<std::int64_t> residueSetToFlatSet(const ResidueSet& s)
 {
-    std::set<std::int64_t> out;
+    std::flat_set<std::int64_t> out;
     s.forEach([&out](const std::int64_t r) { out.insert(r); });
     return out;
 }
@@ -248,7 +250,7 @@ bool cappedLcm(const std::int64_t a, const std::int64_t b, std::int64_t& result)
 /// The sequence A_0 = {0}, A_k = A_{k-1} (+) r (mod m) is a deterministic walk over subsets of
 /// Z/m, hence eventually periodic. Cycle detection answers arbitrarily large `count` in
 /// O(preperiod + period) mask operations, so a huge fixed-array repeat count cannot blow up this
-/// path (contrast BLS-D8 on `expand()`). The result is exact.
+/// path. The result is exact.
 ResidueSet exactlyKSumMod(const ResidueSet& r, const std::int64_t count, const std::int64_t m)
 {
     ResidueSet cur = zeroResidue(m);  // A_0
@@ -279,7 +281,7 @@ ResidueSet exactlyKSumMod(const ResidueSet& r, const std::int64_t count, const s
 ///
 /// The union is monotone and bounded by `m` elements; once the underlying sumset sequence A_k
 /// repeats a previously seen value, every later term is already accounted for, so the loop stops
-/// there. Exact, and O(preperiod + period) regardless of `countMax` (contrast BLS-D8).
+/// there. Exact, and O(preperiod + period) regardless of `countMax`.
 ResidueSet unionUpToKSumMod(const ResidueSet& r, const std::int64_t countMax, const std::int64_t m)
 {
     ResidueSet u = zeroResidue(m);  // the k = 0 term
@@ -324,9 +326,9 @@ ResidueSet unionUpToKSumMod(const ResidueSet& r, const std::int64_t countMax, co
 /// Evaluation is ITERATIVE and MEMOIZED: `min`/`max`/`expand`/`str`/`residues` first collect the
 /// distinct reachable nodes in post-order (`collectPostOrder`) and then compute each node once
 /// from its already-computed children. This visits a subgraph shared by m paths a single time
-/// (not m — fixes the exponential blow-up BLS-D9) and uses no call-stack recursion, so arbitrarily
-/// deep expressions do not overflow the stack (BLS-D10). Teardown is likewise iterative — see the
-/// custom destructor — so destroying a deep chain does not recurse either.
+/// (not m — avoiding the exponential blow-up of a naive per-path tree walk) and uses no call-stack
+/// recursion, so arbitrarily deep expressions do not overflow the stack. Teardown is likewise
+/// iterative — see the custom destructor — so destroying a deep chain does not recurse either.
 struct BitLengthSet::Node final
 {
     enum class Kind
@@ -339,14 +341,14 @@ struct BitLengthSet::Node final
         RepeatRange,
     } kind{Kind::Leaf};
 
-    std::set<std::int64_t>      values;
+    std::flat_set<std::int64_t> values;
     std::shared_ptr<const Node> lhs;
     std::shared_ptr<const Node> rhs;
     std::int64_t                param{0};
 
     Node() = default;
 
-    /// @brief Iterative teardown so destroying a deep chain does not recurse (BLS-D10).
+    /// @brief Iterative teardown so destroying a deep chain does not recurse.
     ///
     /// The default destructor would release `lhs`/`rhs` recursively: freeing the head of an
     /// N-deep chain would nest N destructor calls and overflow the stack. Instead, move children
@@ -386,7 +388,7 @@ struct BitLengthSet::Node final
     }
 
     /// @brief Collects every distinct node reachable from `root` in post-order (children before
-    ///        parents), deduplicating shared subgraphs. Iterative — no recursion (BLS-D9/D10).
+    ///        parents), deduplicating shared subgraphs. Iterative — no recursion.
     [[nodiscard]] static std::vector<const Node*> collectPostOrder(const Node* root)
     {
         std::vector<const Node*>                  order;
@@ -426,7 +428,7 @@ struct BitLengthSet::Node final
     ///   Pad: roundUp(min(lhs), a) — correct because rounding-up is monotone.
     ///   Repeat: param * min(lhs) — picking the minimum for every draw minimizes the sum.
     ///   RepeatRange: 0 — the k = 0 term; the smallest element only for non-negative domains.
-    /// Sums and products saturate at INT64_MAX rather than overflowing (BLS-D6). The
+    /// Sums and products saturate at INT64_MAX rather than overflowing. The
     /// `values.empty()` guard on Leaf is defensive: public constructors never produce an empty
     /// leaf (I1).
     [[nodiscard]] std::int64_t min() const
@@ -468,7 +470,7 @@ struct BitLengthSet::Node final
     /// Mirrors `min()`: Leaf takes the largest stored value; Add sums the maxima; Union takes
     /// the larger maximum; Pad rounds the child maximum up (monotone); Repeat and RepeatRange
     /// both yield param * max(lhs) — for RepeatRange this is the k = param term, the maximum
-    /// only on the non-negative value domain. Iterative and memoized (BLS-D9/D10).
+    /// only on the non-negative value domain. Iterative and memoized.
     [[nodiscard]] std::int64_t max() const
     {
         const auto                                    order = collectPostOrder(this);
@@ -505,11 +507,10 @@ struct BitLengthSet::Node final
     ///
     /// Returns `{values, exact}` where `values` is a subset of S with `|values| <= limit` and
     /// `exact` is true iff `values == S`. `limit` is assumed `>= 1` (the public entry point
-    /// clamps it), which keeps every result non-empty (invariant I1) and fixes the former
-    /// empty-set corner (BLS-D3). Truncation favours the smaller elements and always flips
-    /// `exact` to false. Per-kind:
+    /// clamps it), which keeps every result non-empty (invariant I1). Truncation favours the
+    /// smaller elements and always flips `exact` to false. Per-kind:
     ///
-    ///   - Leaf: the stored set, truncated to its smallest `limit` values if larger (BLS-D4);
+    ///   - Leaf: the stored set, truncated to its smallest `limit` values if larger;
     ///     exact iff it fit.
     ///   - Add: distinct sums of the children's (already capped) expansions, keeping the smallest
     ///     `limit`; exact iff both children are exact and no (limit+1)-th distinct sum appeared.
@@ -518,7 +519,7 @@ struct BitLengthSet::Node final
     ///   - Pad: each child value rounded up; non-expansive, so it never itself truncates; exact
     ///     iff the child is exact.
     ///   - Repeat / RepeatRange: iterated self-sum, but bounded to O(convergence) rounds rather
-    ///     than O(`param`) so a huge count cannot hang the compiler (BLS-D8). The item is shifted
+    ///     than O(`param`) so a huge count cannot hang the compiler. The item is shifted
     ///     to contain 0 (`V' = item - min`), which makes the shifted k-fold sumset monotone in k;
     ///     its smallest-`limit` view reaches a fixpoint, and `Repeat` stops there and adds
     ///     `param * min` back. `RepeatRange` additionally stops once every later term's minimum
@@ -526,10 +527,9 @@ struct BitLengthSet::Node final
     ///     overflowed `limit`.
     /// @brief Computes one node's expansion from its children's (already-computed) expansions.
     ///
-    /// Same per-kind logic as the recursive form, but children are read from `memo` (populated in
-    /// post-order) instead of recursing — so `expandChecked` visits each node once (BLS-D9) and
-    /// uses no call stack (BLS-D10). See the method doc for the per-kind semantics and BLS-D8's
-    /// bounded `Repeat`/`RepeatRange`.
+    /// Same per-kind logic, but children are read from `memo` (populated in post-order) instead of
+    /// recursing — so `expandChecked` visits each node once and uses no call stack. See the doc
+    /// above for the per-kind semantics and the bounded `Repeat`/`RepeatRange`.
     [[nodiscard]] static BitLengthSet::Expansion expandNode(
         const Node*                                                     n,
         std::size_t                                                     limit,
@@ -542,19 +542,22 @@ struct BitLengthSet::Node final
             {
                 return {n->values, true};
             }
-            std::set<std::int64_t> out(n->values.begin(),
-                                       std::next(n->values.begin(), static_cast<std::ptrdiff_t>(limit)));
+            // The source is already sorted and unique (it is a flat_set), so keep the smallest
+            // `limit` via the sorted_unique constructor — no re-sort.
+            std::flat_set<std::int64_t> out(std::sorted_unique,
+                                            n->values.begin(),
+                                            std::next(n->values.begin(), static_cast<std::ptrdiff_t>(limit)));
             return {std::move(out), false};
         }
         case Kind::Add: {
-            const auto&            l    = memo.at(n->lhs.get());
-            const auto&            r    = memo.at(n->rhs.get());
-            const std::int64_t     rmin = *r.values.begin();  // r is sorted and non-empty (I1)
-            std::set<std::int64_t> out;
-            bool                   overflow = false;
+            const auto&                 l    = memo.at(n->lhs.get());
+            const auto&                 r    = memo.at(n->rhs.get());
+            const std::int64_t          rmin = *r.values.begin();  // r is sorted and non-empty (I1)
+            std::flat_set<std::int64_t> out;
+            bool                        overflow = false;
             // `l.values`/`r.values` are sorted ascending. Once `out` holds the smallest `limit`
             // sums its max only shrinks, so we can prune whole rows/tails whose sums already exceed
-            // it — bounding the common (truncating) case to O(limit) instead of |l|*|r| (BLS-D11).
+            // it — bounding the common (truncating) case to O(limit) instead of |l|*|r|.
             // The remaining exact case (both children ~limit/2 with a minimal sumset) is inherently
             // quadratic in |l|*|r|, capped at ~(limit/2)^2, since the full sumset must be visited.
             for (const auto lv : l.values)
@@ -583,9 +586,9 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Union: {
-            const auto&            l   = memo.at(n->lhs.get());
-            const auto&            r   = memo.at(n->rhs.get());
-            std::set<std::int64_t> out = l.values;
+            const auto&                 l   = memo.at(n->lhs.get());
+            const auto&                 r   = memo.at(n->rhs.get());
+            std::flat_set<std::int64_t> out = l.values;
             out.insert(r.values.begin(), r.values.end());
             bool overflow = false;
             while (out.size() > limit)
@@ -596,9 +599,9 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Pad: {
-            const auto&            l = memo.at(n->lhs.get());
-            const auto             a = std::max<std::int64_t>(1, n->param);
-            std::set<std::int64_t> out;
+            const auto&                 l = memo.at(n->lhs.get());
+            const auto                  a = std::max<std::int64_t>(1, n->param);
+            std::flat_set<std::int64_t> out;
             for (const auto v : l.values)
             {
                 out.insert(satRoundUp(v, a));  // padding is non-expansive: |out| <= |l.values|
@@ -615,17 +618,17 @@ struct BitLengthSet::Node final
             const std::int64_t base  = *item.values.begin();  // min; item.values is non-empty (I1)
             // Work in the 0-shifted domain V' = { v - base }, which contains 0. The exactly-k
             // sumset of V' is then monotone in k, so its smallest-`limit` view reaches a fixpoint
-            // in O(convergence) rounds; detecting it removes the O(param) dependence (BLS-D8).
-            std::set<std::int64_t> shifted;
+            // in O(convergence) rounds; detecting it removes the O(param) dependence.
+            std::flat_set<std::int64_t> shifted;
             for (const auto v : item.values)
             {
                 shifted.insert(v - base);
             }
-            auto acc = std::set<std::int64_t>{0};  // A'_0
+            auto acc = std::flat_set<std::int64_t>{0};  // A'_0
             for (std::int64_t i = 0; i < n->param; ++i)
             {
-                std::set<std::int64_t> next;
-                bool                   overflow = false;
+                std::flat_set<std::int64_t> next;
+                bool                        overflow = false;
                 for (const auto a : acc)
                 {
                     for (const auto b : shifted)
@@ -652,8 +655,8 @@ struct BitLengthSet::Node final
                 }
             }
             // Undo the shift: the exactly-param sumset of the original set is `param*base + A'_param`.
-            const std::int64_t     shift = satMul(n->param, base);
-            std::set<std::int64_t> out;
+            const std::int64_t          shift = satMul(n->param, base);
+            std::flat_set<std::int64_t> out;
             for (const auto x : acc)
             {
                 out.insert(satAdd(shift, x));
@@ -666,20 +669,20 @@ struct BitLengthSet::Node final
             {
                 return {{0}, true};
             }
-            const auto&            item  = memo.at(n->lhs.get());
-            bool                   exact = item.exact;
-            const std::int64_t     base  = *item.values.begin();  // min; item.values is non-empty (I1)
-            std::set<std::int64_t> shifted;
+            const auto&                 item  = memo.at(n->lhs.get());
+            bool                        exact = item.exact;
+            const std::int64_t          base  = *item.values.begin();  // min; item.values is non-empty (I1)
+            std::flat_set<std::int64_t> shifted;
             for (const auto v : item.values)
             {
                 shifted.insert(v - base);
             }
-            std::set<std::int64_t> out{0};                           // the k = 0 term
-            auto                   acc = std::set<std::int64_t>{0};  // A'_0
+            std::flat_set<std::int64_t> out{0};                                // the k = 0 term
+            auto                        acc = std::flat_set<std::int64_t>{0};  // A'_0
             for (std::int64_t i = 1; i <= maxCount; ++i)
             {
                 // Term k = i starts at `i*base`; once that passes the kept window, and every later
-                // term starts even higher, none can enter the smallest-`limit` result (BLS-D8).
+                // term starts even higher, none can enter the smallest-`limit` result.
                 // Those later terms are non-empty elements of S that we are dropping, so the result
                 // is a proper subset — mark it inexact before bailing.
                 const std::int64_t shift = satMul(i, base);  // term k = i is `shift + A'_i`
@@ -688,8 +691,8 @@ struct BitLengthSet::Node final
                     exact = false;
                     break;
                 }
-                std::set<std::int64_t> next;
-                bool                   overflow = false;
+                std::flat_set<std::int64_t> next;
+                bool                        overflow = false;
                 for (const auto a : acc)
                 {
                     for (const auto b : shifted)
@@ -732,7 +735,7 @@ struct BitLengthSet::Node final
         return {{0}, true};
     }
 
-    /// @brief Iterative, memoized driver for `expandNode` (BLS-D9/D10).
+    /// @brief Iterative, memoized driver for `expandNode`.
     [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
     {
         const auto                                               order = collectPostOrder(this);
@@ -749,8 +752,8 @@ struct BitLengthSet::Node final
     ///
     /// Works entirely in the `ResidueSet` bitmask domain and never enumerates S: every
     /// intermediate result is a subset of Z/modulus (at most `modulus` bits), so it is exact and
-    /// cheap even when S is astronomically large. This is what makes `modulo()` complete (fixes
-    /// BLS-D1). On success the root's residues are unioned into `out`.
+    /// cheap even when S is astronomically large — this is what makes `modulo()` complete for any
+    /// set size. On success the root's residues are unioned into `out`.
     ///
     /// Per-kind derivation (modulus `m >= 1`):
     ///   - Leaf: reduce each stored value mod `m`.
@@ -766,7 +769,7 @@ struct BitLengthSet::Node final
     ///
     /// Iterative and memoized over `(node, modulus)` contexts (a `Pad` evaluates its child at the
     /// widened modulus `lcm(a, modulus)`, so one node can appear at several moduli): this visits a
-    /// shared subgraph once per distinct context (BLS-D9) and uses no call stack (BLS-D10). The
+    /// shared subgraph once per distinct context and uses no call stack. The
     /// root's residues are unioned into `out` on success.
     [[nodiscard]] bool residues(std::int64_t modulus, ResidueSet& out) const
     {
@@ -882,7 +885,7 @@ struct BitLengthSet::Node final
     /// aid only — not a stable serialization format.
     [[nodiscard]] std::string str() const
     {
-        // Iterative token stack so a deep chain does not overflow the call stack (BLS-D10). Each
+        // Iterative token stack so a deep chain does not overflow the call stack. Each
         // frame is either "expand this node" (non-null node) or "emit this literal" (null node).
         // Composite tokens are pushed in REVERSE so the LIFO stack emits them left-to-right; this
         // reproduces the recursive tree rendering exactly (shared subgraphs still print per
@@ -958,7 +961,7 @@ struct BitLengthSet::Node final
 };
 
 BitLengthSet::BitLengthSet()
-    : root_(zeroLeaf())  // share the process-wide {0} leaf — no allocation (BLS-D14)
+    : root_(zeroLeaf())  // share the process-wide {0} leaf — no allocation
 {
 }
 
@@ -973,27 +976,15 @@ BitLengthSet::BitLengthSet(std::set<std::int64_t> values)
     leaf->kind = Node::Kind::Leaf;
     // Value domain: bit lengths are non-negative. A negative element is a caller precondition
     // violation; clamp it to 0 so the set stays in-domain and the saturating arithmetic in
-    // min()/max()/expand() remains sound (BLS-D5). Realistic inputs never hit this.
-    bool hasNegative = false;
+    // min()/max()/expand() remains sound. The `std::set` input is sorted ascending and
+    // clamping negatives to 0 keeps it sorted, so build the flat_set leaf storage directly.
+    std::vector<std::int64_t> clamped;
+    clamped.reserve(values.size());
     for (const auto v : values)
     {
-        if (v < 0)
-        {
-            hasNegative = true;
-            break;
-        }
+        clamped.push_back(v < 0 ? 0 : v);
     }
-    if (hasNegative)
-    {
-        for (const auto v : values)
-        {
-            leaf->values.insert(v < 0 ? 0 : v);
-        }
-    }
-    else
-    {
-        leaf->values = std::move(values);
-    }
+    leaf->values = std::flat_set<std::int64_t>(std::move(clamped));  // sorts + de-duplicates
     // Invariant I1: the denoted set is never empty; an empty input denotes {0}.
     if (leaf->values.empty())
     {
@@ -1023,7 +1014,7 @@ const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
 BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     : root_(std::move(other.root_))
 {
-    // Leave the source denoting {0} rather than null, so any later use is well-defined (BLS-D7).
+    // Leave the source denoting {0} rather than null, so any later use is well-defined.
     other.root_ = zeroLeaf();
 }
 
@@ -1093,7 +1084,7 @@ BitLengthSet BitLengthSet::repeatRange(std::int64_t countMax) const
     return BitLengthSet(node);
 }
 
-std::set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
+std::flat_set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
 {
     // Contract: a non-positive divisor yields the sentinel {0} instead of dividing by zero.
     if (divisor <= 0)
@@ -1101,18 +1092,17 @@ std::set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
         return {0};
     }
     // Primary path: exact per-node symbolic residues in a dense bitmask (bounded by `divisor`,
-    // never truncated). This makes the result complete for every set, however large — the fix
-    // for BLS-D1.
+    // never truncated), so the result is complete for every set, however large.
     ResidueSet mask(divisor);
     if (root_->residues(divisor, mask))
     {
-        return toStdSet(mask);
+        return residueSetToFlatSet(mask);
     }
     // Fallback (not reached for realistic, alignment-driven divisors): symbolic evaluation
-    // required a modulus exceeding kResidueModulusCap. Degrade to the older expand()-based
+    // required a modulus exceeding kResidueModulusCap. Degrade to the expand()-based
     // approximation, which may be incomplete for very large sets. See kResidueModulusCap.
-    std::set<std::int64_t> out;
-    const auto             expanded = expand();
+    std::flat_set<std::int64_t> out;
+    const auto                  expanded = expand();
     for (const auto v : expanded)
     {
         out.insert(v % divisor);
@@ -1120,14 +1110,14 @@ std::set<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
     return out;
 }
 
-std::set<std::int64_t> BitLengthSet::expand(std::size_t limit) const
+std::flat_set<std::int64_t> BitLengthSet::expand(std::size_t limit) const
 {
     return expandChecked(limit).values;
 }
 
 BitLengthSet::Expansion BitLengthSet::expandChecked(std::size_t limit) const
 {
-    // Clamp to >= 1 so the result is never empty (invariant I1; fixes BLS-D3's expand(0) corner).
+    // Clamp to >= 1 so the result is never empty even for expand(0) (invariant I1).
     return root_->expandChecked(std::max<std::size_t>(1, limit));
 }
 

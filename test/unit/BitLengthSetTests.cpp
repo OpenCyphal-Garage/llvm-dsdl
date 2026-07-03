@@ -10,16 +10,14 @@
 /// @file
 /// Regression tests for the BitLengthSet SPECIFICATION (see BitLengthSet.h).
 ///
-/// These tests are written against the documented contract — the denotational semantics,
-/// invariants I1..I4, the algebraic laws, and the exactness model — not against the current
-/// implementation. Expected values are computed by an independent reference model
-/// (`refAdd`, `refPad`, `refRepeat`, ...) that transcribes the specification directly.
-///
-/// Spec clauses that the current implementation is known to violate are exercised via
-/// `expectDefect(...)` (an XFAIL marker): they do not fail the suite while the defect stands,
-/// and they print a loud note when a defect stops reproducing so the test can be promoted to
-/// an enforced `expect(...)`. Defect IDs (BLS-D1, ...) refer to the defect log in the
-/// BitLengthSet analysis report and the cross-references in BitLengthSet.h/.cpp.
+/// The tests target the documented contract — the denotational semantics, invariants I1..I4, the
+/// algebraic laws, and the exactness model — rather than any implementation detail. Expected
+/// values come from an independent reference model (`refAdd`, `refPad`, `refRepeat`, ...) that
+/// transcribes the specification directly, so a regression in either the class or the reference
+/// shows up as a mismatch. Coverage also includes the robustness properties that are easy to get
+/// wrong: value-domain clamping and saturation, exactness signalling, bounded expansion of huge
+/// repeat counts, iterative/memoized evaluation of deep and heavily-shared graphs, and moved-from
+/// usability.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -107,7 +105,11 @@ ValueSet refModulo(const ValueSet& a, std::int64_t divisor)
     return out;
 }
 
-bool isSubset(const ValueSet& sub, const ValueSet& super)
+// Generic over container type: the class returns std::flat_set from expand()/modulo() while the
+// reference model and constructor inputs use std::set, so the harness compares any two sorted
+// ranges of int64.
+template <typename Range>
+bool isSubset(const Range& sub, const ValueSet& super)
 {
     for (const auto v : sub)
     {
@@ -119,7 +121,8 @@ bool isSubset(const ValueSet& sub, const ValueSet& super)
     return true;
 }
 
-std::string setToString(const ValueSet& s)
+template <typename Range>
+std::string setToString(const Range& s)
 {
     std::ostringstream out;
     out << '{';
@@ -143,9 +146,7 @@ std::string setToString(const ValueSet& s)
 
 struct TestContext final
 {
-    int failures       = 0;
-    int defectsPresent = 0;
-    int defectsFixed   = 0;
+    int failures = 0;
 
     void expect(const bool condition, const std::string& what)
     {
@@ -156,31 +157,29 @@ struct TestContext final
         }
     }
 
-    void expectSetEq(const ValueSet& actual, const ValueSet& expected, const std::string& what)
+    // Compare any two sorted int64 ranges (std::set, std::flat_set, or an initializer_list of
+    // expected values). Two overloads so braced `{...}` literals resolve to the initializer_list
+    // form while containers use the generic one.
+    template <typename Actual, typename Expected>
+    void expectSetEq(const Actual& actual, const Expected& expected, const std::string& what)
     {
-        if (actual != expected)
+        expectSetEqImpl(actual, expected, what);
+    }
+
+    template <typename Actual>
+    void expectSetEq(const Actual& actual, std::initializer_list<std::int64_t> expected, const std::string& what)
+    {
+        expectSetEqImpl(actual, expected, what);
+    }
+
+    template <typename Actual, typename Expected>
+    void expectSetEqImpl(const Actual& actual, const Expected& expected, const std::string& what)
+    {
+        if (!std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()))
         {
             ++failures;
             std::cerr << "BitLengthSet spec FAIL: " << what << "\n  expected " << setToString(expected)
                       << "\n  actual   " << setToString(actual) << "\n";
-        }
-    }
-
-    /// XFAIL marker: `specHolds` states the SPEC assertion. While the defect stands this
-    /// prints a note and does not fail the suite; once fixed it asks to be promoted.
-    void expectDefect(const char* id, const bool specHolds, const std::string& what)
-    {
-        if (specHolds)
-        {
-            ++defectsFixed;
-            std::cout << "BitLengthSet: known defect " << id << " no longer reproduces (" << what
-                      << "); promote this check to an enforced expect().\n";
-        }
-        else
-        {
-            ++defectsPresent;
-            std::cout << "BitLengthSet: known defect " << id << " reproduced; spec assertion deferred: " << what
-                      << "\n";
         }
     }
 };
@@ -352,7 +351,8 @@ void testModulo(TestContext& t)
     t.expectSetEq(BitLengthSet(8).modulo(0), {0}, "divisor 0 yields sentinel {0}");
     t.expectSetEq(BitLengthSet(8).modulo(-8), {0}, "negative divisor yields sentinel {0}");
 
-    // Completeness at (and past) the former expand()-based limit — now irrelevant to exactness.
+    // modulo is exact regardless of set size (it does not go through expand()), including at and
+    // past the default expansion limit.
     ValueSet big;
     for (std::int64_t i = 0; i < 16384; ++i)
     {
@@ -360,15 +360,15 @@ void testModulo(TestContext& t)
     }
     t.expectSetEq(BitLengthSet(big).modulo(5), {0, 1, 2, 3, 4}, "modulo complete at the default expansion limit");
 
-    // BLS-D1 (FIXED): with symbolic residues, a residue carried only by the single largest
-    // member survives even though the set has ~20000 elements, far beyond any expand() limit.
+    // A residue carried only by the single largest member survives even though the set has ~20000
+    // elements, far beyond any expand() limit.
     ValueSet aligned;
     for (std::int64_t i = 1; i <= 20000; ++i)
     {
         aligned.insert(16 * i);
     }
     const auto residues = (BitLengthSet(aligned) | BitLengthSet(16 * 20000 + 7)).modulo(8);
-    t.expectSetEq(residues, {0, 7}, "modulo(8) is complete and sound for a ~20000-element set (BLS-D1 fixed)");
+    t.expectSetEq(residues, {0, 7}, "modulo(8) is complete and sound for a ~20000-element set");
 
     // Symbolic residues compose exactly across the whole algebra, without enumerating S, and
     // without blowing up on huge repeat counts (would time out under an expand()-based modulo).
@@ -426,18 +426,18 @@ void testExpand(TestContext& t)
         t.expect(v % 8 == 0, "large expansion values are sound (multiples of 8)");
     }
 
-    // BLS-D4 (FIXED): a leaf larger than the limit is truncated to `limit` of its values.
+    // A leaf larger than the limit is truncated to `limit` of its values.
     const auto leafTrunc = BitLengthSet(ValueSet{1, 2, 3}).expand(2);
-    t.expect(leafTrunc.size() <= 2, "leaf expansion respects the limit (BLS-D4 fixed)");
+    t.expect(leafTrunc.size() <= 2, "leaf expansion respects the limit");
     t.expect(isSubset(leafTrunc, ValueSet{1, 2, 3}), "truncated leaf expansion is sound");
 
-    // BLS-D3 (FIXED): I1 robustness — the limit is clamped to >= 1, so expand(0) is never empty.
+    // I1 robustness — the limit is clamped to >= 1, so expand(0) is never empty.
     t.expect(!(BitLengthSet(5) | BitLengthSet(3)).expand(0).empty(),
-             "expansion never returns the empty set, even for limit 0 (BLS-D3 fixed)");
+             "expansion never returns the empty set, even for limit 0");
     t.expect(BitLengthSet(ValueSet{1, 2, 3}).expand(0).size() == 1, "expand(0) clamps to a one-element result");
 }
 
-// Spec: expandChecked() reports exactness (true iff values == S); BLS-D2 exactness signal.
+// Spec: expandChecked() reports exactness (true iff values == S).
 void testExpandChecked(TestContext& t)
 {
     // Exact: the whole set fits under the limit at every node.
@@ -461,7 +461,7 @@ void testExpandChecked(TestContext& t)
     t.expect(!(BitLengthSet(32) + widePayload).expandChecked(4096).exact,
              "inexactness propagates through Add from a truncated child");
 
-    // Leaf exactness tracks the limit precisely (BLS-D4 companion).
+    // Leaf exactness tracks the limit precisely.
     t.expect(BitLengthSet(ValueSet{1, 2, 3}).expandChecked(3).exact, "leaf exact when it fits the limit");
     t.expect(!BitLengthSet(ValueSet{1, 2, 3}).expandChecked(2).exact, "leaf inexact when truncated");
 
@@ -470,7 +470,7 @@ void testExpandChecked(TestContext& t)
     t.expect(BitLengthSet(8).repeat(3).expandChecked(16).exact, "fixed repeat is exact");
 }
 
-// BLS-D8: repeat/repeatRange expansion is bounded by convergence, not by the count, so a huge
+// Repeat/repeatRange expansion is bounded by convergence, not by the count, so a huge
 // count is both correct (exact values) and fast (does not run `count` rounds).
 void testExpandBoundedRepeat(TestContext& t)
 {
@@ -507,18 +507,18 @@ void testExpandBoundedRepeat(TestContext& t)
     sink += BitLengthSet(ValueSet{8, 16}).repeatRange(50000000).expand(256).size();
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     t.expect(sink > 0, "bounded-repeat sink is used");
-    t.expect(secs < 2.0, "huge repeat/repeatRange expansion completes quickly (BLS-D8 bound)");
+    t.expect(secs < 2.0, "huge repeat/repeatRange expansion completes quickly");
 }
 
-// BLS-D5/D6: value-domain safety — negatives clamp to 0, and arithmetic saturates instead of
+// Value-domain safety — negatives clamp to 0, and arithmetic saturates instead of
 // overflowing (no UB). Realistic inputs never reach these regimes; the point is defined behavior.
 void testValueDomainSafety(TestContext& t)
 {
-    // BLS-D5: negative construction values are clamped to 0, keeping the set in-domain.
+    // Negative construction values are clamped to 0, keeping the set in-domain.
     t.expectSetEq(BitLengthSet(-3).expand(), {0}, "negative singleton clamps to {0}");
     t.expectSetEq(BitLengthSet(ValueSet{-5, -1, 4}).expand(), {0, 4}, "negative elements clamp to 0");
     t.expect(BitLengthSet(-8).min() == 0 && BitLengthSet(-8).max() == 0, "clamped singleton bounds are 0");
-    // The former inverted-range symptom is gone: min() <= max() holds (I2).
+    // A clamped-negative input keeps min() <= max() (I2).
     const BitLengthSet negRange = BitLengthSet(-8).repeatRange(3);
     t.expect(negRange.min() == 0 && negRange.max() == 0 && negRange.min() <= negRange.max(),
              "repeatRange over a clamped negative keeps min <= max (I2)");
@@ -526,7 +526,7 @@ void testValueDomainSafety(TestContext& t)
     t.expectSetEq(BitLengthSet(-3).padToAlignment(8).expand(), {0}, "pad of a clamped negative is 0");
     t.expectSetEq(BitLengthSet(-3).modulo(8), {0}, "modulo of a clamped negative is {0}");
 
-    // BLS-D6: arithmetic saturates at INT64_MAX rather than wrapping (no signed-overflow UB).
+    // Arithmetic saturates at INT64_MAX rather than wrapping (no signed-overflow UB).
     const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
     const BitLengthSet huge(kMax - 2);
     t.expect(huge.padToAlignment(8).max() == kMax, "pad near INT64_MAX saturates instead of wrapping");
@@ -540,7 +540,7 @@ void testValueDomainSafety(TestContext& t)
     t.expect(!sat.empty() && *sat.begin() >= 0, "saturated expansion is non-empty and non-negative");
 }
 
-// BLS-D13: is_aligned_at (exact, built on modulo) and value-set operator==/operator!=.
+// is_aligned_at (exact, built on modulo) and value-set operator==/operator!=.
 void testAlignmentAndEquality(TestContext& t)
 {
     // is_aligned_at: byte-aligned struct vs. a bit-misaligned one.
@@ -564,11 +564,11 @@ void testAlignmentAndEquality(TestContext& t)
     t.expect(!(BitLengthSet(8) == BitLengthSet(16)), "operator== is false for distinct sets");
 }
 
-// BLS-D9/D10: evaluation is memoized (shared DAGs are not re-walked exponentially) and iterative
+// Evaluation is memoized (shared DAGs are not re-walked exponentially) and iterative
 // (deep expressions do not overflow the stack, including at destruction).
 void testDeepAndSharedGraphs(TestContext& t)
 {
-    // BLS-D9: `s = s + s` for n levels denotes 2^n paths to the leaf. Correct results at n = 40
+    // `s = s + s` for n levels denotes 2^n paths to the leaf. Correct results at n = 40
     // are only reachable with memoization — a per-path walk would not finish. A timing guard
     // pins down that it is sub-exponential.
     const auto   dagStart = std::chrono::steady_clock::now();
@@ -577,12 +577,12 @@ void testDeepAndSharedGraphs(TestContext& t)
     {
         dag = dag + dag;
     }
-    t.expect(dag.min() == 0 && dag.max() == (std::int64_t{1} << 40), "shared DAG min/max are correct (BLS-D9)");
-    t.expectSetEq(dag.modulo(8), {0, 1, 2, 3, 4, 5, 6, 7}, "shared DAG modulo is correct (BLS-D9)");
+    t.expect(dag.min() == 0 && dag.max() == (std::int64_t{1} << 40), "shared DAG min/max are correct");
+    t.expectSetEq(dag.modulo(8), {0, 1, 2, 3, 4, 5, 6, 7}, "shared DAG modulo is correct");
     const double dagSecs = std::chrono::duration<double>(std::chrono::steady_clock::now() - dagStart).count();
-    t.expect(dagSecs < 2.0, "shared DAG evaluation is sub-exponential (BLS-D9)");
+    t.expect(dagSecs < 2.0, "shared DAG evaluation is sub-exponential");
 
-    // BLS-D10: an N-deep chain of `+` must evaluate every operation and then destruct without
+    // An N-deep chain of `+` must evaluate every operation and then destruct without
     // overflowing the call stack.
     const int  depth     = 200000;
     const auto deepStart = std::chrono::steady_clock::now();
@@ -592,14 +592,14 @@ void testDeepAndSharedGraphs(TestContext& t)
         {
             chain = chain + BitLengthSet(1);
         }
-        t.expect(chain.min() == depth && chain.max() == depth, "deep chain min/max computed iteratively (BLS-D10)");
+        t.expect(chain.min() == depth && chain.max() == depth, "deep chain min/max computed iteratively");
         t.expect(chain.fixed(), "deep chain is fixed-size");
-        t.expectSetEq(chain.modulo(4), {0}, "deep chain modulo computed iteratively (BLS-D10)");
-        t.expect(!chain.expand(8).empty(), "deep chain expand computed iteratively (BLS-D10)");
-        t.expect(chain.str().size() > static_cast<std::size_t>(depth), "deep chain str rendered iteratively (BLS-D10)");
+        t.expectSetEq(chain.modulo(4), {0}, "deep chain modulo computed iteratively");
+        t.expect(!chain.expand(8).empty(), "deep chain expand computed iteratively");
+        t.expect(chain.str().size() > static_cast<std::size_t>(depth), "deep chain str rendered iteratively");
     }  // chain destructor runs here — must not overflow the stack
     const double deepSecs = std::chrono::duration<double>(std::chrono::steady_clock::now() - deepStart).count();
-    t.expect(deepSecs < 10.0, "deep chain build/eval/teardown completes without stack overflow (BLS-D10)");
+    t.expect(deepSecs < 10.0, "deep chain build/eval/teardown completes without stack overflow");
 }
 
 // Spec: str() grammar (leaf ascending order, post-clamp parameters, operator spellings).
@@ -636,12 +636,12 @@ void testPersistence(TestContext& t)
     t.expectSetEq(copy.expand(), {24}, "copies keep their value when the source is reassigned");
     t.expectSetEq(mutated.expand(), {32}, "reassigned variable holds the new value");
 
-    // BLS-D7: a moved-from object is left denoting {0} — every call on it is well-defined, not a
+    // A moved-from object is left denoting {0} — every call on it is well-defined, not a
     // null-root crash. Both move-construction and move-assignment reset the source.
     BitLengthSet       movedFromCtor(ValueSet{8, 16, 24});
     const BitLengthSet movedIntoCtor = std::move(movedFromCtor);
     t.expectSetEq(movedIntoCtor.expand(), {8, 16, 24}, "move-constructed target keeps the value");
-    t.expectSetEq(movedFromCtor.expand(), {0}, "move-constructed source is left denoting {0} (BLS-D7)");
+    t.expectSetEq(movedFromCtor.expand(), {0}, "move-constructed source is left denoting {0}");
     t.expect(movedFromCtor.min() == 0 && movedFromCtor.max() == 0 && movedFromCtor.fixed(),
              "moved-from source has well-defined bounds, not a null-root crash");
     t.expect(movedFromCtor.str() == "{0}", "moved-from source renders as {0}");
@@ -651,7 +651,7 @@ void testPersistence(TestContext& t)
     BitLengthSet assignTarget(1);
     assignTarget = std::move(movedFromAssign);
     t.expectSetEq(assignTarget.expand(), {40}, "move-assigned target keeps the value");
-    t.expectSetEq(movedFromAssign.expand(), {0}, "move-assigned source is left denoting {0} (BLS-D7)");
+    t.expectSetEq(movedFromAssign.expand(), {0}, "move-assigned source is left denoting {0}");
 }
 
 // Spec examples: the composition patterns the semantic analyzer builds (structs, unions,
@@ -711,11 +711,6 @@ bool runBitLengthSetTests()
     testPersistence(t);
     testDsdlCompositionPatterns(t);
 
-    if (t.defectsPresent > 0)
-    {
-        std::cout << "BitLengthSet: " << t.defectsPresent
-                  << " known spec defect(s) reproduced (deferred, not failing the suite)\n";
-    }
     if (t.failures > 0)
     {
         std::cerr << "BitLengthSet spec tests: " << t.failures << " failure(s)\n";
