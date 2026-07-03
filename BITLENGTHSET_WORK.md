@@ -66,8 +66,8 @@ subject to an expansion limit.
 - `expand(limit)` returns a **sound under-approximation** (subset of `S`): exact when every
   intermediate subexpression's cardinality `≤ limit`; otherwise an **unspecified** subset, with
   no error reported and no guarantee of returning the smallest elements.
-- `modulo(d)` is the exact residue set **only within** the `expand()` exactness envelope,
-  because it is derived from `expand()` at the default limit.
+- `modulo(d)` is the **exact** residue set for any set size, computed by symbolic per-node
+  residue propagation over `Z/d` (not derived from `expand()`). BLS-D1, fixed.
 
 ### Preconditions
 
@@ -97,11 +97,20 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
 
 ### Functional correctness
 
-- **BLS-D1 — `modulo()` silently incomplete past the expansion limit. (High) (probe)**
-  A union of 20,000 multiples of 16 plus the single value `320007` returns residues `{0}` mod 8;
-  the misaligned member's residue `7` vanishes. Because `modulo()` exists for alignment
-  reasoning, this can make a sometimes-misaligned layout appear always-aligned. Root cause: it
-  is derived from `expand()`, whose Union node discards the largest members on truncation.
+- **BLS-D1 — `modulo()` silently incomplete past the expansion limit. (High) (probe) — ✅ FIXED
+  2026-07-02.**
+  A union of 20,000 multiples of 16 plus the single value `320007` returned residues `{0}` mod 8;
+  the misaligned member's residue `7` vanished. Because `modulo()` exists for alignment
+  reasoning, this could make a sometimes-misaligned layout appear always-aligned. Root cause: it
+  was derived from `expand()`, whose Union node discards the largest members on truncation.
+  **Fix:** `modulo()` now computes residues by symbolic per-node propagation over `Z/divisor`
+  (`Node::residues`), so every intermediate set has at most `divisor` elements and nothing is
+  ever truncated — exact for any set size. `Pad` widens the working modulus to
+  `lcm(alignment, divisor)`; `Repeat`/`RepeatRange` use cycle-detecting sumset iteration, so even
+  a `repeat(2·10⁶)` modulo is exact and instant (it also cannot trip the BLS-D8 blow-up on this
+  path). A defensive `kResidueModulusCap` retains the old `expand()`-based approximation only for
+  a pathological modulus that realistic power-of-two alignments never produce. The
+  regression test is now an enforced `expectSetEq(... {0,7} ...)`, no longer an XFAIL.
 
 - **BLS-D2 — `expand()` truncation keeps an arbitrary subset, and it feeds `_offset_`
   evaluation. (High) (probe)**
@@ -182,7 +191,8 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 5. `padToAlignment` (denotation, clamp to 1, idempotence, alignment postcondition, bounds).
 6. `repeat` (clamps, `repeat(1)==x`, `repeat(3)==s+s+s`, scaled bounds).
 7. `repeatRange` (clamps, always-contains-0, bounds, reference model).
-8. `modulo` (residues, sentinel, completeness **exactly at** the 16384 boundary, soundness).
+8. `modulo` (residues, sentinel, **exact completeness for a ~20000-element set — BLS-D1
+   regression**, composed/large-count/pad-widened trees, reference model).
 9. `expand` (exactness at `|S|==limit`, soundness + cap under truncation, `≤ symbolic max`).
 10. `str` (grammar, ascending leaf order, post-clamp parameters).
 11. Persistence / value semantics (I3).
@@ -191,14 +201,14 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
 
 The three assertions of the original test file are preserved as a subset.
 
-**XFAIL mechanism.** Spec clauses the implementation currently violates (BLS-D1, D3, D4) are
-wrapped in `expectDefect(id, specHolds, what)`. While the defect reproduces the marker prints a
-note and does **not** fail the suite; when a fix lands, `specHolds` becomes true and the marker
-announces it should be promoted to an enforced `expect()`. This lets the suite ship green today
-while precisely tracking the known gaps.
+**XFAIL mechanism.** Spec clauses the implementation still violates (BLS-D3, D4 — BLS-D1 has
+since been fixed and its check promoted) are wrapped in `expectDefect(id, specHolds, what)`.
+While the defect reproduces the marker prints a note and does **not** fail the suite; when a fix
+lands, `specHolds` becomes true and the marker announces it should be promoted to an enforced
+`expect()`. This lets the suite ship green today while precisely tracking the known gaps.
 
-**Result:** all ~190 enforced assertions pass; exactly the three known defects reproduce; the
-full unit binary exits 0.
+**Result:** all enforced assertions pass (including the promoted BLS-D1 completeness check);
+exactly the two remaining known defects (BLS-D3, BLS-D4) reproduce; the full unit binary exits 0.
 
 ---
 
@@ -208,11 +218,12 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
 
 ### P0 — correctness of layout/alignment reasoning
 
-- [ ] **Make `modulo()` exact via per-node symbolic residues (BLS-D1, BLS-D16).**
-  Compute residue sets bottom-up mod `d` instead of expanding first — residue sets are bounded
-  by `d`, so this is both exact and cheap, and never truncates. This is what pydsdl's
-  `_bit_length_set/_symbolic.py` does (`__mod__` over the symbolic tree). After the fix, promote
-  the `BLS-D1` XFAIL in `testModulo` to an enforced `expect()`.
+- [x] **Make `modulo()` exact via per-node symbolic residues (BLS-D1, partial BLS-D16).** *(done
+  2026-07-02)* Residues are now computed bottom-up mod `d` (`Node::residues`); each intermediate
+  set is bounded by `d`, so it is exact and cheap and never truncates — mirroring pydsdl's
+  `_bit_length_set/_symbolic.py` `__mod__`. The `BLS-D1` XFAIL in `testModulo` was promoted to an
+  enforced `expectSetEq`, and coverage was added for composed/large-count/pad-widened trees.
+  (BLS-D16 remains open for `expand()`, which still has no exactness signal.)
 - [ ] **Give `expand()` an exact-or-signal contract (BLS-D2, BLS-D16).**
   Return truncation status (e.g. `std::optional`, an out-param `bool exact`, or a small result
   struct) so callers can react. Then make

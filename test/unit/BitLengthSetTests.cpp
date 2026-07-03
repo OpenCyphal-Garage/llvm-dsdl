@@ -336,7 +336,7 @@ void testRepeatRange(TestContext& t)
     t.expect(b.min() == 0 && b.max() == 24, "repeatRange bounds on {8} (original regression)");
 }
 
-// Spec: modulo denotes the exact residue set (within the expand() exactness envelope).
+// Spec: modulo denotes the EXACT residue set for any set size (symbolic per-node residues).
 void testModulo(TestContext& t)
 {
     t.expectSetEq(BitLengthSet(ValueSet{32, 40, 48, 56}).modulo(16), {0, 8}, "modulo(16) residues");
@@ -348,7 +348,7 @@ void testModulo(TestContext& t)
     t.expectSetEq(BitLengthSet(8).modulo(0), {0}, "divisor 0 yields sentinel {0}");
     t.expectSetEq(BitLengthSet(8).modulo(-8), {0}, "negative divisor yields sentinel {0}");
 
-    // Completeness inside the exactness envelope: a leaf exactly at the default expand limit.
+    // Completeness at (and past) the former expand()-based limit — now irrelevant to exactness.
     ValueSet big;
     for (std::int64_t i = 0; i < 16384; ++i)
     {
@@ -356,19 +356,35 @@ void testModulo(TestContext& t)
     }
     t.expectSetEq(BitLengthSet(big).modulo(5), {0, 1, 2, 3, 4}, "modulo complete at the default expansion limit");
 
-    // BLS-D1: outside the envelope, residues silently disappear. Spec requires completeness
-    // for alignment reasoning; the current expand()-based derivation drops the largest
-    // members (Union truncation) and with them their residues.
+    // BLS-D1 (FIXED): with symbolic residues, a residue carried only by the single largest
+    // member survives even though the set has ~20000 elements, far beyond any expand() limit.
     ValueSet aligned;
     for (std::int64_t i = 1; i <= 20000; ++i)
     {
         aligned.insert(16 * i);
     }
     const auto residues = (BitLengthSet(aligned) | BitLengthSet(16 * 20000 + 7)).modulo(8);
-    t.expectDefect("BLS-D1",
-                   residues.count(7) == 1,
-                   "modulo must include residue 7 of member 320007 even when |S| exceeds the expand limit");
-    t.expect(isSubset(residues, ValueSet{0, 7}), "modulo result is sound (no fabricated residues)");
+    t.expectSetEq(residues, {0, 7}, "modulo(8) is complete and sound for a ~20000-element set (BLS-D1 fixed)");
+
+    // Symbolic residues compose exactly across the whole algebra, without enumerating S, and
+    // without blowing up on huge repeat counts (would time out under an expand()-based modulo).
+    t.expectSetEq((BitLengthSet(32) + BitLengthSet(8).repeatRange(3)).padToAlignment(8).modulo(16),
+                  {0, 8},
+                  "modulo through Add + RepeatRange + Pad (composed-set regression)");
+    t.expectSetEq(BitLengthSet(8).repeatRange(2000000).modulo(8),
+                  {0},
+                  "modulo of a 2e6-capacity repeatRange is exact and fast");
+    t.expectSetEq(BitLengthSet(3).repeat(1000000).modulo(8),
+                  refModulo({3000000}, 8),
+                  "modulo of a 1e6-count repeat matches the single reachable value");
+    // Residue union stabilizes by small k, so a small reference count matches the 1e6 query.
+    t.expectSetEq(BitLengthSet(ValueSet{1, 3}).repeatRange(1000000).modulo(8),
+                  refModulo(refRepeatRange({1, 3}, 8), 8),
+                  "modulo of a 1e6-cap repeatRange saturates to all residues");
+    // Pad widens the working modulus to lcm(alignment, divisor); verify an odd divisor case.
+    t.expectSetEq(BitLengthSet(ValueSet{1, 2, 3, 4, 5, 6, 7, 8}).padToAlignment(4).modulo(6),
+                  refModulo(refPad({1, 2, 3, 4, 5, 6, 7, 8}, 4), 6),
+                  "modulo after padding with an alignment coprime-ish to the divisor");
 }
 
 // Spec: expand() exactness condition, soundness under truncation, size cap, limit >= 1.

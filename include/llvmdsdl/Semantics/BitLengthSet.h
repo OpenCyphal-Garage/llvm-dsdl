@@ -107,11 +107,13 @@ namespace llvmdsdl
 ///         guaranteed to be the smallest `limit` elements), and no error is reported;
 ///       * `limit` MUST be >= 1; `expand(0)` is a precondition violation (see D3 in the
 ///         defect log: it can currently return an empty set).
-///   - `modulo(d)` is defined as the exact residue set of S; because the current
-///     implementation derives it from `expand()` with the default limit, completeness is only
-///     guaranteed under the same conditions as `expand()` exactness. Callers performing
-///     alignment proofs MUST NOT rely on `modulo()` completeness for sets that may exceed the
-///     default expansion limit (tracked as defect BLS-D1).
+///   - `modulo(d)` returns the EXACT residue set of S for any set size. It is computed by
+///     symbolic per-node residue propagation (each intermediate set is a subset of Z/d, so it
+///     never truncates), NOT by expanding S. The sole exception is a defensive internal cap on
+///     the working modulus (only ever widened by padding with an alignment coprime to `d`,
+///     which does not occur for the power-of-two alignments used in practice): beyond that cap
+///     the result degrades to the `expand()`-based approximation and may be incomplete. This
+///     is the fix for former defect BLS-D1.
 ///
 /// ## Complexity and robustness caveats (as implemented)
 ///
@@ -204,13 +206,14 @@ public:
     ///       (the length-prefix field is accounted for separately by the caller).
     [[nodiscard]] BitLengthSet repeatRange(std::int64_t countMax) const;
 
-    /// @brief Computes the residues of the denoted set modulo `divisor`.
+    /// @brief Computes the exact residues of the denoted set modulo `divisor`.
     /// @param[in] divisor Modulo divisor; values `< 1` yield `{0}` (silent sentinel).
-    /// @return `{ v mod d : v in S }` — subject to the completeness caveat below.
-    /// @warning Completeness is NOT guaranteed for sets whose expansion exceeds the default
-    ///          `expand()` limit: the result is then the residue set of an unspecified subset
-    ///          of S and may silently omit residues (defect BLS-D1). It is complete whenever
-    ///          `expand()` is exact for this expression at the default limit.
+    /// @return `{ v mod d : v in S }`, complete for any set size.
+    /// @note Computed by symbolic per-node residue propagation (each intermediate residue set is
+    ///       a subset of Z/divisor), so it does NOT depend on `expand()` and never silently
+    ///       omits residues — the fix for former defect BLS-D1. The only non-exact case is a
+    ///       defensive internal modulus cap that a realistic (power-of-two-alignment) query
+    ///       never reaches; see the class-level "Exactness model".
     /// @note Intended for alignment reasoning (e.g. "can this offset be misaligned?"),
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
     [[nodiscard]] std::set<std::int64_t> modulo(std::int64_t divisor) const;
