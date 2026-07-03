@@ -24,6 +24,7 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -103,21 +104,6 @@ inline std::int64_t satRoundUp(const std::int64_t v, const std::int64_t a)
 /// `ResidueSet` to `kResidueModulusCap` bits = 8 KiB.
 constexpr std::int64_t kResidueModulusCap = 1 << 16;
 
-/// @brief Index of the lowest set bit of a non-zero 64-bit word (count of trailing zeros).
-inline int countTrailingZeros(const std::uint64_t v)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    return __builtin_ctzll(v);
-#else
-    int n = 0;
-    for (std::uint64_t x = v; (x & 1ULL) == 0ULL; x >>= 1)
-    {
-        ++n;
-    }
-    return n;
-#endif
-}
-
 /// @brief Dense bitmask over the residues `{0, ..., m-1}` of Z/m: bit `i` is set iff `i` is in
 ///        the set.
 ///
@@ -186,7 +172,9 @@ struct ResidueSet final
             std::uint64_t w = word(wi);
             while (w != 0)
             {
-                fn(static_cast<std::int64_t>(wi * 64) + countTrailingZeros(w));
+                // std::countr_zero is total (returns 64 for 0) and needs no non-zero precondition,
+                // though the loop guard already keeps `w` non-zero here.
+                fn(static_cast<std::int64_t>(wi * 64) + std::countr_zero(w));
                 w &= w - 1;  // clear lowest set bit
             }
         }
@@ -559,25 +547,37 @@ struct BitLengthSet::Node final
             return {std::move(out), false};
         }
         case Kind::Add: {
-            const auto&            l = memo.at(n->lhs.get());
-            const auto&            r = memo.at(n->rhs.get());
+            const auto&            l    = memo.at(n->lhs.get());
+            const auto&            r    = memo.at(n->rhs.get());
+            const std::int64_t     rmin = *r.values.begin();  // r is sorted and non-empty (I1)
             std::set<std::int64_t> out;
             bool                   overflow = false;
+            // `l.values`/`r.values` are sorted ascending. Once `out` holds the smallest `limit`
+            // sums its max only shrinks, so we can prune whole rows/tails whose sums already exceed
+            // it — bounding the common (truncating) case to O(limit) instead of |l|*|r| (BLS-D11).
+            // The remaining exact case (both children ~limit/2 with a minimal sumset) is inherently
+            // quadratic in |l|*|r|, capped at ~(limit/2)^2, since the full sumset must be visited.
             for (const auto lv : l.values)
             {
+                if (out.size() >= limit && satAdd(lv, rmin) > *out.rbegin())
+                {
+                    overflow = true;  // this lv's smallest sum is past the window; so is every later lv
+                    break;
+                }
                 for (const auto rv : r.values)
                 {
-                    out.insert(satAdd(lv, rv));
+                    const auto s = satAdd(lv, rv);
+                    if (out.size() >= limit && s > *out.rbegin())
+                    {
+                        overflow = true;  // a real sum beyond the kept window -> proper subset
+                        break;            // rv ascending, so the remaining sums are larger too
+                    }
+                    out.insert(s);
                     if (out.size() > limit)
                     {
                         out.erase(std::prev(out.end()));  // keep the smallest `limit`
                         overflow = true;
-                        break;
                     }
-                }
-                if (overflow)
-                {
-                    break;
                 }
             }
             return {std::move(out), l.exact && r.exact && !overflow};
@@ -958,12 +958,8 @@ struct BitLengthSet::Node final
 };
 
 BitLengthSet::BitLengthSet()
-    : root_(std::make_shared<Node>())
+    : root_(zeroLeaf())  // share the process-wide {0} leaf — no allocation (BLS-D14)
 {
-    auto leaf    = std::make_shared<Node>();
-    leaf->kind   = Node::Kind::Leaf;
-    leaf->values = {0};
-    root_        = leaf;
 }
 
 BitLengthSet::BitLengthSet(std::int64_t value)
@@ -1056,6 +1052,17 @@ bool BitLengthSet::fixed() const
     return min() == max();
 }
 
+bool BitLengthSet::is_aligned_at(std::int64_t alignment) const
+{
+    if (alignment < 1)
+    {
+        return true;  // trivially aligned
+    }
+    // Exact, since modulo() is exact: aligned iff every possible length reduces to residue 0.
+    const auto residues = modulo(alignment);
+    return residues.size() == 1 && *residues.begin() == 0;
+}
+
 BitLengthSet BitLengthSet::padToAlignment(std::int64_t alignment) const
 {
     auto node  = std::make_shared<Node>();
@@ -1145,6 +1152,25 @@ BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs)
     node->lhs  = lhs.root_;
     node->rhs  = rhs.root_;
     return BitLengthSet(node);
+}
+
+bool operator==(const BitLengthSet& lhs, const BitLengthSet& rhs)
+{
+    // Cheap necessary conditions first; then require both to expand exactly to the same values.
+    // `exact` on both sides is what makes this sound (no false positive): two sets that agree only
+    // on their smallest `limit` elements but differ beyond it are not declared equal. See header.
+    if (lhs.min() != rhs.min() || lhs.max() != rhs.max())
+    {
+        return false;
+    }
+    const auto l = lhs.expandChecked();
+    const auto r = rhs.expandChecked();
+    return l.exact && r.exact && l.values == r.values;
+}
+
+bool operator!=(const BitLengthSet& lhs, const BitLengthSet& rhs)
+{
+    return !(lhs == rhs);
 }
 
 }  // namespace llvmdsdl

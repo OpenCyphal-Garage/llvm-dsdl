@@ -540,6 +540,30 @@ void testValueDomainSafety(TestContext& t)
     t.expect(!sat.empty() && *sat.begin() >= 0, "saturated expansion is non-empty and non-negative");
 }
 
+// BLS-D13: is_aligned_at (exact, built on modulo) and value-set operator==/operator!=.
+void testAlignmentAndEquality(TestContext& t)
+{
+    // is_aligned_at: byte-aligned struct vs. a bit-misaligned one.
+    const BitLengthSet byteAligned = BitLengthSet(8) + BitLengthSet(16) + BitLengthSet(ValueSet{0, 8, 16});
+    t.expect(byteAligned.is_aligned_at(8), "all-multiple-of-8 set is byte-aligned");
+    t.expect(byteAligned.is_aligned_at(4) && byteAligned.is_aligned_at(1), "byte-aligned implies 4- and 1-aligned");
+    t.expect(!BitLengthSet(ValueSet{8, 12}).is_aligned_at(8), "a set with a non-multiple is not byte-aligned");
+    t.expect(BitLengthSet(0).is_aligned_at(8), "the zero-length set is aligned at any boundary");
+    t.expect(BitLengthSet(ValueSet{8, 12}).is_aligned_at(0), "alignment < 1 is trivially aligned");
+    // Exact even past the expansion limit (built on symbolic modulo, not expand).
+    t.expect(BitLengthSet(8).repeatRange(20000).is_aligned_at(8), "huge byte-multiple set is byte-aligned (exact)");
+
+    // operator== / operator!=: provable value-set equality.
+    t.expect(BitLengthSet(ValueSet{8, 16, 24}) == BitLengthSet(8).repeatRange(0) + BitLengthSet(ValueSet{8, 16, 24}),
+             "identity + a set equals the set");
+    t.expect(BitLengthSet(8) + BitLengthSet(16) == BitLengthSet(16) + BitLengthSet(8), "operator+ commutes (==)");
+    t.expect((BitLengthSet(8) | BitLengthSet(8)) == BitLengthSet(8), "union with self equals self (==)");
+    t.expect(BitLengthSet(8) != BitLengthSet(16), "distinct singletons are unequal");
+    t.expect(BitLengthSet(ValueSet{8, 16}) != BitLengthSet(8), "different sets are unequal");
+    t.expect(BitLengthSet() == BitLengthSet(0), "default ctor equals {0}");
+    t.expect(!(BitLengthSet(8) == BitLengthSet(16)), "operator== is false for distinct sets");
+}
+
 // BLS-D9/D10: evaluation is memoized (shared DAGs are not re-walked exponentially) and iterative
 // (deep expressions do not overflow the stack, including at destruction).
 void testDeepAndSharedGraphs(TestContext& t)
@@ -681,6 +705,7 @@ bool runBitLengthSetTests()
     testExpandChecked(t);
     testExpandBoundedRepeat(t);
     testValueDomainSafety(t);
+    testAlignmentAndEquality(t);
     testDeepAndSharedGraphs(t);
     testStr(t);
     testPersistence(t);

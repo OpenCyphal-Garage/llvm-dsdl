@@ -159,6 +159,12 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
   `__builtin_*_overflow` with a portable fallback) that clamp to `INT64_MAX` instead of wrapping.
   The old probe now returns `INT64_MAX` and exits cleanly under UBSan-trap; a `testValueDomainSafety`
   case locks it in. Parallels the roadmap's `Rational` overflow item.
+  *Related UB hardening (2026-07-02):* the `modulo` bitmask scan originally hand-rolled a
+  `countTrailingZeros` around `__builtin_ctzll`, whose zero case is undefined behavior (and whose
+  portable fallback spun forever on 0). Replaced outright with `std::countr_zero` — the project is
+  C++20 (`CMAKE_CXX_STANDARD 20`), so the standard, portable, `constexpr`, already-total function
+  was the right tool all along; the custom helper and its `#if`/fallback were removed. Behavior is
+  unchanged (the sole caller only passes non-zero words).
 
 - **BLS-D7 — Moved-from use dereferences null. (Low/Medium) (probe) — ✅ FIXED 2026-07-02.** Any
   member call on a moved-from object segfaulted (`root_` was null after the defaulted move).
@@ -199,20 +205,31 @@ cross-referenced from comments in `BitLengthSet.h` and `.cpp`.
   A 1M-deep chain now evaluates `min`/`max`/`expand`/`modulo`/`str` and destructs without
   overflowing; a `testDeepAndSharedGraphs` case (200k depth) locks it in.
 
-- **BLS-D11 — `Add.expand` can perform |l|·|r| inserts. (Low)** Up to ~2.7·10⁸ set inserts
-  before reaching the cap when sums collide heavily.
+- **BLS-D11 — `Add.expand` can perform |l|·|r| inserts. (Low) — ✅ FIXED 2026-07-02.** Up to
+  ~2.7·10⁸ inserts when sums collide heavily. **Fix:** since both child expansions are sorted, the
+  loop now prunes whole rows/tails whose sums already exceed the kept-window max (and keeps the
+  globally smallest `limit`), bounding the common truncating case to O(limit) — a two-8000-element
+  overflowing `Add` expands in ~30 ms. The residual is inherent: the rare exact case (both children
+  ~limit/2 with a minimal sumset) must visit the full sumset, capped at ~(limit/2)²; it is bounded
+  (~0.7 s at the default limit) and, thanks to BLS-D9 memoization, runs at most once.
 
 ### API / design
 
-- **BLS-D12 — Silent clamps mask caller bugs. (Low)** Negative counts, sub-1 alignments, and
-  non-positive divisors are silently normalized with no diagnostic (now specified, not fixed).
+- **BLS-D12 — Silent clamps. (Low) — ✅ RESOLVED (by design) 2026-07-02.** The clamps (negative
+  element → 0, `alignment < 1` → 1, `count < 0` → 0, `divisor ≤ 0` → `{0}`) are intentional,
+  defined recovery, now part of the value-domain contract (BLS-D5/D6). This layer has no diagnostic
+  channel; input validation against DSDL limits belongs to callers (the analyzer). Documented as
+  intentional in the header rather than changed.
 
-- **BLS-D13 — Missing `operator==` / `is_aligned_at()`. (Info)** pydsdl parity gaps.
-  `UavcanEmbeddedCatalog` reconstructs a `{min,max}` two-value approximation — sound for its
-  consumers but previously undocumented.
+- **BLS-D13 — Missing `operator==` / `is_aligned_at()`. (Info) — ✅ FIXED 2026-07-02.** Added
+  `is_aligned_at(alignment)` (exact — `modulo(alignment) == {0}`, so correct for any set size) and
+  value-set `operator==`/`operator!=` (definitive for sets within the expansion limit; conservative
+  — never a false positive — for larger ones). Both mirror pydsdl. Covered by
+  `testAlignmentAndEquality`.
 
-- **BLS-D14 — Default constructor double-allocates. (Info)** Allocates a node, then immediately
-  replaces it.
+- **BLS-D14 — Default constructor double-allocates. (Info) — ✅ FIXED 2026-07-02.** Now shares the
+  process-wide `zeroLeaf()` singleton (`root_(zeroLeaf())`), so default construction allocates
+  nothing.
 
 - **BLS-D15 — `fixed() ≡ min()==max()` unsound off-domain. (Info) — ✅ FIXED 2026-07-02** as a
   consequence of BLS-D5: negatives are clamped, so the domain is always non-negative and
@@ -253,6 +270,7 @@ independent in-test reference model (`refAdd`, `refPad`, `refRepeat`, `refRepeat
     usable in every operation — BLS-D7).
 11b. `deepAndSharedGraphs` (a 2⁴⁰-path shared DAG evaluates in O(nodes) with a timing guard — BLS-D9;
      a 200k-deep chain evaluates every op and destructs without overflow — BLS-D10).
+11c. `alignmentAndEquality` (`is_aligned_at` exact via modulo, value-set `==`/`!=` — BLS-D13).
 12. DSDL composition patterns (struct, tagged union, variable array, delimited composite) — the
     actual shapes the Analyzer builds.
 
@@ -271,7 +289,10 @@ fixed it announces it should be promoted.
 
 ## TODO — follow-up work to correct defects and improve the class
 
-Ordered by priority. Each item names the defect(s) it closes and the XFAIL marker to promote.
+**Status: all 16 defects (BLS-D1…BLS-D16) are resolved** — fixed in code, or (BLS-D12) resolved as
+intentional documented behavior. The items below are checked off with the date and approach.
+
+Ordered by priority. Each item names the defect(s) it closes.
 
 ### P0 — correctness of layout/alignment reasoning
 
@@ -315,23 +336,21 @@ Ordered by priority. Each item names the defect(s) it closes and the XFAIL marke
 - [x] **Harden moved-from state (BLS-D7).** *(done 2026-07-02)* User-defined move ctor/assignment
   reset the source to a shared `{0}` leaf, so a moved-from object stays usable (I1) and `root_` is
   never null. O(1), no allocation. Covered by `testPersistence`.
-- [ ] **Fix `expand(0)` to honor I1 (BLS-D3).**
-  Never return the empty set; clamp `limit` to `≥ 1` internally (or assert). Promote the `BLS-D3`
-  XFAIL in `testExpand`.
-- [ ] **Cap leaf expansion at `limit` (BLS-D4).**
-  Truncate oversized leaves consistently with interior nodes. Promote the `BLS-D4` XFAIL.
+- [x] **Fix `expand(0)` to honor I1 (BLS-D3).** *(done 2026-07-02, with the D2 work)* `expandChecked`
+  clamps `limit` to `≥ 1`, so the result is never empty; XFAIL promoted to enforced.
+- [x] **Cap leaf expansion at `limit` (BLS-D4).** *(done 2026-07-02, with the D2 work)* Oversized
+  leaves truncate to their smallest `limit` values and report inexact; XFAIL promoted.
 
 ### P3 — API ergonomics and diagnostics
 
-- [ ] **Reconsider silent clamps (BLS-D12).**
-  Add debug assertions or optional diagnostics for negative counts, sub-1 alignment, and
-  non-positive divisor so caller bugs surface instead of being normalized away.
-- [ ] **Add `operator==` and `is_aligned_at(alignment)` (BLS-D13).**
-  Close the pydsdl parity gap; `is_aligned_at` becomes trivial and exact once symbolic `modulo`
-  (P0) lands. Value equality needs a canonical comparison (expand-and-compare within the exact
-  envelope, or structural normalization).
-- [ ] **Drop the default constructor's double allocation (BLS-D14).**
-  Construct the `{0}` leaf once.
+- [x] **Reconsider silent clamps (BLS-D12).** *(resolved by design 2026-07-02)* Kept as intentional,
+  defined recovery and documented as such in the header; no diagnostic channel exists at this layer,
+  so validation belongs to callers.
+- [x] **Add `operator==` and `is_aligned_at(alignment)` (BLS-D13).** *(done 2026-07-02)*
+  `is_aligned_at` is exact via symbolic `modulo`; `operator==`/`!=` compare value sets (definitive
+  within the expansion limit, conservative — no false positive — beyond it).
+- [x] **Drop the default constructor's double allocation (BLS-D14).** *(done 2026-07-02)* Shares the
+  `zeroLeaf()` singleton — zero allocation.
 
 ### Test-suite maintenance
 

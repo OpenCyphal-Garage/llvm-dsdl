@@ -72,6 +72,12 @@ namespace llvmdsdl
 /// ceiling, so saturation is a safety net, not an expected result; when it does engage, a
 /// saturated `max()` simply reads as "astronomically large" to callers (e.g. extent checks).
 ///
+/// The out-of-domain clamps throughout the API — negative element -> 0, `alignment < 1` -> 1,
+/// `count < 0` -> 0, `divisor <= 0` -> `{0}` — are INTENTIONAL, defined recovery, not silent bugs
+/// (BLS-D12). This layer has no diagnostic channel; validating inputs against DSDL limits is the
+/// caller's responsibility (e.g. the analyzer), and the clamps guarantee this class stays
+/// well-defined regardless.
+///
 /// ## Invariants
 ///
 ///   - I1 (non-empty): S is never empty. The default constructor and the coercion of an empty
@@ -205,6 +211,13 @@ public:
     /// serializes to the same number of bits in every case.
     [[nodiscard]] bool fixed() const;
 
+    /// @brief Reports whether every possible length is a multiple of `alignment`.
+    /// @param[in] alignment Alignment in bits; values `< 1` are treated as 1 (always aligned).
+    /// @return True iff `modulo(alignment) == {0}` — i.e. the entity is `alignment`-aligned in
+    ///         every case. Exact for any set size (built on the exact symbolic `modulo`).
+    /// @note Mirrors pydsdl's `BitLengthSet.is_aligned_at`; the byte case is `is_aligned_at(8)`.
+    [[nodiscard]] bool is_aligned_at(std::int64_t alignment) const;
+
     /// @brief Rounds each candidate length up to the nearest multiple of `alignment`.
     /// @param[in] alignment Alignment in bits; values `< 1` are clamped to 1 (identity map).
     /// @return Set denoting `{ ceil(v / alignment) * alignment : v in S }`.
@@ -302,6 +315,16 @@ public:
     /// either alternative (e.g. tagged-union options). Commutative, associative, idempotent
     /// in value-set semantics. O(1): allocates one node, shares operand structure.
     friend BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs);
+
+    /// @brief Value-set equality of two symbolic sets (mirrors pydsdl's `BitLengthSet.__eq__`).
+    ///
+    /// True iff the two objects PROVABLY denote the same set: their `min()`/`max()` agree and both
+    /// expand exactly (at the default limit) to the same values. This is definitive for every set
+    /// that fits the expansion limit — the realistic case. For a set too large to expand exactly it
+    /// is conservative: it may return `false` for two sets that are in fact equal (a false
+    /// negative), but never `true` for two that differ (no false positive).
+    friend bool operator==(const BitLengthSet& lhs, const BitLengthSet& rhs);
+    friend bool operator!=(const BitLengthSet& lhs, const BitLengthSet& rhs);
 
 private:
     /// @brief Internal persistent expression node.
