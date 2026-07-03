@@ -45,6 +45,17 @@ if(DEFINED CTEST_TEST_DIR AND NOT CTEST_TEST_DIR STREQUAL "")
   list(APPEND DETERMINISM_MATRIX_ARGS --ctest-test-dir "${CTEST_TEST_DIR}")
 endif()
 
+# Behavioral gating: when a JUnit results file is supplied, a backend is covered only
+# if its determinism test executed and passed. Fail loudly if requested but absent.
+if(DEFINED CTEST_JUNIT AND NOT CTEST_JUNIT STREQUAL "")
+  if(NOT EXISTS "${CTEST_JUNIT}")
+    message(FATAL_ERROR
+      "behavioral determinism gate requested but ctest JUnit results not found: ${CTEST_JUNIT}\n"
+      "run the test suite first, e.g. `ctest --preset <preset> --output-junit ${CTEST_JUNIT}`")
+  endif()
+  list(APPEND DETERMINISM_MATRIX_ARGS --ctest-junit "${CTEST_JUNIT}")
+endif()
+
 if(DEFINED CTEST_CONFIG AND NOT CTEST_CONFIG STREQUAL "")
   list(APPEND DETERMINISM_MATRIX_ARGS --ctest-config "${CTEST_CONFIG}")
 endif()

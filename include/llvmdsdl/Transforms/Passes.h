@@ -39,11 +39,23 @@ std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
 
-/// @brief Creates the pass that proves conservative zero-overhead aliasability.
+/// @brief Creates the pass that annotates serialization plans with conservative
+///        zero-overhead aliasability facts.
+/// @details This is a conservative *annotator*, not a proof: it stamps
+///          `zoh_alias_eligible`/`zoh_alias_reason` metadata on eligible plans and
+///          does not alter the emitted serialization path. Registered under the
+///          `dsdl-annotate-aliasability` pipeline name.
 /// @return Newly constructed pass instance.
-std::unique_ptr<mlir::Pass> createDSDLProveZeroOverheadPass();
+std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass();
 
-/// @brief Creates the pass that legalizes target endianness attributes.
+/// @brief Creates the pass that validates and stamps the module's
+///        target-endianness metadata.
+/// @details Validation-only: it checks the `llvmdsdl.target_endianness` attribute
+///          and stamps `llvmdsdl.target_endianness_legalized`. It performs no byte
+///          reordering. The DSDL wire format is always little-endian, so per-target
+///          endianness handling lives entirely in the emitted code (the
+///          `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy
+///          view helpers; `serialize_`/`deserialize_` are host-endianness-agnostic).
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass();
 

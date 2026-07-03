@@ -5,6 +5,27 @@
 > evolves. This document is intended to be committed and iterated on — update
 > verdicts and check off roadmap items as the gaps close._
 
+> **Update 2026-07-03 — P0 "Truthful assurance docs" + "Behavioral gates" landed.**
+> Work done in this pass, plus corrections to this report where the original review was
+> itself stale or overstated (verified against the current tree):
+> - **CI is committed** (`​.github/workflows/ci.yml`, `coverage.yml`, `docs.yml`) and the
+>   report gates already **hard-fail the build** (`message(FATAL_ERROR …)` in the
+>   `cmake/Run*Report.cmake` wrappers, run by the `release-blocking-report-gates` target).
+>   G8 / rec 9's "CI uncommitted" and G4/G5's "gates are theater" premises were stale.
+> - **Behavioral gates:** the parity, malformed-input, and determinism scorecards now
+>   consume **executed ctest pass/fail** (JUnit), not `ctest -N` test-name presence — a
+>   cell is `covered` only if a matching test ran and passed (fail/skip/absent ⇒ uncovered).
+>   The convergence scorecard is **relabeled** as an infrastructure-consistency lint (it is
+>   inherently a marker check and cannot be made behavioral cheaply). See §5 P0.
+> - **Passes renamed/redescribed:** `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability`
+>   (drops "proof" language; it is a conservative annotator); `dsdl-legalize-endianness`
+>   documented as validation-only (no byte reordering).
+> - **Big-endian is NOT "unimplemented".** The original G5/G6/§3 "big-endian absent /
+>   needs byte-swap" claim is **overstated** — see the corrected notes below. DSDL wire is
+>   always little-endian, `serialize_`/`deserialize_` are host-endianness-agnostic, and the
+>   `-l obj … --target-endianness big` smoke test asserts big==little byte-parity; only the
+>   zero-copy *view* fast-path is (correctly) disabled on big-endian targets.
+
 **Scope reviewed:** ~45k LOC C++ (`lib/`, `include/`, `tools/`), ~3.6k LOC multi-language runtime, ~17k LOC tests, the MLIR `dsdl` dialect, 6 codegen backends, the LSP, and the build/CI/convergence tooling. Method: docs read first (DESIGN.md, `docs/design/*`, the four matrix docs), then implementation, then **adversarial verification of every headline claim** against the actual code. Version under review: **`0.1.0`**.
 
 ## 1. Verdict
@@ -28,9 +49,9 @@ Claim audit tally across the review: **28 holds · 32 partial · 5 overstated ·
 | G1 | "Shared semantics, multiple syntaxes" | **Partial** — shared *planning*, per-backend *rendering* | C+ |
 | G2 | LLVM/MLIR as real infrastructure | **Holds** — genuinely operational | A− |
 | G3 | Contract boundaries / drift detection | **Overstated** — presence/identity guard, not drift detection | C |
-| G4 | Backend parity / convergence = 100 | **Overstated** — metrics measure markers, not behavior | C− |
-| G5 | Malformed safety + determinism + release-blocking gates | **Partial** — real read-path safety; gates are theater; big-endian absent | C |
-| G6 | Zero-overhead proof / verifier-first / fallback-free | **Overstated** — annotator not proof; checks are post-hoc/grep | C− |
+| G4 | Backend parity / convergence = 100 | **Overstated → addressed (2026-07-03)** — parity/malformed/determinism now behavioral (executed pass/fail); convergence relabeled as a lint | C−→B |
+| G5 | Malformed safety + determinism + release-blocking gates | **Partial → improved (2026-07-03)** — real read-path safety; gates now behavioral; big-endian present (not "absent") | C |
+| G6 | Zero-overhead proof / verifier-first / fallback-free | **Overstated → partly addressed (2026-07-03)** — pass renamed `dsdl-annotate-aliasability` (drops "proof"); verifier-first/fallback-free still post-hoc/lint | C− |
 | G7 | DSDL v1.0 spec conformance | **Partial** — grammar strong; primitive widths unenforced; parity narrow | C+ |
 | G8 | Reproducible/deterministic builds | **Partial** — good presets; catalog & nondeterminism unguarded; CI uncommitted | B− |
 
@@ -53,12 +74,12 @@ Real behavioral testing *does* exist and is good — e.g. C↔Go generated, comp
 ### G5 — Malformed safety + determinism + release-blocking gates → **Partial**
 Genuinely good: the generated C **read path is bounds-safe** — it inherits the Nunavut/libcanard `copy_bits` primitive that clamps each read window to the buffer via `saturate_fragment_bits`/`choose_min` (`runtime/dsdl_runtime.h:98+`), and variable-array decode validates the length prefix *before* the element loop (no OOB writes from inflated counts).
 
-Weak where it matters most: **(a)** there is **no ASan/UBSan/MSan anywhere** (`grep fsanitize` across presets/CI/cmake = 0 hits); **(b)** only the *Python* runtime (memory-safe by construction) is fuzzed — the **C/C++/Go/Rust decoders, where OOB is actually possible, get hand-written single-case truncation tests, not fuzzing**; **(c)** the "release-blocking malformed gate" is the name-presence metric above; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
+Weak where it matters most: **(a)** there is **no ASan/UBSan/MSan anywhere** (`grep fsanitize` across presets/CI/cmake = 0 hits); **(b)** only the *Python* runtime (memory-safe by construction) is fuzzed — the **C/C++/Go/Rust decoders, where OOB is actually possible, get hand-written single-case truncation tests, not fuzzing**; **(c)** ~~the "release-blocking malformed gate" is the name-presence metric above~~ **(fixed 2026-07-03: the malformed/parity/determinism gates now consume executed ctest pass/fail — behavioral, not name-presence)**; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
 
 ### G6 — Zero-overhead proof / verifier-first / fallback-free → **Overstated**
 All three were read directly:
 
-- **`dsdl-prove-zero-overhead`** (`lib/Transforms/Passes.cpp:1307`) is its own honest description — "annotate plans with *conservative* aliasability facts." It stamps `zoh_alias_eligible` on fixed-size/sealed/byte-aligned layouts; that flag flows out only as a generated **boolean constant** (`ZOH_ALIAS_ELIGIBLE = true/false`) and **does not switch the serializer to a zero-copy path**. It proves nothing about emitted-code overhead. (It *is* well unit-tested as an annotator, incl. a negative case.)
+- **`dsdl-annotate-aliasability`** (renamed 2026-07-03 from `dsdl-prove-zero-overhead`; `lib/Transforms/Passes.cpp`) now matches its honest description — "annotate plans with *conservative* aliasability facts." It stamps `zoh_alias_eligible` on fixed-size/sealed/byte-aligned layouts; that flag flows out only as a generated **boolean constant** (`ZOH_ALIAS_ELIGIBLE = true/false`) and **does not switch the serializer to a zero-copy path**. It proves nothing about emitted-code overhead. (It *is* well unit-tested as an annotator, incl. a negative case.) *(The emitted `ZOH_ALIAS_ELIGIBLE`/`zoh_alias_*` surface was deliberately left unrenamed — it is a generated-API and doesn't itself claim a proof.)*
 - **"verifier-first"** is **post-hoc**: invariants are validated on already-lowered IR, not enforced during lowering (`lib/Lowering/LowerToMLIR.cpp` adds no MLIR verifiers/constraints).
 - **"fallback-free"** is scored by grepping cmake gate files for regexes.
 
@@ -82,7 +103,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 | Semantics | **7** | Solid BitLengthSet algebra; **unchecked `Rational` int64 overflow**, unbounded `repeatRange` expansion. |
 | Runtime (multi-language) | **7** | Read-path bounds-safe; **empty semantic-wrapper allowlist**; no isolated cross-language primitive tests. |
 | Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
-| Transforms | **6** | Real contract enforcement; zero-overhead/endianness passes oversold; big-endian unimplemented. |
+| Transforms | **6** | Real contract enforcement; zero-overhead/endianness passes renamed/redescribed (2026-07-03); big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. |
 | Codegen shared layer | **6** | Genuine shared planning; semantics still re-rendered per backend. |
 | LSP (`dsdld`) | **6** | Reuses compiler core (good); **unbounded `Content-Length` allocation (OOM DoS)**, DocumentStore thread-safety. |
 | Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
@@ -95,8 +116,8 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 **Highest leverage — make the claims true or relabel them:**
 
-1. **Re-found the three scorecards on behavior, not markers.** Convergence should derive from generated-output/AST equivalence; parity and malformed matrices must consume `ctest` **pass/fail**, not `ctest -N` names. Until then, relabel "100" in `docs/CONVERGENCE_SCORECARD.md`, `PARITY_MATRIX.md`, `MALFORMED_INPUT_CONTRACT_MATRIX.md` as "infrastructure-consistency lint," not a correctness proof.
-2. **Rename `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability`** (or similar) and drop "proof" language; document `dsdl-legalize-endianness` as validation-only and mark `--target-endianness big` **EXPERIMENTAL/unsupported** until byte-swap logic exists.
+1. **Re-found the three scorecards on behavior, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/CONVERGENCE_SCORECARD.md`) rather than made behavioral (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
+2. ✅ **Done (2026-07-03).** Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing.
 3. **Build the verification the docs already promise:** run the **Nunavut differential parity in CI** (provision `nunavut`/`pydsdl`), enable byte comparison for union/float cases, and expand coverage from 5 types to a representative cross-section (and the `reg`/UDRAL namespace).
 
 **Safety / high-assurance:**
@@ -120,8 +141,8 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 ### P0 — Release-blocking (must close before any "high-assurance" claim)
 
-- [ ] **Truthful assurance docs.** Relabel convergence/parity/malformed "100" scores; rename/redescribe the zero-overhead and endianness passes; mark big-endian unsupported. *(Cheap, high-trust-impact.)*
-- [ ] **Behavioral gates.** Scorecards consume real pass/fail; gates fail the build on regression; CI committed and ordered correctly.
+- [x] **Truthful assurance docs.** *(Done 2026-07-03.)* Convergence relabeled as an infrastructure-consistency lint; parity/malformed carry explicit structural-vs-behavioral mode banners; `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` (drops "proof"); `dsdl-legalize-endianness` documented validation-only; big-endian docs corrected (`docs/backends/object.md`). Big-endian **not** marked unsupported — that premise was overstated (big-endian is implemented; see the 2026-07-03 update note).
+- [x] **Behavioral gates.** *(Done 2026-07-03.)* Parity/malformed/determinism scorecards consume executed ctest pass/fail via JUnit (`tools/convergence/ctest_results.py`); a cell is `covered` only if a matching test ran and passed (fail/skip/absent ⇒ uncovered). Gates hard-fail on regression (already did) and now on behavioral coverage loss. CI feeds the suite's JUnit into `release-blocking-report-gates` via the `LLVMDSDL_REPORT_GATE_JUNIT` cache var; missing results fail loudly (no silent "no data = pass"). Red-team verified: flipping one parity test to fail breaks the gate. *(Remaining nuance: the in-suite ctest coverage tests still run structurally as a fast pre-check; the authoritative behavioral gate is the post-suite target.)*
 - [ ] **Sanitizers + native decoder fuzzing in CI.** ASan/UBSan over generated C/C++/Go; libFuzzer over native deserializers on the real corpus.
 - [ ] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
 - [ ] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.

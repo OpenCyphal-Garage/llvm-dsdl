@@ -31,7 +31,7 @@ flowchart LR
   E --> F["lowerToMLIR"]
   F --> G["dsdl.schema + dsdl.serialization_plan\n(dsdl.align/dsdl.io)"]
   G --> H["lower-dsdl-serialization\n(contract stamping + helper synthesis)"]
-  H --> I["dsdl-prove-zero-overhead + dsdl-legalize-endianness"]
+  H --> I["dsdl-annotate-aliasability + dsdl-legalize-endianness"]
   I --> K{"Backend path"}
   K --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
   K --> O["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
@@ -107,7 +107,7 @@ Transforms are where normalization and contract hardening happen. The pass set c
 
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
-- `dsdl-prove-zero-overhead`
+- `dsdl-annotate-aliasability`
 - `dsdl-legalize-endianness`
 - `convert-dsdl-to-emitc`
 - optional `optimize-dsdl-lowered-serdes` pipeline
@@ -215,7 +215,7 @@ Key files:
 Current path:
 
 1. Clone MLIR module and stamp `llvmdsdl.target_endianness`.
-2. Run `lower-dsdl-exec`, `dsdl-prove-zero-overhead`, `dsdl-legalize-endianness`, optional optimize.
+2. Run `lower-dsdl-exec`, `dsdl-annotate-aliasability`, `dsdl-legalize-endianness`, optional optimize.
 3. For `--obj-abi-language c` (default), stage C artifacts and invoke host C compiler to produce `.o`.
 4. For `--obj-abi-language cpp`, stage canonical profile-agnostic C++ ABI artifacts under `.obj_stage_cpp`, emit C shim wrappers with distinct shim symbols, compile with host C++ compiler, and include C-lane objects.
 5. Optionally invoke archiver to produce `.a`.

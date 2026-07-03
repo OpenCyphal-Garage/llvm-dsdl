@@ -46,6 +46,18 @@ set(MALFORMED_CONTRACT_ARGS
   --check-regressions
 )
 
+# Behavioral gating: when a JUnit results file is supplied, a matrix cell is covered
+# only if a matching test executed and passed. Fail loudly if it is requested but
+# absent (never silently degrade "no results" into "everything passed").
+if(DEFINED CTEST_JUNIT AND NOT CTEST_JUNIT STREQUAL "")
+  if(NOT EXISTS "${CTEST_JUNIT}")
+    message(FATAL_ERROR
+      "behavioral malformed-contract gate requested but ctest JUnit results not found: ${CTEST_JUNIT}\n"
+      "run the test suite first, e.g. `ctest --preset <preset> --output-junit ${CTEST_JUNIT}`")
+  endif()
+  list(APPEND MALFORMED_CONTRACT_ARGS --ctest-junit "${CTEST_JUNIT}")
+endif()
+
 if(DEFINED CTEST_CONFIG AND NOT CTEST_CONFIG STREQUAL "")
   list(APPEND MALFORMED_CONTRACT_ARGS --ctest-config "${CTEST_CONFIG}")
 endif()

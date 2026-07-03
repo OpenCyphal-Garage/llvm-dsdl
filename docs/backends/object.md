@@ -28,7 +28,24 @@ The object backend compiles generated sources into static objects and optional a
 
 ## Endianness semantics
 
-Wire semantics remain OpenCyphal-compatible. Target endianness controls codegen/legalization strategy, not wire contract semantics.
+The DSDL wire format is little-endian on every target, so `serialize_`/`deserialize_`
+perform explicit little-endian bit assembly and are independent of host endianness.
+`--target-endianness` selects the codegen/legalization strategy; it does not change
+wire-contract semantics. There is no byte-swap step, because the wire is always
+little-endian regardless of target.
+
+- `little`: all fast paths are available, including the zero-copy view helpers
+  (`try_deserialize_view_` / `try_serialize_view_`) for alias-eligible fixed-size
+  sealed layouts.
+- `big`: `serialize_` / `deserialize_` are fully supported and produce byte-identical
+  wire output to `little` (verified by the object-backend smoke test). The zero-copy
+  view helpers are intentionally disabled and return
+  `-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT`, because little-endian wire bytes cannot be
+  safely aliased as native big-endian typed memory.
+
+**Note:** the big-endian path is validated by compiling the
+`LLVMDSDL_TARGET_ENDIANNESS_BIG` code path and asserting wire byte-parity on a
+little-endian host; it is not yet exercised on real big-endian hardware in CI.
 
 ## Example
 

@@ -159,6 +159,105 @@ class MatrixReportRegressionTest(unittest.TestCase):
         self.assertIn("coverage drift:", result.stderr)
 
 
+class BehavioralGateTest(unittest.TestCase):
+    """JUnit-consuming behavioral gate tests. Self-contained (no configured build dir).
+
+    These prove the core behavioral property the gates now enforce: a matrix cell is
+    covered only if a matching test actually executed and passed — a failed or skipped
+    test (or a missing results file) must NOT read as covered.
+    """
+
+    def setUp(self) -> None:
+        self.repo_root = Path(self.repo_root_arg).resolve()
+        self.parity_script = self.repo_root / "tools/convergence/parity_matrix_report.py"
+        self.determinism_script = self.repo_root / "tools/convergence/determinism_matrix_report.py"
+
+    def _run(self, script: Path, extra: List[str]) -> subprocess.CompletedProcess[str]:
+        cmd = [sys.executable, str(script), "--repo-root", str(self.repo_root), *extra]
+        return subprocess.run(cmd, text=True, capture_output=True, check=False)
+
+    @staticmethod
+    def _junit(tmp: str, cases: List[tuple]) -> Path:
+        parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<testsuite name="ctest">']
+        for name, outcome in cases:
+            if outcome == "fail":
+                parts.append(f'<testcase name="{name}"><failure/></testcase>')
+            elif outcome == "skip":
+                parts.append(f'<testcase name="{name}"><skipped/></testcase>')
+            else:
+                parts.append(f'<testcase name="{name}"/>')
+        parts.append("</testsuite>")
+        path = Path(tmp) / "junit.xml"
+        path.write_text("\n".join(parts), encoding="utf-8")
+        return path
+
+    # Concrete evidence test names taken from the parity/determinism matrices.
+    PARITY_SCALAR_C = "llvmdsdl-signed-narrow-c-python-parity"
+    MINIMAL_PARITY_BASELINE = {"expected_covered": {"c": {"scalar": True}}, "minimum_scores": {}}
+
+    def test_behavioral_flag_is_set_with_junit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            junit = self._junit(tmp, [(self.PARITY_SCALAR_C, "pass")])
+            out_json = Path(tmp) / "report.json"
+            res = self._run(self.parity_script, ["--ctest-junit", str(junit), "--output-json", str(out_json)])
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+            self.assertTrue(_load_json(out_json)["behavioral"])
+
+    def test_passing_evidence_covers_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            junit = self._junit(tmp, [(self.PARITY_SCALAR_C, "pass")])
+            baseline = Path(tmp) / "baseline.json"
+            _write_json(baseline, self.MINIMAL_PARITY_BASELINE)
+            res = self._run(
+                self.parity_script,
+                ["--ctest-junit", str(junit), "--baseline", str(baseline), "--check-regressions"],
+            )
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+
+    def test_failing_evidence_uncovers_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            junit = self._junit(tmp, [(self.PARITY_SCALAR_C, "fail")])
+            baseline = Path(tmp) / "baseline.json"
+            _write_json(baseline, self.MINIMAL_PARITY_BASELINE)
+            res = self._run(
+                self.parity_script,
+                ["--ctest-junit", str(junit), "--baseline", str(baseline), "--check-regressions"],
+            )
+            self.assertNotEqual(res.returncode, 0, msg="a failing evidence test must uncover its cell")
+            self.assertIn("coverage drift", res.stderr)
+
+    def test_skipped_evidence_uncovers_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            junit = self._junit(tmp, [(self.PARITY_SCALAR_C, "skip")])
+            baseline = Path(tmp) / "baseline.json"
+            _write_json(baseline, self.MINIMAL_PARITY_BASELINE)
+            res = self._run(
+                self.parity_script,
+                ["--ctest-junit", str(junit), "--baseline", str(baseline), "--check-regressions"],
+            )
+            self.assertNotEqual(res.returncode, 0, msg="a skipped evidence test must not read as covered")
+
+    def test_missing_junit_file_is_loud(self) -> None:
+        res = self._run(self.parity_script, ["--ctest-junit", "/nonexistent/does-not-exist.xml"])
+        self.assertEqual(res.returncode, 2, msg="a missing results file must be a hard error, not a silent pass")
+        self.assertIn("results file not found", res.stderr)
+
+    def test_determinism_failing_backend_uncovered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            junit = self._junit(
+                tmp,
+                [("llvmdsdl-uavcan-c-determinism", "pass"), ("llvmdsdl-uavcan-go-determinism", "fail")],
+            )
+            baseline = Path(tmp) / "baseline.json"
+            _write_json(baseline, {"expected_covered": {"c": True, "go": True}, "minimum_scores": {}})
+            res = self._run(
+                self.determinism_script,
+                ["--ctest-junit", str(junit), "--baseline", str(baseline), "--check-regressions"],
+            )
+            self.assertNotEqual(res.returncode, 0, msg="a failing determinism test must uncover its backend")
+            self.assertIn("coverage drift", res.stderr)
+
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run matrix report regression tests.")
     parser.add_argument("--repo-root", required=True, help="Path to repository root.")
@@ -172,7 +271,21 @@ def main(argv: List[str]) -> int:
     MatrixReportRegressionTest.repo_root_arg = args.repo_root
     MatrixReportRegressionTest.ctest_test_dir_arg = args.ctest_test_dir
     MatrixReportRegressionTest.ctest_config_arg = args.ctest_config
-    suite = unittest.defaultTestLoader.loadTestsFromTestCase(MatrixReportRegressionTest)
+    BehavioralGateTest.repo_root_arg = args.repo_root
+
+    loader = unittest.defaultTestLoader
+    suite = unittest.TestSuite()
+    suite.addTests(loader.loadTestsFromTestCase(MatrixReportRegressionTest))
+    suite.addTests(loader.loadTestsFromTestCase(BehavioralGateTest))
+    # Fold in the pure JUnit-parser unit tests so they run under the same gate.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import test_ctest_results
+
+        suite.addTests(loader.loadTestsFromModule(test_ctest_results))
+    except Exception as exc:  # noqa: BLE001 - diagnostic only
+        print(f"warning: could not load test_ctest_results: {exc}", file=sys.stderr)
+
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

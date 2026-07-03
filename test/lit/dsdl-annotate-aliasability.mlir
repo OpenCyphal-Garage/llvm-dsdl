@@ -1,4 +1,4 @@
-// RUN: %dsdl-opt --pass-pipeline='builtin.module(dsdl-prove-zero-overhead)' %s | FileCheck %s
+// RUN: %dsdl-opt --pass-pipeline='builtin.module(dsdl-annotate-aliasability)' %s | FileCheck %s
 
 module {
   dsdl.schema @test_Aliasable_1_0 attributes {full_name = "test.Aliasable", major = 1 : i32, minor = 0 : i32, sealed} {

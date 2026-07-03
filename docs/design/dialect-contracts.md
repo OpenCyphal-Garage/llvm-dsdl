@@ -11,13 +11,13 @@ The custom `dsdl` MLIR dialect is the intermediate contract boundary between fro
 ## Important pass sequence
 
 - `lower-dsdl-exec`
-- `dsdl-prove-zero-overhead`
-- `dsdl-legalize-endianness`
+- `dsdl-annotate-aliasability` (conservative aliasability *annotator*; stamps metadata only)
+- `dsdl-legalize-endianness` (validates/stamps target endianness; performs no byte reordering)
 - optional optimization pipeline
 
 ## Contract benefits
 
-- Detects producer/consumer drift early
+- Detects raw/unlowered IR reaching a backend via a contract version + producer-identity guard (not field-level semantic-compatibility drift detection)
 - Keeps backend emitters aligned
 - Enables deterministic diagnostics for unsupported/malformed states
 

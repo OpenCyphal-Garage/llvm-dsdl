@@ -26,7 +26,7 @@ nav:
   - Validation:
       - Parity Matrix: PARITY_MATRIX.md
       - Malformed Input Matrix: MALFORMED_INPUT_CONTRACT_MATRIX.md
-      - Convergence Scorecard: CONVERGENCE_SCORECARD.md
+      - Shared-Infra Consistency Lint: CONVERGENCE_SCORECARD.md
   - LSP Guides:
       - AI Operator Guide: LSP_AI_OPERATOR_GUIDE.md
       - Index Schema: LSP_INDEX_SCHEMA.md

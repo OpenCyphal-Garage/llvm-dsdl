@@ -99,7 +99,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
     auto              loweredModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>(module->clone()));
     mlir::PassManager pm(module.getContext());
     pm.addPass(createLowerDSDLExecPass());
-    pm.addPass(createDSDLProveZeroOverheadPass());
+    pm.addPass(createDSDLAnnotateAliasabilityPass());
     if (optimizeLoweredSerDes)
     {
         addOptimizeLoweredSerDesPipeline(pm);

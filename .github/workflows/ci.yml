@@ -52,7 +52,10 @@ jobs:
         uses: ./.github/actions/setup-language-toolchains
 
       - name: Configure (ci preset)
-        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+        # LLVMDSDL_REPORT_GATE_JUNIT makes the parity/malformed/determinism report gates
+        # BEHAVIORAL: a matrix cell is covered only if a matching test executed and passed
+        # (consumed from the suite's --output-junit below), not merely registered by name.
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
@@ -66,7 +69,9 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
-      - name: Generate convergence / parity / determinism / contract reports
+      - name: Behavioral scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
+        # Runs after the suite so it can consume the executed JUnit results. `if: always()`
+        # ensures the gate still runs (and can fail the job) even if an earlier test failed.
         if: always()
         run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
 
@@ -150,7 +155,9 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Configure (ci preset)
-        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+        # See the linux job: this makes the report gates behavioral by feeding them the
+        # suite's executed JUnit results (a cell is covered only if its test passed).
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
@@ -164,7 +171,9 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
 
-      - name: Generate convergence / parity / determinism / contract reports
+      - name: Behavioral scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
+        # Runs after the suite so it can consume the executed JUnit results. `if: always()`
+        # ensures the gate still runs (and can fail the job) even if an earlier test failed.
         if: always()
         run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
 

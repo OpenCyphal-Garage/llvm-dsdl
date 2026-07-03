@@ -329,7 +329,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     }
     mlir::PassManager pm(module.getContext());
     pm.addPass(createLowerDSDLExecPass());
-    pm.addPass(createDSDLProveZeroOverheadPass());
+    pm.addPass(createDSDLAnnotateAliasabilityPass());
     pm.addPass(createDSDLEndianLegalizePass());
     if (options.optimizeLoweredSerDes)
     {

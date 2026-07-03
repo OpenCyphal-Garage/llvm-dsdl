@@ -272,6 +272,14 @@ add_custom_target(distclean
   COMMENT "Removing generated build and local development artifacts"
 )
 
+# Optional behavioral gating input: a JUnit results file from an executed ctest run.
+# When set (e.g. by CI after running the suite with --output-junit), the
+# parity/malformed/determinism report gates enforce BEHAVIORAL coverage — a matrix cell
+# is covered only if a matching test executed and passed. Empty (default) keeps them as
+# structural test-name-presence lints so local doc regeneration needs no prior suite run.
+set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
+  "JUnit XML from an executed ctest run; enables behavioral parity/malformed/determinism gating.")
+
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(convergence-report
     COMMAND
@@ -305,6 +313,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
         -DCTEST_CONFIG=$<CONFIG>
+        -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/parity-matrix-report.json
         -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/PARITY_MATRIX.md
         -DPARITY_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_baseline.json
@@ -332,6 +341,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
         -DCTEST_CONFIG=$<CONFIG>
+        -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/malformed-contract-matrix-report.json
         -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/MALFORMED_INPUT_CONTRACT_MATRIX.md
         -DMALFORMED_CONTRACT_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_baseline.json
@@ -359,6 +369,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
         -DCTEST_CONFIG=$<CONFIG>
+        -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/determinism-matrix-report.json
         -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/DETERMINISM_MATRIX.md
         -DDETERMINISM_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_baseline.json

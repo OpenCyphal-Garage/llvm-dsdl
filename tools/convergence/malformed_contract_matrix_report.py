@@ -19,6 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Set, Tuple
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ctest_results  # noqa: E402
+
 CATEGORIES: List[Tuple[str, str]] = [
     ("out_of_range_bit_ops", "Out-of-range bit read/copy handling"),
     ("copy_range_violations", "Bit-copy range violation handling"),
@@ -214,12 +217,36 @@ def _matches(test_names: Iterable[str], patterns: Iterable[str]) -> List[str]:
     return out
 
 
-def _build_report(repo_root: Path, test_dir: Path, config: str | None) -> Dict[str, object]:
-    test_names = _extract_test_names_from_ctest(test_dir, config)
+def _build_report(
+    repo_root: Path,
+    test_dir: Path | None,
+    config: str | None,
+    junit: "ctest_results.TestResults | None" = None,
+) -> Dict[str, object]:
+    failed_names: Set[str] = set()
+    skipped_names: Set[str] = set()
+    if junit is not None:
+        test_names = junit.passed
+        failed_names = junit.failed
+        skipped_names = junit.skipped
+        test_source = (
+            f"ctest --output-junit (executed: {len(junit.passed)} passed, "
+            f"{len(junit.failed)} failed, {len(junit.skipped)} skipped)"
+        )
+        behavioral = True
+    else:
+        test_names = _extract_test_names_from_ctest(test_dir, config)
+        try:
+            test_dir_text = str(test_dir.relative_to(repo_root))
+        except ValueError:
+            test_dir_text = str(test_dir)
+        test_source = f"ctest --test-dir {test_dir_text}"
+        behavioral = False
     category_labels = {category_id: category_label for category_id, category_label in CATEGORIES}
 
     backends: Dict[str, object] = {}
     missing_cells: List[Dict[str, str]] = []
+    coverage_manifest: List[Dict[str, object]] = []
     total_cells = 0
     covered_cells = 0
 
@@ -235,7 +262,10 @@ def _build_report(repo_root: Path, test_dir: Path, config: str | None) -> Dict[s
             total_cells += 1
             patterns = cells[category_id]
             evidence = _matches(test_names, patterns)
-            covered = len(evidence) > 0
+            failed_evidence = _matches(failed_names, patterns) if behavioral else []
+            skipped_evidence = _matches(skipped_names, patterns) if behavioral else []
+            # Behavioral rule: covered iff a matching test passed AND none failed.
+            covered = len(evidence) > 0 and len(failed_evidence) == 0
             if covered:
                 backend_covered += 1
                 covered_cells += 1
@@ -247,7 +277,29 @@ def _build_report(repo_root: Path, test_dir: Path, config: str | None) -> Dict[s
                 "covered": covered,
                 "patterns": list(patterns),
                 "evidence_tests": evidence,
+                "evidence_failed": failed_evidence,
+                "evidence_skipped": skipped_evidence,
             }
+
+            if behavioral and (not covered or skipped_evidence):
+                if failed_evidence:
+                    reason = "matching test(s) failed"
+                elif not evidence and skipped_evidence:
+                    reason = "matching test(s) skipped / not run"
+                elif not evidence:
+                    reason = "no matching test executed"
+                else:
+                    reason = "covered, but some matching tests were skipped"
+                coverage_manifest.append(
+                    {
+                        "backend": backend,
+                        "category": category_id,
+                        "covered": covered,
+                        "reason": reason,
+                        "failed": failed_evidence,
+                        "skipped": skipped_evidence,
+                    }
+                )
 
         backends[backend] = {
             "behavior": backend_cfg["behavior"],
@@ -257,24 +309,21 @@ def _build_report(repo_root: Path, test_dir: Path, config: str | None) -> Dict[s
             "cells": row_cells,
         }
 
-    try:
-        test_dir_text = str(test_dir.relative_to(repo_root))
-    except ValueError:
-        test_dir_text = str(test_dir)
-
     native_behavior_guards = _build_native_behavior_guards(repo_root)
 
     return {
         "version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "test_source": f"ctest --test-dir {test_dir_text}",
+        "test_source": test_source,
         "test_name_count": len(test_names),
+        "behavioral": behavioral,
         "categories": [{"id": category_id, "label": category_label} for category_id, category_label in CATEGORIES],
         "backends": backends,
         "overall_covered_cells": covered_cells,
         "overall_total_cells": total_cells,
         "overall_score": int(round((covered_cells * 100.0) / total_cells)),
         "missing_cells": missing_cells,
+        "coverage_manifest": coverage_manifest,
         "native_behavior_guards": native_behavior_guards,
     }
 
@@ -301,6 +350,16 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append(f"Overall matrix score: `{report['overall_score']}`")
     lines.append(f"Integration test names scanned: `{report['test_name_count']}`")
     lines.append(f"Test-source scan: `{report['test_source']}`")
+    if report.get("behavioral"):
+        lines.append(
+            "Gating mode: **behavioral** — a category is `covered` only if a matching test "
+            "executed and passed; failed/skipped/absent evidence leaves it uncovered."
+        )
+    else:
+        lines.append(
+            "Gating mode: **structural** — coverage is inferred from registered test names. "
+            "Supply `--ctest-junit` for behavioral (executed pass/fail) gating."
+        )
     lines.append("")
 
     for backend in sorted(report["backends"]):
@@ -328,6 +387,24 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         lines.append("## Missing Cells")
         lines.append("")
         lines.append("None.")
+        lines.append("")
+
+    if report.get("behavioral"):
+        lines.append("## Coverage Manifest (behavioral)")
+        lines.append("")
+        manifest = report.get("coverage_manifest", [])
+        if manifest:
+            lines.append("| Backend | Category | Covered | Reason | Failed | Skipped |")
+            lines.append("| --- | --- | :---: | --- | --- | --- |")
+            for entry in manifest:
+                failed = ", ".join(f"`{n}`" for n in entry.get("failed", [])) or "-"
+                skipped = ", ".join(f"`{n}`" for n in entry.get("skipped", [])) or "-"
+                lines.append(
+                    f"| `{entry['backend']}` | `{entry['category']}` | `{entry['covered']}` | "
+                    f"{entry['reason']} | {failed} | {skipped} |"
+                )
+        else:
+            lines.append("All categories covered by an executed, passing test; no failed/skipped evidence.")
         lines.append("")
 
     lines.append("## Native Behavior Guards")
@@ -417,8 +494,15 @@ def _check_baseline(report: Dict[str, object], baseline_path: Path) -> List[str]
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate malformed-input contract matrix coverage.")
     parser.add_argument("--repo-root", required=True, help="Repository root.")
-    parser.add_argument("--ctest-test-dir", required=True, help="CTest build directory.")
+    parser.add_argument("--ctest-test-dir", help="CTest build directory (structural name-presence mode).")
     parser.add_argument("--ctest-config", help="CTest configuration (for multi-config generators).")
+    parser.add_argument(
+        "--ctest-junit",
+        action="append",
+        default=[],
+        help="JUnit XML result file from an executed ctest run; enables behavioral "
+        "(executed pass/fail) gating. Repeatable.",
+    )
     parser.add_argument("--output-json", help="Output JSON path.")
     parser.add_argument("--output-md", help="Output Markdown path.")
     parser.add_argument("--baseline", help="Path to baseline JSON used for strict regression checks.")
@@ -429,10 +513,31 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 def main(argv: List[str]) -> int:
     args = parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
-    test_dir = Path(args.ctest_test_dir).resolve()
+    test_dir = Path(args.ctest_test_dir).resolve() if args.ctest_test_dir else None
+
+    junit = None
+    if args.ctest_junit:
+        try:
+            junit = ctest_results.load_junit_results([Path(p) for p in args.ctest_junit])
+        except (FileNotFoundError, ValueError) as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 2
+
+    if junit is None and test_dir is None:
+        print(
+            "error: one of --ctest-junit (behavioral) or --ctest-test-dir (structural) is required",
+            file=sys.stderr,
+        )
+        return 2
+    if args.check_regressions and junit is None:
+        print(
+            "warning: malformed-contract gate running in STRUCTURAL mode (test-name presence); "
+            "supply --ctest-junit for behavioral gating",
+            file=sys.stderr,
+        )
 
     try:
-        report = _build_report(repo_root, test_dir, args.ctest_config)
+        report = _build_report(repo_root, test_dir, args.ctest_config, junit)
     except RuntimeError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2

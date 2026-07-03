@@ -1304,15 +1304,18 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
 };
 
-struct ProveDSDLZeroOverheadPass
-    : public mlir::PassWrapper<ProveDSDLZeroOverheadPass, mlir::OperationPass<mlir::ModuleOp>>
+struct AnnotateDSDLAliasabilityPass
+    : public mlir::PassWrapper<AnnotateDSDLAliasabilityPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
     {
-        return "dsdl-prove-zero-overhead";
+        return "dsdl-annotate-aliasability";
     }
     llvm::StringRef getDescription() const final
     {
+        // Conservative annotator: stamps aliasability metadata only. It does not
+        // prove anything about emitted-code overhead and does not switch the
+        // serializer onto a zero-copy path.
         return "Annotate serialization plans with conservative zero-overhead aliasability facts";
     }
 
@@ -1444,6 +1447,10 @@ struct ProveDSDLZeroOverheadPass
     }
 };
 
+// Validation-only pass: it checks the target-endianness attribute and stamps a
+// legalized marker. It performs no byte reordering. The DSDL wire format is always
+// little-endian, so per-target endianness handling lives in the emitted code (the
+// `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
 struct DSDLEndianLegalizePass
     : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1453,7 +1460,7 @@ struct DSDLEndianLegalizePass
     }
     llvm::StringRef getDescription() const final
     {
-        return "Validate and stamp DSDL target endianness legalization metadata";
+        return "Validate and stamp DSDL target endianness metadata (no byte reordering)";
     }
 
     void runOnOperation() override
@@ -1490,9 +1497,9 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
     return std::make_unique<LowerDSDLExecPass>();
 }
 
-std::unique_ptr<mlir::Pass> createDSDLProveZeroOverheadPass()
+std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass()
 {
-    return std::make_unique<ProveDSDLZeroOverheadPass>();
+    return std::make_unique<AnnotateDSDLAliasabilityPass>();
 }
 
 std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass()
@@ -1517,7 +1524,7 @@ void registerDSDLPasses()
     once = true;
     static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
     static mlir::PassRegistration<LowerDSDLExecPass>          regExec;
-    static mlir::PassRegistration<ProveDSDLZeroOverheadPass>  regZoh;
+    static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> regAlias;
     static mlir::PassRegistration<DSDLEndianLegalizePass>     regEndian;
     static mlir::PassPipelineRegistration<>
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
