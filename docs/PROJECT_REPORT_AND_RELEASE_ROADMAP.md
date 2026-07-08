@@ -74,7 +74,7 @@ Real behavioral testing *does* exist and is good — e.g. C↔Go generated, comp
 ### G5 — Malformed safety + determinism + release-blocking gates → **Partial**
 Genuinely good: the generated C **read path is bounds-safe** — it inherits the Nunavut/libcanard `copy_bits` primitive that clamps each read window to the buffer via `saturate_fragment_bits`/`choose_min` (`runtime/dsdl_runtime.h:98+`), and variable-array decode validates the length prefix *before* the element loop (no OOB writes from inflated counts).
 
-Weak where it matters most: **(a)** there is **no ASan/UBSan/MSan anywhere** (`grep fsanitize` across presets/CI/cmake = 0 hits); **(b)** only the *Python* runtime (memory-safe by construction) is fuzzed — the **C/C++/Go/Rust decoders, where OOB is actually possible, get hand-written single-case truncation tests, not fuzzing**; **(c)** ~~the "release-blocking malformed gate" is the name-presence metric above~~ **(fixed 2026-07-03: the malformed/parity/determinism gates now consume executed ctest pass/fail — behavioral, not name-presence)**; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
+Weak where it matters most — ~~**(a)** there is **no ASan/UBSan/MSan anywhere**~~ and ~~**(b)** only the *Python* runtime … is fuzzed~~ **(both addressed 2026-07-03: the `ci-asan` preset + `sanitizers` CI lane run ASan/UBSan over the generated C/C++/Go decoders and a coverage-guided libFuzzer lane over the native C deserializers on the real corpus — see P0)**; **(c)** ~~the "release-blocking malformed gate" is the name-presence metric above~~ **(fixed 2026-07-03: the malformed/parity/determinism gates now consume executed ctest pass/fail — behavioral, not name-presence)**; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
 
 ### G6 — Zero-overhead proof / verifier-first / fallback-free → **Overstated**
 All three were read directly:
@@ -122,7 +122,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 **Safety / high-assurance:**
 
-4. **Add an ASan+UBSan CI lane** that compiles and runs the generated **native** decoders under sanitizers, plus a **libFuzzer lane over the generated C/C++ deserializers** on the real UAVCAN corpus (nested delimited, unions-of-composites, fixed-array-of-variable-array).
+4. ✅ **Done (2026-07-03).** Added the `sanitizers` CI lane (linux/toolshed, Clang): ASan+UBSan over the generated native C/C++/Go decoders (via the parity harnesses recompiled instrumented) and a coverage-guided **libFuzzer lane over the generated C deserializers** on the real UAVCAN corpus, covering the nested-delimited / unions-of-composites / variable-array shapes. See the P0 entry below for the components. *(Remaining P1 deepening: expand the fuzzed type set beyond the curated 7 and enable byte-for-byte serialize re-check assertions inside the fuzz round-trip.)*
 5. **Enforce primitive bit-length-set constraints** (int/uint 1..64, float ∈ {16,32,64}, void 1..64) in the frontend/semantics *and* the IR scalar verifier, with pydsdl-grade diagnostics.
 6. **Bound the LSP:** cap `Content-Length` before allocation (`lib/LSP/JsonRpcIO.cpp:88`); make `DocumentStore` access thread-safe.
 7. **Harden semantics:** checked/`__int128` `Rational` multiply; bound `BitLengthSet` expansion against adversarial `repeatRange`; cap array capacity.
@@ -143,7 +143,26 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 - [x] **Truthful assurance docs.** *(Done 2026-07-03.)* Convergence relabeled as an infrastructure-consistency lint; parity/malformed carry explicit structural-vs-behavioral mode banners; `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` (drops "proof"); `dsdl-legalize-endianness` documented validation-only; big-endian docs corrected (`docs/backends/object.md`). Big-endian **not** marked unsupported — that premise was overstated (big-endian is implemented; see the 2026-07-03 update note).
 - [x] **Behavioral gates.** *(Done 2026-07-03.)* Parity/malformed/determinism scorecards consume executed ctest pass/fail via JUnit (`tools/convergence/ctest_results.py`); a cell is `covered` only if a matching test ran and passed (fail/skip/absent ⇒ uncovered). Gates hard-fail on regression (already did) and now on behavioral coverage loss. CI feeds the suite's JUnit into `release-blocking-report-gates` via the `LLVMDSDL_REPORT_GATE_JUNIT` cache var; missing results fail loudly (no silent "no data = pass"). Red-team verified: flipping one parity test to fail breaks the gate. *(Remaining nuance: the in-suite ctest coverage tests still run structurally as a fast pre-check; the authoritative behavioral gate is the post-suite target.)*
-- [ ] **Sanitizers + native decoder fuzzing in CI.** ASan/UBSan over generated C/C++/Go; libFuzzer over native deserializers on the real corpus.
+- [x] **Sanitizers + native decoder fuzzing in CI.** *(Done 2026-07-03.)* New `ci-asan`
+  preset + `sanitizers` CI job (linux/toolshed, Clang-forced): ASan/UBSan over the
+  generated **C and C++** decoders via the existing parity harness recompiled
+  instrumented (`RunCppCParity.cmake` gains a `SANITIZE` knob →
+  `llvmdsdl-uavcan-cpp-c-parity-sanitized`), and over the **Go** harness's generated-C
+  side (`RunCGoParity.cmake`, linux-only variant; Go-native decoders are memory-safe
+  by construction and already panic-fail the parity harness). New **coverage-guided
+  libFuzzer lane** (`test/integration/NativeDecoderFuzz.c` + `RunNativeDecoderFuzz.cmake`
+  → `llvmdsdl-native-decoder-fuzz`) feeds arbitrary bytes into the generated
+  `deserialize_` entrypoints for the adversarial shapes (union `Frame`, nested-delimited
+  `port.List`, variable-array `ExecuteCommand`, narrow scalars) under ASan+UBSan, with
+  auto-emitted valid seeds + a committed regression corpus
+  (`test/fuzz/corpus/native_decoder/`). Bounded `-runs` on PRs, deep run on the weekly
+  cron; crash reproducers upload as CI artifacts. Degrades loudly to an ASan/UBSan
+  corpus replay when a toolchain lacks compiler-rt libFuzzer (never a silent no-op).
+  All builds use the Debug config so `NDEBUG` is absent and the runtime `copy_bits`
+  asserts still fire. *(Verified locally sans-ASan: harness compiles in all 3 modes,
+  200k coverage-guided runs clean, 7 valid seeds emitted; the ASan runtime itself was
+  unrunnable only on the macOS Apple-Silicon dev box — a known shadow-memory startup
+  hang — so the lane is intentionally Linux-only.)*
 - [ ] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
 - [ ] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.
 - [ ] **Memory-safety hardening:** LSP allocation cap; remove `assert()`-only guards from the release `copy_bits` path.

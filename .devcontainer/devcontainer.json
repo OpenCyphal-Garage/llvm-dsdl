@@ -1,10 +1,10 @@
 {
-  "name": "llvm-dsdl (toolshed ts24.4.3)",
-  "image": "ghcr.io/opencyphal/toolshed:ts24.4.3",
+  "name": "llvm-dsdl (toolshed ts26.4.1)",
+  "image": "ghcr.io/opencyphal/toolshed:ts26.4.1",
   "containerEnv": {
-    "LLVM_DIR": "/usr/lib/llvm-19/lib/cmake/llvm",
-    "MLIR_DIR": "/usr/lib/llvm-19/lib/cmake/mlir",
-    "CMAKE_PREFIX_PATH": "/usr/lib/llvm-19"
+    "LLVM_DIR": "/usr/lib/llvm-22/lib/cmake/llvm",
+    "MLIR_DIR": "/usr/lib/llvm-22/lib/cmake/mlir",
+    "CMAKE_PREFIX_PATH": "/usr/lib/llvm-22"
   },
   "runArgs": [
     "--init"

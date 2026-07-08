@@ -198,12 +198,6 @@ Run it directly:
 dsdld
 ```
 
-### VS Code
-
-A VS Code client extension is included in this repository:
-
-- [`editors/vscode/dsdld-client`](./editors/vscode/dsdld-client)
-
 ### Neovim (`nvim-lspconfig`) example
 
 ```lua

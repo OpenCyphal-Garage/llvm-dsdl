@@ -51,6 +51,24 @@ if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
 endif()
 
+# Optional sanitizer instrumentation of the generated C/C++ decoders. SANITIZE is
+# a comma-separated -fsanitize list (e.g. "address,undefined"); empty = off. When
+# set, both the generated-code objects and the harness main are built and linked
+# with the sanitizer so ASan/UBSan observe the decode path over the randomized +
+# directed malformed inputs the harness already drives. -fno-sanitize-recover=all
+# makes UBSan findings fatal (nonzero exit) instead of merely logged.
+set(san_compile_flags "")
+set(san_link_flags "")
+if(DEFINED SANITIZE AND NOT "${SANITIZE}" STREQUAL "")
+  set(san_compile_flags
+      "-fsanitize=${SANITIZE}"
+      -fno-sanitize-recover=all
+      -fno-omit-frame-pointer
+      -g)
+  set(san_link_flags "-fsanitize=${SANITIZE}")
+  message(STATUS "C/C++ parity harness sanitized with: ${SANITIZE}")
+endif()
+
 set(parity_main "${SOURCE_ROOT}/test/integration/CppCParityMain.cpp")
 if(NOT EXISTS "${parity_main}")
   message(FATAL_ERROR "parity harness source missing: ${parity_main}")
@@ -105,6 +123,7 @@ execute_process(
     "${CXX_COMPILER}"
       ${cxx_std_flag}
       ${cxx_warning_flags}
+      ${san_compile_flags}
       -I "${c_out}"
       -I "${cpp_out}"
       -c "${parity_main}"
@@ -139,6 +158,7 @@ foreach(src IN LISTS generated_c_sources)
         -Wall
         -Wextra
         -Werror
+        ${san_compile_flags}
         -I "${c_out}"
         -c "${src}"
         -o "${obj}"
@@ -161,6 +181,7 @@ execute_process(
     "${CXX_COMPILER}"
       "${main_obj}"
       ${c_objs}
+      ${san_link_flags}
       -o "${exe}"
   RESULT_VARIABLE link_result
   OUTPUT_VARIABLE link_stdout

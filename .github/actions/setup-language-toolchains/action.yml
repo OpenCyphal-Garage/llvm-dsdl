@@ -1,11 +1,10 @@
 name: "Prepare toolshed container for a full run"
 description: >-
   Add everything the OpenCyphal toolshed image is missing for a full, unabridged
-  run: MLIR dev libraries (from the image's preconfigured LLVM apt repo) plus the
-  generated-output language toolchains the integration lanes detect at configure
-  time (Go, Rust, TypeScript/tsc, llvm-lit). Node/npm, clang-19, cmake and ninja
-  are already in the image. Every install is guarded so `act --reuse` re-runs are
-  effectively no-ops.
+  run: MLIR dev libraries matching LLVM_DIR/MLIR_DIR plus the generated-output
+  language toolchains the integration lanes detect at configure time (Go, Rust,
+  TypeScript/tsc, llvm-lit). Node/npm, clang, cmake and ninja are already in the
+  image. Every install is guarded so `act --reuse` re-runs are effectively no-ops.
 
 inputs:
   go-version:
@@ -25,10 +24,31 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        if [ ! -f /usr/lib/llvm-19/lib/cmake/mlir/MLIRConfig.cmake ]; then
+
+        llvm_version="${LLVM_VERSION:-${TOOLSHED_LLVM_VERSION:-}}"
+        if [[ -z "${llvm_version}" && "${MLIR_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
+          llvm_version="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "${llvm_version}" && "${LLVM_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
+          llvm_version="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "${llvm_version}" ]]; then
+          echo "Could not infer LLVM version from LLVM_DIR/MLIR_DIR/TOOLSHED_LLVM_VERSION" >&2
+          exit 1
+        fi
+
+        mlir_dir="${MLIR_DIR:-/usr/lib/llvm-${llvm_version}/lib/cmake/mlir}"
+        packages=()
+        if [ ! -f "${mlir_dir}/MLIRConfig.cmake" ]; then
+          packages+=("libmlir-${llvm_version}-dev" "mlir-${llvm_version}-tools")
+        fi
+        if ! find /usr/lib -path "*/cmake/zstd/zstdConfig.cmake" -print -quit | grep -q .; then
+          packages+=("libzstd-dev")
+        fi
+
+        if [ "${#packages[@]}" -gt 0 ]; then
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends \
-            libmlir-19-dev mlir-19-tools libzstd-dev
+          apt-get install -y -qq --no-install-recommends "${packages[@]}"
         fi
 
     - name: Go
@@ -71,11 +91,19 @@ runs:
       shell: bash
       run: |
         export PATH="/usr/local/go/bin:${HOME}/.cargo/bin:${PATH}"
+        llvm_version="${LLVM_VERSION:-${TOOLSHED_LLVM_VERSION:-}}"
+        if [[ -z "${llvm_version}" && "${MLIR_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
+          llvm_version="${BASH_REMATCH[1]}"
+        fi
+        clang_bin="clang"
+        if [[ -n "${llvm_version}" ]] && command -v "clang-${llvm_version}" >/dev/null 2>&1; then
+          clang_bin="clang-${llvm_version}"
+        fi
         {
           echo "## Toolchains"
           echo '```'
           echo "cmake:  $(cmake --version | head -1)"
-          echo "clang:  $(clang-19 --version | head -1)"
+          echo "clang:  $(${clang_bin} --version | head -1)"
           echo "python: $(python3 --version 2>&1)"
           echo "lit:    $(lit --version 2>&1 || echo missing)"
           echo "go:     $(go version 2>&1)"

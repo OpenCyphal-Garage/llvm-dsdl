@@ -4,11 +4,11 @@ name: CI
 # across every supported host platform and every generated-output language.
 #
 # The Linux job runs INSIDE the project's own toolshed image
-# (ghcr.io/opencyphal/toolshed:ts24.4.3 — the same image .devcontainer uses), so
-# LLVM/MLIR 19, clang, cmake and ninja are already present: no per-run toolchain
+# (ghcr.io/opencyphal/toolshed:ts26.4.1 — the same image .devcontainer uses), so
+# LLVM/MLIR 22, clang, cmake and ninja are already present: no per-run toolchain
 # install of LLVM. The setup action only adds what the image lacks (MLIR dev libs,
-# Go, Rust, tsc, lit). This job runs identically under `act` locally (see .actrc)
-# and on GitHub-hosted runners.
+# Go, Rust, tsc, lit). This job runs identically under `act` locally and on
+# GitHub-hosted runners.
 #
 # The integration suite registers a language's tests only when its toolchain is
 # found at configure time, so installing the full toolchain set is what makes the
@@ -34,14 +34,14 @@ concurrency:
 jobs:
   linux:
     name: Full suite (linux / toolshed)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts24.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.1
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-19/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-19/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-19
+      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -109,102 +109,86 @@ jobs:
           path: reports/
           if-no-files-found: warn
 
-  macos:
-    name: Full suite (macos / homebrew)
-    # Containers are Linux-only, so macOS can't use the toolshed image; it is a
-    # GitHub-hosted job. Local `act` has no macos-14 runner image and skips it.
-    runs-on: macos-14
+  sanitizers:
+    name: Native decoder sanitizers + fuzzing (linux / toolshed)
+    # ASan/UBSan over the generated C/C++/Go decoders plus a coverage-guided
+    # libFuzzer lane over the native deserializers on the real UAVCAN corpus.
+    # Linux-only: threading the ASan runtime into a Go external link is only
+    # reliable here, and macOS Apple-Silicon ASan startup is flaky. The lane is
+    # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.1
     timeout-minutes: 120
+    env:
+      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      # The sanitizer + fuzz harnesses require Clang (-fsanitize=address,undefined
+      # and compiler-rt libFuzzer); force it so the Clang-gated tests register and
+      # the generated decoders are compiled with the sanitizer toolchain.
+      CC: /usr/lib/llvm-22/bin/clang
+      CXX: /usr/lib/llvm-22/bin/clang++
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Prepare toolchains
+        # Go is needed for the C/Go sanitized parity variant; the MLIR dev libs
+        # are needed to build dsdlc.
+        uses: ./.github/actions/setup-language-toolchains
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install LLVM/MLIR 19 + toolchains (Homebrew)
+      - name: Configure (ci-asan preset)
+        # A short fuzz budget on PRs keeps the lane fast; the weekly schedule cron
+        # runs a deep budget. libFuzzer support is auto-probed by the harness,
+        # which falls back to an ASan/UBSan corpus replay if it is absent.
         run: |
-          set -euxo pipefail
-          brew update
-          brew install llvm@19 ninja zstd
-          npm install -g typescript@5.4
-          python3 -m pip install --upgrade --break-system-packages lit || python3 -m pip install --upgrade lit
-          rustup toolchain install stable --profile minimal --no-self-update || true
-          rustup default stable || true
-          LLVM_PREFIX="$(brew --prefix llvm@19)"
-          {
-            echo "LLVM_DIR=${LLVM_PREFIX}/lib/cmake/llvm"
-            echo "MLIR_DIR=${LLVM_PREFIX}/lib/cmake/mlir"
-            echo "CMAKE_PREFIX_PATH=${LLVM_PREFIX}"
-            echo "CC=${LLVM_PREFIX}/bin/clang"
-            echo "CXX=${LLVM_PREFIX}/bin/clang++"
-          } >> "${GITHUB_ENV}"
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            FUZZ_RUNS=4000000
+          else
+            FUZZ_RUNS=40000
+          fi
+          cmake --preset ci-asan \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_NATIVE_DECODER_FUZZ_RUNS="${FUZZ_RUNS}"
 
-      - name: Configure (ci preset)
-        # See the linux job: this makes the report gates behavioral by feeding them the
-        # suite's executed JUnit results (a cell is covered only if its test passed).
-        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
+      - name: Build dsdlc (sanitizer toolchain)
+        # The sanitizer/fuzz tests are CMake scripts that only drive dsdlc; they
+        # compile the generated decoders themselves under sanitizers, so only
+        # dsdlc needs building here.
+        run: cmake --build build/matrix/ci-asan --config Debug --target dsdlc
 
-      - name: Build (Debug)
-        run: cmake --build --preset build-ci
-
-      - name: Build Python runtime accelerator
-        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
-
-      - name: Run full unabridged test suite
+      - name: Run sanitizer + native-decoder fuzz lane
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/test-results"
-          ctest --preset test-ci-full \
-            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
+          ctest --preset test-ci-asan-sanitizer \
+            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-sanitizers.xml"
 
-      - name: Behavioral scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
-        # Runs after the suite so it can consume the executed JUnit results. `if: always()`
-        # ensures the gate still runs (and can fail the job) even if an earlier test failed.
-        if: always()
-        run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
-
-      - name: Collect reports
+      - name: Collect fuzz reproducers
+        # Any crash/leak/timeout reproducer libFuzzer saved becomes a CI artifact
+        # so a maintainer can add it to test/fuzz/corpus/native_decoder/.
         if: always()
         run: |
-          mkdir -p "${GITHUB_WORKSPACE}/reports"
-          [ -d build/matrix/ci/convergence ] && cp -R build/matrix/ci/convergence "${GITHUB_WORKSPACE}/reports/" || true
+          mkdir -p "${GITHUB_WORKSPACE}/fuzz-artifacts"
+          find build/matrix/ci-asan -type d -name artifacts -path '*native-decoder-fuzz*' \
+            -exec cp -R {}/. "${GITHUB_WORKSPACE}/fuzz-artifacts/" \; 2>/dev/null || true
 
       - name: Publish test results
-        if: always()
+        if: ${{ always() && !env.ACT }}
         uses: mikepenz/action-junit-report@v5
         with:
-          report_paths: "test-results/junit-macos.xml"
-          check_name: "Test results (macos)"
+          report_paths: "test-results/junit-sanitizers.xml"
+          check_name: "Test results (sanitizers)"
           include_passed: true
           detailed_summary: true
           fail_on_failure: false
 
-      - name: Upload JUnit results
-        if: always()
+      - name: Upload fuzz reproducers
+        if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
-          name: junit-macos
-          path: test-results/junit-macos.xml
-          if-no-files-found: warn
-
-      - name: Upload reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reports-macos
-          path: reports/
-          if-no-files-found: warn
+          name: fuzz-reproducers
+          path: fuzz-artifacts/
+          if-no-files-found: ignore

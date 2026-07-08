@@ -97,7 +97,16 @@ include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 include_directories(SYSTEM ${MLIR_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
-add_definitions(${LLVM_DEFINITIONS})
+# Packaged LLVM records the ABI it was built against by re-emitting
+# -D_GLIBCXX_USE_CXX11_ABI in LLVM_DEFINITIONS. The toolshed's GCC driver
+# already injects that same macro on <command-line>, so applying LLVM's copy
+# makes every translation unit warn about a command-line macro redefinition.
+# Drop LLVM's duplicate and keep the compiler's own definition; all the other
+# LLVM defines (__STDC_CONSTANT_MACROS, etc.) are preserved.
+string(REPLACE " " ";" _llvmdsdl_llvm_definitions "${LLVM_DEFINITIONS}")
+list(FILTER _llvmdsdl_llvm_definitions EXCLUDE REGEX "_GLIBCXX_USE_CXX11_ABI")
+add_definitions(${_llvmdsdl_llvm_definitions})
+unset(_llvmdsdl_llvm_definitions)
 
 if(APPLE AND LLVM_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
   add_link_options("-Wl,-no_warn_duplicate_libraries")
@@ -133,10 +142,6 @@ option(LLVMDSDL_ENABLE_LLVM_COVERAGE
 
 option(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR
        "Build optional CPython runtime accelerator module for generated Python code"
-       OFF)
-
-option(LLVMDSDL_DISTCLEAN_REMOVE_NODE_MODULES
-       "Remove editors/vscode/dsdld-client/node_modules when running distclean"
        OFF)
 
 option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
@@ -180,6 +185,74 @@ if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
   message(STATUS "Using llvm-profdata: ${LLVMDSDL_LLVM_PROFDATA_EXE}")
   message(STATUS "Using llvm-cov: ${LLVMDSDL_LLVM_COV_EXE}")
 endif()
+
+# --- Sanitizers -------------------------------------------------------------
+# Instruments the host tools (dsdlc/dsdl-opt/dsdld) AND the in-process frontend
+# fuzzers (Lexer/Parser/LSP) with ASan/UBSan. Generated *native decoders* are
+# compiled by the integration harness scripts in their own execute_process
+# invocations, so they do NOT inherit these flags; those scripts are sanitized
+# independently via LLVMDSDL_NATIVE_HARNESS_SANITIZE (forwarded below). Use the
+# Debug configuration for sanitizer builds so NDEBUG is absent and the runtime
+# copy_bits assert() guards still fire alongside ASan.
+set(LLVMDSDL_ENABLE_SANITIZERS
+    ""
+    CACHE STRING
+    "Comma-separated -fsanitize list applied to the host tools and unit fuzzers \
+(e.g. \"address,undefined\"). Empty = off. Requires Clang/AppleClang.")
+
+# Sanitizer flavor forwarded to the native-decoder integration harnesses (the
+# generated C/C++/Go parity + roundtrip + libFuzzer tests). Kept separate from
+# the host-tool switch because those harnesses compile untrusted-input decoders
+# and are the primary ASan/libFuzzer target; the host tools are a bonus. When
+# LLVMDSDL_ENABLE_SANITIZERS is set and this is left at "auto", it defaults to
+# the same list so a single knob turns everything on.
+set(LLVMDSDL_NATIVE_HARNESS_SANITIZE
+    "auto"
+    CACHE STRING
+    "Sanitizer list for generated native-decoder harnesses (address,undefined). \
+\"auto\" tracks LLVMDSDL_ENABLE_SANITIZERS; \"\" disables.")
+
+if(LLVMDSDL_NATIVE_HARNESS_SANITIZE STREQUAL "auto")
+  set(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE "${LLVMDSDL_ENABLE_SANITIZERS}")
+else()
+  set(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE "${LLVMDSDL_NATIVE_HARNESS_SANITIZE}")
+endif()
+
+if(LLVMDSDL_ENABLE_SANITIZERS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    message(FATAL_ERROR
+      "LLVMDSDL_ENABLE_SANITIZERS requires Clang/AppleClang. "
+      "Current C++ compiler: ${CMAKE_CXX_COMPILER_ID}")
+  endif()
+  add_compile_options(
+    -fsanitize=${LLVMDSDL_ENABLE_SANITIZERS}
+    -fno-sanitize-recover=all
+    -fno-omit-frame-pointer
+    -g)
+  add_link_options(-fsanitize=${LLVMDSDL_ENABLE_SANITIZERS})
+  message(STATUS "Sanitizers enabled for host tools/fuzzers: ${LLVMDSDL_ENABLE_SANITIZERS}")
+endif()
+
+if(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE)
+  message(STATUS
+    "Native-decoder harnesses sanitized with: ${LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE}")
+endif()
+
+# Coverage-guided libFuzzer lane over the generated native (C/C++) deserializers
+# on the real UAVCAN corpus. Requires a Clang that ships compiler-rt's
+# -fsanitize=fuzzer; the harness registration probes for it and skips loudly if
+# absent so a toolchain without libFuzzer does not silently drop the lane.
+option(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
+       "Register the coverage-guided libFuzzer lane over generated native decoders"
+       OFF)
+
+# Bounded iteration count for the native-decoder fuzz lane's ctest entry. CI sets
+# a small number on PRs and a large number on the weekly deep run; interactive
+# fuzzing overrides -runs directly on the built binary.
+set(LLVMDSDL_NATIVE_DECODER_FUZZ_RUNS
+    "20000"
+    CACHE STRING
+    "libFuzzer -runs= budget for the native-decoder fuzz ctest entry.")
 
 if(NOT LLVMDSDL_CLANG_FORMAT_EXE)
   message(WARNING

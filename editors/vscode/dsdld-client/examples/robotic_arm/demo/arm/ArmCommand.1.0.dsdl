@@ -1,7 +1,0 @@
-# High-level command for a 6-DOF arm with a generic hand/tool interface.
-
-JointCommand.1.0 joints
-ToolCommand.1.0 tool
-bool enable_motors
-
-@sealed

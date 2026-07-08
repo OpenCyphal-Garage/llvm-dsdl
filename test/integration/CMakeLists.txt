@@ -2588,6 +2588,36 @@ if(GO_EXECUTABLE)
       PROPERTIES
         LABELS "integration;uavcan;go;differential;go-differential;slow;optimized"
     )
+
+    # ASan/UBSan variant of the C/Go parity harness: the generated C decoders
+    # linked into the CGo binary are sanitized. Restricted to Linux + Clang
+    # because threading the ASan runtime into a Go external link is only reliably
+    # supported there; on other hosts the C/C++ sanitizer variant above provides
+    # the equivalent generated-C decoder coverage.
+    if(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE
+       AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+       AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+      add_test(
+        NAME llvmdsdl-uavcan-c-go-parity-sanitized
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-go-parity-sanitized-out
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DAR_EXECUTABLE=${CMAKE_AR}
+            -DGO_EXECUTABLE=${GO_EXECUTABLE}
+            -DSANITIZE=${LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE}
+            -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCGoParity.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-uavcan-c-go-parity-sanitized
+        PROPERTIES
+          LABELS "integration;uavcan;go;differential;go-differential;slow;sanitizer"
+      )
+    endif()
   endif()
 endif()
 
@@ -2659,6 +2689,37 @@ set_tests_properties(
   PROPERTIES
     LABELS "integration;uavcan;cpp;differential;slow"
 )
+
+# ASan/UBSan variant of the C/C++ decoder parity harness. Reuses the same
+# randomized + directed malformed-input harness but rebuilds the generated C and
+# C++ decoders (and the harness main) under sanitizers, so memory/UB defects in
+# the generated decode path surface as a hard failure. Registered only when a
+# sanitizer flavor is active (ci-asan preset) and the toolchain is Clang, which
+# is what -fsanitize=address,undefined requires.
+if(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE
+   AND CMAKE_C_COMPILER_ID MATCHES "Clang|AppleClang"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+  add_test(
+    NAME llvmdsdl-uavcan-cpp-c-parity-sanitized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-c-parity-sanitized-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCPP_PROFILE=std
+        -DSANITIZE=${LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-cpp-c-parity-sanitized
+    PROPERTIES
+      LABELS "integration;uavcan;cpp;differential;slow;sanitizer"
+  )
+endif()
 
 add_test(
   NAME llvmdsdl-uavcan-cpp-c-parity-optimized
@@ -2971,23 +3032,33 @@ else()
     "Skipping differential parity test: requires Python3 interpreter and sibling nunavut/pydsdl repos.")
 endif()
 
-find_program(NPM_EXECUTABLE npm QUIET)
-if(NPM_EXECUTABLE)
+# --- Native-decoder libFuzzer lane (ASan/UBSan over generated C decoders) ----
+# Registered only when explicitly enabled (the ci-asan preset) and the compiler
+# is Clang, since the harness requires -fsanitize=address,undefined and, for
+# coverage-guided mode, compiler-rt's libFuzzer. The harness itself degrades to
+# an ASan/UBSan corpus replay when libFuzzer is unavailable, so the lane is
+# meaningful on any Clang; it is never a silent no-op.
+if(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
+   AND CMAKE_C_COMPILER_ID MATCHES "Clang|AppleClang")
   add_test(
-    NAME llvmdsdl-vscode-extension-smoke
+    NAME llvmdsdl-native-decoder-fuzz
     COMMAND
       ${CMAKE_COMMAND}
-        -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
-        -DEXTENSION_DIR=${LLVMDSDL_SOURCE_DIR}/editors/vscode/dsdld-client
-        -DDSDLD_BINARY=$<TARGET_FILE:dsdld>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunVsCodeExtensionTests.cmake
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/native-decoder-fuzz-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DSANITIZE=${LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE}
+        -DFUZZ_RUNS=${LLVMDSDL_NATIVE_DECODER_FUZZ_RUNS}
+        -DCORPUS_DIR=${LLVMDSDL_SOURCE_DIR}/test/fuzz/corpus/native_decoder
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunNativeDecoderFuzz.cmake
   )
 
   set_tests_properties(
-    llvmdsdl-vscode-extension-smoke
+    llvmdsdl-native-decoder-fuzz
     PROPERTIES
-      LABELS "integration;vscode;lsp"
+      LABELS "integration;uavcan;fuzz;sanitizer;slow"
+      TIMEOUT 2400
   )
-else()
-  message(STATUS "Skipping VSCode extension integration test: npm not found")
 endif()

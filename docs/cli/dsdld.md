@@ -19,7 +19,6 @@ dsdld
 
 ## Editor integration
 
-- VS Code client: `editors/vscode/dsdld-client`
 - Neovim: configure via `nvim-lspconfig`
 
 ## Related operator docs

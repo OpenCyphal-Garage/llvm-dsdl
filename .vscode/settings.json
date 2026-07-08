@@ -20,6 +20,7 @@
         "minkowski",
         "mlir",
         "nodiscard",
+        "opencyphal",
         "RUSTEMITTER",
         "SERDES",
         "thirtytwobits"

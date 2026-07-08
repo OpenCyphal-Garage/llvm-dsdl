@@ -60,6 +60,18 @@
         "LLVMDSDL_ENABLE_PYTHON_ACCELERATOR": "ON",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/ci/install"
       }
+    },
+    {
+      "name": "ci-asan",
+      "displayName": "CI (ASan/UBSan + native-decoder fuzzing)",
+      "description": "CI preset that compiles the generated native decoders under ASan+UBSan (parity + libFuzzer lanes). Clang-only; build the Debug configuration so NDEBUG is absent and the runtime copy_bits asserts still fire. Host tools are NOT sanitized by default (that is all-or-nothing and heavy); add -DLLVMDSDL_ENABLE_SANITIZERS=address,undefined to additionally instrument dsdlc/dsdl-opt/dsdld and the frontend unit fuzzers.",
+      "inherits": "ci",
+      "binaryDir": "${sourceDir}/build/matrix/ci-asan",
+      "cacheVariables": {
+        "LLVMDSDL_NATIVE_HARNESS_SANITIZE": "address,undefined",
+        "LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/ci-asan/install"
+      }
     }
   ],
   "buildPresets": [
@@ -77,6 +89,12 @@
       "name": "build-ci",
       "displayName": "Build (ci)",
       "configurePreset": "ci",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-ci-asan",
+      "displayName": "Build (ci-asan, Debug)",
+      "configurePreset": "ci-asan",
       "configuration": "Debug"
     }
   ],
@@ -186,6 +204,23 @@
           "label": "python-accel-required"
         }
       }
+    },
+    {
+      "name": "test-ci-asan-sanitizer",
+      "displayName": "Test (ci-asan sanitizer + native fuzz lane)",
+      "inherits": "test-base",
+      "configurePreset": "ci-asan",
+      "filter": {
+        "include": {
+          "label": "sanitizer"
+        }
+      }
+    },
+    {
+      "name": "test-ci-asan-full",
+      "displayName": "Test (ci-asan full suite under sanitizers)",
+      "inherits": "test-base",
+      "configurePreset": "ci-asan"
     }
   ],
   "workflowPresets": [

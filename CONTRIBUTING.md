@@ -324,4 +324,3 @@ In the PR description, include:
 - [`README.md`](./README.md)
 - [`DESIGN.md`](./DESIGN.md)
 - [`tools/dsdld/README.md`](./tools/dsdld/README.md)
-- [`editors/vscode/dsdld-client/README.md`](./editors/vscode/dsdld-client/README.md)

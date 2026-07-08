@@ -4,7 +4,21 @@ set -euo pipefail
 need_llvm_mlir=0
 need_zstd=0
 
-if ! [ -f /usr/lib/llvm-19/lib/cmake/mlir/MLIRConfig.cmake ]; then
+llvm_version="${LLVM_VERSION:-${TOOLSHED_LLVM_VERSION:-}}"
+if [[ -z "${llvm_version}" && "${MLIR_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
+  llvm_version="${BASH_REMATCH[1]}"
+fi
+if [[ -z "${llvm_version}" && "${LLVM_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
+  llvm_version="${BASH_REMATCH[1]}"
+fi
+if [[ -z "${llvm_version}" ]]; then
+  echo "Could not infer LLVM version from LLVM_DIR/MLIR_DIR/TOOLSHED_LLVM_VERSION" >&2
+  exit 1
+fi
+
+mlir_dir="${MLIR_DIR:-/usr/lib/llvm-${llvm_version}/lib/cmake/mlir}"
+
+if ! [ -f "${mlir_dir}/MLIRConfig.cmake" ]; then
   need_llvm_mlir=1
 fi
 
@@ -17,14 +31,14 @@ if [ "$need_llvm_mlir" -eq 1 ] || [ "$need_zstd" -eq 1 ]; then
     sudo apt-get update
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       libzstd-dev \
-      libmlir-19-dev \
-      mlir-19-tools
+      "libmlir-${llvm_version}-dev" \
+      "mlir-${llvm_version}-tools"
   else
     apt-get update
     env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       libzstd-dev \
-      libmlir-19-dev \
-      mlir-19-tools
+      "libmlir-${llvm_version}-dev" \
+      "mlir-${llvm_version}-tools"
   fi
 fi
 

@@ -47,6 +47,28 @@ if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
 endif()
 
+# Optional sanitizer instrumentation of the C side of the CGo parity harness.
+# SANITIZE is a comma-separated -fsanitize list (e.g. "address,undefined"); the
+# generated C decoders + C harness are compiled with it, and the sanitizer
+# runtime is threaded into the CGo external link via -extldflags so ASan/UBSan
+# observe the C decode path over the harness's randomized + directed malformed
+# inputs. NOTE: the generated *Go* decoders are memory-safe by construction (a
+# malformed payload panics rather than corrupting memory, and the harness asserts
+# C<->Go parity, so any panic already fails the test); ASan/UBSan therefore only
+# instrument the C bindings here. Go-native fault safety is covered by the parity
+# assertions, and could be deepened later with `go test -fuzz`/`-race`.
+set(san_compile_flags "")
+set(san_ext_ldflags "")
+if(DEFINED SANITIZE AND NOT "${SANITIZE}" STREQUAL "")
+  set(san_compile_flags
+      "-fsanitize=${SANITIZE}"
+      -fno-sanitize-recover=all
+      -fno-omit-frame-pointer
+      -g)
+  set(san_ext_ldflags "-fsanitize=${SANITIZE}")
+  message(STATUS "C/Go parity harness (C side) sanitized with: ${SANITIZE}")
+endif()
+
 file(MAKE_DIRECTORY "${OUT_DIR}")
 foreach(stale_dir c go build harness .gocache .gomodcache)
   if(EXISTS "${OUT_DIR}/${stale_dir}")
@@ -114,6 +136,7 @@ execute_process(
       -Wall
       -Wextra
       -Werror
+      ${san_compile_flags}
       -I "${c_out}"
       -c "${c_harness_src}"
       -o "${harness_obj}"
@@ -147,6 +170,7 @@ foreach(src IN LISTS generated_c_sources)
         -Wall
         -Wextra
         -Werror
+        ${san_compile_flags}
         -I "${c_out}"
         -c "${src}"
         -o "${obj}"
@@ -182,6 +206,11 @@ endif()
 set(go_cache "${run_out}/.gocache")
 set(go_mod_cache "${run_out}/.gomodcache")
 set(ext_ldflags "${static_lib}")
+if(NOT "${san_ext_ldflags}" STREQUAL "")
+  # Pull the sanitizer runtime/interceptors into the CGo external link so the
+  # ASan/UBSan instrumentation compiled into the C archive resolves at link time.
+  set(ext_ldflags "${ext_ldflags} ${san_ext_ldflags}")
+endif()
 set(go_ldflags "-extldflags '${ext_ldflags}'")
 execute_process(
   COMMAND

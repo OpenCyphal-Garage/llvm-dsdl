@@ -21,16 +21,16 @@ concurrency:
 jobs:
   coverage:
     name: LLVM source coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts24.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.1
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-19/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-19/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-19
-      CC: clang-19
-      CXX: clang++-19
+      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      CC: clang-22
+      CXX: clang++-22
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
