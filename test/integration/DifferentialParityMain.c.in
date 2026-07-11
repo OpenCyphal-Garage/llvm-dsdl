@@ -1,6 +1,5 @@
 #include "DifferentialParityABI.h"
 
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -30,100 +29,46 @@ extern const DifferentialCaseInfo g_nv_case_node_id_alloc;
 extern const DifferentialCaseInfo g_nv_case_diag_record;
 extern const DifferentialCaseInfo g_nv_case_sync_timestamp;
 
-// How the re-serialized bytes of a case are compared against the reference.
-typedef enum {
-  // Byte-for-byte identical serialized representation required. Used for every
-  // type whose wire image contains no floating-point fields.
-  COMPARE_EXACT_BYTES,
-  // Real32.1.0 (float32[<=64]) layout: byte-for-byte identical EXCEPT that a NaN
-  // element may carry a different mantissa payload. Our C codegen normalizes a
-  // saturated float through a float->double->float round-trip, which
-  // canonicalizes a signaling NaN to quiet (sets its mantissa MSB); the
-  // reference passes the raw float. Both are valid NaNs (Cyphal/IEEE-754 do not
-  // require preserving NaN payloads), so byte-exact parity is not achievable for
-  // NaN inputs, but every finite/infinite value must still match exactly.
-  COMPARE_FLOAT32_ARRAY_NAN_OK,
-  // Structural parity only (serialize/deserialize return code and byte length),
-  // no byte-for-byte check. Used for uavcan.register.Value.1.0, a tagged union
-  // whose active variant may be a real16/32/64 array; those float variants are
-  // subject to the same NaN canonicalization as above, and a union-layout-aware
-  // NaN-tolerant byte comparator would be brittle. Full byte-exact union parity
-  // is gated on the codegen fix that avoids the float->double round-trip.
-  COMPARE_STRUCTURAL_ONLY,
-} CompareMode;
-
+// Every case is compared byte-for-byte against the reference compiler. This
+// includes the float-carrying types (Real32, and register.Value's real16/32/64
+// union variants): our C codegen keeps floats in their native storage width
+// end-to-end, so a signaling NaN's mantissa payload is preserved exactly as the
+// reference does (no float->double->float canonicalization).
 typedef struct {
   const char *name;
   const DifferentialCaseInfo *ours;
   const DifferentialCaseInfo *nv;
-  CompareMode compareMode;
 } CasePair;
 
 static const CasePair kCases[] = {
-    {"uavcan.node.Heartbeat.1.0", &g_ours_case_heartbeat, &g_nv_case_heartbeat,
-     COMPARE_EXACT_BYTES},
+    {"uavcan.node.Heartbeat.1.0", &g_ours_case_heartbeat, &g_nv_case_heartbeat},
     {"uavcan.node.ExecuteCommand.Request.1.3",
      &g_ours_case_execute_command_request,
-     &g_nv_case_execute_command_request, COMPARE_EXACT_BYTES},
+     &g_nv_case_execute_command_request},
     {"uavcan.node.ExecuteCommand.Response.1.3",
      &g_ours_case_execute_command_response,
-     &g_nv_case_execute_command_response, COMPARE_EXACT_BYTES},
+     &g_nv_case_execute_command_response},
     {"uavcan.register.Value.1.0", &g_ours_case_register_value,
-     &g_nv_case_register_value, COMPARE_STRUCTURAL_ONLY},
+     &g_nv_case_register_value},
     {"uavcan.metatransport.can.Frame.0.2", &g_ours_case_can_frame,
-     &g_nv_case_can_frame, COMPARE_EXACT_BYTES},
+     &g_nv_case_can_frame},
     {"uavcan.primitive.array.Real32.1.0", &g_ours_case_real32_array,
-     &g_nv_case_real32_array, COMPARE_FLOAT32_ARRAY_NAN_OK},
+     &g_nv_case_real32_array},
     // Tagged union with no floating-point variant (sparse list / bitset mask /
-    // total): byte-exact re-serialization holds.
+    // total).
     {"uavcan.node.port.SubjectIDList.1.0", &g_ours_case_subject_id_list,
-     &g_nv_case_subject_id_list, COMPARE_EXACT_BYTES},
+     &g_nv_case_subject_id_list},
     // Fixed-length byte array (unique_id[16]) plus a variable-length optional.
     {"uavcan.pnp.NodeIDAllocationData.2.0", &g_ours_case_node_id_alloc,
-     &g_nv_case_node_id_alloc, COMPARE_EXACT_BYTES},
+     &g_nv_case_node_id_alloc},
     // Nested composite (timestamp) + enum-ish field + variable-length UTF-8/byte
     // array (text[<=255]).
     {"uavcan.diagnostic.Record.1.1", &g_ours_case_diag_record,
-     &g_nv_case_diag_record, COMPARE_EXACT_BYTES},
+     &g_nv_case_diag_record},
     // Narrow non-byte-aligned scalar (uint56).
     {"uavcan.time.SynchronizedTimestamp.1.0", &g_ours_case_sync_timestamp,
-     &g_nv_case_sync_timestamp, COMPARE_EXACT_BYTES},
+     &g_nv_case_sync_timestamp},
 };
-
-// Compares two Real32.1.0 serialized payloads treating NaN elements as equal
-// regardless of mantissa payload (see COMPARE_FLOAT32_ARRAY_NAN_OK). The wire
-// layout is a single length byte (element count, 0..64) followed by that many
-// little-endian IEEE-754 binary32 values.
-static bool real32ArrayEqual(const uint8_t *const a, const uint8_t *const b,
-                             const size_t size) {
-  if (size == 0U) {
-    return true;
-  }
-  if (a[0] != b[0]) {
-    return false; // length prefix must match exactly
-  }
-  const size_t count = (size_t)a[0];
-  size_t off = 1U;
-  for (size_t e = 0; e < count; ++e) {
-    if ((off + 4U) > size) {
-      break; // defensive: truncated payload compared exactly below
-    }
-    if (memcmp(a + off, b + off, 4U) != 0) {
-      float fa;
-      float fb;
-      memcpy(&fa, a + off, 4U);
-      memcpy(&fb, b + off, 4U);
-      if (!(isnan(fa) && isnan(fb))) {
-        return false; // a genuine (non-NaN) value divergence
-      }
-    }
-    off += 4U;
-  }
-  if (off < size) {
-    return memcmp(a + off, b + off, size - off) == 0; // any trailing bytes
-  }
-  return true;
-}
 
 static uint64_t g_rng_state = UINT64_C(0x9E3779B97F4A7C15);
 
@@ -213,22 +158,9 @@ static int runCase(const CasePair *const testCase, const size_t iterations) {
           testCase->ours->serialize(oursObject, oursSerialized, &oursOutSize);
       const int8_t nvSerResult =
           testCase->nv->serialize(nvObject, nvSerialized, &nvOutSize);
-      bool byteMismatch = false;
-      if (oursOutSize == nvOutSize) {
-        switch (testCase->compareMode) {
-        case COMPARE_EXACT_BYTES:
-          byteMismatch =
-              (memcmp(oursSerialized, nvSerialized, oursOutSize) != 0);
-          break;
-        case COMPARE_FLOAT32_ARRAY_NAN_OK:
-          byteMismatch =
-              !real32ArrayEqual(oursSerialized, nvSerialized, oursOutSize);
-          break;
-        case COMPARE_STRUCTURAL_ONLY:
-          byteMismatch = false;
-          break;
-        }
-      }
+      const bool byteMismatch =
+          (oursOutSize == nvOutSize) &&
+          (memcmp(oursSerialized, nvSerialized, oursOutSize) != 0);
       if ((oursSerResult != nvSerResult) || (oursOutSize != nvOutSize) ||
           byteMismatch) {
         fprintf(stderr,

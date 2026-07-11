@@ -1063,9 +1063,15 @@ bool emitSerializeField(std::ostringstream& out,
         {
             return false;
         }
+        // Keep the value in its native storage width (float for 16/32-bit,
+        // double for 64-bit) through the identity normalization helper so a NaN
+        // payload is not canonicalized by a float->double->float round-trip.
         const auto normName = "_normf_" + std::to_string(index);
-        emitLine(out, indent, "const double " + normName + " = " + step.serFloatHelper + "((double)(" + expr + "));");
-        std::string valueExpr = "(" + castType + ")(" + normName + ")";
+        emitLine(out,
+                 indent,
+                 "const " + castType + " " + normName + " = " + step.serFloatHelper + "((" + castType + ")(" + expr +
+                     "));");
+        std::string valueExpr = normName;
         emitLine(out,
                  indent,
                  "const int8_t _err_" + std::to_string(index) + " = " + setter +
@@ -1211,9 +1217,13 @@ bool emitDeserializeField(std::ostringstream& out,
         }
         std::string castType = (step.bitLength == 64) ? "double" : "float";
         const auto  rawName  = "_rawf_" + std::to_string(index);
+        // Read into the native storage width (get_f16/get_f32 return float,
+        // get_f64 returns double) and run the identity normalization helper at
+        // that width, so a NaN payload survives without float->double->float
+        // canonicalization.
         emitLine(out,
                  indent,
-                 "const double " + rawName + " = (double)" + getter + "(buffer, capacity_bytes, offset_bits);");
+                 "const " + castType + " " + rawName + " = " + getter + "(buffer, capacity_bytes, offset_bits);");
         if (step.deserFloatHelper.empty())
         {
             return false;
@@ -2000,7 +2010,18 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         }
         for (const auto& symbol : scalarFloatHelperSymbols)
         {
-            mlir::emitc::VerbatimOp::create(builder, loc, "double " + symbol + "(double);");
+            // The scalar float helper is width-matched (float for 16/32-bit
+            // fields, double for 64-bit); mirror its actual signature in the
+            // forward declaration so the prototype matches the lowered definition.
+            std::string ctype = "double";
+            if (auto fn = module.lookupSymbol<mlir::func::FuncOp>(symbol))
+            {
+                if (fn.getFunctionType().getNumInputs() == 1 && fn.getFunctionType().getInput(0).isF32())
+                {
+                    ctype = "float";
+                }
+            }
+            mlir::emitc::VerbatimOp::create(builder, loc, ctype + " " + symbol + "(" + ctype + ");");
         }
         for (const auto& symbol : arrayLengthPrefixHelperSymbols)
         {

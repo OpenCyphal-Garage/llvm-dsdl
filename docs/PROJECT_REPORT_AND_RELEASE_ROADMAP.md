@@ -172,26 +172,31 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   a **hard configure error**, not a silent skip (the repo paths are overridable
   cache vars in `test/integration/CMakeLists.txt`). **(b) Byte comparison is now
   always on** (removed the opt-in `--strict-float-byte-parity` flag): all
-  non-float types are byte-exact, and `Real32` (float32[<=64]) is byte-exact for
-  every finite/inf value with a **NaN-payload carve-out** (verified clean to 500k
-  random iterations). **(c) The `register.Value` union stays structural
-  (rc+size)**, not byte-exact — root cause found: our C codegen normalizes a
-  saturated float through a `float→double→float` round-trip
-  (`(double)(obj->value.elements[i])` → double saturation helper → `(float)`),
-  which canonicalizes a signaling NaN's mantissa MSB; the reference passes the
-  raw float. Both are valid NaNs (Cyphal/IEEE-754 don't require preserving NaN
-  payloads), so this is spec-permitted, not a correctness bug — but it blocks
-  byte-exact parity for any float-carrying type. **(d) Coverage broadened 6 → 10
+  non-float types are byte-exact, and **every float-carrying type is byte-exact
+  too** — including `Real32` and the `register.Value` union — after the C float
+  codegen fix (2026-07-10). The scalar-float normalization helper is now
+  **width-matched** (f32 for 16/32-bit fields, f64 for 64-bit) instead of always
+  f64, so the generated C keeps a float in its native width end-to-end rather
+  than promoting to `double` and narrowing back; that round-trip was
+  canonicalizing signaling-NaN mantissa payloads and was the *sole* source of
+  divergence from the reference. Verified byte-exact clean to **1,000,000** random
+  iterations across all 10 cases. *(Fix is C/EmitC-scoped:
+  `lib/Transforms/Passes.cpp` helper type + `lib/Transforms/ConvertDSDLToEmitC.cpp`
+  casts/decl. The Cpp/Rust/Go emitters keep the same vestigial double round-trip —
+  harmless, and the cross-language parity suites compare values so they tolerate
+  the NaN-payload difference — but they should be width-matched for consistency;
+  see P2. TS/Python are inherently double-typed and cannot preserve float32 NaN
+  payloads.)* **(d) Coverage broadened 6 → 10
   cases (2026-07-10)** across new wire shapes, all byte-exact and verified clean
   to 300k iterations: `node.port.SubjectIDList.1.0` (a **byte-exact non-float
   tagged union** — sparse list / bool[8192] bitset / total, the union coverage
   the float-variant `register.Value` can't provide),
   `pnp.NodeIDAllocationData.2.0` (fixed `byte[16]` + variable-length optional),
   `diagnostic.Record.1.1` (nested composite timestamp + `uint8[<=255]`), and
-  `time.SynchronizedTimestamp.1.0` (narrow non-byte-aligned `uint56`). **Remaining:**
-  (i) fix the codegen to avoid the float→double round-trip (P2 below) → then flip
-  `register.Value` to byte-exact; (ii) extend into the `reg`/UDRAL namespace
-  (`node.port.List.1.0`, ~8.5 KB, needs the harness I/O buffers enlarged).
+  `time.SynchronizedTimestamp.1.0` (narrow non-byte-aligned `uint56`); all 10 are
+  byte-exact. **Remaining:** extend into the `reg`/UDRAL namespace and
+  `node.port.List.1.0` (~8.5 KB, needs the harness I/O buffers enlarged), and
+  width-match the Cpp/Rust/Go float helpers for cross-backend consistency (P2).
 - [x] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.
   *(Done 2026-07-10.)* The frontend now enforces the Cyphal Specification
   primitive bit-length ranges (from the "Serializable types" section) in
@@ -250,6 +255,6 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
 - [ ] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
-- [ ] **Float serialization: avoid the `float→double→float` round-trip.** Our C codegen normalizes a saturated `float32` field by promoting each element to `double`, applying a double-typed saturation helper, then narrowing back to `float` (`lib/CodeGen` / the `__llvmdsdl_plan_scalar_float__…__ser` helper). For finite values this is numerically exact, but it canonicalizes signaling-NaN mantissa payloads, diverging bit-for-bit from the reference compiler (which passes same-width floats through untouched). Saturating same-width floats in native `float` (no `double` hop) would preserve NaN bits, enable **byte-exact reference parity for all float-carrying types** (flip `register.Value` and any float case to byte-exact in the differential harness), and drop needless conversions. Cross-backend change — needs golden-file updates + re-parity across C/C++/Rust/Go/TS/Python.
+- [~] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. **Remaining (consistency, no test currently fails):** apply the same width-match to the **Cpp/Rust/Go** emitters — their float helper (`lib/CodeGen/HelperBindingRender.cpp`) and callers (`CppEmitter.cpp` `static_cast<double>`, `RustEmitter.cpp` `as f64`, `GoEmitter.cpp` `float64(...)`) still round-trip through double, so those backends canonicalize NaN. The cross-language parity suites compare values and tolerate it, so nothing is red — this is a shared-semantics cleanup. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless.
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.

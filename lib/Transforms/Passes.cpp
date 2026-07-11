@@ -723,13 +723,21 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
         op.setAttr("lowered_ser_float_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_float_helper", builder.getStringAttr(deserName));
 
+        // Width-match the helper to the field's native storage type: 16/32-bit
+        // fields are held as `float` (f32), 64-bit as `double` (f64). Typing the
+        // helper as f64 for every width forced callers to promote a float32
+        // value to double and narrow it back, which canonicalizes a signaling
+        // NaN's mantissa payload and diverges bit-for-bit from the reference
+        // compiler. The helper is an identity pass-through, so matching the width
+        // preserves the exact bits.
+        auto floatTy = (bitLength == 64) ? mlir::Type(builder.getF64Type()) : mlir::Type(builder.getF32Type());
+
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
             mlir::OpBuilder::InsertionGuard g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
-            auto                 f64Ty  = builder.getF64Type();
-            auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{floatTy}, mlir::TypeRange{floatTy});
             auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
             fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("serialize"));
@@ -749,8 +757,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             mlir::OpBuilder::InsertionGuard g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
-            auto                 f64Ty  = builder.getF64Type();
-            auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{floatTy}, mlir::TypeRange{floatTy});
             auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
             fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("deserialize"));
