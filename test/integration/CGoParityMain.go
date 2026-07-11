@@ -4444,6 +4444,34 @@ func runCGoParity(iterations int) error {
 		directedCategoryCounts[classifyDirectedVector("real16_nan_vector")]++
 	}
 
+	// Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C and
+	// Go. Regression guard for the float32 -> float64 -> float32 round-trip that quieted signaling
+	// NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0). float16 is
+	// intentionally excluded: the shared runtime canonicalizes half-precision NaN payloads to
+	// 0x7E00 for every backend, so there is no stable payload to preserve there.
+	if tc, ok := caseByName["scalar_real32"]; ok {
+		golden := []byte{0x01, 0x00, 0x80, 0x7F} // float32 sNaN
+		var input [maxIOBuffer]byte
+		var cOutput [maxIOBuffer]byte
+		var goOutput [maxIOBuffer]byte
+		copy(input[:], golden)
+		outcome, err := runParityOnce(tc, input[:], len(golden), cOutput[:], goOutput[:], tc.maxSerialized)
+		if err != nil {
+			return fmt.Errorf("scalar_real32_signaling_nan_payload: %w", err)
+		}
+		if outcome.cSerializeSize != len(golden) || outcome.goSerializeSize != len(golden) ||
+			!bytes.Equal(cOutput[:len(golden)], golden) || !bytes.Equal(goOutput[:len(golden)], golden) {
+			return fmt.Errorf(
+				"scalar_real32_signaling_nan_payload: signaling NaN payload not preserved: golden=[%s] c=[%s] go=[%s]",
+				formatBytes(golden),
+				formatBytes(cOutput[:outcome.cSerializeSize]),
+				formatBytes(goOutput[:outcome.goSerializeSize]),
+			)
+		}
+		fmt.Println("PASS scalar_real32_signaling_nan_payload directed")
+		directedCategoryCounts[classifyDirectedVector("scalar_real32_signaling_nan_payload")]++
+	}
+
 	emitCategorySummary("random", randomCategoryCounts)
 	emitCategorySummary("directed", directedCategoryCounts)
 

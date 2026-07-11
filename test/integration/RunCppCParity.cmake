@@ -291,6 +291,7 @@ set(required_directed_markers
   "INFO cpp-c directed marker health_saturating_serialize"
   "INFO cpp-c directed marker synchronized_timestamp_truncating_serialize"
   "INFO cpp-c directed marker integer8_signed_roundtrip"
+  "INFO cpp-c directed marker real32_signaling_nan_payload_roundtrip"
 )
 foreach(marker IN LISTS required_directed_markers)
   string(FIND "${run_stdout}" "${marker}" marker_pos)

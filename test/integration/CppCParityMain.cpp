@@ -30,6 +30,7 @@ extern "C"
 #include "uavcan/node/Health_1_0.h"
 #include "uavcan/node/port/List_1_0.h"
 #include "uavcan/primitive/scalar/Integer8_1_0.h"
+#include "uavcan/primitive/scalar/Real32_1_0.h"
 #include "uavcan/time/SynchronizedTimestamp_1_0.h"
 }
 
@@ -39,6 +40,7 @@ extern "C"
 #include "uavcan/node/Health_1_0.hpp"
 #include "uavcan/node/port/List_1_0.hpp"
 #include "uavcan/primitive/scalar/Integer8_1_0.hpp"
+#include "uavcan/primitive/scalar/Real32_1_0.hpp"
 #include "uavcan/time/SynchronizedTimestamp_1_0.hpp"
 
 namespace
@@ -821,6 +823,44 @@ int runDirectedErrorCases()
             return 1;
         }
         std::printf("INFO cpp-c directed marker integer8_signed_roundtrip\n");
+    }
+
+    {
+        // Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // and C++. Regression guard for the float32 -> double -> float32 round-trip that quieted
+        // signaling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
+        // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
+        // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
+        const std::uint8_t                golden[4] = {0x01U, 0x00U, 0x80U, 0x7FU};  // float32 sNaN
+        uavcan__primitive__scalar__Real32 cObj{};
+        uavcan::primitive::scalar::Real32 cppObj{};
+        std::size_t                       cConsumed   = sizeof(golden);
+        std::size_t                       cppConsumed = sizeof(golden);
+        const std::int8_t                 cDesRc = uavcan__primitive__scalar__Real32__deserialize_(&cObj, golden, &cConsumed);
+        const std::int8_t                 cppDesRc = cppObj.deserialize(golden, &cppConsumed);
+        std::uint8_t                      cOut[8]{};
+        std::uint8_t                      cppOut[8]{};
+        std::size_t                       cSize    = sizeof(cOut);
+        std::size_t                       cppSize  = sizeof(cppOut);
+        const std::int8_t                 cSerRc   = uavcan__primitive__scalar__Real32__serialize_(&cObj, cOut, &cSize);
+        const std::int8_t                 cppSerRc = cppObj.serialize(cppOut, &cppSize);
+        if ((cDesRc != 0) || (cppDesRc != 0) || (cConsumed != cppConsumed) || (cSerRc != 0) || (cppSerRc != 0) ||
+            (cSize != 4U) || (cppSize != 4U) || (std::memcmp(cOut, golden, 4U) != 0) ||
+            (std::memcmp(cppOut, golden, 4U) != 0))
+        {
+            std::fprintf(stderr,
+                         "Directed mismatch (Real32 signaling-NaN payload roundtrip): "
+                         "C(rc=%d,size=%zu) C++(rc=%d,size=%zu)\n",
+                         static_cast<int>(cSerRc),
+                         cSize,
+                         static_cast<int>(cppSerRc),
+                         cppSize);
+            dumpBytes("golden", golden, 4U);
+            dumpBytes("c", cOut, cSize);
+            dumpBytes("cpp", cppOut, cppSize);
+            return 1;
+        }
+        std::printf("INFO cpp-c directed marker real32_signaling_nan_payload_roundtrip\n");
     }
 
     std::printf("PASS directed_error_parity directed\n");

@@ -279,7 +279,7 @@ string(REGEX MATCHALL
   directed_pass_lines
   "${run_stdout}")
 set(directed_vector_pass_lines "${directed_pass_lines}")
-list(FILTER directed_vector_pass_lines EXCLUDE REGEX "^PASS real16_nan_vector directed$")
+list(FILTER directed_vector_pass_lines EXCLUDE REGEX "^PASS (real16_nan_vector|scalar_real32_signaling_nan_payload) directed$")
 list(LENGTH directed_vector_pass_lines observed_directed_vector_pass_lines)
 if(NOT observed_directed_vector_pass_lines EQUAL observed_directed)
   message(FATAL_ERROR
@@ -416,7 +416,7 @@ set(required_directed_category_mins
   "delimiter_error:2"
   "length_prefix_error:25"
   "truncation:109"
-  "float_nan:4"
+  "float_nan:5"
   "serialize_buffer:109"
   "high_bits_normalization:10"
 )
@@ -451,6 +451,7 @@ set(required_directed_markers
   "PASS port_list_bad_delimiter_header directed"
   # Float/NaN path parity.
   "PASS scalar_real64_nan_payload directed"
+  "PASS scalar_real32_signaling_nan_payload directed"
   # Truncation/zero-extension coverage.
   "PASS scalar_integer64_truncated_input directed"
   "PASS scalar_natural8_truncated_input directed"

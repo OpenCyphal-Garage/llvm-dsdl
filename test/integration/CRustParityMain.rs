@@ -23,6 +23,7 @@ use uavcan_dsdl_generated::uavcan::node::health_1_0::uavcan_node_Health_1_0;
 use uavcan_dsdl_generated::uavcan::node::port::list_1_0::uavcan_node_port_List_1_0;
 use uavcan_dsdl_generated::uavcan::node::port::subject_id_1_0::uavcan_node_port_SubjectID_1_0;
 use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::uavcan_primitive_scalar_Integer8_1_0;
+use uavcan_dsdl_generated::uavcan::primitive::scalar::real32_1_0::uavcan_primitive_scalar_Real32_1_0;
 use uavcan_dsdl_generated::uavcan::register::value_1_0::uavcan_register_Value_1_0;
 use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::uavcan_time_SynchronizedTimestamp_1_0;
 
@@ -95,6 +96,14 @@ unsafe extern "C" {
     ) -> c_int;
 
     fn c_value_roundtrip(
+        input: *const u8,
+        input_size: usize,
+        output: *mut u8,
+        output_capacity: usize,
+        result: *mut CCaseResult,
+    ) -> c_int;
+
+    fn c_real32_roundtrip(
         input: *const u8,
         input_size: usize,
         output: *mut u8,
@@ -1071,6 +1080,64 @@ fn run_directed_error_cases() -> Result<(), String> {
             }
         }
         println!("INFO c/rust directed marker integer8_signed_roundtrip");
+    }
+
+    {
+        // Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // and Rust. Regression guard for the float32 -> f64 -> float32 round-trip that quieted
+        // signaling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
+        // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
+        // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
+        let golden = [0x01u8, 0x00u8, 0x80u8, 0x7Fu8]; // float32 sNaN
+        let mut c_result = CCaseResult::default();
+        let mut c_output = [0u8; MAX_IO_BUFFER];
+        let c_status = unsafe {
+            c_real32_roundtrip(
+                golden.as_ptr(),
+                golden.len(),
+                c_output.as_mut_ptr(),
+                uavcan_primitive_scalar_Real32_1_0::SERIALIZATION_BUFFER_SIZE_BYTES,
+                &mut c_result,
+            )
+        };
+        if c_status != 0 {
+            return Err(format!(
+                "C harness call failed for real32 signaling-NaN roundtrip: status={c_status}"
+            ));
+        }
+        let mut rust_obj = uavcan_primitive_scalar_Real32_1_0::default();
+        let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&golden);
+        let mut rust_output =
+            vec![0u8; uavcan_primitive_scalar_Real32_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let rust_size = match rust_obj.serialize(&mut rust_output) {
+            Ok(size) => size,
+            Err(rc) => {
+                return Err(format!(
+                    "Rust real32 signaling-NaN serialize unexpectedly failed rc={rc}"
+                ));
+            }
+        };
+        if rust_des_rc != 0
+            || rust_consumed != c_result.deserialize_consumed
+            || c_result.serialize_rc != 0
+            || rust_size != c_result.serialize_size
+            || rust_size != golden.len()
+            || c_output[..golden.len()] != golden
+            || rust_output[..golden.len()] != golden
+        {
+            return Err(format!(
+                "Directed mismatch (Real32 signaling-NaN payload roundtrip): golden=[{}] \
+                 C(rc={},size={},bytes=[{}]) Rust(rc={},size={},bytes=[{}])",
+                format_bytes(&golden),
+                c_result.serialize_rc,
+                c_result.serialize_size,
+                format_bytes(&c_output[..c_result.serialize_size.min(MAX_IO_BUFFER)]),
+                rust_des_rc,
+                rust_size,
+                format_bytes(&rust_output[..rust_size.min(MAX_IO_BUFFER)])
+            ));
+        }
+        println!("INFO c/rust directed marker real32_signaling_nan_payload_roundtrip");
     }
 
     println!("PASS directed_error_parity directed");

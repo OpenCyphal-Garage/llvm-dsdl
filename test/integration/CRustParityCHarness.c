@@ -25,6 +25,7 @@
 #include "uavcan/node/Health_1_0.h"
 #include "uavcan/node/port/List_1_0.h"
 #include "uavcan/primitive/scalar/Integer8_1_0.h"
+#include "uavcan/primitive/scalar/Real32_1_0.h"
 #include "uavcan/register/Value_1_0.h"
 #include "uavcan/time/SynchronizedTimestamp_1_0.h"
 
@@ -225,6 +226,33 @@ static int run_frame(const uint8_t* const input,
     return 0;
 }
 
+static int run_real32(const uint8_t* const input,
+                      const size_t         input_size,
+                      uint8_t* const       output,
+                      const size_t         output_capacity,
+                      CCaseResult* const   result)
+{
+    uavcan__primitive__scalar__Real32 obj;
+    memset(&obj, 0, sizeof(obj));
+
+    size_t       consumed        = input_size;
+    const int8_t des             = uavcan__primitive__scalar__Real32__deserialize_(&obj, input, &consumed);
+    result->deserialize_rc       = des;
+    result->deserialize_consumed = consumed;
+    result->serialize_rc         = 0;
+    result->serialize_size       = 0;
+    if (des < 0)
+    {
+        return 0;
+    }
+
+    size_t       out_size  = output_capacity;
+    const int8_t ser       = uavcan__primitive__scalar__Real32__serialize_(&obj, output, &out_size);
+    result->serialize_rc   = ser;
+    result->serialize_size = out_size;
+    return 0;
+}
+
 static int run_value(const uint8_t* const input,
                      const size_t         input_size,
                      uint8_t* const       output,
@@ -354,6 +382,19 @@ int c_value_roundtrip(const uint8_t* const input,
         return -1;
     }
     return run_value(input, input_size, output, output_capacity, result);
+}
+
+int c_real32_roundtrip(const uint8_t* const input,
+                       const size_t         input_size,
+                       uint8_t* const       output,
+                       const size_t         output_capacity,
+                       CCaseResult* const   result)
+{
+    if ((input == NULL) || (output == NULL) || (result == NULL))
+    {
+        return -1;
+    }
+    return run_real32(input, input_size, output, output_capacity, result);
 }
 
 int c_frame_bad_union_tag_deserialize(CCaseResult* const result)
