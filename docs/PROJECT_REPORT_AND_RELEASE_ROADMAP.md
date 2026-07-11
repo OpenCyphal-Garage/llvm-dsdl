@@ -180,13 +180,14 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   than promoting to `double` and narrowing back; that round-trip was
   canonicalizing signaling-NaN mantissa payloads and was the *sole* source of
   divergence from the reference. Verified byte-exact clean to **1,000,000** random
-  iterations across all 10 cases. *(Fix is C/EmitC-scoped:
+  iterations across all 10 cases. *(C/EmitC fix:
   `lib/Transforms/Passes.cpp` helper type + `lib/Transforms/ConvertDSDLToEmitC.cpp`
-  casts/decl. The Cpp/Rust/Go emitters keep the same vestigial double round-trip —
-  harmless, and the cross-language parity suites compare values so they tolerate
-  the NaN-payload difference — but they should be width-matched for consistency;
-  see P2. TS/Python are inherently double-typed and cannot preserve float32 NaN
-  payloads.)* **(d) Coverage broadened 6 → 10
+  casts/decl. The Cpp/Rust/Go emitters were width-matched the same day
+  (`lib/CodeGen/HelperBindingRender.cpp` helper + the serialize/deserialize callers
+  in `CppEmitter.cpp`/`RustEmitter.cpp`/`GoEmitter.cpp`), so all four native
+  backends now keep floats native end-to-end and no longer canonicalize NaN via a
+  double round-trip. TS/Python are inherently double-typed and cannot preserve
+  float32 NaN payloads.)* **(d) Coverage broadened 6 → 10
   cases (2026-07-10)** across new wire shapes, all byte-exact and verified clean
   to 300k iterations: `node.port.SubjectIDList.1.0` (a **byte-exact non-float
   tagged union** — sparse list / bool[8192] bitset / total, the union coverage
@@ -195,8 +196,9 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   `diagnostic.Record.1.1` (nested composite timestamp + `uint8[<=255]`), and
   `time.SynchronizedTimestamp.1.0` (narrow non-byte-aligned `uint56`); all 10 are
   byte-exact. **Remaining:** extend into the `reg`/UDRAL namespace and
-  `node.port.List.1.0` (~8.5 KB, needs the harness I/O buffers enlarged), and
-  width-match the Cpp/Rust/Go float helpers for cross-backend consistency (P2).
+  `node.port.List.1.0` (~8.5 KB, needs the harness I/O buffers enlarged). *(The
+  Cpp/Rust/Go float helpers were width-matched for cross-backend consistency on
+  2026-07-10 — see P2.)*
 - [x] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.
   *(Done 2026-07-10.)* The frontend now enforces the Cyphal Specification
   primitive bit-length ranges (from the "Serializable types" section) in
@@ -255,6 +257,6 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
 - [ ] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
-- [~] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. **Remaining (consistency, no test currently fails):** apply the same width-match to the **Cpp/Rust/Go** emitters — their float helper (`lib/CodeGen/HelperBindingRender.cpp`) and callers (`CppEmitter.cpp` `static_cast<double>`, `RustEmitter.cpp` `as f64`, `GoEmitter.cpp` `float64(...)`) still round-trip through double, so those backends canonicalize NaN. The cross-language parity suites compare values and tolerate it, so nothing is red — this is a shared-semantics cleanup. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless.
+- [x] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match is now applied to the shared float helper (`lib/CodeGen/HelperBindingRender.cpp`: `const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialize/deserialize caller (`CppEmitter.cpp`, `RustEmitter.cpp`, `GoEmitter.cpp`), so all four native backends keep floats in native width end-to-end and no longer canonicalize signaling-NaN payloads via a double round-trip. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless.
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.

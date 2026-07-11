@@ -732,7 +732,8 @@ private:
         }
         case SemanticScalarCategory::Float: {
             const auto  err            = nextName("err");
-            std::string normalizedExpr = expr + " as f64";
+            const auto  floatType      = std::string(type.bitLength == 64U ? "f64" : "f32");
+            std::string normalizedExpr = expr + " as " + floatType;
             const auto  helperSymbol   = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
@@ -740,15 +741,15 @@ private:
             std::string setCall;
             if (type.bitLength == 16U)
             {
-                setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + normalizedExpr + " as f32)";
+                setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + normalizedExpr + ")";
             }
             else if (type.bitLength == 32U)
             {
-                setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + normalizedExpr + " as f32)";
+                setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + normalizedExpr + ")";
             }
             else
             {
-                setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + " as f64)";
+                setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + ")";
             }
             emitLine(out, indent, "let " + err + " = " + setCall + ";");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
@@ -818,13 +819,13 @@ private:
             {
                 emitLine(out,
                          indent,
-                         expr + " = " + helper + "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f64) as f32;");
+                         expr + " = " + helper + "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f32) as f32;");
             }
             else if (type.bitLength == 32U)
             {
                 emitLine(out,
                          indent,
-                         expr + " = " + helper + "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f64) as f32;");
+                         expr + " = " + helper + "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f32) as f32;");
             }
             else
             {

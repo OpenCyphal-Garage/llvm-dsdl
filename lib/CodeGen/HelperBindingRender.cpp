@@ -430,10 +430,13 @@ std::vector<std::string> renderScalarBinding(const HelperBindingRenderLanguage  
                 "};",
             };
         }
-        case ScalarHelperKind::Float:
+        case ScalarHelperKind::Float: {
+            const std::string floatType = descriptor.bitLength == 64U ? "double" : "float";
             return {
-                "const auto " + helperName + " = [](const double value) -> double { return value; };",
+                "const auto " + helperName + " = [](const " + floatType + " value) -> " + floatType +
+                    " { return value; };",
             };
+        }
         }
     }
 
@@ -504,10 +507,12 @@ std::vector<std::string> renderScalarBinding(const HelperBindingRenderLanguage  
                 "};",
             };
         }
-        case ScalarHelperKind::Float:
+        case ScalarHelperKind::Float: {
+            const std::string floatType = descriptor.bitLength == 64U ? "f64" : "f32";
             return {
-                "let " + helperName + " = |value: f64| -> f64 { value };",
+                "let " + helperName + " = |value: " + floatType + "| -> " + floatType + " { value };",
             };
+        }
         }
     }
 
@@ -718,10 +723,12 @@ std::vector<std::string> renderScalarBinding(const HelperBindingRenderLanguage  
             "}",
         };
     }
-    case ScalarHelperKind::Float:
+    case ScalarHelperKind::Float: {
+        const std::string floatType = descriptor.bitLength == 64U ? "float64" : "float32";
         return {
-            helperName + " := func(value float64) float64 { return value }",
+            helperName + " := func(value " + floatType + ") " + floatType + " { return value }",
         };
+    }
     }
     return {};
 }

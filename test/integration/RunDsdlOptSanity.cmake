@@ -185,7 +185,7 @@ foreach(required
     "int64_t __llvmdsdl_plan_union_tag__"
     "int64_t __llvmdsdl_plan_scalar_unsigned__"
     "int64_t __llvmdsdl_plan_scalar_signed__"
-    "double __llvmdsdl_plan_scalar_float__"
+    "float __llvmdsdl_plan_scalar_float__"
     "int64_t __llvmdsdl_plan_array_length_prefix__"
     "int8_t __llvmdsdl_plan_validate_array_length__"
     "int8_t __llvmdsdl_plan_validate_delimiter_header__")
@@ -201,7 +201,7 @@ foreach(required
     "int64_t __llvmdsdl_plan_union_tag__"
     "int64_t __llvmdsdl_plan_scalar_unsigned__"
     "int64_t __llvmdsdl_plan_scalar_signed__"
-    "double __llvmdsdl_plan_scalar_float__"
+    "float __llvmdsdl_plan_scalar_float__"
     "int64_t __llvmdsdl_plan_array_length_prefix__"
     "int8_t __llvmdsdl_plan_validate_array_length__"
     "int8_t __llvmdsdl_plan_validate_delimiter_header__")

@@ -826,7 +826,8 @@ private:
         }
         case SemanticScalarCategory::Float: {
             const auto  err            = nextName("err");
-            std::string normalizedExpr = "static_cast<double>(" + expr + ")";
+            const auto  floatType      = std::string(type.bitLength == 64U ? "double" : "float");
+            std::string normalizedExpr = "static_cast<" + floatType + ">(" + expr + ")";
             const auto  helperSymbol   = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
@@ -834,18 +835,15 @@ private:
             std::string call;
             if (type.bitLength == 16U)
             {
-                call = "dsdl_runtime_set_f16(buffer, capacity_bytes, offset_bits, static_cast<float>(" +
-                       normalizedExpr + "))";
+                call = "dsdl_runtime_set_f16(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
             }
             else if (type.bitLength == 32U)
             {
-                call = "dsdl_runtime_set_f32(buffer, capacity_bytes, offset_bits, static_cast<float>(" +
-                       normalizedExpr + "))";
+                call = "dsdl_runtime_set_f32(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
             }
             else
             {
-                call = "dsdl_runtime_set_f64(buffer, capacity_bytes, offset_bits, static_cast<double>(" +
-                       normalizedExpr + "))";
+                call = "dsdl_runtime_set_f64(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
             }
             emitLine(out, indent, "const std::int8_t " + err + " = " + call + ";");
             emitLine(out, indent, "if (" + err + " < 0) {");
@@ -924,14 +922,14 @@ private:
                 emitLine(out,
                          indent,
                          expr + " = static_cast<float>(" + helper +
-                             "(static_cast<double>(dsdl_runtime_get_f16(buffer, capacity_bytes, offset_bits))));");
+                             "(static_cast<float>(dsdl_runtime_get_f16(buffer, capacity_bytes, offset_bits))));");
             }
             else if (type.bitLength == 32U)
             {
                 emitLine(out,
                          indent,
                          expr + " = static_cast<float>(" + helper +
-                             "(static_cast<double>(dsdl_runtime_get_f32(buffer, capacity_bytes, offset_bits))));");
+                             "(static_cast<float>(dsdl_runtime_get_f32(buffer, capacity_bytes, offset_bits))));");
             }
             else
             {

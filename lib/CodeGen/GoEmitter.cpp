@@ -753,7 +753,8 @@ private:
             break;
         }
         case SemanticScalarCategory::Float: {
-            std::string valueExpr    = "float64(" + expr + ")";
+            const auto  floatType  = std::string(type.bitLength == 64U ? "float64" : "float32");
+            std::string valueExpr    = floatType + "(" + expr + ")";
             const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
@@ -761,11 +762,11 @@ private:
             const auto err    = nextName("err");
             if (type.bitLength == 16U)
             {
-                emitLine(out, indent, err + " := dsdlruntime.SetF16(buffer, offsetBits, float32(" + valueExpr + "))");
+                emitLine(out, indent, err + " := dsdlruntime.SetF16(buffer, offsetBits, " + valueExpr + ")");
             }
             else if (type.bitLength == 32U)
             {
-                emitLine(out, indent, err + " := dsdlruntime.SetF32(buffer, offsetBits, float32(" + valueExpr + "))");
+                emitLine(out, indent, err + " := dsdlruntime.SetF32(buffer, offsetBits, " + valueExpr + ")");
             }
             else
             {
@@ -833,13 +834,13 @@ private:
             {
                 emitLine(out,
                          indent,
-                         expr + " = float32(" + helper + "(float64(dsdlruntime.GetF16(buffer, offsetBits))))");
+                         expr + " = float32(" + helper + "(float32(dsdlruntime.GetF16(buffer, offsetBits))))");
             }
             else if (type.bitLength == 32U)
             {
                 emitLine(out,
                          indent,
-                         expr + " = float32(" + helper + "(float64(dsdlruntime.GetF32(buffer, offsetBits))))");
+                         expr + " = float32(" + helper + "(float32(dsdlruntime.GetF32(buffer, offsetBits))))");
             }
             else
             {
