@@ -6,22 +6,6 @@ foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER PYTHON_EXECUTABLE SOURCE_ROOT N
   endif()
 endforeach()
 
-set(strict_float_mode_input "")
-if(DEFINED STRICT_FLOAT_BYTE_PARITY)
-  set(strict_float_mode_input "${STRICT_FLOAT_BYTE_PARITY}")
-endif()
-
-set(STRICT_FLOAT_BYTE_PARITY OFF)
-if(NOT strict_float_mode_input STREQUAL "")
-  string(TOUPPER "${strict_float_mode_input}" strict_float_mode)
-  if(strict_float_mode STREQUAL "ON" OR strict_float_mode STREQUAL "1" OR
-     strict_float_mode STREQUAL "TRUE")
-    set(STRICT_FLOAT_BYTE_PARITY ON)
-  else()
-    set(STRICT_FLOAT_BYTE_PARITY OFF)
-  endif()
-endif()
-
 if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
@@ -268,9 +252,6 @@ if(NOT link_result EQUAL 0)
 endif()
 
 set(harness_cmd "${harness_exe}" 128)
-if(STRICT_FLOAT_BYTE_PARITY)
-  list(APPEND harness_cmd --strict-float-byte-parity)
-endif()
 
 execute_process(
   COMMAND ${harness_cmd}

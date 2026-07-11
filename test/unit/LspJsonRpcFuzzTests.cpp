@@ -124,6 +124,52 @@ bool runLspJsonRpcFuzzTests()
     }
 
     {
+        // A Content-Length above the configured cap must be rejected before the
+        // payload buffer is allocated (unbounded-allocation / OOM DoS guard).
+        std::istringstream                   in("Content-Length: 100\r\n\r\n");
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out, /*maxContentLength=*/16U);
+        llvm::json::Value                    message(llvm::json::Object{});
+        std::string                          error;
+        if (transport.readMessage(message, error) || error != "Content-Length exceeds maximum")
+        {
+            std::cerr << "expected oversized Content-Length to be rejected\n";
+            return false;
+        }
+    }
+
+    {
+        // A Content-Length long enough to overflow size_t must saturate and be
+        // rejected by the cap, never wrap to a small valid-looking length.
+        std::istringstream                   in("Content-Length: 999999999999999999999999999999\r\n\r\n");
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
+        llvm::json::Value                    message(llvm::json::Object{});
+        std::string                          error;
+        if (transport.readMessage(message, error) || error != "Content-Length exceeds maximum")
+        {
+            std::cerr << "expected overflowing Content-Length to be rejected\n";
+            return false;
+        }
+    }
+
+    {
+        // A legitimately framed message at exactly the cap size still parses, so
+        // the bound rejects only oversized frames.
+        const std::string                    payload = "{}";
+        std::istringstream                   in(encodeLspFrame(payload));
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out, /*maxContentLength=*/payload.size());
+        llvm::json::Value                    message(llvm::json::Object{});
+        std::string                          error;
+        if (!transport.readMessage(message, error) || !error.empty())
+        {
+            std::cerr << "expected in-bound message to parse cleanly, got error: " << error << "\n";
+            return false;
+        }
+    }
+
+    {
         std::istringstream                   in;
         std::ostringstream                   out;
         llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);

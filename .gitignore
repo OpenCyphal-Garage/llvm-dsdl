@@ -47,3 +47,7 @@ dsdl_out
 # MkDocs output
 site/
 .actrc
+
+# Reference DSDL compiler checkouts for the differential parity lane (CI clones
+# these; local runs may too). Provisioned, never committed.
+.reference/

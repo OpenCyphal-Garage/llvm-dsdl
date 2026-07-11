@@ -2980,11 +2980,31 @@ else()
 endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
-set(LLVMDSDL_NUNAVUT_REPO "${LLVMDSDL_SOURCE_DIR}/../nunavut")
-set(LLVMDSDL_PYDSDL_REPO "${LLVMDSDL_SOURCE_DIR}/../pydsdl")
-if(Python3_Interpreter_FOUND AND
-   EXISTS "${LLVMDSDL_NUNAVUT_REPO}/src/nunavut" AND
-   EXISTS "${LLVMDSDL_PYDSDL_REPO}/pydsdl")
+# Overridable so CI (or any environment) can point the Nunavut differential
+# parity at explicit checkouts instead of the default sibling repos; the harness
+# consumes these as source trees via PYTHONPATH (no pip install required).
+set(LLVMDSDL_NUNAVUT_REPO "${LLVMDSDL_SOURCE_DIR}/../nunavut"
+    CACHE PATH "Path to a nunavut source checkout for the differential parity test")
+set(LLVMDSDL_PYDSDL_REPO "${LLVMDSDL_SOURCE_DIR}/../pydsdl"
+    CACHE PATH "Path to a pydsdl source checkout for the differential parity test")
+# When ON, a missing prerequisite is a hard configure error instead of a silent
+# skip, so CI cannot report a green run while the reference-parity lane was never
+# built (local green != false confidence).
+option(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY
+    "Fail configuration if the Nunavut differential parity prerequisites are missing" OFF)
+
+set(_diff_parity_missing "")
+if(NOT Python3_Interpreter_FOUND)
+  list(APPEND _diff_parity_missing "Python3 interpreter")
+endif()
+if(NOT EXISTS "${LLVMDSDL_NUNAVUT_REPO}/src/nunavut")
+  list(APPEND _diff_parity_missing "nunavut source tree (${LLVMDSDL_NUNAVUT_REPO}/src/nunavut)")
+endif()
+if(NOT EXISTS "${LLVMDSDL_PYDSDL_REPO}/pydsdl")
+  list(APPEND _diff_parity_missing "pydsdl source tree (${LLVMDSDL_PYDSDL_REPO}/pydsdl)")
+endif()
+
+if(_diff_parity_missing STREQUAL "")
   add_test(
     NAME llvmdsdl-differential-parity
     COMMAND
@@ -3028,8 +3048,17 @@ if(Python3_Interpreter_FOUND AND
       LABELS "integration;uavcan;differential;slow;optimized"
   )
 else()
-  message(STATUS
-    "Skipping differential parity test: requires Python3 interpreter and sibling nunavut/pydsdl repos.")
+  string(REPLACE ";" ", " _diff_parity_missing_str "${_diff_parity_missing}")
+  if(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY)
+    message(FATAL_ERROR
+      "Differential parity is required (LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON) but "
+      "prerequisites are missing: ${_diff_parity_missing_str}. Provide a nunavut/pydsdl "
+      "checkout via -DLLVMDSDL_NUNAVUT_REPO=/path -DLLVMDSDL_PYDSDL_REPO=/path.")
+  else()
+    message(STATUS
+      "Skipping differential parity test; missing: ${_diff_parity_missing_str}. "
+      "Set -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON to make this a hard error.")
+  endif()
 endif()
 
 # --- Native-decoder libFuzzer lane (ASan/UBSan over generated C decoders) ----

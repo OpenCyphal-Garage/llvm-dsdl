@@ -18,6 +18,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <istream>
+#include <limits>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -35,25 +36,40 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
     {
         return false;
     }
-    header            = header.trim();
-    std::size_t value = 0;
+    header = header.trim();
+    if (header.empty())
+    {
+        return false;
+    }
+    std::size_t value    = 0;
+    bool        overflow = false;
     for (const char ch : header)
     {
         if (ch < '0' || ch > '9')
         {
             return false;
         }
-        value = value * 10U + static_cast<std::size_t>(ch - '0');
+        const auto digit = static_cast<std::size_t>(ch - '0');
+        // Saturate instead of wrapping so an absurdly long digit string is
+        // rejected by the size cap in readMessage rather than silently
+        // overflowing size_t into a small, valid-looking length.
+        if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10U)
+        {
+            overflow = true;
+            break;
+        }
+        value = value * 10U + digit;
     }
-    contentLength = value;
+    contentLength = overflow ? std::numeric_limits<std::size_t>::max() : value;
     return true;
 }
 
 }  // namespace
 
-JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out)
+JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out, std::size_t maxContentLength)
     : input_(in)
     , output_(out)
+    , maxContentLength_(maxContentLength)
 {
 }
 
@@ -88,6 +104,12 @@ bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string&
     if (contentLength == 0U)
     {
         error = "missing Content-Length header";
+        return false;
+    }
+
+    if (contentLength > maxContentLength_)
+    {
+        error = "Content-Length exceeds maximum";
         return false;
     }
 

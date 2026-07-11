@@ -105,7 +105,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 | Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
 | Transforms | **6** | Real contract enforcement; zero-overhead/endianness passes renamed/redescribed (2026-07-03); big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. |
 | Codegen shared layer | **6** | Genuine shared planning; semantics still re-rendered per backend. |
-| LSP (`dsdld`) | **6** | Reuses compiler core (good); **unbounded `Content-Length` allocation (OOM DoS)**, DocumentStore thread-safety. |
+| LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; DocumentStore thread-safety still open. |
 | Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
 | Build / CI / test infra | **6** | Strong test culture; **gates are name-presence metrics**; silent toolchain skips; CI uncommitted. |
 | **Headline-claim integrity** | **5** | The dominant production risk: docs promise proofs the code doesn't deliver. |
@@ -118,13 +118,13 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 1. **Re-found the three scorecards on behavior, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/CONVERGENCE_SCORECARD.md`) rather than made behavioral (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
 2. ✅ **Done (2026-07-03).** Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing.
-3. **Build the verification the docs already promise:** run the **Nunavut differential parity in CI** (provision `nunavut`/`pydsdl`), enable byte comparison for union/float cases, and expand coverage from 5 types to a representative cross-section (and the `reg`/UDRAL namespace).
+3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads). Remaining: union byte-exact (gated on the float→double codegen fix, P2) + expand from 6 cases to a broad cross-section (incl. `reg`/UDRAL). See the P0 entry.
 
 **Safety / high-assurance:**
 
 4. ✅ **Done (2026-07-03).** Added the `sanitizers` CI lane (linux/toolshed, Clang): ASan+UBSan over the generated native C/C++/Go decoders (via the parity harnesses recompiled instrumented) and a coverage-guided **libFuzzer lane over the generated C deserializers** on the real UAVCAN corpus, covering the nested-delimited / unions-of-composites / variable-array shapes. See the P0 entry below for the components. *(Remaining P1 deepening: expand the fuzzed type set beyond the curated 7 and enable byte-for-byte serialize re-check assertions inside the fuzz round-trip.)*
 5. ✅ **Done (2026-07-10).** Primitive bit-length constraints are now enforced in the frontend parser *and* the `dsdl.io` IR verifier, with per-kind diagnostics. Per the Cyphal Specification these are **signed int [2,64]** (not 1 — `int1` is invalid), **unsigned int [1,64]**, **float ∈ {16,32,64}**, **void [1,64]**. See the P0 entry below. *(This corrects the earlier "int/uint 1..64" shorthand — signed and unsigned have different minimums.)*
-6. **Bound the LSP:** cap `Content-Length` before allocation (`lib/LSP/JsonRpcIO.cpp:88`); make `DocumentStore` access thread-safe.
+6. **Bound the LSP:** ✅ **`Content-Length` cap done (2026-07-10)** — bounded + overflow-safe before allocation (`lib/LSP/JsonRpcIO.cpp`; see P0). Remaining: make `DocumentStore` access thread-safe (tracked under P1).
 7. **Harden semantics:** checked/`__int128` `Rational` multiply; bound `BitLengthSet` expansion against adversarial `repeatRange`; cap array capacity.
 
 **Integrity / reproducibility:**
@@ -163,7 +163,28 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   200k coverage-guided runs clean, 7 valid seeds emitted; the ASan runtime itself was
   unrunnable only on the macOS Apple-Silicon dev box — a known shadow-memory startup
   hang — so the lane is intentionally Linux-only.)*
-- [ ] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
+- [~] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
+  *(Runs in CI + byte-exact for all non-float and finite-float cases — 2026-07-10.)*
+  **(a) Now runs in CI, non-silently.** The `linux` job provisions pinned
+  nunavut+pydsdl checkouts (`.github/workflows/ci.yml`; consumed as source trees
+  via `PYTHONPATH`, no pip) and configures with
+  `-DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON`, so a missing reference compiler is
+  a **hard configure error**, not a silent skip (the repo paths are overridable
+  cache vars in `test/integration/CMakeLists.txt`). **(b) Byte comparison is now
+  always on** (removed the opt-in `--strict-float-byte-parity` flag): all
+  non-float types are byte-exact, and `Real32` (float32[<=64]) is byte-exact for
+  every finite/inf value with a **NaN-payload carve-out** (verified clean to 500k
+  random iterations). **(c) The `register.Value` union stays structural
+  (rc+size)**, not byte-exact — root cause found: our C codegen normalizes a
+  saturated float through a `float→double→float` round-trip
+  (`(double)(obj->value.elements[i])` → double saturation helper → `(float)`),
+  which canonicalizes a signaling NaN's mantissa MSB; the reference passes the
+  raw float. Both are valid NaNs (Cyphal/IEEE-754 don't require preserving NaN
+  payloads), so this is spec-permitted, not a correctness bug — but it blocks
+  byte-exact parity for any float-carrying type. **Remaining:** (i) fix the
+  codegen to avoid the float→double round-trip (P2 below) → then flip the union
+  to byte-exact; (ii) expand beyond the current 6 cases to a representative
+  cross-section incl. the `reg`/UDRAL namespace.
 - [x] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.
   *(Done 2026-07-10.)* The frontend now enforces the Cyphal Specification
   primitive bit-length ranges (from the "Serializable types" section) in
@@ -187,7 +208,24 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   forms `uint0`/`int0`/`float0`/`void0` are already rejected one level up by the
   grammar's `[1-9]` leading-digit rule, so they fail with a type-resolution
   diagnostic rather than the bit-length message.)*
-- [ ] **Memory-safety hardening:** LSP allocation cap; remove `assert()`-only guards from the release `copy_bits` path.
+- [x] **Memory-safety hardening:** LSP allocation cap; ~~remove `assert()`-only guards from the release `copy_bits` path~~.
+  *(Done 2026-07-10.)* **LSP allocation cap:** `JsonRpcStdioTransport` now bounds
+  the framed payload — a `Content-Length` above `kDefaultMaxContentLength` (64 MiB,
+  constructor-overridable) is rejected with `Content-Length exceeds maximum`
+  *before* the payload buffer is allocated, and the header parser saturates
+  instead of wrapping so a giant digit string can no longer overflow `size_t`
+  into a small valid-looking length (`lib/LSP/JsonRpcIO.cpp`). Covered by new
+  cases in `test/unit/LspJsonRpcFuzzTests.cpp` (oversized, overflowing, and
+  at-cap-valid). **`copy_bits` asserts — premise withdrawn as overstated:** the
+  release read/write paths are bounds-safe *by construction*, not via asserts.
+  Every generated deserialize helper calls `saturate_fragment_bits` to clamp the
+  read window to the buffer *before* `copy_bits` (`runtime/dsdl_runtime.h`
+  get_bits/get_uxx), and every serialize helper checks buffer size and returns
+  `-SERIALIZATION_BUFFER_TOO_SMALL` first; the `assert()`s in `copy_bits` are
+  API-contract / loop-invariant checks (non-null, non-overlap, `size<=8`) that
+  are *not* the memory-safety mechanism, so their absence under `NDEBUG` cannot
+  cause an OOB access. They are correctly kept (zero release cost) and *do* fire
+  in the ASan/UBSan+fuzz lane, which builds Debug precisely so they stay live.
 
 ### P1 — Required for a credible 1.0
 
@@ -205,5 +243,6 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
 - [ ] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
+- [ ] **Float serialization: avoid the `float→double→float` round-trip.** Our C codegen normalizes a saturated `float32` field by promoting each element to `double`, applying a double-typed saturation helper, then narrowing back to `float` (`lib/CodeGen` / the `__llvmdsdl_plan_scalar_float__…__ser` helper). For finite values this is numerically exact, but it canonicalizes signaling-NaN mantissa payloads, diverging bit-for-bit from the reference compiler (which passes same-width floats through untouched). Saturating same-width floats in native `float` (no `double` hop) would preserve NaN bits, enable **byte-exact reference parity for all float-carrying types** (flip `register.Value` and any float case to byte-exact in the differential harness), and drop needless conversions. Cross-backend change — needs golden-file updates + re-parity across C/C++/Rust/Go/TS/Python.
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.

@@ -51,11 +51,35 @@ jobs:
       - name: Prepare toolchains
         uses: ./.github/actions/setup-language-toolchains
 
+      - name: Provision reference DSDL compiler (nunavut + pydsdl)
+        # The differential parity lane compares our generated C against the
+        # reference compiler (Nunavut). The harness consumes both as source trees
+        # via PYTHONPATH — nunavut vendors Jinja2 and pydsdl has no runtime deps,
+        # so no pip install is needed. Pinned to the exact commits validated
+        # together; bump both when intentionally updating the reference.
+        env:
+          NUNAVUT_SHA: 37095abb9fac47f924a52500bf4cebe2256dcff5  # tag 3.0.1b1
+          PYDSDL_SHA: a1506ce424589cc049b3fe4fece1e52626b55529   # pydsdl 1.23.0-dev
+        run: |
+          git clone --filter=blob:none https://github.com/OpenCyphal/nunavut.git .reference/nunavut
+          git -C .reference/nunavut checkout --detach "${NUNAVUT_SHA}"
+          git clone --filter=blob:none https://github.com/OpenCyphal/pydsdl.git .reference/pydsdl
+          git -C .reference/pydsdl checkout --detach "${PYDSDL_SHA}"
+
       - name: Configure (ci preset)
         # LLVMDSDL_REPORT_GATE_JUNIT makes the parity/malformed/determinism report gates
         # BEHAVIORAL: a matrix cell is covered only if a matching test executed and passed
         # (consumed from the suite's --output-junit below), not merely registered by name.
-        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
+        # LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON turns a missing nunavut/pydsdl into a hard
+        # configure error, so a green CI run can never mean the reference-parity lane was
+        # silently skipped.
+        run: |
+          cmake --preset ci \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-linux.xml" \
+            -DLLVMDSDL_NUNAVUT_REPO="${GITHUB_WORKSPACE}/.reference/nunavut" \
+            -DLLVMDSDL_PYDSDL_REPO="${GITHUB_WORKSPACE}/.reference/pydsdl" \
+            -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci

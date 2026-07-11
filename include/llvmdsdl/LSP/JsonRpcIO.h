@@ -19,6 +19,7 @@
 
 #include "llvm/Support/JSON.h"
 
+#include <cstddef>
 #include <iosfwd>
 #include <mutex>
 #include <string>
@@ -30,10 +31,22 @@ namespace llvmdsdl::lsp
 class JsonRpcStdioTransport final
 {
 public:
+    /// @brief Default upper bound on an accepted `Content-Length` (64 MiB).
+    ///
+    /// The payload buffer is allocated up front from the client-supplied length,
+    /// so an unbounded value would let a malformed or hostile header trigger an
+    /// out-of-memory abort. This cap keeps a single message allocation bounded;
+    /// legitimate LSP traffic is far below it.
+    static constexpr std::size_t kDefaultMaxContentLength = static_cast<std::size_t>(64) * 1024 * 1024;
+
     /// @brief Creates a transport over input and output streams.
     /// @param[in] in Input stream.
     /// @param[in] out Output stream.
-    JsonRpcStdioTransport(std::istream& in, std::ostream& out);
+    /// @param[in] maxContentLength Largest `Content-Length` accepted before the
+    /// frame is rejected without allocating the payload buffer.
+    JsonRpcStdioTransport(std::istream& in,
+                          std::ostream& out,
+                          std::size_t   maxContentLength = kDefaultMaxContentLength);
 
     /// @brief Reads one framed JSON-RPC message.
     /// @param[out] message Parsed JSON payload.
@@ -49,6 +62,7 @@ public:
 private:
     std::istream& input_;
     std::ostream& output_;
+    std::size_t   maxContentLength_;
     std::mutex    writeMutex_;
 };
 
