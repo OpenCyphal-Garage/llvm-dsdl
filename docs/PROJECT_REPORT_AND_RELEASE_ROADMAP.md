@@ -118,7 +118,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 1. **Re-found the three scorecards on behavior, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/CONVERGENCE_SCORECARD.md`) rather than made behavioral (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
 2. ✅ **Done (2026-07-03).** Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing.
-3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads). Remaining: union byte-exact (gated on the float→double codegen fix, P2) + expand from 6 cases to a broad cross-section (incl. `reg`/UDRAL). See the P0 entry.
+3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads); coverage broadened 6 → 10 cases incl. a byte-exact non-float union, fixed+variable arrays, nested composites, and a narrow scalar. Remaining: `register.Value` byte-exact (gated on the float→double codegen fix, P2) + `reg`/UDRAL namespace + `port.List` (needs larger harness buffers). See the P0 entry.
 
 **Safety / high-assurance:**
 
@@ -181,10 +181,17 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   which canonicalizes a signaling NaN's mantissa MSB; the reference passes the
   raw float. Both are valid NaNs (Cyphal/IEEE-754 don't require preserving NaN
   payloads), so this is spec-permitted, not a correctness bug — but it blocks
-  byte-exact parity for any float-carrying type. **Remaining:** (i) fix the
-  codegen to avoid the float→double round-trip (P2 below) → then flip the union
-  to byte-exact; (ii) expand beyond the current 6 cases to a representative
-  cross-section incl. the `reg`/UDRAL namespace.
+  byte-exact parity for any float-carrying type. **(d) Coverage broadened 6 → 10
+  cases (2026-07-10)** across new wire shapes, all byte-exact and verified clean
+  to 300k iterations: `node.port.SubjectIDList.1.0` (a **byte-exact non-float
+  tagged union** — sparse list / bool[8192] bitset / total, the union coverage
+  the float-variant `register.Value` can't provide),
+  `pnp.NodeIDAllocationData.2.0` (fixed `byte[16]` + variable-length optional),
+  `diagnostic.Record.1.1` (nested composite timestamp + `uint8[<=255]`), and
+  `time.SynchronizedTimestamp.1.0` (narrow non-byte-aligned `uint56`). **Remaining:**
+  (i) fix the codegen to avoid the float→double round-trip (P2 below) → then flip
+  `register.Value` to byte-exact; (ii) extend into the `reg`/UDRAL namespace
+  (`node.port.List.1.0`, ~8.5 KB, needs the harness I/O buffers enlarged).
 - [x] **Spec-conformance fix:** reject out-of-range primitive widths at frontend + IR verifier.
   *(Done 2026-07-10.)* The frontend now enforces the Cyphal Specification
   primitive bit-length ranges (from the "Serializable types" section) in

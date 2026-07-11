@@ -5,6 +5,10 @@
 #include "@NV_VALUE_HEADER@"
 #include "@NV_FRAME_HEADER@"
 #include "@NV_REAL32_HEADER@"
+#include "@NV_SUBJECTIDLIST_HEADER@"
+#include "@NV_NODEIDALLOC_HEADER@"
+#include "@NV_DIAGRECORD_HEADER@"
+#include "@NV_SYNCTIMESTAMP_HEADER@"
 
 static int8_t nvHeartbeatSerialize(const void *const obj, uint8_t *const buffer,
                                    size_t *const inoutSize) {
@@ -81,6 +85,58 @@ static int8_t nvReal32ArrayDeserialize(void *const outObj,
       (uavcan_primitive_array_Real32_1_0 *)outObj, buffer, inoutSize);
 }
 
+static int8_t nvSubjectIdListSerialize(const void *const obj,
+                                       uint8_t *const buffer,
+                                       size_t *const inoutSize) {
+  return uavcan_node_port_SubjectIDList_1_0_serialize_(
+      (const uavcan_node_port_SubjectIDList_1_0 *)obj, buffer, inoutSize);
+}
+static int8_t nvSubjectIdListDeserialize(void *const outObj,
+                                         const uint8_t *const buffer,
+                                         size_t *const inoutSize) {
+  return uavcan_node_port_SubjectIDList_1_0_deserialize_(
+      (uavcan_node_port_SubjectIDList_1_0 *)outObj, buffer, inoutSize);
+}
+
+static int8_t nvNodeIdAllocSerialize(const void *const obj,
+                                     uint8_t *const buffer,
+                                     size_t *const inoutSize) {
+  return uavcan_pnp_NodeIDAllocationData_2_0_serialize_(
+      (const uavcan_pnp_NodeIDAllocationData_2_0 *)obj, buffer, inoutSize);
+}
+static int8_t nvNodeIdAllocDeserialize(void *const outObj,
+                                       const uint8_t *const buffer,
+                                       size_t *const inoutSize) {
+  return uavcan_pnp_NodeIDAllocationData_2_0_deserialize_(
+      (uavcan_pnp_NodeIDAllocationData_2_0 *)outObj, buffer, inoutSize);
+}
+
+static int8_t nvDiagRecordSerialize(const void *const obj,
+                                    uint8_t *const buffer,
+                                    size_t *const inoutSize) {
+  return uavcan_diagnostic_Record_1_1_serialize_(
+      (const uavcan_diagnostic_Record_1_1 *)obj, buffer, inoutSize);
+}
+static int8_t nvDiagRecordDeserialize(void *const outObj,
+                                      const uint8_t *const buffer,
+                                      size_t *const inoutSize) {
+  return uavcan_diagnostic_Record_1_1_deserialize_(
+      (uavcan_diagnostic_Record_1_1 *)outObj, buffer, inoutSize);
+}
+
+static int8_t nvSyncTimestampSerialize(const void *const obj,
+                                       uint8_t *const buffer,
+                                       size_t *const inoutSize) {
+  return uavcan_time_SynchronizedTimestamp_1_0_serialize_(
+      (const uavcan_time_SynchronizedTimestamp_1_0 *)obj, buffer, inoutSize);
+}
+static int8_t nvSyncTimestampDeserialize(void *const outObj,
+                                         const uint8_t *const buffer,
+                                         size_t *const inoutSize) {
+  return uavcan_time_SynchronizedTimestamp_1_0_deserialize_(
+      (uavcan_time_SynchronizedTimestamp_1_0 *)outObj, buffer, inoutSize);
+}
+
 const DifferentialCaseInfo g_nv_case_heartbeat = {
     .object_size = sizeof(uavcan_node_Heartbeat_1_0),
     .max_serialized_size = (size_t)uavcan_node_Heartbeat_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
@@ -125,4 +181,36 @@ const DifferentialCaseInfo g_nv_case_real32_array = {
         (size_t)uavcan_primitive_array_Real32_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
     .serialize = &nvReal32ArraySerialize,
     .deserialize = &nvReal32ArrayDeserialize,
+};
+
+const DifferentialCaseInfo g_nv_case_subject_id_list = {
+    .object_size = sizeof(uavcan_node_port_SubjectIDList_1_0),
+    .max_serialized_size =
+        (size_t)uavcan_node_port_SubjectIDList_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &nvSubjectIdListSerialize,
+    .deserialize = &nvSubjectIdListDeserialize,
+};
+
+const DifferentialCaseInfo g_nv_case_node_id_alloc = {
+    .object_size = sizeof(uavcan_pnp_NodeIDAllocationData_2_0),
+    .max_serialized_size =
+        (size_t)uavcan_pnp_NodeIDAllocationData_2_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &nvNodeIdAllocSerialize,
+    .deserialize = &nvNodeIdAllocDeserialize,
+};
+
+const DifferentialCaseInfo g_nv_case_diag_record = {
+    .object_size = sizeof(uavcan_diagnostic_Record_1_1),
+    .max_serialized_size =
+        (size_t)uavcan_diagnostic_Record_1_1_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &nvDiagRecordSerialize,
+    .deserialize = &nvDiagRecordDeserialize,
+};
+
+const DifferentialCaseInfo g_nv_case_sync_timestamp = {
+    .object_size = sizeof(uavcan_time_SynchronizedTimestamp_1_0),
+    .max_serialized_size =
+        (size_t)uavcan_time_SynchronizedTimestamp_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &nvSyncTimestampSerialize,
+    .deserialize = &nvSyncTimestampDeserialize,
 };

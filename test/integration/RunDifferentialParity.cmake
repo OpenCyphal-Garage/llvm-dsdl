@@ -85,6 +85,10 @@ execute_process(
       "${UAVCAN_ROOT}:register/Value.1.0.dsdl"
       "${UAVCAN_ROOT}:metatransport/can/Frame.0.2.dsdl"
       "${UAVCAN_ROOT}:primitive/array/Real32.1.0.dsdl"
+      "${UAVCAN_ROOT}:node/port/SubjectIDList.1.0.dsdl"
+      "${UAVCAN_ROOT}:pnp/8165.NodeIDAllocationData.2.0.dsdl"
+      "${UAVCAN_ROOT}:diagnostic/8184.Record.1.1.dsdl"
+      "${UAVCAN_ROOT}:time/SynchronizedTimestamp.1.0.dsdl"
   RESULT_VARIABLE nunavut_result
   OUTPUT_VARIABLE nunavut_stdout
   ERROR_VARIABLE nunavut_stderr
@@ -100,12 +104,20 @@ set(OURS_EXECUTECOMMAND_HEADER "${ours_out}/uavcan/node/ExecuteCommand_1_3.h")
 set(OURS_VALUE_HEADER "${ours_out}/uavcan/register/Value_1_0.h")
 set(OURS_FRAME_HEADER "${ours_out}/uavcan/metatransport/can/Frame_0_2.h")
 set(OURS_REAL32_HEADER "${ours_out}/uavcan/primitive/array/Real32_1_0.h")
+set(OURS_SUBJECTIDLIST_HEADER "${ours_out}/uavcan/node/port/SubjectIDList_1_0.h")
+set(OURS_NODEIDALLOC_HEADER "${ours_out}/uavcan/pnp/NodeIDAllocationData_2_0.h")
+set(OURS_DIAGRECORD_HEADER "${ours_out}/uavcan/diagnostic/Record_1_1.h")
+set(OURS_SYNCTIMESTAMP_HEADER "${ours_out}/uavcan/time/SynchronizedTimestamp_1_0.h")
 
 set(NV_HEARTBEAT_HEADER "${dsdl_out}/uavcan/node/Heartbeat_1_0.h")
 set(NV_EXECUTECOMMAND_HEADER "${dsdl_out}/uavcan/node/ExecuteCommand_1_3.h")
 set(NV_VALUE_HEADER "${dsdl_out}/uavcan/_register/Value_1_0.h")
 set(NV_FRAME_HEADER "${dsdl_out}/uavcan/metatransport/can/Frame_0_2.h")
 set(NV_REAL32_HEADER "${dsdl_out}/uavcan/primitive/array/Real32_1_0.h")
+set(NV_SUBJECTIDLIST_HEADER "${dsdl_out}/uavcan/node/port/SubjectIDList_1_0.h")
+set(NV_NODEIDALLOC_HEADER "${dsdl_out}/uavcan/pnp/NodeIDAllocationData_2_0.h")
+set(NV_DIAGRECORD_HEADER "${dsdl_out}/uavcan/diagnostic/Record_1_1.h")
+set(NV_SYNCTIMESTAMP_HEADER "${dsdl_out}/uavcan/time/SynchronizedTimestamp_1_0.h")
 
 foreach(header
     "${OURS_HEARTBEAT_HEADER}"
@@ -113,11 +125,19 @@ foreach(header
     "${OURS_VALUE_HEADER}"
     "${OURS_FRAME_HEADER}"
     "${OURS_REAL32_HEADER}"
+    "${OURS_SUBJECTIDLIST_HEADER}"
+    "${OURS_NODEIDALLOC_HEADER}"
+    "${OURS_DIAGRECORD_HEADER}"
+    "${OURS_SYNCTIMESTAMP_HEADER}"
     "${NV_HEARTBEAT_HEADER}"
     "${NV_EXECUTECOMMAND_HEADER}"
     "${NV_VALUE_HEADER}"
     "${NV_FRAME_HEADER}"
-    "${NV_REAL32_HEADER}")
+    "${NV_REAL32_HEADER}"
+    "${NV_SUBJECTIDLIST_HEADER}"
+    "${NV_NODEIDALLOC_HEADER}"
+    "${NV_DIAGRECORD_HEADER}"
+    "${NV_SYNCTIMESTAMP_HEADER}")
   if(NOT EXISTS "${header}")
     message(FATAL_ERROR "expected generated header missing: ${header}")
   endif()
@@ -266,7 +286,7 @@ if(NOT run_result EQUAL 0)
 endif()
 
 set(min_random_iterations 128)
-set(min_random_cases 6)
+set(min_random_cases 10)
 set(expected_directed_cases 0)
 string(REGEX MATCH
   "PASS differential parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"

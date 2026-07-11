@@ -14,6 +14,10 @@ extern const DifferentialCaseInfo g_ours_case_execute_command_response;
 extern const DifferentialCaseInfo g_ours_case_register_value;
 extern const DifferentialCaseInfo g_ours_case_can_frame;
 extern const DifferentialCaseInfo g_ours_case_real32_array;
+extern const DifferentialCaseInfo g_ours_case_subject_id_list;
+extern const DifferentialCaseInfo g_ours_case_node_id_alloc;
+extern const DifferentialCaseInfo g_ours_case_diag_record;
+extern const DifferentialCaseInfo g_ours_case_sync_timestamp;
 
 extern const DifferentialCaseInfo g_nv_case_heartbeat;
 extern const DifferentialCaseInfo g_nv_case_execute_command_request;
@@ -21,6 +25,10 @@ extern const DifferentialCaseInfo g_nv_case_execute_command_response;
 extern const DifferentialCaseInfo g_nv_case_register_value;
 extern const DifferentialCaseInfo g_nv_case_can_frame;
 extern const DifferentialCaseInfo g_nv_case_real32_array;
+extern const DifferentialCaseInfo g_nv_case_subject_id_list;
+extern const DifferentialCaseInfo g_nv_case_node_id_alloc;
+extern const DifferentialCaseInfo g_nv_case_diag_record;
+extern const DifferentialCaseInfo g_nv_case_sync_timestamp;
 
 // How the re-serialized bytes of a case are compared against the reference.
 typedef enum {
@@ -66,6 +74,20 @@ static const CasePair kCases[] = {
      &g_nv_case_can_frame, COMPARE_EXACT_BYTES},
     {"uavcan.primitive.array.Real32.1.0", &g_ours_case_real32_array,
      &g_nv_case_real32_array, COMPARE_FLOAT32_ARRAY_NAN_OK},
+    // Tagged union with no floating-point variant (sparse list / bitset mask /
+    // total): byte-exact re-serialization holds.
+    {"uavcan.node.port.SubjectIDList.1.0", &g_ours_case_subject_id_list,
+     &g_nv_case_subject_id_list, COMPARE_EXACT_BYTES},
+    // Fixed-length byte array (unique_id[16]) plus a variable-length optional.
+    {"uavcan.pnp.NodeIDAllocationData.2.0", &g_ours_case_node_id_alloc,
+     &g_nv_case_node_id_alloc, COMPARE_EXACT_BYTES},
+    // Nested composite (timestamp) + enum-ish field + variable-length UTF-8/byte
+    // array (text[<=255]).
+    {"uavcan.diagnostic.Record.1.1", &g_ours_case_diag_record,
+     &g_nv_case_diag_record, COMPARE_EXACT_BYTES},
+    // Narrow non-byte-aligned scalar (uint56).
+    {"uavcan.time.SynchronizedTimestamp.1.0", &g_ours_case_sync_timestamp,
+     &g_nv_case_sync_timestamp, COMPARE_EXACT_BYTES},
 };
 
 // Compares two Real32.1.0 serialized payloads treating NaN elements as equal
@@ -132,11 +154,13 @@ static void dumpBytes(const char *const label, const uint8_t *const data,
 }
 
 static int runCase(const CasePair *const testCase, const size_t iterations) {
-  uint8_t input[2048];
-  uint8_t oursObject[4096];
-  uint8_t nvObject[4096];
-  uint8_t oursSerialized[2048];
-  uint8_t nvSerialized[2048];
+  // Sized for the largest case currently exercised: SubjectIDList.1.0 carries a
+  // bool[8192] bitset variant (~8.2 KiB object, 1025-byte serialized form).
+  uint8_t input[4096];
+  uint8_t oursObject[16384];
+  uint8_t nvObject[16384];
+  uint8_t oursSerialized[4096];
+  uint8_t nvSerialized[4096];
 
   if (testCase->ours->object_size > sizeof(oursObject) ||
       testCase->nv->object_size > sizeof(nvObject)) {
@@ -148,7 +172,10 @@ static int runCase(const CasePair *const testCase, const size_t iterations) {
       maxSize(testCase->ours->max_serialized_size,
               testCase->nv->max_serialized_size) +
       16U;
-  const size_t maxOutput = 1024U;
+  // Serialize into a buffer large enough for this case's full wire image so the
+  // maximum-size representation is actually exercised (not capped short).
+  const size_t maxOutput = maxSize(testCase->ours->max_serialized_size,
+                                   testCase->nv->max_serialized_size);
   if (maxInput > sizeof(input) || maxOutput > sizeof(oursSerialized) ||
       maxOutput > sizeof(nvSerialized)) {
     fprintf(stderr, "Case %s requires larger I/O buffers in harness\n", testCase->name);
