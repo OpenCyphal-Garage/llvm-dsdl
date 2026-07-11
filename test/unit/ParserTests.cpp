@@ -408,5 +408,48 @@ bool runParserTests()
         }
     }
 
+    // Cyphal Specification primitive bit-length ranges must be enforced. Per the
+    // "Serializable types" section: signed integers [2,64], unsigned integers
+    // [1,64], floats exactly {16,32,64}, void [1,64]. Note `int1` is lexically a
+    // signed-integer name but semantically out of range (the single-bit case is
+    // `bool`), so it must be rejected. A field whose only type is out of range
+    // must fail to parse *and* raise a diagnostic; in-range boundaries must parse.
+    {
+        const auto fieldParses = [](const std::string& fieldType) -> bool {
+            const std::string          text = fieldType + " f\n@sealed\n";
+            llvmdsdl::DiagnosticEngine diag;
+            llvmdsdl::Lexer            lexer("width.dsdl", text);
+            auto                       tokens = lexer.lex();
+            llvmdsdl::Parser           parser("width.dsdl", std::move(tokens), diag);
+            auto                       def = parser.parseDefinition();
+            return def && !def->statements.empty() && !diag.hasErrors();
+        };
+
+        const char* const rejectedTypes[] = {
+            "uint0",   "uint65",   "uint100", "int0",  "int1",   "int65", "int128",
+            "float8",  "float17",  "float0",  "float128", "void0", "void65", "void100",
+        };
+        for (const char* rejected : rejectedTypes)
+        {
+            if (fieldParses(rejected))
+            {
+                std::cerr << "primitive-width regression: '" << rejected << "' should have been rejected\n";
+                return false;
+            }
+        }
+
+        const char* const acceptedTypes[] = {
+            "uint1", "uint64", "int2", "int64", "float16", "float32", "float64", "void1", "void64",
+        };
+        for (const char* accepted : acceptedTypes)
+        {
+            if (!fieldParses(accepted))
+            {
+                std::cerr << "primitive-width regression: '" << accepted << "' should have parsed cleanly\n";
+                return false;
+            }
+        }
+    }
+
     return true;
 }

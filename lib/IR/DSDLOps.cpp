@@ -428,6 +428,46 @@ LogicalResult IOOp::verify()
     {
         return emitOpError("invalid bit_length/array_capacity/array_length_prefix_bits metadata");
     }
+
+    // Defense-in-depth for the Cyphal Specification primitive bit-length ranges.
+    // The frontend already rejects out-of-range widths, but enforcing it here
+    // guarantees no downstream pass or hand-authored IR can smuggle a
+    // non-conformant scalar (e.g. int1, uint100, float8) into codegen. Signed
+    // and unsigned integers have different minimums per the spec: signed [2, 64],
+    // unsigned [1, 64].
+    const auto scalarCategory = scalarCategoryAttr.getValue();
+    if (scalarCategory == "signed")
+    {
+        if (*bitLength < 2 || *bitLength > 64)
+        {
+            return emitOpError("invalid scalar bit_length metadata; signed integer widths must be in [2, 64]");
+        }
+    }
+    else if (scalarCategory == "unsigned")
+    {
+        if (*bitLength < 1 || *bitLength > 64)
+        {
+            return emitOpError("invalid scalar bit_length metadata; unsigned integer widths must be in [1, 64]");
+        }
+    }
+    else if (scalarCategory == "float")
+    {
+        if (*bitLength != 16 && *bitLength != 32 && *bitLength != 64)
+        {
+            return emitOpError("invalid scalar bit_length metadata; floating-point width must be 16, 32, or 64");
+        }
+    }
+    else if (scalarCategory == "void")
+    {
+        // Void categories model alignment/spacer padding. The frontend enforces
+        // the spec range [1, 64] for user-written `voidN` fields; the lowering
+        // pipeline may additionally synthesize a degenerate 0-bit padding that is
+        // dropped downstream, so 0 is admitted here.
+        if (*bitLength < 0 || *bitLength > 64)
+        {
+            return emitOpError("invalid scalar bit_length metadata; void widths must be in [0, 64]");
+        }
+    }
     if (*alignmentBits <= 0)
     {
         return emitOpError("invalid alignment_bits metadata");

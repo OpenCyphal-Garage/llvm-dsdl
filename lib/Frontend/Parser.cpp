@@ -740,6 +740,79 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
         return std::nullopt;
     };
 
+    // Enforces the DSDL primitive bit-length ranges from the Cyphal
+    // Specification, §"Serializable types" (Void types / Primitive types). The
+    // spec gives signed and unsigned integers *different* minimums: signed
+    // integer widths range "from 2 to 64, inclusive" (int1 is not a valid type;
+    // the single-bit case is expressed with `bool`), unsigned integer widths
+    // range "from 1 to 64, inclusive", floating-point types are exactly
+    // {16, 32, 64} (pattern `float(16|32|64)`), and void widths range "from 1 to
+    // 64, inclusive". The lexical name pattern `int[1-9]\d*` admits `int1`, so
+    // the out-of-range width must be rejected here rather than at the grammar
+    // level. Without this check these lower to structurally-valid but
+    // non-conformant IR.
+    enum class WidthDomain
+    {
+        SignedInteger,
+        UnsignedInteger,
+        Float,
+        Void
+    };
+    auto validateBitLength = [&](WidthDomain domain, std::uint32_t bits) -> bool {
+        switch (domain)
+        {
+        case WidthDomain::SignedInteger:
+            if (bits < 2U || bits > 64U)
+            {
+                if (!silent)
+                {
+                    diagnostics_.error(baseTok.location,
+                                       "invalid signed integer bit length " + std::to_string(bits) +
+                                           "; must be in the range [2, 64]");
+                }
+                return false;
+            }
+            return true;
+        case WidthDomain::UnsignedInteger:
+            if (bits < 1U || bits > 64U)
+            {
+                if (!silent)
+                {
+                    diagnostics_.error(baseTok.location,
+                                       "invalid unsigned integer bit length " + std::to_string(bits) +
+                                           "; must be in the range [1, 64]");
+                }
+                return false;
+            }
+            return true;
+        case WidthDomain::Float:
+            if (bits != 16U && bits != 32U && bits != 64U)
+            {
+                if (!silent)
+                {
+                    diagnostics_.error(baseTok.location,
+                                       "invalid floating point bit length " + std::to_string(bits) +
+                                           "; must be 16, 32, or 64");
+                }
+                return false;
+            }
+            return true;
+        case WidthDomain::Void:
+            if (bits < 1U || bits > 64U)
+            {
+                if (!silent)
+                {
+                    diagnostics_.error(baseTok.location,
+                                       "invalid void bit length " + std::to_string(bits) +
+                                           "; must be in the range [1, 64]");
+                }
+                return false;
+            }
+            return true;
+        }
+        return true;
+    };
+
     // A cast mode may only precede a numeric primitive (type_primitive_name =
     // uint/int/float, productions 44-51); it is invalid on bool/byte/utf8, void,
     // or composite (versioned) types.
@@ -764,6 +837,10 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             VoidTypeExprAST v;
             const auto      bits = parseBitLength(name.substr(4));
             if (!bits)
+            {
+                return fail();
+            }
+            if (!validateBitLength(WidthDomain::Void, *bits))
             {
                 return fail();
             }
@@ -800,6 +877,10 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 {
                     return fail();
                 }
+                if (!validateBitLength(WidthDomain::UnsignedInteger, *bits))
+                {
+                    return fail();
+                }
                 p.bitLength = *bits;
             }
             else if (name.rfind("int", 0) == 0)
@@ -810,6 +891,10 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 {
                     return fail();
                 }
+                if (!validateBitLength(WidthDomain::SignedInteger, *bits))
+                {
+                    return fail();
+                }
                 p.bitLength = *bits;
             }
             else if (name.rfind("float", 0) == 0)
@@ -817,6 +902,10 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 p.kind          = PrimitiveKind::Float;
                 const auto bits = parseBitLength(name.substr(5));
                 if (!bits)
+                {
+                    return fail();
+                }
+                if (!validateBitLength(WidthDomain::Float, *bits))
                 {
                     return fail();
                 }
