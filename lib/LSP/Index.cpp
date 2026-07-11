@@ -177,13 +177,22 @@ std::optional<std::uint64_t> getRequiredUnsigned64(const llvm::json::Object& obj
 
 std::optional<std::size_t> getRequiredSize(const llvm::json::Object& object, llvm::StringRef key, std::string& error)
 {
-    const auto value = object.getInteger(key);
-    if (!value.has_value() || *value < 0)
+    // Encoded as a decimal string: a full 64-bit std::size_t hash does not fit
+    // JSON's signed integer domain, so an integer encoding would round-trip a
+    // high-bit-set value back as a negative and be rejected.
+    const auto value = object.getString(key);
+    if (!value.has_value())
     {
         error = "missing required size field: " + key.str();
         return std::nullopt;
     }
-    return static_cast<std::size_t>(*value);
+    std::size_t parsed = 0;
+    if (value->getAsInteger(10, parsed))
+    {
+        error = "invalid size field: " + key.str();
+        return std::nullopt;
+    }
+    return parsed;
 }
 
 std::optional<IndexLocation> parseLocation(const llvm::json::Object& object, std::string& error)
@@ -459,7 +468,7 @@ bool IndexStorage::writeShard(const IndexFileShard& shard, std::string* errorMes
     llvm::json::Object metadata;
     metadata["file_path"]        = shard.metadata.filePath;
     metadata["source_uri"]       = shard.metadata.sourceUri;
-    metadata["text_hash"]        = static_cast<std::int64_t>(shard.metadata.textHash);
+    metadata["text_hash"]        = std::to_string(shard.metadata.textHash);
     metadata["snapshot_version"] = static_cast<std::int64_t>(shard.metadata.snapshotVersion);
 
     std::vector<IndexSymbolRecord> sortedSymbols = shard.symbols;

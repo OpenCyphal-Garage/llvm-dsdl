@@ -246,8 +246,10 @@ bool runLspServerTests()
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 diagnosticsNotification =
-            findLatestNotificationByMethod(outgoing, "textDocument/publishDiagnostics");
+        // Look up diagnostics by URI: publishDiagnosticsFromAnalysis emits one
+        // notification per URI in unordered_map order, so the last-by-method
+        // notification is not necessarily this document's on every platform.
+        const auto* diagnosticsNotification = findLatestDiagnosticsForUri(outgoing, "file:///tmp/bad.dsdl");
         if (!diagnosticsNotification)
         {
             std::cerr << "missing diagnostics notification for invalid document\n";

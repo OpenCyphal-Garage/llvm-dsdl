@@ -723,6 +723,7 @@ std::vector<std::string> renderScalarBinding(const HelperBindingRenderLanguage  
             helperName + " := func(value float64) float64 { return value }",
         };
     }
+    return {};
 }
 
 std::vector<std::string> renderArrayPrefixBinding(const HelperBindingRenderLanguage language,

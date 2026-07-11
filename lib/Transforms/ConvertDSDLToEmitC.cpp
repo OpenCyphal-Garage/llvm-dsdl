@@ -1963,60 +1963,60 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::OpBuilder builder(module.getContext());
         builder.setInsertionPointToStart(&body);
         const mlir::Location loc = builder.getUnknownLoc();
-        builder.create<mlir::emitc::VerbatimOp>(loc, "#include <stddef.h>");
-        builder.create<mlir::emitc::VerbatimOp>(loc, "#include <stdint.h>");
-        builder.create<mlir::emitc::VerbatimOp>(loc, "#include \"dsdl_runtime.h\"");
+        mlir::emitc::VerbatimOp::create(builder, loc, "#include <stddef.h>");
+        mlir::emitc::VerbatimOp::create(builder, loc, "#include <stdint.h>");
+        mlir::emitc::VerbatimOp::create(builder, loc, "#include \"dsdl_runtime.h\"");
         if (headersAvailable)
         {
             for (const auto& headerPath : typedHeaders)
             {
-                builder.create<mlir::emitc::VerbatimOp>(loc, "#include \"" + headerPath + "\"");
+                mlir::emitc::VerbatimOp::create(builder, loc, "#include \"" + headerPath + "\"");
             }
         }
-        builder.create<mlir::emitc::VerbatimOp>(loc, "/* Generated from DSDL IR by convert-dsdl-to-emitc. */");
+        mlir::emitc::VerbatimOp::create(builder, loc, "/* Generated from DSDL IR by convert-dsdl-to-emitc. */");
         for (const auto& typeName : forwardDeclaredTypes)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "typedef struct " + typeName + " " + typeName + ";");
+            mlir::emitc::VerbatimOp::create(builder, loc, "typedef struct " + typeName + " " + typeName + ";");
         }
         for (const auto& symbol : capacityCheckSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int8_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : unionTagValidateSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int8_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : unionTagIoHelperSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int64_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int64_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : scalarUnsignedHelperSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int64_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int64_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : scalarSignedHelperSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int64_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int64_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : scalarFloatHelperSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "double " + symbol + "(double);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "double " + symbol + "(double);");
         }
         for (const auto& symbol : arrayLengthPrefixHelperSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int64_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int64_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : arrayLengthValidateSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int8_t " + symbol + "(int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t);");
         }
         for (const auto& symbol : delimiterValidateSymbols)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, "int8_t " + symbol + "(int64_t, int64_t);");
+            mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t, int64_t);");
         }
         for (const auto& fn : emittedFunctions)
         {
-            builder.create<mlir::emitc::VerbatimOp>(loc, fn);
+            mlir::emitc::VerbatimOp::create(builder, loc, fn);
         }
 
         for (mlir::Operation* op : schemaOps)

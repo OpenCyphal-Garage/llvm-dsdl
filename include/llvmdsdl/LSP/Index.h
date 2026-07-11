@@ -32,7 +32,10 @@ namespace llvmdsdl::lsp
 {
 
 /// @brief On-disk schema version for persisted index shards.
-inline constexpr std::uint32_t LspIndexSchemaVersion = 1;
+///
+/// Version 2 encodes `text_hash` as a decimal string so a full 64-bit
+/// `std::size_t` hash round-trips without overflowing JSON's signed integer.
+inline constexpr std::uint32_t LspIndexSchemaVersion = 2;
 
 /// @brief Source location payload used by indexed symbols/references.
 struct IndexLocation final

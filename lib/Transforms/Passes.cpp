@@ -256,7 +256,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
     auto                 i64Ty  = builder.getIntegerType(64);
     auto                 i8Ty   = builder.getIntegerType(8);
     auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
-    auto                 fn     = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
+    auto                 fn     = mlir::func::FuncOp::create(builder, loc, funcName, fnType);
     fn->setAttr("llvmdsdl.plan_capacity_check", builder.getUnitAttr());
     fn->setAttr("llvmdsdl.schema_sym", schemaSym);
     if (sectionAttr)
@@ -282,21 +282,21 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
         return plan->emitOpError("missing required max_bits metadata");
     }
 
-    auto requiredBitsValue = builder.create<mlir::arith::ConstantIntOp>(loc, requiredBits, 64).getResult();
+    auto requiredBitsValue = mlir::arith::ConstantIntOp::create(builder, loc, requiredBits, 64).getResult();
     auto cond =
-        builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, requiredBitsValue, capacityBits);
-    auto status = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, cond, true);
+        mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, requiredBitsValue, capacityBits);
+    auto status = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, cond, true);
     {
         mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-        auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -3, 8).getResult();
-        thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        auto            fail        = mlir::arith::ConstantIntOp::create(thenBuilder, loc, -3, 8).getResult();
+        mlir::scf::YieldOp::create(thenBuilder, loc, fail);
     }
     {
         mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-        auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-        elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        auto            ok          = mlir::arith::ConstantIntOp::create(elseBuilder, loc, 0, 8).getResult();
+        mlir::scf::YieldOp::create(elseBuilder, loc, ok);
     }
-    builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+    mlir::func::ReturnOp::create(builder, loc, status.getResults());
 
     return mlir::success();
 }
@@ -360,7 +360,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
     auto                 i64Ty  = builder.getIntegerType(64);
     auto                 i8Ty   = builder.getIntegerType(8);
     auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
-    auto                 fn     = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
+    auto                 fn     = mlir::func::FuncOp::create(builder, loc, funcName, fnType);
     fn->setAttr("llvmdsdl.union_tag_validate", builder.getUnitAttr());
     fn->setAttr("llvmdsdl.schema_sym", schemaSym);
     if (sectionAttr)
@@ -372,26 +372,26 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
     mlir::Value tagValue = entry->getArgument(0);
-    mlir::Value anyMatch = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1).getResult();
+    mlir::Value anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
     for (const std::int64_t option : optionIndexes)
     {
-        auto optConst = builder.create<mlir::arith::ConstantIntOp>(loc, option, 64).getResult();
-        auto match    = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
-        anyMatch      = builder.create<mlir::arith::OrIOp>(loc, anyMatch, match);
+        auto optConst = mlir::arith::ConstantIntOp::create(builder, loc, option, 64).getResult();
+        auto match    = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
+        anyMatch      = mlir::arith::OrIOp::create(builder, loc, anyMatch, match);
     }
 
-    auto status = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, anyMatch, true);
+    auto status = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, anyMatch, true);
     {
         mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-        auto            ok          = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-        thenBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        auto            ok          = mlir::arith::ConstantIntOp::create(thenBuilder, loc, 0, 8).getResult();
+        mlir::scf::YieldOp::create(thenBuilder, loc, ok);
     }
     {
         mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-        auto            fail        = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, -11, 8).getResult();
-        elseBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        auto            fail        = mlir::arith::ConstantIntOp::create(elseBuilder, loc, -11, 8).getResult();
+        mlir::scf::YieldOp::create(elseBuilder, loc, fail);
     }
-    builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+    mlir::func::ReturnOp::create(builder, loc, status.getResults());
 
     return mlir::success();
 }
@@ -464,7 +464,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
             fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind", builder.getStringAttr("serialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -482,16 +482,16 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             }
             else if (castMode == "saturated")
             {
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-                auto over = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
-                result    = builder.create<mlir::arith::SelectOp>(loc, over, maskConst, value).getResult();
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+                auto over = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
+                result    = mlir::arith::SelectOp::create(builder, loc, over, maskConst, value).getResult();
             }
             else
             {
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-                result         = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+                result         = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
             }
-            builder.create<mlir::func::ReturnOp>(loc, result);
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
@@ -501,7 +501,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
             fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind", builder.getStringAttr("deserialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -514,13 +514,13 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             auto value = entry->getArgument(0);
             if (fullWidth)
             {
-                builder.create<mlir::func::ReturnOp>(loc, value);
+                mlir::func::ReturnOp::create(builder, loc, value);
             }
             else
             {
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-                auto masked    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-                builder.create<mlir::func::ReturnOp>(loc, masked);
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+                auto masked    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+                mlir::func::ReturnOp::create(builder, loc, masked);
             }
         }
     }
@@ -599,7 +599,7 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
             fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_signed_helper_kind", builder.getStringAttr("serialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -613,14 +613,14 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             mlir::Value result = value;
             if (castMode == "saturated" && bitLength < 64)
             {
-                auto minConst = builder.create<mlir::arith::ConstantIntOp>(loc, minValue, 64);
-                auto maxConst = builder.create<mlir::arith::ConstantIntOp>(loc, maxValue, 64);
-                auto below = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, value, minConst);
-                auto above = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
-                auto clampedLow = builder.create<mlir::arith::SelectOp>(loc, below, minConst, value);
-                result          = builder.create<mlir::arith::SelectOp>(loc, above, maxConst, clampedLow).getResult();
+                auto minConst = mlir::arith::ConstantIntOp::create(builder, loc, minValue, 64);
+                auto maxConst = mlir::arith::ConstantIntOp::create(builder, loc, maxValue, 64);
+                auto below = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, value, minConst);
+                auto above = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
+                auto clampedLow = mlir::arith::SelectOp::create(builder, loc, below, minConst, value);
+                result          = mlir::arith::SelectOp::create(builder, loc, above, maxConst, clampedLow).getResult();
             }
-            builder.create<mlir::func::ReturnOp>(loc, result);
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
@@ -630,7 +630,7 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
             fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_signed_helper_kind", builder.getStringAttr("deserialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -644,25 +644,25 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
 
             if (bitLength >= 64)
             {
-                builder.create<mlir::func::ReturnOp>(loc, value);
+                mlir::func::ReturnOp::create(builder, loc, value);
             }
             else
             {
                 const std::uint64_t maskU       = (UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1);
                 const std::uint64_t signU       = UINT64_C(1) << static_cast<unsigned>(bitLength - 1);
                 const std::uint64_t extendMaskU = ~maskU;
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(maskU), 64);
-                auto signConst = builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(signU), 64);
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(maskU), 64);
+                auto signConst = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(signU), 64);
                 auto extendConst =
-                    builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(extendMaskU), 64);
-                auto zeroConst = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
-                auto masked    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-                auto signPart  = builder.create<mlir::arith::AndIOp>(loc, masked, signConst).getResult();
+                    mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(extendMaskU), 64);
+                auto zeroConst = mlir::arith::ConstantIntOp::create(builder, loc, 0, 64);
+                auto masked    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+                auto signPart  = mlir::arith::AndIOp::create(builder, loc, masked, signConst).getResult();
                 auto isNegative =
-                    builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
-                auto negExtended = builder.create<mlir::arith::OrIOp>(loc, masked, extendConst).getResult();
-                auto result = builder.create<mlir::arith::SelectOp>(loc, isNegative, negExtended, masked).getResult();
-                builder.create<mlir::func::ReturnOp>(loc, result);
+                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
+                auto negExtended = mlir::arith::OrIOp::create(builder, loc, masked, extendConst).getResult();
+                auto result = mlir::arith::SelectOp::create(builder, loc, isNegative, negExtended, masked).getResult();
+                mlir::func::ReturnOp::create(builder, loc, result);
             }
         }
     }
@@ -730,7 +730,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 f64Ty  = builder.getF64Type();
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
             fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("serialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -741,7 +741,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
             auto value = entry->getArgument(0);
-            builder.create<mlir::func::ReturnOp>(loc, value);
+            mlir::func::ReturnOp::create(builder, loc, value);
         }
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
@@ -751,7 +751,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 f64Ty  = builder.getF64Type();
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
             fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("deserialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -762,7 +762,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
             auto value = entry->getArgument(0);
-            builder.create<mlir::func::ReturnOp>(loc, value);
+            mlir::func::ReturnOp::create(builder, loc, value);
         }
     }
 
@@ -828,7 +828,7 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
         auto                 i64Ty  = builder.getIntegerType(64);
         auto                 i8Ty   = builder.getIntegerType(8);
         auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
-        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
+        auto                 fn     = mlir::func::FuncOp::create(builder, loc, symbolName, fnType);
         fn->setAttr("llvmdsdl.array_length_validate", builder.getUnitAttr());
         fn->setAttr("llvmdsdl.schema_sym", schemaSym);
         if (sectionAttr)
@@ -839,23 +839,23 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
         auto* entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
         auto length     = entry->getArgument(0);
-        auto zeroConst  = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
-        auto capConst   = builder.create<mlir::arith::ConstantIntOp>(loc, capacity, 64);
-        auto isNegative = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
-        auto tooLarge   = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
-        auto invalid    = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
-        auto status     = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+        auto zeroConst  = mlir::arith::ConstantIntOp::create(builder, loc, 0, 64);
+        auto capConst   = mlir::arith::ConstantIntOp::create(builder, loc, capacity, 64);
+        auto isNegative = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
+        auto tooLarge   = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
+        auto invalid    = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
+        auto status     = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);
         {
             mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-            auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -10, 8).getResult();
-            thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+            auto            fail        = mlir::arith::ConstantIntOp::create(thenBuilder, loc, -10, 8).getResult();
+            mlir::scf::YieldOp::create(thenBuilder, loc, fail);
         }
         {
             mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-            auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-            elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+            auto            ok          = mlir::arith::ConstantIntOp::create(elseBuilder, loc, 0, 8).getResult();
+            mlir::scf::YieldOp::create(elseBuilder, loc, ok);
         }
-        builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+        mlir::func::ReturnOp::create(builder, loc, status.getResults());
     }
 
     return mlir::success();
@@ -927,7 +927,7 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
             fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.array_length_prefix_helper_kind", builder.getStringAttr("serialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -940,13 +940,13 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
             auto value = entry->getArgument(0);
             if (fullWidth)
             {
-                builder.create<mlir::func::ReturnOp>(loc, value);
+                mlir::func::ReturnOp::create(builder, loc, value);
             }
             else
             {
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-                auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-                builder.create<mlir::func::ReturnOp>(loc, result);
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+                auto result    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+                mlir::func::ReturnOp::create(builder, loc, result);
             }
         }
 
@@ -957,7 +957,7 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
             fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
             fn->setAttr("llvmdsdl.array_length_prefix_helper_kind", builder.getStringAttr("deserialize"));
             fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -970,13 +970,13 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
             auto value = entry->getArgument(0);
             if (fullWidth)
             {
-                builder.create<mlir::func::ReturnOp>(loc, value);
+                mlir::func::ReturnOp::create(builder, loc, value);
             }
             else
             {
-                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-                auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-                builder.create<mlir::func::ReturnOp>(loc, result);
+                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+                auto result    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+                mlir::func::ReturnOp::create(builder, loc, result);
             }
         }
     }
@@ -1026,7 +1026,7 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         const mlir::Location loc    = plan->getLoc();
         auto                 i64Ty  = builder.getIntegerType(64);
         auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+        auto                 fn     = mlir::func::FuncOp::create(builder, loc, serName, fnType);
         fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
         fn->setAttr("llvmdsdl.union_tag_helper_kind", builder.getStringAttr("serialize"));
         fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -1039,13 +1039,13 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         auto value = entry->getArgument(0);
         if (fullWidth)
         {
-            builder.create<mlir::func::ReturnOp>(loc, value);
+            mlir::func::ReturnOp::create(builder, loc, value);
         }
         else
         {
-            auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-            auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-            builder.create<mlir::func::ReturnOp>(loc, result);
+            auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+            auto result    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
     }
 
@@ -1056,7 +1056,7 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         const mlir::Location loc    = plan->getLoc();
         auto                 i64Ty  = builder.getIntegerType(64);
         auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+        auto                 fn     = mlir::func::FuncOp::create(builder, loc, deserName, fnType);
         fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
         fn->setAttr("llvmdsdl.union_tag_helper_kind", builder.getStringAttr("deserialize"));
         fn->setAttr("llvmdsdl.schema_sym", schemaSym);
@@ -1069,13 +1069,13 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         auto value = entry->getArgument(0);
         if (fullWidth)
         {
-            builder.create<mlir::func::ReturnOp>(loc, value);
+            mlir::func::ReturnOp::create(builder, loc, value);
         }
         else
         {
-            auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-            auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-            builder.create<mlir::func::ReturnOp>(loc, result);
+            auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
+            auto result    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
     }
 
@@ -1145,7 +1145,7 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
         auto                 i64Ty  = builder.getIntegerType(64);
         auto                 i8Ty   = builder.getIntegerType(8);
         auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty, i64Ty}, mlir::TypeRange{i8Ty});
-        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
+        auto                 fn     = mlir::func::FuncOp::create(builder, loc, symbolName, fnType);
         fn->setAttr("llvmdsdl.delimiter_header_validate", builder.getUnitAttr());
         fn->setAttr("llvmdsdl.schema_sym", schemaSym);
         if (sectionAttr)
@@ -1157,24 +1157,24 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
         builder.setInsertionPointToStart(entry);
         auto headerBytes    = entry->getArgument(0);
         auto remainingBytes = entry->getArgument(1);
-        auto zeroConst      = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
+        auto zeroConst      = mlir::arith::ConstantIntOp::create(builder, loc, 0, 64);
         auto isNegative =
-            builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, headerBytes, zeroConst);
+            mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, headerBytes, zeroConst);
         auto tooLarge =
-            builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, headerBytes, remainingBytes);
-        auto invalid = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
-        auto status  = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+            mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, headerBytes, remainingBytes);
+        auto invalid = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
+        auto status  = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);
         {
             mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-            auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -12, 8).getResult();
-            thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+            auto            fail        = mlir::arith::ConstantIntOp::create(thenBuilder, loc, -12, 8).getResult();
+            mlir::scf::YieldOp::create(thenBuilder, loc, fail);
         }
         {
             mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-            auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-            elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+            auto            ok          = mlir::arith::ConstantIntOp::create(elseBuilder, loc, 0, 8).getResult();
+            mlir::scf::YieldOp::create(elseBuilder, loc, ok);
         }
-        builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+        mlir::func::ReturnOp::create(builder, loc, status.getResults());
     }
 
     return mlir::success();
