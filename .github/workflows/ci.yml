@@ -216,3 +216,29 @@ jobs:
           name: fuzz-reproducers
           path: fuzz-artifacts/
           if-no-files-found: ignore
+
+  formal-model:
+    name: Formal model check (TLA+)
+    # spec/tla/CyphalSerdes.tla is the normative oracle for the emit-order verifier
+    # (the accepted serialize/deserialize op-orderings the generated backends are
+    # checked against). Re-model-check it on every change so the oracle can't rot.
+    # Needs only a JVM plus the vendored tla2tools.jar (spec/tla/vendor/) — fully
+    # offline, and deliberately independent of the LLVM/MLIR build matrix so it is
+    # fast and cannot be skipped by a toolchain gap in the heavy lanes.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Model-check CyphalSerdes
+        # check.sh finds the in-tree spec/tla/vendor/tla2tools.jar automatically and
+        # exec's TLC, which exits non-zero on any invariant violation, so a broken
+        # model (or a regression to the accepted op-orderings) fails the job.
+        run: ./spec/tla/check.sh

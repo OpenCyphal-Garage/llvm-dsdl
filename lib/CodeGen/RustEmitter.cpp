@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
@@ -271,6 +272,16 @@ public:
     {
     }
 
+    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     void emitSerialize(std::ostringstream&              out,
                        const std::string&               typeName,
                        const SemanticSection&           section,
@@ -454,6 +465,7 @@ public:
 private:
     const EmitterContext&                               ctx_;
     const std::unordered_map<std::string, std::string>& poolClassConstExprByField_;
+    EmitTraceSink*                                      traceSink_ = nullptr;
     std::size_t                                         id_{0};
 
     std::string poolClassConstExprForField(const std::string& fieldName) const
@@ -512,6 +524,7 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Align, alignmentBits);
         const auto err = nextName("err");
         emitLine(out, indent, "while (offset_bits % " + std::to_string(alignmentBits) + "usize) != 0 {");
         emitLine(out, indent + 1, "let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, false);");
@@ -526,6 +539,7 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Align, alignmentBits);
         emitLine(out,
                  indent,
                  "offset_bits = (offset_bits + " + std::to_string(alignmentBits - 1) + ") & !" +
@@ -538,12 +552,14 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Pad, type.bitLength);
         const auto err = nextName("err");
         emitLine(out,
                  indent,
                  "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, 0, " +
                      std::to_string(type.bitLength) + "u8);");
         emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+        trace(EmitTraceOp::Advance, type.bitLength);
         emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
     }
 
@@ -553,6 +569,8 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Pad, type.bitLength);
+        trace(EmitTraceOp::Advance, type.bitLength);
         emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
     }
 
@@ -565,6 +583,7 @@ private:
     {
         const auto tagBits        = resolveUnionTagBits(section, sectionFacts);
         const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        trace(EmitTraceOp::ValidateTag);
         emitLine(out, indent, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
         emitLine(out,
                  indent,
@@ -573,17 +592,22 @@ private:
         const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
 
         const auto tagErr = nextName("err");
+        trace(EmitTraceOp::MaskTag);
+        trace(EmitTraceOp::WriteTag, tagBits);
         emitLine(out,
                  indent,
                  "let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + tagExpr + ", " +
                      std::to_string(tagBits) + "u8);");
         emitLine(out, indent, "if " + tagErr + " < 0 { return Err(" + tagErr + "); }");
+        trace(EmitTraceOp::Advance, tagBits);
         emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + ";");
 
+        trace(EmitTraceOp::Switch);
         emitLine(out, indent, "match self._tag_ {");
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
+            trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, indent + 1, std::to_string(field.unionOptionIndex) + " => {");
             emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
             emitSerializeAny(out,
@@ -594,6 +618,7 @@ private:
                              step.fieldFacts);
             emitLine(out, indent + 1, "}");
         }
+        trace(EmitTraceOp::DefaultBadTag);
         emitLine(out,
                  indent + 1,
                  "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
@@ -609,24 +634,31 @@ private:
     {
         const auto tagBits = resolveUnionTagBits(section, sectionFacts);
         const auto rawTag  = nextName("tag_raw");
+        trace(EmitTraceOp::ReadTag, tagBits);
         emitLine(out,
                  indent,
                  "let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " + std::to_string(tagBits) +
                      "u8);");
         const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
         const auto tagExpr   = tagHelper + "(" + rawTag + ")";
+        trace(EmitTraceOp::MaskTag);
+        trace(EmitTraceOp::StoreTag);
         emitLine(out, indent, "self._tag_ = (" + tagExpr + ") as u8;");
         const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        trace(EmitTraceOp::ValidateTag);
         emitLine(out, indent, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
         emitLine(out,
                  indent,
                  "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
+        trace(EmitTraceOp::Advance, tagBits);
         emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + ";");
 
+        trace(EmitTraceOp::Switch);
         emitLine(out, indent, "match self._tag_ {");
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
+            trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, indent + 1, std::to_string(field.unionOptionIndex) + " => {");
             emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
             emitDeserializeAny(out,
@@ -638,6 +670,7 @@ private:
                                poolClassConstExprForField(field.name));
             emitLine(out, indent + 1, "}");
         }
+        trace(EmitTraceOp::DefaultBadTag);
         emitLine(out,
                  indent + 1,
                  "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
@@ -691,8 +724,10 @@ private:
         {
         case SemanticScalarCategory::Bool: {
             const auto err = nextName("err");
+            trace(EmitTraceOp::WriteScalarBool, 1);
             emitLine(out, indent, "let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, " + expr + ");");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+            trace(EmitTraceOp::Advance, 1);
             emitLine(out, indent, "offset_bits += 1;");
             break;
         }
@@ -706,11 +741,13 @@ private:
             valueExpr         = helper + "(" + valueExpr + ")";
 
             const auto err = nextName("err");
+            trace(EmitTraceOp::WriteScalarUint, type.bitLength);
             emitLine(out,
                      indent,
                      "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + valueExpr + ", " +
                          std::to_string(type.bitLength) + "u8);");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -722,11 +759,13 @@ private:
             valueExpr         = helper + "(" + valueExpr + ")";
 
             const auto err = nextName("err");
+            trace(EmitTraceOp::WriteScalarSint, type.bitLength);
             emitLine(out,
                      indent,
                      "let " + err + " = crate::dsdl_runtime::set_ixx(buffer, offset_bits, " + valueExpr + ", " +
                          std::to_string(type.bitLength) + "u8);");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -751,8 +790,10 @@ private:
             {
                 setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + ")";
             }
+            trace(EmitTraceOp::WriteScalarFloat, type.bitLength);
             emitLine(out, indent, "let " + err + " = " + setCall + ";");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -774,7 +815,9 @@ private:
         switch (type.scalarCategory)
         {
         case SemanticScalarCategory::Bool:
+            trace(EmitTraceOp::ReadScalarBool, 1);
             emitLine(out, indent, expr + " = crate::dsdl_runtime::get_bit(buffer, offset_bits);");
+            trace(EmitTraceOp::Advance, 1);
             emitLine(out, indent, "offset_bits += 1;");
             break;
         case SemanticScalarCategory::Byte:
@@ -785,6 +828,7 @@ private:
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
             const auto raw    = nextName("raw");
+            trace(EmitTraceOp::ReadScalarUint, type.bitLength);
             emitLine(out,
                      indent,
                      "let " + raw + " = crate::dsdl_runtime::" + getter + "(buffer, offset_bits, " +
@@ -792,6 +836,7 @@ private:
             emitLine(out,
                      indent,
                      expr + " = " + helper + "(" + raw + ") as " + unsignedStorageType(type.bitLength) + ";");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -801,6 +846,7 @@ private:
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
             const auto raw    = nextName("raw");
+            trace(EmitTraceOp::ReadScalarSint, type.bitLength);
             emitLine(out,
                      indent,
                      "let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
@@ -808,6 +854,7 @@ private:
             emitLine(out,
                      indent,
                      expr + " = " + helper + "(" + raw + ") as " + signedStorageType(type.bitLength) + ";");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -815,6 +862,7 @@ private:
             const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
+            trace(EmitTraceOp::ReadScalarFloat, type.bitLength);
             if (type.bitLength == 16U)
             {
                 emitLine(out,
@@ -833,6 +881,7 @@ private:
                          indent,
                          expr + " = " + helper + "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
             }
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
             break;
         }
@@ -860,6 +909,7 @@ private:
 
         if (type.arrayKind == ArrayKind::Fixed)
         {
+            trace(EmitTraceOp::LenCheck, type.arrayCapacity);
             emitLine(out,
                      indent,
                      "if " + expr + ".len() != " + std::to_string(type.arrayCapacity) +
@@ -873,6 +923,7 @@ private:
             assert(!arrayDescriptor->validateSymbol.empty());
             const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
             const auto validateRc     = nextName("len_rc");
+            trace(EmitTraceOp::LenValidate, prefixBits);
             emitLine(out, indent, "let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
             emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
             std::string prefixExpr = expr + ".len() as u64";
@@ -880,17 +931,20 @@ private:
             const auto serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
             prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
             const auto err             = nextName("err");
+            trace(EmitTraceOp::LenWrite, prefixBits);
             emitLine(out,
                      indent,
                      "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + prefixExpr + ", " +
                          std::to_string(prefixBits) + "u8);");
             emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+            trace(EmitTraceOp::Advance, prefixBits);
             emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + ";");
         }
 
         const auto index = nextName("index");
         const auto count = variable ? (expr + ".len()") : std::to_string(type.arrayCapacity) + "usize";
 
+        trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for " + index + " in 0.." + count + " {");
 
         const auto itemType = arrayElementType(type);
@@ -934,10 +988,12 @@ private:
         if (variable)
         {
             const auto rawCount = nextName("count_raw");
+            trace(EmitTraceOp::LenRead, prefixBits);
             emitLine(out,
                      indent,
                      "let " + rawCount + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
                          std::to_string(prefixBits) + "u8);");
+            trace(EmitTraceOp::Advance, prefixBits);
             emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + ";");
             std::string countExpr = rawCount + " as usize";
             assert(arrayDescriptor.has_value());
@@ -948,6 +1004,7 @@ private:
             assert(!arrayDescriptor->validateSymbol.empty());
             const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
             const auto validateRc     = nextName("len_rc");
+            trace(EmitTraceOp::LenValidate, prefixBits);
             emitLine(out, indent, "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
             emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
         }
@@ -973,6 +1030,7 @@ private:
         emitLine(out, indent, "}");
 
         const auto index = nextName("index");
+        trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for " + index + " in 0.." + count + " {");
 
         const auto itemType = arrayElementType(type);
@@ -990,6 +1048,7 @@ private:
                                 const int                      indent,
                                 const LoweredFieldFacts* const fieldFacts)
     {
+        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
         const auto sizeVar = nextName("size_bytes");
         const auto errVar  = nextName("err");
 
@@ -1043,6 +1102,7 @@ private:
                                   const int                      indent,
                                   const LoweredFieldFacts* const fieldFacts)
     {
+        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
         const auto sizeVar = nextName("size_bytes");
 
         if (!type.compositeSealed)

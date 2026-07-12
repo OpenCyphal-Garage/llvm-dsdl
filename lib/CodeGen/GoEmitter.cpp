@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
@@ -312,6 +313,16 @@ public:
     {
     }
 
+    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     void emitSerializeFunction(std::ostringstream&        out,
                                const std::string&         typeName,
                                const SemanticSection&     section,
@@ -484,6 +495,7 @@ private:
     const EmitterContext&                     ctx_;
     std::string                               currentPackagePath_;
     const std::map<std::string, std::string>& importAliases_;
+    EmitTraceSink*                            traceSink_ = nullptr;
     std::size_t                               id_{0};
 
     std::string nextName(const std::string& prefix)
@@ -532,6 +544,7 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Align, alignmentBits);
         const auto err = nextName("err");
         emitLine(out, indent, "for (offsetBits % " + std::to_string(alignmentBits) + ") != 0 {");
         emitLine(out, indent + 1, err + " := dsdlruntime.SetBit(buffer, offsetBits, false)");
@@ -548,6 +561,7 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Align, alignmentBits);
         emitLine(out,
                  indent,
                  "offsetBits = (offsetBits + " + std::to_string(alignmentBits - 1) + ") & ^" +
@@ -560,6 +574,7 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Pad, type.bitLength);
         const auto err = nextName("err");
         emitLine(out,
                  indent,
@@ -567,6 +582,7 @@ private:
         emitLine(out, indent, "if " + err + " < 0 {");
         emitLine(out, indent + 1, "return " + err + ", 0");
         emitLine(out, indent, "}");
+        trace(EmitTraceOp::Advance, type.bitLength);
         emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
     }
 
@@ -576,6 +592,8 @@ private:
         {
             return;
         }
+        trace(EmitTraceOp::Pad, type.bitLength);
+        trace(EmitTraceOp::Advance, type.bitLength);
         emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
     }
 
@@ -588,6 +606,7 @@ private:
     {
         const auto tagBits        = resolveUnionTagBits(section, sectionFacts);
         const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        trace(EmitTraceOp::ValidateTag);
         emitLine(out,
                  indent,
                  "if rc := " + validateHelper + "(int64(obj.Tag)); rc != dsdlruntime.DSDL_RUNTIME_SUCCESS {");
@@ -596,6 +615,8 @@ private:
 
         const auto tagExpr = helperBindingName(helperBindings.unionTagMask->symbol) + "(uint64(obj.Tag))";
         const auto tagErr  = nextName("err");
+        trace(EmitTraceOp::MaskTag);
+        trace(EmitTraceOp::WriteTag, tagBits);
         emitLine(out,
                  indent,
                  tagErr + " := dsdlruntime.SetUxx(buffer, offsetBits, " + tagExpr + ", " + std::to_string(tagBits) +
@@ -603,12 +624,15 @@ private:
         emitLine(out, indent, "if " + tagErr + " < 0 {");
         emitLine(out, indent + 1, "return " + tagErr + ", 0");
         emitLine(out, indent, "}");
+        trace(EmitTraceOp::Advance, tagBits);
         emitLine(out, indent, "offsetBits += " + std::to_string(tagBits));
 
+        trace(EmitTraceOp::Switch);
         emitLine(out, indent, "switch obj.Tag {");
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
+            trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, indent, "case " + std::to_string(field.unionOptionIndex) + ":");
             emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
             emitSerializeAny(out,
@@ -618,6 +642,7 @@ private:
                              step.arrayLengthPrefixBits,
                              step.fieldFacts);
         }
+        trace(EmitTraceOp::DefaultBadTag);
         emitLine(out, indent, "default:");
         emitLine(out,
                  indent + 1,
@@ -635,22 +660,29 @@ private:
     {
         const auto tagBits = resolveUnionTagBits(section, sectionFacts);
         const auto rawTag  = nextName("tag");
+        trace(EmitTraceOp::ReadTag, tagBits);
         emitLine(out, indent, rawTag + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(tagBits) + ")");
         const auto tagExpr = helperBindingName(helperBindings.unionTagMask->symbol) + "(" + rawTag + ")";
+        trace(EmitTraceOp::MaskTag);
+        trace(EmitTraceOp::StoreTag);
         emitLine(out, indent, "obj.Tag = uint8(" + tagExpr + ")");
 
         const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        trace(EmitTraceOp::ValidateTag);
         emitLine(out,
                  indent,
                  "if rc := " + validateHelper + "(int64(obj.Tag)); rc != dsdlruntime.DSDL_RUNTIME_SUCCESS {");
         emitLine(out, indent + 1, "return rc, 0");
         emitLine(out, indent, "}");
+        trace(EmitTraceOp::Advance, tagBits);
         emitLine(out, indent, "offsetBits += " + std::to_string(tagBits));
 
+        trace(EmitTraceOp::Switch);
         emitLine(out, indent, "switch obj.Tag {");
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
+            trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, indent, "case " + std::to_string(field.unionOptionIndex) + ":");
             emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
             emitDeserializeAny(out,
@@ -660,6 +692,7 @@ private:
                                step.arrayLengthPrefixBits,
                                step.fieldFacts);
         }
+        trace(EmitTraceOp::DefaultBadTag);
         emitLine(out, indent, "default:");
         emitLine(out,
                  indent + 1,
@@ -708,10 +741,12 @@ private:
         {
         case SemanticScalarCategory::Bool: {
             const auto err = nextName("err");
+            trace(EmitTraceOp::WriteScalarBool, 1);
             emitLine(out, indent, err + " := dsdlruntime.SetBit(buffer, offsetBits, " + expr + ")");
             emitLine(out, indent, "if " + err + " < 0 {");
             emitLine(out, indent + 1, "return " + err + ", 0");
             emitLine(out, indent, "}");
+            trace(EmitTraceOp::Advance, 1);
             emitLine(out, indent, "offsetBits += 1");
             break;
         }
@@ -724,6 +759,7 @@ private:
             const auto helper = helperBindingName(helperSymbol);
             valueExpr         = helper + "(" + valueExpr + ")";
             const auto err    = nextName("err");
+            trace(EmitTraceOp::WriteScalarUint, type.bitLength);
             emitLine(out,
                      indent,
                      err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + valueExpr + ", " +
@@ -731,6 +767,7 @@ private:
             emitLine(out, indent, "if " + err + " < 0 {");
             emitLine(out, indent + 1, "return " + err + ", 0");
             emitLine(out, indent, "}");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -742,6 +779,7 @@ private:
             valueExpr         = helper + "(" + valueExpr + ")";
 
             const auto err = nextName("err");
+            trace(EmitTraceOp::WriteScalarSint, type.bitLength);
             emitLine(out,
                      indent,
                      err + " := dsdlruntime.SetIxx(buffer, offsetBits, " + valueExpr + ", " +
@@ -749,6 +787,7 @@ private:
             emitLine(out, indent, "if " + err + " < 0 {");
             emitLine(out, indent + 1, "return " + err + ", 0");
             emitLine(out, indent, "}");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -760,6 +799,7 @@ private:
             const auto helper = helperBindingName(helperSymbol);
             valueExpr         = helper + "(" + valueExpr + ")";
             const auto err    = nextName("err");
+            trace(EmitTraceOp::WriteScalarFloat, type.bitLength);
             if (type.bitLength == 16U)
             {
                 emitLine(out, indent, err + " := dsdlruntime.SetF16(buffer, offsetBits, " + valueExpr + ")");
@@ -775,6 +815,7 @@ private:
             emitLine(out, indent, "if " + err + " < 0 {");
             emitLine(out, indent + 1, "return " + err + ", 0");
             emitLine(out, indent, "}");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -796,7 +837,9 @@ private:
         switch (type.scalarCategory)
         {
         case SemanticScalarCategory::Bool:
+            trace(EmitTraceOp::ReadScalarBool, 1);
             emitLine(out, indent, expr + " = dsdlruntime.GetBit(buffer, offsetBits)");
+            trace(EmitTraceOp::Advance, 1);
             emitLine(out, indent, "offsetBits += 1");
             break;
         case SemanticScalarCategory::Byte:
@@ -806,11 +849,13 @@ private:
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
             const auto raw    = nextName("raw");
+            trace(EmitTraceOp::ReadScalarUint, type.bitLength);
             emitLine(out,
                      indent,
                      raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(type.bitLength) +
                          "))");
             emitLine(out, indent, expr + " = " + unsignedStorageType(type.bitLength) + "(" + helper + "(" + raw + "))");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -819,10 +864,12 @@ private:
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
             const auto raw    = nextName("raw");
+            trace(EmitTraceOp::ReadScalarSint, type.bitLength);
             emitLine(out,
                      indent,
                      raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(type.bitLength) + "))");
             emitLine(out, indent, expr + " = " + signedStorageType(type.bitLength) + "(" + helper + "(" + raw + "))");
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -830,6 +877,7 @@ private:
             const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
             assert(!helperSymbol.empty());
             const auto helper = helperBindingName(helperSymbol);
+            trace(EmitTraceOp::ReadScalarFloat, type.bitLength);
             if (type.bitLength == 16U)
             {
                 emitLine(out,
@@ -846,6 +894,7 @@ private:
             {
                 emitLine(out, indent, expr + " = " + helper + "(dsdlruntime.GetF64(buffer, offsetBits))");
             }
+            trace(EmitTraceOp::Advance, type.bitLength);
             emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
             break;
         }
@@ -873,6 +922,7 @@ private:
             assert(!arrayPlan.descriptor->validateSymbol.empty());
             const auto validateHelper = helperBindingName(arrayPlan.descriptor->validateSymbol);
             const auto validateRc     = nextName("lenRc");
+            trace(EmitTraceOp::LenValidate, arrayPlan.prefixBits);
             emitLine(out, indent, validateRc + " := " + validateHelper + "(int64(len(" + expr + ")))");
             emitLine(out, indent, "if " + validateRc + " < 0 {");
             emitLine(out, indent + 1, "return " + validateRc + ", 0");
@@ -883,6 +933,7 @@ private:
             const auto serPrefixHelper = helperBindingName(arrayPlan.descriptor->prefixSymbol);
             prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
             const auto err             = nextName("err");
+            trace(EmitTraceOp::LenWrite, arrayPlan.prefixBits);
             emitLine(out,
                      indent,
                      err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + prefixExpr + ", " +
@@ -890,11 +941,13 @@ private:
             emitLine(out, indent, "if " + err + " < 0 {");
             emitLine(out, indent + 1, "return " + err + ", 0");
             emitLine(out, indent, "}");
+            trace(EmitTraceOp::Advance, arrayPlan.prefixBits);
             emitLine(out, indent, "offsetBits += " + std::to_string(arrayPlan.prefixBits));
         }
 
         const auto index = nextName("index");
         const auto count = arrayPlan.variable ? "len(" + expr + ")" : std::to_string(type.arrayCapacity);
+        trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
         emitSerializeScalar(out, arrayElementType(type), expr + "[" + index + "]", indent + 1, fieldFacts);
         emitLine(out, indent, "}");
@@ -913,10 +966,12 @@ private:
         if (arrayPlan.variable)
         {
             const auto rawCount = nextName("countRaw");
+            trace(EmitTraceOp::LenRead, arrayPlan.prefixBits);
             emitLine(out,
                      indent,
                      rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(arrayPlan.prefixBits) +
                          ")");
+            trace(EmitTraceOp::Advance, arrayPlan.prefixBits);
             emitLine(out, indent, "offsetBits += " + std::to_string(arrayPlan.prefixBits));
             std::string countExpr = "int(" + rawCount + ")";
             assert(arrayPlan.descriptor.has_value());
@@ -927,6 +982,7 @@ private:
             assert(!arrayPlan.descriptor->validateSymbol.empty());
             const auto validateHelper = helperBindingName(arrayPlan.descriptor->validateSymbol);
             const auto validateRc     = nextName("lenRc");
+            trace(EmitTraceOp::LenValidate, arrayPlan.prefixBits);
             emitLine(out, indent, validateRc + " := " + validateHelper + "(int64(" + count + "))");
             emitLine(out, indent, "if " + validateRc + " < 0 {");
             emitLine(out, indent + 1, "return " + validateRc + ", 0");
@@ -940,6 +996,7 @@ private:
         }
 
         const auto index = nextName("index");
+        trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
         emitDeserializeScalar(out, arrayElementType(type), expr + "[" + index + "]", indent + 1, fieldFacts);
         emitLine(out, indent, "}");
@@ -951,6 +1008,7 @@ private:
                                 int                      indent,
                                 const LoweredFieldFacts* fieldFacts)
     {
+        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
         const auto sizeVar  = nextName("sizeBytes");
         const auto maxBytes = (type.bitLengthSet.max() + 7) / 8;
         if (!type.compositeSealed)
@@ -1008,6 +1066,7 @@ private:
                                   int                      indent,
                                   const LoweredFieldFacts* fieldFacts)
     {
+        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
         if (!type.compositeSealed)
         {
             const auto sizeVar = nextName("sizeBytes");

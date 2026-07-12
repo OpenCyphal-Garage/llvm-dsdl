@@ -1,0 +1,108 @@
+# P2 — Reduce per-backend control-flow duplication (execution plan)
+
+Executes the P2 roadmap line *"Reduce per-backend control-flow duplication (shared
+render template, or a verifier that the six emit orders match)."* Sequenced **B1 → A**:
+first a behavioral verifier that the emit orders match (the net), then a shared render
+template (Option A) refactored under that net.
+
+Companion: [P2_canonical_emit_order.md](P2_canonical_emit_order.md) — the canonical
+step-order spec (Phase 0 output, the oracle both phases check against).
+
+## Key architectural facts (grounded in the tree)
+
+- **Scope = the 5 string emitters**: `RustEmitter`, `GoEmitter`, `CppEmitter`,
+  `TsEmitter`, `PythonEmitter`. **C is out of scope**: it lowers through MLIR
+  `convert-dsdl-to-emitc` (no string emitter) and is covered instead by the C↔{Go,Rust,Cpp}
+  parity harnesses. State coverage honestly as "5 string emitters + C via parity", never "six".
+- **Field order is already shared for native backends.** `traverseNativeSection`
+  (`include/llvmdsdl/CodeGen/NativeEmitterTraversal.h`) drives field/padding/union order via
+  callbacks (`onUnionDispatch`, `onFieldAlignment`, `onField`, `onPaddingAlignment`,
+  `onPadding`); Rust/Go/Cpp each supply spelling callbacks. What is still hand-written per
+  backend is (a) the **union prologue** (`onUnionDispatch` hands the whole union to each
+  backend's `emitSerializeUnion`) and (b) **scalar/array/composite rendering**.
+- **Two order-producers exist**: native (`PlannedFieldStep` walk via `traverseNativeSection`)
+  and scripted (`buildScriptedSectionOperationPlan`, `ScriptedOperationPlan.cpp`, used by
+  TS/Python). The end-state unifies them onto one step IR; the plan bridges incrementally.
+- Because the native traversal already exists, **Option A is "reify a callback stream that
+  already exists", not "six renderers from scratch."**
+
+## Why B1 before A
+
+B1 is A's safety net. Once B1's golden trace is green and stable, Option A becomes a
+**behavior-preserving** refactor: the trace proves emitted order is byte-identical before and
+after. Without the net, A is a large refactor betting against golden-output regressions with
+nothing underneath.
+
+---
+
+## Phase 0 — Canonical order spec (~0.5–1 day) — *DONE as [P2_canonical_emit_order.md](P2_canonical_emit_order.md)*
+
+The oracle. Enumerates the ordered abstract steps per direction for struct + union sections
+and scalar/array/composite fields, and resolves the one known ambiguity (mask placement:
+fold-into-write, matching Rust/Go; TS to be normalized in Phase 1d).
+
+**DoD**: reviewed step list; every current divergence flagged normalize-or-accept. ✅
+
+## Phase 1 — B1: the emit-order verifier (~3–6 days)
+
+| Step | Work | Files |
+|---|---|---|
+| 1a | `enum class EmitTraceOp` + null-by-default `EmitTraceSink` (zero cost when off) | new `include/llvmdsdl/CodeGen/EmitTrace.h` |
+| 1b | `trace(op, …)` calls **at the text-emission site** in `emitSerialize{Union,Scalar,Array,Composite,Padding}` + align helpers | `{Rust,Go,Cpp,Ts,Python}Emitter.cpp` |
+| 1c | Comparator ctest: per fixture × direction, collect 5 traces, normalize, assert identical; + mutation/negative test | `test/integration/CMakeLists.txt`, reuse existing fixture DSDL |
+| 1d | Normalize genuine **abstract-order** divergences B1 surfaces (enumerated once instrumented). NB: TS mask-placement is spelling-only — a B1 insensitivity check, not a fix | emitters |
+| 1e | Add to CI; relabel marker-regex "convergence 100" as an infra lint, point the real number at B1 | `tools/convergence/*`, `cmake/RunConvergenceReport.cmake` |
+
+**Critical design point**: place `trace()` calls at the **spelling layer** (where text is
+produced), not in the shared traversal. (1) tracing the traversal is tautological for order;
+(2) spelling-site traces **survive Phase 2** — when A changes *who calls* the spelling, the
+spelling still traces the same tokens in the same order, so the golden trace is unchanged and
+genuinely proves A preserved behavior.
+
+**DoD**: ctest green across all `test/integration` fixtures; mutation test red; CI runs it;
+convergence claim relabeled (closes the G4 honesty gap).
+
+> **GATE:** B1 green + stable on the branch before any Phase 2 work.
+
+## Phase 2 — A: shared render template, union prologue first (~1–2 wks prologue; deeper optional)
+
+| Step | Work | Files |
+|---|---|---|
+| 2a | `EmitStep` IR + `renderSteps(steps, BackendSpelling&)`; reify the `traverseNativeSection` callback sequence into `std::vector<EmitStep>` and **decompose `onUnionDispatch`** into ordered union sub-steps | new `include/llvmdsdl/CodeGen/EmitStep.h`, `lib/CodeGen/EmitStepRender.cpp`; extend `NativeEmitterTraversal` |
+| 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; B1 proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` |
+| 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); B1 proves parity | `Ts/PythonEmitter.cpp`, `ScriptedOperationPlan.cpp` |
+| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under B1 | emitters |
+
+**Spelling interface must express the real divergence axes** (this preserves idiomatic
+output): `match` vs `switch` vs `if/elif`; the error channel (`Result`/`Err` vs multi-return
+`(rc,0)` vs negative-int vs `throw`/`raise`); and overflow ops as a step attribute
+(`WRITE_SCALAR{wrap|saturate}` → `wrapping_*`/`@truncate`/explicit mask) so build-mode-dependent
+arithmetic is pinned by the same verifier.
+
+**Scope discipline**: union prologue for all 5 first — ship, measure LOC delta — *then* decide
+on 2d. Leave C/EmitC on the MLIR path (step-IR-drives-EmitC is a separate epic; note it, do
+not scope it).
+
+**DoD**: union prologue emitted via one shared step-list + per-backend spelling across all 5;
+B1 trace unchanged (behavior preserved); LOC reduction measured; G1 grade rationale updated.
+
+## Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Trace placed wrong → tautological or breaks under A | Place at spelling site (1b); mutation test (1e) proves it detects reorders |
+| A regresses idiomatic output | Spelling interface expresses match/switch/if + error model; B1 is order-only, so pair with existing golden-output/parity tests for text quality |
+| Two order-producers drift during 2c | Converge onto `EmitStep`; B1 spans both, so drift fails the build |
+| "Six" overclaim (C excluded) | Log the C/EmitC boundary explicitly; coverage = "5 string emitters + C via parity" |
+
+## Roadmap fit
+
+- **Phase 0 + 1 belong in alpha**: cheap, fix the G4 "convergence measures markers not
+  behavior" honesty gap, and 1d catches real divergences. Output-affecting only where it
+  *fixes* a bug.
+- **Phase 2 is behavior-preserving under B1**, so it is safe even during alpha, and is the
+  natural home for the alpha→beta-1 breaking-change window if we choose to also normalize
+  output there.
+
+**Effort**: Phase 0–1 ≈ 1 week; Phase 2 union-prologue ≈ 1–2 weeks; optional deep recursion
+(2d) multi-week.
