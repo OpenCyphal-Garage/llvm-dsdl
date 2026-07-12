@@ -15,13 +15,16 @@
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/SHA256.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/Parser/Parser.h>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstring>
@@ -660,9 +663,33 @@ bool parseSemanticDefinition(mlir::Operation& schema, SemanticDefinition& out, D
 
 }  // namespace
 
+bool verifyEmbeddedCatalogIntegrity(llvm::StringRef mlirText, llvm::StringRef expectedSha256Hex)
+{
+    const std::array<uint8_t, 32> digest = llvm::SHA256::hash(
+        llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t*>(mlirText.data()), mlirText.size()));
+    const std::string actual = llvm::toHex(digest, /*LowerCase=*/true);
+    return actual == expectedSha256Hex;
+}
+
+bool embeddedUavcanCatalogIntegrityOk()
+{
+    return verifyEmbeddedCatalogIntegrity(uavcan_embedded_mlir::kEmbeddedUavcanMlirText,
+                                          uavcan_embedded_mlir::kEmbeddedUavcanMlirSha256);
+}
+
 llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContext& context,
                                                                 DiagnosticEngine&  diagnostics)
 {
+    // Integrity gate: refuse to parse a blob that does not match its recorded SHA-256 (corruption,
+    // tampering, or a text/hash mismatch introduced during the build).
+    if (!embeddedUavcanCatalogIntegrityOk())
+    {
+        diagnostics.error({"<embedded-uavcan>", 1, 1},
+                          "embedded UAVCAN catalog failed SHA-256 integrity verification");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "embedded UAVCAN catalog failed SHA-256 integrity verification");
+    }
+
     auto module = mlir::parseSourceString<mlir::ModuleOp>(uavcan_embedded_mlir::kEmbeddedUavcanMlirText, &context);
     if (!module)
     {

@@ -43,6 +43,29 @@ const llvmdsdl::SemanticDefinition* findDefinition(const llvmdsdl::SemanticModul
 
 bool runUavcanEmbeddedCatalogTests()
 {
+    // Runtime SHA-256 integrity check (P1 #2).
+    // (1) The blob compiled into this binary must match its recorded hash. This also confirms the
+    //     C++ string-literal text decodes byte-identically to the text the generator hashed.
+    if (!llvmdsdl::embeddedUavcanCatalogIntegrityOk())
+    {
+        std::cerr << "embedded UAVCAN catalog failed its own SHA-256 integrity check\n";
+        return false;
+    }
+    // (2) The verifier must compute SHA-256 correctly: the empty string has a well-known digest.
+    if (!llvmdsdl::verifyEmbeddedCatalogIntegrity(
+            "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+    {
+        std::cerr << "verifyEmbeddedCatalogIntegrity rejected the known empty-string digest\n";
+        return false;
+    }
+    // (3) A mismatched hash must be rejected (the check is not a no-op).
+    if (llvmdsdl::verifyEmbeddedCatalogIntegrity(
+            "dsdl.schema @tampered {}", "0000000000000000000000000000000000000000000000000000000000000000"))
+    {
+        std::cerr << "verifyEmbeddedCatalogIntegrity accepted a mismatched hash\n";
+        return false;
+    }
+
     mlir::DialectRegistry registry;
     registry.insert<mlir::dsdl::DSDLDialect,
                     mlir::func::FuncDialect,

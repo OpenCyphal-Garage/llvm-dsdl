@@ -49,8 +49,7 @@ namespace llvmdsdl::uavcan_embedded_mlir
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = {schema_count}U;
 inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
     "{sha256}";
-inline constexpr const char kEmbeddedUavcanMlirText[] = R"{delimiter}(
-{mlir_text}){delimiter}";
+inline constexpr const char kEmbeddedUavcanMlirText[] = R"{delimiter}({content}){delimiter}";
 }}  // namespace llvmdsdl::uavcan_embedded_mlir
 """
 
@@ -90,12 +89,16 @@ def _run_dsdlc(dsdlc: str, uavcan_root: Path) -> str:
 
 def _render(mlir_text: str) -> str:
     schema_count = len(re.findall(r"\\bdsdl\\.schema\\b", mlir_text))
-    digest = hashlib.sha256(mlir_text.encode("utf-8")).hexdigest()
+    # The raw-string literal embeds this exact content (a leading newline keeps the generated file
+    # readable). Hash the same bytes so the runtime SHA-256 check verifies what is actually embedded,
+    # not a differently-normalized copy.
+    content = "\n" + mlir_text
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     output = HEADER.format(
         schema_count=schema_count,
         sha256=digest,
         delimiter=DELIMITER,
-        mlir_text=mlir_text,
+        content=content,
     )
     if not output.endswith("\n"):
         output += "\n"

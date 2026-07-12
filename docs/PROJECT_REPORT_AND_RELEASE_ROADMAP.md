@@ -258,7 +258,21 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   the `+ 1` (the repeat math already saturated in the hardened `BitLengthSet`). Covered by new
   `EvaluatorTests`/`AnalyzerTests` cases (overflow → diagnostic, `1 ** huge` terminates, boundary
   comparisons, adversarial capacities analyze without crashing); verified UB-free under UBSan.
-- [ ] Embedded-catalog integrity + freshness gating; runtime SHA-256 check.
+- [x] Embedded-catalog integrity + freshness gating; runtime SHA-256 check.
+  ✅ **Done (2026-07-11).** Freshness gating already existed — the release-blocking
+  `llvmdsdl-embedded-uavcan-catalog-guard` runs `generate_embedded_uavcan_mlir.py --check`,
+  regenerating the MLIR from the submodule and failing the build if the committed
+  `UavcanEmbeddedMlir.inc` is stale (plus a guard selftest). This pass adds the missing
+  **runtime SHA-256 check**: the generator already baked a `kEmbeddedUavcanMlirSha256` into the
+  `.inc`, but nothing verified it. `loadUavcanEmbeddedCatalog` now computes `llvm::SHA256` over the
+  embedded MLIR text and refuses to parse (hard error + diagnostic) on mismatch — catching binary/
+  memory corruption, tampering, or a text/hash drift. Factored into a pure, testable
+  `verifyEmbeddedCatalogIntegrity` (unit-tested with the shipped blob, the known empty-string
+  digest, and a rejected mismatch). **Found and fixed a latent bug** doing so: the generator hashed
+  `mlir_text` but the raw-string literal embedded `"\n" + mlir_text` (a leading newline), so the
+  recorded hash never matched the bytes actually shipped; the generator now hashes the exact
+  embedded content. Verified: unit tests, the freshness guard (regenerates byte-identically), the
+  guard selftest, and the generator's own drift/roundtrip tests all pass.
 - [ ] LSP concurrency correctness (DocumentStore mutex; analysis snapshot atomicity).
 - [x] Isolated cross-language runtime-primitive equivalence tests; populate/justify the wrapper allowlist.
   ✅ **Equivalence tests done (2026-07-11).** A shared golden-vector file

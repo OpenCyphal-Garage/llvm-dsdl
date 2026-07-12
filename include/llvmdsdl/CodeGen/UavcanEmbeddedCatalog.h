@@ -19,6 +19,7 @@
 #include <unordered_set>
 
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -53,7 +54,21 @@ struct UavcanEmbeddedCatalog final
     std::unordered_map<std::string, mlir::Operation*> schemaByKey;
 };
 
+/// @brief Verifies that `mlirText` hashes to `expectedSha256Hex` (lowercase hex SHA-256).
+///
+/// The embedded UAVCAN MLIR blob is compiled into the binary alongside a SHA-256 of the exact text
+/// it was generated from. Checking the two agree at load time is a defense-in-depth integrity guard:
+/// it catches binary/memory corruption, tampering, and a build where the text and its recorded hash
+/// drifted out of sync. Pure and side-effect-free so it can be unit-tested with arbitrary pairs.
+[[nodiscard]] bool verifyEmbeddedCatalogIntegrity(llvm::StringRef mlirText, llvm::StringRef expectedSha256Hex);
+
+/// @brief Verifies the integrity of the catalog blob actually compiled into this binary.
+/// @return True when the embedded MLIR text matches its recorded SHA-256.
+[[nodiscard]] bool embeddedUavcanCatalogIntegrityOk();
+
 /// @brief Loads and parses embedded UAVCAN catalog artifacts.
+///
+/// Fails (without parsing) when the embedded MLIR blob does not match its recorded SHA-256.
 llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContext& context,
                                                                 DiagnosticEngine&  diagnostics);
 

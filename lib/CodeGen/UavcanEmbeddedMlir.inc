@@ -20,7 +20,7 @@ namespace llvmdsdl::uavcan_embedded_mlir
 {
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = 0U;
 inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
-    "1dd2130edce6f47c77f348eb9cb54d6a61321778fd17a21dadc24e61cc8b457d";
+    "4772548c76d7d563cf4fcccce70dd4029f68edf1a517b76036b307db1a723404";
 inline constexpr const char kEmbeddedUavcanMlirText[] = R"LLVMDSDL_UAVCAN(
 module {
   dsdl.schema @uavcan_diagnostic_Record_1_1 attributes {c_type_name = "uavcan__diagnostic__Record", doc = "Generic human-readable text message for logging and displaying purposes.\0AGenerally, it should be published at the lowest priority level.", extent_bits = 2400 : i64, fixed_port_id = 8184 : i64, full_name = "uavcan.diagnostic.Record", header_path = "uavcan/diagnostic/Record_1_1.h", major = 1 : i32, minor = 1 : i32} {
