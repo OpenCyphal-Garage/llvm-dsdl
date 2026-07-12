@@ -52,11 +52,6 @@ site/
 # these; local runs may too). Provisioned, never committed.
 .reference/
 
-# TLA+ / TLC model-checker artifacts (spec/tla/check.sh runs TLC in spec/tla/).
-# The .tla / .cfg sources and the vendored tla2tools.jar are committed; everything
-# TLC generates is not.
-/spec/tla/states/
-/spec/tla/*.st
-/spec/tla/.tlacache/
-*_TTrace_*.tla
-*_TTrace_*.bin
+# Dafny scratch (verify emits nothing, but guard against stray build/backup output).
+*.dfy.bak
+spec/dafny/bin/

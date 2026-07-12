@@ -5,6 +5,12 @@ Phase 0 output for [P2_emit_order_dedup.md](P2_emit_order_dedup.md). This is the
 (Rust, Go, C++, TypeScript, Python) must follow. The B1 verifier asserts this order; Option A's
 shared render template produces it by construction.
 
+This prose is the human-readable projection of the machine-checked model in
+[spec/dafny/CyphalSerdes.dfy](../../spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
+by induction) that serialize/deserialize round-trip and that the read path is bounds-safe, and
+defines the accepted op orderings (`SerOrderOK`/`DeOrderOK`). The model is the source of truth;
+this doc is the readable shadow.
+
 Derived from the current implementations (`RustEmitter.cpp`, `GoEmitter.cpp`, `TsEmitter.cpp`)
 which already agree on it. Where a backend differs, it is recorded under
 [Known differences](#known-differences).
