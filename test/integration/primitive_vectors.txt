@@ -1,0 +1,77 @@
+# Shared cross-language runtime-primitive equivalence vectors.
+#
+# Every native runtime (C, Rust, Go) is exercised against THIS SAME file by an
+# isolated per-language driver. Each primitive direction is checked on its own —
+# never only as a round-trip — so a bug in one direction cannot be masked by a
+# matching bug in its inverse (e.g. float16 pack vs. unpack).
+#
+# Golden values were validated against IEEE-754 / two's-complement by hand and
+# cross-checked with the C runtime. If any single runtime diverges from a golden,
+# its driver fails loudly.
+#
+# Format (whitespace-separated; '#' begins a comment; blank lines ignored):
+#   f16pack   <f32_bits:8hex>                       <expect_u16:4hex>
+#   f16unpack <u16:4hex>                            <expect_f32_bits:8hex>
+#   geti      <type_bits> <len_bits> <off_bits> <buf_hex>  <expect_i64_twos:16hex>
+#   getu      <type_bits> <len_bits> <off_bits> <buf_hex>  <expect_u64:16hex>
+#   copybits  <dst_off> <len_bits> <src_off> <src_hex> <dst_init_hex>  <expect_dst_hex>
+# where type_bits selects the get_i8/16/32/64 (or get_u*) variant, buffers are
+# even-length hex byte strings in serialized (little-endian bit) order, and the
+# expected integer is the value widened to 64 bits.
+
+# ---- float16 pack: float32 -> binary16 -------------------------------------
+f16pack 3f800000 3c00   # 1.0
+f16pack 40000000 4000   # 2.0
+f16pack c0000000 c000   # -2.0
+f16pack 00000000 0000   # +0.0
+f16pack 80000000 8000   # -0.0
+f16pack 7f800000 7c00   # +inf
+f16pack ff800000 fc00   # -inf
+f16pack 7fc00000 7e00   # quiet NaN -> canonical half NaN
+f16pack 7f800001 7e00   # signaling NaN -> canonical half NaN (payload not representable)
+f16pack 3e000000 3000   # 0.125
+f16pack 477fe000 7bff   # 65504.0 (largest finite half)
+f16pack 47800000 7c00   # 65536.0 overflows to +inf under saturation
+f16pack 33800000 0001   # 2^-24 smallest positive subnormal half
+f16pack 38800000 0400   # 2^-14 smallest positive normal half
+f16pack 3c000000 2000   # 2^-7
+
+# ---- float16 unpack: binary16 -> float32 -----------------------------------
+f16unpack 3c00 3f800000 # 1.0
+f16unpack 4000 40000000 # 2.0
+f16unpack c000 c0000000 # -2.0
+f16unpack 0000 00000000 # +0.0
+f16unpack 8000 80000000 # -0.0
+f16unpack 7c00 7f800000 # +inf
+f16unpack fc00 ff800000 # -inf
+f16unpack 7e00 7fc00000 # canonical quiet half NaN -> float32 qNaN
+f16unpack 7c01 7f802000 # signaling half NaN widens to a float32 NaN
+f16unpack 0400 38800000 # smallest normal half
+f16unpack 0001 33800000 # smallest subnormal half
+f16unpack 3555 3eaaa000 # ~0.333
+
+# ---- signed integer read with sign extension (the sign-extend primitive) ---
+geti 8  8  0 80               ffffffffffffff80  # int8 0x80 = -128
+geti 8  8  0 7f               000000000000007f  # int8 0x7f = 127
+geti 8  4  0 0f               ffffffffffffffff  # 4-bit 0xF sign-extends to -1
+geti 8  4  0 07               0000000000000007  # 4-bit 0x7 = 7
+geti 8  8  4 0008             ffffffffffffff80  # int8 across byte boundary = -128
+geti 16 16 0 0080             ffffffffffff8000  # int16 0x8000 = -32768
+geti 16 12 0 ff0f             ffffffffffffffff  # 12-bit 0xFFF = -1
+geti 32 32 0 00000080         ffffffff80000000  # int32 min
+geti 32 20 0 ffff0f00         ffffffffffffffff  # 20-bit all ones = -1
+geti 64 64 0 0000000000000080 8000000000000000  # int64 min
+
+# ---- unsigned integer read (zero-extension baseline; must NOT sign-extend) --
+getu 8  8  0 ff               00000000000000ff  # 255
+getu 16 12 0 ff0f             0000000000000fff  # 4095
+getu 8  3  5 e0               0000000000000007  # 3 bits at offset 5 = 0x7
+getu 64 64 0 ffffffffffffffff ffffffffffffffff  # u64 max
+
+# ---- copy_bits at arbitrary bit offsets ------------------------------------
+copybits 0 16 0 aabb   0000   aabb    # byte-aligned full copy
+copybits 4 8  0 ff     0000   f00f    # 8 bits into dst bit offset 4
+copybits 0 4  4 a5     00     0a      # read high nibble (src offset 4)
+copybits 2 3  0 07     00     1c      # set bits 2..4 in a zero byte
+copybits 2 3  0 00     ff     e3      # clear bits 2..4 in an all-ones byte (preserves the rest)
+copybits 3 17 2 123456 000000 20680c  # unaligned src and dst, spans three bytes

@@ -713,6 +713,33 @@ else()
   message(STATUS "Skipping Go runtime unit tests: go unavailable")
 endif()
 
+# Isolated cross-language runtime-primitive equivalence: every native runtime
+# (C, Rust, Go) is checked against one shared golden-vector file, per primitive
+# direction, so paired bugs cannot mask each other.
+if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-primitive-equivalence
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/primitive-equivalence-out
+        -DVECTORS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/primitive_vectors.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPrimitiveEquivalence.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-primitive-equivalence
+    PROPERTIES
+      LABELS "integration;runtime;differential;go;rust;go-differential"
+  )
+else()
+  message(STATUS
+    "Skipping cross-language primitive equivalence: need C compiler, cargo, and go")
+endif()
+
 if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
   add_test(
     NAME llvmdsdl-c-ts-parity

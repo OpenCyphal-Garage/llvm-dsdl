@@ -246,7 +246,24 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 - [ ] Semantics overflow/DoS hardening (`Rational`, `BitLengthSet`, capacity).
 - [ ] Embedded-catalog integrity + freshness gating; runtime SHA-256 check.
 - [ ] LSP concurrency correctness (DocumentStore mutex; analysis snapshot atomicity).
-- [ ] Isolated cross-language runtime-primitive equivalence tests; populate/justify the wrapper allowlist.
+- [~] Isolated cross-language runtime-primitive equivalence tests; populate/justify the wrapper allowlist.
+  ✅ **Equivalence tests done (2026-07-11).** A shared golden-vector file
+  (`test/integration/primitive_vectors.txt`, 47 vectors) is run against the C, Rust,
+  and Go runtimes by thin per-language drivers (`PrimitiveEquivalenceDriver.{c,rs,go}`,
+  wired via `RunPrimitiveEquivalence.cmake` → `llvmdsdl-primitive-equivalence`).
+  Each primitive **direction** is asserted on its own — `float16_pack`, `float16_unpack`,
+  signed read/sign-extension (`get_i8/16/32/64`), unsigned read, and `copy_bits` at
+  arbitrary bit offsets — so a bug in one direction can't be masked by its inverse.
+  **This immediately caught a real bug:** both the Go and Rust `float16_pack` mis-ported
+  the C algorithm's load-bearing unsigned wraparound subtraction (Go zeroed via a guard,
+  Rust used `saturating_sub`), so *every finite float16 value serialized to garbage*
+  (`1.0 → 0x0000`). It was masked because the Go parity harness set `requireByteParity:
+  false` on all 24 float-carrying cases. Fixed both runtimes (`wrapping_sub` / unconditional
+  wrapping subtraction), and flipped all 24 Go float cases to `requireByteParity: true`
+  (they now agree byte-for-byte with C at 128 random iterations). TS uses a different
+  (explicit) float16 algorithm and Python uses native `struct.pack("<e")`, so neither
+  shared the bug; adding TS/Python drivers to the equivalence harness is a follow-up.
+  **Remaining:** populate/justify the empty `semantic_wrapper_allowlist.json`.
 - [ ] Determinism gates that actually perturb (`PYTHONHASHSEED`, locale/TZ, two toolchains) + audit `unordered_*` iteration in emitters.
 - [ ] Object backend: escape/validate `targetTriple` and staged paths.
 
