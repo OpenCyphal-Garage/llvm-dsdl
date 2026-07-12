@@ -273,7 +273,22 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   recorded hash never matched the bytes actually shipped; the generator now hashes the exact
   embedded content. Verified: unit tests, the freshness guard (regenerates byte-identically), the
   guard selftest, and the generator's own drift/roundtrip tests all pass.
-- [ ] LSP concurrency correctness (DocumentStore mutex; analysis snapshot atomicity).
+- [x] LSP concurrency correctness (DocumentStore mutex; analysis snapshot atomicity).
+  ✅ **Done (2026-07-11).** **DocumentStore** was the real gap: it had no synchronization and its
+  `lookup()` returned a raw `const DocumentSnapshot*` into the internal map — a dangling-pointer /
+  use-after-free hazard the instant a reader holds it across a concurrent `close()`/rehash. It now
+  carries a `std::mutex` guarding every operation, and `lookup()` returns a value copy
+  (`std::optional<DocumentSnapshot>`) so no pointer into the map can escape. Proven under
+  **ThreadSanitizer**: the 8-thread stress test (new in `LspDocumentStoreTests`) is race-free with
+  the mutex and TSan flags `unordered_map` rehash/read races the moment the locks are removed.
+  **Analysis-snapshot atomicity already holds** and needed no change: analysis state
+  (`latestAnalysisResult_`/`analysisDirty_`) is owned solely by the main message-loop thread, and the
+  async Index worker receives a **versioned immutable copy** (`scheduleRebuild(snapshotVersion,
+  analysis_.buildIndexShards())`, shards taken by value) rather than a reference to shared state —
+  verified. *(Note: there is no live race today — request handlers dispatch inline on the main thread
+  and only a cancellable-sleep test method is offloaded — so this hardens the shared store for the
+  offload-to-worker path the scheduler architecture is built toward. A dedicated TSan CI lane would
+  be a worthwhile follow-up; today the concurrency test runs under the normal and ASan lanes.)*
 - [x] Isolated cross-language runtime-primitive equivalence tests; populate/justify the wrapper allowlist.
   ✅ **Equivalence tests done (2026-07-11).** A shared golden-vector file
   (`test/integration/primitive_vectors.txt`, 47 vectors) is run against **all five**

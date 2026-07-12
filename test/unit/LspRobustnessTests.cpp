@@ -222,7 +222,7 @@ bool runLspRobustnessTests()
         }
     }
 
-    const llvmdsdl::lsp::DocumentSnapshot* snapshot = server.documentStore().lookup(uri);
+    const auto snapshot = server.documentStore().lookup(uri);
     if (!snapshot || snapshot->version != kChurnIterations + 1)
     {
         std::cerr << "document overlay version did not track churned updates\n";

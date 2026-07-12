@@ -1923,8 +1923,8 @@ void Server::appendAiCodeActions(const std::string&              uri,
         return;
     }
 
-    const DocumentSnapshot*        snapshot    = documents_.lookup(uri);
-    const std::string              sourceText  = snapshot ? snapshot->text : std::string{};
+    const std::optional<DocumentSnapshot> snapshot   = documents_.lookup(uri);
+    const std::string                     sourceText = snapshot ? snapshot->text : std::string{};
     const std::vector<std::string> symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
 
     const AiCodeActionContext                 context     = aiContextPacker_.buildCodeActionContext(uri,

@@ -178,7 +178,7 @@ bool runLspServerTests()
     server.handleMessage(parseJson(
         R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/demo.dsdl","version":5,"text":"uint8 value\n@sealed\n"}}})"));
 
-    const auto* snapshotAfterOpen = server.documentStore().lookup("file:///tmp/demo.dsdl");
+    const auto snapshotAfterOpen = server.documentStore().lookup("file:///tmp/demo.dsdl");
     if (!snapshotAfterOpen || snapshotAfterOpen->text != "uint8 value\n@sealed\n" || snapshotAfterOpen->version != 5)
     {
         std::cerr << "didOpen did not populate document overlay\n";
@@ -206,7 +206,7 @@ bool runLspServerTests()
     server.handleMessage(parseJson(
         R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/demo.dsdl","version":6},"contentChanges":[{"text":"uint16 value\n@sealed\n"}]}})"));
 
-    const auto* snapshotAfterChange = server.documentStore().lookup("file:///tmp/demo.dsdl");
+    const auto snapshotAfterChange = server.documentStore().lookup("file:///tmp/demo.dsdl");
     if (!snapshotAfterChange || snapshotAfterChange->text != "uint16 value\n@sealed\n" ||
         snapshotAfterChange->version != 6)
     {
@@ -235,7 +235,7 @@ bool runLspServerTests()
     server.handleMessage(parseJson(
         R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/demo.dsdl"}}})"));
 
-    if (server.documentStore().lookup("file:///tmp/demo.dsdl") != nullptr)
+    if (server.documentStore().lookup("file:///tmp/demo.dsdl").has_value())
     {
         std::cerr << "didClose did not remove document overlay\n";
         return false;
