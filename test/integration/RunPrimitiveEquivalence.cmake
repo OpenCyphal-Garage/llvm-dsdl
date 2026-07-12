@@ -5,13 +5,13 @@ cmake_minimum_required(VERSION 3.24)
 # checks every primitive direction on its own, so a bug in one runtime (or one
 # direction) cannot be masked by a matching bug in another.
 
-foreach(var C_COMPILER CARGO_EXECUTABLE GO_EXECUTABLE SOURCE_ROOT OUT_DIR VECTORS_FILE)
+foreach(var C_COMPILER CARGO_EXECUTABLE GO_EXECUTABLE PYTHON_EXECUTABLE SOURCE_ROOT OUT_DIR VECTORS_FILE)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
     message(FATAL_ERROR "Missing required variable: ${var}")
   endif()
 endforeach()
 
-foreach(tool "${C_COMPILER}" "${CARGO_EXECUTABLE}" "${GO_EXECUTABLE}")
+foreach(tool "${C_COMPILER}" "${CARGO_EXECUTABLE}" "${GO_EXECUTABLE}" "${PYTHON_EXECUTABLE}")
   if(NOT EXISTS "${tool}")
     message(FATAL_ERROR "required tool not found: ${tool}")
   endif()
@@ -112,6 +112,75 @@ if(NOT rs_rc EQUAL 0)
 endif()
 extract_processed("Rust" rs_out rs_count)
 
+# ---------------------------------------------------------- Python driver -----
+# Python is double-typed: it runs the same shared vectors but may SKIP a small,
+# explicitly-reported subset that is not comparable at the raw-primitive level
+# (e.g. float16 overflow, which the Python primitive raises on while the C
+# magic-float primitive returns inf). processed + skipped must still cover every
+# vector, so nothing is dropped silently.
+execute_process(
+  COMMAND "${PYTHON_EXECUTABLE}" "${driver_dir}/PrimitiveEquivalenceDriver.py"
+    "${VECTORS_FILE}" "${SOURCE_ROOT}/runtime/python/_dsdl_runtime.py"
+  RESULT_VARIABLE py_rc OUTPUT_VARIABLE py_out ERROR_VARIABLE py_err)
+if(NOT py_rc EQUAL 0)
+  message(FATAL_ERROR "Python primitive equivalence FAILED:\n${py_out}\n${py_err}")
+endif()
+extract_processed("Python" py_out py_count)
+string(REGEX MATCH "SKIPPED ([0-9]+)" _pysk "${py_out}")
+if(NOT _pysk)
+  message(FATAL_ERROR "Python driver did not report a SKIPPED count:\n${py_out}")
+endif()
+set(py_skipped "${CMAKE_MATCH_1}")
+
+# ------------------------------------------------------- TypeScript driver ----
+# Optional: only runs when tsc, node, and dsdlc are all available (the generated
+# TS runtime must be produced by dsdlc first). TS is double-typed like Python, so
+# float16 unpack results that are NaN are SKIPPED (JS numbers canonicalize NaN
+# payloads); everything else is exact.
+set(ts_ran FALSE)
+if(DEFINED TSC_EXECUTABLE AND EXISTS "${TSC_EXECUTABLE}"
+   AND DEFINED NODE_EXECUTABLE AND EXISTS "${NODE_EXECUTABLE}"
+   AND DEFINED DSDLC AND EXISTS "${DSDLC}")
+  set(ts_dir "${OUT_DIR}/ts")
+  file(MAKE_DIRECTORY "${ts_dir}")
+  set(uavcan_root "${SOURCE_ROOT}/submodules/public_regulated_data_types/uavcan")
+  execute_process(
+    COMMAND "${DSDLC}" --target-language ts -I "${uavcan_root}"
+      --outdir "${ts_dir}" "${uavcan_root}/primitive/scalar/Real32.1.0.dsdl" --omit-dependencies
+    RESULT_VARIABLE ts_gen_rc OUTPUT_VARIABLE ts_gen_out ERROR_VARIABLE ts_gen_err)
+  if(NOT ts_gen_rc EQUAL 0 OR NOT EXISTS "${ts_dir}/dsdl_runtime.ts")
+    message(FATAL_ERROR "TS runtime generation failed:\n${ts_gen_out}\n${ts_gen_err}")
+  endif()
+  file(COPY_FILE "${driver_dir}/PrimitiveEquivalenceDriver.ts" "${ts_dir}/driver.ts")
+  file(WRITE "${ts_dir}/tsconfig.json"
+    "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"CommonJS\",\n"
+    "    \"moduleResolution\": \"Node\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n"
+    "    \"types\": [],\n    \"outDir\": \"./js\"\n  },\n  \"include\": [\"./driver.ts\", \"./dsdl_runtime.ts\"]\n}\n")
+  execute_process(
+    COMMAND "${TSC_EXECUTABLE}" -p "${ts_dir}/tsconfig.json" --pretty false
+    WORKING_DIRECTORY "${ts_dir}"
+    RESULT_VARIABLE ts_tsc_rc OUTPUT_VARIABLE ts_tsc_out ERROR_VARIABLE ts_tsc_err)
+  if(NOT ts_tsc_rc EQUAL 0)
+    message(FATAL_ERROR "TS driver compilation failed:\n${ts_tsc_out}\n${ts_tsc_err}")
+  endif()
+  file(WRITE "${ts_dir}/js/package.json" "{\n  \"type\": \"commonjs\"\n}\n")
+  execute_process(
+    COMMAND "${NODE_EXECUTABLE}" "${ts_dir}/js/driver.js" "${VECTORS_FILE}"
+    RESULT_VARIABLE ts_rc OUTPUT_VARIABLE ts_out ERROR_VARIABLE ts_err)
+  if(NOT ts_rc EQUAL 0)
+    message(FATAL_ERROR "TypeScript primitive equivalence FAILED:\n${ts_out}\n${ts_err}")
+  endif()
+  extract_processed("TypeScript" ts_out ts_count)
+  string(REGEX MATCH "SKIPPED ([0-9]+)" _tssk "${ts_out}")
+  if(NOT _tssk)
+    message(FATAL_ERROR "TS driver did not report a SKIPPED count:\n${ts_out}")
+  endif()
+  set(ts_skipped "${CMAKE_MATCH_1}")
+  set(ts_ran TRUE)
+else()
+  message(STATUS "primitive equivalence: skipping TypeScript (need tsc, node, and dsdlc)")
+endif()
+
 if(c_count LESS 1)
   message(FATAL_ERROR "no vectors were processed")
 endif()
@@ -119,8 +188,26 @@ if(NOT c_count EQUAL go_count OR NOT c_count EQUAL rs_count)
   message(FATAL_ERROR
     "drivers disagree on processed vector count: C=${c_count} Go=${go_count} Rust=${rs_count}")
 endif()
+math(EXPR py_total "${py_count} + ${py_skipped}")
+if(NOT py_total EQUAL c_count)
+  message(FATAL_ERROR
+    "Python covered ${py_total} vectors (processed=${py_count} skipped=${py_skipped}) "
+    "but the native runtimes ran ${c_count}")
+endif()
+
+set(ts_summary "TypeScript=skipped")
+if(ts_ran)
+  math(EXPR ts_total "${ts_count} + ${ts_skipped}")
+  if(NOT ts_total EQUAL c_count)
+    message(FATAL_ERROR
+      "TypeScript covered ${ts_total} vectors (processed=${ts_count} skipped=${ts_skipped}) "
+      "but the native runtimes ran ${c_count}")
+  endif()
+  set(ts_summary "TypeScript agreed on ${ts_count} (${ts_skipped} double-typed skip(s))")
+endif()
 
 message(STATUS
-  "Primitive equivalence PASS: C, Rust, and Go each agreed on all ${c_count} shared vectors")
+  "Primitive equivalence PASS: C, Rust, Go agreed on all ${c_count} shared vectors; "
+  "Python agreed on ${py_count} (${py_skipped} double-typed skip(s)); ${ts_summary}")
 file(WRITE "${OUT_DIR}/primitive-equivalence-summary.txt"
-  "vectors=${c_count}\n${c_out}${go_out}${rs_out}")
+  "vectors=${c_count}\npython_skipped=${py_skipped}\n${c_out}${go_out}${rs_out}${py_out}")

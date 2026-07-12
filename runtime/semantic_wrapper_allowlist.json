@@ -1,4 +1,5 @@
 {
   "version": 1,
+  "justification": "Intentionally empty. This allowlist tracks HAND-WRITTEN runtime constructs that sit ABOVE primitive bit/number operations (see CONTRIBUTING.md 10.1) and are therefore not covered by the cross-language primitive-equivalence test; each such exception requires an explicit owner and rationale. It is empty because no backend currently ships such an exception: the Rust semantic wrappers are template-generated (generated files must NOT be allowlisted, per the validator) and the C, C++, Go, TS, Python, and python_accel runtimes expose no hand-written above-primitive wrapper symbols that the validator's coverage checks discover. Primitive bit/number operations themselves (float16 pack/unpack, sign-extension, copy_bits, ...) are equivalence-tested directly by the llvmdsdl-primitive-equivalence lane and do not belong here. Add an entry only when introducing a hand-written, non-generated runtime construct above primitive operations, with fields: language, file, symbol, kind='semantic_wrapper', owner='@owner', rationale (>=24 chars).",
   "entries": []
 }

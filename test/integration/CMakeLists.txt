@@ -716,7 +716,7 @@ endif()
 # Isolated cross-language runtime-primitive equivalence: every native runtime
 # (C, Rust, Go) is checked against one shared golden-vector file, per primitive
 # direction, so paired bugs cannot mask each other.
-if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
+if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE AND PYTHON_EXECUTABLE)
   add_test(
     NAME llvmdsdl-primitive-equivalence
     COMMAND
@@ -724,6 +724,10 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
         -DC_COMPILER=${CMAKE_C_COMPILER}
         -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
         -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
         -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/primitive-equivalence-out
         -DVECTORS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/primitive_vectors.txt
@@ -733,11 +737,11 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-primitive-equivalence
     PROPERTIES
-      LABELS "integration;runtime;differential;go;rust;go-differential"
+      LABELS "integration;runtime;differential;go;rust;python;ts;go-differential"
   )
 else()
   message(STATUS
-    "Skipping cross-language primitive equivalence: need C compiler, cargo, and go")
+    "Skipping cross-language primitive equivalence: need C compiler, cargo, go, and python3")
 endif()
 
 if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
