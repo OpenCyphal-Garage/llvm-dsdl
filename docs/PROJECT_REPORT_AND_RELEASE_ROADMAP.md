@@ -314,7 +314,21 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   intentionally empty (all Rust semantic wrappers are template-generated and excluded by the
   validator; no backend ships a hand-written above-primitive wrapper), and the
   release-blocking `llvmdsdl-runtime-semantic-wrapper-allowlist` lane passes.
-- [ ] Determinism gates that actually perturb (`PYTHONHASHSEED`, locale/TZ, two toolchains) + audit `unordered_*` iteration in emitters.
+- [~] Determinism gates that actually perturb (`PYTHONHASHSEED`, locale/TZ, two toolchains) + audit `unordered_*` iteration in emitters.
+  ✅ **Audit + env-perturbation done (2026-07-11).** **Emitter audit came up clean:** the CodeGen
+  layer uses no `llvm::DenseMap`/`DenseSet`/`SmallPtrSet` (whose iteration is pointer/insertion
+  ordered), every `std::unordered_map`/`unordered_set` is a keyed *lookup/membership* structure that
+  is never iterated to produce output, there is no locale- or time-dependent formatting, and the
+  emitters already `std::sort`/`llvm::sort` (8 sites) wherever emission order is derived from a set.
+  So the generated text is already iteration-order-independent. **Gates now actually perturb:** the
+  six `RunUavcan*Determinism.cmake` gates previously ran two concurrent generations in the *same*
+  environment (catching only concurrency/address nondeterminism); they now run the two generations
+  under deliberately different `LC_ALL`, `TZ`, and `PYTHONHASHSEED`, so byte-identical output proves
+  environment-independence and would catch any future locale/TZ/hash-order dependence. All gates
+  pass under perturbation. **Remaining:** the **two-toolchain** dimension (build `dsdlc` against a
+  second C++ stdlib, e.g. libstdc++ vs libc++, whose `std::hash` differs) is the only way to catch
+  C++ `unordered_*` *iteration* nondeterminism that env-perturbation cannot — it catches nothing
+  today given the clean audit, but is worth a CI lane; deferred as it needs a second build config.
 - [ ] Object backend: escape/validate `targetTriple` and staged paths.
 
 ### P2 — Maturity / maintainability

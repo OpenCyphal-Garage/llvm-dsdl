@@ -26,15 +26,19 @@ if(NOT EXISTS "/bin/sh")
   message(FATAL_ERROR "parallel determinism check requires /bin/sh")
 endif()
 
+# Determinism gate: the two concurrent generations run under deliberately different
+# environments (locale, timezone, Python hash seed) so that byte-identical output proves
+# the codegen is environment-independent -- catching any future locale/TZ/hash-order
+# dependence that a same-environment double run would miss.
 set(parallel_script "${OUT_DIR}/run-cpp-parallel.sh")
 file(
   WRITE
   "${parallel_script}"
   "#!/bin/sh\n"
   "set -eu\n"
-  "\"${DSDLC}\" --target-language cpp \"${UAVCAN_ROOT}\" --cpp-profile both --outdir \"${out_a}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language cpp \"${UAVCAN_ROOT}\" --cpp-profile both --outdir \"${out_a}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
   "pid_a=$!\n"
-  "\"${DSDLC}\" --target-language cpp \"${UAVCAN_ROOT}\" --cpp-profile both --outdir \"${out_b}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language cpp \"${UAVCAN_ROOT}\" --cpp-profile both --outdir \"${out_b}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
   "pid_b=$!\n"
   "wait \"$pid_a\"\n"
   "wait \"$pid_b\"\n")

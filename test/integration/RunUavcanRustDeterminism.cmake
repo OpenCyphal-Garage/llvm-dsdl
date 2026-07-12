@@ -60,14 +60,18 @@ set(out_b "${OUT_DIR}/run-b")
 file(MAKE_DIRECTORY "${out_a}")
 file(MAKE_DIRECTORY "${out_b}")
 
+# Determinism gate: the two concurrent generations run under deliberately different
+# environments (locale, timezone, Python hash seed) so that byte-identical output proves
+# the codegen is environment-independent -- catching any future locale/TZ/hash-order
+# dependence that a same-environment double run would miss.
 set(parallel_script "${OUT_DIR}/run-rust-parallel.sh")
 file(WRITE
   "${parallel_script}"
   "#!/bin/sh\n"
   "set -eu\n"
-  "\"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
   "pid_a=$!\n"
-  "\"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
   "pid_b=$!\n"
   "wait \"$pid_a\"\n"
   "wait \"$pid_b\"\n")
