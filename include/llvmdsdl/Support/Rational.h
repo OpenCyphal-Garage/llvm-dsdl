@@ -54,6 +54,19 @@ public:
         return denominator_ == 1;
     }
 
+    /// @brief Returns true when a preceding arithmetic operation overflowed 64-bit range.
+    ///
+    /// Arithmetic operators (`+`, `-`, `*`, `/`) evaluate in 128-bit intermediates and set this
+    /// flag (rather than invoking signed-overflow undefined behaviour) when the reduced result no
+    /// longer fits in `std::int64_t`. The flag is sticky: any operation involving an overflowed
+    /// operand yields an overflowed result. Callers performing constant-expression evaluation
+    /// should check this and surface a diagnostic instead of using the (clamped) value. Comparisons
+    /// are always computed exactly in 128-bit and never overflow.
+    [[nodiscard]] bool overflowed() const
+    {
+        return overflowed_;
+    }
+
     /// @brief Converts to integer when the value is integral.
     /// @return Integer value or `std::nullopt` for non-integral rationals.
     [[nodiscard]] std::optional<std::int64_t> asInteger() const;
@@ -99,11 +112,18 @@ private:
     /// @brief Reduces sign and fraction by GCD.
     void normalize();
 
+    /// @brief Builds a normalized rational from 128-bit numerator/denominator, marking the result
+    ///        overflowed (and clamping to zero) when the reduced value does not fit in 64 bits.
+    static Rational fromWide(__int128 numerator, __int128 denominator, bool operandOverflowed);
+
     /// @brief Normalized numerator.
     std::int64_t numerator_;
 
     /// @brief Normalized denominator (always positive).
     std::int64_t denominator_;
+
+    /// @brief Set when a preceding arithmetic op overflowed 64-bit range; see `overflowed()`.
+    bool overflowed_ = false;
 };
 
 }  // namespace llvmdsdl

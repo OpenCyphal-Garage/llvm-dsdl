@@ -66,10 +66,30 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
     {
         return std::nullopt;
     }
+    // Special-case the bases whose powers never overflow, so a huge exponent cannot spin the loop
+    // (a denial-of-service vector): 1**e == 1, 0**e is 0 (or 1 for e == 0), and (-1)**e alternates.
+    if (base == Rational(1, 1))
+    {
+        return Rational(1, 1);
+    }
+    if (base == Rational(0, 1))
+    {
+        return (e == 0) ? Rational(1, 1) : Rational(0, 1);
+    }
+    if (base == Rational(-1, 1))
+    {
+        return ((e % 2) == 0) ? Rational(1, 1) : Rational(-1, 1);
+    }
+    // Every other base has |value| != 1, so the running product leaves 64-bit range within a few
+    // dozen iterations; bail as soon as it overflows, which also bounds the loop.
     Rational out(1, 1);
     for (std::int64_t i = 0; i < e; ++i)
     {
         out = out * base;
+        if (out.overflowed())
+        {
+            return std::nullopt;
+        }
     }
     return out;
 }
@@ -86,14 +106,26 @@ std::optional<Value> applyBinaryRational(BinaryOp op, const Rational& lhs, const
         }
         return Value{*p};
     }
-    case BinaryOp::Mul:
-        return Value{lhs * rhs};
-    case BinaryOp::Div:
+    case BinaryOp::Mul: {
+        const Rational r = lhs * rhs;
+        if (r.overflowed())
+        {
+            return std::nullopt;
+        }
+        return Value{r};
+    }
+    case BinaryOp::Div: {
         if (rhs == Rational(0, 1))
         {
             return std::nullopt;
         }
-        return Value{lhs / rhs};
+        const Rational r = lhs / rhs;
+        if (r.overflowed())
+        {
+            return std::nullopt;
+        }
+        return Value{r};
+    }
     case BinaryOp::Mod: {
         if (!isInteger(lhs) || !isInteger(rhs) || rhs == Rational(0, 1))
         {
@@ -101,12 +133,29 @@ std::optional<Value> applyBinaryRational(BinaryOp op, const Rational& lhs, const
         }
         const auto li = lhs.asInteger().value();
         const auto ri = rhs.asInteger().value();
+        // `INT64_MIN % -1` overflows (the quotient is unrepresentable) and is UB; the result is 0.
+        if (ri == -1)
+        {
+            return Value{Rational(0, 1)};
+        }
         return Value{Rational(li % ri, 1)};
     }
-    case BinaryOp::Add:
-        return Value{lhs + rhs};
-    case BinaryOp::Sub:
-        return Value{lhs - rhs};
+    case BinaryOp::Add: {
+        const Rational r = lhs + rhs;
+        if (r.overflowed())
+        {
+            return std::nullopt;
+        }
+        return Value{r};
+    }
+    case BinaryOp::Sub: {
+        const Rational r = lhs - rhs;
+        if (r.overflowed())
+        {
+            return std::nullopt;
+        }
+        return Value{r};
+    }
     case BinaryOp::BitOr:
     case BinaryOp::BitXor:
     case BinaryOp::BitAnd: {

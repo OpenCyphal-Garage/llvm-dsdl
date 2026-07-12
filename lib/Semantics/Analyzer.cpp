@@ -636,7 +636,14 @@ private:
             }
         }
 
-        const auto b          = ceilLog2(capacity + 1);
+        // Length-prefix width: bits needed to represent a count in [0, capacity]. This equals
+        // ceilLog2(capacity + 1), but computed as the bit-width of `capacity` (which is >= 1 here)
+        // so an adversarial capacity of INT64_MAX does not overflow the `+ 1` (signed-overflow UB).
+        std::int64_t b = 0;
+        for (std::int64_t v = capacity; v > 0; v >>= 1)
+        {
+            ++b;
+        }
         const auto prefixBits = pow2ceil(std::max<std::int64_t>(8, b));
 
         BitLengthSet bls(prefixBits);

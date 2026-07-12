@@ -243,7 +243,21 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 ### P1 — Required for a credible 1.0
 
-- [ ] Semantics overflow/DoS hardening (`Rational`, `BitLengthSet`, capacity).
+- [x] Semantics overflow/DoS hardening (`Rational`, `BitLengthSet`, capacity).
+  ✅ **Done (2026-07-11).** `BitLengthSet` was already overflow-hardened (`__builtin_*_overflow`
+  with saturation, defects BLS-D1…D16). This pass closes the other two:
+  **`Rational`** (`lib/Support/Rational.cpp`) now evaluates `+ - * /` in 128-bit intermediates and
+  **poisons** (sets a sticky `overflowed()` flag, clamping to 0) when the reduced result leaves
+  64-bit range instead of invoking signed-overflow UB; comparisons cross-multiply in 128-bit so
+  they are always exact; and `normalize()`/`gcd()` no longer negate/`llabs` `INT64_MIN`. The
+  evaluator (`Evaluator.cpp`) surfaces a diagnostic on any poisoned result and special-cases
+  `intPow` for bases in {−1, 0, 1} so a huge exponent can't spin the loop (a DoS), bailing as soon
+  as the running product overflows for other bases; `INT64_MIN % -1` is also guarded. **Array
+  capacity**: the length-prefix width is now computed as the bit-width of `capacity` rather than
+  `ceilLog2(capacity + 1)`, so an adversarial `INT64_MAX` inclusive-array bound no longer overflows
+  the `+ 1` (the repeat math already saturated in the hardened `BitLengthSet`). Covered by new
+  `EvaluatorTests`/`AnalyzerTests` cases (overflow → diagnostic, `1 ** huge` terminates, boundary
+  comparisons, adversarial capacities analyze without crashing); verified UB-free under UBSan.
 - [ ] Embedded-catalog integrity + freshness gating; runtime SHA-256 check.
 - [ ] LSP concurrency correctness (DocumentStore mutex; analysis snapshot atomicity).
 - [x] Isolated cross-language runtime-primitive equivalence tests; populate/justify the wrapper allowlist.

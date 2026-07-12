@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -526,6 +527,65 @@ bool runEvaluatorTests()
         if (typeValue->typeName() != "metaserializable" || typeValue->str() != "Foo.1.0")
         {
             std::cerr << "type-literal value formatting/typeName mismatch\n";
+            return false;
+        }
+    }
+
+    // --- Overflow / DoS hardening (P1 #1) -------------------------------------------------------
+    {
+        // A product that leaves 64-bit range must yield a diagnostic, not undefined behaviour.
+        llvmdsdl::DiagnosticEngine diag;
+        auto                       value = evaluateAssertExpression("4611686018427387904 * 4", diag);
+        if (value || !hasErrorContaining(diag, "invalid rational operation"))
+        {
+            std::cerr << "overflowing multiply should fail with a diagnostic\n";
+            return false;
+        }
+    }
+    {
+        // Exponentiation that overflows must bail (also bounding the loop) rather than run forever.
+        llvmdsdl::DiagnosticEngine diag;
+        auto                       value = evaluateAssertExpression("2 ** 1000000000000", diag);
+        if (value || !hasErrorContaining(diag, "invalid rational operation"))
+        {
+            std::cerr << "overflowing exponentiation should fail with a diagnostic\n";
+            return false;
+        }
+    }
+    {
+        // Trivial bases must be special-cased so a huge exponent cannot spin the loop (DoS). If this
+        // were unbounded the test would hang rather than fail.
+        llvmdsdl::DiagnosticEngine diag;
+        auto                       one = evaluateAssertExpression("1 ** 1000000000000", diag);
+        if (!expectRational(one, llvmdsdl::Rational(1, 1)))
+        {
+            std::cerr << "1 ** huge should evaluate to 1 without looping\n";
+            return false;
+        }
+    }
+    {
+        // Direct Rational overflow flag + INT64 boundary comparisons (exact, never overflow).
+        const llvmdsdl::Rational big = llvmdsdl::Rational(INT64_MAX, 1) * llvmdsdl::Rational(2, 1);
+        if (!big.overflowed())
+        {
+            std::cerr << "INT64_MAX * 2 should set the overflow flag\n";
+            return false;
+        }
+        if (!(llvmdsdl::Rational(INT64_MIN, 1) < llvmdsdl::Rational(INT64_MAX, 1)))
+        {
+            std::cerr << "INT64_MIN should compare less than INT64_MAX\n";
+            return false;
+        }
+        if (llvmdsdl::Rational(INT64_MAX, 1) < llvmdsdl::Rational(INT64_MAX, 1))
+        {
+            std::cerr << "INT64_MAX should not compare less than itself\n";
+            return false;
+        }
+        // INT64_MIN must be constructible/normalizable without UB (negation guard).
+        const llvmdsdl::Rational neg = llvmdsdl::Rational(INT64_MIN, 1);
+        if (neg.numerator() != INT64_MIN || neg.denominator() != 1)
+        {
+            std::cerr << "INT64_MIN/1 should normalize to itself\n";
             return false;
         }
     }

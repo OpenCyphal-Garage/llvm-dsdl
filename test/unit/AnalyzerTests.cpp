@@ -444,5 +444,54 @@ bool runAnalyzerTests()
         }
     }
 
+    // Capacity overflow guard (P1 #1): an adversarial INT64_MAX array capacity must not overflow the
+    // length-prefix width computation (previously `ceilLog2(capacity + 1)`) or the bit-length-set
+    // repeat math. The analyzer must terminate cleanly with diagnostics, never crash, hang, or
+    // invoke signed-overflow UB (the latter is caught by the UBSan lane, which exercises this path).
+    {
+        const auto analyzeCompletes = [](const std::string& body) -> bool {
+            llvmdsdl::DiagnosticEngine parse;
+            llvmdsdl::Lexer            lex("uavcan.test.HugeArray.1.0.dsdl", body);
+            auto                       toks = lex.lex();
+            llvmdsdl::Parser           p("uavcan.test.HugeArray.1.0.dsdl", std::move(toks), parse);
+            auto                       ast = p.parseDefinition();
+            if (!ast)
+            {
+                llvm::consumeError(ast.takeError());
+                return true;
+            }
+            if (parse.hasErrors())
+            {
+                return true;
+            }
+            llvmdsdl::DiscoveredDefinition disc;
+            disc.filePath            = "uavcan/test/HugeArray.1.0.dsdl";
+            disc.rootNamespacePath   = "uavcan";
+            disc.fullName            = "uavcan.test.HugeArray";
+            disc.shortName           = "HugeArray";
+            disc.namespaceComponents = {"uavcan", "test"};
+            disc.majorVersion        = 1;
+            disc.minorVersion        = 0;
+            disc.text                = body;
+            llvmdsdl::ASTModule mod;
+            mod.definitions.push_back(llvmdsdl::ParsedDefinition{disc, *ast});
+            llvmdsdl::DiagnosticEngine sem;
+            auto                       model = llvmdsdl::analyze(mod, sem);
+            if (!model)
+            {
+                llvm::consumeError(model.takeError());
+            }
+            return true;  // reaching here means analysis terminated without crash/hang/UB
+        };
+        // INT64_MAX inclusive, exclusive, and fixed-length capacities.
+        if (!analyzeCompletes("uint8[<=9223372036854775807] x\n@sealed\n") ||
+            !analyzeCompletes("uint8[<9223372036854775807] y\n@sealed\n") ||
+            !analyzeCompletes("uint8[9223372036854775807] z\n@sealed\n"))
+        {
+            std::cerr << "analyzer failed to complete on adversarial array capacity\n";
+            return false;
+        }
+    }
+
     return true;
 }
