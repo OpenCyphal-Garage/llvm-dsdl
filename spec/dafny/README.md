@@ -13,6 +13,16 @@ Models the **sequence of wire operations** and the **structural invertibility** 
 serialize/deserialize. The wire is an ordered stream of typed *tokens*; a scalar's value is
 an opaque tag that must survive the round trip.
 
+**Token granularity:** tokens are atomic — the model never splits a field. This is exact for
+schema-evolution skew (appended fields always start on a token boundary) and deliberately
+coarse for arbitrary corruption: a buffer cut mid-scalar is below the abstraction floor.
+Byte-level truncation is exercised empirically by the sanitizer/fuzz harnesses instead.
+
+Variable arrays carry their capacity: conformance bounds the element count
+(`|elems| <= cap`) and `De` validates the wire's length prefix against it — the functional
+counterpart of the `LEN_VALIDATE` op, the same way `VALIDATE_TAG` corresponds to the union
+tag-range guard.
+
 **Out of scope — verified empirically instead:** bit-exact byte layout, integer widths,
 saturation/truncation, endianness, NaN payloads. Those are covered by the differential-parity
 and cross-language round-trip harnesses.

@@ -5,7 +5,10 @@
 // SCOPE (deliberate): models the SEQUENCE of wire operations and the structural
 // invertibility of serialize/deserialize -- NOT bit-exact byte layout. The wire is
 // an ordered stream of typed *tokens*; a scalar's value is an opaque tag that must
-// survive the round trip. Bit-exactness (widths, saturation, endianness, NaN) is
+// survive the round trip. Tokens are ATOMIC: effects that split a field mid-way
+// (byte-level truncation inside a scalar) are below this abstraction -- exact for
+// schema-evolution skew (appended fields start on token boundaries), coarse for
+// arbitrary corruption. Bit-exactness (widths, saturation, endianness, NaN) is
 // verified empirically by the differential-parity harnesses.
 //
 // WHAT IS PROVEN (unbounded -- for all conforming values, by structural induction):
@@ -44,7 +47,7 @@ module CyphalSerdes {
     | TPad(w: nat)
     | TStruct(fields: seq<Typ>)
     | TFArr(cap: nat, elem: Typ)
-    | TVArr(pb: nat, elem: Typ)
+    | TVArr(pb: nat, cap: nat, elem: Typ)
     | TUnion(tb: nat, opts: seq<Typ>)
     | TComp(sealed: bool, inner: Typ)
 
@@ -86,7 +89,7 @@ module CyphalSerdes {
                             && (forall i | 0 <= i < |fts| :: ConformsTo(v.fields[i], fts[i]))
     case TFArr(cap, et)  => v.FArr? && |v.elems| == cap
                             && (forall i | 0 <= i < |v.elems| :: ConformsTo(v.elems[i], et))
-    case TVArr(pb, et)   => v.VArr? && v.pb == pb
+    case TVArr(pb, cap, et) => v.VArr? && v.pb == pb && |v.elems| <= cap
                             && (forall i | 0 <= i < |v.elems| :: ConformsTo(v.elems[i], et))
     case TUnion(tb, ops) => v.Union? && v.tb == tb && v.tag < |ops|
                             && ConformsTo(v.sel, ops[v.tag])
@@ -120,7 +123,10 @@ module CyphalSerdes {
   // Total (no precondition): Dafny forbids the out-of-bounds token access, so this
   // is bounds-safe on ANY wire by construction. Token kind AND metadata (width /
   // pb / tb) are validated against the schema, so acceptance is canonical -- the
-  // guards below are exactly what DeCanonical needs to reconstruct the wire.
+  // guards below are exactly what DeCanonical needs to reconstruct the wire. The
+  // variable-array length prefix is additionally validated against capacity
+  // (w[0].val <= cap) -- the functional counterpart of the LenValidate op, the
+  // same way ValidateTag corresponds to the union tag-range guard.
 
   function De(t: Typ, w: seq<Token>): Option<(Value, seq<Token>)>
     decreases t, 0
@@ -140,8 +146,8 @@ module CyphalSerdes {
       (match DeCount(et, cap, w)
        case None => None
        case Some((vs, rest)) => Some((FArr(vs), rest)))
-    case TVArr(pb, et) =>
-      if |w| >= 1 && w[0].TokLen? && w[0].pb == pb then
+    case TVArr(pb, cap, et) =>
+      if |w| >= 1 && w[0].TokLen? && w[0].pb == pb && w[0].val <= cap then
         (match DeCount(et, w[0].val, w[1..])
          case None => None
          case Some((vs, rest)) => Some((VArr(pb, vs), rest)))
@@ -376,7 +382,7 @@ module CyphalSerdes {
       DeSeqCanonical(fts, w);
     case TFArr(cap, et) =>
       DeCountCanonical(et, cap, w);
-    case TVArr(pb, et) =>
+    case TVArr(pb, cap, et) =>
       DeCountCanonical(et, w[0].val, w[1..]);
       assert w == [w[0]] + w[1..];
     case TUnion(tb, opts) =>
