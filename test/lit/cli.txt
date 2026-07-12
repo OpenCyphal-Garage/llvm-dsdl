@@ -18,6 +18,8 @@
 # RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
 # RUN: %dsdlc --target-language obj --obj-abi-language cpp --target-endianness little --dry-run --list-outputs --outdir %t.obj-cpp %S/fixtures | FileCheck %s --check-prefix=OBJ_CPP_OUTPUTS
 # RUN: not %dsdlc --target-language obj --obj-abi-language bad --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ABI_LANG
+# RUN: not %dsdlc --target-language obj --target-endianness little --target-triple 'x;rm -rf /' --outdir %t.obj-bad-triple %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_TRIPLE
+# RUN: not %dsdlc --target-language obj --target-endianness little --obj-archive-name ../../evil --outdir %t.obj-bad-archive %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ARCHIVE
 # RUN: not %dsdlc --target-language c --obj-abi-language cpp %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ABI_LANG
 # RUN: %dsdlc --target-language obj --target-endianness little --obj-no-archive --dry-run --list-outputs --outdir %t.obj-no-archive %S/fixtures | FileCheck %s --check-prefix=OBJ_NO_ARCHIVE
 # RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
@@ -70,6 +72,10 @@
 # BAD_JOBS: invalid --jobs value:
 
 # OBJ_BAD_ABI_LANG: invalid --obj-abi-language value: bad
+
+# OBJ_BAD_TRIPLE: invalid --target-triple 'x;rm -rf /'
+
+# OBJ_BAD_ARCHIVE: invalid --obj-archive-name '../../evil'
 
 # OBJ_CPP_OUTPUTS: Delimited_1_0_abi.o
 # OBJ_CPP_OUTPUTS: EmptyService_1_0_abi.o

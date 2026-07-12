@@ -329,7 +329,18 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   second C++ stdlib, e.g. libstdc++ vs libc++, whose `std::hash` differs) is the only way to catch
   C++ `unordered_*` *iteration* nondeterminism that env-perturbation cannot — it catches nothing
   today given the clean audit, but is worth a CI lane; deferred as it needs a second build config.
-- [ ] Object backend: escape/validate `targetTriple` and staged paths.
+- [x] Object backend: escape/validate `targetTriple` and staged paths.
+  ✅ **Done (2026-07-12).** First, the reassuring part: the object backend already invokes the
+  C/C++ compiler and archiver via **argv** (`llvm::sys::ExecuteAndWait`), never a shell, so there
+  was no shell-injection vector (a hostile `--target-triple` can only ever be an inert `--target=`
+  payload) — "escape" was moot; **validation** was the gap. Added: `--target-triple` is now checked
+  against a conservative charset (hyphen-separated `[A-Za-z0-9._-]`, no leading dash, ≤128 chars) so
+  whitespace/path/shell metacharacters are rejected up front with a clear diagnostic; `--obj-archive-name`
+  must be a single safe filename component (no path separators or `..`), closing an archive-path
+  traversal where `../../evil` would escape `--outdir`; and every derived object/archive path is
+  containment-checked (`isPathWithinRoot`) to refuse writes outside the output root as
+  defense-in-depth behind the input validation. New negative cases in `test/lit/cli.txt` prove the
+  malicious triple and traversal archive name are rejected while a valid triple still passes.
 
 ### P2 — Maturity / maintainability
 

@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/CodeGen/CppObjectAbiEmitter.h"
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/Program.h>
@@ -52,6 +53,57 @@ std::string absoluteNormalizedPath(const std::filesystem::path& path)
         return path.lexically_normal().string();
     }
     return absolute.lexically_normal().string();
+}
+
+/// @brief Accepts only a conservative target-triple charset: hyphen-separated alphanumeric
+///        components (`[A-Za-z0-9._-]`, not starting with `-`). LLVM triples fit this; anything with
+///        whitespace, path/shell metacharacters, or a leading dash is rejected so a hostile value
+///        can never reach the compiler command line as anything but an inert `--target=` payload.
+bool isSafeTargetTriple(llvm::StringRef triple)
+{
+    if (triple.empty() || triple.size() > 128U || !llvm::isAlnum(triple.front()))
+    {
+        return false;
+    }
+    for (const char c : triple)
+    {
+        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// @brief Accepts only a single safe filename component (used for the archive name): non-empty,
+///        `[A-Za-z0-9._-]`, and not a path separator or parent/self reference.
+bool isSafePathComponent(llvm::StringRef name)
+{
+    if (name.empty() || name.size() > 128U || name == "." || name == "..")
+    {
+        return false;
+    }
+    for (const char c : name)
+    {
+        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// @brief True when `candidate` normalizes to a location at or under `root` (no `..` traversal escape).
+bool isPathWithinRoot(const std::filesystem::path& root, const std::filesystem::path& candidate)
+{
+    const std::filesystem::path normalizedRoot(absoluteNormalizedPath(root));
+    const std::filesystem::path normalizedCandidate(absoluteNormalizedPath(candidate));
+    const std::filesystem::path relative = normalizedCandidate.lexically_relative(normalizedRoot);
+    if (relative.empty())
+    {
+        return false;  // unrelated to root
+    }
+    return *relative.begin() != std::filesystem::path("..");
 }
 
 void recordOutput(const EmitWritePolicy&          policy,
@@ -311,6 +363,21 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                                        options.targetEndianness.c_str());
     }
 
+    if (!options.targetTriple.empty() && !isSafeTargetTriple(options.targetTriple))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "invalid --target-triple '%s'; expected hyphen-separated alphanumeric "
+                                       "components ([A-Za-z0-9._-])",
+                                       options.targetTriple.c_str());
+    }
+    if (!options.archiveName.empty() && !isSafePathComponent(options.archiveName))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "invalid --obj-archive-name '%s'; expected a single filename component "
+                                       "([A-Za-z0-9._-], no path separators or parent references)",
+                                       options.archiveName.c_str());
+    }
+
     const std::filesystem::path outRoot(options.outDir);
     const std::filesystem::path cppStageRoot = outRoot / ".obj_stage_cpp";
     const std::filesystem::path cStageRoot =
@@ -403,6 +470,12 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         }
         std::filesystem::path objectPath = outRoot / relative;
         objectPath.replace_extension(".o");
+        if (!isPathWithinRoot(outRoot, objectPath))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "refusing to write object file outside the output directory: %s",
+                                           objectPath.string().c_str());
+        }
         std::filesystem::create_directories(objectPath.parent_path(), ec);
         if (ec)
         {
@@ -494,6 +567,12 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
             std::filesystem::path objectPath = outRoot / relative;
             objectPath.replace_extension(".o");
+            if (!isPathWithinRoot(outRoot, objectPath))
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "refusing to write object file outside the output directory: %s",
+                                               objectPath.string().c_str());
+            }
             std::filesystem::create_directories(objectPath.parent_path(), ec);
             if (ec)
             {
@@ -542,6 +621,12 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             return arOrErr.takeError();
         }
         std::filesystem::path archivePath = outRoot / (options.archiveName + ".a");
+        if (!isPathWithinRoot(outRoot, archivePath))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "refusing to write archive outside the output directory: %s",
+                                           archivePath.string().c_str());
+        }
 
         std::vector<std::string> args;
         args.push_back("rcs");
