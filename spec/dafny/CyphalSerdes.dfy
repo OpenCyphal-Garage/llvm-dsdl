@@ -12,9 +12,17 @@
 //   RoundTrip     : De(t, SerWire(v) + suffix) == Some((v, suffix)) for v conforming
 //                   to t. Serialize/deserialize are genuine inverses; the reader
 //                   consumes exactly what the writer produced.
+//   DeCanonical   : the converse -- every wire De accepts decodes to a conforming
+//                   value whose re-serialization is exactly the consumed prefix, so
+//                   De accepts EXACTLY SerWire's image. Together the pair pins both
+//                   functions: leniency added to De breaks DeCanonical, strictness
+//                   breaks RoundTrip.
 //   Bounds safety : De is a TOTAL function with no precondition, so Dafny forbids any
 //                   out-of-bounds token access by construction -- there is no wire
 //                   (truncated, adversarial, empty) on which De is undefined.
+//   Order oracle  : CanonicalTracesOrderOK -- SerOps/DeOps satisfy SerOrderOK/DeOrderOK
+//                   for ALL values, so the canonical traces can never disagree with
+//                   the ordering predicates B1 applies to backend traces.
 //
 // SerOps(v) / DeOps(v) are the emit-order oracle -- the accepted op orderings the B1
 // verifier checks each generated backend against. SerOrderOK / DeOrderOK are those
@@ -110,16 +118,20 @@ module CyphalSerdes {
 
   // ---- Deserialize: (type, wire) -> Option<(value, rest)> ------------------
   // Total (no precondition): Dafny forbids the out-of-bounds token access, so this
-  // is bounds-safe on ANY wire by construction.
+  // is bounds-safe on ANY wire by construction. Token kind AND metadata (width /
+  // pb / tb) are validated against the schema, so acceptance is canonical -- the
+  // guards below are exactly what DeCanonical needs to reconstruct the wire.
 
   function De(t: Typ, w: seq<Token>): Option<(Value, seq<Token>)>
     decreases t, 0
   {
     match t
     case TScal(width) =>
-      if |w| >= 1 && w[0].TokScal? then Some((Scal(width, w[0].val), w[1..])) else None
+      if |w| >= 1 && w[0].TokScal? && w[0].w == width
+      then Some((Scal(width, w[0].val), w[1..])) else None
     case TPad(width) =>
-      if |w| >= 1 && w[0].TokPad? then Some((Pad(width), w[1..])) else None
+      if |w| >= 1 && w[0].TokPad? && w[0].w == width
+      then Some((Pad(width), w[1..])) else None
     case TStruct(fts) =>
       (match DeSeq(fts, w)
        case None => None
@@ -129,13 +141,13 @@ module CyphalSerdes {
        case None => None
        case Some((vs, rest)) => Some((FArr(vs), rest)))
     case TVArr(pb, et) =>
-      if |w| >= 1 && w[0].TokLen? then
+      if |w| >= 1 && w[0].TokLen? && w[0].pb == pb then
         (match DeCount(et, w[0].val, w[1..])
          case None => None
          case Some((vs, rest)) => Some((VArr(pb, vs), rest)))
       else None
     case TUnion(tb, opts) =>
-      if |w| >= 1 && w[0].TokTag? && w[0].val < |opts| then
+      if |w| >= 1 && w[0].TokTag? && w[0].tb == tb && w[0].val < |opts| then
         (match De(opts[w[0].val], w[1..])
          case None => None
          case Some((sv, rest)) => Some((Union(tb, w[0].val, sv), rest)))
@@ -335,21 +347,323 @@ module CyphalSerdes {
     assert SerWire(v) + [] == SerWire(v);
   }
 
-  // Sanity: the canonical emit traces satisfy the ordering constraints. Proving this
-  // for ALL values is a positional-over-concatenation induction with low payoff (B1
-  // applies these predicates to real *backend* traces, not the model's own), so we
-  // check representative shapes concretely -- Dafny evaluates SerOps/DeOps here and
-  // verifies the predicate holds.
-  lemma OrderingSanity()
+  // ==========================================================================
+  // PROOF: canonical acceptance (the right inverse). Every wire De accepts
+  // decodes to a CONFORMING value whose re-serialization is exactly the consumed
+  // prefix -- De accepts nothing SerWire cannot produce. Together with RoundTrip
+  // this pins De and SerWire completely: any added leniency in De breaks
+  // DeCanonical, any added strictness breaks RoundTrip. (It is also why the
+  // delimited case demands exact body consumption, r2 == [], and why De checks
+  // token metadata: without either, non-canonical wires would be accepted.)
+  //
+  // This is a MODEL property -- the abstract wire grammar is unambiguous. Real
+  // DSDL decoders are deliberately more tolerant (delimited version-skew
+  // acceptance); see the README's assurance boundary before citing.
+  // ==========================================================================
+
+  lemma DeCanonical(t: Typ, w: seq<Token>)
+    requires De(t, w).Some?
+    ensures var (v, rest) := De(t, w).value;
+            ConformsTo(v, t) && w == SerWire(v) + rest
+    decreases t, 0
   {
-    var u  := Union(8, 0, Scal(8, 0));            // union -> exercises tag validate/mask/write order
-    var va := VArr(8, [Scal(8, 0), Scal(8, 0)]);  // variable array -> len validate/write order
-    var st := Struct([Scal(8, 0), Scal(8, 0)]);   // struct -> scalar write/advance order
-    assert SerOrderOK(SerOps(u));
-    assert SerOrderOK(SerOps(va));
-    assert SerOrderOK(SerOps(st));
-    assert DeOrderOK(DeOps(u));
-    assert DeOrderOK(DeOps(va));
-    assert DeOrderOK(DeOps(st));
+    match t
+    case TScal(width) =>
+      assert w == [w[0]] + w[1..];
+    case TPad(width) =>
+      assert w == [w[0]] + w[1..];
+    case TStruct(fts) =>
+      DeSeqCanonical(fts, w);
+    case TFArr(cap, et) =>
+      DeCountCanonical(et, cap, w);
+    case TVArr(pb, et) =>
+      DeCountCanonical(et, w[0].val, w[1..]);
+      assert w == [w[0]] + w[1..];
+    case TUnion(tb, opts) =>
+      DeCanonical(opts[w[0].val], w[1..]);
+      assert w == [w[0]] + w[1..];
+    case TComp(sl, it) =>
+      if sl {
+        DeCanonical(it, w);
+      } else {
+        var body := w[1..];
+        var sz := w[0].len;
+        DeCanonical(it, body[..sz]);
+        var (iv, r2) := De(it, body[..sz]).value;
+        assert r2 == [];                       // exact consumption: else De is None
+        assert body[..sz] == SerWire(iv) + r2;
+        assert SerWire(iv) + [] == SerWire(iv);
+        assert |SerWire(iv)| == sz;            // so the header value is forced
+        assert w == [w[0]] + body;
+        assert body == body[..sz] + body[sz..];
+      }
+  }
+
+  lemma DeSeqCanonical(fts: seq<Typ>, w: seq<Token>)
+    requires DeSeq(fts, w).Some?
+    ensures var (vs, rest) := DeSeq(fts, w).value;
+            |vs| == |fts|
+            && (forall i | 0 <= i < |vs| :: ConformsTo(vs[i], fts[i]))
+            && w == SerWireSeq(vs) + rest
+    decreases fts, 0
+  {
+    if |fts| == 0 {
+      assert [] + w == w;
+    } else {
+      DeCanonical(fts[0], w);
+      var (v0, rest0) := De(fts[0], w).value;
+      DeSeqCanonical(fts[1..], rest0);
+      var (vs1, rest) := DeSeq(fts[1..], rest0).value;
+      assert ([v0] + vs1)[1..] == vs1;
+      assert SerWireSeq([v0] + vs1) == SerWire(v0) + SerWireSeq(vs1);
+      assert w == SerWire(v0) + (SerWireSeq(vs1) + rest);
+    }
+  }
+
+  lemma DeCountCanonical(et: Typ, n: nat, w: seq<Token>)
+    requires DeCount(et, n, w).Some?
+    ensures var (vs, rest) := DeCount(et, n, w).value;
+            |vs| == n
+            && (forall i | 0 <= i < |vs| :: ConformsTo(vs[i], et))
+            && w == SerWireSeq(vs) + rest
+    decreases et, n
+  {
+    if n == 0 {
+      assert [] + w == w;
+    } else {
+      DeCanonical(et, w);
+      var (v0, rest0) := De(et, w).value;
+      DeCountCanonical(et, n - 1, rest0);
+      var (vs1, rest) := DeCount(et, n - 1, rest0).value;
+      assert ([v0] + vs1)[1..] == vs1;
+      assert SerWireSeq([v0] + vs1) == SerWire(v0) + SerWireSeq(vs1);
+      assert w == SerWire(v0) + (SerWireSeq(vs1) + rest);
+    }
+  }
+
+  // The characterization corollary: De succeeds on EXACTLY the canonical wires.
+  lemma DeAcceptanceCharacterization(t: Typ, w: seq<Token>)
+    ensures De(t, w).Some? <==>
+            exists v: Value, rest: seq<Token> ::
+              ConformsTo(v, t) && w == SerWire(v) + rest
+  {
+    if De(t, w).Some? {
+      DeCanonical(t, w);
+      var (v, rest) := De(t, w).value;
+      assert ConformsTo(v, t) && w == SerWire(v) + rest;
+    }
+    forall v: Value, rest: seq<Token> | ConformsTo(v, t) && w == SerWire(v) + rest
+      ensures De(t, w).Some?
+    {
+      RoundTrip(t, v, rest);
+    }
+  }
+
+  // ==========================================================================
+  // PROOF: the canonical traces satisfy the ordering predicates, for ALL values
+  // (unbounded). B1 applies SerOrderOK/DeOrderOK to real *backend* traces; these
+  // lemmas guarantee the model's own SerOps/DeOps can never disagree with those
+  // predicates, so the two halves of the oracle stay consistent by machine check
+  // rather than by sampling representative shapes.
+  //
+  // Shape of the proof: the predicates only ever constrain an op against
+  // neighbours at fixed offsets, and every constrained op is emitted inside one
+  // contiguous constructor-level block that carries its full context (e.g.
+  // WriteTag only ever appears as ...ValidateTag, MaskTag, WriteTag, Advance...).
+  // Hence the predicates are closed under concatenation (the two Concat lemmas),
+  // and the universal statement follows by structural induction over Value: each
+  // match arm checks its head block concretely, then stitches in the recursive
+  // traces with the concat lemma.
+  // ==========================================================================
+
+  lemma SerOrderOKConcat(a: seq<Op>, b: seq<Op>)
+    requires SerOrderOK(a)
+    requires SerOrderOK(b)
+    ensures SerOrderOK(a + b)
+  {
+    var c := a + b;
+    forall i | 0 <= i < |c| && c[i] == WriteTag
+      ensures i >= 2 && c[i-1] == MaskTag && c[i-2] == ValidateTag
+    {
+      if i < |a| {
+        assert a[i] == WriteTag;
+      } else {
+        var j := i - |a|;
+        assert b[j] == WriteTag;
+        assert j >= 2 && b[j-1] == MaskTag && b[j-2] == ValidateTag;
+      }
+    }
+    forall i | 0 <= i < |c| && c[i] == LenWrite
+      ensures i >= 1 && c[i-1] == LenValidate
+    {
+      if i < |a| {
+        assert a[i] == LenWrite;
+      } else {
+        var j := i - |a|;
+        assert b[j] == LenWrite;
+      }
+    }
+    forall i | 0 <= i < |c| && c[i] in {WriteTag, LenWrite, WriteScalar}
+      ensures i + 1 < |c| && c[i+1] == Advance
+    {
+      if i < |a| {
+        assert a[i] in {WriteTag, LenWrite, WriteScalar};
+        assert i + 1 < |a| && a[i+1] == Advance;
+      } else {
+        var j := i - |a|;
+        assert b[j] in {WriteTag, LenWrite, WriteScalar};
+        assert j + 1 < |b| && b[j+1] == Advance;
+      }
+    }
+  }
+
+  lemma DeOrderOKConcat(a: seq<Op>, b: seq<Op>)
+    requires DeOrderOK(a)
+    requires DeOrderOK(b)
+    ensures DeOrderOK(a + b)
+  {
+    var c := a + b;
+    forall i | 0 <= i < |c| && c[i] == ValidateTag
+      ensures i >= 3 && c[i-1] == StoreTag && c[i-2] == MaskTag && c[i-3] == ReadTag
+    {
+      if i < |a| {
+        assert a[i] == ValidateTag;
+      } else {
+        var j := i - |a|;
+        assert b[j] == ValidateTag;
+        assert j >= 3 && b[j-1] == StoreTag && b[j-2] == MaskTag && b[j-3] == ReadTag;
+      }
+    }
+    forall i | 0 <= i < |c| && c[i] == LenValidate
+      ensures i >= 2 && c[i-1] == Advance && c[i-2] == LenRead
+    {
+      if i < |a| {
+        assert a[i] == LenValidate;
+      } else {
+        var j := i - |a|;
+        assert b[j] == LenValidate;
+        assert j >= 2 && b[j-1] == Advance && b[j-2] == LenRead;
+      }
+    }
+  }
+
+  lemma SerOpsOrderOK(v: Value)
+    ensures SerOrderOK(SerOps(v))
+    decreases v
+  {
+    match v
+    case Scal(w, val) =>
+      assert SerOps(v) == [WriteScalar, Advance];
+    case Pad(w) =>
+      assert SerOps(v) == [PadOp, Advance];
+    case Struct(fs) =>
+      SerOpsSeqOrderOK(fs);
+      assert SerOrderOK([Align]);
+      SerOrderOKConcat(SerOpsSeq(fs), [Align]);
+    case FArr(es) =>
+      SerOpsSeqOrderOK(es);
+      assert SerOrderOK([ElemLoop]);
+      SerOrderOKConcat([ElemLoop], SerOpsSeq(es));
+    case VArr(pb, es) =>
+      SerOpsSeqOrderOK(es);
+      assert SerOrderOK([LenValidate, LenWrite, Advance, ElemLoop]);
+      SerOrderOKConcat([LenValidate, LenWrite, Advance, ElemLoop], SerOpsSeq(es));
+    case Union(tb, tg, s) =>
+      SerOpsOrderOK(s);
+      var hd := [ValidateTag, MaskTag, WriteTag, Advance, Switch, Case, Align];
+      assert SerOrderOK(hd);    // the negative control: reordering the union head block fails here
+      assert SerOrderOK([DefaultBadTag]);
+      SerOrderOKConcat(hd, SerOps(s));
+      SerOrderOKConcat(hd + SerOps(s), [DefaultBadTag]);
+    case Comp(sl, inn) =>
+      SerOpsOrderOK(inn);
+      if sl {
+        assert SerOrderOK([CompositeInline]);
+        SerOrderOKConcat([CompositeInline], SerOps(inn));
+      } else {
+        assert SerOrderOK([CompositeDelimHeader]);
+        SerOrderOKConcat([CompositeDelimHeader], SerOps(inn));
+      }
+  }
+
+  lemma SerOpsSeqOrderOK(vs: seq<Value>)
+    ensures SerOrderOK(SerOpsSeq(vs))
+    decreases vs
+  {
+    if |vs| == 0 {
+      assert SerOpsSeq(vs) == [];
+    } else {
+      SerOpsOrderOK(vs[0]);
+      SerOpsSeqOrderOK(vs[1..]);
+      assert SerOrderOK([Align]);
+      SerOrderOKConcat([Align], SerOps(vs[0]));
+      SerOrderOKConcat([Align] + SerOps(vs[0]), SerOpsSeq(vs[1..]));
+      assert SerOpsSeq(vs) == ([Align] + SerOps(vs[0])) + SerOpsSeq(vs[1..]);
+    }
+  }
+
+  lemma DeOpsOrderOK(v: Value)
+    ensures DeOrderOK(DeOps(v))
+    decreases v
+  {
+    match v
+    case Scal(w, val) =>
+      assert DeOps(v) == [ReadScalar, Advance];
+    case Pad(w) =>
+      assert DeOps(v) == [PadOp, Advance];
+    case Struct(fs) =>
+      DeOpsSeqOrderOK(fs);
+      assert DeOrderOK([Align]);
+      DeOrderOKConcat(DeOpsSeq(fs), [Align]);
+    case FArr(es) =>
+      DeOpsSeqOrderOK(es);
+      assert DeOrderOK([ElemLoop]);
+      DeOrderOKConcat([ElemLoop], DeOpsSeq(es));
+    case VArr(pb, es) =>
+      DeOpsSeqOrderOK(es);
+      assert DeOrderOK([LenRead, Advance, LenValidate, ElemLoop]);
+      DeOrderOKConcat([LenRead, Advance, LenValidate, ElemLoop], DeOpsSeq(es));
+    case Union(tb, tg, s) =>
+      DeOpsOrderOK(s);
+      var hd := [ReadTag, MaskTag, StoreTag, ValidateTag, Advance, Switch, Case, Align];
+      assert DeOrderOK(hd);
+      assert DeOrderOK([DefaultBadTag]);
+      DeOrderOKConcat(hd, DeOps(s));
+      DeOrderOKConcat(hd + DeOps(s), [DefaultBadTag]);
+    case Comp(sl, inn) =>
+      DeOpsOrderOK(inn);
+      if sl {
+        assert DeOrderOK([CompositeInline]);
+        DeOrderOKConcat([CompositeInline], DeOps(inn));
+      } else {
+        assert DeOrderOK([CompositeDelimHeader]);
+        DeOrderOKConcat([CompositeDelimHeader], DeOps(inn));
+      }
+  }
+
+  lemma DeOpsSeqOrderOK(vs: seq<Value>)
+    ensures DeOrderOK(DeOpsSeq(vs))
+    decreases vs
+  {
+    if |vs| == 0 {
+      assert DeOpsSeq(vs) == [];
+    } else {
+      DeOpsOrderOK(vs[0]);
+      DeOpsSeqOrderOK(vs[1..]);
+      assert DeOrderOK([Align]);
+      DeOrderOKConcat([Align], DeOps(vs[0]));
+      DeOrderOKConcat([Align] + DeOps(vs[0]), DeOpsSeq(vs[1..]));
+      assert DeOpsSeq(vs) == ([Align] + DeOps(vs[0])) + DeOpsSeq(vs[1..]);
+    }
+  }
+
+  // The headline corollary: the two halves of the emit-order oracle -- the
+  // canonical traces and the ordering predicates -- agree for EVERY value.
+  lemma CanonicalTracesOrderOK(v: Value)
+    ensures SerOrderOK(SerOps(v))
+    ensures DeOrderOK(DeOps(v))
+  {
+    SerOpsOrderOK(v);
+    DeOpsOrderOK(v);
   }
 }
