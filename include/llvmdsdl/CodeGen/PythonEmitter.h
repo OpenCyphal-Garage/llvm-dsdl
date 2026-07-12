@@ -30,6 +30,7 @@ namespace llvmdsdl
 {
 class DiagnosticEngine;
 struct SemanticModule;
+class EmitTraceSink;
 
 /// @file
 /// @brief Python backend emission entry points.
@@ -68,11 +69,13 @@ struct PythonEmitOptions final
 /// @param[in] module Lowered MLIR module.
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
+/// @param[in] traceSink Optional emit-order trace sink (B1); null (default) disables tracing at zero cost.
 /// @return Success or detailed failure.
 llvm::Error emitPython(const SemanticModule&    semantic,
                        mlir::ModuleOp           module,
                        const PythonEmitOptions& options,
-                       DiagnosticEngine&        diagnostics);
+                       DiagnosticEngine&        diagnostics,
+                       EmitTraceSink*           traceSink = nullptr);
 
 }  // namespace llvmdsdl
 

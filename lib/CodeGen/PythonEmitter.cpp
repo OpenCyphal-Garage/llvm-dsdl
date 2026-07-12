@@ -40,6 +40,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
@@ -150,6 +151,19 @@ public:
     {
     }
 
+    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    ///
+    /// Marked `const` so it can be called through the `const EmitterContext&` the render free
+    /// functions hold: it mutates the pointee (the sink), not the pointer.
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -257,6 +271,7 @@ private:
 
     std::vector<std::string> packageComponents_;
     DefinitionIndex          index_;
+    EmitTraceSink*           traceSink_ = nullptr;
 };
 
 std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -453,6 +468,7 @@ void emitPyRuntimeSerializeCompositeValue(std::ostringstream&     out,
                                           const std::string&      valueExpr,
                                           const EmitterContext&   ctx)
 {
+    ctx.trace(field.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
     const auto nestedVar = field.fieldName + "_bytes";
     emitLine(out, indent, nestedVar + " = " + valueExpr + ".serialize()");
     if (field.compositeSealed)
@@ -495,6 +511,7 @@ void emitPyRuntimeDeserializeCompositeValue(std::ostringstream&     out,
                                             const EmitterContext&   ctx,
                                             const std::string&      delimiterValidateHelper = {})
 {
+    ctx.trace(field.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
     const auto typeName = compositeTypeName(field, ctx);
     if (field.compositeSealed)
     {
@@ -535,15 +552,17 @@ void emitPyRuntimeDeserializeCompositeValue(std::ostringstream&     out,
     emitLine(out, indent, "offset_bits += " + sizeVar + " * 8");
 }
 
-void emitPyRuntimeAlignSerialize(std::ostringstream& out,
-                                 int                 indent,
-                                 std::int64_t        alignmentBits,
-                                 const std::string&  prefix)
+void emitPyRuntimeAlignSerialize(std::ostringstream&   out,
+                                 int                   indent,
+                                 std::int64_t          alignmentBits,
+                                 const std::string&    prefix,
+                                 const EmitterContext& ctx)
 {
     if (alignmentBits <= 1)
     {
         return;
     }
+    ctx.trace(EmitTraceOp::Align, alignmentBits);
     const auto alignedVar = prefix + "_aligned_offset_bits";
     const auto bitVar     = prefix + "_align_bit";
     emitLine(out,
@@ -555,36 +574,50 @@ void emitPyRuntimeAlignSerialize(std::ostringstream& out,
     emitLine(out, indent, "offset_bits = " + alignedVar);
 }
 
-void emitPyRuntimeAlignDeserialize(std::ostringstream& out, int indent, std::int64_t alignmentBits)
+void emitPyRuntimeAlignDeserialize(std::ostringstream&   out,
+                                   int                   indent,
+                                   std::int64_t          alignmentBits,
+                                   const EmitterContext& ctx)
 {
     if (alignmentBits <= 1)
     {
         return;
     }
+    ctx.trace(EmitTraceOp::Align, alignmentBits);
     emitLine(out,
              indent,
              "offset_bits = ((offset_bits + " + std::to_string(alignmentBits - 1) + ") // " +
                  std::to_string(alignmentBits) + ") * " + std::to_string(alignmentBits));
 }
 
-void emitPyRuntimeSerializePadding(std::ostringstream& out, int indent, const RuntimeFieldPlan& field)
+void emitPyRuntimeSerializePadding(std::ostringstream&     out,
+                                   int                     indent,
+                                   const RuntimeFieldPlan& field,
+                                   const EmitterContext&   ctx)
 {
     if (field.bitLength <= 0)
     {
         return;
     }
+    ctx.trace(EmitTraceOp::Pad, field.bitLength);
     const auto bitVar = field.fieldName + "_padding_bit";
     emitLine(out, indent, "for " + bitVar + " in range(" + std::to_string(field.bitLength) + "):");
     emitLine(out, indent + 1, "dsdl_runtime.set_bit(out, offset_bits + " + bitVar + ", False)");
+    ctx.trace(EmitTraceOp::Advance, field.bitLength);
     emitLine(out, indent, "offset_bits += " + std::to_string(field.bitLength));
 }
 
-void emitPyRuntimeDeserializePadding(std::ostringstream& out, int indent, const RuntimeFieldPlan& field)
+void emitPyRuntimeDeserializePadding(std::ostringstream&     out,
+                                     int                     indent,
+                                     const RuntimeFieldPlan& field,
+                                     const EmitterContext&   ctx)
 {
     if (field.bitLength <= 0)
     {
         return;
     }
+    ctx.trace(EmitTraceOp::Pad, field.bitLength);
+    ctx.trace(EmitTraceOp::Advance, field.bitLength);
     emitLine(out, indent, "offset_bits += " + std::to_string(field.bitLength));
 }
 
@@ -602,10 +635,12 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
     switch (operation.valueKind)
     {
     case ScriptedFieldValueKind::Padding:
-        emitPyRuntimeSerializePadding(out, indent, field);
+        emitPyRuntimeSerializePadding(out, indent, field, ctx);
         return;
     case ScriptedFieldValueKind::Bool:
+        ctx.trace(EmitTraceOp::WriteScalarBool, field.bitLength);
         emitLine(out, indent, "dsdl_runtime.set_bit(out, offset_bits, bool(" + valueExpr + "))");
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     case ScriptedFieldValueKind::Composite:
@@ -617,9 +652,11 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
         {
             scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
         }
+        ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
         emitLine(out,
                  indent,
                  "dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
@@ -629,7 +666,9 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
         {
             scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
         }
+        ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
         emitLine(out, indent, "dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
@@ -639,9 +678,11 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
         {
             scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
         }
+        ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
         emitLine(out,
                  indent,
                  "dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
@@ -658,7 +699,7 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
     const auto& helpers = operation.body.helpers;
     const auto  cap     = std::to_string(field.arrayCapacity);
 
-    emitPyRuntimeAlignSerialize(out, indent, field.alignmentBits, field.fieldName);
+    emitPyRuntimeAlignSerialize(out, indent, field.alignmentBits, field.fieldName, ctx);
     switch (operation.cardinality)
     {
     case ScriptedFieldCardinality::Scalar:
@@ -668,11 +709,13 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
         const auto arrVar  = field.fieldName + "_arr";
         const auto itemVar = field.fieldName + "_item";
         emitLine(out, indent, arrVar + " = " + valueExpr);
+        ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
         emitLine(out, indent, "if len(" + arrVar + ") != " + cap + ":");
         emitLine(out,
                  indent + 1,
                  "raise ValueError(\"" +
                      codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\")");
+        ctx.trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
         emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
         return;
@@ -685,6 +728,7 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
     const auto itemVar   = field.fieldName + "_item";
     const auto prefixBit = std::to_string(field.arrayLengthPrefixBits);
     emitLine(out, indent, arrVar + " = " + valueExpr);
+    ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
     if (!helpers.arrayValidate.empty())
     {
         emitLine(out, indent, "if not " + helpers.arrayValidate + "(len(" + arrVar + ")):");
@@ -702,10 +746,13 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
     {
         prefixExpr = "int(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
     }
+    ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
     emitLine(out,
              indent,
              "dsdl_runtime.write_unsigned(out, offset_bits, " + prefixBit + ", " + prefixExpr + ", False)");
+    ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
     emitLine(out, indent, "offset_bits += " + prefixBit);
+    ctx.trace(EmitTraceOp::ElemLoop);
     emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
     emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
 }
@@ -723,10 +770,12 @@ void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
     switch (operation.valueKind)
     {
     case ScriptedFieldValueKind::Padding:
-        emitPyRuntimeDeserializePadding(out, indent, field);
+        emitPyRuntimeDeserializePadding(out, indent, field, ctx);
         return;
     case ScriptedFieldValueKind::Bool:
+        ctx.trace(EmitTraceOp::ReadScalarBool, field.bitLength);
         emitLine(out, indent, targetExpr + " = dsdl_runtime.get_bit(data, offset_bits)");
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     case ScriptedFieldValueKind::Composite:
@@ -734,6 +783,7 @@ void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
         return;
     case ScriptedFieldValueKind::Unsigned: {
         const auto rawVar = field.fieldName + "_raw";
+        ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
         emitLine(out, indent, rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
         if (!helpers.deserScalar.empty())
         {
@@ -743,11 +793,13 @@ void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
         {
             emitLine(out, indent, targetExpr + " = " + rawVar);
         }
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
     case ScriptedFieldValueKind::Float: {
         const auto rawVar = field.fieldName + "_raw";
+        ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
         emitLine(out, indent, rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
         if (!helpers.deserScalar.empty())
         {
@@ -757,11 +809,13 @@ void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
         {
             emitLine(out, indent, targetExpr + " = " + rawVar);
         }
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
     case ScriptedFieldValueKind::Signed: {
         const auto rawVar = field.fieldName + "_raw";
+        ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
         emitLine(out, indent, rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
         if (!helpers.deserScalar.empty())
         {
@@ -771,6 +825,7 @@ void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
         {
             emitLine(out, indent, targetExpr + " = " + rawVar);
         }
+        ctx.trace(EmitTraceOp::Advance, field.bitLength);
         emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
@@ -787,7 +842,7 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
     const auto& helpers = operation.body.helpers;
     const auto  cap     = std::to_string(field.arrayCapacity);
 
-    emitPyRuntimeAlignDeserialize(out, indent, field.alignmentBits);
+    emitPyRuntimeAlignDeserialize(out, indent, field.alignmentBits, ctx);
     switch (operation.cardinality)
     {
     case ScriptedFieldCardinality::Scalar:
@@ -797,6 +852,7 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
         const auto arrVar  = field.fieldName + "_arr";
         const auto itemVar = field.fieldName + "_item";
         emitLine(out, indent, arrVar + " = []");
+        ctx.trace(EmitTraceOp::ElemLoop);
         emitLine(out, indent, "for _ in range(" + cap + "):");
         emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
         emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
@@ -812,7 +868,9 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
     const auto itemVar    = field.fieldName + "_item";
     const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
     const auto rawLenVar  = field.fieldName + "_len_raw";
+    ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
     emitLine(out, indent, rawLenVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, " + prefixBits + "))");
+    ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
     emitLine(out, indent, "offset_bits += " + prefixBits);
     if (!helpers.deserArrayPrefix.empty())
     {
@@ -822,6 +880,7 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
     {
         emitLine(out, indent, lenVar + " = " + rawLenVar);
     }
+    ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
     if (!helpers.arrayValidate.empty())
     {
         emitLine(out, indent, "if not " + helpers.arrayValidate + "(" + lenVar + "):");
@@ -835,6 +894,7 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
              "raise ValueError(\"" +
                  codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\")");
     emitLine(out, indent, arrVar + " = []");
+    ctx.trace(EmitTraceOp::ElemLoop);
     emitLine(out, indent, "for _ in range(" + lenVar + "):");
     emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
     emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
@@ -920,24 +980,30 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "tag = int(value._tag)");
         if (!sectionHelperNames.unionTagValidate.empty())
         {
+            ctx.trace(EmitTraceOp::ValidateTag);
             emitLine(out, 1, "if not " + sectionHelperNames.unionTagValidate + "(tag):");
             emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
         }
         if (!sectionHelperNames.serUnionTagMask.empty())
         {
+            ctx.trace(EmitTraceOp::MaskTag);
             emitLine(out, 1, "tag = int(" + sectionHelperNames.serUnionTagMask + "(tag))");
         }
+        ctx.trace(EmitTraceOp::WriteTag, operationPlan->unionTagBits);
         emitLine(out,
                  1,
                  "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(operationPlan->unionTagBits) +
                      ", tag, False)");
+        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
         emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
 
+        ctx.trace(EmitTraceOp::Switch);
         bool first = true;
         for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
+            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
             const auto optionValueExpr = "value." + field.fieldName;
             emitLine(out, 2, "if " + optionValueExpr + " is None:");
@@ -948,6 +1014,7 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
             emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
             first = false;
         }
+        ctx.trace(EmitTraceOp::DefaultBadTag);
         emitLine(out, 1, "else:");
         emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
         emitLine(out, 1, "aligned_offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
@@ -964,33 +1031,41 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "data = bytes(data)");
         emitDeserializeHelperBindings();
         emitLine(out, 1, "offset_bits = 0");
+        ctx.trace(EmitTraceOp::ReadTag, operationPlan->unionTagBits);
         emitLine(out,
                  1,
                  "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " +
                      std::to_string(operationPlan->unionTagBits) + "))");
+        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
         emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
         if (!sectionHelperNames.deserUnionTagMask.empty())
         {
+            ctx.trace(EmitTraceOp::MaskTag);
             emitLine(out, 1, "tag = int(" + sectionHelperNames.deserUnionTagMask + "(tag))");
         }
         if (!sectionHelperNames.unionTagValidate.empty())
         {
+            ctx.trace(EmitTraceOp::ValidateTag);
             emitLine(out, 1, "if not " + sectionHelperNames.unionTagValidate + "(tag):");
             emitLine(out,
                      2,
                      "raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
         }
+        ctx.trace(EmitTraceOp::StoreTag);
         emitLine(out, 1, "value = " + typeName + "(_tag=tag)");
 
+        ctx.trace(EmitTraceOp::Switch);
         first = true;
         for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
+            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
             emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
             emitPyRuntimeDeserializeFieldValue(out, 2, scriptedField, "value." + field.fieldName, ctx);
             first = false;
         }
+        ctx.trace(EmitTraceOp::DefaultBadTag);
         emitLine(out, 1, "else:");
         emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
         emitLine(out, 1, "offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
@@ -1321,7 +1396,8 @@ llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
 llvm::Error emitPython(const SemanticModule&    semantic,
                        mlir::ModuleOp           module,
                        const PythonEmitOptions& options,
-                       DiagnosticEngine&        diagnostics)
+                       DiagnosticEngine&        diagnostics,
+                       EmitTraceSink*           traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1343,6 +1419,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
 
     const auto     packageComponents = splitPackageName(options.packageName);
     EmitterContext ctx(semantic, packageComponents);
+    ctx.setTraceSink(traceSink);
 
     std::filesystem::path outRoot(options.outDir);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
