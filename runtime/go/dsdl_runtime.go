@@ -237,11 +237,11 @@ func Float16Pack(value float32) uint16 {
 		inBits &= roundMask
 		scaled := math.Float32frombits(inBits) * math.Float32frombits(magic)
 		inBits = math.Float32bits(scaled)
-		if inBits >= roundMask {
-			inBits -= roundMask
-		} else {
-			inBits = 0
-		}
+		// Unsigned wraparound is load-bearing here (matches the C reference
+		// `in.bits -= round_mask`): for finite inputs `inBits < roundMask`, so the
+		// subtraction underflows and wraps, which produces the correct mantissa.
+		// A guarded/saturating subtraction would zero every finite value instead.
+		inBits -= roundMask
 		if inBits > f16inf {
 			inBits = f16inf
 		}

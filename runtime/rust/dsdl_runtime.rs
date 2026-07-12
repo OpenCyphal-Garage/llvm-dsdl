@@ -273,7 +273,11 @@ pub fn float16_pack(value: f32) -> u16 {
         in_bits &= round_mask;
         let scaled = f32::from_bits(in_bits) * f32::from_bits(magic);
         in_bits = scaled.to_bits();
-        in_bits = in_bits.saturating_sub(round_mask);
+        // Unsigned wraparound is load-bearing here (matches the C reference
+        // `in.bits -= round_mask`): for finite inputs `in_bits < round_mask`, so the
+        // subtraction underflows and wraps, which produces the correct mantissa. A
+        // saturating subtraction would zero every finite value instead.
+        in_bits = in_bits.wrapping_sub(round_mask);
         if in_bits > f16inf {
             in_bits = f16inf;
         }
