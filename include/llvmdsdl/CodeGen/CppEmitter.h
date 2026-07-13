@@ -29,6 +29,7 @@ class ModuleOp;
 namespace llvmdsdl
 {
 class DiagnosticEngine;
+class EmitTraceSink;
 struct SemanticModule;
 
 /// @file
@@ -79,7 +80,8 @@ struct CppEmitOptions final
 llvm::Error emitCpp(const SemanticModule& semantic,
                     mlir::ModuleOp        module,
                     const CppEmitOptions& options,
-                    DiagnosticEngine&     diagnostics);
+                    DiagnosticEngine&     diagnostics,
+                    EmitTraceSink*        traceSink = nullptr);
 
 }  // namespace llvmdsdl
 

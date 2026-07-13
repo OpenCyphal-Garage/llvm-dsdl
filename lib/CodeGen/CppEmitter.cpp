@@ -199,6 +199,16 @@ public:
         }
     }
 
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -275,6 +285,7 @@ public:
 private:
     DefinitionIndex                              index_;
     std::unordered_map<std::string, std::size_t> versionCountByFullName_;
+    EmitTraceSink*                               traceSink_ = nullptr;
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -308,14 +319,11 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    /// @brief Records one abstract emit op via the shared EmitterContext sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
     void trace(const EmitTraceOp op, const PayloadT payload = -1) const
     {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+        ctx_.trace(op, payload);
     }
 
     void emitSerializeFunction(std::ostringstream&              out,
@@ -528,7 +536,6 @@ public:
 private:
     const EmitterContext& ctx_;
     CppFlavor             flavor_{CppFlavor::Std};
-    EmitTraceSink*        traceSink_ = nullptr;
     std::size_t           id_{0};
 
     std::string nextName(const std::string& prefix)
@@ -1956,7 +1963,8 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
                         const CppFlavor                        flavor,
                         const LoweredFactsMap&                 loweredFacts,
                         const CppEmitOptions&                  options,
-                        const std::unordered_set<std::string>& selectedTypeKeys)
+                        const std::unordered_set<std::string>& selectedTypeKeys,
+                        EmitTraceSink* const                   traceSink)
 {
     auto cRuntime = loadCRuntimeHeader();
     if (!cRuntime)
@@ -1983,6 +1991,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
     }
 
     EmitterContext ctx(semantic);
+    ctx.setTraceSink(traceSink);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys))
@@ -2013,7 +2022,8 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
 llvm::Error emitCpp(const SemanticModule& semantic,
                     mlir::ModuleOp        module,
                     const CppEmitOptions& options,
-                    DiagnosticEngine&     diagnostics)
+                    DiagnosticEngine&     diagnostics,
+                    EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -2036,22 +2046,23 @@ llvm::Error emitCpp(const SemanticModule& semantic,
 
     if (options.profile == CppProfile::Std)
     {
-        return emitProfile(semantic, outRoot, CppFlavor::Std, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, outRoot, CppFlavor::Std, loweredFacts, options, selectedTypeKeys, traceSink);
     }
     if (options.profile == CppProfile::Pmr)
     {
-        return emitProfile(semantic, outRoot, CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, outRoot, CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys, traceSink);
     }
     if (options.profile == CppProfile::Autosar)
     {
-        return emitProfile(semantic, outRoot, CppFlavor::Autosar, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, outRoot, CppFlavor::Autosar, loweredFacts, options, selectedTypeKeys, traceSink);
     }
 
-    if (auto err = emitProfile(semantic, outRoot / "std", CppFlavor::Std, loweredFacts, options, selectedTypeKeys))
+    if (auto err =
+            emitProfile(semantic, outRoot / "std", CppFlavor::Std, loweredFacts, options, selectedTypeKeys, traceSink))
     {
         return err;
     }
-    return emitProfile(semantic, outRoot / "pmr", CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
+    return emitProfile(semantic, outRoot / "pmr", CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys, traceSink);
 }
 
 }  // namespace llvmdsdl

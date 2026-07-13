@@ -30,6 +30,7 @@ class ModuleOp;
 namespace llvmdsdl
 {
 class DiagnosticEngine;
+class EmitTraceSink;
 struct SemanticModule;
 
 /// @file
@@ -111,7 +112,8 @@ struct RustEmitOptions final
 llvm::Error emitRust(const SemanticModule&  semantic,
                      mlir::ModuleOp         module,
                      const RustEmitOptions& options,
-                     DiagnosticEngine&      diagnostics);
+                     DiagnosticEngine&      diagnostics,
+                     EmitTraceSink*         traceSink = nullptr);
 
 }  // namespace llvmdsdl
 

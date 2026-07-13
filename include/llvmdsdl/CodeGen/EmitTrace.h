@@ -10,7 +10,7 @@
 /// @file
 /// Abstract emit-order trace vocabulary shared by the string backends.
 ///
-/// B1 (the emit-order verifier) asserts that every string backend
+/// The emit-order verifier (tools/convergence/emit_order_verifier.py) asserts that every string backend
 /// (Rust/Go/C++/TypeScript/Python) performs the same ordered sequence of
 /// *abstract* serialize/deserialize operations for a given type, independent of
 /// surface spelling. Each backend records these ops into an @ref EmitTraceSink
@@ -109,7 +109,7 @@ public:
     }
 
     /// @brief Returns the recorded ops in emission order.
-    /// @return Ordered events for this (type, direction); the sequence B1 compares across backends.
+    /// @return Ordered events for this (type, direction); the sequence the emit-order verifier compares across backends.
     const std::vector<EmitTraceEvent>& events() const { return events_; }
 
     /// @brief Discards all recorded ops so the sink can be reused for the next (type, direction).

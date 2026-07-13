@@ -1,9 +1,9 @@
 # P2 — Reduce per-backend control-flow duplication (execution plan)
 
 Executes the P2 roadmap line *"Reduce per-backend control-flow duplication (shared
-render template, or a verifier that the six emit orders match)."* Sequenced **B1 → A**:
+render template, or a verifier that the six emit orders match)."* Sequenced **emit-order verifier → shared render template**:
 first a behavioral verifier that the emit orders match (the net), then a shared render
-template (Option A) refactored under that net.
+template refactored under that net.
 
 Companion: [P2_canonical_emit_order.md](P2_canonical_emit_order.md) — the canonical
 step-order spec (Phase 0 output, the oracle both phases check against).
@@ -23,14 +23,14 @@ step-order spec (Phase 0 output, the oracle both phases check against).
 - **Two order-producers exist**: native (`PlannedFieldStep` walk via `traverseNativeSection`)
   and scripted (`buildScriptedSectionOperationPlan`, `ScriptedOperationPlan.cpp`, used by
   TS/Python). The end-state unifies them onto one step IR; the plan bridges incrementally.
-- Because the native traversal already exists, **Option A is "reify a callback stream that
+- Because the native traversal already exists, **the shared render template is "reify a callback stream that
   already exists", not "six renderers from scratch."**
 
-## Why B1 before A
+## Why the emit-order verifier comes before the shared render template
 
-B1 is A's safety net. Once B1's golden trace is green and stable, Option A becomes a
+The emit-order verifier is the shared render template's safety net. Once the emit-order verifier's golden trace is green and stable, the shared render template becomes a
 **behavior-preserving** refactor: the trace proves emitted order is byte-identical before and
-after. Without the net, A is a large refactor betting against golden-output regressions with
+after. Without the net, the shared render template is a large refactor betting against golden-output regressions with
 nothing underneath.
 
 ---
@@ -43,35 +43,35 @@ fold-into-write, matching Rust/Go; TS to be normalized in Phase 1d).
 
 **DoD**: reviewed step list; every current divergence flagged normalize-or-accept. ✅
 
-## Phase 1 — B1: the emit-order verifier (~3–6 days)
+## Phase 1 — the emit-order verifier (~3–6 days)
 
 | Step | Work | Files |
 |---|---|---|
 | 1a | `enum class EmitTraceOp` + null-by-default `EmitTraceSink` (zero cost when off) | new `include/llvmdsdl/CodeGen/EmitTrace.h` |
 | 1b | `trace(op, …)` calls **at the text-emission site** in `emitSerialize{Union,Scalar,Array,Composite,Padding}` + align helpers | `{Rust,Go,Cpp,Ts,Python}Emitter.cpp` |
 | 1c | Comparator ctest: per fixture × direction, collect 5 traces, normalize, assert identical; + mutation/negative test | `test/integration/CMakeLists.txt`, reuse existing fixture DSDL |
-| 1d | Normalize genuine **abstract-order** divergences B1 surfaces (enumerated once instrumented). NB: TS mask-placement is spelling-only — a B1 insensitivity check, not a fix | emitters |
-| 1e | Add to CI; relabel marker-regex "convergence 100" as an infra lint, point the real number at B1 | `tools/convergence/*`, `cmake/RunConvergenceReport.cmake` |
+| 1d | Normalize genuine **abstract-order** divergences the emit-order verifier surfaces (enumerated once instrumented). NB: TS mask-placement is spelling-only — a emit-order-verifier insensitivity check, not a fix | emitters |
+| 1e | Add to CI; relabel marker-regex "convergence 100" as an infra lint, point the real number at the emit-order verifier | `tools/convergence/*`, `cmake/RunConvergenceReport.cmake` |
 
 **Critical design point**: place `trace()` calls at the **spelling layer** (where text is
 produced), not in the shared traversal. (1) tracing the traversal is tautological for order;
-(2) spelling-site traces **survive Phase 2** — when A changes *who calls* the spelling, the
+(2) spelling-site traces **survive Phase 2** — when the shared render template changes *who calls* the spelling, the
 spelling still traces the same tokens in the same order, so the golden trace is unchanged and
-genuinely proves A preserved behavior.
+genuinely proves the shared render template preserved behavior.
 
 **DoD**: ctest green across all `test/integration` fixtures; mutation test red; CI runs it;
 convergence claim relabeled (closes the G4 honesty gap).
 
-> **GATE:** B1 green + stable on the branch before any Phase 2 work.
+> **GATE:** the emit-order verifier green + stable on the branch before any Phase 2 work.
 
-## Phase 2 — A: shared render template, union prologue first (~1–2 wks prologue; deeper optional)
+## Phase 2 — the shared render template, union prologue first (~1–2 wks prologue; deeper optional)
 
 | Step | Work | Files |
 |---|---|---|
 | 2a | `EmitStep` IR + `renderSteps(steps, BackendSpelling&)`; reify the `traverseNativeSection` callback sequence into `std::vector<EmitStep>` and **decompose `onUnionDispatch`** into ordered union sub-steps | new `include/llvmdsdl/CodeGen/EmitStep.h`, `lib/CodeGen/EmitStepRender.cpp`; extend `NativeEmitterTraversal` |
-| 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; B1 proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` |
-| 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); B1 proves parity | `Ts/PythonEmitter.cpp`, `ScriptedOperationPlan.cpp` |
-| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under B1 | emitters |
+| 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; the emit-order verifier proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` |
+| 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); the emit-order verifier proves parity | `Ts/PythonEmitter.cpp`, `ScriptedOperationPlan.cpp` |
+| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under the emit-order verifier | emitters |
 
 **Spelling interface must express the real divergence axes** (this preserves idiomatic
 output): `match` vs `switch` vs `if/elif`; the error channel (`Result`/`Err` vs multi-return
@@ -84,15 +84,15 @@ on 2d. Leave C/EmitC on the MLIR path (step-IR-drives-EmitC is a separate epic; 
 not scope it).
 
 **DoD**: union prologue emitted via one shared step-list + per-backend spelling across all 5;
-B1 trace unchanged (behavior preserved); LOC reduction measured; G1 grade rationale updated.
+emit-order-verifier trace unchanged (behavior preserved); LOC reduction measured; G1 grade rationale updated.
 
 ## Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Trace placed wrong → tautological or breaks under A | Place at spelling site (1b); mutation test (1e) proves it detects reorders |
-| A regresses idiomatic output | Spelling interface expresses match/switch/if + error model; B1 is order-only, so pair with existing golden-output/parity tests for text quality |
-| Two order-producers drift during 2c | Converge onto `EmitStep`; B1 spans both, so drift fails the build |
+| Trace placed wrong → tautological or breaks under the shared render template | Place at spelling site (1b); mutation test (1e) proves it detects reorders |
+| The shared render template regresses idiomatic output | Spelling interface expresses match/switch/if + error model; the emit-order verifier is order-only, so pair with existing golden-output/parity tests for text quality |
+| Two order-producers drift during 2c | Converge onto `EmitStep`; the emit-order verifier spans both, so drift fails the build |
 | "Six" overclaim (C excluded) | Log the C/EmitC boundary explicitly; coverage = "5 string emitters + C via parity" |
 
 ## Roadmap fit
@@ -100,7 +100,7 @@ B1 trace unchanged (behavior preserved); LOC reduction measured; G1 grade ration
 - **Phase 0 + 1 belong in alpha**: cheap, fix the G4 "convergence measures markers not
   behavior" honesty gap, and 1d catches real divergences. Output-affecting only where it
   *fixes* a bug.
-- **Phase 2 is behavior-preserving under B1**, so it is safe even during alpha, and is the
+- **Phase 2 is behavior-preserving under the emit-order verifier**, so it is safe even during alpha, and is the
   natural home for the alpha→beta-1 breaking-change window if we choose to also normalize
   output there.
 

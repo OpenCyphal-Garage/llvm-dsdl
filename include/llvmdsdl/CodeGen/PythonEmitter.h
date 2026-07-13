@@ -69,7 +69,7 @@ struct PythonEmitOptions final
 /// @param[in] module Lowered MLIR module.
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
-/// @param[in] traceSink Optional emit-order trace sink (B1); null (default) disables tracing at zero cost.
+/// @param[in] traceSink Optional emit-order trace sink (for the emit-order verifier); null (default) disables tracing at zero cost.
 /// @return Success or detailed failure.
 llvm::Error emitPython(const SemanticModule&    semantic,
                        mlir::ModuleOp           module,

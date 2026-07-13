@@ -33,6 +33,8 @@ and cross-language round-trip harnesses.
 |---|---|---|
 | **Round-trip identity** — `De(t, SerWire(v) + suffix) == Some((v, suffix))` for every value `v` conforming to type `t` | `lemma RoundTrip` (+ `RoundTripSeq`/`RoundTripCount`), by structural induction | **Unbounded** — holds for *all* conforming values, not a bounded sample |
 | **Canonical acceptance** — the converse: every wire `De` accepts decodes to a conforming value whose re-serialization is exactly the consumed prefix, so `De` accepts *nothing* `SerWire` cannot produce | `lemma DeCanonical` (+ `DeSeqCanonical`/`DeCountCanonical`), mirror induction of `RoundTrip`; `DeAcceptanceCharacterization` states the iff | **Unbounded** — with `RoundTrip` this pins `De` exactly: added leniency breaks `DeCanonical`, added strictness breaks `RoundTrip` |
+| **Tolerant decoding** — DSDL implicit truncation + zero extension, at token granularity: exhausted wire reads as zeros, delimited sections consume exactly their declared length, present-but-wrong data still errors | `DeCompat`; `DeCompatConservative` — agrees with `De` on every wire `De` accepts; `DeCompatRoundTrip`; `ZeroExtension` + `ZeroValueConforms`; `DeCompatConforms`; concrete `CompatTolerates`/`CompatStillRejects` bounds | Conservative extension is **unbounded**; the tolerance shape is pinned by CI-enforced concrete checks |
+| **Version-skew compatibility** — the extensibility contract: for `Evolves(tNew, tOld)` (field append at *delimited* boundaries only), a new reader decodes an old wire to `Upgrade(v)` (appended fields read as zeros) and an old reader decodes a new wire to `Downgrade(v)` (appended fields skipped via the delimiter) | `lemma OldWireNewReader` / `lemma NewWireOldReader` (+ seq/elems/section-body lemmas and zero-footprint support); `UpgradeConforms`/`DowngradeConforms`; `VersionSkewExample` is the concrete CI-enforced bookend | **Unbounded**, both directions; sealed layouts admit **no** append rule — adding one breaks the proofs (mutation-tested) |
 | **Bounds safety** — `De` never reads past the buffer on any wire (truncated, empty, adversarial) | `De` is a **total** `function` with no precondition; Dafny rejects any unguarded token access | By construction |
 | **Emit-order oracle** — the accepted serialize/deserialize op orderings | `SerOrderOK` / `DeOrderOK` predicates; `SerOps` / `DeOps` are the canonical traces | Predicates are the definition B1 applies to real backend traces; `CanonicalTracesOrderOK` proves the canonical traces satisfy them — **unbounded**, for *all* values (concat-closure lemmas + structural induction) |
 
@@ -60,11 +62,17 @@ the generators are checked against it by B1."* Do not call it "proven serializat
 project's stated top risk is claiming proofs the code doesn't deliver.)
 
 `DeCanonical` is a statement about the **abstract token wire**: the model's wire grammar is
-unambiguous — uniquely decodable and uniquely encodable. Its job is to pin the model's `De`
-against leniency drift. Do **not** cite it as "decoders reject non-canonical input": real DSDL
-decode is deliberately *more tolerant* than the model (e.g. delimited sections longer than the
-nested payload are accepted for version skew), and that tolerance is intentionally outside the
-model's scope.
+unambiguous — uniquely decodable and uniquely encodable. Its job is to pin the model's strict
+`De` against leniency drift. Do **not** cite it as "decoders reject non-canonical input": real
+DSDL decode is deliberately *more tolerant*, and that tolerance is modeled separately by
+`DeCompat` (implicit truncation + zero extension). `DeCompat` deliberately has **no**
+canonicity theorem — its acceptance is a strict superset of the canonical wires — so its
+envelope is `DeCompatConservative`, `DeCompatConforms`, and the concrete `CompatTolerates` /
+`CompatStillRejects` checks. Cross-*version* compatibility **is** proven at the model level
+(`OldWireNewReader`/`NewWireOldReader`), but note its scope: `Evolves` covers **field append
+at delimited boundaries** only — no union-option additions, no capacity or width changes.
+Cite it as *"the model's evolution rules are machine-checked"*; the generated decoders are
+still linked to the model only by B1 and the empirical harnesses.
 
 ## Run
 
@@ -79,14 +87,17 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
 ## Extend
 
 - Add constructors/edge cases to the datatypes and extend the matches in `RoundTrip`,
-  `DeCanonical`, and `SerOpsOrderOK`/`DeOpsOrderOK` — the proofs are by induction, so each
-  new case is local: show the new head block satisfies the predicate, then stitch with the
-  concat lemma.
+  `DeCanonical`, `WFTyp`/`ZeroValue`/`DeCompat` (+ its lemma family),
+  `Evolves`/`Upgrade`/`Downgrade` (+ the skew lemmas), and `SerOpsOrderOK`/`DeOpsOrderOK` —
+  the proofs are by induction, so each new case is local: show the new head block satisfies
+  the predicate, then stitch with the concat lemma.
 - Ordering differences that are **accepted** (e.g. Rust's optional fixed-array `LEN_CHECK`,
   absent in Go/C++ because their fixed arrays are compile-time-sized — the D2/D3 entries in the
   prose spec) are modeled by making the op optional in the predicate, never silently ignored.
 
 ## Files
 
-- `CyphalSerdes.dfy` — datatypes, `SerWire`/`De`, `SerOps`/`DeOps`, ordering predicates, and the
-  round-trip, canonical-acceptance, and trace-ordering proofs.
+- `CyphalSerdes.dfy` — datatypes, `SerWire`/`De`/`DeCompat`, `SerOps`/`DeOps`, ordering
+  predicates, and the round-trip, canonical-acceptance, tolerant-decode
+  (truncation/zero-extension), version-skew (`Evolves`/`Upgrade`/`Downgrade`), and
+  trace-ordering proofs.

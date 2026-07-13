@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -39,6 +40,7 @@
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
@@ -61,6 +63,28 @@
 
 namespace
 {
+
+// Emit-order verifier side channel: writes the abstract op trace a string emitter recorded into
+// `sink` to `path`, one op per line ("OP_NAME" or "OP_NAME <payload>"). The comparator diffs
+// these across backends; enabled per run by the LLVMDSDL_EMIT_TRACE environment variable.
+void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink)
+{
+    std::ofstream os(path, std::ios::binary | std::ios::trunc);
+    if (!os)
+    {
+        llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
+        return;
+    }
+    for (const auto& event : sink.events())
+    {
+        os << llvmdsdl::emitTraceOpName(event.op);
+        if (event.payload >= 0)
+        {
+            os << ' ' << event.payload;
+        }
+        os << '\n';
+    }
+}
 
 struct CliOptions final
 {
@@ -1378,6 +1402,12 @@ int main(int argc, char** argv)
 
     logVerbose(1, "running backend emission");
 
+    // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
+    // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
+    const char* const              emitTraceEnv     = std::getenv("LLVMDSDL_EMIT_TRACE");
+    llvmdsdl::EmitTraceSink        emitTraceSink;
+    llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
+
     if (options.targetLanguage == "c")
     {
         llvmdsdl::CEmitOptions emitOptions;
@@ -1409,10 +1439,14 @@ int main(int argc, char** argv)
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (emitTraceSinkPtr != nullptr)
+        {
+            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -1436,10 +1470,14 @@ int main(int argc, char** argv)
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (emitTraceSinkPtr != nullptr)
+        {
+            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -1459,10 +1497,14 @@ int main(int argc, char** argv)
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (emitTraceSinkPtr != nullptr)
+        {
+            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -1483,10 +1525,14 @@ int main(int argc, char** argv)
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitTs(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitTs(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (emitTraceSinkPtr != nullptr)
+        {
+            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -1507,10 +1553,14 @@ int main(int argc, char** argv)
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (emitTraceSinkPtr != nullptr)
+        {
+            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))

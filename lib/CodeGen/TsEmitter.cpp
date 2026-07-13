@@ -94,7 +94,7 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
     void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).

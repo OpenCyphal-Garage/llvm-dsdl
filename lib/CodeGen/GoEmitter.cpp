@@ -155,6 +155,16 @@ public:
     {
     }
 
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -201,6 +211,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    EmitTraceSink*  traceSink_ = nullptr;
 };
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
@@ -313,14 +324,11 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    /// @brief Records one abstract emit op via the shared EmitterContext sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
     void trace(const EmitTraceOp op, const PayloadT payload = -1) const
     {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+        ctx_.trace(op, payload);
     }
 
     void emitSerializeFunction(std::ostringstream&        out,
@@ -495,7 +503,6 @@ private:
     const EmitterContext&                     ctx_;
     std::string                               currentPackagePath_;
     const std::map<std::string, std::string>& importAliases_;
-    EmitTraceSink*                            traceSink_ = nullptr;
     std::size_t                               id_{0};
 
     std::string nextName(const std::string& prefix)
@@ -1317,7 +1324,8 @@ std::string renderGoMod(const GoEmitOptions& options)
 llvm::Error emitGo(const SemanticModule& semantic,
                    mlir::ModuleOp        module,
                    const GoEmitOptions&  options,
-                   DiagnosticEngine&     diagnostics)
+                   DiagnosticEngine&     diagnostics,
+                   EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1354,6 +1362,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
     }
 
     EmitterContext ctx(semantic);
+    ctx.setTraceSink(traceSink);
 
     for (const auto& def : semantic.definitions)
     {

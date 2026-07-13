@@ -121,6 +121,16 @@ public:
     {
     }
 
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
+    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+
+    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    template <typename PayloadT = std::int64_t>
+    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
+    {
+        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -193,6 +203,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    EmitTraceSink*  traceSink_ = nullptr;
 };
 
 std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -272,14 +283,11 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (B1). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
+    /// @brief Records one abstract emit op via the shared EmitterContext sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
     void trace(const EmitTraceOp op, const PayloadT payload = -1) const
     {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
+        ctx_.trace(op, payload);
     }
 
     void emitSerialize(std::ostringstream&              out,
@@ -465,7 +473,6 @@ public:
 private:
     const EmitterContext&                               ctx_;
     const std::unordered_map<std::string, std::string>& poolClassConstExprByField_;
-    EmitTraceSink*                                      traceSink_ = nullptr;
     std::size_t                                         id_{0};
 
     std::string poolClassConstExprForField(const std::string& fieldName) const
@@ -1561,7 +1568,8 @@ std::string renderCargoToml(const RustEmitOptions& options)
 llvm::Error emitRust(const SemanticModule&  semantic,
                      mlir::ModuleOp         module,
                      const RustEmitOptions& options,
-                     DiagnosticEngine&      diagnostics)
+                     DiagnosticEngine&      diagnostics,
+                     EmitTraceSink*         traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1616,6 +1624,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     }
 
     EmitterContext ctx(semantic);
+    ctx.setTraceSink(traceSink);
 
     std::map<std::string, std::set<std::string>> dirToSubdirs;
     std::map<std::string, std::set<std::string>> dirToFiles;

@@ -344,7 +344,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 ### P2 — Maturity / maintainability
 
-- [ ] Reduce per-backend control-flow duplication (shared render template, or a verifier that the six emit orders match) — directly strengthens G1. **Execution plan: [docs/plans/P2_emit_order_dedup.md](plans/P2_emit_order_dedup.md)** (sequenced B1 verifier → A shared template; canonical-order oracle in [P2_canonical_emit_order.md](plans/P2_canonical_emit_order.md)). *In progress on branch `p2-emit-order-dedup`.*
+- [ ] Reduce per-backend control-flow duplication (shared render template, or a verifier that the six emit orders match) — directly strengthens G1. **Execution plan: [docs/plans/P2_emit_order_dedup.md](plans/P2_emit_order_dedup.md)** (sequenced emit-order verifier → shared render template; canonical-order oracle in [P2_canonical_emit_order.md](plans/P2_canonical_emit_order.md)). *In progress on branch `p2-emit-order-dedup`.*
 - [ ] Remove dead `dsdl.field`/`dsdl.constant` ops; add proactive verifiers in lowering.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.

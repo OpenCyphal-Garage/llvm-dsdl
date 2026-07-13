@@ -200,6 +200,39 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;convergence"
   )
 
+  # Emit-order verifier (golden step-trace): runs dsdlc over fixtures with the LLVMDSDL_EMIT_TRACE side
+  # channel and checks every backend's emit-order trace is a member of the proven-safe
+  # equivalence class (the ordering the Dafny oracle proves for the canonical), plus
+  # cross-backend wire-skeleton agreement. Only needs dsdlc + Python (no target toolchains).
+  add_test(
+    NAME llvmdsdl-emit-order-verifier
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
+        --dsdlc $<TARGET_FILE:dsdlc>
+  )
+
+  set_tests_properties(
+    llvmdsdl-emit-order-verifier
+    PROPERTIES
+      LABELS "integration;convergence;emit-order"
+  )
+
+  # Negative control: the membership check must reject a mask-before-validate reorder.
+  add_test(
+    NAME llvmdsdl-emit-order-verifier-selftest
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
+        --selftest
+  )
+
+  set_tests_properties(
+    llvmdsdl-emit-order-verifier-selftest
+    PROPERTIES
+      LABELS "integration;convergence;emit-order"
+  )
+
   if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
     add_test(
       NAME llvmdsdl-embedded-uavcan-catalog-guard

@@ -2,8 +2,8 @@
 
 Phase 0 output for [P2_emit_order_dedup.md](P2_emit_order_dedup.md). This is the reference
 **abstract** serialize/deserialize step order that every string backend
-(Rust, Go, C++, TypeScript, Python) must follow. The B1 verifier asserts this order; Option A's
-shared render template produces it by construction.
+(Rust, Go, C++, TypeScript, Python) must follow. The emit-order verifier asserts this order; the shared render template
+produces it by construction.
 
 This prose is the human-readable projection of the machine-checked model in
 [spec/dafny/CyphalSerdes.dfy](../../spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
@@ -17,12 +17,12 @@ which already agree on it. Where a backend differs, it is recorded under
 
 ## Abstract order vs spelling — the load-bearing distinction
 
-B1 checks **abstract op order**, not surface text. Two backends agree if they perform the same
+the emit-order verifier checks **abstract op order**, not surface text. Two backends agree if they perform the same
 ordered sequence of abstract ops, regardless of how each op is spelled.
 
-- **Abstract op** (B1 asserts these, cross-backend identical): `VALIDATE_TAG`, `MASK_TAG`,
+- **Abstract op** (the emit-order verifier asserts these, cross-backend identical): `VALIDATE_TAG`, `MASK_TAG`,
   `WRITE_TAG`, `ADVANCE`, `SWITCH`, `CASE`, `ALIGN`, `WRITE_SCALAR`, … (full list below).
-- **Spelling** (the Option A visitor varies these; B1 is deliberately blind to them): whether a
+- **Spelling** (the shared-render-template visitor varies these; the emit-order verifier is deliberately blind to them): whether a
   mask is a separate statement or an inline sub-expression; `match` vs `switch` vs `if/elif`;
   `Result`/`Err` vs `(rc,0)` vs negative-int return vs `throw`/`raise`; identifier names;
   indentation.
@@ -30,8 +30,8 @@ ordered sequence of abstract ops, regardless of how each op is spelled.
 Example: in `serialize` of a union tag, Rust/Go write `set_uxx(buf, off, mask(tag), bits)`
 (mask folded into the write argument) while TS emits `tag = mask(tag);` then
 `writeUnsigned(...tag...)` (mask as its own statement). **Both are `VALIDATE_TAG → MASK_TAG →
-WRITE_TAG`** — identical abstract order, different spelling. B1 must treat them as equal. This
-case doubles as a B1 insensitivity test (see [Known differences](#known-differences)).
+WRITE_TAG`** — identical abstract order, different spelling. the emit-order verifier must treat them as equal. This
+case doubles as a emit-order-verifier insensitivity test (see [Known differences](#known-differences)).
 
 ## Two invariant principles
 
@@ -140,15 +140,15 @@ ALIGN(pad.bits) → PAD(write/skip zeroed bits) → ADVANCE(pad.bits)
 `READ_SCALAR{bool|uint|sint|float}` · `LEN_CHECK` · `LEN_VALIDATE` · `LEN_WRITE` · `LEN_READ` ·
 `ELEM_LOOP` · `COMPOSITE_INLINE` · `COMPOSITE_DELIM_HEADER` · `PAD` · `ADVANCE`.
 
-Each op carries a small payload where relevant (bit width, option index, scalar sub-kind). B1
+Each op carries a small payload where relevant (bit width, option index, scalar sub-kind). the emit-order verifier
 normalizes away identifiers and indentation, keeping op + payload.
 
 ## Known differences
 
 | # | Backend(s) | Kind | Canonical decision | Phase |
 |---|---|---|---|---|
-| D1 | TS masks union tag as its own statement (`TsEmitter.cpp:600`); Rust/Go fold it into the write arg | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Keep both; use as a B1 insensitivity test (B1 must report *equal*) | 1c |
-| D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Genuine structural difference, accepted** — the check is type-system-subsumed, not missing. B1 comparator treats `LEN_CHECK` as a backend-optional op (tolerated absent) | 1c comparator |
+| D1 | TS masks union tag as its own statement (`TsEmitter.cpp:600`); Rust/Go fold it into the write arg | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Keep both; use as a emit-order-verifier insensitivity test (the emit-order verifier must report *equal*) | 1c |
+| D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Genuine structural difference, accepted** — the check is type-system-subsumed, not missing. the emit-order verifier treats `LEN_CHECK` as a backend-optional op (tolerated absent) | 1c comparator |
 | D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits **no `ELEM_LOOP` / per-element scalar ops** for that case | **Genuine C++ optimization** — real divergence on fixed-bool-array fixtures only | Note as accepted; 1c comparator scopes or annotates fixed-bool-array cases |
 | D4 | **Python union deserialize** emits `READ_TAG → ADVANCE → MASK_TAG → VALIDATE_TAG → STORE_TAG`; Rust/canonical is `READ → MASK → STORE → VALIDATE → ADVANCE` | **Genuine order difference, safe** — read-before-mask-before-validate all hold (Python even validates *before* storing); only `STORE`/`ADVANCE` bookkeeping positions differ | **Accept**, and *loosen the model's `DeOrderOK`* to the safety-critical core rather than pin `STORE`/`ADVANCE` to Rust's positions. Reveals the oracle was over-constrained. | model refinement + 1c |
 | D5 | *(further genuine reorderings, if any, enumerated once the comparator runs over all five)* | — | Normalize (fix) or accept + document | 1d |
