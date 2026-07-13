@@ -51,12 +51,17 @@ jobs:
       - name: Prepare toolchains
         uses: ./.github/actions/setup-language-toolchains
 
-      - name: Provision reference DSDL compiler (nunavut + pydsdl)
-        # The differential parity lane compares our generated C against the
-        # reference compiler (Nunavut). The harness consumes both as source trees
-        # via PYTHONPATH — nunavut vendors Jinja2 and pydsdl has no runtime deps,
-        # so no pip install is needed. Pinned to the exact commits validated
-        # together; bump both when intentionally updating the reference.
+      - name: Provision peer DSDL compiler for corroboration (nunavut + pydsdl)
+        # The differential parity lane compares our generated C against Nunavut as a
+        # pinned PEER implementation — corroboration, not an oracle. The Cyphal
+        # Specification is the truth and spec/dafny/CyphalSerdes.dfy is the
+        # machine-checked oracle (see its Authority hierarchy); a mismatch here is an
+        # investigation adjudicated by the spec, as likely a Nunavut defect as ours.
+        # With the SHAs pinned, a newly appearing mismatch implicates our change
+        # first, which is what makes this lane a useful blocking tripwire. The
+        # harness consumes both repos as source trees via PYTHONPATH — nunavut
+        # vendors Jinja2 and pydsdl has no runtime deps, so no pip install is
+        # needed. Bump both SHAs only as a deliberate, adjudicated update.
         env:
           NUNAVUT_SHA: 37095abb9fac47f924a52500bf4cebe2256dcff5  # tag 3.0.1b1
           PYDSDL_SHA: a1506ce424589cc049b3fe4fece1e52626b55529   # pydsdl 1.23.0-dev

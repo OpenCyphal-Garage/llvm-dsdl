@@ -24,8 +24,22 @@ counterpart of the `LEN_VALIDATE` op, the same way `VALIDATE_TAG` corresponds to
 tag-range guard.
 
 **Out of scope — verified empirically instead:** bit-exact byte layout, integer widths,
-saturation/truncation, endianness, NaN payloads. Those are covered by the differential-parity
-and cross-language round-trip harnesses.
+saturation/truncation, endianness, NaN payloads. Those are covered by the **spec-derived
+primitive golden vectors** (`test/integration/primitive_vectors.txt` — absolute wire bytes
+asserted against all five runtimes) and the cross-language round-trip harnesses, with the
+pinned Nunavut lane as *corroboration*.
+
+## Authority hierarchy
+
+1. **The Cyphal Specification is the truth.**
+2. **This model is the machine-checked oracle** for what it models (op ordering, structural
+   round-trip, read-path bounds safety), re-verified in CI on every change.
+3. **Enforcement is spec-derived**: the emit-order verifier checks every string backend
+   against the ordering class proven here; the primitive golden vectors pin absolute wire
+   bytes at the primitive level; cross-backend parity pins self-consistency.
+4. **Nunavut is a pinned peer implementation, not a reference.** Agreement corroborates;
+   a mismatch is an investigation *adjudicated by the specification* — it is as likely to
+   be a Nunavut defect as one of ours, and neither side wins by default.
 
 ## What is proven
 

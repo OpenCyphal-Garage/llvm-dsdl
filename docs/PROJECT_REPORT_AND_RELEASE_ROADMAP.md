@@ -132,7 +132,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 
 1. **Re-found the three scorecards on behavior, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/CONVERGENCE_SCORECARD.md`) rather than made behavioral (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
 2. ✅ **Done (2026-07-03).** Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing.
-3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads); coverage broadened 6 → 10 cases incl. a byte-exact non-float union, fixed+variable arrays, nested composites, and a narrow scalar. Remaining: `register.Value` byte-exact (gated on the float→double codegen fix, P2) + `reg`/UDRAL namespace + `port.List` (needs larger harness buffers). See the P0 entry.
+3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads); coverage broadened 6 → 10 cases incl. a byte-exact non-float union, fixed+variable arrays, nested composites, and a narrow scalar. **Reframed and closed (2026-07-12):** Nunavut is a *pinned peer implementation used for corroboration*, not the oracle — the Cyphal Specification is the truth and `spec/dafny/CyphalSerdes.dfy` is the machine-checked oracle. Further coverage expansion is retired by decision; see the P0 entry for the authority hierarchy and rationale.
 
 **Safety / high-assurance:**
 
@@ -177,7 +177,32 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   200k coverage-guided runs clean, 7 valid seeds emitted; the ASan runtime itself was
   unrunnable only on the macOS Apple-Silicon dev box — a known shadow-memory startup
   hang — so the lane is intentionally Linux-only.)*
-- [~] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
+- [x] **Reference-parity in CI**, byte-exact incl. unions/floats, broad type coverage.
+  ✅ **Closed (2026-07-12) — reframed as corroboration, expansion retired by decision.**
+  **The authority hierarchy is now explicit:** the **Cyphal Specification is the truth**;
+  **`spec/dafny/CyphalSerdes.dfy` is the machine-checked oracle** (op ordering, round-trip,
+  read-path bounds safety — re-verified in CI); enforcement is spec-derived — the emit-order
+  verifier (all 5 string backends vs the proven ordering class, full corpus), the
+  spec-derived primitive golden vectors (`test/integration/primitive_vectors.txt`, absolute
+  wire bytes at the primitive level, all 5 runtimes), cross-backend byte parity
+  (C↔{Cpp,Rust,Go,TS} + Python), and the sanitizer/fuzz lanes. **Nunavut is a pinned peer
+  implementation, not a reference**: agreement is corroboration; a mismatch is an
+  *investigation adjudicated by the specification* and is as likely to be a Nunavut defect
+  as ours. **The 10-case lane is retained, pinned, and blocking** — with Nunavut pinned to
+  exact SHAs it functions as a regression tripwire (a newly appearing mismatch implicates
+  our change first), and the 10 cases already cover every wire-shape class: byte-exact
+  non-float union, float union, fixed + variable arrays, nested composites, delimited
+  types, narrow non-byte-aligned scalars, floats at all widths. **The retired remainder**
+  (`reg`/UDRAL namespace, `node.port.List`) would have added *instances* of already-covered
+  shapes, not new shapes — instance-level correctness across the whole corpus is enforced by
+  shape-generic machinery (single-source step-tree sequencing + the verifier + cross-backend
+  parity), so expansion would have increased exposure to Nunavut defects without adding
+  spec-grounded evidence. *(Honest residual: absolute byte layout above the primitive level
+  rests on the primitive vectors + the 10 corroboration cases + single-source layout
+  planning. If more absolute-layout confidence is ever wanted, the spec-consistent
+  instrument is composite golden wire vectors hand-derived from the specification — not
+  more Nunavut coverage.)*
+  *(Pre-reframe history below.)*
   *(Runs in CI + byte-exact for all non-float and finite-float cases — 2026-07-10.)*
   **(a) Now runs in CI, non-silently.** The `linux` job provisions pinned
   nunavut+pydsdl checkouts (`.github/workflows/ci.yml`; consumed as source trees

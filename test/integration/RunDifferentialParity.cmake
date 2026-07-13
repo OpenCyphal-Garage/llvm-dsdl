@@ -1,3 +1,12 @@
+# Differential parity vs Nunavut — CORROBORATION, not an oracle.
+#
+# The Cyphal Specification is the truth; spec/dafny/CyphalSerdes.dfy is the
+# machine-checked oracle (see its Authority hierarchy). Nunavut is a pinned peer
+# implementation: byte agreement here corroborates both implementations, and a
+# mismatch is an investigation adjudicated by the specification — it is as likely
+# to be a Nunavut defect as ours. The 10 cases cover every wire-shape class;
+# coverage expansion was deliberately retired (2026-07-12, see the roadmap P0
+# entry) in favor of spec-derived verification.
 cmake_minimum_required(VERSION 3.24)
 
 foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER PYTHON_EXECUTABLE SOURCE_ROOT NUNAVUT_REPO PYDSDL_REPO)

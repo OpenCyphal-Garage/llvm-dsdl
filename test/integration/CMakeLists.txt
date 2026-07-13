@@ -3080,7 +3080,7 @@ set(LLVMDSDL_NUNAVUT_REPO "${LLVMDSDL_SOURCE_DIR}/../nunavut"
 set(LLVMDSDL_PYDSDL_REPO "${LLVMDSDL_SOURCE_DIR}/../pydsdl"
     CACHE PATH "Path to a pydsdl source checkout for the differential parity test")
 # When ON, a missing prerequisite is a hard configure error instead of a silent
-# skip, so CI cannot report a green run while the reference-parity lane was never
+# skip, so CI cannot report a green run while the Nunavut corroboration lane was never
 # built (local green != false confidence).
 option(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY
     "Fail configuration if the Nunavut differential parity prerequisites are missing" OFF)
