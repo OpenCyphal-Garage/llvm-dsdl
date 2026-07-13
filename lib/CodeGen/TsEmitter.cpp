@@ -671,19 +671,426 @@ private:
     std::string                      badTagDiagnosticPrefix_;
 };
 
+/// @brief TypeScript spelling of the shared recursive field-body steps (see EmitStep.h).
+///
+/// One spelling covers all four contexts (struct/union x serialize/deserialize):
+/// the union context differs only in declare-vs-assign store style, diagnostic
+/// flag, temp suffixes, and root-expression casts (applied by the caller). Leaf
+/// composite/padding idioms delegate to the existing atomic renderers; all
+/// cross-group and recursive ordering comes from renderFieldSteps.
+class TsFieldSpelling final : public FieldStepSpelling
+{
+public:
+    TsFieldSpelling(std::ostringstream&               out,
+                    const EmitterContext&             ctx,
+                    const ScriptedFieldOperationPlan& operation,
+                    const int                         indent,
+                    const bool                        unionContext)
+        : out_(out)
+        , ctx_(ctx)
+        , operation_(operation)
+        , indent_(indent)
+        , unionContext_(unionContext)
+    {
+    }
+
+    /// @brief Sets the render direction (padding and store style branch on it).
+    void setDirection(const HelperBindingDirection direction) { direction_ = direction; }
+
+    void spellPad(const FieldEmitStep& step) override
+    {
+        (void) step;
+        const auto& field = operation_.body.field;
+        if (direction_ == HelperBindingDirection::Serialize)
+        {
+            const auto label = unionContext_ ? field.fieldName + "Option" : field.fieldName;
+            emitTsRuntimeSerializePadding(out_, indent_, field, label, ctx_);
+        }
+        else
+        {
+            emitTsRuntimeDeserializePadding(out_, indent_, field, ctx_);
+            if (unionContext_)
+            {
+                emitLine(out_, indent_, "const optionValue = undefined;");
+            }
+        }
+    }
+
+    void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        const auto& field      = operation_.body.field;
+        const auto& helpers    = operation_.body.helpers;
+        const auto  bits       = std::to_string(field.bitLength);
+        const auto  saturating = field.castMode == CastMode::Saturated ? "true" : "false";
+        switch (step.kind)
+        {
+        case FieldStepKind::ScalarBool:
+            ctx_.trace(EmitTraceOp::WriteScalarBool, 1);
+            emitLine(out_, indent_, "dsdlRuntime.setBit(out, offsetBits, " + expr + ");");
+            break;
+        case FieldStepKind::ScalarUint: {
+            std::string scalarExpr = expr;
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx_.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
+            emitLine(out_,
+                     indent_,
+                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
+                         ");");
+            break;
+        }
+        case FieldStepKind::ScalarFloat: {
+            std::string scalarExpr = expr;
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx_.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
+            emitLine(out_, indent_, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
+            break;
+        }
+        case FieldStepKind::ScalarSint: {
+            std::string scalarExpr = expr;
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx_.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
+            emitLine(out_,
+                     indent_,
+                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
+                         ");");
+            break;
+        }
+        default:
+            assert(false && "not a scalar step");
+            break;
+        }
+        ctx_.trace(EmitTraceOp::Advance, field.bitLength);
+        emitLine(out_, indent_, "offsetBits += " + bits + ";");
+    }
+
+    void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        const auto& field   = operation_.body.field;
+        const auto& helpers = operation_.body.helpers;
+        const auto  bits    = std::to_string(field.bitLength);
+        switch (step.kind)
+        {
+        case FieldStepKind::ScalarBool:
+            ctx_.trace(EmitTraceOp::ReadScalarBool, 1);
+            emitStore(expr, "dsdlRuntime.getBit(bytes, offsetBits)");
+            break;
+        case FieldStepKind::ScalarUint: {
+            const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+            const auto        rawVar = field.fieldName + rawSuffix();
+            ctx_.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
+            emitLine(out_, indent_, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            emitStore(expr, normalizeTsDeserScalarExpr(field, helpers, rawVar));
+            break;
+        }
+        case FieldStepKind::ScalarFloat: {
+            const auto rawVar = field.fieldName + rawSuffix();
+            ctx_.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
+            emitLine(out_, indent_, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            emitStore(expr, normalizeTsDeserScalarExpr(field, helpers, rawVar));
+            break;
+        }
+        case FieldStepKind::ScalarSint: {
+            const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
+            const auto        rawVar = field.fieldName + rawSuffix();
+            ctx_.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
+            emitLine(out_, indent_, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            emitStore(expr, normalizeTsDeserScalarExpr(field, helpers, rawVar));
+            break;
+        }
+        default:
+            assert(false && "not a scalar step");
+            break;
+        }
+        ctx_.trace(EmitTraceOp::Advance, field.bitLength);
+        emitLine(out_, indent_, "offsetBits += " + bits + ";");
+    }
+
+    void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        emitTsRuntimeSerializeCompositeValue(out_, indent_, operation_.body.field, expr, ctx_);
+    }
+
+    void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field = operation_.body.field;
+        if (!inElement_ && unionContext_)
+        {
+            emitLine(out_, indent_, "let " + expr + ": " + compositeTypeName(field, ctx_) + ";");
+        }
+        emitTsRuntimeDeserializeCompositeValue(out_,
+                                               indent_,
+                                               field,
+                                               expr,
+                                               ctx_,
+                                               operation_.body.helpers.delimiterValidate);
+    }
+
+    void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field    = operation_.body.field;
+        const auto  cap      = std::to_string(field.arrayCapacity);
+        const auto  fieldArr = field.fieldName + "Array";
+        emitLine(out_, indent_, "const " + fieldArr + " = " + expr + ";");
+        ctx_.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
+        emitLine(out_,
+                 indent_,
+                 "if (!Array.isArray(" + fieldArr + ") || " + fieldArr + ".length !== " + cap + ") {");
+        emitLine(out_,
+                 indent_ + 1,
+                 "throw new Error(\"" +
+                     codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, unionContext_) +
+                     "\");");
+        emitLine(out_, indent_, "}");
+    }
+
+    void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field      = operation_.body.field;
+        const auto& helpers    = operation_.body.helpers;
+        const auto  cap        = std::to_string(field.arrayCapacity);
+        const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
+        const auto  fieldArr   = field.fieldName + "Array";
+        emitLine(out_, indent_, "const " + fieldArr + " = " + expr + ";");
+        emitLine(out_, indent_, "if (!Array.isArray(" + fieldArr + ")) {");
+        emitLine(out_,
+                 indent_ + 1,
+                 "throw new Error(\"" + codegen_diagnostic_text::fieldExpectsArray(field.fieldName, unionContext_) +
+                     "\");");
+        emitLine(out_, indent_, "}");
+        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+        if (!helpers.arrayValidate.empty())
+        {
+            emitLine(out_, indent_, "if (!" + helpers.arrayValidate + "(" + fieldArr + ".length)) {");
+            emitLine(out_,
+                     indent_ + 1,
+                     "throw new Error(\"" +
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) +
+                         "\");");
+            emitLine(out_, indent_, "}");
+        }
+        else
+        {
+            emitLine(out_, indent_, "if (" + fieldArr + ".length > " + cap + ") {");
+            emitLine(out_,
+                     indent_ + 1,
+                     "throw new Error(\"" +
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) +
+                         "\");");
+            emitLine(out_, indent_, "}");
+        }
+        std::string prefixExpr = fieldArr + ".length";
+        if (!helpers.serArrayPrefix.empty())
+        {
+            prefixExpr = "Number(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
+        }
+        ctx_.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
+        emitLine(out_,
+                 indent_,
+                 "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + prefixExpr + ", false);");
+        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+        emitLine(out_, indent_, "offsetBits += " + prefixBits + ";");
+    }
+
+    std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field      = operation_.body.field;
+        const auto& helpers    = operation_.body.helpers;
+        const auto  cap        = std::to_string(field.arrayCapacity);
+        const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
+        const auto  fieldArr   = field.fieldName + "Array";
+        const auto  rawLen     = field.fieldName + "LengthRaw";
+        ctx_.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
+        emitLine(out_,
+                 indent_,
+                 "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + prefixBits +
+                     "));");
+        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+        emitLine(out_, indent_, "offsetBits += " + prefixBits + ";");
+        const auto normalizedLen = field.fieldName + "Length";
+        if (!helpers.deserArrayPrefix.empty())
+        {
+            emitLine(out_,
+                     indent_,
+                     "const " + normalizedLen + " = Number(" + helpers.deserArrayPrefix + "(" + rawLen + "));");
+        }
+        else
+        {
+            emitLine(out_, indent_, "const " + normalizedLen + " = " + rawLen + ";");
+        }
+        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+        if (!helpers.arrayValidate.empty())
+        {
+            emitLine(out_, indent_, "if (!" + helpers.arrayValidate + "(" + normalizedLen + ")) {");
+        }
+        else
+        {
+            emitLine(out_, indent_, "if (" + normalizedLen + " < 0 || " + normalizedLen + " > " + cap + ") {");
+        }
+        emitLine(out_,
+                 indent_ + 1,
+                 "throw new Error(\"" +
+                     codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, unionContext_) +
+                     "\");");
+        emitLine(out_, indent_, "}");
+        emitLine(out_,
+                 indent_,
+                 "const " + fieldArr + ": Array<" + arrayElemType() + "> = new Array(" + normalizedLen + ");");
+        return normalizedLen;
+    }
+
+    std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field    = operation_.body.field;
+        const auto  cap      = std::to_string(field.arrayCapacity);
+        const auto  fieldArr = field.fieldName + "Array";
+        emitLine(out_, indent_, "const " + fieldArr + ": Array<" + arrayElemType() + "> = new Array(" + cap + ");");
+        return cap;
+    }
+
+    std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) expr;
+        const auto& field    = operation_.body.field;
+        const auto  fieldArr = field.fieldName + "Array";
+        const auto  bound    = step.kind == FieldStepKind::VariableArray ? fieldArr + ".length"
+                                                                         : std::to_string(field.arrayCapacity);
+        ctx_.trace(EmitTraceOp::ElemLoop);
+        emitLine(out_, indent_, "for (let i = 0; i < " + bound + "; ++i) {");
+        ++indent_;
+        inElement_ = true;
+        // The union option array came from an `unknown`-typed member, so composite
+        // elements carry an explicit cast for the nested serializer call.
+        if (unionContext_ && field.kind == RuntimeFieldKind::Composite)
+        {
+            return fieldArr + "[i] as " + compositeTypeName(field, ctx_);
+        }
+        return fieldArr + "[i]";
+    }
+
+    std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
+                                              const std::string&   expr,
+                                              const std::string&   countExpr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto fieldArr = operation_.body.field.fieldName + "Array";
+        ctx_.trace(EmitTraceOp::ElemLoop);
+        emitLine(out_, indent_, "for (let i = 0; i < " + countExpr + "; ++i) {");
+        ++indent_;
+        inElement_ = true;
+        return fieldArr + "[i]";
+    }
+
+    void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        inElement_ = false;
+        --indent_;
+        emitLine(out_, indent_, "}");
+    }
+
+    void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        inElement_ = false;
+        --indent_;
+        emitLine(out_, indent_, "}");
+        emitStore(expr, operation_.body.field.fieldName + "Array");
+    }
+
+private:
+    /// @brief Root de-target store: union case bodies declare `const optionValue`,
+    ///        struct bodies assign the member; element targets always assign.
+    void emitStore(const std::string& target, const std::string& valueExpr)
+    {
+        if (!inElement_ && unionContext_)
+        {
+            emitLine(out_, indent_, "const " + target + " = " + valueExpr + ";");
+        }
+        else
+        {
+            emitLine(out_, indent_, target + " = " + valueExpr + ";");
+        }
+    }
+
+    std::string rawSuffix() const
+    {
+        if (inElement_)
+        {
+            return "ItemRaw";
+        }
+        return unionContext_ ? "OptionRaw" : "Raw";
+    }
+
+    std::string arrayElemType() const
+    {
+        const auto& field = operation_.body.field;
+        return field.kind == RuntimeFieldKind::Bool
+                   ? "boolean"
+                   : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx_)
+                                                                : (field.useBigInt ? "bigint" : "number"));
+    }
+
+    std::ostringstream&               out_;
+    const EmitterContext&             ctx_;
+    const ScriptedFieldOperationPlan& operation_;
+    int                               indent_;
+    const bool                        unionContext_;
+    HelperBindingDirection            direction_{};
+    bool                              inElement_{false};
+};
+
+/// @brief Root serialize expression for a union option: optionValue with the
+///        kind-appropriate cast (the option member is `unknown`-typed).
+std::string tsUnionOptionSerializeExpr(const ScriptedFieldOperationPlan& operation, const EmitterContext& ctx)
+{
+    const auto& field = operation.body.field;
+    if (operation.cardinality != ScriptedFieldCardinality::Scalar)
+    {
+        return "optionValue";
+    }
+    switch (operation.valueKind)
+    {
+    case ScriptedFieldValueKind::Bool:
+        return "!!optionValue";
+    case ScriptedFieldValueKind::Composite:
+        return "optionValue as " + compositeTypeName(field, ctx);
+    case ScriptedFieldValueKind::Float:
+        return "optionValue as number";
+    case ScriptedFieldValueKind::Unsigned:
+    case ScriptedFieldValueKind::Signed:
+        return "optionValue as number | bigint";
+    case ScriptedFieldValueKind::Padding:
+        break;
+    }
+    return "optionValue";
+}
+
 /// @brief Renders one TS union serialize case body (option guard + aligned field ops).
-void emitTsUnionSerializeCaseBody(std::ostringstream&              out,
-                                  const EmitterContext&            ctx,
+void emitTsUnionSerializeCaseBody(std::ostringstream&               out,
+                                  const EmitterContext&             ctx,
                                   const ScriptedFieldOperationPlan& scriptedField)
 {
-    const auto& field       = scriptedField.body.field;
-    const auto& helpers     = scriptedField.body.helpers;
-    const auto  cardinality = scriptedField.cardinality;
-    const auto  bits        = std::to_string(field.bitLength);
-    const auto  optionTag   = std::to_string(field.unionOptionIndex);
-    const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
-    const auto  cap         = std::to_string(field.arrayCapacity);
-    const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
+    const auto& field     = scriptedField.body.field;
+    const auto  optionTag = std::to_string(field.unionOptionIndex);
     emitLine(out, 2, "const optionValue = (value as Record<string, unknown>)." + field.fieldName + ";");
     emitLine(out, 2, "if (optionValue === undefined) {");
     emitLine(out,
@@ -692,236 +1099,13 @@ void emitTsUnionSerializeCaseBody(std::ostringstream&              out,
                  codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\");");
     emitLine(out, 2, "}");
     emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option", ctx);
-    if (cardinality == ScriptedFieldCardinality::Scalar)
-    {
-        if (field.kind == RuntimeFieldKind::Padding)
-        {
-            emitTsRuntimeSerializePadding(out, 2, field, field.fieldName + "Option", ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Bool)
-        {
-            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, !!optionValue);");
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitTsRuntimeSerializeCompositeValue(out,
-                                                 2,
-                                                 field,
-                                                 "optionValue as " + compositeTypeName(field, ctx),
-                                                 ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            std::string scalarExpr = "optionValue as number | bigint";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-            emitLine(out,
-                     2,
-                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            std::string scalarExpr = "optionValue as number";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-            emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-        }
-        else
-        {
-            std::string scalarExpr = "optionValue as number | bigint";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-            emitLine(out,
-                     2,
-                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-        {
-            ctx.trace(EmitTraceOp::Advance, field.bitLength);
-            emitLine(out, 2, "offsetBits += " + bits + ";");
-        }
-    }
-    else if (cardinality == ScriptedFieldCardinality::FixedArray)
-    {
-        const auto optionArray = field.fieldName + "Array";
-        emitLine(out, 2, "const " + optionArray + " = optionValue;");
-        ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-        emitLine(out,
-                 2,
-                 "if (!Array.isArray(" + optionArray + ") || " + optionArray + ".length !== " + cap + ") {");
-        emitLine(out,
-                 3,
-                 "throw new Error(\"" +
-                     codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, true) + "\");");
-        emitLine(out, 2, "}");
-        ctx.trace(EmitTraceOp::ElemLoop);
-        emitLine(out, 2, "for (let i = 0; i < " + cap + "; ++i) {");
-        if (field.kind == RuntimeFieldKind::Bool)
-        {
-            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitTsRuntimeSerializeCompositeValue(out,
-                                                 3,
-                                                 field,
-                                                 optionArray + "[i] as " + compositeTypeName(field, ctx),
-                                                 ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-            emitLine(out,
-                     3,
-                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-            emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-        }
-        else
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-            emitLine(out,
-                     3,
-                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-        {
-            ctx.trace(EmitTraceOp::Advance, field.bitLength);
-            emitLine(out, 3, "offsetBits += " + bits + ";");
-        }
-        emitLine(out, 2, "}");
-    }
-    else
-    {
-        const auto optionArray = field.fieldName + "Array";
-        emitLine(out, 2, "const " + optionArray + " = optionValue;");
-        emitLine(out, 2, "if (!Array.isArray(" + optionArray + ")) {");
-        emitLine(out,
-                 3,
-                 "throw new Error(\"" + codegen_diagnostic_text::fieldExpectsArray(field.fieldName, true) +
-                     "\");");
-        emitLine(out, 2, "}");
-        ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-        if (!helpers.arrayValidate.empty())
-        {
-            emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + optionArray + ".length)) {");
-            emitLine(out,
-                     3,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
-            emitLine(out, 2, "}");
-        }
-        else
-        {
-            emitLine(out, 2, "if (" + optionArray + ".length > " + cap + ") {");
-            emitLine(out,
-                     3,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
-            emitLine(out, 2, "}");
-        }
-        std::string prefixExpr = optionArray + ".length";
-        if (!helpers.serArrayPrefix.empty())
-        {
-            prefixExpr = "Number(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
-        }
-        ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
-        emitLine(out,
-                 2,
-                 "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + prefixExpr + ", false);");
-        ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-        emitLine(out, 2, "offsetBits += " + prefixBits + ";");
-        ctx.trace(EmitTraceOp::ElemLoop);
-        emitLine(out, 2, "for (let i = 0; i < " + optionArray + ".length; ++i) {");
-        if (field.kind == RuntimeFieldKind::Bool)
-        {
-            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitTsRuntimeSerializeCompositeValue(out,
-                                                 3,
-                                                 field,
-                                                 optionArray + "[i] as " + compositeTypeName(field, ctx),
-                                                 ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-            emitLine(out,
-                     3,
-                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-            emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-        }
-        else
-        {
-            std::string scalarExpr = optionArray + "[i]";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-            }
-            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-            emitLine(out,
-                     3,
-                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                         saturating + ");");
-        }
-        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-        {
-            ctx.trace(EmitTraceOp::Advance, field.bitLength);
-            emitLine(out, 3, "offsetBits += " + bits + ";");
-        }
-        emitLine(out, 2, "}");
-    }
+    assert(scriptedField.serializeSteps.has_value());
+    TsFieldSpelling spelling(out, ctx, scriptedField, 2, /*unionContext=*/true);
+    spelling.setDirection(HelperBindingDirection::Serialize);
+    renderFieldSteps(*scriptedField.serializeSteps,
+                     tsUnionOptionSerializeExpr(scriptedField, ctx),
+                     HelperBindingDirection::Serialize,
+                     spelling);
 }
 
 /// @brief Renders one TS union deserialize case body (aligned field ops + value construction).
@@ -930,166 +1114,16 @@ void emitTsUnionDeserializeCaseBody(std::ostringstream&               out,
                                     const ScriptedFieldOperationPlan& scriptedField,
                                     const std::string&                typeName)
 {
-    const auto& field       = scriptedField.body.field;
-    const auto& helpers     = scriptedField.body.helpers;
-    const auto  cardinality = scriptedField.cardinality;
-    const auto  bits        = std::to_string(field.bitLength);
-    const auto  optionTag   = std::to_string(field.unionOptionIndex);
-    const auto  cap         = std::to_string(field.arrayCapacity);
-    const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
-    const auto  arrayElemType =
-        field.kind == RuntimeFieldKind::Bool
-             ? "boolean"
-             : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx)
-                                                          : (field.useBigInt ? "bigint" : "number"));
+    const auto& field     = scriptedField.body.field;
+    const auto  optionTag = std::to_string(field.unionOptionIndex);
     emitTsRuntimeAlignDeserialize(out, 2, field.alignmentBits, ctx);
-    if (cardinality == ScriptedFieldCardinality::Scalar)
-    {
-        if (field.kind == RuntimeFieldKind::Padding)
-        {
-            emitTsRuntimeDeserializePadding(out, 2, field, ctx);
-            emitLine(out, 2, "const optionValue = undefined;");
-        }
-        else if (field.kind == RuntimeFieldKind::Bool)
-        {
-            ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-            emitLine(out, 2, "const optionValue = dsdlRuntime.getBit(bytes, offsetBits);");
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitLine(out, 2, "let optionValue: " + compositeTypeName(field, ctx) + ";");
-            emitTsRuntimeDeserializeCompositeValue(out,
-                                                   2,
-                                                   field,
-                                                   "optionValue",
-                                                   ctx,
-                                                   helpers.delimiterValidate);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-            const auto        rawVar = field.fieldName + "OptionRaw";
-            ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            const auto rawVar = field.fieldName + "OptionRaw";
-            ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-        }
-        else
-        {
-            const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-            const auto        rawVar = field.fieldName + "OptionRaw";
-            ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-        }
-        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-        {
-            ctx.trace(EmitTraceOp::Advance, field.bitLength);
-            emitLine(out, 2, "offsetBits += " + bits + ";");
-        }
-    }
-    else
-    {
-        std::string arrayLenExpr = cap;
-        if (cardinality == ScriptedFieldCardinality::VariableArray)
-        {
-            const auto rawLen = field.fieldName + "LengthRaw";
-            ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
-            emitLine(out,
-                     2,
-                     "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " +
-                         prefixBits + "));");
-            ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-            emitLine(out, 2, "offsetBits += " + prefixBits + ";");
-            const auto normalizedLen = field.fieldName + "Length";
-            if (!helpers.deserArrayPrefix.empty())
-            {
-                emitLine(out,
-                         2,
-                         "const " + normalizedLen + " = Number(" + helpers.deserArrayPrefix + "(" + rawLen +
-                             "));");
-            }
-            else
-            {
-                emitLine(out, 2, "const " + normalizedLen + " = " + rawLen + ";");
-            }
-            ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-            if (!helpers.arrayValidate.empty())
-            {
-                emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + normalizedLen + ")) {");
-            }
-            else
-            {
-                emitLine(out, 2, "if (" + normalizedLen + " < 0 || " + normalizedLen + " > " + cap + ") {");
-            }
-            emitLine(out,
-                     3,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, true) +
-                         "\");");
-            emitLine(out, 2, "}");
-            arrayLenExpr = normalizedLen;
-        }
-        const auto optionArray = field.fieldName + "Array";
-        emitLine(out,
-                 2,
-                 "const " + optionArray + ": Array<" + arrayElemType + "> = new Array(" + arrayLenExpr + ");");
-        ctx.trace(EmitTraceOp::ElemLoop);
-        emitLine(out, 2, "for (let i = 0; i < " + arrayLenExpr + "; ++i) {");
-        if (field.kind == RuntimeFieldKind::Bool)
-        {
-            ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-            emitLine(out, 3, optionArray + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitTsRuntimeDeserializeCompositeValue(out,
-                                                   3,
-                                                   field,
-                                                   optionArray + "[i]",
-                                                   ctx,
-                                                   helpers.delimiterValidate);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-            const auto        rawVar = field.fieldName + "ItemRaw";
-            ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            const auto rawVar = field.fieldName + "ItemRaw";
-            ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-        }
-        else
-        {
-            const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-            const auto        rawVar = field.fieldName + "ItemRaw";
-            ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-        }
-        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-        {
-            ctx.trace(EmitTraceOp::Advance, field.bitLength);
-            emitLine(out, 3, "offsetBits += " + bits + ";");
-        }
-        emitLine(out, 2, "}");
-        emitLine(out, 2, "const optionValue = " + optionArray + ";");
-    }
+    assert(scriptedField.deserializeSteps.has_value());
+    TsFieldSpelling spelling(out, ctx, scriptedField, 2, /*unionContext=*/true);
+    spelling.setDirection(HelperBindingDirection::Deserialize);
+    renderFieldSteps(*scriptedField.deserializeSteps,
+                     "optionValue",
+                     HelperBindingDirection::Deserialize,
+                     spelling);
     emitLine(out,
              2,
              "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
@@ -1255,232 +1289,15 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     }
     for (const auto& scriptedField : operationPlan->fields)
     {
-        const auto& field       = scriptedField.body.field;
-        const auto& helpers     = scriptedField.body.helpers;
-        const auto  cardinality = scriptedField.cardinality;
-        const auto  bits        = std::to_string(field.bitLength);
-        const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
+        const auto& field = scriptedField.body.field;
         emitTsRuntimeAlignSerialize(out, 1, field.alignmentBits, field.fieldName, ctx);
-
-        if (cardinality == ScriptedFieldCardinality::Scalar)
-        {
-            if (field.kind == RuntimeFieldKind::Padding)
-            {
-                emitTsRuntimeSerializePadding(out, 1, field, field.fieldName, ctx);
-            }
-            else if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                emitLine(out, 1, "dsdlRuntime.setBit(out, offsetBits, value." + field.fieldName + ");");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeSerializeCompositeValue(out, 1, field, "value." + field.fieldName, ctx);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                std::string scalarExpr = "value." + field.fieldName;
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                emitLine(out,
-                         1,
-                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                std::string scalarExpr = "value." + field.fieldName;
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                emitLine(out, 1, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-            }
-            else
-            {
-                std::string scalarExpr = "value." + field.fieldName;
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                emitLine(out,
-                         1,
-                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 1, "offsetBits += " + bits + ";");
-            }
-        }
-        else if (cardinality == ScriptedFieldCardinality::FixedArray)
-        {
-            const auto cap      = std::to_string(field.arrayCapacity);
-            const auto fieldArr = field.fieldName + "Array";
-            emitLine(out, 1, "const " + fieldArr + " = value." + field.fieldName + ";");
-            ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-            emitLine(out, 1, "if (!Array.isArray(" + fieldArr + ") || " + fieldArr + ".length !== " + cap + ") {");
-            emitLine(out,
-                     2,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\");");
-            emitLine(out, 1, "}");
-            ctx.trace(EmitTraceOp::ElemLoop);
-            emitLine(out, 1, "for (let i = 0; i < " + cap + "; ++i) {");
-            if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, " + fieldArr + "[i]);");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeSerializeCompositeValue(out, 2, field, fieldArr + "[i]", ctx);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                emitLine(out,
-                         2,
-                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-            }
-            else
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                emitLine(out,
-                         2,
-                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 2, "offsetBits += " + bits + ";");
-            }
-            emitLine(out, 1, "}");
-        }
-        else
-        {
-            const auto cap        = std::to_string(field.arrayCapacity);
-            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
-            const auto fieldArr   = field.fieldName + "Array";
-            emitLine(out, 1, "const " + fieldArr + " = value." + field.fieldName + ";");
-            emitLine(out, 1, "if (!Array.isArray(" + fieldArr + ")) {");
-            emitLine(out,
-                     2,
-                     "throw new Error(\"" + codegen_diagnostic_text::fieldExpectsArray(field.fieldName, false) +
-                         "\");");
-            emitLine(out, 1, "}");
-            ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-            if (!helpers.arrayValidate.empty())
-            {
-                emitLine(out, 1, "if (!" + helpers.arrayValidate + "(" + fieldArr + ".length)) {");
-                emitLine(out,
-                         2,
-                         "throw new Error(\"" +
-                             codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) + "\");");
-                emitLine(out, 1, "}");
-            }
-            else
-            {
-                emitLine(out, 1, "if (" + fieldArr + ".length > " + cap + ") {");
-                emitLine(out,
-                         2,
-                         "throw new Error(\"" +
-                             codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) + "\");");
-                emitLine(out, 1, "}");
-            }
-            std::string prefixExpr = fieldArr + ".length";
-            if (!helpers.serArrayPrefix.empty())
-            {
-                prefixExpr = "Number(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
-            }
-            ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
-            emitLine(out,
-                     1,
-                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + prefixExpr + ", false);");
-            ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-            emitLine(out, 1, "offsetBits += " + prefixBits + ";");
-            ctx.trace(EmitTraceOp::ElemLoop);
-            emitLine(out, 1, "for (let i = 0; i < " + fieldArr + ".length; ++i) {");
-            if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, " + fieldArr + "[i]);");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeSerializeCompositeValue(out, 2, field, fieldArr + "[i]", ctx);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                emitLine(out,
-                         2,
-                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-            }
-            else
-            {
-                std::string scalarExpr = fieldArr + "[i]";
-                if (!helpers.serScalar.empty())
-                {
-                    scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                }
-                ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                emitLine(out,
-                         2,
-                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                             ");");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 2, "offsetBits += " + bits + ";");
-            }
-            emitLine(out, 1, "}");
-        }
+        assert(scriptedField.serializeSteps.has_value());
+        TsFieldSpelling spelling(out, ctx, scriptedField, 1, /*unionContext=*/false);
+        spelling.setDirection(HelperBindingDirection::Serialize);
+        renderFieldSteps(*scriptedField.serializeSteps,
+                         "value." + field.fieldName,
+                         HelperBindingDirection::Serialize,
+                         spelling);
     }
     emitLine(out, 1, "const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);");
     emitLine(out, 1, "return out.subarray(0, usedBytes);");
@@ -1497,212 +1314,15 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     emitLine(out, 1, "let offsetBits = 0;");
     for (const auto& scriptedField : operationPlan->fields)
     {
-        const auto& field       = scriptedField.body.field;
-        const auto& helpers     = scriptedField.body.helpers;
-        const auto  cardinality = scriptedField.cardinality;
-        const auto  bits        = std::to_string(field.bitLength);
+        const auto& field = scriptedField.body.field;
         emitTsRuntimeAlignDeserialize(out, 1, field.alignmentBits, ctx);
-        if (cardinality == ScriptedFieldCardinality::Scalar)
-        {
-            if (field.kind == RuntimeFieldKind::Padding)
-            {
-                emitTsRuntimeDeserializePadding(out, 1, field, ctx);
-            }
-            else if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-                emitLine(out, 1, "value." + field.fieldName + " = dsdlRuntime.getBit(bytes, offsetBits);");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeDeserializeCompositeValue(out,
-                                                       1,
-                                                       field,
-                                                       "value." + field.fieldName,
-                                                       ctx,
-                                                       helpers.delimiterValidate);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-                const auto        rawVar = field.fieldName + "Raw";
-                ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-                emitLine(out, 1, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 1, "value." + field.fieldName + " = " + valueExpr + ";");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                const auto rawVar = field.fieldName + "Raw";
-                ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-                emitLine(out, 1, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 1, "value." + field.fieldName + " = " + valueExpr + ";");
-            }
-            else
-            {
-                const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-                const auto        rawVar = field.fieldName + "Raw";
-                ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-                emitLine(out, 1, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 1, "value." + field.fieldName + " = " + valueExpr + ";");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 1, "offsetBits += " + bits + ";");
-            }
-            continue;
-        }
-
-        if (cardinality == ScriptedFieldCardinality::FixedArray)
-        {
-            const auto cap      = std::to_string(field.arrayCapacity);
-            const auto fieldArr = field.fieldName + "Array";
-            const auto arrayElemType =
-                field.kind == RuntimeFieldKind::Bool
-                    ? "boolean"
-                    : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx)
-                                                                 : (field.useBigInt ? "bigint" : "number"));
-            emitLine(out, 1, "const " + fieldArr + ": Array<" + arrayElemType + "> = new Array(" + cap + ");");
-            ctx.trace(EmitTraceOp::ElemLoop);
-            emitLine(out, 1, "for (let i = 0; i < " + cap + "; ++i) {");
-            if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeDeserializeCompositeValue(out, 2, field, fieldArr + "[i]", ctx, helpers.delimiterValidate);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-                const auto        rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                const auto rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            else
-            {
-                const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-                const auto        rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 2, "offsetBits += " + bits + ";");
-            }
-            emitLine(out, 1, "}");
-            emitLine(out, 1, "value." + field.fieldName + " = " + fieldArr + ";");
-        }
-        else
-        {
-            const auto cap        = std::to_string(field.arrayCapacity);
-            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
-            const auto fieldArr   = field.fieldName + "Array";
-            const auto arrayElemType =
-                field.kind == RuntimeFieldKind::Bool
-                    ? "boolean"
-                    : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx)
-                                                                 : (field.useBigInt ? "bigint" : "number"));
-            const auto rawLen = field.fieldName + "LengthRaw";
-            ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
-            emitLine(out,
-                     1,
-                     "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + prefixBits +
-                         "));");
-            ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-            emitLine(out, 1, "offsetBits += " + prefixBits + ";");
-            const auto normalizedLen = field.fieldName + "Length";
-            if (!helpers.deserArrayPrefix.empty())
-            {
-                emitLine(out,
-                         1,
-                         "const " + normalizedLen + " = Number(" + helpers.deserArrayPrefix + "(" + rawLen + "));");
-            }
-            else
-            {
-                emitLine(out, 1, "const " + normalizedLen + " = " + rawLen + ";");
-            }
-            ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-            if (!helpers.arrayValidate.empty())
-            {
-                emitLine(out, 1, "if (!" + helpers.arrayValidate + "(" + normalizedLen + ")) {");
-            }
-            else
-            {
-                emitLine(out, 1, "if (" + normalizedLen + " < 0 || " + normalizedLen + " > " + cap + ") {");
-            }
-            emitLine(out,
-                     2,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\");");
-            emitLine(out, 1, "}");
-            emitLine(out,
-                     1,
-                     "const " + fieldArr + ": Array<" + arrayElemType + "> = new Array(" + field.fieldName +
-                         "Length);");
-            ctx.trace(EmitTraceOp::ElemLoop);
-            emitLine(out, 1, "for (let i = 0; i < " + normalizedLen + "; ++i) {");
-            if (field.kind == RuntimeFieldKind::Bool)
-            {
-                ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
-            }
-            else if (field.kind == RuntimeFieldKind::Composite)
-            {
-                emitTsRuntimeDeserializeCompositeValue(out, 2, field, fieldArr + "[i]", ctx, helpers.delimiterValidate);
-            }
-            else if (field.kind == RuntimeFieldKind::Unsigned)
-            {
-                const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-                const auto        rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            else if (field.kind == RuntimeFieldKind::Float)
-            {
-                const auto rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            else
-            {
-                const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-                const auto        rawVar = field.fieldName + "ItemRaw";
-                ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-                emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                emitLine(out, 2, fieldArr + "[i] = " + valueExpr + ";");
-            }
-            if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-            {
-                ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                emitLine(out, 2, "offsetBits += " + bits + ";");
-            }
-            emitLine(out, 1, "}");
-            emitLine(out, 1, "value." + field.fieldName + " = " + fieldArr + ";");
-        }
+        assert(scriptedField.deserializeSteps.has_value());
+        TsFieldSpelling spelling(out, ctx, scriptedField, 1, /*unionContext=*/false);
+        spelling.setDirection(HelperBindingDirection::Deserialize);
+        renderFieldSteps(*scriptedField.deserializeSteps,
+                         "value." + field.fieldName,
+                         HelperBindingDirection::Deserialize,
+                         spelling);
     }
     emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
     emitLine(out, 1, "return { value, consumed };");

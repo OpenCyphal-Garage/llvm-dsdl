@@ -128,13 +128,19 @@ scorecard preamble now names the emit-order verifier as the behavioral step-orde
   and order-sensitive, so each spelling preserves its backend's original allocation
   order (they legitimately differ — e.g. C++ allocates `count_raw` before `count`,
   Rust/Go the reverse).
-- **Remaining tranche — TS/Python onto the same tree.** Design: their per-kind if-chains
-  map 1:1 onto the `FieldSpelling` methods (scalar kinds → `spellScalar*`, array blocks →
-  the array group methods, composite helpers → `spellComposite*`); helper *names* resolve
-  from the tree's helper *symbols* via the existing `helperBindingName{Ts,Py}` resolvers;
-  TS's build-then-assign deserialize style stays inside its spelling (declare-vs-assign is
-  a statement shape, not an order). Expected diff: identical or declared normalizations
-  only, under the same double net.
+- ✅ **Scripted tranche done (2026-07-12) — TS/Python are on the same tree.** The shared
+  `buildScriptedSectionOperationPlan` now attaches per-field serialize/deserialize
+  `FieldEmitStep` trees (built by the same `buildFieldEmitSteps` from the semantic field +
+  lowered facts; synthesized `Pad` nodes for anonymous padding entries), and both scripted
+  emitters render field bodies through `renderFieldSteps`: `PyFieldSpelling` delegates leaf
+  idioms to the existing atomic per-kind renderers; `TsFieldSpelling` is one class covering
+  all four TS contexts (struct/union × ser/de) — the union context is just declare-vs-assign
+  store style, a diagnostics flag, temp suffixes, and caller-applied root casts. Both proven
+  **full-corpus byte-identical**. All five string backends now derive their complete serdes
+  body sequencing — union prologue, scalar grouping, array length-group→loop, element
+  recursion, composite nesting — from the one shared step builder; per-backend code is
+  spelling only. The beta-1 acceptance test now holds: **adding a backend means writing
+  spelling classes, not sequencing.**
 
 **As landed (2026-07-12):**
 

@@ -696,72 +696,245 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
     }
 }
 
+void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
+                                         int                               indent,
+                                         const ScriptedFieldOperationPlan& operation,
+                                         const std::string&                targetExpr,
+                                         const EmitterContext&             ctx);
+
+/// @brief Python spelling of the shared recursive field-body steps (see EmitStep.h).
+///
+/// Leaf statement idioms delegate to the existing atomic per-kind renderers
+/// (emitPyRuntime*ScalarValue / *CompositeValue / *Padding); all cross-group and
+/// recursive ordering comes from renderFieldSteps. Temp names are field-name
+/// derived (no counters), matching the pre-template output byte for byte.
+class PyFieldSpelling final : public FieldStepSpelling
+{
+public:
+    PyFieldSpelling(std::ostringstream&               out,
+                    const EmitterContext&             ctx,
+                    const ScriptedFieldOperationPlan& operation,
+                    const int                         indent)
+        : out_(out)
+        , ctx_(ctx)
+        , operation_(operation)
+        , indent_(indent)
+    {
+    }
+
+    void spellPad(const FieldEmitStep& step) override
+    {
+        (void) step;
+        if (direction_ == HelperBindingDirection::Serialize)
+        {
+            emitPyRuntimeSerializePadding(out_, indent_, operation_.body.field, ctx_);
+        }
+        else
+        {
+            emitPyRuntimeDeserializePadding(out_, indent_, operation_.body.field, ctx_);
+        }
+    }
+
+    void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        emitPyRuntimeSerializeScalarValue(out_, indent_, operation_, expr, ctx_);
+    }
+
+    void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        emitPyRuntimeDeserializeScalarValue(out_, indent_, operation_, expr, ctx_);
+    }
+
+    void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        emitPyRuntimeSerializeCompositeValue(out_, indent_, operation_.body.field, expr, ctx_);
+    }
+
+    void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        emitPyRuntimeDeserializeCompositeValue(out_,
+                                               indent_,
+                                               operation_.body.field,
+                                               expr,
+                                               ctx_,
+                                               operation_.body.helpers.delimiterValidate);
+    }
+
+    void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field  = operation_.body.field;
+        const auto  cap    = std::to_string(field.arrayCapacity);
+        const auto  arrVar = field.fieldName + "_arr";
+        emitLine(out_, indent_, arrVar + " = " + expr);
+        ctx_.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
+        emitLine(out_, indent_, "if len(" + arrVar + ") != " + cap + ":");
+        emitLine(out_,
+                 indent_ + 1,
+                 "raise ValueError(\"" +
+                     codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\")");
+    }
+
+    void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field     = operation_.body.field;
+        const auto& helpers   = operation_.body.helpers;
+        const auto  cap       = std::to_string(field.arrayCapacity);
+        const auto  arrVar    = field.fieldName + "_arr";
+        const auto  prefixBit = std::to_string(field.arrayLengthPrefixBits);
+        emitLine(out_, indent_, arrVar + " = " + expr);
+        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+        if (!helpers.arrayValidate.empty())
+        {
+            emitLine(out_, indent_, "if not " + helpers.arrayValidate + "(len(" + arrVar + ")):");
+        }
+        else
+        {
+            emitLine(out_, indent_, "if len(" + arrVar + ") > " + cap + ":");
+        }
+        emitLine(out_,
+                 indent_ + 1,
+                 "raise ValueError(\"" +
+                     codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) + "\")");
+        std::string prefixExpr = "len(" + arrVar + ")";
+        if (!helpers.serArrayPrefix.empty())
+        {
+            prefixExpr = "int(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
+        }
+        ctx_.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
+        emitLine(out_,
+                 indent_,
+                 "dsdl_runtime.write_unsigned(out, offset_bits, " + prefixBit + ", " + prefixExpr + ", False)");
+        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+        emitLine(out_, indent_, "offset_bits += " + prefixBit);
+    }
+
+    std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field      = operation_.body.field;
+        const auto& helpers    = operation_.body.helpers;
+        const auto  cap        = std::to_string(field.arrayCapacity);
+        const auto  arrVar     = field.fieldName + "_arr";
+        const auto  lenVar     = field.fieldName + "_len";
+        const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
+        const auto  rawLenVar  = field.fieldName + "_len_raw";
+        ctx_.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
+        emitLine(out_,
+                 indent_,
+                 rawLenVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, " + prefixBits + "))");
+        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+        emitLine(out_, indent_, "offset_bits += " + prefixBits);
+        if (!helpers.deserArrayPrefix.empty())
+        {
+            emitLine(out_, indent_, lenVar + " = int(" + helpers.deserArrayPrefix + "(" + rawLenVar + "))");
+        }
+        else
+        {
+            emitLine(out_, indent_, lenVar + " = " + rawLenVar);
+        }
+        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+        if (!helpers.arrayValidate.empty())
+        {
+            emitLine(out_, indent_, "if not " + helpers.arrayValidate + "(" + lenVar + "):");
+        }
+        else
+        {
+            emitLine(out_, indent_, "if " + lenVar + " < 0 or " + lenVar + " > " + cap + ":");
+        }
+        emitLine(out_,
+                 indent_ + 1,
+                 "raise ValueError(\"" +
+                     codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\")");
+        emitLine(out_, indent_, arrVar + " = []");
+        return lenVar;
+    }
+
+    std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field  = operation_.body.field;
+        const auto  arrVar = field.fieldName + "_arr";
+        emitLine(out_, indent_, arrVar + " = []");
+        return std::to_string(field.arrayCapacity);
+    }
+
+    std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field   = operation_.body.field;
+        const auto  arrVar  = field.fieldName + "_arr";
+        const auto  itemVar = field.fieldName + "_item";
+        ctx_.trace(EmitTraceOp::ElemLoop);
+        emitLine(out_, indent_, "for " + itemVar + " in " + arrVar + ":");
+        ++indent_;
+        return itemVar;
+    }
+
+    std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
+                                              const std::string&   expr,
+                                              const std::string&   countExpr) override
+    {
+        (void) step;
+        (void) expr;
+        const auto& field   = operation_.body.field;
+        const auto  itemVar = field.fieldName + "_item";
+        ctx_.trace(EmitTraceOp::ElemLoop);
+        emitLine(out_, indent_, "for _ in range(" + countExpr + "):");
+        ++indent_;
+        return itemVar;
+    }
+
+    void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        (void) expr;
+        --indent_;
+    }
+
+    void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    {
+        (void) step;
+        const auto& field   = operation_.body.field;
+        const auto  arrVar  = field.fieldName + "_arr";
+        const auto  itemVar = field.fieldName + "_item";
+        emitLine(out_, indent_, arrVar + ".append(" + itemVar + ")");
+        --indent_;
+        emitLine(out_, indent_, expr + " = " + arrVar);
+    }
+
+    /// @brief Sets the render direction (spellPad branches on it).
+    void setDirection(const HelperBindingDirection direction) { direction_ = direction; }
+
+private:
+    std::ostringstream&               out_;
+    const EmitterContext&             ctx_;
+    const ScriptedFieldOperationPlan& operation_;
+    int                               indent_;
+    HelperBindingDirection            direction_{};
+};
+
 void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
                                       int                               indent,
                                       const ScriptedFieldOperationPlan& operation,
                                       const std::string&                valueExpr,
                                       const EmitterContext&             ctx)
 {
-    const auto& field   = operation.body.field;
-    const auto& helpers = operation.body.helpers;
-    const auto  cap     = std::to_string(field.arrayCapacity);
+    const auto& field = operation.body.field;
 
     emitPyRuntimeAlignSerialize(out, indent, field.alignmentBits, field.fieldName, ctx);
-    switch (operation.cardinality)
-    {
-    case ScriptedFieldCardinality::Scalar:
-        emitPyRuntimeSerializeScalarValue(out, indent, operation, valueExpr, ctx);
-        return;
-    case ScriptedFieldCardinality::FixedArray: {
-        const auto arrVar  = field.fieldName + "_arr";
-        const auto itemVar = field.fieldName + "_item";
-        emitLine(out, indent, arrVar + " = " + valueExpr);
-        ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-        emitLine(out, indent, "if len(" + arrVar + ") != " + cap + ":");
-        emitLine(out,
-                 indent + 1,
-                 "raise ValueError(\"" +
-                     codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\")");
-        ctx.trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
-        emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
-        return;
-    }
-    case ScriptedFieldCardinality::VariableArray:
-        break;
-    }
-
-    const auto arrVar    = field.fieldName + "_arr";
-    const auto itemVar   = field.fieldName + "_item";
-    const auto prefixBit = std::to_string(field.arrayLengthPrefixBits);
-    emitLine(out, indent, arrVar + " = " + valueExpr);
-    ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-    if (!helpers.arrayValidate.empty())
-    {
-        emitLine(out, indent, "if not " + helpers.arrayValidate + "(len(" + arrVar + ")):");
-    }
-    else
-    {
-        emitLine(out, indent, "if len(" + arrVar + ") > " + cap + ":");
-    }
-    emitLine(out,
-             indent + 1,
-             "raise ValueError(\"" + codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) +
-                 "\")");
-    std::string prefixExpr = "len(" + arrVar + ")";
-    if (!helpers.serArrayPrefix.empty())
-    {
-        prefixExpr = "int(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
-    }
-    ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
-    emitLine(out,
-             indent,
-             "dsdl_runtime.write_unsigned(out, offset_bits, " + prefixBit + ", " + prefixExpr + ", False)");
-    ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-    emitLine(out, indent, "offset_bits += " + prefixBit);
-    ctx.trace(EmitTraceOp::ElemLoop);
-    emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
-    emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
+    assert(operation.serializeSteps.has_value());
+    PyFieldSpelling spelling(out, ctx, operation, indent);
+    spelling.setDirection(HelperBindingDirection::Serialize);
+    renderFieldSteps(*operation.serializeSteps, valueExpr, HelperBindingDirection::Serialize, spelling);
 }
 
 void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
@@ -845,67 +1018,13 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
                                         const std::string&                targetExpr,
                                         const EmitterContext&             ctx)
 {
-    const auto& field   = operation.body.field;
-    const auto& helpers = operation.body.helpers;
-    const auto  cap     = std::to_string(field.arrayCapacity);
+    const auto& field = operation.body.field;
 
     emitPyRuntimeAlignDeserialize(out, indent, field.alignmentBits, ctx);
-    switch (operation.cardinality)
-    {
-    case ScriptedFieldCardinality::Scalar:
-        emitPyRuntimeDeserializeScalarValue(out, indent, operation, targetExpr, ctx);
-        return;
-    case ScriptedFieldCardinality::FixedArray: {
-        const auto arrVar  = field.fieldName + "_arr";
-        const auto itemVar = field.fieldName + "_item";
-        emitLine(out, indent, arrVar + " = []");
-        ctx.trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for _ in range(" + cap + "):");
-        emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
-        emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
-        emitLine(out, indent, targetExpr + " = " + arrVar);
-        return;
-    }
-    case ScriptedFieldCardinality::VariableArray:
-        break;
-    }
-
-    const auto arrVar     = field.fieldName + "_arr";
-    const auto lenVar     = field.fieldName + "_len";
-    const auto itemVar    = field.fieldName + "_item";
-    const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
-    const auto rawLenVar  = field.fieldName + "_len_raw";
-    ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
-    emitLine(out, indent, rawLenVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, " + prefixBits + "))");
-    ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-    emitLine(out, indent, "offset_bits += " + prefixBits);
-    if (!helpers.deserArrayPrefix.empty())
-    {
-        emitLine(out, indent, lenVar + " = int(" + helpers.deserArrayPrefix + "(" + rawLenVar + "))");
-    }
-    else
-    {
-        emitLine(out, indent, lenVar + " = " + rawLenVar);
-    }
-    ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-    if (!helpers.arrayValidate.empty())
-    {
-        emitLine(out, indent, "if not " + helpers.arrayValidate + "(" + lenVar + "):");
-    }
-    else
-    {
-        emitLine(out, indent, "if " + lenVar + " < 0 or " + lenVar + " > " + cap + ":");
-    }
-    emitLine(out,
-             indent + 1,
-             "raise ValueError(\"" +
-                 codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\")");
-    emitLine(out, indent, arrVar + " = []");
-    ctx.trace(EmitTraceOp::ElemLoop);
-    emitLine(out, indent, "for _ in range(" + lenVar + "):");
-    emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
-    emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
-    emitLine(out, indent, targetExpr + " = " + arrVar);
+    assert(operation.deserializeSteps.has_value());
+    PyFieldSpelling spelling(out, ctx, operation, indent);
+    spelling.setDirection(HelperBindingDirection::Deserialize);
+    renderFieldSteps(*operation.deserializeSteps, targetExpr, HelperBindingDirection::Deserialize, spelling);
 }
 
 /// @brief Python spelling of the shared union-prologue steps (see EmitStep.h).

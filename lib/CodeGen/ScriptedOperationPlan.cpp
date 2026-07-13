@@ -19,10 +19,36 @@
 
 #include <utility>
 
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+
 namespace llvmdsdl
 {
 namespace
 {
+
+const SemanticField* findSemanticFieldByName(const SemanticSection& section, const std::string& fieldName)
+{
+    for (const auto& field : section.fields)
+    {
+        if (field.name == fieldName)
+        {
+            return &field;
+        }
+    }
+    return nullptr;
+}
+
+/// @brief A synthesized Pad step for runtime padding entries with no semantic field.
+FieldEmitStep synthesizePadStep(const RuntimeFieldPlan& field)
+{
+    FieldEmitStep step;
+    step.kind                = FieldStepKind::Pad;
+    step.bits                = field.bitLength;
+    step.type.scalarCategory = SemanticScalarCategory::Void;
+    step.type.bitLength      = static_cast<std::uint32_t>(field.bitLength);
+    return step;
+}
 
 ScriptedFieldCardinality classifyFieldCardinality(const RuntimeArrayKind arrayKind)
 {
@@ -86,6 +112,26 @@ llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
         operation.body        = bodyField;
         operation.cardinality = classifyFieldCardinality(bodyField.field.arrayKind);
         operation.valueKind   = classifyFieldValueKind(bodyField.field.kind);
+        // Attach the shared recursive step trees so scripted emitters render field
+        // bodies through renderFieldSteps (single-source sequencing) rather than
+        // hand-written per-kind chains.
+        if (const auto* const semanticField = findSemanticFieldByName(section, bodyField.field.semanticFieldName))
+        {
+            const auto* const fieldFacts = findLoweredFieldFacts(sectionFacts, semanticField->name);
+            operation.serializeSteps     = buildFieldEmitSteps(semanticField->resolvedType,
+                                                           fieldFacts,
+                                                           bodyField.arrayPrefixOverride,
+                                                           HelperBindingDirection::Serialize);
+            operation.deserializeSteps   = buildFieldEmitSteps(semanticField->resolvedType,
+                                                             fieldFacts,
+                                                             bodyField.arrayPrefixOverride,
+                                                             HelperBindingDirection::Deserialize);
+        }
+        else if (operation.valueKind == ScriptedFieldValueKind::Padding)
+        {
+            operation.serializeSteps   = synthesizePadStep(bodyField.field);
+            operation.deserializeSteps = synthesizePadStep(bodyField.field);
+        }
         out.fields.push_back(std::move(operation));
     }
     if (auto contractErr = validateScriptedSectionOperationPlanContract(out, "scripted-operation-plan"))

@@ -23,6 +23,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
 #include "llvmdsdl/CodeGen/WireOperationContract.h"
 
@@ -75,6 +76,13 @@ struct ScriptedFieldOperationPlan final
 
     /// @brief Field value kind.
     ScriptedFieldValueKind valueKind{ScriptedFieldValueKind::Padding};
+
+    /// @brief Shared recursive field-body step trees (see EmitStep.h), one per
+    ///        direction, built once here from semantic + lowered facts so the
+    ///        scripted emitters render field bodies through renderFieldSteps
+    ///        instead of hand-written sequencing.
+    std::optional<FieldEmitStep> serializeSteps;
+    std::optional<FieldEmitStep> deserializeSteps;
 };
 
 /// @brief One scripted section operation plan.
