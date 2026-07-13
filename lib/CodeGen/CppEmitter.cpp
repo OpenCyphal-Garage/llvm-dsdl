@@ -209,6 +209,12 @@ public:
         emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
     }
 
+    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
+    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
+    {
+        emitTraceSection(traceSink_, canonicalName, direction);
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -1056,9 +1062,11 @@ private:
         {
             const auto source    = expr + ".data()";
             const auto countExpr = std::to_string(type.arrayCapacity) + "U";
+            trace(EmitTraceOp::BulkCopy, type.arrayCapacity);
             emitLine(out,
                      indent,
                      "dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr + ", " + source + ", 0U);");
+            trace(EmitTraceOp::Advance, type.arrayCapacity);
             emitLine(out, indent, "offset_bits += " + countExpr + ";");
             return;
         }
@@ -1158,12 +1166,14 @@ private:
         if (elementIsBool && !variable)
         {
             const auto target = expr + ".data()";
+            trace(EmitTraceOp::BulkCopy, type.arrayCapacity);
             emitLine(out,
                      indent,
                      "dsdl_runtime_get_bits(" + target +
                          ", &buffer[0], capacity_bytes, "
                          "offset_bits, " +
                          countExpr + ");");
+            trace(EmitTraceOp::Advance, type.arrayCapacity);
             emitLine(out, indent, "offset_bits += " + countExpr + ";");
             return;
         }
@@ -1753,8 +1763,12 @@ void emitSection(std::ostringstream&              out,
                       typeDoc,
                       sectionFacts);
 
+    const auto canonicalSectionName = fullName + "." + std::to_string(def.info.majorVersion) + "." +
+                                      std::to_string(def.info.minorVersion);
     FunctionBodyEmitter bodyEmitter(ctx, flavor);
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
     bodyEmitter.emitSerializeFunction(out, typeName, section, sectionFacts);
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
     bodyEmitter.emitDeserializeFunction(out, typeName, section, sectionFacts);
     emitViewFunctions(out, typeName);
 }

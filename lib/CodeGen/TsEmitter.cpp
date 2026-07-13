@@ -107,6 +107,12 @@ public:
         emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
     }
 
+    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
+    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
+    {
+        emitTraceSection(traceSink_, canonicalName, direction);
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -541,8 +547,19 @@ void emitTsRuntimeDeserializePadding(std::ostringstream&     out,
     emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
 }
 
+/// @brief Canonical (backend-independent) DSDL section label for emit-order trace segments.
+/// @param[in] info Discovered definition identity.
+/// @param[in] sectionSuffix "" for a message type, ".Request"/".Response" for service halves.
+/// @return "full.type.Name[.Request|.Response].major.minor".
+std::string canonicalDefinitionName(const DiscoveredDefinition& info, const std::string& sectionSuffix)
+{
+    return info.fullName + sectionSuffix + "." + std::to_string(info.majorVersion) + "." +
+           std::to_string(info.minorVersion);
+}
+
 llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
                                    const std::string&         typeName,
+                                   const std::string&         canonicalSectionName,
                                    const RuntimeSectionPlan&  plan,
                                    const EmitterContext&      ctx,
                                    const SemanticSection&     section,
@@ -609,6 +626,7 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     if (operationPlan->isUnion)
     {
         const auto tagBits = std::to_string(operationPlan->unionTagBits);
+        ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
         emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
         emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
         emitLine(out, 1, "let offsetBits = 0;");
@@ -905,6 +923,7 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 0, "}");
         emitLine(out, 0, "");
 
+        ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
         emitLine(out,
                  0,
                  "export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName +
@@ -1114,6 +1133,7 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
         return llvm::Error::success();
     }
 
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
     emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
     emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
     emitLine(out, 1, "let offsetBits = 0;");
@@ -1358,6 +1378,7 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     emitLine(out, 0, "}");
     emitLine(out, 0, "");
 
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
     emitLine(out,
              0,
              "export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName +
@@ -1732,8 +1753,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         emitLine(out, 0, "");
-        if (auto err =
-                emitTsRuntimeFunctions(out, baseType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+        if (auto err = emitTsRuntimeFunctions(out,
+                                              baseType,
+                                              canonicalDefinitionName(def.info, ""),
+                                              *requestRuntimePlan,
+                                              ctx,
+                                              def.request,
+                                              requestSectionFacts))
         {
             return std::move(err);
         }
@@ -1747,7 +1773,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
-    if (auto err = emitTsRuntimeFunctions(out, reqType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+    if (auto err = emitTsRuntimeFunctions(out,
+                                          reqType,
+                                          canonicalDefinitionName(def.info, ".Request"),
+                                          *requestRuntimePlan,
+                                          ctx,
+                                          def.request,
+                                          requestSectionFacts))
     {
         return std::move(err);
     }
@@ -1761,6 +1793,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         emitLine(out, 0, "");
         if (auto err = emitTsRuntimeFunctions(out,
                                               respType,
+                                              canonicalDefinitionName(def.info, ".Response"),
                                               *responseRuntimePlan,
                                               ctx,
                                               *def.response,

@@ -138,10 +138,17 @@ ALIGN(pad.bits) → PAD(write/skip zeroed bits) → ADVANCE(pad.bits)
 `VALIDATE_TAG` · `MASK_TAG` · `WRITE_TAG` · `READ_TAG` · `STORE_TAG` · `SWITCH` · `CASE` ·
 `DEFAULT_BAD_TAG` · `ALIGN` · `WRITE_SCALAR{bool|uint|sint|float}` ·
 `READ_SCALAR{bool|uint|sint|float}` · `LEN_CHECK` · `LEN_VALIDATE` · `LEN_WRITE` · `LEN_READ` ·
-`ELEM_LOOP` · `COMPOSITE_INLINE` · `COMPOSITE_DELIM_HEADER` · `PAD` · `ADVANCE`.
+`ELEM_LOOP` · `BULK_COPY` · `COMPOSITE_INLINE` · `COMPOSITE_DELIM_HEADER` · `PAD` · `ADVANCE`.
 
 Each op carries a small payload where relevant (bit width, option index, scalar sub-kind). the emit-order verifier
-normalizes away identifiers and indentation, keeping op + payload.
+normalizes away identifiers and indentation, keeping op + payload — payloads are compared,
+so a wrong bit width or option index fails even when op names agree.
+
+Two structural additions (2026-07-12): `BULK_COPY` (payload = total bits) is the honest trace
+of the C++ fixed-bool-array fast path — the D3 declared equivalence
+`BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` is applied by the comparator, never silently.
+`SECTION <canonical.name> <serialize|deserialize>` header events segment the trace per
+(type, direction) so divergences localize and cannot cancel across type boundaries.
 
 ## Known differences
 
@@ -149,9 +156,9 @@ normalizes away identifiers and indentation, keeping op + payload.
 |---|---|---|---|---|
 | D1 | TS masks union tag as its own statement (`TsEmitter.cpp:600`); Rust/Go fold it into the write arg | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Keep both; use as a emit-order-verifier insensitivity test (the emit-order verifier must report *equal*) | 1c |
 | D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Genuine structural difference, accepted** — the check is type-system-subsumed, not missing. the emit-order verifier treats `LEN_CHECK` as a backend-optional op (tolerated absent) | 1c comparator |
-| D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits **no `ELEM_LOOP` / per-element scalar ops** for that case | **Genuine C++ optimization** — real divergence on fixed-bool-array fixtures only | Note as accepted; 1c comparator scopes or annotates fixed-bool-array cases |
-| D4 | **Python union deserialize** emits `READ_TAG → ADVANCE → MASK_TAG → VALIDATE_TAG → STORE_TAG`; Rust/canonical is `READ → MASK → STORE → VALIDATE → ADVANCE` | **Genuine order difference, safe** — read-before-mask-before-validate all hold (Python even validates *before* storing); only `STORE`/`ADVANCE` bookkeeping positions differ | **Accept**, and *loosen the model's `DeOrderOK`* to the safety-critical core rather than pin `STORE`/`ADVANCE` to Rust's positions. Reveals the oracle was over-constrained. | model refinement + 1c |
-| D5 | *(further genuine reorderings, if any, enumerated once the comparator runs over all five)* | — | Normalize (fix) or accept + document | 1d |
+| D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits **no `ELEM_LOOP` / per-element scalar ops** for that case | **Genuine C++ optimization** — real divergence on fixed-bool-array fixtures only | **Modeled (2026-07-12):** the fast path traces an honest `BULK_COPY` op; the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned); exercised by the `BoolArray` fixture | 1c ✅ |
+| D4 | **Python union deserialize** emits `READ_TAG → ADVANCE → MASK_TAG → VALIDATE_TAG → STORE_TAG`; Rust/canonical is `READ → MASK → STORE → VALIDATE → ADVANCE` | **Genuine order difference, safe** — read-before-mask-before-validate all hold (Python even validates *before* storing); only `STORE`/`ADVANCE` bookkeeping positions differ | **Accept**, and *loosen the model's `DeOrderOK`* to the safety-critical core rather than pin `STORE`/`ADVANCE` to Rust's positions. Reveals the oracle was over-constrained. | model refinement + 1c ✅ |
+| D5 | *(further genuine reorderings, if any, enumerated once the comparator runs over all five)* | **Enumerated (2026-07-12): none.** All 5 backends ran over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 segments) — zero unmodeled divergences | Closed — 1d required no emitter changes | 1d ✅ |
 
 Only a **genuine abstract-order divergence** (e.g. a backend that masks before validating, or
 advances before writing) is a Phase 1d fix. Spelling differences (D1) and type-system-subsumed

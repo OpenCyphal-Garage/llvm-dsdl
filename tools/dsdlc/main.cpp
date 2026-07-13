@@ -29,6 +29,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -67,6 +68,11 @@ namespace
 // Emit-order verifier side channel: writes the abstract op trace a string emitter recorded into
 // `sink` to `path`, one op per line ("OP_NAME" or "OP_NAME <payload>"). The comparator diffs
 // these across backends; enabled per run by the LLVMDSDL_EMIT_TRACE environment variable.
+//
+// LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate additionally swaps each VALIDATE_TAG with the
+// MASK_TAG that follows it before writing — the verifier's end-to-end mutation negative
+// control (a genuine mask-before-validate reorder flowing through the real pipeline). It
+// affects only this diagnostic trace file, never the generated code.
 void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink)
 {
     std::ofstream os(path, std::ios::binary | std::ios::trunc);
@@ -75,8 +81,29 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
         llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
         return;
     }
-    for (const auto& event : sink.events())
+    auto events = sink.events();
+    const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
+    if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
     {
+        for (std::size_t i = 0; i + 1 < events.size(); ++i)
+        {
+            if (events[i].op == llvmdsdl::EmitTraceOp::ValidateTag &&
+                events[i + 1].op == llvmdsdl::EmitTraceOp::MaskTag)
+            {
+                std::swap(events[i], events[i + 1]);
+            }
+        }
+    }
+    for (const auto& event : events)
+    {
+        if (event.op == llvmdsdl::EmitTraceOp::SectionStart)
+        {
+            // "SECTION <canonical.type.Name.maj.min> <serialize|deserialize>": segment header
+            // the comparator keys on, so divergences localize to one (type, direction).
+            os << llvmdsdl::emitTraceOpName(event.op) << ' ' << event.label << ' '
+               << (event.payload == 0 ? "serialize" : "deserialize") << '\n';
+            continue;
+        }
         os << llvmdsdl::emitTraceOpName(event.op);
         if (event.payload >= 0)
         {

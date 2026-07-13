@@ -203,13 +203,20 @@ if(PYTHON_EXECUTABLE)
   # Emit-order verifier (golden step-trace): runs dsdlc over fixtures with the LLVMDSDL_EMIT_TRACE side
   # channel and checks every backend's emit-order trace is a member of the proven-safe
   # equivalence class (the ordering the Dafny oracle proves for the canonical), plus
-  # cross-backend wire-skeleton agreement. Only needs dsdlc + Python (no target toolchains).
+  # cross-backend payload-aware wire-skeleton agreement per (type, direction). When the
+  # UAVCAN submodule is present the full public regulated corpus is verified too (~424
+  # segments, sub-second per backend). Only needs dsdlc + Python (no target toolchains).
+  set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS "")
+  if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
+    set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS --corpus "${LLVMDSDL_UAVCAN_ROOT}")
+  endif()
   add_test(
     NAME llvmdsdl-emit-order-verifier
     COMMAND
       ${PYTHON_EXECUTABLE}
         ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
         --dsdlc $<TARGET_FILE:dsdlc>
+        ${LLVMDSDL_EMIT_ORDER_CORPUS_ARGS}
   )
 
   set_tests_properties(
@@ -218,7 +225,8 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;convergence;emit-order"
   )
 
-  # Negative control: the membership check must reject a mask-before-validate reorder.
+  # Negative control: the membership check must reject a mask-before-validate reorder,
+  # detect payload divergence, and honor the declared D3 bulk-copy equivalence.
   add_test(
     NAME llvmdsdl-emit-order-verifier-selftest
     COMMAND
@@ -229,6 +237,26 @@ if(PYTHON_EXECUTABLE)
 
   set_tests_properties(
     llvmdsdl-emit-order-verifier-selftest
+    PROPERTIES
+      LABELS "integration;convergence;emit-order"
+  )
+
+  # End-to-end mutation negative control: dsdlc re-runs with
+  # LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate (a genuine mask-before-validate reorder
+  # of the recorded trace) and the verifier must go red. Proves the whole pipeline
+  # (emitter run -> trace side channel -> comparator) detects a reorder, not merely that
+  # the checker rejects a hand-written list.
+  add_test(
+    NAME llvmdsdl-emit-order-verifier-mutation
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
+        --dsdlc $<TARGET_FILE:dsdlc>
+        --mutation-test
+  )
+
+  set_tests_properties(
+    llvmdsdl-emit-order-verifier-mutation
     PROPERTIES
       LABELS "integration;convergence;emit-order"
   )

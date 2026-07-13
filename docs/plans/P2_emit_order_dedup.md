@@ -43,15 +43,44 @@ fold-into-write, matching Rust/Go; TS to be normalized in Phase 1d).
 
 **DoD**: reviewed step list; every current divergence flagged normalize-or-accept. ✅
 
-## Phase 1 — the emit-order verifier (~3–6 days)
+## Phase 1 — the emit-order verifier (~3–6 days) — *DONE (2026-07-12)*
 
-| Step | Work | Files |
-|---|---|---|
-| 1a | `enum class EmitTraceOp` + null-by-default `EmitTraceSink` (zero cost when off) | new `include/llvmdsdl/CodeGen/EmitTrace.h` |
-| 1b | `trace(op, …)` calls **at the text-emission site** in `emitSerialize{Union,Scalar,Array,Composite,Padding}` + align helpers | `{Rust,Go,Cpp,Ts,Python}Emitter.cpp` |
-| 1c | Comparator ctest: per fixture × direction, collect 5 traces, normalize, assert identical; + mutation/negative test | `test/integration/CMakeLists.txt`, reuse existing fixture DSDL |
-| 1d | Normalize genuine **abstract-order** divergences the emit-order verifier surfaces (enumerated once instrumented). NB: TS mask-placement is spelling-only — a emit-order-verifier insensitivity check, not a fix | emitters |
-| 1e | Add to CI; relabel marker-regex "convergence 100" as an infra lint, point the real number at the emit-order verifier | `tools/convergence/*`, `cmake/RunConvergenceReport.cmake` |
+| Step | Work | Files | Status |
+|---|---|---|---|
+| 1a | `enum class EmitTraceOp` + null-by-default `EmitTraceSink` (zero cost when off) | new `include/llvmdsdl/CodeGen/EmitTrace.h` | ✅ |
+| 1b | `trace(op, …)` calls **at the text-emission site** in `emitSerialize{Union,Scalar,Array,Composite,Padding}` + align helpers | `{Rust,Go,Cpp,Ts,Python}Emitter.cpp` | ✅ |
+| 1c | Comparator ctest: per fixture × direction, collect 5 traces, normalize, assert identical; + mutation/negative test | `test/integration/CMakeLists.txt`, `tools/convergence/emit_order_verifier.py` | ✅ |
+| 1d | Normalize genuine **abstract-order** divergences the emit-order verifier surfaces (enumerated once instrumented). NB: TS mask-placement is spelling-only — a emit-order-verifier insensitivity check, not a fix | emitters | ✅ (none needed — see below) |
+| 1e | Add to CI; relabel marker-regex "convergence 100" as an infra lint, point the real number at the emit-order verifier | `tools/convergence/*`, `docs/CONVERGENCE_SCORECARD.md` | ✅ |
+
+**As landed (2026-07-12), beyond the original sketch:**
+
+- **Per-(type, direction) segmentation.** Emitters record a `SECTION <canonical.name> <direction>`
+  header at every serialize/deserialize entry (`EmitTraceSink::beginSection`; canonical =
+  backend-independent DSDL name incl. `.Request`/`.Response`), so a divergence is reported
+  against one concrete type + direction and misalignment cannot cancel across type boundaries.
+- **Payload-aware skeletons.** The cross-backend comparison is over `(op, payload)` pairs —
+  a wrong bit width, union option index, or prefix width fails even when op names agree.
+- **Accepted differences are modeled, not ignored.** D2: `LEN_CHECK` dropped from the skeleton
+  (type-system-subsumed in Go/C++). D3: the C++ fixed-bool-array fast path now traces an honest
+  `BULK_COPY` op which the comparator expands to `ELEM_LOOP` + a 1-bit bool scalar — the
+  declared equivalence, selftest-pinned. D4: `ADVANCE`/`STORE_TAG` positions are skeleton-free;
+  membership still pins the safety order.
+- **Fixture coverage**: union, variable/fixed arrays, floats (16/32/64), signed + `void`
+  padding, fixed bool array (exercises D3), sealed composite (`COMPOSITE_INLINE`), delimited
+  composite (`COMPOSITE_DELIM_HEADER`), array-of-composites, and a service type
+  (`.Request`/`.Response` labels) — 26 segments, all green. **Plus the full embedded UAVCAN
+  public-regulated corpus** (`--corpus`, wired into the ctest when the submodule is present):
+  424 segments, all 5 backends agree, sub-second per backend. **1d outcome: zero unmodeled
+  divergences** — every difference the comparator can see is D1 (invisible by design) or
+  modeled D2/D3/D4.
+- **Two negative controls as ctests**: `…-selftest` (checker logic: mask-before-validate
+  rejected, payload divergence detected, D3 equivalence honored) and `…-mutation`
+  (end-to-end: dsdlc re-run with `LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate` reorders the
+  real recorded traces and the verifier must go red — proves the pipeline, not just the
+  checker, has teeth). Residual honesty note: the trace is only as truthful as `trace()`
+  adjacency to the `emitLine` it describes; that adjacency is a review invariant until
+  Phase 2 makes order true by construction.
 
 **Critical design point**: place `trace()` calls at the **spelling layer** (where text is
 produced), not in the shared traversal. (1) tracing the traversal is tautological for order;
@@ -60,9 +89,13 @@ spelling still traces the same tokens in the same order, so the golden trace is 
 genuinely proves the shared render template preserved behavior.
 
 **DoD**: ctest green across all `test/integration` fixtures; mutation test red; CI runs it;
-convergence claim relabeled (closes the G4 honesty gap).
+convergence claim relabeled (closes the G4 honesty gap). ✅ **Met 2026-07-12** — three ctests
+(`llvmdsdl-emit-order-verifier`, `…-selftest`, `…-mutation`, labels
+`integration;convergence;emit-order`) run in every ctest-driven CI lane; the convergence
+scorecard preamble now names the emit-order verifier as the behavioral step-order check.
 
 > **GATE:** the emit-order verifier green + stable on the branch before any Phase 2 work.
+> **Status: OPEN — Phase 2 may begin.**
 
 ## Phase 2 — the shared render template, union prologue first (~1–2 wks prologue; deeper optional)
 

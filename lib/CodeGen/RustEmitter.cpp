@@ -131,6 +131,12 @@ public:
         emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
     }
 
+    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
+    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
+    {
+        emitTraceSection(traceSink_, canonicalName, direction);
+    }
+
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -1345,9 +1351,13 @@ void emitSectionType(std::ostringstream&              out,
     }
     out << "\n";
 
+    const auto canonicalSectionName =
+        fullName + "." + std::to_string(majorVersion) + "." + std::to_string(minorVersion);
     FunctionBodyEmitter body(ctx, poolClassConstExprByField);
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
     body.emitSerialize(out, typeName, section, sectionFacts);
     out << "\n";
+    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
     body.emitDeserialize(out, typeName, section, sectionFacts);
     out << "\n";
 

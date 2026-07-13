@@ -26,6 +26,7 @@
 #define LLVMDSDL_CODEGEN_EMIT_TRACE_H
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace llvmdsdl
@@ -76,6 +77,10 @@ enum class EmitTraceOp
     LenWrite,          ///< write length prefix (payload = prefix bits).
     LenRead,           ///< read length prefix (payload = prefix bits).
     ElemLoop,          ///< begin the element loop.
+    BulkCopy,          ///< bulk bit-copy replacing an element loop (payload = total bits).
+                       ///< C++-only fixed-bool-array fast path (known difference D3): the
+                       ///< comparator models it as equivalent to ELEM_LOOP + one 1-bit
+                       ///< bool scalar op — an accepted optimization, explicitly declared.
 
     // ---- Composites ----
     CompositeInline,       ///< sealed: inline nested (de)serialize at current offset.
@@ -83,6 +88,13 @@ enum class EmitTraceOp
 
     // ---- Cursor ----
     Advance,           ///< offset_bits += N (payload = N).
+
+    // ---- Stream structure (not a wire op) ----
+    SectionStart,      ///< begin of one (type, direction) trace segment; payload = direction
+                       ///< (0 = serialize, 1 = deserialize), label = canonical DSDL name
+                       ///< ("full.type.Name[.Request|.Response].major.minor"). The comparator
+                       ///< keys segments by this label so failures localize to a type and
+                       ///< direction and misalignment cannot cancel across type boundaries.
 };
 
 /// @brief One recorded abstract op with its optional payload.
@@ -90,6 +102,7 @@ struct EmitTraceEvent final
 {
     EmitTraceOp  op;
     std::int64_t payload;  ///< Bit width / option index / capacity; -1 when not applicable.
+    std::string  label;    ///< SectionStart only: canonical DSDL section name. Empty otherwise.
 };
 
 /// @brief Ordered collector of abstract emit ops for one (type, direction).
@@ -105,7 +118,19 @@ public:
     /// @param[in] payload Optional payload (bit width / union option index / capacity); -1 when not applicable.
     void record(const EmitTraceOp op, const std::int64_t payload = -1)
     {
-        events_.push_back(EmitTraceEvent{op, payload});
+        events_.push_back(EmitTraceEvent{op, payload, {}});
+    }
+
+    /// @brief Marks the start of one (type, direction) trace segment.
+    /// @param[in] name Canonical DSDL section name ("full.type.Name[.Request|.Response].major.minor").
+    ///                 Must be backend-independent so the comparator can align segments across backends.
+    /// @param[in] direction Serialize or deserialize.
+    void beginSection(const std::string& name, const EmitTraceDirection direction)
+    {
+        events_.push_back(
+            EmitTraceEvent{EmitTraceOp::SectionStart,
+                           direction == EmitTraceDirection::Serialize ? std::int64_t{0} : std::int64_t{1},
+                           name});
     }
 
     /// @brief Returns the recorded ops in emission order.
@@ -128,6 +153,20 @@ inline void emitTrace(EmitTraceSink* const sink, const EmitTraceOp op, const std
     if (sink != nullptr)
     {
         sink->record(op, payload);
+    }
+}
+
+/// @brief Null-safe section-start helper used at emitter (type, direction) entry points.
+/// @param[in] sink Nullable sink; when null this is a no-op (zero cost).
+/// @param[in] name Canonical DSDL section name (backend-independent).
+/// @param[in] direction Serialize or deserialize.
+inline void emitTraceSection(EmitTraceSink* const     sink,
+                             const std::string&       name,
+                             const EmitTraceDirection direction)
+{
+    if (sink != nullptr)
+    {
+        sink->beginSection(name, direction);
     }
 }
 
@@ -161,9 +200,11 @@ inline const char* emitTraceOpName(const EmitTraceOp op)
     case EmitTraceOp::LenWrite:             return "LEN_WRITE";
     case EmitTraceOp::LenRead:              return "LEN_READ";
     case EmitTraceOp::ElemLoop:             return "ELEM_LOOP";
+    case EmitTraceOp::BulkCopy:             return "BULK_COPY";
     case EmitTraceOp::CompositeInline:      return "COMPOSITE_INLINE";
     case EmitTraceOp::CompositeDelimHeader: return "COMPOSITE_DELIM_HEADER";
     case EmitTraceOp::Advance:              return "ADVANCE";
+    case EmitTraceOp::SectionStart:         return "SECTION";
     }
     return "UNKNOWN";
 }
