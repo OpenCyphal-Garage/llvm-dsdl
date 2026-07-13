@@ -104,7 +104,37 @@ scorecard preamble now names the emit-order verifier as the behavioral step-orde
 | 2a | `EmitStep` IR + `renderSteps(steps, BackendSpelling&)`; reify the `traverseNativeSection` callback sequence into `std::vector<EmitStep>` and **decompose `onUnionDispatch`** into ordered union sub-steps | new `include/llvmdsdl/CodeGen/EmitStep.h`, `lib/CodeGen/EmitStepRender.cpp` | ✅ (`UnionEmitStep` + `buildUnionSectionSteps` + `renderUnionSection`; the canonical prologue order lives in exactly one function) |
 | 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; the emit-order verifier proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` | ✅ (nested `UnionSpelling` classes; **full-UAVCAN-corpus generated output byte-identical** pre/post, proven by rebuild-and-diff) |
 | 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); the emit-order verifier proves parity | `Ts/PythonEmitter.cpp` | ✅ (`TsUnionSpelling`/`PyUnionSpelling` + extracted case-body helpers; corpus diff is **exactly** the D4 normalization — the deserialize `ADVANCE`/`STORE` bookkeeping moved to canonical positions, 7 union types, nothing else) |
-| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under the emit-order verifier | emitters | open (decide after alpha feedback) |
+| 2d | Extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under the emit-order verifier | emitters | ✅ **native backends (2026-07-12)**: `FieldEmitStep` recursive tree + `buildFieldEmitSteps` + `renderFieldSteps` (EmitStep.h / EmitStepRender.cpp); Rust/Go/C++ field rendering fully routed, each proven **full-corpus byte-identical**. Scripted (TS/Python) = next tranche, design below |
+
+**2d as landed (2026-07-12) — the recursion is now shared, not just the top level:**
+
+- `buildFieldEmitSteps(type, facts, prefixOverride, direction)` builds a **step tree**:
+  array nodes own their element's step subtree (`children`) — nesting/recursion is decided
+  once, in shared code, from shared facts (semantic type, lowered facts, shared
+  helper-symbol resolution, `buildArrayWirePlan`). `renderFieldSteps` owns **every
+  cross-group ordering decision recursively**: scalar helper-before-write grouping,
+  fixed-array guard→loop, variable-array length-group→loop, loop-contains-element-subtree,
+  composite delimiter mechanics position. The per-backend `FieldSpelling` classes contain
+  *zero sequencing* — only leaf statement idioms (temp names, casts, error channel,
+  storage types, PMR flavor differences).
+- **The accepted deviations became interface points**: D2 is
+  `spellFixedArrayLenCheck` (Rust emits the runtime guard; Go/C++ implement it as a
+  documented type-system-subsumed no-op), and D3 is `trySpellArrayBulkFastPath` (only C++
+  implements it, for fixed bool arrays, emitting the honest `BULK_COPY` trace). A backend
+  can no longer skip or reorder a step ad hoc — it can only exercise a declared right.
+- **Byte-identity proof per backend**: Rust, Go, and C++ (all three profiles) each
+  regenerate the full UAVCAN corpus byte-for-byte identically to the pre-refactor
+  compiler. Byte-identity subtleties handled: `nextName` temp-name counters are shared
+  and order-sensitive, so each spelling preserves its backend's original allocation
+  order (they legitimately differ — e.g. C++ allocates `count_raw` before `count`,
+  Rust/Go the reverse).
+- **Remaining tranche — TS/Python onto the same tree.** Design: their per-kind if-chains
+  map 1:1 onto the `FieldSpelling` methods (scalar kinds → `spellScalar*`, array blocks →
+  the array group methods, composite helpers → `spellComposite*`); helper *names* resolve
+  from the tree's helper *symbols* via the existing `helperBindingName{Ts,Py}` resolvers;
+  TS's build-then-assign deserialize style stays inside its spelling (declare-vs-assign is
+  a statement shape, not an order). Expected diff: identical or declared normalizations
+  only, under the same double net.
 
 **As landed (2026-07-12):**
 

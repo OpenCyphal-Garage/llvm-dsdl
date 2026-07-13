@@ -750,6 +750,461 @@ private:
         renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
 
+    /// @brief Rust spelling of the shared recursive field-body steps (see EmitStep.h).
+    ///
+    /// Leaf statement idioms only; all cross-group and recursive ordering comes
+    /// from renderFieldSteps. Constructed per field render with the direction and
+    /// (for deserialize) the pool-class expression.
+    class FieldSpelling final : public FieldStepSpelling
+    {
+    public:
+        FieldSpelling(FunctionBodyEmitter&         owner,
+                      std::ostringstream&          out,
+                      const int                    indent,
+                      const HelperBindingDirection direction,
+                      std::string                  poolClassConstExpr)
+            : owner_(owner)
+            , out_(out)
+            , indent_(indent)
+            , direction_(direction)
+            , poolClassConstExpr_(std::move(poolClassConstExpr))
+        {
+        }
+
+        void spellPad(const FieldEmitStep& step) override
+        {
+            if (direction_ == HelperBindingDirection::Serialize)
+            {
+                owner_.emitSerializePadding(out_, step.type, indent_);
+            }
+            else
+            {
+                owner_.emitDeserializePadding(out_, step.type, indent_);
+            }
+        }
+
+        void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool: {
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarBool, 1);
+                emitLine(out_,
+                         indent_,
+                         "let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, " + expr + ");");
+                emitLine(out_, indent_, "if " + err + " < 0 { return Err(" + err + "); }");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offset_bits += 1;");
+                break;
+            }
+            case FieldStepKind::ScalarUint: {
+                std::string valueExpr = expr + " as u64";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + "u8);");
+                emitLine(out_, indent_, "if " + err + " < 0 { return Err(" + err + "); }");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                std::string valueExpr = expr + " as i64";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "let " + err + " = crate::dsdl_runtime::set_ixx(buffer, offset_bits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + "u8);");
+                emitLine(out_, indent_, "if " + err + " < 0 { return Err(" + err + "); }");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                const auto  err            = owner_.nextName("err");
+                const auto  floatType      = std::string(step.bits == 64 ? "f64" : "f32");
+                std::string normalizedExpr = expr + " as " + floatType;
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                normalizedExpr    = helper + "(" + normalizedExpr + ")";
+                std::string setCall;
+                if (step.bits == 16)
+                {
+                    setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + normalizedExpr + ")";
+                }
+                else if (step.bits == 32)
+                {
+                    setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + normalizedExpr + ")";
+                }
+                else
+                {
+                    setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + ")";
+                }
+                owner_.trace(EmitTraceOp::WriteScalarFloat, step.bits);
+                emitLine(out_, indent_, "let " + err + " = " + setCall + ";");
+                emitLine(out_, indent_, "if " + err + " < 0 { return Err(" + err + "); }");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool:
+                owner_.trace(EmitTraceOp::ReadScalarBool, 1);
+                emitLine(out_, indent_, expr + " = crate::dsdl_runtime::get_bit(buffer, offset_bits);");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offset_bits += 1;");
+                break;
+            case FieldStepKind::ScalarUint: {
+                const std::string getter =
+                    "get_u" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "let " + raw + " = crate::dsdl_runtime::" + getter + "(buffer, offset_bits, " +
+                             std::to_string(step.bits) + "u8) as u64;");
+                emitLine(out_,
+                         indent_,
+                         expr + " = " + helper + "(" + raw + ") as " +
+                             unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + ";");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                const std::string getter =
+                    "get_i" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
+                             std::to_string(step.bits) + "u8) as i64;");
+                emitLine(out_,
+                         indent_,
+                         expr + " = " + helper + "(" + raw + ") as " +
+                             signedStorageType(static_cast<std::uint32_t>(step.bits)) + ";");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
+                if (step.bits == 16)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = " + helper +
+                                 "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f32) as f32;");
+                }
+                else if (step.bits == 32)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = " + helper +
+                                 "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f32) as f32;");
+                }
+                else
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = " + helper +
+                                 "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
+                }
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + ";");
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
+        {
+            owner_.trace(EmitTraceOp::LenCheck, step.capacity);
+            emitLine(out_,
+                     indent_,
+                     "if " + expr + ".len() != " + std::to_string(step.capacity) +
+                         "usize { return "
+                         "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+        }
+
+        void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_, indent_, "let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
+            emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
+            std::string prefixExpr = expr + ".len() as u64";
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto serPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err             = owner_.nextName("err");
+            owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + prefixExpr + ", " +
+                         std::to_string(step.prefixBits) + "u8);");
+            emitLine(out_, indent_, "if " + err + " < 0 { return Err(" + err + "); }");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(step.prefixBits) + ";");
+        }
+
+        std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            emitPoolContract(expr);
+            const auto count    = owner_.nextName("count");
+            const auto rawCount = owner_.nextName("count_raw");
+            owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "let " + rawCount + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
+                         std::to_string(step.prefixBits) + "u8);");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(step.prefixBits) + ";");
+            std::string countExpr = rawCount + " as usize";
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto deserPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            countExpr                    = deserPrefixHelper + "(" + rawCount + ") as usize";
+            emitLine(out_, indent_, "let " + count + " = " + countExpr + ";");
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_, indent_, "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
+            emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
+            emitClearReserve(expr, count);
+            return count;
+        }
+
+        std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            emitPoolContract(expr);
+            const auto count = owner_.nextName("count");
+            emitLine(out_, indent_, "let " + count + " = " + std::to_string(step.capacity) + "usize;");
+            emitClearReserve(expr, count);
+            return count;
+        }
+
+        std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            const auto index = owner_.nextName("index");
+            const auto count = step.kind == FieldStepKind::VariableArray
+                                   ? (expr + ".len()")
+                                   : std::to_string(step.capacity) + "usize";
+
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_, indent_, "for " + index + " in 0.." + count + " {");
+            ++indent_;
+            return expr + "[" + index + "]";
+        }
+
+        std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
+                                                  const std::string&   expr,
+                                                  const std::string&   countExpr) override
+        {
+            (void) expr;
+            const auto index = owner_.nextName("index");
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_, indent_, "for " + index + " in 0.." + countExpr + " {");
+            ++indent_;
+            assert(itemVar_.empty() && "DSDL forbids arrays of arrays; loops never nest");
+            itemVar_ = owner_.nextName("item");
+            emitLine(out_,
+                     indent_,
+                     "let mut " + itemVar_ + " = " + defaultExpr(step.children.front().type, owner_.ctx_) + ";");
+            return itemVar_;
+        }
+
+        void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            (void) expr;
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            emitLine(out_, indent_, expr + ".push(" + itemVar_ + ");");
+            itemVar_.clear();
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            const auto sizeVar = owner_.nextName("size_bytes");
+            const auto errVar  = owner_.nextName("err");
+
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_, indent_, "offset_bits += 32;  // Delimiter header");
+            }
+
+            emitLine(out_,
+                     indent_,
+                     "let mut " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) +
+                         "usize;");
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_,
+                         indent_,
+                         "let _remaining = "
+                         "buffer.len().saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
+                         "buffer.len()));");
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         "let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
+                emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
+            }
+            emitLine(out_, indent_, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
+            emitLine(out_, indent_, "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
+            emitLine(out_, indent_, "let " + errVar + " = " + expr + ".serialize(&mut buffer[_start.._end]);");
+            emitLine(out_, indent_, "match " + errVar + " {");
+            emitLine(out_, indent_ + 1, "Ok(v) => " + sizeVar + " = v,");
+            emitLine(out_, indent_ + 1, "Err(e) => return Err(e),");
+            emitLine(out_, indent_, "}");
+
+            if (!step.type.compositeSealed)
+            {
+                const auto hdrErr = owner_.nextName("err");
+                emitLine(out_,
+                         indent_,
+                         "let " + hdrErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits - 32, " + sizeVar +
+                             " as u64, 32u8);");
+                emitLine(out_, indent_, "if " + hdrErr + " < 0 { return Err(" + hdrErr + "); }");
+            }
+
+            emitLine(out_, indent_, "offset_bits += " + sizeVar + " * 8;");
+        }
+
+        void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            const auto sizeVar = owner_.nextName("size_bytes");
+
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_,
+                         indent_,
+                         "let " + sizeVar + " = crate::dsdl_runtime::get_u32(buffer, offset_bits, 32u8) as usize;");
+                emitLine(out_, indent_, "offset_bits += 32;");
+                emitLine(out_,
+                         indent_,
+                         "let _remaining = "
+                         "capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
+                         "capacity_bytes));");
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         "let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
+                emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
+                emitLine(out_, indent_, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
+                emitLine(out_, indent_, "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
+                emitLine(out_,
+                         indent_,
+                         "if let Err(e) = " + expr + ".deserialize(&buffer[_start.._end]) { return Err(e); }");
+                emitLine(out_, indent_, "offset_bits += " + sizeVar + " * 8;");
+                return;
+            }
+
+            emitLine(out_, indent_, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
+            emitLine(out_, indent_, "let _slice = &buffer[_start..buffer.len()];");
+            emitLine(out_,
+                     indent_,
+                     "let _consumed = match " + expr +
+                         ".deserialize(_slice) { Ok(v) => v, Err(e) => return Err(e) };\n");
+            emitLine(out_, indent_, "offset_bits += _consumed * 8;");
+        }
+
+    private:
+        void emitPoolContract(const std::string& expr)
+        {
+            if (!poolClassConstExpr_.empty())
+            {
+                emitLine(out_,
+                         indent_,
+                         expr +
+                             ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
+                             "Self::__LLVMDSDL_MEMORY_MODE, "
+                             "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
+                             poolClassConstExpr_ + "));");
+            }
+        }
+
+        void emitClearReserve(const std::string& expr, const std::string& count)
+        {
+            emitLine(out_, indent_, expr + ".clear();");
+            emitLine(out_,
+                     indent_,
+                     "if Self::__LLVMDSDL_MEMORY_MODE == "
+                     "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
+            emitLine(out_, indent_ + 1, "let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
+            emitLine(out_,
+                     indent_ + 1,
+                     "if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count +
+                         ", &mut _pool)"
+                         " {");
+            emitLine(out_,
+                     indent_ + 2,
+                     "return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+            emitLine(out_, indent_ + 1, "}");
+            emitLine(out_, indent_, "} else {");
+            emitLine(out_, indent_ + 1, expr + ".reserve(" + count + ");");
+            emitLine(out_, indent_, "}");
+        }
+
+        FunctionBodyEmitter&         owner_;
+        std::ostringstream&          out_;
+        int                          indent_;
+        const HelperBindingDirection direction_;
+        const std::string            poolClassConstExpr_;
+        std::string                  itemVar_;
+    };
+
     void emitSerializeAny(std::ostringstream&                out,
                           const SemanticFieldType&           type,
                           const std::string&                 expr,
@@ -757,12 +1212,10 @@ private:
                           const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
                           const LoweredFieldFacts* const     fieldFacts                    = nullptr)
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitSerializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
-            return;
-        }
-        emitSerializeScalar(out, type, expr, indent, fieldFacts);
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Serialize, "");
+        renderFieldSteps(steps, expr, HelperBindingDirection::Serialize, spelling);
     }
 
     void emitDeserializeAny(std::ostringstream&                out,
@@ -773,442 +1226,10 @@ private:
                             const LoweredFieldFacts* const     fieldFacts                    = nullptr,
                             const std::string&                 poolClassConstExpr            = "")
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitDeserializeArray(out,
-                                 type,
-                                 expr,
-                                 indent,
-                                 arrayLengthPrefixBitsOverride,
-                                 fieldFacts,
-                                 poolClassConstExpr);
-            return;
-        }
-        emitDeserializeScalar(out, type, expr, indent, fieldFacts);
-    }
-
-    void emitSerializeScalar(std::ostringstream&            out,
-                             const SemanticFieldType&       type,
-                             const std::string&             expr,
-                             const int                      indent,
-                             const LoweredFieldFacts* const fieldFacts)
-    {
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool: {
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out, indent, "let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, " + expr + ");");
-            emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offset_bits += 1;");
-            break;
-        }
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            std::string valueExpr    = expr + " as u64";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + valueExpr + ", " +
-                         std::to_string(type.bitLength) + "u8);");
-            emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            std::string valueExpr    = expr + " as i64";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "let " + err + " = crate::dsdl_runtime::set_ixx(buffer, offset_bits, " + valueExpr + ", " +
-                         std::to_string(type.bitLength) + "u8);");
-            emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto  err            = nextName("err");
-            const auto  floatType      = std::string(type.bitLength == 64U ? "f64" : "f32");
-            std::string normalizedExpr = expr + " as " + floatType;
-            const auto  helperSymbol   = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            normalizedExpr    = helper + "(" + normalizedExpr + ")";
-            std::string setCall;
-            if (type.bitLength == 16U)
-            {
-                setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + normalizedExpr + ")";
-            }
-            else if (type.bitLength == 32U)
-            {
-                setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + normalizedExpr + ")";
-            }
-            else
-            {
-                setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + ")";
-            }
-            trace(EmitTraceOp::WriteScalarFloat, type.bitLength);
-            emitLine(out, indent, "let " + err + " = " + setCall + ";");
-            emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitSerializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitSerializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
-    }
-
-    void emitDeserializeScalar(std::ostringstream&            out,
-                               const SemanticFieldType&       type,
-                               const std::string&             expr,
-                               const int                      indent,
-                               const LoweredFieldFacts* const fieldFacts)
-    {
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool:
-            trace(EmitTraceOp::ReadScalarBool, 1);
-            emitLine(out, indent, expr + " = crate::dsdl_runtime::get_bit(buffer, offset_bits);");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offset_bits += 1;");
-            break;
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            const std::string getter = "get_u" + std::string(scalarWidthSuffix(type.bitLength));
-            const auto helperSymbol  = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "let " + raw + " = crate::dsdl_runtime::" + getter + "(buffer, offset_bits, " +
-                         std::to_string(type.bitLength) + "u8) as u64;");
-            emitLine(out,
-                     indent,
-                     expr + " = " + helper + "(" + raw + ") as " + unsignedStorageType(type.bitLength) + ";");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            const std::string getter = "get_i" + std::string(scalarWidthSuffix(type.bitLength));
-            const auto helperSymbol  = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                         std::to_string(type.bitLength) + "u8) as i64;");
-            emitLine(out,
-                     indent,
-                     expr + " = " + helper + "(" + raw + ") as " + signedStorageType(type.bitLength) + ";");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            trace(EmitTraceOp::ReadScalarFloat, type.bitLength);
-            if (type.bitLength == 16U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = " + helper + "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f32) as f32;");
-            }
-            else if (type.bitLength == 32U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = " + helper + "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f32) as f32;");
-            }
-            else
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = " + helper + "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
-            }
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitDeserializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitDeserializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
-    }
-
-    void emitSerializeArray(std::ostringstream&                out,
-                            const SemanticFieldType&           type,
-                            const std::string&                 expr,
-                            const int                          indent,
-                            const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                            const LoweredFieldFacts* const     fieldFacts)
-    {
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
-        const bool  variable        = arrayPlan.variable;
-        const auto  prefixBits      = arrayPlan.prefixBits;
-        const auto& arrayDescriptor = arrayPlan.descriptor;
-
-        if (type.arrayKind == ArrayKind::Fixed)
-        {
-            trace(EmitTraceOp::LenCheck, type.arrayCapacity);
-            emitLine(out,
-                     indent,
-                     "if " + expr + ".len() != " + std::to_string(type.arrayCapacity) +
-                         "usize { return "
-                         "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
-        }
-
-        if (variable)
-        {
-            assert(arrayDescriptor.has_value());
-            assert(!arrayDescriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            const auto validateRc     = nextName("len_rc");
-            trace(EmitTraceOp::LenValidate, prefixBits);
-            emitLine(out, indent, "let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
-            emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            std::string prefixExpr = expr + ".len() as u64";
-            assert(!arrayDescriptor->prefixSymbol.empty());
-            const auto serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = nextName("err");
-            trace(EmitTraceOp::LenWrite, prefixBits);
-            emitLine(out,
-                     indent,
-                     "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + prefixExpr + ", " +
-                         std::to_string(prefixBits) + "u8);");
-            emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
-            trace(EmitTraceOp::Advance, prefixBits);
-            emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + ";");
-        }
-
-        const auto index = nextName("index");
-        const auto count = variable ? (expr + ".len()") : std::to_string(type.arrayCapacity) + "usize";
-
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for " + index + " in 0.." + count + " {");
-
-        const auto itemType = arrayElementType(type);
-
-        if (itemType.scalarCategory == SemanticScalarCategory::Composite)
-        {
-            emitSerializeScalar(out, itemType, expr + "[" + index + "]", indent + 1, fieldFacts);
-        }
-        else
-        {
-            emitSerializeScalar(out, itemType, expr + "[" + index + "]", indent + 1, fieldFacts);
-        }
-        emitLine(out, indent, "}");
-    }
-
-    void emitDeserializeArray(std::ostringstream&                out,
-                              const SemanticFieldType&           type,
-                              const std::string&                 expr,
-                              const int                          indent,
-                              const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                              const LoweredFieldFacts* const     fieldFacts,
-                              const std::string&                 poolClassConstExpr)
-    {
-        if (!poolClassConstExpr.empty())
-        {
-            emitLine(out,
-                     indent,
-                     expr +
-                         ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
-                         "Self::__LLVMDSDL_MEMORY_MODE, "
-                         "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                         poolClassConstExpr + "));");
-        }
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
-        const bool  variable        = arrayPlan.variable;
-        const auto  prefixBits      = arrayPlan.prefixBits;
-        const auto& arrayDescriptor = arrayPlan.descriptor;
-        const auto  count           = nextName("count");
-
-        if (variable)
-        {
-            const auto rawCount = nextName("count_raw");
-            trace(EmitTraceOp::LenRead, prefixBits);
-            emitLine(out,
-                     indent,
-                     "let " + rawCount + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                         std::to_string(prefixBits) + "u8);");
-            trace(EmitTraceOp::Advance, prefixBits);
-            emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + ";");
-            std::string countExpr = rawCount + " as usize";
-            assert(arrayDescriptor.has_value());
-            assert(!arrayDescriptor->prefixSymbol.empty());
-            const auto deserPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            countExpr                    = deserPrefixHelper + "(" + rawCount + ") as usize";
-            emitLine(out, indent, "let " + count + " = " + countExpr + ";");
-            assert(!arrayDescriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            const auto validateRc     = nextName("len_rc");
-            trace(EmitTraceOp::LenValidate, prefixBits);
-            emitLine(out, indent, "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
-            emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-        }
-        else
-        {
-            emitLine(out, indent, "let " + count + " = " + std::to_string(type.arrayCapacity) + "usize;");
-        }
-        emitLine(out, indent, expr + ".clear();");
-        emitLine(out,
-                 indent,
-                 "if Self::__LLVMDSDL_MEMORY_MODE == "
-                 "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
-        emitLine(out, indent + 1, "let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
-        emitLine(out,
-                 indent + 1,
-                 "if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count +
-                     ", &mut _pool)"
-                     " {");
-        emitLine(out, indent + 2, "return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
-        emitLine(out, indent + 1, "}");
-        emitLine(out, indent, "} else {");
-        emitLine(out, indent + 1, expr + ".reserve(" + count + ");");
-        emitLine(out, indent, "}");
-
-        const auto index = nextName("index");
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for " + index + " in 0.." + count + " {");
-
-        const auto itemType = arrayElementType(type);
-
-        const auto itemVar = nextName("item");
-        emitLine(out, indent + 1, "let mut " + itemVar + " = " + defaultExpr(itemType, ctx_) + ";");
-        emitDeserializeScalar(out, itemType, itemVar, indent + 1, fieldFacts);
-        emitLine(out, indent + 1, expr + ".push(" + itemVar + ");");
-        emitLine(out, indent, "}");
-    }
-
-    void emitSerializeComposite(std::ostringstream&            out,
-                                const SemanticFieldType&       type,
-                                const std::string&             expr,
-                                const int                      indent,
-                                const LoweredFieldFacts* const fieldFacts)
-    {
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        const auto sizeVar = nextName("size_bytes");
-        const auto errVar  = nextName("err");
-
-        if (!type.compositeSealed)
-        {
-            emitLine(out, indent, "offset_bits += 32;  // Delimiter header");
-        }
-
-        emitLine(out,
-                 indent,
-                 "let mut " + sizeVar + " = " + std::to_string((type.bitLengthSet.max() + 7) / 8) + "usize;");
-        if (!type.compositeSealed)
-        {
-            emitLine(out,
-                     indent,
-                     "let _remaining = buffer.len().saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
-                     "buffer.len()));");
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     "let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
-            emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-        }
-        emitLine(out, indent, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-        emitLine(out, indent, "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
-        emitLine(out, indent, "let " + errVar + " = " + expr + ".serialize(&mut buffer[_start.._end]);");
-        emitLine(out, indent, "match " + errVar + " {");
-        emitLine(out, indent + 1, "Ok(v) => " + sizeVar + " = v,");
-        emitLine(out, indent + 1, "Err(e) => return Err(e),");
-        emitLine(out, indent, "}");
-
-        if (!type.compositeSealed)
-        {
-            const auto hdrErr = nextName("err");
-            emitLine(out,
-                     indent,
-                     "let " + hdrErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits - 32, " + sizeVar +
-                         " as u64, 32u8);");
-            emitLine(out, indent, "if " + hdrErr + " < 0 { return Err(" + hdrErr + "); }");
-        }
-
-        emitLine(out, indent, "offset_bits += " + sizeVar + " * 8;");
-    }
-
-    void emitDeserializeComposite(std::ostringstream&            out,
-                                  const SemanticFieldType&       type,
-                                  const std::string&             expr,
-                                  const int                      indent,
-                                  const LoweredFieldFacts* const fieldFacts)
-    {
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        const auto sizeVar = nextName("size_bytes");
-
-        if (!type.compositeSealed)
-        {
-            emitLine(out,
-                     indent,
-                     "let " + sizeVar + " = crate::dsdl_runtime::get_u32(buffer, offset_bits, 32u8) as usize;");
-            emitLine(out, indent, "offset_bits += 32;");
-            emitLine(out,
-                     indent,
-                     "let _remaining = capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
-                     "capacity_bytes));");
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     "let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
-            emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            emitLine(out, indent, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-            emitLine(out, indent, "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
-            emitLine(out, indent, "if let Err(e) = " + expr + ".deserialize(&buffer[_start.._end]) { return Err(e); }");
-            emitLine(out, indent, "offset_bits += " + sizeVar + " * 8;");
-            return;
-        }
-
-        emitLine(out, indent, "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-        emitLine(out, indent, "let _slice = &buffer[_start..buffer.len()];");
-        emitLine(out,
-                 indent,
-                 "let _consumed = match " + expr + ".deserialize(_slice) { Ok(v) => v, Err(e) => return Err(e) };\n");
-        emitLine(out, indent, "offset_bits += _consumed * 8;");
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Deserialize, poolClassConstExpr);
+        renderFieldSteps(steps, expr, HelperBindingDirection::Deserialize, spelling);
     }
 };
 

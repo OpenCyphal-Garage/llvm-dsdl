@@ -14,6 +14,12 @@
 #include "llvmdsdl/CodeGen/EmitStep.h"
 
 #include <cassert>
+#include <utility>
+
+#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/TypeStorage.h"
 
 namespace llvmdsdl
 {
@@ -91,6 +97,142 @@ void renderUnionSection(const EmitTraceDirection            direction,
             spelling.spellEndDispatch();
             break;
         }
+    }
+}
+
+FieldEmitStep buildFieldEmitSteps(const SemanticFieldType&           type,
+                                  const LoweredFieldFacts* const     fieldFacts,
+                                  const std::optional<std::uint32_t> prefixBitsOverride,
+                                  const HelperBindingDirection       direction)
+{
+    FieldEmitStep step;
+    step.type = type;
+
+    if (type.arrayKind != ArrayKind::None)
+    {
+        const auto arrayPlan = buildArrayWirePlan(type, fieldFacts, prefixBitsOverride, direction);
+        step.kind            = arrayPlan.variable ? FieldStepKind::VariableArray : FieldStepKind::FixedArray;
+        step.capacity        = type.arrayCapacity;
+        step.prefixBits      = arrayPlan.prefixBits;
+        step.arrayHelpers    = arrayPlan.descriptor;
+        // The element subtree: nesting is shared here, not re-written per backend.
+        step.children.push_back(buildFieldEmitSteps(arrayElementType(type), fieldFacts, std::nullopt, direction));
+        return step;
+    }
+
+    switch (type.scalarCategory)
+    {
+    case SemanticScalarCategory::Void:
+        step.kind = FieldStepKind::Pad;
+        step.bits = type.bitLength;
+        return step;
+    case SemanticScalarCategory::Bool:
+        step.kind = FieldStepKind::ScalarBool;
+        step.bits = 1;
+        return step;
+    case SemanticScalarCategory::Byte:
+    case SemanticScalarCategory::Utf8:
+    case SemanticScalarCategory::UnsignedInt:
+        step.kind = FieldStepKind::ScalarUint;
+        break;
+    case SemanticScalarCategory::SignedInt:
+        step.kind = FieldStepKind::ScalarSint;
+        break;
+    case SemanticScalarCategory::Float:
+        step.kind = FieldStepKind::ScalarFloat;
+        break;
+    case SemanticScalarCategory::Composite:
+        step.kind = FieldStepKind::Composite;
+        if (!type.compositeSealed)
+        {
+            step.delimiterValidateSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
+        }
+        return step;
+    }
+
+    step.bits               = type.bitLength;
+    step.scalarHelperSymbol = resolveScalarHelperSymbol(type, fieldFacts, direction);
+    return step;
+}
+
+void renderFieldSteps(const FieldEmitStep&         step,
+                      const std::string&           expr,
+                      const HelperBindingDirection direction,
+                      FieldStepSpelling&           spelling)
+{
+    const bool serialize = direction == HelperBindingDirection::Serialize;
+    switch (step.kind)
+    {
+    case FieldStepKind::Pad:
+        spelling.spellPad(step);
+        return;
+    case FieldStepKind::ScalarBool:
+    case FieldStepKind::ScalarUint:
+    case FieldStepKind::ScalarSint:
+    case FieldStepKind::ScalarFloat:
+        if (serialize)
+        {
+            spelling.spellScalarSerialize(step, expr);
+        }
+        else
+        {
+            spelling.spellScalarDeserialize(step, expr);
+        }
+        return;
+    case FieldStepKind::Composite:
+        if (serialize)
+        {
+            spelling.spellCompositeSerialize(step, expr);
+        }
+        else
+        {
+            spelling.spellCompositeDeserialize(step, expr);
+        }
+        return;
+    case FieldStepKind::FixedArray: {
+        assert(step.children.size() == 1U);
+        if (serialize)
+        {
+            spelling.spellFixedArrayLenCheck(step, expr);  // D2 interface point
+            if (spelling.trySpellArrayBulkFastPath(step, expr, direction))  // D3 interface point
+            {
+                return;
+            }
+            const auto elemExpr = spelling.spellBeginElemLoopSerialize(step, expr);
+            renderFieldSteps(step.children.front(), elemExpr, direction, spelling);
+            spelling.spellEndElemLoopSerialize(step, expr);
+        }
+        else
+        {
+            const auto countExpr = spelling.spellFixedArrayCountDeserialize(step, expr);
+            if (spelling.trySpellArrayBulkFastPath(step, expr, direction))  // D3 interface point
+            {
+                return;
+            }
+            const auto elemExpr = spelling.spellBeginElemLoopDeserialize(step, expr, countExpr);
+            renderFieldSteps(step.children.front(), elemExpr, direction, spelling);
+            spelling.spellEndElemLoopDeserialize(step, expr);
+        }
+        return;
+    }
+    case FieldStepKind::VariableArray: {
+        assert(step.children.size() == 1U);
+        if (serialize)
+        {
+            spelling.spellVariableArrayLenSerialize(step, expr);
+            const auto elemExpr = spelling.spellBeginElemLoopSerialize(step, expr);
+            renderFieldSteps(step.children.front(), elemExpr, direction, spelling);
+            spelling.spellEndElemLoopSerialize(step, expr);
+        }
+        else
+        {
+            const auto countExpr = spelling.spellVariableArrayLenDeserialize(step, expr);
+            const auto elemExpr  = spelling.spellBeginElemLoopDeserialize(step, expr, countExpr);
+            renderFieldSteps(step.children.front(), elemExpr, direction, spelling);
+            spelling.spellEndElemLoopDeserialize(step, expr);
+        }
+        return;
+    }
     }
 }
 

@@ -776,6 +776,437 @@ private:
         renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
 
+    /// @brief Go spelling of the shared recursive field-body steps (see EmitStep.h).
+    ///
+    /// Leaf statement idioms only; all cross-group and recursive ordering comes
+    /// from renderFieldSteps. Fixed arrays are compile-time sized `[N]T`, so the
+    /// D2 length guard is type-system-subsumed (spellFixedArrayLenCheck is a
+    /// documented no-op).
+    class FieldSpelling final : public FieldStepSpelling
+    {
+    public:
+        FieldSpelling(FunctionBodyEmitter&         owner,
+                      std::ostringstream&          out,
+                      const int                    indent,
+                      const HelperBindingDirection direction)
+            : owner_(owner)
+            , out_(out)
+            , indent_(indent)
+            , direction_(direction)
+        {
+        }
+
+        void spellPad(const FieldEmitStep& step) override
+        {
+            if (direction_ == HelperBindingDirection::Serialize)
+            {
+                owner_.emitSerializePadding(out_, step.type, indent_);
+            }
+            else
+            {
+                owner_.emitDeserializePadding(out_, step.type, indent_);
+            }
+        }
+
+        void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool: {
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarBool, 1);
+                emitLine(out_, indent_, err + " := dsdlruntime.SetBit(buffer, offsetBits, " + expr + ")");
+                emitLine(out_, indent_, "if " + err + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + err + ", 0");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offsetBits += 1");
+                break;
+            }
+            case FieldStepKind::ScalarUint: {
+                std::string valueExpr = "uint64(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+                const auto err    = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + ")");
+                emitLine(out_, indent_, "if " + err + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + err + ", 0");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                std::string valueExpr = "int64(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         err + " := dsdlruntime.SetIxx(buffer, offsetBits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + ")");
+                emitLine(out_, indent_, "if " + err + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + err + ", 0");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                const auto  floatType = std::string(step.bits == 64 ? "float64" : "float32");
+                std::string valueExpr = floatType + "(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+                const auto err    = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarFloat, step.bits);
+                if (step.bits == 16)
+                {
+                    emitLine(out_, indent_, err + " := dsdlruntime.SetF16(buffer, offsetBits, " + valueExpr + ")");
+                }
+                else if (step.bits == 32)
+                {
+                    emitLine(out_, indent_, err + " := dsdlruntime.SetF32(buffer, offsetBits, " + valueExpr + ")");
+                }
+                else
+                {
+                    emitLine(out_, indent_, err + " := dsdlruntime.SetF64(buffer, offsetBits, " + valueExpr + ")");
+                }
+                emitLine(out_, indent_, "if " + err + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + err + ", 0");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool:
+                owner_.trace(EmitTraceOp::ReadScalarBool, 1);
+                emitLine(out_, indent_, expr + " = dsdlruntime.GetBit(buffer, offsetBits)");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offsetBits += 1");
+                break;
+            case FieldStepKind::ScalarUint: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) +
+                             "))");
+                emitLine(out_,
+                         indent_,
+                         expr + " = " + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper +
+                             "(" + raw + "))");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) +
+                             "))");
+                emitLine(out_,
+                         indent_,
+                         expr + " = " + signedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper +
+                             "(" + raw + "))");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
+                if (step.bits == 16)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = float32(" + helper + "(float32(dsdlruntime.GetF16(buffer, offsetBits))))");
+                }
+                else if (step.bits == 32)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = float32(" + helper + "(float32(dsdlruntime.GetF32(buffer, offsetBits))))");
+                }
+                else
+                {
+                    emitLine(out_, indent_, expr + " = " + helper + "(dsdlruntime.GetF64(buffer, offsetBits))");
+                }
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
+        {
+            // D2: Go fixed arrays are compile-time sized `[N]T`; the exact-length
+            // guard is subsumed by the type system, so there is no emit site.
+            (void) step;
+            (void) expr;
+        }
+
+        void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("lenRc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_, indent_, validateRc + " := " + validateHelper + "(int64(len(" + expr + ")))");
+            emitLine(out_, indent_, "if " + validateRc + " < 0 {");
+            emitLine(out_, indent_ + 1, "return " + validateRc + ", 0");
+            emitLine(out_, indent_, "}");
+
+            std::string prefixExpr = "uint64(len(" + expr + "))";
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto serPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err             = owner_.nextName("err");
+            owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + prefixExpr + ", " +
+                         std::to_string(step.prefixBits) + ")");
+            emitLine(out_, indent_, "if " + err + " < 0 {");
+            emitLine(out_, indent_ + 1, "return " + err + ", 0");
+            emitLine(out_, indent_, "}");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offsetBits += " + std::to_string(step.prefixBits));
+        }
+
+        std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            const auto count    = owner_.nextName("count");
+            const auto rawCount = owner_.nextName("countRaw");
+            owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.prefixBits) +
+                         ")");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offsetBits += " + std::to_string(step.prefixBits));
+            std::string countExpr = "int(" + rawCount + ")";
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto deserPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            countExpr                    = "int(" + deserPrefixHelper + "(" + rawCount + "))";
+            emitLine(out_, indent_, count + " := " + countExpr);
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("lenRc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_, indent_, validateRc + " := " + validateHelper + "(int64(" + count + "))");
+            emitLine(out_, indent_, "if " + validateRc + " < 0 {");
+            emitLine(out_, indent_ + 1, "return " + validateRc + ", 0");
+            emitLine(out_, indent_, "}");
+            const auto itemType = goBaseFieldType(step.children.front().type,
+                                                  owner_.ctx_,
+                                                  owner_.currentPackagePath_,
+                                                  owner_.importAliases_);
+            emitLine(out_, indent_, expr + " = make([]" + itemType + ", " + count + ")");
+            return count;
+        }
+
+        std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) expr;
+            const auto count = owner_.nextName("count");
+            emitLine(out_, indent_, count + " := " + std::to_string(step.capacity));
+            return count;
+        }
+
+        std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            const auto index = owner_.nextName("index");
+            const auto count = step.kind == FieldStepKind::VariableArray ? "len(" + expr + ")"
+                                                                         : std::to_string(step.capacity);
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_, indent_, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
+            ++indent_;
+            return expr + "[" + index + "]";
+        }
+
+        std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
+                                                  const std::string&   expr,
+                                                  const std::string&   countExpr) override
+        {
+            (void) step;
+            const auto index = owner_.nextName("index");
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_,
+                     indent_,
+                     "for " + index + " := 0; " + index + " < " + countExpr + "; " + index + "++ {");
+            ++indent_;
+            return expr + "[" + index + "]";
+        }
+
+        void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            (void) expr;
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            (void) expr;
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            const auto sizeVar  = owner_.nextName("sizeBytes");
+            const auto maxBytes = (step.type.bitLengthSet.max() + 7) / 8;
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_, indent_, "offsetBits += 32");
+            }
+            emitLine(out_, indent_, sizeVar + " := " + std::to_string(maxBytes));
+            if (!step.type.compositeSealed)
+            {
+                const auto remainingVar = owner_.nextName("remaining");
+                emitLine(out_,
+                         indent_,
+                         remainingVar + " := len(buffer) - dsdlruntime.ChooseMin(offsetBits/8, "
+                                        "len(buffer))");
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
+                emitLine(out_, indent_, "if " + validateRc + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + validateRc + ", 0");
+                emitLine(out_, indent_, "}");
+            }
+            const auto startVar = owner_.nextName("start");
+            const auto endVar   = owner_.nextName("end");
+            emitLine(out_, indent_, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
+            emitLine(out_,
+                     indent_,
+                     endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
+            const auto rcVar       = owner_.nextName("rc");
+            const auto consumedVar = owner_.nextName("consumed");
+            emitLine(out_,
+                     indent_,
+                     rcVar + ", " + consumedVar + " := " + expr + ".Serialize(buffer[" + startVar + ":" + endVar +
+                         "])");
+            emitLine(out_, indent_, "if " + rcVar + " < 0 {");
+            emitLine(out_, indent_ + 1, "return " + rcVar + ", 0");
+            emitLine(out_, indent_, "}");
+            emitLine(out_, indent_, sizeVar + " = " + consumedVar);
+            if (!step.type.compositeSealed)
+            {
+                const auto hdrErr = owner_.nextName("err");
+                emitLine(out_,
+                         indent_,
+                         hdrErr + " := dsdlruntime.SetUxx(buffer, offsetBits-32, uint64(" + sizeVar + "), 32)");
+                emitLine(out_, indent_, "if " + hdrErr + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + hdrErr + ", 0");
+                emitLine(out_, indent_, "}");
+            }
+            emitLine(out_, indent_, "offsetBits += " + sizeVar + " * 8");
+        }
+
+        void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            if (!step.type.compositeSealed)
+            {
+                const auto sizeVar = owner_.nextName("sizeBytes");
+                emitLine(out_, indent_, sizeVar + " := int(dsdlruntime.GetU32(buffer, offsetBits, 32))");
+                emitLine(out_, indent_, "offsetBits += 32");
+                const auto remainingVar = owner_.nextName("remaining");
+                emitLine(out_,
+                         indent_,
+                         remainingVar + " := capacityBytes - dsdlruntime.ChooseMin(offsetBits/8, "
+                                        "capacityBytes)");
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
+                emitLine(out_, indent_, "if " + validateRc + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + validateRc + ", 0");
+                emitLine(out_, indent_, "}");
+                const auto startVar = owner_.nextName("start");
+                const auto endVar   = owner_.nextName("end");
+                emitLine(out_, indent_, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
+                emitLine(out_,
+                         indent_,
+                         endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
+                const auto rcVar       = owner_.nextName("rc");
+                const auto consumedVar = owner_.nextName("consumed");
+                emitLine(out_,
+                         indent_,
+                         rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":" +
+                             endVar + "])");
+                emitLine(out_, indent_, "_ = " + consumedVar);
+                emitLine(out_, indent_, "if " + rcVar + " < 0 {");
+                emitLine(out_, indent_ + 1, "return " + rcVar + ", 0");
+                emitLine(out_, indent_, "}");
+                emitLine(out_, indent_, "offsetBits += " + sizeVar + " * 8");
+                return;
+            }
+
+            const auto startVar = owner_.nextName("start");
+            emitLine(out_, indent_, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
+            const auto rcVar       = owner_.nextName("rc");
+            const auto consumedVar = owner_.nextName("consumed");
+            emitLine(out_,
+                     indent_,
+                     rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar +
+                         ":len(buffer)])");
+            emitLine(out_, indent_, "if " + rcVar + " < 0 {");
+            emitLine(out_, indent_ + 1, "return " + rcVar + ", 0");
+            emitLine(out_, indent_, "}");
+            emitLine(out_, indent_, "offsetBits += " + consumedVar + " * 8");
+        }
+
+    private:
+        FunctionBodyEmitter&         owner_;
+        std::ostringstream&          out_;
+        int                          indent_;
+        const HelperBindingDirection direction_;
+    };
+
     void emitSerializeAny(std::ostringstream&          out,
                           const SemanticFieldType&     type,
                           const std::string&           expr,
@@ -783,12 +1214,10 @@ private:
                           std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
                           const LoweredFieldFacts*     fieldFacts                    = nullptr)
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitSerializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
-            return;
-        }
-        emitSerializeScalar(out, type, expr, indent, fieldFacts);
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Serialize);
+        renderFieldSteps(steps, expr, HelperBindingDirection::Serialize, spelling);
     }
 
     void emitDeserializeAny(std::ostringstream&          out,
@@ -798,399 +1227,10 @@ private:
                             std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
                             const LoweredFieldFacts*     fieldFacts                    = nullptr)
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitDeserializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
-            return;
-        }
-        emitDeserializeScalar(out, type, expr, indent, fieldFacts);
-    }
-
-    void emitSerializeScalar(std::ostringstream&      out,
-                             const SemanticFieldType& type,
-                             const std::string&       expr,
-                             int                      indent,
-                             const LoweredFieldFacts* fieldFacts)
-    {
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool: {
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out, indent, err + " := dsdlruntime.SetBit(buffer, offsetBits, " + expr + ")");
-            emitLine(out, indent, "if " + err + " < 0 {");
-            emitLine(out, indent + 1, "return " + err + ", 0");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offsetBits += 1");
-            break;
-        }
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            std::string valueExpr    = "uint64(" + expr + ")";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-            const auto err    = nextName("err");
-            trace(EmitTraceOp::WriteScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + valueExpr + ", " +
-                         std::to_string(type.bitLength) + ")");
-            emitLine(out, indent, "if " + err + " < 0 {");
-            emitLine(out, indent + 1, "return " + err + ", 0");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            std::string valueExpr    = "int64(" + expr + ")";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     err + " := dsdlruntime.SetIxx(buffer, offsetBits, " + valueExpr + ", " +
-                         std::to_string(type.bitLength) + ")");
-            emitLine(out, indent, "if " + err + " < 0 {");
-            emitLine(out, indent + 1, "return " + err + ", 0");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto  floatType  = std::string(type.bitLength == 64U ? "float64" : "float32");
-            std::string valueExpr    = floatType + "(" + expr + ")";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-            const auto err    = nextName("err");
-            trace(EmitTraceOp::WriteScalarFloat, type.bitLength);
-            if (type.bitLength == 16U)
-            {
-                emitLine(out, indent, err + " := dsdlruntime.SetF16(buffer, offsetBits, " + valueExpr + ")");
-            }
-            else if (type.bitLength == 32U)
-            {
-                emitLine(out, indent, err + " := dsdlruntime.SetF32(buffer, offsetBits, " + valueExpr + ")");
-            }
-            else
-            {
-                emitLine(out, indent, err + " := dsdlruntime.SetF64(buffer, offsetBits, " + valueExpr + ")");
-            }
-            emitLine(out, indent, "if " + err + " < 0 {");
-            emitLine(out, indent + 1, "return " + err + ", 0");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitSerializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitSerializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
-    }
-
-    void emitDeserializeScalar(std::ostringstream&      out,
-                               const SemanticFieldType& type,
-                               const std::string&       expr,
-                               int                      indent,
-                               const LoweredFieldFacts* fieldFacts)
-    {
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool:
-            trace(EmitTraceOp::ReadScalarBool, 1);
-            emitLine(out, indent, expr + " = dsdlruntime.GetBit(buffer, offsetBits)");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offsetBits += 1");
-            break;
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(type.bitLength) +
-                         "))");
-            emitLine(out, indent, expr + " = " + unsignedStorageType(type.bitLength) + "(" + helper + "(" + raw + "))");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(type.bitLength) + "))");
-            emitLine(out, indent, expr + " = " + signedStorageType(type.bitLength) + "(" + helper + "(" + raw + "))");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            trace(EmitTraceOp::ReadScalarFloat, type.bitLength);
-            if (type.bitLength == 16U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = float32(" + helper + "(float32(dsdlruntime.GetF16(buffer, offsetBits))))");
-            }
-            else if (type.bitLength == 32U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = float32(" + helper + "(float32(dsdlruntime.GetF32(buffer, offsetBits))))");
-            }
-            else
-            {
-                emitLine(out, indent, expr + " = " + helper + "(dsdlruntime.GetF64(buffer, offsetBits))");
-            }
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offsetBits += " + std::to_string(type.bitLength));
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitDeserializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitDeserializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
-    }
-
-    void emitSerializeArray(std::ostringstream&          out,
-                            const SemanticFieldType&     type,
-                            const std::string&           expr,
-                            int                          indent,
-                            std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                            const LoweredFieldFacts*     fieldFacts)
-    {
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
-        if (arrayPlan.variable)
-        {
-            assert(arrayPlan.descriptor.has_value());
-            assert(!arrayPlan.descriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayPlan.descriptor->validateSymbol);
-            const auto validateRc     = nextName("lenRc");
-            trace(EmitTraceOp::LenValidate, arrayPlan.prefixBits);
-            emitLine(out, indent, validateRc + " := " + validateHelper + "(int64(len(" + expr + ")))");
-            emitLine(out, indent, "if " + validateRc + " < 0 {");
-            emitLine(out, indent + 1, "return " + validateRc + ", 0");
-            emitLine(out, indent, "}");
-
-            std::string prefixExpr = "uint64(len(" + expr + "))";
-            assert(!arrayPlan.descriptor->prefixSymbol.empty());
-            const auto serPrefixHelper = helperBindingName(arrayPlan.descriptor->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = nextName("err");
-            trace(EmitTraceOp::LenWrite, arrayPlan.prefixBits);
-            emitLine(out,
-                     indent,
-                     err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + prefixExpr + ", " +
-                         std::to_string(arrayPlan.prefixBits) + ")");
-            emitLine(out, indent, "if " + err + " < 0 {");
-            emitLine(out, indent + 1, "return " + err + ", 0");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, arrayPlan.prefixBits);
-            emitLine(out, indent, "offsetBits += " + std::to_string(arrayPlan.prefixBits));
-        }
-
-        const auto index = nextName("index");
-        const auto count = arrayPlan.variable ? "len(" + expr + ")" : std::to_string(type.arrayCapacity);
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
-        emitSerializeScalar(out, arrayElementType(type), expr + "[" + index + "]", indent + 1, fieldFacts);
-        emitLine(out, indent, "}");
-    }
-
-    void emitDeserializeArray(std::ostringstream&          out,
-                              const SemanticFieldType&     type,
-                              const std::string&           expr,
-                              int                          indent,
-                              std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                              const LoweredFieldFacts*     fieldFacts)
-    {
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
-        const auto count = nextName("count");
-        if (arrayPlan.variable)
-        {
-            const auto rawCount = nextName("countRaw");
-            trace(EmitTraceOp::LenRead, arrayPlan.prefixBits);
-            emitLine(out,
-                     indent,
-                     rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(arrayPlan.prefixBits) +
-                         ")");
-            trace(EmitTraceOp::Advance, arrayPlan.prefixBits);
-            emitLine(out, indent, "offsetBits += " + std::to_string(arrayPlan.prefixBits));
-            std::string countExpr = "int(" + rawCount + ")";
-            assert(arrayPlan.descriptor.has_value());
-            assert(!arrayPlan.descriptor->prefixSymbol.empty());
-            const auto deserPrefixHelper = helperBindingName(arrayPlan.descriptor->prefixSymbol);
-            countExpr                    = "int(" + deserPrefixHelper + "(" + rawCount + "))";
-            emitLine(out, indent, count + " := " + countExpr);
-            assert(!arrayPlan.descriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayPlan.descriptor->validateSymbol);
-            const auto validateRc     = nextName("lenRc");
-            trace(EmitTraceOp::LenValidate, arrayPlan.prefixBits);
-            emitLine(out, indent, validateRc + " := " + validateHelper + "(int64(" + count + "))");
-            emitLine(out, indent, "if " + validateRc + " < 0 {");
-            emitLine(out, indent + 1, "return " + validateRc + ", 0");
-            emitLine(out, indent, "}");
-            const auto itemType = goBaseFieldType(arrayElementType(type), ctx_, currentPackagePath_, importAliases_);
-            emitLine(out, indent, expr + " = make([]" + itemType + ", " + count + ")");
-        }
-        else
-        {
-            emitLine(out, indent, count + " := " + std::to_string(type.arrayCapacity));
-        }
-
-        const auto index = nextName("index");
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
-        emitDeserializeScalar(out, arrayElementType(type), expr + "[" + index + "]", indent + 1, fieldFacts);
-        emitLine(out, indent, "}");
-    }
-
-    void emitSerializeComposite(std::ostringstream&      out,
-                                const SemanticFieldType& type,
-                                const std::string&       expr,
-                                int                      indent,
-                                const LoweredFieldFacts* fieldFacts)
-    {
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        const auto sizeVar  = nextName("sizeBytes");
-        const auto maxBytes = (type.bitLengthSet.max() + 7) / 8;
-        if (!type.compositeSealed)
-        {
-            emitLine(out, indent, "offsetBits += 32");
-        }
-        emitLine(out, indent, sizeVar + " := " + std::to_string(maxBytes));
-        if (!type.compositeSealed)
-        {
-            const auto remainingVar = nextName("remaining");
-            emitLine(out,
-                     indent,
-                     remainingVar + " := len(buffer) - dsdlruntime.ChooseMin(offsetBits/8, "
-                                    "len(buffer))");
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
-            emitLine(out, indent, "if " + validateRc + " < 0 {");
-            emitLine(out, indent + 1, "return " + validateRc + ", 0");
-            emitLine(out, indent, "}");
-        }
-        const auto startVar = nextName("start");
-        const auto endVar   = nextName("end");
-        emitLine(out, indent, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-        emitLine(out, indent, endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
-        const auto rcVar       = nextName("rc");
-        const auto consumedVar = nextName("consumed");
-        emitLine(out,
-                 indent,
-                 rcVar + ", " + consumedVar + " := " + expr + ".Serialize(buffer[" + startVar + ":" + endVar + "])");
-        emitLine(out, indent, "if " + rcVar + " < 0 {");
-        emitLine(out, indent + 1, "return " + rcVar + ", 0");
-        emitLine(out, indent, "}");
-        emitLine(out, indent, sizeVar + " = " + consumedVar);
-        if (!type.compositeSealed)
-        {
-            const auto hdrErr = nextName("err");
-            emitLine(out,
-                     indent,
-                     hdrErr + " := dsdlruntime.SetUxx(buffer, offsetBits-32, uint64(" + sizeVar + "), 32)");
-            emitLine(out, indent, "if " + hdrErr + " < 0 {");
-            emitLine(out, indent + 1, "return " + hdrErr + ", 0");
-            emitLine(out, indent, "}");
-        }
-        emitLine(out, indent, "offsetBits += " + sizeVar + " * 8");
-    }
-
-    void emitDeserializeComposite(std::ostringstream&      out,
-                                  const SemanticFieldType& type,
-                                  const std::string&       expr,
-                                  int                      indent,
-                                  const LoweredFieldFacts* fieldFacts)
-    {
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        if (!type.compositeSealed)
-        {
-            const auto sizeVar = nextName("sizeBytes");
-            emitLine(out, indent, sizeVar + " := int(dsdlruntime.GetU32(buffer, offsetBits, 32))");
-            emitLine(out, indent, "offsetBits += 32");
-            const auto remainingVar = nextName("remaining");
-            emitLine(out,
-                     indent,
-                     remainingVar + " := capacityBytes - dsdlruntime.ChooseMin(offsetBits/8, "
-                                    "capacityBytes)");
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
-            emitLine(out, indent, "if " + validateRc + " < 0 {");
-            emitLine(out, indent + 1, "return " + validateRc + ", 0");
-            emitLine(out, indent, "}");
-            const auto startVar = nextName("start");
-            const auto endVar   = nextName("end");
-            emitLine(out, indent, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-            emitLine(out, indent, endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
-            const auto rcVar       = nextName("rc");
-            const auto consumedVar = nextName("consumed");
-            emitLine(out,
-                     indent,
-                     rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":" + endVar +
-                         "])");
-            emitLine(out, indent, "_ = " + consumedVar);
-            emitLine(out, indent, "if " + rcVar + " < 0 {");
-            emitLine(out, indent + 1, "return " + rcVar + ", 0");
-            emitLine(out, indent, "}");
-            emitLine(out, indent, "offsetBits += " + sizeVar + " * 8");
-            return;
-        }
-
-        const auto startVar = nextName("start");
-        emitLine(out, indent, startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-        const auto rcVar       = nextName("rc");
-        const auto consumedVar = nextName("consumed");
-        emitLine(out,
-                 indent,
-                 rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":len(buffer)])");
-        emitLine(out, indent, "if " + rcVar + " < 0 {");
-        emitLine(out, indent + 1, "return " + rcVar + ", 0");
-        emitLine(out, indent, "}");
-        emitLine(out, indent, "offsetBits += " + consumedVar + " * 8");
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Deserialize);
+        renderFieldSteps(steps, expr, HelperBindingDirection::Deserialize, spelling);
     }
 };
 

@@ -874,6 +874,548 @@ private:
         renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
 
+    /// @brief C++ spelling of the shared recursive field-body steps (see EmitStep.h).
+    ///
+    /// Leaf statement idioms only; all cross-group and recursive ordering comes
+    /// from renderFieldSteps. Fixed arrays are std::array, so the D2 length guard
+    /// is type-system-subsumed (spellFixedArrayLenCheck is a documented no-op),
+    /// and fixed bool arrays take the D3 bulk-copy fast path via
+    /// trySpellArrayBulkFastPath. PMR flavor differences stay inside this class.
+    class FieldSpelling final : public FieldStepSpelling
+    {
+    public:
+        FieldSpelling(FunctionBodyEmitter&         owner,
+                      std::ostringstream&          out,
+                      const int                    indent,
+                      const HelperBindingDirection direction)
+            : owner_(owner)
+            , out_(out)
+            , indent_(indent)
+            , direction_(direction)
+        {
+        }
+
+        void spellPad(const FieldEmitStep& step) override
+        {
+            if (direction_ == HelperBindingDirection::Serialize)
+            {
+                owner_.emitSerializePadding(out_, step.type, indent_);
+            }
+            else
+            {
+                owner_.emitDeserializePadding(out_, step.type, indent_);
+            }
+        }
+
+        void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool: {
+                const auto err = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarBool, 1);
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + err +
+                             " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " + expr + ");");
+                emitLine(out_, indent_, "if (" + err + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + err + ";");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offset_bits += 1U;");
+                break;
+            }
+            case FieldStepKind::ScalarUint: {
+                std::string valueExpr = "static_cast<std::uint64_t>(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+                const auto err    = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + err +
+                             " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + "U);");
+                emitLine(out_, indent_, "if (" + err + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + err + ";");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                std::string valueExpr = "static_cast<std::int64_t>(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                valueExpr         = helper + "(" + valueExpr + ")";
+                const auto err    = owner_.nextName("err");
+                owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + err +
+                             " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
+                             std::to_string(step.bits) + "U);");
+                emitLine(out_, indent_, "if (" + err + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + err + ";");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                const auto  err            = owner_.nextName("err");
+                const auto  floatType      = std::string(step.bits == 64 ? "double" : "float");
+                std::string normalizedExpr = "static_cast<" + floatType + ">(" + expr + ")";
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                normalizedExpr    = helper + "(" + normalizedExpr + ")";
+                std::string call;
+                if (step.bits == 16)
+                {
+                    call = "dsdl_runtime_set_f16(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
+                }
+                else if (step.bits == 32)
+                {
+                    call = "dsdl_runtime_set_f32(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
+                }
+                else
+                {
+                    call = "dsdl_runtime_set_f64(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
+                }
+                owner_.trace(EmitTraceOp::WriteScalarFloat, step.bits);
+                emitLine(out_, indent_, "const std::int8_t " + err + " = " + call + ";");
+                emitLine(out_, indent_, "if (" + err + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + err + ";");
+                emitLine(out_, indent_, "}");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            switch (step.kind)
+            {
+            case FieldStepKind::ScalarBool:
+                owner_.trace(EmitTraceOp::ReadScalarBool, 1);
+                emitLine(out_, indent_, expr + " = dsdl_runtime_get_bit(buffer, capacity_bytes, offset_bits);");
+                owner_.trace(EmitTraceOp::Advance, 1);
+                emitLine(out_, indent_, "offset_bits += 1U;");
+                break;
+            case FieldStepKind::ScalarUint: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "const std::uint64_t " + raw + " = static_cast<std::uint64_t>(" +
+                             unsignedGetter(static_cast<std::uint32_t>(step.bits)) +
+                             "(buffer, capacity_bytes, offset_bits, " + std::to_string(step.bits) + "U));");
+                emitLine(out_,
+                         indent_,
+                         expr + " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) +
+                             ">(" + helper + "(" + raw + "));");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            case FieldStepKind::ScalarSint: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto raw    = owner_.nextName("raw");
+                owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
+                emitLine(out_,
+                         indent_,
+                         "const std::int64_t " + raw + " = static_cast<std::int64_t>(" +
+                             unsignedGetter(static_cast<std::uint32_t>(step.bits)) +
+                             "(buffer, capacity_bytes, offset_bits, " + std::to_string(step.bits) + "U));");
+                emitLine(out_,
+                         indent_,
+                         expr + " = static_cast<" + signedStorageType(static_cast<std::uint32_t>(step.bits)) + ">(" +
+                             helper + "(" + raw + "));");
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            case FieldStepKind::ScalarFloat: {
+                assert(!step.scalarHelperSymbol.empty());
+                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
+                if (step.bits == 16)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = static_cast<float>(" + helper +
+                                 "(static_cast<float>(dsdl_runtime_get_f16(buffer, capacity_bytes, "
+                                 "offset_bits))));");
+                }
+                else if (step.bits == 32)
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = static_cast<float>(" + helper +
+                                 "(static_cast<float>(dsdl_runtime_get_f32(buffer, capacity_bytes, "
+                                 "offset_bits))));");
+                }
+                else
+                {
+                    emitLine(out_,
+                             indent_,
+                             expr + " = static_cast<double>(" + helper +
+                                 "(static_cast<double>(dsdl_runtime_get_f64(buffer, capacity_bytes, "
+                                 "offset_bits))));");
+                }
+                owner_.trace(EmitTraceOp::Advance, step.bits);
+                emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
+                break;
+            }
+            default:
+                assert(false && "not a scalar step");
+                break;
+            }
+        }
+
+        void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
+        {
+            // D2: C++ fixed arrays are std::array; the exact-length guard is subsumed
+            // by the type system, so there is no emit site.
+            (void) step;
+            (void) expr;
+        }
+
+        bool trySpellArrayBulkFastPath(const FieldEmitStep&         step,
+                                       const std::string&           expr,
+                                       const HelperBindingDirection direction) override
+        {
+            // D3: fixed bool arrays are bit-copied wholesale instead of looping.
+            if (step.kind != FieldStepKind::FixedArray ||
+                step.children.front().kind != FieldStepKind::ScalarBool)
+            {
+                return false;
+            }
+            const auto countExpr = std::to_string(step.capacity) + "U";
+            if (direction == HelperBindingDirection::Serialize)
+            {
+                const auto source = expr + ".data()";
+                owner_.trace(EmitTraceOp::BulkCopy, step.capacity);
+                emitLine(out_,
+                         indent_,
+                         "dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr + ", " + source + ", 0U);");
+                owner_.trace(EmitTraceOp::Advance, step.capacity);
+                emitLine(out_, indent_, "offset_bits += " + countExpr + ";");
+            }
+            else
+            {
+                const auto target = expr + ".data()";
+                owner_.trace(EmitTraceOp::BulkCopy, step.capacity);
+                emitLine(out_,
+                         indent_,
+                         "dsdl_runtime_get_bits(" + target +
+                             ", &buffer[0], capacity_bytes, "
+                             "offset_bits, " +
+                             countExpr + ");");
+                owner_.trace(EmitTraceOp::Advance, step.capacity);
+                emitLine(out_, indent_, "offset_bits += " + countExpr + ";");
+            }
+            return true;
+        }
+
+        void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
+                         expr + ".size()));");
+            emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + validateRc + ";");
+            emitLine(out_, indent_, "}");
+
+            std::string prefixExpr = "static_cast<std::uint64_t>(" + expr + ".size())";
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto serPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err             = owner_.nextName("err");
+            owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
+                         prefixExpr + ", " + std::to_string(step.prefixBits) + "U);");
+            emitLine(out_, indent_, "if (" + err + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + err + ";");
+            emitLine(out_, indent_, "}");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(step.prefixBits) + "U;");
+        }
+
+        std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            const auto rawCountVar = owner_.nextName("count_raw");
+            owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "const std::uint64_t " + rawCountVar + " = static_cast<std::uint64_t>(" +
+                         unsignedGetter(step.prefixBits) + "(buffer, capacity_bytes, offset_bits, " +
+                         std::to_string(step.prefixBits) + "U));");
+            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(step.prefixBits) + "U;");
+            std::string countRawExpr = rawCountVar;
+            assert(step.arrayHelpers.has_value());
+            assert(!step.arrayHelpers->prefixSymbol.empty());
+            const auto deserPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
+            countRawExpr                 = deserPrefixHelper + "(" + countRawExpr + ")";
+            const auto countVar          = owner_.nextName("count");
+            emitLine(out_,
+                     indent_,
+                     "const std::size_t " + countVar + " = static_cast<std::size_t>(" + countRawExpr + ");");
+
+            assert(!step.arrayHelpers->validateSymbol.empty());
+            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
+            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
+                         countVar + "));");
+            emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + validateRc + ";");
+            emitLine(out_, indent_, "}");
+            if (isPmrFlavor(owner_.flavor_))
+            {
+                const auto tmpVar = owner_.nextName("tmp");
+                emitLine(out_,
+                         indent_,
+                         "std::pmr::vector<" + owner_.containerElementType(step.type) + "> " + tmpVar +
+                             "(effective_memory_resource != nullptr ? effective_memory_resource : "
+                             "::llvmdsdl::cpp::default_memory_resource());");
+                emitLine(out_, indent_, tmpVar + ".resize(" + countVar + ");");
+                emitLine(out_, indent_, expr + " = std::move(" + tmpVar + ");");
+            }
+            else
+            {
+                emitLine(out_, indent_, expr + ".resize(" + countVar + ");");
+            }
+
+            if (isPmrFlavor(owner_.flavor_) && step.type.scalarCategory == SemanticScalarCategory::Composite)
+            {
+                const auto initIndex = owner_.nextName("i");
+                emitLine(out_,
+                         indent_,
+                         "for (std::size_t " + initIndex + " = 0U; " + initIndex + " < " + countVar + "; ++" +
+                             initIndex + ") {");
+                emitLine(out_,
+                         indent_ + 1,
+                         expr + "[" + initIndex + "].set_memory_resource(effective_memory_resource);");
+                emitLine(out_, indent_, "}");
+            }
+
+            return countVar;
+        }
+
+        std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            // std::array needs no storage prep; the loop bounds on the capacity literal.
+            (void) expr;
+            return std::to_string(step.capacity) + "U";
+        }
+
+        std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            const auto index = owner_.nextName("index");
+            const auto bound = step.kind == FieldStepKind::VariableArray
+                                   ? (expr + ".size()")
+                                   : std::to_string(step.capacity) + "U";
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_,
+                     indent_,
+                     "for (std::size_t " + index + " = 0U; " + index + " < " + bound + "; ++" + index + ") {");
+            ++indent_;
+            return expr + "[" + index + "]";
+        }
+
+        std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
+                                                  const std::string&   expr,
+                                                  const std::string&   countExpr) override
+        {
+            (void) step;
+            const auto index = owner_.nextName("index");
+            owner_.trace(EmitTraceOp::ElemLoop);
+            emitLine(out_,
+                     indent_,
+                     "for (std::size_t " + index + " = 0U; " + index + " < " + countExpr + "; ++" + index + ") {");
+            ++indent_;
+            return expr + "[" + index + "]";
+        }
+
+        void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            (void) expr;
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            (void) step;
+            (void) expr;
+            --indent_;
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            if (!step.type.compositeType)
+            {
+                emitLine(out_, indent_, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                return;
+            }
+
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
+            auto       sizeVar    = owner_.nextName("size_bytes");
+            auto       errVar     = owner_.nextName("err");
+
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_, indent_, "offset_bits += 32U;  // Delimiter header");
+            }
+
+            emitLine(out_,
+                     indent_,
+                     "std::size_t " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) +
+                         "U;");
+            if (!step.type.compositeSealed)
+            {
+                const auto remaining = owner_.nextName("remaining");
+                emitLine(out_,
+                         indent_,
+                         "const std::size_t " + remaining +
+                             " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
+                             sizeVar + "), static_cast<std::int64_t>(" + remaining + "));");
+                emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + validateRc + ";");
+                emitLine(out_, indent_, "}");
+            }
+            emitLine(out_,
+                     indent_,
+                     "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
+                         ", &buffer[offset_bits / 8U], &" + sizeVar +
+                         (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
+            emitLine(out_, indent_, "if (" + errVar + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + errVar + ";");
+            emitLine(out_, indent_, "}");
+
+            if (!step.type.compositeSealed)
+            {
+                auto hdrErr = owner_.nextName("err");
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + hdrErr +
+                             " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits - 32U, "
+                             "static_cast<std::uint64_t>(" +
+                             sizeVar + "), 32U);");
+                emitLine(out_, indent_, "if (" + hdrErr + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + hdrErr + ";");
+                emitLine(out_, indent_, "}");
+            }
+
+            emitLine(out_, indent_, "offset_bits += " + sizeVar + " * 8U;");
+        }
+
+        void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+        {
+            if (!step.type.compositeType)
+            {
+                emitLine(out_, indent_, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                return;
+            }
+
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
+                                                   : EmitTraceOp::CompositeDelimHeader);
+            const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
+            auto       sizeVar    = owner_.nextName("size_bytes");
+            auto       errVar     = owner_.nextName("err");
+
+            if (!step.type.compositeSealed)
+            {
+                emitLine(out_,
+                         indent_,
+                         "std::size_t " + sizeVar +
+                             " = static_cast<std::size_t>(dsdl_runtime_get_u32(buffer, capacity_bytes, "
+                             "offset_bits, "
+                             "32U));");
+                emitLine(out_, indent_, "offset_bits += 32U;");
+                emitLine(out_,
+                         indent_,
+                         "const std::size_t _remaining_" + std::to_string(owner_.id_) +
+                             " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
+                const auto remVar = "_remaining_" + std::to_string(owner_.id_);
+                ++owner_.id_;
+                assert(!step.delimiterValidateSymbol.empty());
+                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto validateRc = owner_.nextName("rc");
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
+                             sizeVar + "), static_cast<std::int64_t>(" + remVar + "));");
+                emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + validateRc + ";");
+                emitLine(out_, indent_, "}");
+                const auto consumed = owner_.nextName("consumed");
+                emitLine(out_, indent_, "std::size_t " + consumed + " = " + sizeVar + ";");
+                emitLine(out_,
+                         indent_,
+                         "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                             ", &buffer[offset_bits / 8U], &" + consumed +
+                             (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
+                emitLine(out_, indent_, "if (" + errVar + " < 0) {");
+                emitLine(out_, indent_ + 1, "return " + errVar + ";");
+                emitLine(out_, indent_, "}");
+                emitLine(out_, indent_, "offset_bits += " + sizeVar + " * 8U;");
+                return;
+            }
+
+            emitLine(out_,
+                     indent_,
+                     "std::size_t " + sizeVar +
+                         " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                         ", &buffer[offset_bits / 8U], &" + sizeVar +
+                         (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
+            emitLine(out_, indent_, "if (" + errVar + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + errVar + ";");
+            emitLine(out_, indent_, "}");
+            emitLine(out_, indent_, "offset_bits += " + sizeVar + " * 8U;");
+        }
+
+    private:
+        FunctionBodyEmitter&         owner_;
+        std::ostringstream&          out_;
+        int                          indent_;
+        const HelperBindingDirection direction_;
+    };
+
     void emitSerializeValue(std::ostringstream&                out,
                             const SemanticFieldType&           type,
                             const std::string&                 expr,
@@ -881,105 +1423,10 @@ private:
                             const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
                             const LoweredFieldFacts* const     fieldFacts                    = nullptr)
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitSerializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
-            return;
-        }
-
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool: {
-            const auto err = nextName("err");
-            trace(EmitTraceOp::WriteScalarBool, 1);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + err + " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " +
-                         expr + ");");
-            emitLine(out, indent, "if (" + err + " < 0) {");
-            emitLine(out, indent + 1, "return " + err + ";");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offset_bits += 1U;");
-            break;
-        }
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            std::string valueExpr    = "static_cast<std::uint64_t>(" + expr + ")";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-            const auto err    = nextName("err");
-            trace(EmitTraceOp::WriteScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
-                         valueExpr + ", " + std::to_string(type.bitLength) + "U);");
-            emitLine(out, indent, "if (" + err + " < 0) {");
-            emitLine(out, indent + 1, "return " + err + ";");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            std::string valueExpr    = "static_cast<std::int64_t>(" + expr + ")";
-            const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            valueExpr         = helper + "(" + valueExpr + ")";
-            const auto err    = nextName("err");
-            trace(EmitTraceOp::WriteScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + err + " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
-                         valueExpr + ", " + std::to_string(type.bitLength) + "U);");
-            emitLine(out, indent, "if (" + err + " < 0) {");
-            emitLine(out, indent + 1, "return " + err + ";");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto  err            = nextName("err");
-            const auto  floatType      = std::string(type.bitLength == 64U ? "double" : "float");
-            std::string normalizedExpr = "static_cast<" + floatType + ">(" + expr + ")";
-            const auto  helperSymbol   = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            normalizedExpr    = helper + "(" + normalizedExpr + ")";
-            std::string call;
-            if (type.bitLength == 16U)
-            {
-                call = "dsdl_runtime_set_f16(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
-            }
-            else if (type.bitLength == 32U)
-            {
-                call = "dsdl_runtime_set_f32(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
-            }
-            else
-            {
-                call = "dsdl_runtime_set_f64(buffer, capacity_bytes, offset_bits, " + normalizedExpr + ")";
-            }
-            trace(EmitTraceOp::WriteScalarFloat, type.bitLength);
-            emitLine(out, indent, "const std::int8_t " + err + " = " + call + ";");
-            emitLine(out, indent, "if (" + err + " < 0) {");
-            emitLine(out, indent + 1, "return " + err + ";");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitSerializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitSerializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Serialize);
+        renderFieldSteps(steps, expr, HelperBindingDirection::Serialize, spelling);
     }
 
     void emitDeserializeValue(std::ostringstream&                out,
@@ -989,412 +1436,10 @@ private:
                               const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
                               const LoweredFieldFacts* const     fieldFacts                    = nullptr)
     {
-        if (type.arrayKind != ArrayKind::None)
-        {
-            emitDeserializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
-            return;
-        }
-
-        switch (type.scalarCategory)
-        {
-        case SemanticScalarCategory::Bool:
-            trace(EmitTraceOp::ReadScalarBool, 1);
-            emitLine(out, indent, expr + " = dsdl_runtime_get_bit(buffer, capacity_bytes, offset_bits);");
-            trace(EmitTraceOp::Advance, 1);
-            emitLine(out, indent, "offset_bits += 1U;");
-            break;
-        case SemanticScalarCategory::Byte:
-        case SemanticScalarCategory::Utf8:
-        case SemanticScalarCategory::UnsignedInt: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarUint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "const std::uint64_t " + raw + " = static_cast<std::uint64_t>(" + unsignedGetter(type.bitLength) +
-                         "(buffer, capacity_bytes, offset_bits, " + std::to_string(type.bitLength) + "U));");
-            emitLine(out,
-                     indent,
-                     expr + " = static_cast<" + unsignedStorageType(type.bitLength) + ">(" + helper + "(" + raw +
-                         "));");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::SignedInt: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            const auto raw    = nextName("raw");
-            trace(EmitTraceOp::ReadScalarSint, type.bitLength);
-            emitLine(out,
-                     indent,
-                     "const std::int64_t " + raw + " = static_cast<std::int64_t>(" + unsignedGetter(type.bitLength) +
-                         "(buffer, capacity_bytes, offset_bits, " + std::to_string(type.bitLength) + "U));");
-            emitLine(out,
-                     indent,
-                     expr + " = static_cast<" + signedStorageType(type.bitLength) + ">(" + helper + "(" + raw + "));");
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::Float: {
-            const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            assert(!helperSymbol.empty());
-            const auto helper = helperBindingName(helperSymbol);
-            trace(EmitTraceOp::ReadScalarFloat, type.bitLength);
-            if (type.bitLength == 16U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = static_cast<float>(" + helper +
-                             "(static_cast<float>(dsdl_runtime_get_f16(buffer, capacity_bytes, offset_bits))));");
-            }
-            else if (type.bitLength == 32U)
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = static_cast<float>(" + helper +
-                             "(static_cast<float>(dsdl_runtime_get_f32(buffer, capacity_bytes, offset_bits))));");
-            }
-            else
-            {
-                emitLine(out,
-                         indent,
-                         expr + " = static_cast<double>(" + helper +
-                             "(static_cast<double>(dsdl_runtime_get_f64(buffer, capacity_bytes, offset_bits))));");
-            }
-            trace(EmitTraceOp::Advance, type.bitLength);
-            emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
-            break;
-        }
-        case SemanticScalarCategory::Void:
-            emitDeserializePadding(out, type, indent);
-            break;
-        case SemanticScalarCategory::Composite:
-            emitDeserializeComposite(out, type, expr, indent, fieldFacts);
-            break;
-        }
-    }
-
-    void emitSerializeArray(std::ostringstream&                out,
-                            const SemanticFieldType&           type,
-                            const std::string&                 expr,
-                            const int                          indent,
-                            const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                            const LoweredFieldFacts* const     fieldFacts)
-    {
-        const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
-        const bool  variable        = arrayPlan.variable;
-        const auto  prefixBits      = arrayPlan.prefixBits;
-        const auto& arrayDescriptor = arrayPlan.descriptor;
-
-        if (variable)
-        {
-            assert(arrayDescriptor.has_value());
-            assert(!arrayDescriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            const auto validateRc     = nextName("len_rc");
-            trace(EmitTraceOp::LenValidate, prefixBits);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" + expr +
-                         ".size()));");
-            emitLine(out, indent, "if (" + validateRc + " < 0) {");
-            emitLine(out, indent + 1, "return " + validateRc + ";");
-            emitLine(out, indent, "}");
-
-            std::string prefixExpr = "static_cast<std::uint64_t>(" + expr + ".size())";
-            assert(!arrayDescriptor->prefixSymbol.empty());
-            const auto serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = nextName("err");
-            trace(EmitTraceOp::LenWrite, prefixBits);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
-                         prefixExpr + ", " + std::to_string(prefixBits) + "U);");
-            emitLine(out, indent, "if (" + err + " < 0) {");
-            emitLine(out, indent + 1, "return " + err + ";");
-            emitLine(out, indent, "}");
-            trace(EmitTraceOp::Advance, prefixBits);
-            emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + "U;");
-        }
-
-        if (elementIsBool && !variable)
-        {
-            const auto source    = expr + ".data()";
-            const auto countExpr = std::to_string(type.arrayCapacity) + "U";
-            trace(EmitTraceOp::BulkCopy, type.arrayCapacity);
-            emitLine(out,
-                     indent,
-                     "dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr + ", " + source + ", 0U);");
-            trace(EmitTraceOp::Advance, type.arrayCapacity);
-            emitLine(out, indent, "offset_bits += " + countExpr + ";");
-            return;
-        }
-
-        const auto index        = nextName("index");
-        const auto bound        = variable ? (expr + ".size()") : std::to_string(type.arrayCapacity) + "U";
-        const auto accessPrefix = expr;
-
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for (std::size_t " + index + " = 0U; " + index + " < " + bound + "; ++" + index + ") {");
-        const auto elementType = arrayElementType(type);
-        emitSerializeValue(out, elementType, accessPrefix + "[" + index + "]", indent + 1, std::nullopt, fieldFacts);
-        emitLine(out, indent, "}");
-    }
-
-    void emitDeserializeArray(std::ostringstream&                out,
-                              const SemanticFieldType&           type,
-                              const std::string&                 expr,
-                              const int                          indent,
-                              const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                              const LoweredFieldFacts* const     fieldFacts)
-    {
-        const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-        const auto arrayPlan =
-            buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
-        const bool  variable        = arrayPlan.variable;
-        const auto  prefixBits      = arrayPlan.prefixBits;
-        const auto& arrayDescriptor = arrayPlan.descriptor;
-        std::string countExpr;
-
-        if (variable)
-        {
-            const auto rawCountVar = nextName("count_raw");
-            trace(EmitTraceOp::LenRead, prefixBits);
-            emitLine(out,
-                     indent,
-                     "const std::uint64_t " + rawCountVar + " = static_cast<std::uint64_t>(" +
-                         unsignedGetter(prefixBits) + "(buffer, capacity_bytes, offset_bits, " +
-                         std::to_string(prefixBits) + "U));");
-            trace(EmitTraceOp::Advance, prefixBits);
-            emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + "U;");
-            std::string countRawExpr = rawCountVar;
-            assert(arrayDescriptor.has_value());
-            assert(!arrayDescriptor->prefixSymbol.empty());
-            const auto deserPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            countRawExpr                 = deserPrefixHelper + "(" + countRawExpr + ")";
-            const auto countVar          = nextName("count");
-            emitLine(out,
-                     indent,
-                     "const std::size_t " + countVar + " = static_cast<std::size_t>(" + countRawExpr + ");");
-
-            assert(!arrayDescriptor->validateSymbol.empty());
-            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            const auto validateRc     = nextName("len_rc");
-            trace(EmitTraceOp::LenValidate, prefixBits);
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
-                         countVar + "));");
-            emitLine(out, indent, "if (" + validateRc + " < 0) {");
-            emitLine(out, indent + 1, "return " + validateRc + ";");
-            emitLine(out, indent, "}");
-            if (isPmrFlavor(flavor_))
-            {
-                const auto tmpVar = nextName("tmp");
-                emitLine(out,
-                         indent,
-                         "std::pmr::vector<" + containerElementType(type) + "> " + tmpVar +
-                             "(effective_memory_resource != nullptr ? effective_memory_resource : "
-                             "::llvmdsdl::cpp::default_memory_resource());");
-                emitLine(out, indent, tmpVar + ".resize(" + countVar + ");");
-                emitLine(out, indent, expr + " = std::move(" + tmpVar + ");");
-            }
-            else
-            {
-                emitLine(out, indent, expr + ".resize(" + countVar + ");");
-            }
-
-            if (isPmrFlavor(flavor_) && type.scalarCategory == SemanticScalarCategory::Composite)
-            {
-                const auto initIndex = nextName("i");
-                emitLine(out,
-                         indent,
-                         "for (std::size_t " + initIndex + " = 0U; " + initIndex + " < " + countVar + "; ++" +
-                             initIndex + ") {");
-                emitLine(out, indent + 1, expr + "[" + initIndex + "].set_memory_resource(effective_memory_resource);");
-                emitLine(out, indent, "}");
-            }
-
-            countExpr = countVar;
-        }
-        else
-        {
-            countExpr = std::to_string(type.arrayCapacity) + "U";
-        }
-
-        if (elementIsBool && !variable)
-        {
-            const auto target = expr + ".data()";
-            trace(EmitTraceOp::BulkCopy, type.arrayCapacity);
-            emitLine(out,
-                     indent,
-                     "dsdl_runtime_get_bits(" + target +
-                         ", &buffer[0], capacity_bytes, "
-                         "offset_bits, " +
-                         countExpr + ");");
-            trace(EmitTraceOp::Advance, type.arrayCapacity);
-            emitLine(out, indent, "offset_bits += " + countExpr + ";");
-            return;
-        }
-
-        const auto index        = nextName("index");
-        const auto bound        = variable ? countExpr : std::to_string(type.arrayCapacity) + "U";
-        const auto accessPrefix = expr;
-
-        trace(EmitTraceOp::ElemLoop);
-        emitLine(out, indent, "for (std::size_t " + index + " = 0U; " + index + " < " + bound + "; ++" + index + ") {");
-        const auto elementType = arrayElementType(type);
-        emitDeserializeValue(out, elementType, accessPrefix + "[" + index + "]", indent + 1, std::nullopt, fieldFacts);
-        emitLine(out, indent, "}");
-    }
-
-    void emitSerializeComposite(std::ostringstream&            out,
-                                const SemanticFieldType&       type,
-                                const std::string&             expr,
-                                const int                      indent,
-                                const LoweredFieldFacts* const fieldFacts)
-    {
-        if (!type.compositeType)
-        {
-            emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-            return;
-        }
-
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        const auto nestedType = ctx_.cppQualifiedTypeName(*type.compositeType);
-        auto       sizeVar    = nextName("size_bytes");
-        auto       errVar     = nextName("err");
-
-        if (!type.compositeSealed)
-        {
-            emitLine(out, indent, "offset_bits += 32U;  // Delimiter header");
-        }
-
-        emitLine(out,
-                 indent,
-                 "std::size_t " + sizeVar + " = " + std::to_string((type.bitLengthSet.max() + 7) / 8) + "U;");
-        if (!type.compositeSealed)
-        {
-            const auto remaining = nextName("remaining");
-            emitLine(out,
-                     indent,
-                     "const std::size_t " + remaining +
-                         " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
-                         "), static_cast<std::int64_t>(" + remaining + "));");
-            emitLine(out, indent, "if (" + validateRc + " < 0) {");
-            emitLine(out, indent + 1, "return " + validateRc + ";");
-            emitLine(out, indent, "}");
-        }
-        emitLine(out,
-                 indent,
-                 "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
-                     ", &buffer[offset_bits / 8U], &" + sizeVar +
-                     (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ");");
-        emitLine(out, indent, "if (" + errVar + " < 0) {");
-        emitLine(out, indent + 1, "return " + errVar + ";");
-        emitLine(out, indent, "}");
-
-        if (!type.compositeSealed)
-        {
-            auto hdrErr = nextName("err");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + hdrErr +
-                         " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits - 32U, "
-                         "static_cast<std::uint64_t>(" +
-                         sizeVar + "), 32U);");
-            emitLine(out, indent, "if (" + hdrErr + " < 0) {");
-            emitLine(out, indent + 1, "return " + hdrErr + ";");
-            emitLine(out, indent, "}");
-        }
-
-        emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
-    }
-
-    void emitDeserializeComposite(std::ostringstream&            out,
-                                  const SemanticFieldType&       type,
-                                  const std::string&             expr,
-                                  const int                      indent,
-                                  const LoweredFieldFacts* const fieldFacts)
-    {
-        if (!type.compositeType)
-        {
-            emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-            return;
-        }
-
-        trace(type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-        const auto nestedType = ctx_.cppQualifiedTypeName(*type.compositeType);
-        auto       sizeVar    = nextName("size_bytes");
-        auto       errVar     = nextName("err");
-
-        if (!type.compositeSealed)
-        {
-            emitLine(out,
-                     indent,
-                     "std::size_t " + sizeVar +
-                         " = static_cast<std::size_t>(dsdl_runtime_get_u32(buffer, capacity_bytes, offset_bits, "
-                         "32U));");
-            emitLine(out, indent, "offset_bits += 32U;");
-            emitLine(out,
-                     indent,
-                     "const std::size_t _remaining_" + std::to_string(id_) +
-                         " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-            const auto remVar = "_remaining_" + std::to_string(id_);
-            ++id_;
-            const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            assert(!helperSymbol.empty());
-            const auto helper     = helperBindingName(helperSymbol);
-            const auto validateRc = nextName("rc");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
-                         "), static_cast<std::int64_t>(" + remVar + "));");
-            emitLine(out, indent, "if (" + validateRc + " < 0) {");
-            emitLine(out, indent + 1, "return " + validateRc + ";");
-            emitLine(out, indent, "}");
-            const auto consumed = nextName("consumed");
-            emitLine(out, indent, "std::size_t " + consumed + " = " + sizeVar + ";");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
-                         ", &buffer[offset_bits / 8U], &" + consumed +
-                         (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ");");
-            emitLine(out, indent, "if (" + errVar + " < 0) {");
-            emitLine(out, indent + 1, "return " + errVar + ";");
-            emitLine(out, indent, "}");
-            emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
-            return;
-        }
-
-        emitLine(out,
-                 indent,
-                 "std::size_t " + sizeVar +
-                     " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-        emitLine(out,
-                 indent,
-                 "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
-                     ", &buffer[offset_bits / 8U], &" + sizeVar +
-                     (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ");");
-        emitLine(out, indent, "if (" + errVar + " < 0) {");
-        emitLine(out, indent + 1, "return " + errVar + ";");
-        emitLine(out, indent, "}");
-        emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
+        const auto steps =
+            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
+        FieldSpelling spelling(*this, out, indent, HelperBindingDirection::Deserialize);
+        renderFieldSteps(steps, expr, HelperBindingDirection::Deserialize, spelling);
     }
 };
 
