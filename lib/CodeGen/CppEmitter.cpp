@@ -38,6 +38,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
@@ -682,6 +683,137 @@ private:
         emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + "U;");
     }
 
+    /// @brief C++ spelling of the shared union-prologue steps (see EmitStep.h).
+    ///
+    /// Dispatch is an if / else-if chain (not a switch), so the case spelling is
+    /// stateful via the shared renderer's firstCase flag, and the bad-tag default
+    /// is the trailing `else` arm.
+    class UnionSpelling final : public UnionSectionSpelling
+    {
+    public:
+        UnionSpelling(FunctionBodyEmitter&            owner,
+                      std::ostringstream&             out,
+                      const std::string&              objRef,
+                      const int                       indent,
+                      const std::int64_t              tagBits,
+                      const SectionHelperBindingPlan& helperBindings)
+            : owner_(owner)
+            , out_(out)
+            , objRef_(objRef)
+            , indent_(indent)
+            , tagBits_(tagBits)
+            , helperBindings_(helperBindings)
+        {
+        }
+
+        void spellSerializeValidateTag() override
+        {
+            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            const auto validateErr    = owner_.nextName("err_union_tag");
+            owner_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" +
+                         objRef_ + "->_tag_));");
+            emitLine(out_, indent_, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+            emitLine(out_, indent_ + 1, "return " + validateErr + ";");
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellSerializeWriteMaskedTag() override
+        {
+            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagExpr   = tagHelper + "(static_cast<std::uint64_t>(" + objRef_ + "->_tag_))";
+            const auto tagErr    = owner_.nextName("err");
+            owner_.trace(EmitTraceOp::MaskTag);
+            owner_.trace(EmitTraceOp::WriteTag, tagBits_);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + tagErr + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
+                         tagExpr + ", " + std::to_string(tagBits_) + "U);");
+            emitLine(out_, indent_, "if (" + tagErr + " < 0) {");
+            emitLine(out_, indent_ + 1, "return " + tagErr + ";");
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellDeserializeReadMaskStoreTag() override
+        {
+            const auto rawTag = owner_.nextName("tag_raw");
+            owner_.trace(EmitTraceOp::ReadTag, tagBits_);
+            emitLine(out_,
+                     indent_,
+                     "const std::uint64_t " + rawTag + " = static_cast<std::uint64_t>(" +
+                         unsignedGetter(static_cast<std::uint32_t>(tagBits_)) +
+                         "(buffer, capacity_bytes, offset_bits, " + std::to_string(tagBits_) + "U));");
+            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
+            owner_.trace(EmitTraceOp::MaskTag);
+            owner_.trace(EmitTraceOp::StoreTag);
+            emitLine(out_,
+                     indent_,
+                     objRef_ + "->_tag_ = static_cast<std::uint8_t>(" + tagHelper + "(" + rawTag + "));");
+        }
+
+        void spellDeserializeValidateTag() override
+        {
+            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            const auto validateErr    = owner_.nextName("err_union_tag");
+            owner_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_,
+                     indent_,
+                     "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" +
+                         objRef_ + "->_tag_));");
+            emitLine(out_, indent_, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+            emitLine(out_, indent_ + 1, "return " + validateErr + ";");
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellAdvanceTag() override
+        {
+            owner_.trace(EmitTraceOp::Advance, tagBits_);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(tagBits_) + "U;");
+        }
+
+        void spellBeginDispatch() override
+        {
+            // The if / else-if chain has no opening construct; SWITCH is abstract here.
+            owner_.trace(EmitTraceOp::Switch);
+        }
+
+        void spellBeginCase(const std::int64_t optionIndex, const bool firstCase) override
+        {
+            owner_.trace(EmitTraceOp::Case, optionIndex);
+            emitLine(out_,
+                     indent_,
+                     std::string(firstCase ? "if" : "else if") + " (" + objRef_ +
+                         "->_tag_ == " + std::to_string(optionIndex) + "U) {");
+        }
+
+        void spellEndCase() override { emitLine(out_, indent_, "}"); }
+
+        void spellBadTagDefault() override
+        {
+            owner_.trace(EmitTraceOp::DefaultBadTag);
+            emitLine(out_, indent_, "else {");
+            emitLine(out_,
+                     indent_ + 1,
+                     "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG);");
+            emitLine(out_, indent_, "}");
+        }
+
+        void spellEndDispatch() override
+        {
+            // The trailing else arm closed itself; nothing further.
+        }
+
+    private:
+        FunctionBodyEmitter&            owner_;
+        std::ostringstream&             out_;
+        const std::string&              objRef_;
+        const int                       indent_;
+        const std::int64_t              tagBits_;
+        const SectionHelperBindingPlan& helperBindings_;
+    };
+
     void emitSerializeUnion(std::ostringstream&                  out,
                             const SemanticSection&               section,
                             const std::vector<PlannedFieldStep>& unionBranches,
@@ -690,59 +822,26 @@ private:
                             const LoweredSectionFacts* const     sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto tagBits        = resolveUnionTagBits(section, sectionFacts);
-        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
-        const auto validateErr    = nextName("err_union_tag");
-        trace(EmitTraceOp::ValidateTag);
-        emitLine(out,
-                 indent,
-                 "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" + objRef +
-                     "->_tag_));");
-        emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-        emitLine(out, indent + 1, "return " + validateErr + ";");
-        emitLine(out, indent, "}");
-        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
-        const auto tagExpr   = tagHelper + "(static_cast<std::uint64_t>(" + objRef + "->_tag_))";
-
-        const auto tagErr = nextName("err");
-        trace(EmitTraceOp::MaskTag);
-        trace(EmitTraceOp::WriteTag, tagBits);
-        emitLine(out,
-                 indent,
-                 "const std::int8_t " + tagErr + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
-                     tagExpr + ", " + std::to_string(tagBits) + "U);");
-        emitLine(out, indent, "if (" + tagErr + " < 0) {");
-        emitLine(out, indent + 1, "return " + tagErr + ";");
-        emitLine(out, indent, "}");
-        trace(EmitTraceOp::Advance, tagBits);
-        emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + "U;");
-
-        trace(EmitTraceOp::Switch);
-        bool first = true;
+        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        std::vector<UnionCaseRender> cases;
+        cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
-            const auto& field  = *step.field;
-            const auto  member = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-            trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out,
-                     indent,
-                     std::string(first ? "if" : "else if") + " (" + objRef +
-                         "->_tag_ == " + std::to_string(field.unionOptionIndex) + "U) {");
-            emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
-            emitSerializeValue(out,
-                               field.resolvedType,
-                               objRef + "->" + member,
-                               indent + 1,
-                               step.arrayLengthPrefixBits,
-                               step.fieldFacts);
-            emitLine(out, indent, "}");
-            first = false;
+            const auto& field = *step.field;
+            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
+                                                const auto member =
+                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+                                                emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                                emitSerializeValue(out,
+                                                                   field.resolvedType,
+                                                                   objRef + "->" + member,
+                                                                   indent + 1,
+                                                                   step.arrayLengthPrefixBits,
+                                                                   step.fieldFacts);
+                                            }});
         }
-
-        trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, indent, "else {");
-        emitLine(out, indent + 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG);");
-        emitLine(out, indent, "}");
+        renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
     }
 
     void emitDeserializeUnion(std::ostringstream&                  out,
@@ -753,58 +852,26 @@ private:
                               const LoweredSectionFacts* const     sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto tagBits = resolveUnionTagBits(section, sectionFacts);
-        const auto rawTag  = nextName("tag_raw");
-        trace(EmitTraceOp::ReadTag, tagBits);
-        emitLine(out,
-                 indent,
-                 "const std::uint64_t " + rawTag + " = static_cast<std::uint64_t>(" + unsignedGetter(tagBits) +
-                     "(buffer, capacity_bytes, offset_bits, " + std::to_string(tagBits) + "U));");
-        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
-        const auto tagExpr   = tagHelper + "(" + rawTag + ")";
-
-        trace(EmitTraceOp::MaskTag);
-        trace(EmitTraceOp::StoreTag);
-        emitLine(out, indent, objRef + "->_tag_ = static_cast<std::uint8_t>(" + tagExpr + ");");
-        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
-        const auto validateErr    = nextName("err_union_tag");
-        trace(EmitTraceOp::ValidateTag);
-        emitLine(out,
-                 indent,
-                 "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" + objRef +
-                     "->_tag_));");
-        emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-        emitLine(out, indent + 1, "return " + validateErr + ";");
-        emitLine(out, indent, "}");
-        trace(EmitTraceOp::Advance, tagBits);
-        emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + "U;");
-
-        trace(EmitTraceOp::Switch);
-        bool first = true;
+        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        std::vector<UnionCaseRender> cases;
+        cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
-            const auto& field  = *step.field;
-            const auto  member = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-            trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out,
-                     indent,
-                     std::string(first ? "if" : "else if") + " (" + objRef +
-                         "->_tag_ == " + std::to_string(field.unionOptionIndex) + "U) {");
-            emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
-            emitDeserializeValue(out,
-                                 field.resolvedType,
-                                 objRef + "->" + member,
-                                 indent + 1,
-                                 step.arrayLengthPrefixBits,
-                                 step.fieldFacts);
-            emitLine(out, indent, "}");
-            first = false;
+            const auto& field = *step.field;
+            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
+                                                const auto member =
+                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+                                                emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                                emitDeserializeValue(out,
+                                                                     field.resolvedType,
+                                                                     objRef + "->" + member,
+                                                                     indent + 1,
+                                                                     step.arrayLengthPrefixBits,
+                                                                     step.fieldFacts);
+                                            }});
         }
-
-        trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, indent, "else {");
-        emitLine(out, indent + 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG);");
-        emitLine(out, indent, "}");
+        renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
 
     void emitSerializeValue(std::ostringstream&                out,

@@ -98,11 +98,11 @@ export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_
   
   let offsetBits = 0;
   let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 8));
-  offsetBits += 8;
   tag = Number(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag));
   if (!mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {
     throw new Error("decoded invalid union tag " + tag);
   }
+  offsetBits += 8;
   let value: UnionTag_1_0;
   switch (tag) {
   case 0: {

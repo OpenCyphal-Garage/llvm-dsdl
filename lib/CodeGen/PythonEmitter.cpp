@@ -40,6 +40,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
@@ -907,6 +908,122 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
     emitLine(out, indent, targetExpr + " = " + arrVar);
 }
 
+/// @brief Python spelling of the shared union-prologue steps (see EmitStep.h).
+///
+/// Dispatch is an if / elif chain; the error channel is `raise`; the tag mask is
+/// spelled as its own statement (D1 spelling freedom). Helper-conditional guards
+/// mirror the pre-template code.
+class PyUnionSpelling final : public UnionSectionSpelling
+{
+public:
+    PyUnionSpelling(std::ostringstream&              out,
+                    const EmitterContext&            ctx,
+                    const RuntimeSectionHelperNames& sectionHelperNames,
+                    const std::uint32_t              tagBits,
+                    std::string                      typeName)
+        : out_(out)
+        , ctx_(ctx)
+        , helperNames_(sectionHelperNames)
+        , tagBits_(tagBits)
+        , tagBitsStr_(std::to_string(tagBits))
+        , typeName_(std::move(typeName))
+    {
+    }
+
+    void spellSerializeValidateTag() override
+    {
+        if (!helperNames_.unionTagValidate.empty())
+        {
+            ctx_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, 1, "if not " + helperNames_.unionTagValidate + "(tag):");
+            emitLine(out_, 2, "raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
+        }
+    }
+
+    void spellSerializeWriteMaskedTag() override
+    {
+        if (!helperNames_.serUnionTagMask.empty())
+        {
+            ctx_.trace(EmitTraceOp::MaskTag);
+            emitLine(out_, 1, "tag = int(" + helperNames_.serUnionTagMask + "(tag))");
+        }
+        ctx_.trace(EmitTraceOp::WriteTag, tagBits_);
+        emitLine(out_, 1, "dsdl_runtime.write_unsigned(out, offset_bits, " + tagBitsStr_ + ", tag, False)");
+    }
+
+    void spellDeserializeReadMaskStoreTag() override
+    {
+        ctx_.trace(EmitTraceOp::ReadTag, tagBits_);
+        emitLine(out_, 1, "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " + tagBitsStr_ + "))");
+        if (!helperNames_.deserUnionTagMask.empty())
+        {
+            ctx_.trace(EmitTraceOp::MaskTag);
+            emitLine(out_, 1, "tag = int(" + helperNames_.deserUnionTagMask + "(tag))");
+        }
+        ctx_.trace(EmitTraceOp::StoreTag);
+        emitLine(out_, 1, "value = " + typeName_ + "(_tag=tag)");
+    }
+
+    void spellDeserializeValidateTag() override
+    {
+        if (!helperNames_.unionTagValidate.empty())
+        {
+            ctx_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, 1, "if not " + helperNames_.unionTagValidate + "(tag):");
+            emitLine(out_,
+                     2,
+                     "raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
+        }
+    }
+
+    void spellAdvanceTag() override
+    {
+        ctx_.trace(EmitTraceOp::Advance, tagBits_);
+        emitLine(out_, 1, "offset_bits += " + tagBitsStr_);
+    }
+
+    void spellBeginDispatch() override
+    {
+        // The if / elif chain has no opening construct; SWITCH is abstract here.
+        ctx_.trace(EmitTraceOp::Switch);
+    }
+
+    void spellBeginCase(const std::int64_t optionIndex, const bool firstCase) override
+    {
+        ctx_.trace(EmitTraceOp::Case, optionIndex);
+        emitLine(out_, 1, std::string(firstCase ? "if " : "elif ") + "tag == " + std::to_string(optionIndex) + ":");
+    }
+
+    void spellEndCase() override
+    {
+        // Python suites are indentation-delimited; nothing to close.
+    }
+
+    void spellBadTagDefault() override
+    {
+        ctx_.trace(EmitTraceOp::DefaultBadTag);
+        emitLine(out_, 1, "else:");
+        emitLine(out_, 2, "raise ValueError(f\"" + badTagDiagnosticPrefix_ + "{tag}\")");
+    }
+
+    void spellEndDispatch() override
+    {
+        // The if / elif chain has no closing construct.
+    }
+
+    /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
+    void setBadTagDiagnosticPrefix(std::string prefix) { badTagDiagnosticPrefix_ = std::move(prefix); }
+
+private:
+    std::ostringstream&              out_;
+    const EmitterContext&            ctx_;
+    const RuntimeSectionHelperNames& helperNames_;
+    const std::uint32_t              tagBits_;
+    const std::string                tagBitsStr_;
+    const std::string                typeName_;
+    std::string                      badTagDiagnosticPrefix_;
+};
+
 /// @brief Canonical (backend-independent) DSDL section label for emit-order trace segments.
 /// @param[in] info Discovered definition identity.
 /// @param[in] sectionSuffix "" for a message type, ".Request"/".Response" for service halves.
@@ -996,45 +1113,29 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
             emitLine(out, 2, "raise ValueError(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\")");
         }
         emitLine(out, 1, "tag = int(value._tag)");
-        if (!sectionHelperNames.unionTagValidate.empty())
         {
-            ctx.trace(EmitTraceOp::ValidateTag);
-            emitLine(out, 1, "if not " + sectionHelperNames.unionTagValidate + "(tag):");
-            emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
+            PyUnionSpelling spelling(out, ctx, sectionHelperNames, operationPlan->unionTagBits, typeName);
+            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::invalidUnionTagPrefix());
+            std::vector<UnionCaseRender> cases;
+            cases.reserve(operationPlan->fields.size());
+            for (const auto& scriptedField : operationPlan->fields)
+            {
+                cases.push_back(UnionCaseRender{
+                    scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
+                        const auto& field           = scriptedField.body.field;
+                        const auto  optionTag       = std::to_string(field.unionOptionIndex);
+                        const auto  optionValueExpr = "value." + field.fieldName;
+                        emitLine(out, 2, "if " + optionValueExpr + " is None:");
+                        emitLine(out,
+                                 3,
+                                 "raise ValueError(\"" +
+                                     codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) +
+                                     "\")");
+                        emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
+                    }});
+            }
+            renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
         }
-        if (!sectionHelperNames.serUnionTagMask.empty())
-        {
-            ctx.trace(EmitTraceOp::MaskTag);
-            emitLine(out, 1, "tag = int(" + sectionHelperNames.serUnionTagMask + "(tag))");
-        }
-        ctx.trace(EmitTraceOp::WriteTag, operationPlan->unionTagBits);
-        emitLine(out,
-                 1,
-                 "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(operationPlan->unionTagBits) +
-                     ", tag, False)");
-        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
-        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
-
-        ctx.trace(EmitTraceOp::Switch);
-        bool first = true;
-        for (const auto& scriptedField : operationPlan->fields)
-        {
-            const auto& field     = scriptedField.body.field;
-            const auto  optionTag = std::to_string(field.unionOptionIndex);
-            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
-            const auto optionValueExpr = "value." + field.fieldName;
-            emitLine(out, 2, "if " + optionValueExpr + " is None:");
-            emitLine(out,
-                     3,
-                     "raise ValueError(\"" +
-                         codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\")");
-            emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
-            first = false;
-        }
-        ctx.trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, 1, "else:");
-        emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
         emitLine(out, 1, "aligned_offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
         emitLine(out, 1, "for bit in range(offset_bits, aligned_offset_bits):");
         emitLine(out, 2, "dsdl_runtime.set_bit(out, bit, False)");
@@ -1050,43 +1151,24 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "data = bytes(data)");
         emitDeserializeHelperBindings();
         emitLine(out, 1, "offset_bits = 0");
-        ctx.trace(EmitTraceOp::ReadTag, operationPlan->unionTagBits);
-        emitLine(out,
-                 1,
-                 "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " +
-                     std::to_string(operationPlan->unionTagBits) + "))");
-        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
-        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
-        if (!sectionHelperNames.deserUnionTagMask.empty())
         {
-            ctx.trace(EmitTraceOp::MaskTag);
-            emitLine(out, 1, "tag = int(" + sectionHelperNames.deserUnionTagMask + "(tag))");
+            PyUnionSpelling spelling(out, ctx, sectionHelperNames, operationPlan->unionTagBits, typeName);
+            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::decodedInvalidUnionTagPrefix());
+            std::vector<UnionCaseRender> cases;
+            cases.reserve(operationPlan->fields.size());
+            for (const auto& scriptedField : operationPlan->fields)
+            {
+                cases.push_back(UnionCaseRender{
+                    scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
+                        emitPyRuntimeDeserializeFieldValue(out,
+                                                           2,
+                                                           scriptedField,
+                                                           "value." + scriptedField.body.field.fieldName,
+                                                           ctx);
+                    }});
+            }
+            renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
         }
-        if (!sectionHelperNames.unionTagValidate.empty())
-        {
-            ctx.trace(EmitTraceOp::ValidateTag);
-            emitLine(out, 1, "if not " + sectionHelperNames.unionTagValidate + "(tag):");
-            emitLine(out,
-                     2,
-                     "raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
-        }
-        ctx.trace(EmitTraceOp::StoreTag);
-        emitLine(out, 1, "value = " + typeName + "(_tag=tag)");
-
-        ctx.trace(EmitTraceOp::Switch);
-        first = true;
-        for (const auto& scriptedField : operationPlan->fields)
-        {
-            const auto& field     = scriptedField.body.field;
-            const auto  optionTag = std::to_string(field.unionOptionIndex);
-            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
-            emitPyRuntimeDeserializeFieldValue(out, 2, scriptedField, "value." + field.fieldName, ctx);
-            first = false;
-        }
-        ctx.trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, 1, "else:");
-        emitLine(out, 2, "raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
         emitLine(out, 1, "offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
         emitLine(out, 1, "consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
         emitLine(out, 1, "return value, consumed");

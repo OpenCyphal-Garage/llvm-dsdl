@@ -100,11 +100,11 @@ def _deserialize_UnionTag_1_0(data: bytes | bytearray | memoryview) -> tuple[Uni
     
     offset_bits = 0
     tag = int(dsdl_runtime.read_unsigned(data, offset_bits, 8))
-    offset_bits += 8
     tag = int(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag))
+    value = UnionTag_1_0(_tag=tag)
     if not mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
         raise ValueError(f"decoded invalid union tag {tag}")
-    value = UnionTag_1_0(_tag=tag)
+    offset_bits += 8
     if tag == 0:
         first_raw = dsdl_runtime.read_unsigned(data, offset_bits, 8)
         value.first = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(first_raw)

@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
@@ -587,6 +588,109 @@ private:
         emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
     }
 
+    /// @brief Rust spelling of the shared union-prologue steps (see EmitStep.h).
+    class UnionSpelling final : public UnionSectionSpelling
+    {
+    public:
+        UnionSpelling(FunctionBodyEmitter&            owner,
+                      std::ostringstream&             out,
+                      const int                       indent,
+                      const std::int64_t              tagBits,
+                      const SectionHelperBindingPlan& helperBindings)
+            : owner_(owner)
+            , out_(out)
+            , indent_(indent)
+            , tagBits_(tagBits)
+            , helperBindings_(helperBindings)
+        {
+        }
+
+        void spellSerializeValidateTag() override
+        {
+            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            owner_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, indent_, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
+            emitLine(out_,
+                     indent_,
+                     "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
+        }
+
+        void spellSerializeWriteMaskedTag() override
+        {
+            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
+            const auto tagErr    = owner_.nextName("err");
+            owner_.trace(EmitTraceOp::MaskTag);
+            owner_.trace(EmitTraceOp::WriteTag, tagBits_);
+            emitLine(out_,
+                     indent_,
+                     "let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + tagExpr + ", " +
+                         std::to_string(tagBits_) + "u8);");
+            emitLine(out_, indent_, "if " + tagErr + " < 0 { return Err(" + tagErr + "); }");
+        }
+
+        void spellDeserializeReadMaskStoreTag() override
+        {
+            const auto rawTag = owner_.nextName("tag_raw");
+            owner_.trace(EmitTraceOp::ReadTag, tagBits_);
+            emitLine(out_,
+                     indent_,
+                     "let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
+                         std::to_string(tagBits_) + "u8);");
+            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
+            owner_.trace(EmitTraceOp::MaskTag);
+            owner_.trace(EmitTraceOp::StoreTag);
+            emitLine(out_, indent_, "self._tag_ = (" + tagHelper + "(" + rawTag + ")) as u8;");
+        }
+
+        void spellDeserializeValidateTag() override
+        {
+            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            owner_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, indent_, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
+            emitLine(out_,
+                     indent_,
+                     "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
+        }
+
+        void spellAdvanceTag() override
+        {
+            owner_.trace(EmitTraceOp::Advance, tagBits_);
+            emitLine(out_, indent_, "offset_bits += " + std::to_string(tagBits_) + ";");
+        }
+
+        void spellBeginDispatch() override
+        {
+            owner_.trace(EmitTraceOp::Switch);
+            emitLine(out_, indent_, "match self._tag_ {");
+        }
+
+        void spellBeginCase(const std::int64_t optionIndex, const bool /*firstCase*/) override
+        {
+            owner_.trace(EmitTraceOp::Case, optionIndex);
+            emitLine(out_, indent_ + 1, std::to_string(optionIndex) + " => {");
+        }
+
+        void spellEndCase() override { emitLine(out_, indent_ + 1, "}"); }
+
+        void spellBadTagDefault() override
+        {
+            owner_.trace(EmitTraceOp::DefaultBadTag);
+            emitLine(out_,
+                     indent_ + 1,
+                     "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
+        }
+
+        void spellEndDispatch() override { emitLine(out_, indent_, "}"); }
+
+    private:
+        FunctionBodyEmitter&            owner_;
+        std::ostringstream&             out_;
+        const int                       indent_;
+        const std::int64_t              tagBits_;
+        const SectionHelperBindingPlan& helperBindings_;
+    };
+
     void emitSerializeUnion(std::ostringstream&                  out,
                             const SemanticSection&               section,
                             const std::vector<PlannedFieldStep>& unionBranches,
@@ -594,48 +698,26 @@ private:
                             const LoweredSectionFacts* const     sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto tagBits        = resolveUnionTagBits(section, sectionFacts);
-        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
-        trace(EmitTraceOp::ValidateTag);
-        emitLine(out, indent, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
-        emitLine(out,
-                 indent,
-                 "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
-        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
-        const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
-
-        const auto tagErr = nextName("err");
-        trace(EmitTraceOp::MaskTag);
-        trace(EmitTraceOp::WriteTag, tagBits);
-        emitLine(out,
-                 indent,
-                 "let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + tagExpr + ", " +
-                     std::to_string(tagBits) + "u8);");
-        emitLine(out, indent, "if " + tagErr + " < 0 { return Err(" + tagErr + "); }");
-        trace(EmitTraceOp::Advance, tagBits);
-        emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + ";");
-
-        trace(EmitTraceOp::Switch);
-        emitLine(out, indent, "match self._tag_ {");
+        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        std::vector<UnionCaseRender> cases;
+        cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
-            trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, indent + 1, std::to_string(field.unionOptionIndex) + " => {");
-            emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
-            emitSerializeAny(out,
-                             field.resolvedType,
-                             "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name),
-                             indent + 2,
-                             step.arrayLengthPrefixBits,
-                             step.fieldFacts);
-            emitLine(out, indent + 1, "}");
+            cases.push_back(
+                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field]() {
+                                    emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
+                                    emitSerializeAny(out,
+                                                     field.resolvedType,
+                                                     "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
+                                                                                         field.name),
+                                                     indent + 2,
+                                                     step.arrayLengthPrefixBits,
+                                                     step.fieldFacts);
+                                }});
         }
-        trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out,
-                 indent + 1,
-                 "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
-        emitLine(out, indent, "}");
+        renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
     }
 
     void emitDeserializeUnion(std::ostringstream&                  out,
@@ -645,49 +727,27 @@ private:
                               const LoweredSectionFacts* const     sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto tagBits = resolveUnionTagBits(section, sectionFacts);
-        const auto rawTag  = nextName("tag_raw");
-        trace(EmitTraceOp::ReadTag, tagBits);
-        emitLine(out,
-                 indent,
-                 "let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " + std::to_string(tagBits) +
-                     "u8);");
-        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
-        const auto tagExpr   = tagHelper + "(" + rawTag + ")";
-        trace(EmitTraceOp::MaskTag);
-        trace(EmitTraceOp::StoreTag);
-        emitLine(out, indent, "self._tag_ = (" + tagExpr + ") as u8;");
-        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
-        trace(EmitTraceOp::ValidateTag);
-        emitLine(out, indent, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
-        emitLine(out,
-                 indent,
-                 "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
-        trace(EmitTraceOp::Advance, tagBits);
-        emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + ";");
-
-        trace(EmitTraceOp::Switch);
-        emitLine(out, indent, "match self._tag_ {");
+        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        std::vector<UnionCaseRender> cases;
+        cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
-            trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, indent + 1, std::to_string(field.unionOptionIndex) + " => {");
-            emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
-            emitDeserializeAny(out,
-                               field.resolvedType,
-                               "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name),
-                               indent + 2,
-                               step.arrayLengthPrefixBits,
-                               step.fieldFacts,
-                               poolClassConstExprForField(field.name));
-            emitLine(out, indent + 1, "}");
+            cases.push_back(
+                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field]() {
+                                    emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
+                                    emitDeserializeAny(out,
+                                                       field.resolvedType,
+                                                       "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
+                                                                                           field.name),
+                                                       indent + 2,
+                                                       step.arrayLengthPrefixBits,
+                                                       step.fieldFacts,
+                                                       poolClassConstExprForField(field.name));
+                                }});
         }
-        trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out,
-                 indent + 1,
-                 "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
-        emitLine(out, indent, "}");
+        renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
 
     void emitSerializeAny(std::ostringstream&                out,

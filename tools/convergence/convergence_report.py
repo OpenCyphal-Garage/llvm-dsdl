@@ -261,7 +261,12 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         )
         traits["helper_plan_builder"] = _has_any(text, [r"buildSectionHelperBindingPlan\("])
         traits["helper_binding_render"] = _has_any(text, [r"renderSectionHelperBindings\("])
-        traits["union_helper_usage"] = _has_any(text, [r"sectionHelperNames\.unionTagValidate"])
+        # The shared union render template (EmitStep.h) holds the helper names via its
+        # spelling-class member (helperNames_); the pre-template inline form used
+        # sectionHelperNames directly. Either spelling references the shared helpers.
+        traits["union_helper_usage"] = _has_any(
+            text, [r"sectionHelperNames\.unionTagValidate", r"helperNames_\.unionTagValidate"]
+        )
         traits["capacity_helper_usage"] = _has_any(text, [r"sectionHelperNames\.capacityCheck"])
         traits["scalar_helper_usage"] = _has_any(text, [r"helpers\.serScalar", r"helpers\.deserScalar"])
         traits["array_helper_usage"] = _has_any(

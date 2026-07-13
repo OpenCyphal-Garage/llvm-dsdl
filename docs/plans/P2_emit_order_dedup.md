@@ -97,14 +97,40 @@ scorecard preamble now names the emit-order verifier as the behavioral step-orde
 > **GATE:** the emit-order verifier green + stable on the branch before any Phase 2 work.
 > **Status: OPEN — Phase 2 may begin.**
 
-## Phase 2 — the shared render template, union prologue first (~1–2 wks prologue; deeper optional)
+## Phase 2 — the shared render template, union prologue first (~1–2 wks prologue; deeper optional) — *union prologue DONE (2026-07-12)*
 
-| Step | Work | Files |
-|---|---|---|
-| 2a | `EmitStep` IR + `renderSteps(steps, BackendSpelling&)`; reify the `traverseNativeSection` callback sequence into `std::vector<EmitStep>` and **decompose `onUnionDispatch`** into ordered union sub-steps | new `include/llvmdsdl/CodeGen/EmitStep.h`, `lib/CodeGen/EmitStepRender.cpp`; extend `NativeEmitterTraversal` |
-| 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; the emit-order verifier proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` |
-| 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); the emit-order verifier proves parity | `Ts/PythonEmitter.cpp`, `ScriptedOperationPlan.cpp` |
-| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under the emit-order verifier | emitters |
+| Step | Work | Files | Status |
+|---|---|---|---|
+| 2a | `EmitStep` IR + `renderSteps(steps, BackendSpelling&)`; reify the `traverseNativeSection` callback sequence into `std::vector<EmitStep>` and **decompose `onUnionDispatch`** into ordered union sub-steps | new `include/llvmdsdl/CodeGen/EmitStep.h`, `lib/CodeGen/EmitStepRender.cpp` | ✅ (`UnionEmitStep` + `buildUnionSectionSteps` + `renderUnionSection`; the canonical prologue order lives in exactly one function) |
+| 2b | `BackendSpelling` for Rust/Go/Cpp — **union prologue only** — delete hand-written prologue, route through `renderSteps`; the emit-order verifier proves order unchanged | `{Rust,Go,Cpp}Emitter.cpp` | ✅ (nested `UnionSpelling` classes; **full-UAVCAN-corpus generated output byte-identical** pre/post, proven by rebuild-and-diff) |
+| 2c | Bring Ts/Python onto the same union-prologue steps (extend/converge `ScriptedSectionOperationPlan` → `EmitStep`); the emit-order verifier proves parity | `Ts/PythonEmitter.cpp` | ✅ (`TsUnionSpelling`/`PyUnionSpelling` + extracted case-body helpers; corpus diff is **exactly** the D4 normalization — the deserialize `ADVANCE`/`STORE` bookkeeping moved to canonical positions, 7 union types, nothing else) |
+| 2d | *Optional/later:* extend the step IR into scalar/array/composite so recursion is shared too; one lens at a time under the emit-order verifier | emitters | open (decide after alpha feedback) |
+
+**As landed (2026-07-12):**
+
+- The union prologue order is now produced **by construction** from
+  `buildUnionSectionSteps` — a backend physically cannot reorder validate/mask/write or
+  read/mask/store/validate on its own; the emit-order verifier independently pins the same
+  order (belt and braces).
+- The `UnionSectionSpelling` interface expresses the real divergence axes: dispatch
+  construct (Rust `match` / Go `switch` / C++ if-else-if / TS `switch`+`break` / Python
+  if-elif), error channel (`Result`/`(rc,0)`/negative-int/`throw`/`raise`), and mask
+  folding (native fold into the write argument; scripted spell it as a statement — D1).
+  Helper-conditional guards in the scripted backends are preserved verbatim.
+- **D4 is closed by construction**: TS/Python union deserialize now emits the canonical
+  `READ → MASK → STORE → VALIDATE → ADVANCE` order; the raw prologue traces of all five
+  backends are identical (the comparator's bookkeeping tolerance is retained for
+  robustness, but nothing needs it for unions anymore). The TS/Python lit snapshot goldens
+  were updated accordingly; C↔TS parity and the Python runtime/malformed suites confirm
+  the reorder is behavior-preserving.
+- **LOC delta (honest)**: roughly neutral-to-slightly-up (~250 lines of shared
+  template/interface; per-backend union code about flat — hand-written sequencing deleted,
+  spelling-class boilerplate added). The win is structural, not volumetric: 10 hand-written
+  prologue sequencings (5 backends × 2 directions) collapsed into 1, which is what G1's
+  "planned once, rendered six times" critique actually asked for.
+- The marker-lint (`convergence_report.py`) was taught the spelling-class member form of
+  the union-helper marker (`helperNames_.unionTagValidate`) — same shared machinery, new
+  spelling site.
 
 **Spelling interface must express the real divergence axes** (this preserves idiomatic
 output): `match` vs `switch` vs `if/elif`; the error channel (`Result`/`Err` vs multi-return
@@ -118,6 +144,9 @@ not scope it).
 
 **DoD**: union prologue emitted via one shared step-list + per-backend spelling across all 5;
 emit-order-verifier trace unchanged (behavior preserved); LOC reduction measured; G1 grade rationale updated.
+✅ **Met 2026-07-12** (traces unchanged for Rust/Go/Cpp; TS/Python changed only in the
+D4-accepted bookkeeping positions, deliberately, closing D4; LOC measured ≈ neutral —
+the deliverable is single-source sequencing, see above; G1 note updated in the roadmap).
 
 ## Risks & mitigations
 

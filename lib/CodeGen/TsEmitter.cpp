@@ -38,6 +38,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
@@ -547,6 +548,553 @@ void emitTsRuntimeDeserializePadding(std::ostringstream&     out,
     emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
 }
 
+/// @brief TypeScript spelling of the shared union-prologue steps (see EmitStep.h).
+///
+/// The tag mask is spelled as its own statement (D1 spelling freedom); the error
+/// channel is `throw`. Helper-conditional guards mirror the pre-template code.
+class TsUnionSpelling final : public UnionSectionSpelling
+{
+public:
+    TsUnionSpelling(std::ostringstream&              out,
+                    const EmitterContext&            ctx,
+                    const RuntimeSectionHelperNames& sectionHelperNames,
+                    const std::uint32_t              tagBits,
+                    std::string                      dispatchPreamble)
+        : out_(out)
+        , ctx_(ctx)
+        , helperNames_(sectionHelperNames)
+        , tagBits_(tagBits)
+        , tagBitsStr_(std::to_string(tagBits))
+        , dispatchPreamble_(std::move(dispatchPreamble))
+    {
+    }
+
+    void spellSerializeValidateTag() override
+    {
+        if (!helperNames_.unionTagValidate.empty())
+        {
+            ctx_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, 1, "if (!" + helperNames_.unionTagValidate + "(tag)) {");
+            emitLine(out_,
+                     2,
+                     "throw new Error(\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "\" + tag);");
+            emitLine(out_, 1, "}");
+        }
+    }
+
+    void spellSerializeWriteMaskedTag() override
+    {
+        if (!helperNames_.serUnionTagMask.empty())
+        {
+            emitLine(out_, 1, "tag = Number(" + helperNames_.serUnionTagMask + "(tag));");
+        }
+        ctx_.trace(EmitTraceOp::MaskTag);
+        ctx_.trace(EmitTraceOp::WriteTag, tagBits_);
+        emitLine(out_, 1, "dsdlRuntime.writeUnsigned(out, offsetBits, " + tagBitsStr_ + ", tag, false);");
+    }
+
+    void spellDeserializeReadMaskStoreTag() override
+    {
+        ctx_.trace(EmitTraceOp::ReadTag, tagBits_);
+        emitLine(out_, 1, "let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + tagBitsStr_ + "));");
+        if (!helperNames_.deserUnionTagMask.empty())
+        {
+            ctx_.trace(EmitTraceOp::MaskTag);
+            ctx_.trace(EmitTraceOp::StoreTag);
+            emitLine(out_, 1, "tag = Number(" + helperNames_.deserUnionTagMask + "(tag));");
+        }
+    }
+
+    void spellDeserializeValidateTag() override
+    {
+        if (!helperNames_.unionTagValidate.empty())
+        {
+            ctx_.trace(EmitTraceOp::ValidateTag);
+            emitLine(out_, 1, "if (!" + helperNames_.unionTagValidate + "(tag)) {");
+            emitLine(out_,
+                     2,
+                     "throw new Error(\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() +
+                         "\" + tag);");
+            emitLine(out_, 1, "}");
+        }
+    }
+
+    void spellAdvanceTag() override
+    {
+        ctx_.trace(EmitTraceOp::Advance, tagBits_);
+        emitLine(out_, 1, "offsetBits += " + tagBitsStr_ + ";");
+    }
+
+    void spellBeginDispatch() override
+    {
+        if (!dispatchPreamble_.empty())
+        {
+            emitLine(out_, 1, dispatchPreamble_);
+        }
+        ctx_.trace(EmitTraceOp::Switch);
+        emitLine(out_, 1, "switch (tag) {");
+    }
+
+    void spellBeginCase(const std::int64_t optionIndex, const bool /*firstCase*/) override
+    {
+        ctx_.trace(EmitTraceOp::Case, optionIndex);
+        emitLine(out_, 1, "case " + std::to_string(optionIndex) + ": {");
+    }
+
+    void spellEndCase() override
+    {
+        emitLine(out_, 2, "break;");
+        emitLine(out_, 1, "}");
+    }
+
+    void spellBadTagDefault() override
+    {
+        ctx_.trace(EmitTraceOp::DefaultBadTag);
+        emitLine(out_, 1, "default:");
+        emitLine(out_,
+                 2,
+                 "throw new Error(\"" + badTagDiagnosticPrefix_ + "\" + tag);");
+    }
+
+    void spellEndDispatch() override { emitLine(out_, 1, "}"); }
+
+    /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
+    void setBadTagDiagnosticPrefix(std::string prefix) { badTagDiagnosticPrefix_ = std::move(prefix); }
+
+private:
+    std::ostringstream&              out_;
+    const EmitterContext&            ctx_;
+    const RuntimeSectionHelperNames& helperNames_;
+    const std::uint32_t              tagBits_;
+    const std::string                tagBitsStr_;
+    const std::string                dispatchPreamble_;
+    std::string                      badTagDiagnosticPrefix_;
+};
+
+/// @brief Renders one TS union serialize case body (option guard + aligned field ops).
+void emitTsUnionSerializeCaseBody(std::ostringstream&              out,
+                                  const EmitterContext&            ctx,
+                                  const ScriptedFieldOperationPlan& scriptedField)
+{
+    const auto& field       = scriptedField.body.field;
+    const auto& helpers     = scriptedField.body.helpers;
+    const auto  cardinality = scriptedField.cardinality;
+    const auto  bits        = std::to_string(field.bitLength);
+    const auto  optionTag   = std::to_string(field.unionOptionIndex);
+    const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
+    const auto  cap         = std::to_string(field.arrayCapacity);
+    const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
+    emitLine(out, 2, "const optionValue = (value as Record<string, unknown>)." + field.fieldName + ";");
+    emitLine(out, 2, "if (optionValue === undefined) {");
+    emitLine(out,
+             3,
+             "throw new Error(\"" +
+                 codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\");");
+    emitLine(out, 2, "}");
+    emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option", ctx);
+    if (cardinality == ScriptedFieldCardinality::Scalar)
+    {
+        if (field.kind == RuntimeFieldKind::Padding)
+        {
+            emitTsRuntimeSerializePadding(out, 2, field, field.fieldName + "Option", ctx);
+        }
+        else if (field.kind == RuntimeFieldKind::Bool)
+        {
+            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
+            emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, !!optionValue);");
+        }
+        else if (field.kind == RuntimeFieldKind::Composite)
+        {
+            emitTsRuntimeSerializeCompositeValue(out,
+                                                 2,
+                                                 field,
+                                                 "optionValue as " + compositeTypeName(field, ctx),
+                                                 ctx);
+        }
+        else if (field.kind == RuntimeFieldKind::Unsigned)
+        {
+            std::string scalarExpr = "optionValue as number | bigint";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
+            emitLine(out,
+                     2,
+                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        else if (field.kind == RuntimeFieldKind::Float)
+        {
+            std::string scalarExpr = "optionValue as number";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
+            emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
+        }
+        else
+        {
+            std::string scalarExpr = "optionValue as number | bigint";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
+            emitLine(out,
+                     2,
+                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
+        {
+            ctx.trace(EmitTraceOp::Advance, field.bitLength);
+            emitLine(out, 2, "offsetBits += " + bits + ";");
+        }
+    }
+    else if (cardinality == ScriptedFieldCardinality::FixedArray)
+    {
+        const auto optionArray = field.fieldName + "Array";
+        emitLine(out, 2, "const " + optionArray + " = optionValue;");
+        ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
+        emitLine(out,
+                 2,
+                 "if (!Array.isArray(" + optionArray + ") || " + optionArray + ".length !== " + cap + ") {");
+        emitLine(out,
+                 3,
+                 "throw new Error(\"" +
+                     codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, true) + "\");");
+        emitLine(out, 2, "}");
+        ctx.trace(EmitTraceOp::ElemLoop);
+        emitLine(out, 2, "for (let i = 0; i < " + cap + "; ++i) {");
+        if (field.kind == RuntimeFieldKind::Bool)
+        {
+            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
+            emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
+        }
+        else if (field.kind == RuntimeFieldKind::Composite)
+        {
+            emitTsRuntimeSerializeCompositeValue(out,
+                                                 3,
+                                                 field,
+                                                 optionArray + "[i] as " + compositeTypeName(field, ctx),
+                                                 ctx);
+        }
+        else if (field.kind == RuntimeFieldKind::Unsigned)
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
+            emitLine(out,
+                     3,
+                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        else if (field.kind == RuntimeFieldKind::Float)
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
+            emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
+        }
+        else
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
+            emitLine(out,
+                     3,
+                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
+        {
+            ctx.trace(EmitTraceOp::Advance, field.bitLength);
+            emitLine(out, 3, "offsetBits += " + bits + ";");
+        }
+        emitLine(out, 2, "}");
+    }
+    else
+    {
+        const auto optionArray = field.fieldName + "Array";
+        emitLine(out, 2, "const " + optionArray + " = optionValue;");
+        emitLine(out, 2, "if (!Array.isArray(" + optionArray + ")) {");
+        emitLine(out,
+                 3,
+                 "throw new Error(\"" + codegen_diagnostic_text::fieldExpectsArray(field.fieldName, true) +
+                     "\");");
+        emitLine(out, 2, "}");
+        ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+        if (!helpers.arrayValidate.empty())
+        {
+            emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + optionArray + ".length)) {");
+            emitLine(out,
+                     3,
+                     "throw new Error(\"" +
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
+            emitLine(out, 2, "}");
+        }
+        else
+        {
+            emitLine(out, 2, "if (" + optionArray + ".length > " + cap + ") {");
+            emitLine(out,
+                     3,
+                     "throw new Error(\"" +
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
+            emitLine(out, 2, "}");
+        }
+        std::string prefixExpr = optionArray + ".length";
+        if (!helpers.serArrayPrefix.empty())
+        {
+            prefixExpr = "Number(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
+        }
+        ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
+        emitLine(out,
+                 2,
+                 "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + prefixExpr + ", false);");
+        ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+        emitLine(out, 2, "offsetBits += " + prefixBits + ";");
+        ctx.trace(EmitTraceOp::ElemLoop);
+        emitLine(out, 2, "for (let i = 0; i < " + optionArray + ".length; ++i) {");
+        if (field.kind == RuntimeFieldKind::Bool)
+        {
+            ctx.trace(EmitTraceOp::WriteScalarBool, 1);
+            emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
+        }
+        else if (field.kind == RuntimeFieldKind::Composite)
+        {
+            emitTsRuntimeSerializeCompositeValue(out,
+                                                 3,
+                                                 field,
+                                                 optionArray + "[i] as " + compositeTypeName(field, ctx),
+                                                 ctx);
+        }
+        else if (field.kind == RuntimeFieldKind::Unsigned)
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
+            emitLine(out,
+                     3,
+                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        else if (field.kind == RuntimeFieldKind::Float)
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
+            emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
+        }
+        else
+        {
+            std::string scalarExpr = optionArray + "[i]";
+            if (!helpers.serScalar.empty())
+            {
+                scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
+            }
+            ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
+            emitLine(out,
+                     3,
+                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
+                         saturating + ");");
+        }
+        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
+        {
+            ctx.trace(EmitTraceOp::Advance, field.bitLength);
+            emitLine(out, 3, "offsetBits += " + bits + ";");
+        }
+        emitLine(out, 2, "}");
+    }
+}
+
+/// @brief Renders one TS union deserialize case body (aligned field ops + value construction).
+void emitTsUnionDeserializeCaseBody(std::ostringstream&               out,
+                                    const EmitterContext&             ctx,
+                                    const ScriptedFieldOperationPlan& scriptedField,
+                                    const std::string&                typeName)
+{
+    const auto& field       = scriptedField.body.field;
+    const auto& helpers     = scriptedField.body.helpers;
+    const auto  cardinality = scriptedField.cardinality;
+    const auto  bits        = std::to_string(field.bitLength);
+    const auto  optionTag   = std::to_string(field.unionOptionIndex);
+    const auto  cap         = std::to_string(field.arrayCapacity);
+    const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
+    const auto  arrayElemType =
+        field.kind == RuntimeFieldKind::Bool
+             ? "boolean"
+             : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx)
+                                                          : (field.useBigInt ? "bigint" : "number"));
+    emitTsRuntimeAlignDeserialize(out, 2, field.alignmentBits, ctx);
+    if (cardinality == ScriptedFieldCardinality::Scalar)
+    {
+        if (field.kind == RuntimeFieldKind::Padding)
+        {
+            emitTsRuntimeDeserializePadding(out, 2, field, ctx);
+            emitLine(out, 2, "const optionValue = undefined;");
+        }
+        else if (field.kind == RuntimeFieldKind::Bool)
+        {
+            ctx.trace(EmitTraceOp::ReadScalarBool, 1);
+            emitLine(out, 2, "const optionValue = dsdlRuntime.getBit(bytes, offsetBits);");
+        }
+        else if (field.kind == RuntimeFieldKind::Composite)
+        {
+            emitLine(out, 2, "let optionValue: " + compositeTypeName(field, ctx) + ";");
+            emitTsRuntimeDeserializeCompositeValue(out,
+                                                   2,
+                                                   field,
+                                                   "optionValue",
+                                                   ctx,
+                                                   helpers.delimiterValidate);
+        }
+        else if (field.kind == RuntimeFieldKind::Unsigned)
+        {
+            const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+            const auto        rawVar = field.fieldName + "OptionRaw";
+            ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
+            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
+        }
+        else if (field.kind == RuntimeFieldKind::Float)
+        {
+            const auto rawVar = field.fieldName + "OptionRaw";
+            ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
+            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
+        }
+        else
+        {
+            const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
+            const auto        rawVar = field.fieldName + "OptionRaw";
+            ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
+            emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
+        }
+        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
+        {
+            ctx.trace(EmitTraceOp::Advance, field.bitLength);
+            emitLine(out, 2, "offsetBits += " + bits + ";");
+        }
+    }
+    else
+    {
+        std::string arrayLenExpr = cap;
+        if (cardinality == ScriptedFieldCardinality::VariableArray)
+        {
+            const auto rawLen = field.fieldName + "LengthRaw";
+            ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
+            emitLine(out,
+                     2,
+                     "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " +
+                         prefixBits + "));");
+            ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
+            emitLine(out, 2, "offsetBits += " + prefixBits + ";");
+            const auto normalizedLen = field.fieldName + "Length";
+            if (!helpers.deserArrayPrefix.empty())
+            {
+                emitLine(out,
+                         2,
+                         "const " + normalizedLen + " = Number(" + helpers.deserArrayPrefix + "(" + rawLen +
+                             "));");
+            }
+            else
+            {
+                emitLine(out, 2, "const " + normalizedLen + " = " + rawLen + ";");
+            }
+            ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
+            if (!helpers.arrayValidate.empty())
+            {
+                emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + normalizedLen + ")) {");
+            }
+            else
+            {
+                emitLine(out, 2, "if (" + normalizedLen + " < 0 || " + normalizedLen + " > " + cap + ") {");
+            }
+            emitLine(out,
+                     3,
+                     "throw new Error(\"" +
+                         codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, true) +
+                         "\");");
+            emitLine(out, 2, "}");
+            arrayLenExpr = normalizedLen;
+        }
+        const auto optionArray = field.fieldName + "Array";
+        emitLine(out,
+                 2,
+                 "const " + optionArray + ": Array<" + arrayElemType + "> = new Array(" + arrayLenExpr + ");");
+        ctx.trace(EmitTraceOp::ElemLoop);
+        emitLine(out, 2, "for (let i = 0; i < " + arrayLenExpr + "; ++i) {");
+        if (field.kind == RuntimeFieldKind::Bool)
+        {
+            ctx.trace(EmitTraceOp::ReadScalarBool, 1);
+            emitLine(out, 3, optionArray + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
+        }
+        else if (field.kind == RuntimeFieldKind::Composite)
+        {
+            emitTsRuntimeDeserializeCompositeValue(out,
+                                                   3,
+                                                   field,
+                                                   optionArray + "[i]",
+                                                   ctx,
+                                                   helpers.delimiterValidate);
+        }
+        else if (field.kind == RuntimeFieldKind::Unsigned)
+        {
+            const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+            const auto        rawVar = field.fieldName + "ItemRaw";
+            ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
+            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
+            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
+        }
+        else if (field.kind == RuntimeFieldKind::Float)
+        {
+            const auto rawVar = field.fieldName + "ItemRaw";
+            ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
+            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
+            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
+        }
+        else
+        {
+            const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
+            const auto        rawVar = field.fieldName + "ItemRaw";
+            ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
+            emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
+            emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
+        }
+        if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
+        {
+            ctx.trace(EmitTraceOp::Advance, field.bitLength);
+            emitLine(out, 3, "offsetBits += " + bits + ";");
+        }
+        emitLine(out, 2, "}");
+        emitLine(out, 2, "const optionValue = " + optionArray + ";");
+    }
+    emitLine(out,
+             2,
+             "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
+}
+
 /// @brief Canonical (backend-independent) DSDL section label for emit-order trace segments.
 /// @param[in] info Discovered definition identity.
 /// @param[in] sectionSuffix "" for a message type, ".Request"/".Response" for service halves.
@@ -638,281 +1186,20 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
             emitLine(out, 1, "}");
         }
         emitLine(out, 1, "let tag = Math.trunc((value as { _tag: number })._tag);");
-        if (!sectionHelperNames.unionTagValidate.empty())
         {
-            ctx.trace(EmitTraceOp::ValidateTag);
-            emitLine(out, 1, "if (!" + sectionHelperNames.unionTagValidate + "(tag)) {");
-            emitLine(out, 2, "throw new Error(\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "\" + tag);");
-            emitLine(out, 1, "}");
-        }
-        if (!sectionHelperNames.serUnionTagMask.empty())
-        {
-            emitLine(out, 1, "tag = Number(" + sectionHelperNames.serUnionTagMask + "(tag));");
-        }
-        ctx.trace(EmitTraceOp::MaskTag);
-        ctx.trace(EmitTraceOp::WriteTag, operationPlan->unionTagBits);
-        emitLine(out, 1, "dsdlRuntime.writeUnsigned(out, offsetBits, " + tagBits + ", tag, false);");
-        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
-        emitLine(out, 1, "offsetBits += " + tagBits + ";");
-        ctx.trace(EmitTraceOp::Switch);
-        emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : operationPlan->fields)
-        {
-            const auto& field       = scriptedField.body.field;
-            const auto& helpers     = scriptedField.body.helpers;
-            const auto  cardinality = scriptedField.cardinality;
-            const auto  bits        = std::to_string(field.bitLength);
-            const auto  optionTag   = std::to_string(field.unionOptionIndex);
-            const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
-            const auto  cap         = std::to_string(field.arrayCapacity);
-            const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
-            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, 1, "case " + optionTag + ": {");
-            emitLine(out, 2, "const optionValue = (value as Record<string, unknown>)." + field.fieldName + ";");
-            emitLine(out, 2, "if (optionValue === undefined) {");
-            emitLine(out,
-                     3,
-                     "throw new Error(\"" +
-                         codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\");");
-            emitLine(out, 2, "}");
-            emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option", ctx);
-            if (cardinality == ScriptedFieldCardinality::Scalar)
+            TsUnionSpelling spelling(out, ctx, sectionHelperNames, operationPlan->unionTagBits, "");
+            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::invalidUnionTagPrefix());
+            std::vector<UnionCaseRender> cases;
+            cases.reserve(operationPlan->fields.size());
+            for (const auto& scriptedField : operationPlan->fields)
             {
-                if (field.kind == RuntimeFieldKind::Padding)
-                {
-                    emitTsRuntimeSerializePadding(out, 2, field, field.fieldName + "Option", ctx);
-                }
-                else if (field.kind == RuntimeFieldKind::Bool)
-                {
-                    ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                    emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, !!optionValue);");
-                }
-                else if (field.kind == RuntimeFieldKind::Composite)
-                {
-                    emitTsRuntimeSerializeCompositeValue(out,
-                                                         2,
-                                                         field,
-                                                         "optionValue as " + compositeTypeName(field, ctx),
-                                                         ctx);
-                }
-                else if (field.kind == RuntimeFieldKind::Unsigned)
-                {
-                    std::string scalarExpr = "optionValue as number | bigint";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                    emitLine(out,
-                             2,
-                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                else if (field.kind == RuntimeFieldKind::Float)
-                {
-                    std::string scalarExpr = "optionValue as number";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                    emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-                }
-                else
-                {
-                    std::string scalarExpr = "optionValue as number | bigint";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                    emitLine(out,
-                             2,
-                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-                {
-                    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                    emitLine(out, 2, "offsetBits += " + bits + ";");
-                }
+                cases.push_back(UnionCaseRender{scriptedField.body.field.unionOptionIndex,
+                                                [&out, &ctx, &scriptedField]() {
+                                                    emitTsUnionSerializeCaseBody(out, ctx, scriptedField);
+                                                }});
             }
-            else if (cardinality == ScriptedFieldCardinality::FixedArray)
-            {
-                const auto optionArray = field.fieldName + "Array";
-                emitLine(out, 2, "const " + optionArray + " = optionValue;");
-                ctx.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-                emitLine(out,
-                         2,
-                         "if (!Array.isArray(" + optionArray + ") || " + optionArray + ".length !== " + cap + ") {");
-                emitLine(out,
-                         3,
-                         "throw new Error(\"" +
-                             codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, true) + "\");");
-                emitLine(out, 2, "}");
-                ctx.trace(EmitTraceOp::ElemLoop);
-                emitLine(out, 2, "for (let i = 0; i < " + cap + "; ++i) {");
-                if (field.kind == RuntimeFieldKind::Bool)
-                {
-                    ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                    emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
-                }
-                else if (field.kind == RuntimeFieldKind::Composite)
-                {
-                    emitTsRuntimeSerializeCompositeValue(out,
-                                                         3,
-                                                         field,
-                                                         optionArray + "[i] as " + compositeTypeName(field, ctx),
-                                                         ctx);
-                }
-                else if (field.kind == RuntimeFieldKind::Unsigned)
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                    emitLine(out,
-                             3,
-                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                else if (field.kind == RuntimeFieldKind::Float)
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                    emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-                }
-                else
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                    emitLine(out,
-                             3,
-                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-                {
-                    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                    emitLine(out, 3, "offsetBits += " + bits + ";");
-                }
-                emitLine(out, 2, "}");
-            }
-            else
-            {
-                const auto optionArray = field.fieldName + "Array";
-                emitLine(out, 2, "const " + optionArray + " = optionValue;");
-                emitLine(out, 2, "if (!Array.isArray(" + optionArray + ")) {");
-                emitLine(out,
-                         3,
-                         "throw new Error(\"" + codegen_diagnostic_text::fieldExpectsArray(field.fieldName, true) +
-                             "\");");
-                emitLine(out, 2, "}");
-                ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-                if (!helpers.arrayValidate.empty())
-                {
-                    emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + optionArray + ".length)) {");
-                    emitLine(out,
-                             3,
-                             "throw new Error(\"" +
-                                 codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
-                    emitLine(out, 2, "}");
-                }
-                else
-                {
-                    emitLine(out, 2, "if (" + optionArray + ".length > " + cap + ") {");
-                    emitLine(out,
-                             3,
-                             "throw new Error(\"" +
-                                 codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, true) + "\");");
-                    emitLine(out, 2, "}");
-                }
-                std::string prefixExpr = optionArray + ".length";
-                if (!helpers.serArrayPrefix.empty())
-                {
-                    prefixExpr = "Number(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
-                }
-                ctx.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
-                emitLine(out,
-                         2,
-                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + prefixExpr + ", false);");
-                ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-                emitLine(out, 2, "offsetBits += " + prefixBits + ";");
-                ctx.trace(EmitTraceOp::ElemLoop);
-                emitLine(out, 2, "for (let i = 0; i < " + optionArray + ".length; ++i) {");
-                if (field.kind == RuntimeFieldKind::Bool)
-                {
-                    ctx.trace(EmitTraceOp::WriteScalarBool, 1);
-                    emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
-                }
-                else if (field.kind == RuntimeFieldKind::Composite)
-                {
-                    emitTsRuntimeSerializeCompositeValue(out,
-                                                         3,
-                                                         field,
-                                                         optionArray + "[i] as " + compositeTypeName(field, ctx),
-                                                         ctx);
-                }
-                else if (field.kind == RuntimeFieldKind::Unsigned)
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-                    emitLine(out,
-                             3,
-                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                else if (field.kind == RuntimeFieldKind::Float)
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-                    emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + scalarExpr + ");");
-                }
-                else
-                {
-                    std::string scalarExpr = optionArray + "[i]";
-                    if (!helpers.serScalar.empty())
-                    {
-                        scalarExpr = helpers.serScalar + "(" + scalarExpr + ")";
-                    }
-                    ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-                    emitLine(out,
-                             3,
-                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " +
-                                 saturating + ");");
-                }
-                if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-                {
-                    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                    emitLine(out, 3, "offsetBits += " + bits + ";");
-                }
-                emitLine(out, 2, "}");
-            }
-            emitLine(out, 2, "break;");
-            emitLine(out, 1, "}");
+            renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
         }
-        ctx.trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, 1, "default:");
-        emitLine(out, 2, "throw new Error(\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "\" + tag);");
-        emitLine(out, 1, "}");
         emitLine(out, 1, "const alignedOffsetBits = dsdlRuntime.byteLengthForBits(offsetBits) * 8;");
         emitLine(out, 1, "for (let bit = offsetBits; bit < alignedOffsetBits; ++bit) {");
         emitLine(out, 2, "dsdlRuntime.setBit(out, bit, false);");
@@ -930,202 +1217,24 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
                      "; consumed: number } {");
         emitDeserializeHelperBindings();
         emitLine(out, 1, "let offsetBits = 0;");
-        ctx.trace(EmitTraceOp::ReadTag, operationPlan->unionTagBits);
-        emitLine(out, 1, "let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + tagBits + "));");
-        ctx.trace(EmitTraceOp::Advance, operationPlan->unionTagBits);
-        emitLine(out, 1, "offsetBits += " + tagBits + ";");
-        if (!sectionHelperNames.deserUnionTagMask.empty())
         {
-            ctx.trace(EmitTraceOp::MaskTag);
-            ctx.trace(EmitTraceOp::StoreTag);
-            emitLine(out, 1, "tag = Number(" + sectionHelperNames.deserUnionTagMask + "(tag));");
-        }
-        if (!sectionHelperNames.unionTagValidate.empty())
-        {
-            ctx.trace(EmitTraceOp::ValidateTag);
-            emitLine(out, 1, "if (!" + sectionHelperNames.unionTagValidate + "(tag)) {");
-            emitLine(out,
-                     2,
-                     "throw new Error(\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "\" + tag);");
-            emitLine(out, 1, "}");
-        }
-        emitLine(out, 1, "let value: " + typeName + ";");
-        ctx.trace(EmitTraceOp::Switch);
-        emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : operationPlan->fields)
-        {
-            const auto& field       = scriptedField.body.field;
-            const auto& helpers     = scriptedField.body.helpers;
-            const auto  cardinality = scriptedField.cardinality;
-            const auto  bits        = std::to_string(field.bitLength);
-            const auto  optionTag   = std::to_string(field.unionOptionIndex);
-            const auto  cap         = std::to_string(field.arrayCapacity);
-            const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
-            const auto  arrayElemType =
-                field.kind == RuntimeFieldKind::Bool
-                     ? "boolean"
-                     : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx)
-                                                                  : (field.useBigInt ? "bigint" : "number"));
-            ctx.trace(EmitTraceOp::Case, field.unionOptionIndex);
-            emitLine(out, 1, "case " + optionTag + ": {");
-            emitTsRuntimeAlignDeserialize(out, 2, field.alignmentBits, ctx);
-            if (cardinality == ScriptedFieldCardinality::Scalar)
+            TsUnionSpelling spelling(out,
+                                     ctx,
+                                     sectionHelperNames,
+                                     operationPlan->unionTagBits,
+                                     "let value: " + typeName + ";");
+            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::decodedInvalidUnionTagPrefix());
+            std::vector<UnionCaseRender> cases;
+            cases.reserve(operationPlan->fields.size());
+            for (const auto& scriptedField : operationPlan->fields)
             {
-                if (field.kind == RuntimeFieldKind::Padding)
-                {
-                    emitTsRuntimeDeserializePadding(out, 2, field, ctx);
-                    emitLine(out, 2, "const optionValue = undefined;");
-                }
-                else if (field.kind == RuntimeFieldKind::Bool)
-                {
-                    ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-                    emitLine(out, 2, "const optionValue = dsdlRuntime.getBit(bytes, offsetBits);");
-                }
-                else if (field.kind == RuntimeFieldKind::Composite)
-                {
-                    emitLine(out, 2, "let optionValue: " + compositeTypeName(field, ctx) + ";");
-                    emitTsRuntimeDeserializeCompositeValue(out,
-                                                           2,
-                                                           field,
-                                                           "optionValue",
-                                                           ctx,
-                                                           helpers.delimiterValidate);
-                }
-                else if (field.kind == RuntimeFieldKind::Unsigned)
-                {
-                    const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-                    const auto        rawVar = field.fieldName + "OptionRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-                    emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                    emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-                }
-                else if (field.kind == RuntimeFieldKind::Float)
-                {
-                    const auto rawVar = field.fieldName + "OptionRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-                    emitLine(out, 2, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-                    emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-                }
-                else
-                {
-                    const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-                    const auto        rawVar = field.fieldName + "OptionRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-                    emitLine(out, 2, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                    emitLine(out, 2, "const optionValue = " + normalizeTsDeserScalarExpr(field, helpers, rawVar) + ";");
-                }
-                if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-                {
-                    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                    emitLine(out, 2, "offsetBits += " + bits + ";");
-                }
+                cases.push_back(UnionCaseRender{scriptedField.body.field.unionOptionIndex,
+                                                [&out, &ctx, &scriptedField, &typeName]() {
+                                                    emitTsUnionDeserializeCaseBody(out, ctx, scriptedField, typeName);
+                                                }});
             }
-            else
-            {
-                std::string arrayLenExpr = cap;
-                if (cardinality == ScriptedFieldCardinality::VariableArray)
-                {
-                    const auto rawLen = field.fieldName + "LengthRaw";
-                    ctx.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
-                    emitLine(out,
-                             2,
-                             "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " +
-                                 prefixBits + "));");
-                    ctx.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-                    emitLine(out, 2, "offsetBits += " + prefixBits + ";");
-                    const auto normalizedLen = field.fieldName + "Length";
-                    if (!helpers.deserArrayPrefix.empty())
-                    {
-                        emitLine(out,
-                                 2,
-                                 "const " + normalizedLen + " = Number(" + helpers.deserArrayPrefix + "(" + rawLen +
-                                     "));");
-                    }
-                    else
-                    {
-                        emitLine(out, 2, "const " + normalizedLen + " = " + rawLen + ";");
-                    }
-                    ctx.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-                    if (!helpers.arrayValidate.empty())
-                    {
-                        emitLine(out, 2, "if (!" + helpers.arrayValidate + "(" + normalizedLen + ")) {");
-                    }
-                    else
-                    {
-                        emitLine(out, 2, "if (" + normalizedLen + " < 0 || " + normalizedLen + " > " + cap + ") {");
-                    }
-                    emitLine(out,
-                             3,
-                             "throw new Error(\"" +
-                                 codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, true) +
-                                 "\");");
-                    emitLine(out, 2, "}");
-                    arrayLenExpr = normalizedLen;
-                }
-                const auto optionArray = field.fieldName + "Array";
-                emitLine(out,
-                         2,
-                         "const " + optionArray + ": Array<" + arrayElemType + "> = new Array(" + arrayLenExpr + ");");
-                ctx.trace(EmitTraceOp::ElemLoop);
-                emitLine(out, 2, "for (let i = 0; i < " + arrayLenExpr + "; ++i) {");
-                if (field.kind == RuntimeFieldKind::Bool)
-                {
-                    ctx.trace(EmitTraceOp::ReadScalarBool, 1);
-                    emitLine(out, 3, optionArray + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
-                }
-                else if (field.kind == RuntimeFieldKind::Composite)
-                {
-                    emitTsRuntimeDeserializeCompositeValue(out,
-                                                           3,
-                                                           field,
-                                                           optionArray + "[i]",
-                                                           ctx,
-                                                           helpers.delimiterValidate);
-                }
-                else if (field.kind == RuntimeFieldKind::Unsigned)
-                {
-                    const std::string fn     = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
-                    const auto        rawVar = field.fieldName + "ItemRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-                    emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                    std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                    emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-                }
-                else if (field.kind == RuntimeFieldKind::Float)
-                {
-                    const auto rawVar = field.fieldName + "ItemRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-                    emitLine(out, 3, "const " + rawVar + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
-                    std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                    emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-                }
-                else
-                {
-                    const std::string fn     = field.useBigInt ? "readSignedBigInt" : "readSigned";
-                    const auto        rawVar = field.fieldName + "ItemRaw";
-                    ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-                    emitLine(out, 3, "const " + rawVar + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
-                    std::string valueExpr = normalizeTsDeserScalarExpr(field, helpers, rawVar);
-                    emitLine(out, 3, optionArray + "[i] = " + valueExpr + ";");
-                }
-                if (field.kind != RuntimeFieldKind::Composite && field.kind != RuntimeFieldKind::Padding)
-                {
-                    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-                    emitLine(out, 3, "offsetBits += " + bits + ";");
-                }
-                emitLine(out, 2, "}");
-                emitLine(out, 2, "const optionValue = " + optionArray + ";");
-            }
-            emitLine(out,
-                     2,
-                     "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
-            emitLine(out, 2, "break;");
-            emitLine(out, 1, "}");
+            renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
         }
-        ctx.trace(EmitTraceOp::DefaultBadTag);
-        emitLine(out, 1, "default:");
-        emitLine(out, 2, "throw new Error(\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "\" + tag);");
-        emitLine(out, 1, "}");
         emitLine(out, 1, "offsetBits = dsdlRuntime.byteLengthForBits(offsetBits) * 8;");
         emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
         emitLine(out, 1, "return { value, consumed };");

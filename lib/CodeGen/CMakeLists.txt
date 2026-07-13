@@ -16,6 +16,7 @@ add_library(llvmdsdlCodeGen
   DefinitionIndex.cpp
   DefinitionPathProjection.cpp
   EmitCommon.cpp
+  EmitStepRender.cpp
   CEmitter.cpp
   CppEmitter.cpp
   CppObjectAbiEmitter.cpp
