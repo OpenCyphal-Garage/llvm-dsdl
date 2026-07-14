@@ -50,6 +50,7 @@
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
 #include "mlir/Pass/PassManager.h"
@@ -407,7 +408,11 @@ void emitSectionTypedef(std::ostringstream&    out,
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "uint8_t _tag_;");
+        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+        // 257..65536, etc.); a hardcoded uint8_t truncates a wide tag and mis-dispatches.
+        // sectionFacts isn't threaded here; resolveUnionTagBits falls back to the
+        // analyzer-set per-field width, which is authoritative.
+        emitLine(out, 1, unsignedStorageType(resolveUnionTagBits(section, nullptr)) + " _tag_;");
         ++emitted;
     }
 

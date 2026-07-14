@@ -640,7 +640,10 @@ private:
             const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::StoreTag);
-            emitLine(out_, indent_, "self._tag_ = (" + tagHelper + "(" + rawTag + ")) as u8;");
+            emitLine(out_,
+                     indent_,
+                     "self._tag_ = (" + tagHelper + "(" + rawTag + ")) as " +
+                         unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + ";");
         }
 
         void spellDeserializeValidateTag() override
@@ -1322,7 +1325,9 @@ void emitSectionType(std::ostringstream&              out,
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "pub _tag_: u8,");
+        // The tag storage must match the wire tag width (8 bits for <=256 options,
+        // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
+        emitLine(out, 1, "pub _tag_: " + unsignedStorageType(resolveUnionTagBits(section, sectionFacts)) + ",");
     }
 
     if (fieldCount == 0 && !section.isUnion)

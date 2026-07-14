@@ -1,0 +1,28 @@
+# Regression: a union with >256 options gets a 16-bit wire tag, and every native
+# backend must store the tag in a >=16-bit field. A hardcoded 8-bit tag store
+# truncates the wire tag on decode (type confusion from untrusted bytes) and makes
+# options 256+ unrepresentable. See the P2 union-tag security review.
+#
+# The fixture is generated here (257 options is the minimal trigger) to avoid
+# committing a 257-line hand-written union.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/wtag
+# RUN: %{python} -c "import sys; print('@union'); [print(f'uint8 opt{i}') for i in range(257)]; print('@sealed')" > %t/dsdl/wtag/BigTag.1.0.dsdl
+
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
+# RUN: cat %t/c/dsdl/wtag/BigTag_1_0.h | FileCheck %s --check-prefix=C_DECL
+# RUN: cat %t/c/dsdl/wtag/BigTag_1_0.c | FileCheck %s --check-prefix=C_STORE
+# C_DECL: uint16_t _tag_;
+# C_STORE: out_obj->_tag_ = (uint16_t)_tag_value;
+
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl --outdir %t/cpp
+# RUN: cat %t/cpp/dsdl/wtag/BigTag_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP: std::uint16_t _tag_{0U};
+
+# RUN: %dsdlc --target-language rust %t/dsdl --outdir %t/rust
+# RUN: cat %t/rust/src/dsdl/wtag/big_tag_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUST: pub _tag_: u16,
+
+# RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go
+# RUN: cat %t/go/dsdl/wtag/big_tag_1_0.go | FileCheck %s --check-prefix=GO
+# GO: Tag uint16

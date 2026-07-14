@@ -401,7 +401,30 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 - [ ] Remove dead `dsdl.field`/`dsdl.constant` ops; add proactive verifiers in lowering.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
-- [ ] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
+- [~] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
+  ✅ **Union-tag review done (2026-07-12); SBOM still open.** The review was cheap because
+  the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC
+  path). **One real defect found and fixed (UT-1, high — decode-time type confusion from
+  untrusted bytes):** the union tag was stored in a hardcoded 8-bit field
+  (`u8`/`uint8`/`std::uint8_t`/`uint8_t`) in **every native backend (C string, C/EmitC, C++,
+  Rust, Go) and the object/ABI backend**, while the compiler computes a **16-bit wire tag**
+  for unions with 257–65536 options (the mask helper is literally `& 65535`). Effect on a
+  spec-legal >256-option union: serialize cannot represent options ≥256, and **deserialize
+  truncated the 16-bit wire tag into the 8-bit store → wire tag 256 decoded as option 0**
+  (type confusion), or a corrupted round-trip (the C/EmitC path dispatched on the untruncated
+  value but stored a truncated `_tag_`). Fix: tag storage now tracks `resolveUnionTagBits`
+  (`unsignedStorageType(tagBits)` / the EmitC `(uint16_t)` store cast); a no-op for every
+  ≤256-option union, so the **full UAVCAN corpus is byte-identical** across all six backends
+  and the ABI/object lanes. Behaviorally verified: a 300-option union now round-trips
+  option 256 in generated C (`tag=256` preserved; previously decoded as `tag=0`). Regression
+  test: `test/lit/union-wide-tag.txt` asserts the ≥16-bit tag storage in C/C++/Rust/Go.
+  **Reviewed and found sound (no change):** validate-before-dispatch bounds the tag against
+  the option count; the bad-tag `default` arm returns `BAD_UNION_TAG` in every backend; the
+  mask width tracks the tag width; the helper-optional `->` derefs are guarded by the native
+  skeleton's missing-helper fallback (union dispatch is unreachable when helpers are unbound);
+  **TS** (numeric-literal discriminant) and **Python** (unbounded `int`) are inherently
+  truncation-safe. **Remaining: supply-chain/SBOM for release artifacts** (separate work,
+  belongs with alpha release mechanics).
 - [x] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match is now applied to the shared float helper (`lib/CodeGen/HelperBindingRender.cpp`: `const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialize/deserialize caller (`CppEmitter.cpp`, `RustEmitter.cpp`, `GoEmitter.cpp`), so all four native backends keep floats in native width end-to-end and no longer canonicalize signaling-NaN payloads via a double round-trip. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **Locked in by directed signaling-NaN payload regression cases** added to the cpp-c, c-rust, and c-go parity harnesses (feed the sNaN wire bytes `01 00 80 7F`, deserialize→reserialize, assert the quiet bit stays clear); a mutation reintroducing the round-trip makes them fail. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless. *(Open spec question about what "the original value will be preserved" means for a NaN at `float16` width is captured in `NAN_PRESERVATION_QUESTION_FOR_MAINTAINERS.md`.)*
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.

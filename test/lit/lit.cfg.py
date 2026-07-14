@@ -1,4 +1,5 @@
 import os
+import sys
 import lit.formats
 
 config.name = "LLVMDSDL"
@@ -12,3 +13,4 @@ if not getattr(config, "test_exec_root", None):
 
 config.substitutions.append(("%dsdlc", config.dsdlc))
 config.substitutions.append(("%dsdl-opt", config.dsdl_opt))
+config.substitutions.append(("%{python}", sys.executable or "python3"))

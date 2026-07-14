@@ -750,7 +750,9 @@ private:
             owner_.trace(EmitTraceOp::StoreTag);
             emitLine(out_,
                      indent_,
-                     objRef_ + "->_tag_ = static_cast<std::uint8_t>(" + tagHelper + "(" + rawTag + "));");
+                     objRef_ + "->_tag_ = static_cast<" +
+                         unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + ">(" + tagHelper + "(" + rawTag +
+                         "));");
         }
 
         void spellDeserializeValidateTag() override
@@ -1622,7 +1624,9 @@ void emitSectionStruct(std::ostringstream&    out,
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "std::uint8_t _tag_{0U};");
+        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+        emitLine(out, 1, unsignedStorageType(resolveUnionTagBits(section, sectionFacts)) + " _tag_{0U};");
         ++emitted;
     }
 

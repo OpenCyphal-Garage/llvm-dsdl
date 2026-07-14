@@ -703,6 +703,24 @@ std::string unsignedGetterForBits(const std::int64_t bits)
     return "dsdl_runtime_get_u64";
 }
 
+/// @brief The C fixed-width unsigned storage type that holds `bits` (union tag width, etc.).
+std::string unsignedStorageTypeForBits(const std::int64_t bits)
+{
+    if (bits <= 8)
+    {
+        return "uint8_t";
+    }
+    if (bits <= 16)
+    {
+        return "uint16_t";
+    }
+    if (bits <= 32)
+    {
+        return "uint32_t";
+    }
+    return "uint64_t";
+}
+
 std::string signedGetterForBits(const std::int64_t bits)
 {
     if (bits <= 8)
@@ -1444,7 +1462,9 @@ std::string renderTypedDeserializeFunction(llvm::StringRef              function
         emitMalformedCategoryComment(out, 2, codegen_diagnostic_text::malformedUnionTagCategory());
         emitLine(out, 2, "return _err_union_tag;");
         emitLine(out, 1, "}");
-        emitLine(out, 1, "out_obj->_tag_ = (uint8_t)_tag_value;");
+        // Store the tag in its true width; a hardcoded (uint8_t) truncates a wide tag
+        // (>256-option unions get a 16-bit tag) and corrupts the decoded object / round-trip.
+        emitLine(out, 1, "out_obj->_tag_ = (" + unsignedStorageTypeForBits(tagBits) + ")_tag_value;");
         emitLine(out, 1, "offset_bits += " + std::to_string(tagBits) + "U;");
 
         std::vector<const PlanStep*> unionFields;

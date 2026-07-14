@@ -18,6 +18,7 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Version.h"
 
@@ -462,7 +463,12 @@ void emitCanonicalStruct(std::ostringstream& out,
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "std::uint8_t _tag_{0U};");
+        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+        emitLine(out,
+                 1,
+                 renderUnsignedStorageToken(StorageTokenLanguage::Cpp, resolveUnionTagBits(section, sectionFacts)) +
+                     " _tag_{0U};");
         ++emittedFields;
     }
     if (emittedFields == 0)
@@ -998,7 +1004,10 @@ void emitShimStruct(std::ostringstream& out,
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "uint8_t _tag_;");
+        // Tag storage must match the wire tag width; a hardcoded uint8_t truncates a wide
+        // tag (>256-option unions get a 16-bit tag). sectionFacts isn't threaded to the
+        // shim struct; resolveUnionTagBits falls back to the authoritative per-field width.
+        emitLine(out, 1, renderUnsignedStorageToken(StorageTokenLanguage::C, resolveUnionTagBits(section, nullptr)) + " _tag_;");
         ++emittedFields;
     }
     if (emittedFields == 0)
