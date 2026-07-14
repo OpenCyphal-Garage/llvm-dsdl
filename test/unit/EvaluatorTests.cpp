@@ -533,9 +533,11 @@ bool runEvaluatorTests()
 
     // --- Overflow / DoS hardening (P1 #1) -------------------------------------------------------
     {
-        // A product that leaves 64-bit range must yield a diagnostic, not undefined behaviour.
+        // A product that leaves 128-bit range must yield a diagnostic, not undefined behaviour.
+        // (`(2^64-1)^2` ~ 2^128 overflows the 128-bit constant value type; per-type range checking of
+        // in-range values is the analyzer's job, not the evaluator's.)
         llvmdsdl::DiagnosticEngine diag;
-        auto                       value = evaluateAssertExpression("4611686018427387904 * 4", diag);
+        auto value = evaluateAssertExpression("18446744073709551615 * 18446744073709551615", diag);
         if (value || !hasErrorContaining(diag, "invalid rational operation"))
         {
             std::cerr << "overflowing multiply should fail with a diagnostic\n";
@@ -564,11 +566,28 @@ bool runEvaluatorTests()
         }
     }
     {
-        // Direct Rational overflow flag + INT64 boundary comparisons (exact, never overflow).
+        // 128-bit storage: every value in [INT64_MIN, UINT64_MAX] is exact and unflagged; only a
+        // genuine 128-bit overflow poisons.
         const llvmdsdl::Rational big = llvmdsdl::Rational(INT64_MAX, 1) * llvmdsdl::Rational(2, 1);
-        if (!big.overflowed())
+        if (big.overflowed() || big.asWideInteger().value() != static_cast<__int128>(INT64_MAX) * 2)
         {
-            std::cerr << "INT64_MAX * 2 should set the overflow flag\n";
+            std::cerr << "INT64_MAX * 2 fits 128-bit and must be exact, not overflowed\n";
+            return false;
+        }
+        // A full-width uint64 value is representable: exact via asWideInteger, absent via asInteger.
+        const __int128          uint64Max = (static_cast<__int128>(1) << 64) - 1;
+        const llvmdsdl::Rational umax(uint64Max, 1);
+        if (umax.overflowed() || umax.asInteger().has_value() || umax.asWideInteger().value() != uint64Max)
+        {
+            std::cerr << "UINT64_MAX should be exact in 128-bit but not fit int64\n";
+            return false;
+        }
+        // A real 128-bit overflow still poisons (bounds the DoS surface for constant expressions).
+        const __int128          huge  = static_cast<__int128>(1) << 96;
+        const llvmdsdl::Rational spill = llvmdsdl::Rational(huge, 1) * llvmdsdl::Rational(huge, 1);
+        if (!spill.overflowed())
+        {
+            std::cerr << "2^96 * 2^96 should set the 128-bit overflow flag\n";
             return false;
         }
         if (!(llvmdsdl::Rational(INT64_MIN, 1) < llvmdsdl::Rational(INT64_MAX, 1)))

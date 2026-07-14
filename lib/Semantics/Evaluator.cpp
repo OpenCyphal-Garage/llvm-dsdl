@@ -61,7 +61,7 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
     {
         return std::nullopt;
     }
-    const auto e = exp.asInteger().value_or(0);
+    const auto e = exp.asWideInteger().value_or(0);
     if (e < 0)
     {
         return std::nullopt;
@@ -83,7 +83,7 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
     // Every other base has |value| != 1, so the running product leaves 64-bit range within a few
     // dozen iterations; bail as soon as it overflows, which also bounds the loop.
     Rational out(1, 1);
-    for (std::int64_t i = 0; i < e; ++i)
+    for (__int128 i = 0; i < e; ++i)
     {
         out = out * base;
         if (out.overflowed())
@@ -131,9 +131,10 @@ std::optional<Value> applyBinaryRational(BinaryOp op, const Rational& lhs, const
         {
             return std::nullopt;
         }
-        const auto li = lhs.asInteger().value();
-        const auto ri = rhs.asInteger().value();
-        // `INT64_MIN % -1` overflows (the quotient is unrepresentable) and is UB; the result is 0.
+        const auto li = lhs.asWideInteger().value();
+        const auto ri = rhs.asWideInteger().value();
+        // `x % -1` is 0; special-cased so a most-negative dividend cannot form an unrepresentable
+        // quotient (undefined behaviour) in the modulo below.
         if (ri == -1)
         {
             return Value{Rational(0, 1)};
@@ -163,8 +164,8 @@ std::optional<Value> applyBinaryRational(BinaryOp op, const Rational& lhs, const
         {
             return std::nullopt;
         }
-        const auto li = lhs.asInteger().value();
-        const auto ri = rhs.asInteger().value();
+        const auto li = lhs.asWideInteger().value();
+        const auto ri = rhs.asWideInteger().value();
         if (op == BinaryOp::BitOr)
         {
             return Value{Rational(li | ri, 1)};

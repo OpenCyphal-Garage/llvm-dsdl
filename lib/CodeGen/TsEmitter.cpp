@@ -64,9 +64,9 @@ class DiagnosticEngine;
 namespace
 {
 
-std::string tsConstValue(const Value& value)
+std::string tsConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::TypeScript, value);
+    return renderConstantLiteral(ConstantLiteralLanguage::TypeScript, value, makeConstantTypeInfo(type));
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -255,7 +255,7 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
         emitAttachedDocTs(out, 0, constant.doc);
         const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, prefix) + "_" +
                                codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, constant.name);
-        emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.value) + ";");
+        emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.type, constant.value) + ";");
     }
 }
 

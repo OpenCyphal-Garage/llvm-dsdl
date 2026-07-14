@@ -1,0 +1,49 @@
+# Regression: constant values across the full DSDL integer domain [INT64_MIN, UINT64_MAX] and
+# integer-valued float constants must be representable and render as source that compiles in every
+# backend. The constant/expression core was int64-bound, so uint64 values >= 2^63 and int64 == INT64_MIN
+# were rejected at parse; and integer constants were rendered identically for all languages, so a
+# `uint64` mask lost its unsigned suffix (Rust/C), a 64-bit constant was a plain `number` instead of a
+# `bigint` (TypeScript), INT64_MIN was a bare negated literal that overflows i64 (Rust) / is unsigned
+# (C), and a `float` constant equal to `2.0` was emitted as the integer `2` (a type error as f64 in
+# Rust). See the emitter read-as-review / int64 constant range gap.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/kv
+# RUN: printf 'uint64 MASK = 0xFFFFFFFFFFFFFFFF\nint64 FLOOR = -9223372036854775808\nuint64 SMALL = 5\nfloat64 HALF = 2.0\nuint8 d\n@sealed\n' > %t/dsdl/kv/K.1.0.dsdl
+
+# RUN: %dsdlc --target-language rust %t/dsdl --outdir %t/rust --rust-crate-name kv
+# RUN: cat %t/rust/src/dsdl/kv/k_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUST-DAG: pub const MASK: u64 = 18446744073709551615u64;
+# RUST-DAG: pub const FLOOR: i64 = i64::MIN;
+# RUST-DAG: pub const SMALL: u64 = 5;
+# RUST-DAG: pub const HALF: f64 = 2.0;
+
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
+# RUN: cat %t/c/dsdl/kv/K_1_0.h | FileCheck %s --check-prefix=C
+# C-DAG: #define dsdl__kv__K_MASK (18446744073709551615ULL)
+# C-DAG: #define dsdl__kv__K_FLOOR ((-9223372036854775807LL - 1))
+# C-DAG: #define dsdl__kv__K_HALF (2.0)
+
+# RUN: %dsdlc --target-language ts %t/dsdl --outdir %t/ts --ts-module kv
+# RUN: cat %t/ts/dsdl/kv/k_1_0.ts | FileCheck %s --check-prefix=TS
+# TS-DAG: export const K_1_0_MASK = 18446744073709551615n;
+# TS-DAG: export const K_1_0_FLOOR = -9223372036854775808n;
+# TS-DAG: export const K_1_0_SMALL = 5n;
+# TS-DAG: export const K_1_0_HALF = 2;
+
+# RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module kv
+# RUN: cat %t/go/dsdl/kv/k_1_0.go | FileCheck %s --check-prefix=GO
+# GO-DAG: const K_1_0_MASK = 18446744073709551615
+# GO-DAG: const K_1_0_FLOOR = -9223372036854775808
+# GO-DAG: const K_1_0_HALF = 2.0
+
+# RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
+# RUN: cat %t/py/dsdl_gen/dsdl/kv/k_1_0.py | FileCheck %s --check-prefix=PY
+# PY-DAG: K_1_0_MASK = 18446744073709551615
+# PY-DAG: K_1_0_FLOOR = -9223372036854775808
+# PY-DAG: K_1_0_HALF = 2.0
+
+# An out-of-range constant is a hard error (a constant must fit its declared width/signedness).
+# RUN: rm -rf %t/bad && mkdir -p %t/bad/kv
+# RUN: printf 'uint8 X = 300\nuint8 d\n@sealed\n' > %t/bad/kv/B.1.0.dsdl
+# RUN: not %dsdlc --target-language ast %t/bad 2>&1 | FileCheck %s --check-prefix=RANGE
+# RANGE: constant value 300 is out of range for uint8

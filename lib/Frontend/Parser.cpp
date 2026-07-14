@@ -66,7 +66,7 @@ std::string removeUnderscores(const std::string& s)
     return out;
 }
 
-std::optional<std::int64_t> parseIntegerLiteral(const std::string& in)
+std::optional<__int128> parseIntegerLiteral(const std::string& in)
 {
     std::string s     = removeUnderscores(in);
     int         base  = 10;
@@ -88,7 +88,12 @@ std::optional<std::int64_t> parseIntegerLiteral(const std::string& in)
         start = 2;
     }
 
-    std::int64_t out = 0;
+    // An integer literal is non-negative (a leading `-` is a separate unary operator) and must fit the
+    // widest DSDL integer type, `uint64`; accumulate in unsigned 128-bit and reject beyond `UINT64_MAX`
+    // so `0xFFFFFFFFFFFFFFFF` and other full-width `uint64` values are representable (a signed 64-bit
+    // accumulator rejected everything above `INT64_MAX`).
+    constexpr unsigned __int128 kUint64Max = (static_cast<unsigned __int128>(1) << 64U) - 1U;
+    unsigned __int128           out        = 0;
     for (std::size_t i = start; i < s.size(); ++i)
     {
         const char c = s[i];
@@ -109,13 +114,13 @@ std::optional<std::int64_t> parseIntegerLiteral(const std::string& in)
         {
             return std::nullopt;
         }
-        if (out > (std::numeric_limits<std::int64_t>::max() - v) / base)
+        if (out > (kUint64Max - static_cast<unsigned __int128>(v)) / static_cast<unsigned __int128>(base))
         {
             return std::nullopt;
         }
-        out = out * base + v;
+        out = out * static_cast<unsigned __int128>(base) + static_cast<unsigned __int128>(v);
     }
-    return out;
+    return static_cast<__int128>(out);
 }
 
 /// @brief True when an Integer token spelling is a plain decimal literal.

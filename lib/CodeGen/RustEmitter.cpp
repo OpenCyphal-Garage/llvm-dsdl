@@ -91,9 +91,9 @@ std::string signedStorageType(const std::uint32_t bitLength)
     return renderSignedStorageToken(StorageTokenLanguage::Rust, bitLength);
 }
 
-std::string rustConstValue(const Value& value)
+std::string rustConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Rust, value);
+    return renderConstantLiteral(ConstantLiteralLanguage::Rust, value, makeConstantTypeInfo(type));
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -1433,7 +1433,7 @@ void emitSectionType(std::ostringstream&              out,
         emitLine(out,
                  1,
                  "pub const " + codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Rust, c.name) + ": " +
-                     rustConstType(c.type, c.value) + " = " + rustConstValue(c.value) + ";");
+                     rustConstType(c.type, c.value) + " = " + rustConstValue(c.type, c.value) + ";");
     }
     out << "\n";
 

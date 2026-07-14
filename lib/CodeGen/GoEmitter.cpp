@@ -125,9 +125,9 @@ std::string signedStorageType(const std::uint32_t bitLength)
     return renderSignedStorageToken(StorageTokenLanguage::Go, bitLength);
 }
 
-std::string goConstValue(const Value& value)
+std::string goConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Go, value);
+    return renderConstantLiteral(ConstantLiteralLanguage::Go, value, makeConstantTypeInfo(type));
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -1289,7 +1289,7 @@ void emitSectionType(std::ostringstream&                       out,
                  0,
                  "const " + typeConstPrefix + "_" +
                      codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, c.name) + " = " +
-                     goConstValue(c.value));
+                     goConstValue(c.type, c.value));
     }
     out << "\n";
 

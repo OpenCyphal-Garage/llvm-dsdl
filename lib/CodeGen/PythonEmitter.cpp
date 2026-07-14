@@ -65,9 +65,9 @@ class DiagnosticEngine;
 namespace
 {
 
-std::string pyConstValue(const Value& value)
+std::string pyConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Python, value);
+    return renderConstantLiteral(ConstantLiteralLanguage::Python, value, makeConstantTypeInfo(type));
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -352,7 +352,7 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
         emitAttachedDocPy(out, 0, constant.doc);
         const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, prefix) + "_" +
                                codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, constant.name);
-        emitLine(out, 0, constName + " = " + pyConstValue(constant.value));
+        emitLine(out, 0, constName + " = " + pyConstValue(constant.type, constant.value));
     }
 }
 

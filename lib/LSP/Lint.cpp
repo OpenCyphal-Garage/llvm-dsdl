@@ -158,11 +158,13 @@ std::optional<std::int64_t> evaluateCapacity(const std::shared_ptr<ExprAST>& exp
         return std::nullopt;
     }
     const auto* rational = std::get_if<Rational>(&expr->value);
-    if (!rational || rational->denominator() != 1)
+    if (!rational)
     {
         return std::nullopt;
     }
-    return rational->numerator();
+    // Yields the value only when it is an integer that fits `std::int64_t`; a capacity outside that
+    // range is not a meaningful array length.
+    return rational->asInteger();
 }
 
 std::vector<std::string> splitLines(const std::string& text)

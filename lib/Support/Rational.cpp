@@ -16,9 +16,10 @@
 
 #include "llvmdsdl/Support/Rational.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <sstream>
+#include <string>
 
 namespace llvmdsdl
 {
@@ -56,13 +57,38 @@ bool fitsInt64(__int128 v)
 
 }  // namespace
 
+std::string wideToString(__int128 value)
+{
+    if (value == 0)
+    {
+        return "0";
+    }
+    const bool negative = value < 0;
+    // Accumulate the magnitude in unsigned 128-bit so the most-negative value (whose positive is
+    // unrepresentable as a signed 128-bit) is still handled without overflow.
+    unsigned __int128 magnitude =
+        negative ? (static_cast<unsigned __int128>(-(value + 1)) + 1U) : static_cast<unsigned __int128>(value);
+    std::string digits;
+    while (magnitude > 0)
+    {
+        digits.push_back(static_cast<char>('0' + static_cast<int>(magnitude % 10U)));
+        magnitude /= 10U;
+    }
+    if (negative)
+    {
+        digits.push_back('-');
+    }
+    std::reverse(digits.begin(), digits.end());
+    return digits;
+}
+
 Rational::Rational()
     : numerator_(0)
     , denominator_(1)
 {
 }
 
-Rational::Rational(std::int64_t numerator, std::int64_t denominator)
+Rational::Rational(__int128 numerator, __int128 denominator)
     : numerator_(numerator)
     , denominator_(denominator == 0 ? 1 : denominator)
 {
@@ -70,6 +96,15 @@ Rational::Rational(std::int64_t numerator, std::int64_t denominator)
 }
 
 std::optional<std::int64_t> Rational::asInteger() const
+{
+    if (!isInteger() || !fitsInt64(numerator_))
+    {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(numerator_);
+}
+
+std::optional<__int128> Rational::asWideInteger() const
 {
     if (!isInteger())
     {
@@ -80,13 +115,13 @@ std::optional<std::int64_t> Rational::asInteger() const
 
 std::string Rational::str() const
 {
-    std::ostringstream out;
-    out << numerator_;
+    std::string out = wideToString(numerator_);
     if (denominator_ != 1)
     {
-        out << '/' << denominator_;
+        out += '/';
+        out += wideToString(denominator_);
     }
-    return out.str();
+    return out;
 }
 
 Rational Rational::fromWide(__int128 numerator, __int128 denominator, bool operandOverflowed)
@@ -105,42 +140,54 @@ Rational Rational::fromWide(__int128 numerator, __int128 denominator, bool opera
         denominator = -denominator;
     }
     const __int128 g = wideGcd(numerator, denominator);
-    numerator /= g;
-    denominator /= g;
-    if (!fitsInt64(numerator) || !fitsInt64(denominator))
-    {
-        // Reduced result exceeds 64-bit range: poison instead of truncating to a wrong value.
-        out.numerator_   = 0;
-        out.denominator_ = 1;
-        out.overflowed_  = true;
-        return out;
-    }
-    out.numerator_   = static_cast<std::int64_t>(numerator);
-    out.denominator_ = static_cast<std::int64_t>(denominator);
+    out.numerator_   = numerator / g;
+    out.denominator_ = denominator / g;
     out.overflowed_  = operandOverflowed;
     return out;
 }
 
 Rational operator+(const Rational& lhs, const Rational& rhs)
 {
-    const __int128 n = static_cast<__int128>(lhs.numerator_) * rhs.denominator_ +
-                       static_cast<__int128>(rhs.numerator_) * lhs.denominator_;
-    const __int128 d = static_cast<__int128>(lhs.denominator_) * rhs.denominator_;
+    __int128   t1  = 0;
+    __int128   t2  = 0;
+    __int128   n   = 0;
+    __int128   d   = 0;
+    const bool of  = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
+                    __builtin_mul_overflow(rhs.numerator_, lhs.denominator_, &t2) ||
+                    __builtin_add_overflow(t1, t2, &n) || __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
+    if (of)
+    {
+        return Rational::fromWide(0, 1, true);
+    }
     return Rational::fromWide(n, d, lhs.overflowed_ || rhs.overflowed_);
 }
 
 Rational operator-(const Rational& lhs, const Rational& rhs)
 {
-    const __int128 n = static_cast<__int128>(lhs.numerator_) * rhs.denominator_ -
-                       static_cast<__int128>(rhs.numerator_) * lhs.denominator_;
-    const __int128 d = static_cast<__int128>(lhs.denominator_) * rhs.denominator_;
+    __int128   t1  = 0;
+    __int128   t2  = 0;
+    __int128   n   = 0;
+    __int128   d   = 0;
+    const bool of  = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
+                    __builtin_mul_overflow(rhs.numerator_, lhs.denominator_, &t2) ||
+                    __builtin_sub_overflow(t1, t2, &n) || __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
+    if (of)
+    {
+        return Rational::fromWide(0, 1, true);
+    }
     return Rational::fromWide(n, d, lhs.overflowed_ || rhs.overflowed_);
 }
 
 Rational operator*(const Rational& lhs, const Rational& rhs)
 {
-    const __int128 n = static_cast<__int128>(lhs.numerator_) * rhs.numerator_;
-    const __int128 d = static_cast<__int128>(lhs.denominator_) * rhs.denominator_;
+    __int128   n  = 0;
+    __int128   d  = 0;
+    const bool of = __builtin_mul_overflow(lhs.numerator_, rhs.numerator_, &n) ||
+                    __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
+    if (of)
+    {
+        return Rational::fromWide(0, 1, true);
+    }
     return Rational::fromWide(n, d, lhs.overflowed_ || rhs.overflowed_);
 }
 
@@ -150,8 +197,14 @@ Rational operator/(const Rational& lhs, const Rational& rhs)
     {
         return Rational(0, 1);
     }
-    const __int128 n = static_cast<__int128>(lhs.numerator_) * rhs.denominator_;
-    const __int128 d = static_cast<__int128>(lhs.denominator_) * rhs.numerator_;
+    __int128   n  = 0;
+    __int128   d  = 0;
+    const bool of = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &n) ||
+                    __builtin_mul_overflow(lhs.denominator_, rhs.numerator_, &d);
+    if (of)
+    {
+        return Rational::fromWide(0, 1, true);
+    }
     return Rational::fromWide(n, d, lhs.overflowed_ || rhs.overflowed_);
 }
 
@@ -168,10 +221,18 @@ bool operator!=(const Rational& lhs, const Rational& rhs)
 bool operator<(const Rational& lhs, const Rational& rhs)
 {
     // Denominators are always positive after normalization, so the cross-multiplied comparison is
-    // order-preserving. Both products are int64*int64 and therefore fit exactly in 128 bits, so this
-    // never overflows (unlike a 64-bit cross-multiply).
-    return static_cast<__int128>(lhs.numerator_) * rhs.denominator_ <
-           static_cast<__int128>(rhs.numerator_) * lhs.denominator_;
+    // order-preserving. Values are bounded to `[INT64_MIN, UINT64_MAX]` in practice, so the products
+    // fit 128 bits; guard with an overflow check for pathological coprime fractions and fall back to
+    // extended-precision ordering (equality is decided exactly by `operator==`).
+    __int128 p1 = 0;
+    __int128 p2 = 0;
+    if (!__builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &p1) &&
+        !__builtin_mul_overflow(rhs.numerator_, lhs.denominator_, &p2))
+    {
+        return p1 < p2;
+    }
+    return (static_cast<long double>(lhs.numerator_) / static_cast<long double>(lhs.denominator_)) <
+           (static_cast<long double>(rhs.numerator_) / static_cast<long double>(rhs.denominator_));
 }
 
 bool operator<=(const Rational& lhs, const Rational& rhs)
@@ -189,12 +250,6 @@ bool operator>=(const Rational& lhs, const Rational& rhs)
     return rhs <= lhs;
 }
 
-std::int64_t Rational::gcd(std::int64_t a, std::int64_t b)
-{
-    // Compute in 128-bit so `INT64_MIN` (whose 64-bit absolute value is unrepresentable) is safe.
-    return static_cast<std::int64_t>(wideGcd(a, b));
-}
-
 void Rational::normalize()
 {
     if (denominator_ == 0)
@@ -205,25 +260,12 @@ void Rational::normalize()
     }
     if (denominator_ < 0)
     {
-        // Move the sign onto the numerator. `INT64_MIN` cannot be negated in 64-bit, so evaluate the
-        // reduced fraction in 128-bit; if it no longer fits, poison rather than invoke UB.
-        const __int128 g = wideGcd(numerator_, denominator_);
-        const __int128 n = -(static_cast<__int128>(numerator_) / g);
-        const __int128 d = -(static_cast<__int128>(denominator_) / g);
-        if (!fitsInt64(n) || !fitsInt64(d))
-        {
-            numerator_   = 0;
-            denominator_ = 1;
-            overflowed_  = true;
-            return;
-        }
-        numerator_   = static_cast<std::int64_t>(n);
-        denominator_ = static_cast<std::int64_t>(d);
-        return;
+        numerator_   = -numerator_;
+        denominator_ = -denominator_;
     }
     const __int128 g = wideGcd(numerator_, denominator_);
-    numerator_       = static_cast<std::int64_t>(static_cast<__int128>(numerator_) / g);
-    denominator_     = static_cast<std::int64_t>(static_cast<__int128>(denominator_) / g);
+    numerator_ /= g;
+    denominator_ /= g;
 }
 
 }  // namespace llvmdsdl

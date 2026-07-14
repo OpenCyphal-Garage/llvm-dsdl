@@ -115,9 +115,9 @@ std::string headerGuard(const DiscoveredDefinition& info)
     return g;
 }
 
-std::string valueToCppExpr(const Value& value)
+std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Cpp, value);
+    return renderConstantLiteral(ConstantLiteralLanguage::Cpp, value, makeConstantTypeInfo(type));
 }
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
@@ -1712,7 +1712,9 @@ void emitSectionStruct(std::ostringstream&    out,
     for (const auto& c : section.constants)
     {
         emitAttachedDocCpp(out, 1, c.doc);
-        emitLine(out, 1, "static constexpr auto " + sanitizeMacroToken(c.name) + " = " + valueToCppExpr(c.value) + ";");
+        emitLine(out,
+                 1,
+                 "static constexpr auto " + sanitizeMacroToken(c.name) + " = " + valueToCppExpr(c.type, c.value) + ";");
     }
 
     emitArrayMetadata(out, typeName, section);

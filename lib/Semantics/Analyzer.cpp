@@ -594,9 +594,15 @@ private:
             diagnostics_.error(type.location, "array capacity expression must yield integer rational");
             return out;
         }
+        else if (const auto fitted = std::get<Rational>(capValue->data).asInteger())
+        {
+            capacity = *fitted;
+        }
         else
         {
-            capacity = std::get<Rational>(capValue->data).asInteger().value();
+            // Integral but outside 64-bit range: no array can have that many elements.
+            diagnostics_.error(type.location, "array capacity is too large");
+            return out;
         }
 
         if (type.arrayKind == ArrayKind::Fixed)
@@ -686,6 +692,28 @@ private:
                 if (!r->isInteger())
                 {
                     diagnostics_.error(decl.location, "integer constants require integer rational values");
+                    return false;
+                }
+                const auto wide = r->asWideInteger();
+                if (!wide)
+                {
+                    diagnostics_.error(decl.location, "integer constant value is not representable");
+                    return false;
+                }
+                // A constant must fit the [min, max] range of its declared width and signedness
+                // (unsigned `[0, 2^n-1]`, signed two's-complement `[-2^(n-1), 2^(n-1)-1]`); `n <= 64`
+                // so every bound fits the 128-bit constant value type. Enforced here because the
+                // Rational core deliberately no longer poisons at 64-bit range.
+                const std::uint32_t bits = prim->bitLength;
+                const bool          isSigned = prim->kind == PrimitiveKind::SignedInt;
+                const __int128      minValue = isSigned ? -(static_cast<__int128>(1) << (bits - 1U)) : __int128{0};
+                const __int128      maxValue = isSigned ? (static_cast<__int128>(1) << (bits - 1U)) - 1
+                                                        : (static_cast<__int128>(1) << bits) - 1;
+                if (*wide < minValue || *wide > maxValue)
+                {
+                    diagnostics_.error(decl.location,
+                                       "constant value " + wideToString(*wide) + " is out of range for " +
+                                           (isSigned ? "int" : "uint") + std::to_string(bits));
                     return false;
                 }
                 return true;
@@ -987,7 +1015,13 @@ private:
                                            expressionLength);
                         continue;
                     }
-                    const auto extent = std::get<Rational>(v->data).asInteger().value();
+                    const auto fittedExtent = std::get<Rational>(v->data).asInteger();
+                    if (!fittedExtent)
+                    {
+                        diagnostics_.error(expressionLocation, "@extent is too large", expressionLength);
+                        continue;
+                    }
+                    const auto extent = *fittedExtent;
                     if (extent < 0)
                     {
                         diagnostics_.error(expressionLocation, "@extent cannot be negative", expressionLength);
