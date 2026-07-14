@@ -154,6 +154,44 @@ bool runLspJsonRpcFuzzTests()
     }
 
     {
+        // A single header line without a terminator must not grow the read buffer
+        // without limit: the per-line cap rejects it before it can exhaust memory.
+        // (The Content-Length payload cap does not protect the header phase.)
+        std::string                          giantHeaderLine = "X-Filler: " + std::string(200000, 'a');
+        std::istringstream                   in(giantHeaderLine);  // no CRLF, no blank line
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
+        llvm::json::Value                    message(llvm::json::Object{});
+        std::string                          error;
+        if (transport.readMessage(message, error) || error != "JSON-RPC header line exceeds maximum")
+        {
+            std::cerr << "expected over-long header line to be rejected, got error: " << error << "\n";
+            return false;
+        }
+    }
+
+    {
+        // Many bounded header lines must not accumulate without limit either: the
+        // total-header-section cap rejects a header flood before the payload phase.
+        std::string headers;
+        for (int i = 0; i < 5000; ++i)
+        {
+            headers += "X-Filler-" + std::to_string(i) + ": some-value\r\n";
+        }
+        headers += "Content-Length: 2\r\n\r\n{}";
+        std::istringstream                   in(headers);
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
+        llvm::json::Value                    message(llvm::json::Object{});
+        std::string                          error;
+        if (transport.readMessage(message, error) || error != "JSON-RPC header section exceeds maximum")
+        {
+            std::cerr << "expected header flood to be rejected, got error: " << error << "\n";
+            return false;
+        }
+    }
+
+    {
         // A legitimately framed message at exactly the cap size still parses, so
         // the bound rejects only oversized frames.
         const std::string                    payload = "{}";

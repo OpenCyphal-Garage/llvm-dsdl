@@ -85,5 +85,54 @@ bool runLspRequestSchedulerTests()
     }
 
     scheduler.shutdown();
+
+    // Pending-request cap: a client streaming distinct request keys faster than the
+    // worker drains them must be bounded. With blocking tasks that never finish until
+    // released, the queue + in-flight set fills to the cap and further enqueues are
+    // rejected (return false), rather than growing without limit.
+    {
+        constexpr std::size_t             cap = 4;
+        llvmdsdl::lsp::RequestScheduler   bounded(cap);
+        std::mutex                        gateMutex;
+        std::condition_variable           gateCv;
+        bool                              release = false;
+
+        auto blockingTask = [&](llvmdsdl::lsp::CancellationToken) {
+            std::unique_lock<std::mutex> lock(gateMutex);
+            gateCv.wait(lock, [&release]() { return release; });
+            return llvmdsdl::lsp::RequestTaskResult{llvmdsdl::lsp::RequestTaskStatus::Completed,
+                                                    llvm::json::Value(nullptr),
+                                                    {}};
+        };
+
+        std::size_t accepted = 0;
+        for (std::size_t i = 0; i < cap + 8; ++i)
+        {
+            if (bounded.enqueue("k:" + std::to_string(i), "blocking", blockingTask, {}))
+            {
+                ++accepted;
+            }
+        }
+        if (accepted > cap)
+        {
+            std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap
+                      << ")\n";
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                release = true;
+            }
+            gateCv.notify_all();
+            bounded.shutdown();
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(gateMutex);
+            release = true;
+        }
+        gateCv.notify_all();
+        bounded.shutdown();
+    }
+
     return true;
 }

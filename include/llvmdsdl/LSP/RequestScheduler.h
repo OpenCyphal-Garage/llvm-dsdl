@@ -20,6 +20,7 @@
 #include "llvm/Support/JSON.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -79,7 +80,13 @@ using RequestCompletion = std::function<void(RequestTaskResult result, std::uint
 class RequestScheduler final
 {
 public:
-    RequestScheduler();
+    /// @brief Default upper bound on queued + in-flight requests (memory-DoS guard).
+    static constexpr std::size_t kDefaultMaxPendingRequests = 4096;
+
+    /// @brief Creates a scheduler.
+    /// @param[in] maxPendingRequests Upper bound on queued + in-flight requests before
+    ///            enqueue() rejects (returns false). Overridable mainly for testing.
+    explicit RequestScheduler(std::size_t maxPendingRequests = kDefaultMaxPendingRequests);
     ~RequestScheduler();
 
     RequestScheduler(const RequestScheduler&)            = delete;

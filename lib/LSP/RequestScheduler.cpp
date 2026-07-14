@@ -39,8 +39,9 @@ bool CancellationToken::isCancellationRequested() const
 class RequestScheduler::Impl final
 {
 public:
-    Impl()
-        : worker_([this]() { run(); })
+    explicit Impl(const std::size_t maxPendingRequests)
+        : maxPendingRequests_(maxPendingRequests)
+        , worker_([this]() { run(); })
     {
     }
 
@@ -57,6 +58,14 @@ public:
             return false;
         }
         if (requestStates_.contains(requestKey))
+        {
+            return false;
+        }
+        // Bound total tracked (queued + in-flight) requests so a client streaming distinct
+        // request keys faster than the worker drains them cannot grow the queue / state map
+        // without limit (memory-exhaustion DoS). The caller turns a false return into a
+        // "failed to queue request" error; real editors hold far fewer requests in flight.
+        if (requestStates_.size() >= maxPendingRequests_)
         {
             return false;
         }
@@ -173,6 +182,7 @@ private:
         }
     }
 
+    const std::size_t                                                  maxPendingRequests_;
     std::mutex                                                         mutex_;
     std::condition_variable                                            cv_;
     std::deque<WorkItem>                                               queue_;
@@ -181,8 +191,8 @@ private:
     std::thread                                                        worker_;
 };
 
-RequestScheduler::RequestScheduler()
-    : impl_(std::make_unique<Impl>())
+RequestScheduler::RequestScheduler(const std::size_t maxPendingRequests)
+    : impl_(std::make_unique<Impl>(maxPendingRequests))
 {
 }
 

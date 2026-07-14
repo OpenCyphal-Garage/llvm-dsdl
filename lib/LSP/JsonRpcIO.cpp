@@ -64,6 +64,41 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
     return true;
 }
 
+// Bounds on the header section, enforced BEFORE the Content-Length cap can apply
+// (the payload cap does nothing for a hostile header that never terminates a line
+// or streams unlimited header lines — both would balloon memory in the read loop).
+// Real LSP headers are a few dozen bytes; these limits are generous.
+constexpr std::size_t kMaxHeaderLineBytes = 8U * 1024U;
+constexpr std::size_t kMaxHeaderBytes     = 64U * 1024U;
+
+// Reads one CRLF/LF-terminated header line into `line`, bounded to kMaxHeaderLineBytes
+// so a line without a terminator cannot grow without limit. Returns false on stream end
+// or when the per-line cap is exceeded (caller treats the latter as a framing error).
+bool readBoundedHeaderLine(std::istream& input, std::string& line, bool& overflowed)
+{
+    line.clear();
+    overflowed = false;
+    int ch = 0;
+    while ((ch = input.get()) != std::char_traits<char>::eof())
+    {
+        if (ch == '\n')
+        {
+            if (!line.empty() && line.back() == '\r')
+            {
+                line.pop_back();
+            }
+            return true;
+        }
+        if (line.size() >= kMaxHeaderLineBytes)
+        {
+            overflowed = true;
+            return true;  // a full (over-long) line is available; caller rejects it
+        }
+        line.push_back(static_cast<char>(ch));
+    }
+    return false;  // stream ended before a newline
+}
+
 }  // namespace
 
 JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out, std::size_t maxContentLength)
@@ -75,14 +110,23 @@ JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out
 
 bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string& error)
 {
-    std::size_t contentLength = 0U;
-    bool        hasHeaders    = false;
+    std::size_t contentLength    = 0U;
+    bool        hasHeaders       = false;
+    std::size_t headerBytesTotal = 0U;
     std::string line;
-    while (std::getline(input_, line))
+    bool        lineOverflowed = false;
+    while (readBoundedHeaderLine(input_, line, lineOverflowed))
     {
-        if (!line.empty() && line.back() == '\r')
+        if (lineOverflowed)
         {
-            line.pop_back();
+            error = "JSON-RPC header line exceeds maximum";
+            return false;
+        }
+        headerBytesTotal += line.size() + 2U;  // account for the stripped CRLF
+        if (headerBytesTotal > kMaxHeaderBytes)
+        {
+            error = "JSON-RPC header section exceeds maximum";
+            return false;
         }
         if (line.empty())
         {
