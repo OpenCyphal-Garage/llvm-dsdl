@@ -46,6 +46,7 @@ add_executable(llvmdsdl-unit-tests
   LspLintTests.cpp
   LspRankingTests.cpp
   LspServerTests.cpp
+  LspTelemetryAuditTests.cpp
   LspRobustnessTests.cpp
   LspJsonRpcFuzzTests.cpp
   LexerFuzzTests.cpp

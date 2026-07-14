@@ -228,7 +228,8 @@ std::optional<std::string> docAttrText(const AttachedDoc& doc)
 
 mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                               mlir::MLIRContext&    context,
-                                              DiagnosticEngine&     diagnostics)
+                                              DiagnosticEngine&     diagnostics,
+                                              const bool            verifyModule)
 {
     mlir::OpBuilder builder(&context);
     auto            m = mlir::ModuleOp::create(builder.getUnknownLoc());
@@ -459,6 +460,11 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
     // verifier (serialization plan / io / align / field / constant) fires for ALL backends
     // — not only the C path, which happens to verify via its pass manager. Malformed IR is
     // rejected loudly at construction rather than flowing silently into a backend.
+    //
+    // Skipped for the LSP introspection path (verifyModule == false), which deliberately
+    // lowers error-tolerant / partially-resolved semantic models to render a best-effort
+    // debug snapshot — a partial module there is an acceptable view, not a codegen contract.
+    if (verifyModule)
     {
         std::string              verifyError;
         llvm::raw_string_ostream verifyStream(verifyError);

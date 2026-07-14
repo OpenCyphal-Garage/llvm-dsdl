@@ -238,7 +238,10 @@ public:
     [[nodiscard]] static std::string redactSensitive(std::string text);
 
 private:
-    static constexpr std::size_t MaxRecords = 256;
+    static constexpr std::size_t MaxRecords     = 256;
+    // Per-record detail cap: bounds total audit memory to ~MaxRecords * MaxDetailBytes
+    // regardless of request size, since `detail` carries attacker-controlled request text.
+    static constexpr std::size_t MaxDetailBytes = 4096;
 
     mutable std::mutex         mutex_;
     std::vector<AiAuditRecord> records_;

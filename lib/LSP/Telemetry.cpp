@@ -31,7 +31,20 @@ void Telemetry::record(std::string method, const std::uint64_t latencyMicros, co
     RequestMetric     metric{method, latencyMicros, cancelled};
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        ++requestCounts_[method];
+        // The `method` string is attacker-controlled (any JSON-RPC request, including
+        // unknown/garbage methods, reaches here). Bound the number of distinct keys so a
+        // client streaming distinct method names cannot grow this map without limit
+        // (memory-exhaustion DoS). Overflow methods bucket into a single sentinel key,
+        // preserving useful aggregate telemetry while capping memory. `kMaxDistinctMethods`
+        // is far above the fixed set of real LSP methods this server handles.
+        if (requestCounts_.find(method) == requestCounts_.end() && requestCounts_.size() >= kMaxDistinctMethods)
+        {
+            ++requestCounts_[std::string(kOverflowMethodKey)];
+        }
+        else
+        {
+            ++requestCounts_[method];
+        }
         sink = sink_;
     }
     if (sink)

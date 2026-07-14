@@ -881,7 +881,11 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
         mlir::DialectRegistry registry;
         registry.insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect>();
         mlir::MLIRContext                 context(registry);
-        mlir::OwningOpRef<mlir::ModuleOp> mlirModule = lowerToMLIR(*semanticModule, context, loweringDiagnostics);
+        // Best-effort introspection snapshot: lower error-tolerant / partial semantic
+        // models without the strict codegen-path verification (which would reject a
+        // partial module and drop the snapshot entirely).
+        mlir::OwningOpRef<mlir::ModuleOp> mlirModule =
+            lowerToMLIR(*semanticModule, context, loweringDiagnostics, /*verifyModule=*/false);
         for (const Diagnostic& d : loweringDiagnostics.diagnostics())
         {
             allDiagnostics.push_back(d);

@@ -63,6 +63,12 @@ public:
     [[nodiscard]] std::uint64_t requestCount(std::string_view method) const;
 
 private:
+    // Upper bound on distinct method keys retained, so an attacker streaming distinct
+    // (unknown) method names cannot grow requestCounts_ without limit. The real server
+    // handles well under 100 methods; overflow aggregates under kOverflowMethodKey.
+    static constexpr std::size_t     kMaxDistinctMethods = 512;
+    static constexpr std::string_view kOverflowMethodKey = "<other>";
+
     mutable std::mutex                             mutex_;
     RequestMetricSink                              sink_;
     std::unordered_map<std::string, std::uint64_t> requestCounts_;

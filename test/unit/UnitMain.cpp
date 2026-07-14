@@ -53,6 +53,7 @@ bool runLspIndexTests();
 bool runLspLintTests();
 bool runLspRankingTests();
 bool runLspServerTests();
+bool runLspTelemetryAuditTests();
 bool runLspRobustnessTests();
 bool runLspJsonRpcFuzzTests();
 bool runLexerFuzzTests();
@@ -107,6 +108,7 @@ int main()
     ok      = runLspLintTests() && ok;
     ok      = runLspRankingTests() && ok;
     ok      = runLspServerTests() && ok;
+    ok      = runLspTelemetryAuditTests() && ok;
     ok      = runLspRobustnessTests() && ok;
     ok      = runLspJsonRpcFuzzTests() && ok;
     ok      = runLexerFuzzTests() && ok;
