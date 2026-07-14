@@ -434,8 +434,13 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   cap ≈ 16 GiB) — detail now capped at 4 KiB after redaction; **(3)** `JsonRpcStdioTransport`
   read the header section with unbounded `getline` and unlimited header lines *before* the
   Content-Length cap applies — now per-line (8 KiB) + total-header (64 KiB) caps; **(4)**
-  `RequestScheduler` had no bound on queued + in-flight requests — now a pending cap (4096).
-  Regression tests added for all four. **Reviewed and found clean:** the Server request
+  `RequestScheduler` had no bound on queued + in-flight requests — now a pending cap (4096);
+  **(5)** the `dsdld` run loop terminated the whole server on *any* `readMessage` failure,
+  including a well-framed message whose payload is merely invalid JSON (stream still
+  synchronized) — so a single `Content-Length: 2\r\n\r\nxx` killed the server (availability
+  DoS + LSP-spec violation). `readMessage` now flags recoverable failures and the loop
+  replies `-32700 Parse error` and keeps serving; verified end-to-end (bad frame then
+  `initialize` both handled). Regression tests added for all five. **Reviewed and found clean:** the Server request
   dispatch and param parsers (position/range/uri) are optional-based and guarded (negatives
   rejected, empty-container guards present, fixed-size array indexing); the redaction/gate
   consistency holds. **Remaining under this item:** LSP structured logging for post-mortems
