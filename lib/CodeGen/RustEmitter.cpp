@@ -1427,13 +1427,20 @@ void emitSectionType(std::ostringstream&              out,
         emitLine(out, 1, "pub const UNION_OPTION_COUNT: usize = " + std::to_string(optionCount) + ";");
     }
 
+    std::vector<std::string> constNames;
+    constNames.reserve(section.constants.size());
+    for (const auto& c : section.constants)
+    {
+        constNames.push_back(c.name);
+    }
+    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Rust, constNames);
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(out, 1, c.doc);
         emitLine(out,
                  1,
-                 "pub const " + codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Rust, c.name) + ": " +
-                     rustConstType(c.type, c.value) + " = " + rustConstValue(c.type, c.value) + ";");
+                 "pub const " + constIdents.get(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
+                     rustConstValue(c.type, c.value) + ";");
     }
     out << "\n";
 

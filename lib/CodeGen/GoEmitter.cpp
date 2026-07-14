@@ -1311,14 +1311,19 @@ void emitSectionType(std::ostringstream&                       out,
         emitLine(out, 0, "const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(optionCount));
     }
 
+    std::vector<std::string> constNames;
+    constNames.reserve(section.constants.size());
+    for (const auto& c : section.constants)
+    {
+        constNames.push_back(c.name);
+    }
+    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Go, constNames);
     for (const auto& c : section.constants)
     {
         emitAttachedDocGo(out, 0, c.doc);
         emitLine(out,
                  0,
-                 "const " + typeConstPrefix + "_" +
-                     codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, c.name) + " = " +
-                     goConstValue(c.type, c.value));
+                 "const " + typeConstPrefix + "_" + constIdents.get(c.name) + " = " + goConstValue(c.type, c.value));
     }
     out << "\n";
 

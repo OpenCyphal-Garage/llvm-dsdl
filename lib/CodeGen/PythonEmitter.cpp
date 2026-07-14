@@ -371,11 +371,18 @@ std::string pyDefaultExpr(const SemanticFieldType& type, const EmitterContext& c
 
 void emitSectionConstants(std::ostringstream& out, const std::string& prefix, const SemanticSection& section)
 {
+    std::vector<std::string> constNames;
+    constNames.reserve(section.constants.size());
+    for (const auto& constant : section.constants)
+    {
+        constNames.push_back(constant.name);
+    }
+    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Python, constNames);
+    const auto prefixupper = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, prefix);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(out, 0, constant.doc);
-        const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, prefix) + "_" +
-                               codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, constant.name);
+        const auto constName = prefixupper + "_" + constIdents.get(constant.name);
         emitLine(out, 0, constName + " = " + pyConstValue(constant.type, constant.value));
     }
 }

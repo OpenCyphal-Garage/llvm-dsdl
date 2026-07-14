@@ -250,11 +250,18 @@ std::string moduleAliasFromPath(const std::string& modulePath)
 
 void emitSectionConstants(std::ostringstream& out, const std::string& prefix, const SemanticSection& section)
 {
+    std::vector<std::string> constNames;
+    constNames.reserve(section.constants.size());
+    for (const auto& constant : section.constants)
+    {
+        constNames.push_back(constant.name);
+    }
+    const auto constIdents  = codegenUpperSnakeAllocator(CodegenNamingLanguage::TypeScript, constNames);
+    const auto prefixupper  = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, prefix);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(out, 0, constant.doc);
-        const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, prefix) + "_" +
-                               codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, constant.name);
+        const auto constName = prefixupper + "_" + constIdents.get(constant.name);
         emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.type, constant.value) + ";");
     }
 }

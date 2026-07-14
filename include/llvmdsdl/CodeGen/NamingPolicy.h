@@ -107,6 +107,17 @@ private:
     llvm::StringMap<std::string> assigned_;
 };
 
+/// @brief Builds a collision-free UPPER_SNAKE_CASE allocation over @p names (declaration order).
+///
+/// Convenience wrapper around @ref CodegenIdentifierAllocator for constant names, whose projection
+/// (`codegenToUpperSnakeCaseIdentifier`) is many-to-one and can otherwise emit two `#define`s / `const`s
+/// with the same name (e.g. `fooBar` and `foo_bar` both fold to `FOO_BAR`).
+/// @param[in] language Naming language.
+/// @param[in] names Distinct source names in declaration order.
+/// @return Allocator mapping each source name to a unique UPPER_SNAKE_CASE identifier.
+[[nodiscard]] CodegenIdentifierAllocator codegenUpperSnakeAllocator(CodegenNamingLanguage        language,
+                                                                    llvm::ArrayRef<std::string> names);
+
 }  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_CODEGEN_NAMING_POLICY_H

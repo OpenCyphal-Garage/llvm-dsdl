@@ -55,6 +55,13 @@ std::string CodegenIdentifierAllocator::get(llvm::StringRef sourceName) const
     }
     return it->second;
 }
+
+CodegenIdentifierAllocator codegenUpperSnakeAllocator(const CodegenNamingLanguage language,
+                                                      llvm::ArrayRef<std::string> names)
+{
+    return CodegenIdentifierAllocator(
+        names, [language](llvm::StringRef name) { return codegenToUpperSnakeCaseIdentifier(language, name); });
+}
 }  // namespace llvmdsdl
 
 namespace llvmdsdl
