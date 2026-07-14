@@ -21,7 +21,9 @@ Comparison rules:
   * The five string backends (cpp/rust/go/ts/python) are always compared strictly.
   * The C backend is routed through MLIR/EmitC, so its text can legitimately vary
     across MLIR MAJOR versions; if the two manifests record different llvm majors
-    (--meta llvm=...), C is skipped with a loud warning instead of failing.
+    (--meta llvm=...), C is skipped with a loud warning — unless --require-c is
+    given (as it is in CI, where both sides are pinned to the same major), in
+    which case skew is itself a hard failure so C coverage cannot silently erode.
   * Everything else (missing files, extra files, differing bytes) is a hard failure
     with per-file detail.
 
@@ -101,7 +103,7 @@ def _llvm_major(manifest):
     return llvm.split(".")[0] if llvm else ""
 
 
-def compare(path_a, path_b):
+def compare(path_a, path_b, require_c=False):
     with open(path_a, encoding="utf-8") as handle:
         a = json.load(handle)
     with open(path_b, encoding="utf-8") as handle:
@@ -110,15 +112,21 @@ def compare(path_a, path_b):
     print(f"B: {b['meta']}")
 
     langs = list(STRICT_LANGS)
+    failures = []
     major_a, major_b = _llvm_major(a), _llvm_major(b)
     if major_a and major_b and major_a != major_b:
-        print(f"WARNING: llvm majors differ ({major_a} vs {major_b}); skipping the "
-              f"MLIR/EmitC-routed C backend comparison (its text may legitimately vary "
-              f"across MLIR majors). Align the toolchains to restore C coverage.")
+        if require_c:
+            failures.append(
+                f"[c] llvm majors differ ({major_a} vs {major_b}) and --require-c is set: "
+                f"the MLIR/EmitC-routed C backend cannot be compared across MLIR majors. "
+                f"Re-align the toolchains (bump both sides together) to restore C coverage.")
+        else:
+            print(f"WARNING: llvm majors differ ({major_a} vs {major_b}); skipping the "
+                  f"MLIR/EmitC-routed C backend comparison (its text may legitimately vary "
+                  f"across MLIR majors). Align the toolchains to restore C coverage.")
     else:
         langs.insert(0, "c")
 
-    failures = []
     for lang in langs:
         la, lb = a["languages"].get(lang), b["languages"].get(lang)
         if la is None or lb is None:
@@ -161,10 +169,14 @@ def main():
                     help="extra manifest metadata as key=value (e.g. llvm=22.1.8); repeatable")
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"),
                     help="compare two manifests instead of generating")
+    ap.add_argument("--require-c", action="store_true",
+                    help="fail (instead of warn and skip) when the C backend cannot be "
+                         "compared, e.g. on llvm major skew; used in CI where both sides "
+                         "are pinned to the same major")
     args = ap.parse_args()
 
     if args.compare:
-        return compare(*args.compare)
+        return compare(*args.compare, require_c=args.require_c)
     if not (args.dsdlc and args.dsdl_root and args.out):
         ap.error("generate mode requires --dsdlc, --dsdl-root, and --out")
     if not os.path.exists(args.dsdlc):

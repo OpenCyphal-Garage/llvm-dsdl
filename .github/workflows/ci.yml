@@ -284,12 +284,31 @@ jobs:
           submodules: recursive
 
       - name: Install LLVM/MLIR + ninja (Homebrew; links libc++)
-        run: brew install llvm ninja
+        # Pin to the toolshed image's LLVM major (ts26.4.1 -> 22) so the C backend
+        # (routed through MLIR/EmitC, whose text may vary across MLIR majors) stays
+        # comparable. Prefer the versioned formula; fall back to `llvm` (which IS 22
+        # while 22 is current). The assertion below is the real pin: a Homebrew
+        # major bump fails this job loudly instead of silently eroding C coverage —
+        # bump this pin and the toolshed image together, deliberately.
+        run: brew install ninja && (brew install llvm@22 || brew install llvm)
+
+      - name: Assert LLVM major matches the linux (toolshed) side
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm@22 2>/dev/null || true)"
+          [ -x "${LLVM_PREFIX}/bin/llvm-config" ] || LLVM_PREFIX="$(brew --prefix llvm)"
+          ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
+          echo "Homebrew LLVM: ${ver} at ${LLVM_PREFIX}"
+          if [ "${ver%%.*}" != "22" ]; then
+            echo "::error::Homebrew LLVM major (${ver%%.*}) != toolshed LLVM major (22)." \
+                 "Bump the llvm@ pin here and the toolshed image together." >&2
+            exit 1
+          fi
+          echo "LLVM_PREFIX=${LLVM_PREFIX}" >> "${GITHUB_ENV}"
 
       - name: Configure (dev-llvm-env preset, Homebrew LLVM)
         run: |
-          export LLVM_DIR="$(brew --prefix llvm)/lib/cmake/llvm"
-          export MLIR_DIR="$(brew --prefix llvm)/lib/cmake/mlir"
+          export LLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm"
+          export MLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir"
           cmake --preset dev-llvm-env
 
       - name: Build dsdlc
@@ -304,7 +323,7 @@ jobs:
       - name: Hash generated corpus (libc++ side)
         run: |
           dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
-          llvm_ver="$("$(brew --prefix llvm)/bin/llvm-config" --version)"
+          llvm_ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
           python3 tools/determinism/cross_stdlib_corpus_hash.py \
             --dsdlc "${dsdlc}" \
             --dsdl-root submodules/public_regulated_data_types/uavcan \
@@ -321,10 +340,13 @@ jobs:
 
   cross-stdlib-determinism:
     name: Cross-stdlib determinism gate (libstdc++/x86-64 vs libc++/arm64)
-    # Compares the two corpus-hash manifests byte-for-byte (the 5 string backends
-    # strictly; the MLIR/EmitC-routed C backend strictly when both sides carry the
-    # same LLVM major). A mismatch means generated output depends on the host
-    # toolchain — see tools/determinism/cross_stdlib_corpus_hash.py.
+    # Compares the two corpus-hash manifests byte-for-byte, all six backends
+    # strictly: --require-c turns LLVM-major skew (which would otherwise skip the
+    # MLIR/EmitC-routed C backend) into a hard failure, and the macOS job pins its
+    # Homebrew LLVM to the toolshed's major, so skew can only happen through a
+    # deliberate, mismatched bump — which this gate then catches. A mismatch means
+    # generated output depends on the host toolchain — see
+    # tools/determinism/cross_stdlib_corpus_hash.py.
     needs: [linux, cross-stdlib]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -344,4 +366,5 @@ jobs:
         if: ${{ !env.ACT }}
         run: |
           python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json
+            --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json \
+            --require-c

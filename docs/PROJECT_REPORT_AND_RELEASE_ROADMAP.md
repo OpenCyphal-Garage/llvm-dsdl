@@ -374,8 +374,11 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   compares them byte-for-byte and fails with per-file detail. libstdc++ and libc++ implement
   different `std::hash`/bucket policies (and the hosts differ in arch and OS), so any future
   `unordered_*` iteration leak into emitted text diverges the manifests. The five string backends
-  compare strictly always; the MLIR/EmitC-routed C backend compares strictly while both sides
-  carry the same LLVM major (22 today) and is skipped with a loud warning on major skew. Depfiles
+  compare strictly always; the MLIR/EmitC-routed C backend compares strictly too — the macOS job
+  pins its Homebrew LLVM to the toolshed's major (llvm@22, asserted in-job so a Homebrew bump
+  fails loudly instead of eroding coverage), and the join job passes `--require-c` so any major
+  skew that slips through is itself a hard failure, never a silent skip. Bump both sides
+  together, deliberately. Depfiles
   (`*.d`) are excluded (absolute host paths by design). Verified locally: generation is run-to-run
   and build-dir-to-build-dir deterministic on the libc++ side, the comparator's corrupted-manifest
   negative control fails with file-level detail, and the llvm-skew path warns and skips only C.
