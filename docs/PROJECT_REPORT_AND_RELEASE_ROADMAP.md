@@ -353,7 +353,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   intentionally empty (all Rust semantic wrappers are template-generated and excluded by the
   validator; no backend ships a hand-written above-primitive wrapper), and the
   release-blocking `llvmdsdl-runtime-semantic-wrapper-allowlist` lane passes.
-- [~] Determinism gates that actually perturb (`PYTHONHASHSEED`, locale/TZ, two toolchains) + audit `unordered_*` iteration in emitters.
+- [x] Determinism gates that actually perturb (`PYTHONHASHSEED`, locale/TZ, two toolchains) + audit `unordered_*` iteration in emitters.
   ✅ **Audit + env-perturbation done (2026-07-11).** **Emitter audit came up clean:** the CodeGen
   layer uses no `llvm::DenseMap`/`DenseSet`/`SmallPtrSet` (whose iteration is pointer/insertion
   ordered), every `std::unordered_map`/`unordered_set` is a keyed *lookup/membership* structure that
@@ -364,10 +364,21 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   environment (catching only concurrency/address nondeterminism); they now run the two generations
   under deliberately different `LC_ALL`, `TZ`, and `PYTHONHASHSEED`, so byte-identical output proves
   environment-independence and would catch any future locale/TZ/hash-order dependence. All gates
-  pass under perturbation. **Remaining:** the **two-toolchain** dimension (build `dsdlc` against a
-  second C++ stdlib, e.g. libstdc++ vs libc++, whose `std::hash` differs) is the only way to catch
-  C++ `unordered_*` *iteration* nondeterminism that env-perturbation cannot — it catches nothing
-  today given the clean audit, but is worth a CI lane; deferred as it needs a second build config.
+  pass under perturbation. ✅ **Two-toolchain lane done (2026-07-12).** The distro LLVM in CI is
+  libstdc++-built, so a same-host `-stdlib=libc++` build cannot link it; the lane crosses *hosts*
+  instead: the existing linux job (libstdc++, x86-64) and a new `cross-stdlib` macOS job (Homebrew
+  LLVM, libc++, arm64 — dsdlc-only build via the `dev-llvm-env` preset, with an `otool` assertion
+  that the binary really links libc++) each generate the full UAVCAN corpus for all six backends
+  and record a canonical per-file SHA-256 manifest
+  (`tools/determinism/cross_stdlib_corpus_hash.py`); the `cross-stdlib-determinism` join job
+  compares them byte-for-byte and fails with per-file detail. libstdc++ and libc++ implement
+  different `std::hash`/bucket policies (and the hosts differ in arch and OS), so any future
+  `unordered_*` iteration leak into emitted text diverges the manifests. The five string backends
+  compare strictly always; the MLIR/EmitC-routed C backend compares strictly while both sides
+  carry the same LLVM major (22 today) and is skipped with a loud warning on major skew. Depfiles
+  (`*.d`) are excluded (absolute host paths by design). Verified locally: generation is run-to-run
+  and build-dir-to-build-dir deterministic on the libc++ side, the comparator's corrupted-manifest
+  negative control fails with file-level detail, and the llvm-skew path warns and skips only C.
 - [x] Object backend: escape/validate `targetTriple` and staged paths.
   ✅ **Done (2026-07-12).** First, the reassuring part: the object backend already invokes the
   C/C++ compiler and archiver via **argv** (`llvm::sys::ExecuteAndWait`), never a shell, so there

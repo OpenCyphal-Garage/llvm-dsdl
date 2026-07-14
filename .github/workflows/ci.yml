@@ -89,6 +89,26 @@ jobs:
       - name: Build (Debug)
         run: cmake --build --preset build-ci
 
+      - name: Hash generated corpus (libstdc++ side of the cross-stdlib determinism gate)
+        # One half of the P1 "two-toolchain" determinism check: this dsdlc links the
+        # distro LLVM/libstdc++ on x86-64; the cross-stdlib job produces the
+        # libc++/arm64 half and the cross-stdlib-determinism job compares them.
+        run: |
+          llvm_ver="$(/usr/lib/llvm-22/bin/llvm-config --version)"
+          python3 tools/determinism/cross_stdlib_corpus_hash.py \
+            --dsdlc build/matrix/ci/tools/dsdlc/Debug/dsdlc \
+            --dsdl-root submodules/public_regulated_data_types/uavcan \
+            --out corpus-hash-libstdcxx.json \
+            --label libstdc++ \
+            --meta "llvm=${llvm_ver}"
+
+      - name: Upload corpus hash (libstdc++)
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-hash-libstdcxx
+          path: corpus-hash-libstdcxx.json
+
       - name: Build Python runtime accelerator
         run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
 
@@ -246,3 +266,82 @@ jobs:
         # `dafny verify` exits non-zero on any failed proof obligation, so a broken model
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
+
+  cross-stdlib:
+    name: Corpus generation (macOS / libc++ / arm64)
+    # The libc++ half of the P1 "two-toolchain" determinism gate. libstdc++ and
+    # libc++ implement different std::hash functions and bucket policies, so a
+    # future code path that lets std::unordered_* iteration order leak into
+    # emitted text diverges between this job's output and the linux job's —
+    # exactly the nondeterminism class that same-host env perturbation
+    # (locale/TZ/PYTHONHASHSEED, already gated) cannot expose. Builds dsdlc only.
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install LLVM/MLIR + ninja (Homebrew; links libc++)
+        run: brew install llvm ninja
+
+      - name: Configure (dev-llvm-env preset, Homebrew LLVM)
+        run: |
+          export LLVM_DIR="$(brew --prefix llvm)/lib/cmake/llvm"
+          export MLIR_DIR="$(brew --prefix llvm)/lib/cmake/mlir"
+          cmake --preset dev-llvm-env
+
+      - name: Build dsdlc
+        run: cmake --build --preset build-dev-llvm-env --target dsdlc
+
+      - name: Assert libc++ linkage (the point of this lane)
+        run: |
+          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
+          otool -L "${dsdlc}"
+          otool -L "${dsdlc}" | grep -q 'libc++'
+
+      - name: Hash generated corpus (libc++ side)
+        run: |
+          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
+          llvm_ver="$("$(brew --prefix llvm)/bin/llvm-config" --version)"
+          python3 tools/determinism/cross_stdlib_corpus_hash.py \
+            --dsdlc "${dsdlc}" \
+            --dsdl-root submodules/public_regulated_data_types/uavcan \
+            --out corpus-hash-libcxx.json \
+            --label libc++ \
+            --meta "llvm=${llvm_ver}"
+
+      - name: Upload corpus hash (libc++)
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-hash-libcxx
+          path: corpus-hash-libcxx.json
+
+  cross-stdlib-determinism:
+    name: Cross-stdlib determinism gate (libstdc++/x86-64 vs libc++/arm64)
+    # Compares the two corpus-hash manifests byte-for-byte (the 5 string backends
+    # strictly; the MLIR/EmitC-routed C backend strictly when both sides carry the
+    # same LLVM major). A mismatch means generated output depends on the host
+    # toolchain — see tools/determinism/cross_stdlib_corpus_hash.py.
+    needs: [linux, cross-stdlib]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        if: ${{ !env.ACT }}
+        uses: actions/checkout@v4
+
+      - name: Download corpus hashes
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: corpus-hash-*
+          merge-multiple: true
+
+      - name: Compare
+        if: ${{ !env.ACT }}
+        run: |
+          python3 tools/determinism/cross_stdlib_corpus_hash.py \
+            --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json
