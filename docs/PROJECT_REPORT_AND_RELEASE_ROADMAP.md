@@ -423,8 +423,20 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   mask width tracks the tag width; the helper-optional `->` derefs are guarded by the native
   skeleton's missing-helper fallback (union dispatch is unreachable when helpers are unbound);
   **TS** (numeric-literal discriminant) and **Python** (unbounded `int`) are inherently
-  truncation-safe. **Remaining: supply-chain/SBOM for release artifacts** (separate work,
-  belongs with alpha release mechanics).
+  truncation-safe. **Peer cross-check (2026-07-12, pinned commits): UT-1 was ours alone.**
+  pydsdl (`_composite.py`, pinned `a1506ce`) computes the tag width as
+  `2 ** ceil(log2(max(8, (N-1).bit_length())))` — mathematically identical to our
+  `pow2ceil(max(8, ceilLog2(count)))`, with its own `assert tag_bit_length in {8,16,32,64}`
+  — so **our tag *width* was always spec-conformant** (a >256-option union is a 16-bit tag
+  in both; the defect was strictly the hardcoded 8-bit *storage*, not the wire width).
+  pydsdl emits no storage, so it cannot have the bug; Nunavut (pinned `37095ab`,
+  `lang/c/templates/definitions.j2:124`) declares the member as
+  `{{ t.tag_field_type | type_from_primitive }} _tag_;` — deriving the C type from pydsdl's
+  computed width, so it already emits `uint16_t _tag_;` for a wide tag. Both peers are
+  correct; the spec adjudicated against us. (No standard UAVCAN type has a >256-option union,
+  which is why neither the differential-parity lane nor real-world use ever exercised it — the
+  bug lived only in the tail we reached by construction.) **Remaining: supply-chain/SBOM for
+  release artifacts** (separate work, belongs with alpha release mechanics).
 - [x] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match is now applied to the shared float helper (`lib/CodeGen/HelperBindingRender.cpp`: `const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialize/deserialize caller (`CppEmitter.cpp`, `RustEmitter.cpp`, `GoEmitter.cpp`), so all four native backends keep floats in native width end-to-end and no longer canonicalize signaling-NaN payloads via a double round-trip. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **Locked in by directed signaling-NaN payload regression cases** added to the cpp-c, c-rust, and c-go parity harnesses (feed the sNaN wire bytes `01 00 80 7F`, deserialize→reserialize, assert the quiet bit stays clear); a mutation reintroducing the round-trip makes them fail. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless. *(Open spec question about what "the original value will be preserved" means for a NaN at `float16` width is captured in `NAN_PRESERVATION_QUESTION_FOR_MAINTAINERS.md`.)*
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.
