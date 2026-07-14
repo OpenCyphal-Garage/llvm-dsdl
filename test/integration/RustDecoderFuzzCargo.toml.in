@@ -1,0 +1,11 @@
+[package]
+name = "llvmdsdl_rust_decoder_fuzz"
+version = "@LLVMDSDL_TOOL_VERSION@"
+edition = "2021"
+
+[[bin]]
+name = "rust_decoder_fuzz"
+path = "src/main.rs"
+
+[dependencies]
+uavcan_dsdl_generated = { path = "@RUST_OUT@" }

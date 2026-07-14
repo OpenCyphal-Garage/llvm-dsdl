@@ -2525,6 +2525,27 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
       LABELS "integration;uavcan;rust;slow"
   )
 
+  # Robustness fuzz over the generated Rust decoders: memory-safe, so the caught
+  # class is a panic on attacker-controlled bytes. Default runs a fast, fixed
+  # iteration count; LLVMDSDL_RUST_FUZZ_ITERS scales it for the deep/cron run.
+  add_test(
+    NAME llvmdsdl-rust-decoder-fuzz
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/rust-decoder-fuzz-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustDecoderFuzz.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-rust-decoder-fuzz
+    PROPERTIES
+      LABELS "integration;uavcan;rust;fuzz;slow"
+  )
+
   add_test(
     NAME llvmdsdl-uavcan-rust-cargo-check-no-std-alloc
     COMMAND
