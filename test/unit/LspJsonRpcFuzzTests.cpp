@@ -124,6 +124,44 @@ bool runLspJsonRpcFuzzTests()
     }
 
     {
+        // A malformed-JSON frame must be RECOVERABLE: the payload was consumed exactly, so
+        // the stream stays synchronized and a following valid frame still parses. This is
+        // what lets the server reply with a parse error and keep serving instead of dying
+        // on one bad message.
+        const std::string                    badFrame  = encodeLspFrame(R"({"jsonrpc":2.0)");
+        const std::string                    goodFrame = encodeLspFrame(R"({"jsonrpc":"2.0","id":7})");
+        std::istringstream                   in(badFrame + goodFrame);
+        std::ostringstream                   out;
+        llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
+
+        llvm::json::Value message(llvm::json::Object{});
+        std::string       error;
+        bool              recoverable = false;
+        if (transport.readMessage(message, error, &recoverable) || !recoverable)
+        {
+            std::cerr << "expected malformed-JSON frame to be reported as recoverable\n";
+            return false;
+        }
+
+        // The next frame must still read cleanly (stream stayed synchronized).
+        llvm::json::Value nextMessage(llvm::json::Object{});
+        std::string       nextError;
+        bool              nextRecoverable = false;
+        if (!transport.readMessage(nextMessage, nextError, &nextRecoverable) || !nextError.empty())
+        {
+            std::cerr << "expected the frame after a bad one to parse; got error: " << nextError << "\n";
+            return false;
+        }
+        const auto* object = nextMessage.getAsObject();
+        const auto  id     = object ? object->getInteger("id") : std::nullopt;
+        if (!id.has_value() || *id != 7)
+        {
+            std::cerr << "expected recovered frame to carry id=7\n";
+            return false;
+        }
+    }
+
+    {
         // A Content-Length above the configured cap must be rejected before the
         // payload buffer is allocated (unbounded-allocation / OOM DoS guard).
         std::istringstream                   in("Content-Length: 100\r\n\r\n");

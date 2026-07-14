@@ -108,8 +108,12 @@ JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out
 {
 }
 
-bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string& error)
+bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string& error, bool* recoverable)
 {
+    if (recoverable != nullptr)
+    {
+        *recoverable = false;
+    }
     std::size_t contentLength    = 0U;
     bool        hasHeaders       = false;
     std::size_t headerBytesTotal = 0U;
@@ -173,6 +177,13 @@ bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string&
         parseStream << parsed.takeError();
         parseStream.flush();
         error = "invalid JSON payload: " + parseMessage;
+        // The frame was well-formed and its payload fully consumed, so the stream is still
+        // synchronized at the next frame — the caller can reply with a parse error and
+        // keep serving rather than terminate on a single bad message.
+        if (recoverable != nullptr)
+        {
+            *recoverable = true;
+        }
         return false;
     }
 

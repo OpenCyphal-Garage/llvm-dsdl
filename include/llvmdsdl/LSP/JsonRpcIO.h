@@ -51,8 +51,14 @@ public:
     /// @brief Reads one framed JSON-RPC message.
     /// @param[out] message Parsed JSON payload.
     /// @param[out] error Parsing/framing error text when read fails.
+    /// @param[out] recoverable When non-null, set to true iff the failure is recoverable —
+    ///            i.e. a well-framed message whose payload was fully consumed but is not
+    ///            valid JSON. The stream is still synchronized at the next frame, so the
+    ///            caller should reply with a JSON-RPC parse error and keep serving rather
+    ///            than terminate. All other failures (EOF, bad/oversized framing, truncated
+    ///            payload) leave the stream ended or desynchronized and are not recoverable.
     /// @return `true` when a full message is read and parsed.
-    [[nodiscard]] bool readMessage(llvm::json::Value& message, std::string& error);
+    [[nodiscard]] bool readMessage(llvm::json::Value& message, std::string& error, bool* recoverable = nullptr);
 
     /// @brief Writes one framed JSON-RPC message.
     /// @param[in] message JSON payload to write.

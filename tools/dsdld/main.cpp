@@ -56,11 +56,23 @@ int main(int argc, char** argv)
     {
         llvm::json::Value message(llvm::json::Object{});
         std::string       error;
-        if (!transport.readMessage(message, error))
+        bool              recoverable = false;
+        if (!transport.readMessage(message, error, &recoverable))
         {
             if (!error.empty())
             {
                 llvm::errs() << "[dsdld] " << error << "\n";
+            }
+            if (recoverable)
+            {
+                // A single malformed-JSON message must not kill the server: the stream is
+                // still framed, so reply with a JSON-RPC parse error (id null) and continue.
+                (void) transport.writeMessage(llvm::json::Object{
+                    {"jsonrpc", "2.0"},
+                    {"id", nullptr},
+                    {"error", llvm::json::Object{{"code", -32700}, {"message", "Parse error"}}},
+                });
+                continue;
             }
             break;
         }
