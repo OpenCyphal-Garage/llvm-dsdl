@@ -423,7 +423,26 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   `test/lit/dsdl-field-invalid-empty-name.mlir`. This closes the G2 "dead ops" note and the
   G6 "post-hoc verifier" critique.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
-- [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
+- [~] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
+  **LSP adversarial data-flow / robustness audit done (2026-07-12) — four DoS defects
+  found and fixed** in code the review had rated as done. All are unbounded-growth on
+  attacker-controlled JSON-RPC input: **(1)** `Telemetry` keyed `requestCounts_` by the raw
+  method string and recorded telemetry for *every* request including unknown methods, so a
+  client streaming distinct method names grew the map without limit — now caps distinct keys
+  and buckets overflow under `<other>`; **(2)** the AI `AiAuditLogger` retained up to 256
+  records with unbounded per-record detail (serialized tool args, up to the 64 MiB frame
+  cap ≈ 16 GiB) — detail now capped at 4 KiB after redaction; **(3)** `JsonRpcStdioTransport`
+  read the header section with unbounded `getline` and unlimited header lines *before* the
+  Content-Length cap applies — now per-line (8 KiB) + total-header (64 KiB) caps; **(4)**
+  `RequestScheduler` had no bound on queued + in-flight requests — now a pending cap (4096).
+  Regression tests added for all four. **Reviewed and found clean:** the Server request
+  dispatch and param parsers (position/range/uri) are optional-based and guarded (negatives
+  rejected, empty-container guards present, fixed-size array indexing); the redaction/gate
+  consistency holds. **Remaining under this item:** LSP structured logging for post-mortems
+  (which will also route the MLIR verify diagnostics the LSP currently leaks to stderr when
+  lowering partial models); the written LSP AI-surface data-flow document; and the
+  LLVM-version-lock write-up (the policy is already *enforced* by the cross-stdlib CI lane
+  pinning both hosts to LLVM 22 with an asserted major — see the determinism item).
 - [~] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
   ✅ **Union-tag review done (2026-07-12); SBOM still open.** The review was cheap because
   the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC
