@@ -19,6 +19,9 @@
 
 #include <string>
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace llvmdsdl
@@ -75,6 +78,34 @@ std::string codegenToPascalCaseIdentifier(CodegenNamingLanguage language, llvm::
 /// @param[in] name Source text.
 /// @return Language-safe UPPER_SNAKE_CASE identifier.
 std::string codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
+
+/// @brief Assigns collision-free identifiers to a set of distinct source names.
+///
+/// The case-folding projections above are many-to-one, so two distinct, spec-valid DSDL names (e.g.
+/// `fooBar` and `foo_bar`, which both fold to `foo_bar`/`FooBar`) can map to the same identifier and
+/// produce duplicate struct fields / object keys / attributes in a generated type. This allocator
+/// applies a chosen projection to each source name in declaration order and appends `_2`, `_3`, ... to
+/// the second and subsequent names that would otherwise collide (checked against every previously
+/// assigned identifier, including suffixed ones), so the mapping stays injective. Source names must be
+/// distinct (the frontend already rejects exact duplicate attribute names).
+class CodegenIdentifierAllocator final
+{
+public:
+    /// @brief Builds the allocation over @p sourceNames (declaration order) using @p transform.
+    /// @param[in] sourceNames Distinct source names, in the order they should claim identifiers.
+    /// @param[in] transform Projection from a source name to its (possibly colliding) base identifier.
+    CodegenIdentifierAllocator(llvm::ArrayRef<std::string>                       sourceNames,
+                               llvm::function_ref<std::string(llvm::StringRef)> transform);
+
+    /// @brief Returns the collision-free identifier assigned to @p sourceName.
+    /// @param[in] sourceName A name provided at construction.
+    /// @return The unique identifier; falls back to @p sourceName if it was not registered.
+    [[nodiscard]] std::string get(llvm::StringRef sourceName) const;
+
+private:
+    /// @brief Source name -> assigned unique identifier.
+    llvm::StringMap<std::string> assigned_;
+};
 
 }  // namespace llvmdsdl
 

@@ -259,6 +259,30 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     }
 }
 
+std::string tsFieldIdentBase(const llvm::StringRef name)
+{
+    return codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
+                                     codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, name));
+}
+
+/// @brief Collision-free property names for one section's fields.
+///
+/// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
+/// object type would declare the same property twice and the (de)serializer would read/write the
+/// wrong one. Built from `section.fields` (declaration order) so every emission site agrees.
+CodegenIdentifierAllocator makeTsFieldIdents(const SemanticSection& section)
+{
+    std::vector<std::string> names;
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            names.push_back(field.name);
+        }
+    }
+    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return tsFieldIdentBase(name); });
+}
+
 void emitStructSectionType(std::ostringstream&    out,
                            const std::string&     typeName,
                            const SemanticSection& section,
@@ -267,6 +291,7 @@ void emitStructSectionType(std::ostringstream&    out,
 {
     emitAttachedDocTs(out, 0, typeDoc);
     emitLine(out, 0, "export interface " + typeName + " {");
+    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -274,9 +299,7 @@ void emitStructSectionType(std::ostringstream&    out,
             continue;
         }
         emitAttachedDocTs(out, 1, field.doc);
-        const auto fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, field.name));
+        const auto fieldName = fieldIdents.get(field.name);
         emitLine(out, 1, fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
     }
     emitLine(out, 0, "}");
@@ -306,13 +329,12 @@ void emitUnionSectionType(std::ostringstream&    out,
 
     emitAttachedDocTs(out, 0, typeDoc);
     emitLine(out, 0, "export type " + typeName + " =");
+    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
     for (std::size_t i = 0; i < options.size(); ++i)
     {
         const auto* field = options[i];
         emitAttachedDocTs(out, 0, field->doc);
-        const auto fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, field->name));
+        const auto fieldName = fieldIdents.get(field->name);
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
                 << tsFieldType(field->resolvedType, ctx) << "; }";
@@ -1163,13 +1185,12 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     {
         return operationPlan.takeError();
     }
+    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
     for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
-        field.fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, semanticName));
+        field.fieldName          = fieldIdents.get(semanticName);
     }
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 

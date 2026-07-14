@@ -85,6 +85,24 @@ std::string toExportedIdent(const llvm::StringRef in)
     return out;
 }
 
+/// @brief Builds the collision-free exported field-name allocation for one section.
+///
+/// Two distinct DSDL field names (e.g. `fooBar` and `foo_bar`) both export to `FooBar`; without this
+/// the struct would declare the same field twice (a compile error) and the (de)serializer would read
+/// or write the wrong field. Padding fields carry no exported name and are excluded.
+CodegenIdentifierAllocator makeExportedFieldIdents(const SemanticSection& section)
+{
+    std::vector<std::string> names;
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            names.push_back(field.name);
+        }
+    }
+    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return toExportedIdent(name); });
+}
+
 std::string packagePathFromComponents(const std::vector<std::string>& components)
 {
     std::string out;
@@ -343,6 +361,7 @@ public:
                                const SemanticSection&     section,
                                const LoweredSectionFacts* sectionFacts)
     {
+        fieldIdents_.emplace(makeExportedFieldIdents(section));
         emitLine(out, 0, "func (obj *" + typeName + ") Serialize(buffer []byte) (int8, int) {");
         emitLine(out, 1, "if obj == nil {");
         emitLine(out, 2, "return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
@@ -395,7 +414,7 @@ public:
                                                     const auto* const field = fieldStep.field;
                                                     emitSerializeAny(out,
                                                                      field->resolvedType,
-                                                                     "obj." + toExportedIdent(field->name),
+                                                                     "obj." + exportedFieldIdent(field->name),
                                                                      1,
                                                                      fieldStep.arrayLengthPrefixBits,
                                                                      fieldStep.fieldFacts);
@@ -429,6 +448,7 @@ public:
                                  const SemanticSection&     section,
                                  const LoweredSectionFacts* sectionFacts)
     {
+        fieldIdents_.emplace(makeExportedFieldIdents(section));
         emitLine(out, 0, "func (obj *" + typeName + ") Deserialize(buffer []byte) (int8, int) {");
         emitLine(out, 1, "if obj == nil {");
         emitLine(out, 2, "return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
@@ -473,7 +493,7 @@ public:
                                                     const auto* const field = fieldStep.field;
                                                     emitDeserializeAny(out,
                                                                        field->resolvedType,
-                                                                       "obj." + toExportedIdent(field->name),
+                                                                       "obj." + exportedFieldIdent(field->name),
                                                                        1,
                                                                        fieldStep.arrayLengthPrefixBits,
                                                                        fieldStep.fieldFacts);
@@ -506,10 +526,19 @@ public:
         emitLine(out, 0, "}");
     }
 
+    /// @brief Collision-free exported field name for the section currently being emitted.
+    std::string exportedFieldIdent(const llvm::StringRef name) const
+    {
+        return fieldIdents_ ? fieldIdents_->get(name) : toExportedIdent(name);
+    }
+
 private:
     const EmitterContext&                     ctx_;
     std::string                               currentPackagePath_;
     const std::map<std::string, std::string>& importAliases_;
+
+    /// @brief Per-section exported field-name allocation; set at the start of each function body.
+    std::optional<CodegenIdentifierAllocator> fieldIdents_;
     std::size_t                               id_{0};
 
     std::string nextName(const std::string& prefix)
@@ -742,7 +771,7 @@ private:
                                                 emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
                                                 emitSerializeAny(out,
                                                                  field.resolvedType,
-                                                                 "obj." + toExportedIdent(field.name),
+                                                                 "obj." + exportedFieldIdent(field.name),
                                                                  indent + 1,
                                                                  step.arrayLengthPrefixBits,
                                                                  step.fieldFacts);
@@ -769,7 +798,7 @@ private:
                                                 emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
                                                 emitDeserializeAny(out,
                                                                    field.resolvedType,
-                                                                   "obj." + toExportedIdent(field.name),
+                                                                   "obj." + exportedFieldIdent(field.name),
                                                                    indent + 1,
                                                                    step.arrayLengthPrefixBits,
                                                                    step.fieldFacts);
@@ -1295,6 +1324,7 @@ void emitSectionType(std::ostringstream&                       out,
 
     emitAttachedDocGo(out, 0, typeDoc);
     emitLine(out, 0, "type " + typeName + " struct {");
+    const CodegenIdentifierAllocator fieldIdents = makeExportedFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -1304,7 +1334,7 @@ void emitSectionType(std::ostringstream&                       out,
         emitAttachedDocGo(out, 1, field.doc);
         emitLine(out,
                  1,
-                 toExportedIdent(field.name) + " " +
+                 fieldIdents.get(field.name) + " " +
                      goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
     }
     if (section.isUnion)

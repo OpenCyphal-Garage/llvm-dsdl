@@ -25,6 +25,40 @@
 
 namespace llvmdsdl
 {
+CodegenIdentifierAllocator::CodegenIdentifierAllocator(
+    llvm::ArrayRef<std::string>                       sourceNames,
+    llvm::function_ref<std::string(llvm::StringRef)> transform)
+{
+    // `used` holds every identifier already handed out, so a disambiguating suffix cannot itself
+    // collide with another field's base identifier (e.g. sources `foo_bar`, `fooBar`, `foo_bar_2`).
+    llvm::StringSet<> used;
+    for (const auto& source : sourceNames)
+    {
+        const std::string base      = transform(source);
+        std::string       candidate = base;
+        unsigned          suffix    = 2;
+        while (!used.insert(candidate).second)
+        {
+            candidate = base + "_" + std::to_string(suffix);
+            ++suffix;
+        }
+        assigned_[source] = candidate;
+    }
+}
+
+std::string CodegenIdentifierAllocator::get(llvm::StringRef sourceName) const
+{
+    const auto it = assigned_.find(sourceName);
+    if (it == assigned_.end())
+    {
+        return sourceName.str();
+    }
+    return it->second;
+}
+}  // namespace llvmdsdl
+
+namespace llvmdsdl
+{
 namespace
 {
 

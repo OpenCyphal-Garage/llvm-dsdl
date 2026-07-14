@@ -1,0 +1,38 @@
+# Regression: two distinct, spec-valid DSDL field names that differ only in case/underscore style
+# (`fooBar` and `foo_bar`) must NOT collide in a generated type. The case-folding backends fold both
+# to one identifier -- Go PascalCase `FooBar`, TypeScript/Python snake_case `foo_bar` -- which produced
+# a duplicate struct field / object key (Go/TS compile error) or, worst, a silently merged Python
+# dataclass attribute so the (de)serializer read/wrote the wrong field with no error. The fix assigns
+# collision-free identifiers per section (a `_2` suffix on the second colliding name). C/C++/Rust
+# preserve the raw DSDL name and were already safe. See the naming/identifier sanitization audit.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/cx
+# RUN: printf 'uint8 fooBar\nuint8 foo_bar\n@sealed\n' > %t/dsdl/cx/C.1.0.dsdl
+
+# Go: two distinct exported fields, each referenced by the matching (de)serialize step.
+# RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module cx
+# RUN: cat %t/go/dsdl/cx/c_1_0.go | FileCheck %s --check-prefix=GO
+# GO: FooBar uint8
+# GO: FooBar_2 uint8
+# GO: obj.FooBar
+# GO: obj.FooBar_2
+
+# TypeScript: two distinct properties.
+# RUN: %dsdlc --target-language ts %t/dsdl --outdir %t/ts --ts-module cx
+# RUN: cat %t/ts/dsdl/cx/c_1_0.ts | FileCheck %s --check-prefix=TS
+# TS: foo_bar: number;
+# TS: foo_bar_2: number;
+# TS: value.foo_bar_2 =
+
+# Python: two distinct dataclass attributes (no silent merge).
+# RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
+# RUN: cat %t/py/dsdl_gen/dsdl/cx/c_1_0.py | FileCheck %s --check-prefix=PY
+# PY: foo_bar: int = 0
+# PY: foo_bar_2: int = 0
+# PY: value.foo_bar_2 =
+
+# C preserves the raw DSDL names (already collision-free, distinct members).
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
+# RUN: cat %t/c/dsdl/cx/C_1_0.h | FileCheck %s --check-prefix=C
+# C-DAG: fooBar;
+# C-DAG: foo_bar;

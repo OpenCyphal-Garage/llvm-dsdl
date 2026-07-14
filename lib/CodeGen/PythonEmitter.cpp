@@ -70,6 +70,30 @@ std::string pyConstValue(const TypeExprAST& type, const Value& value)
     return renderConstantLiteral(ConstantLiteralLanguage::Python, value, makeConstantTypeInfo(type));
 }
 
+std::string pyFieldIdentBase(const llvm::StringRef name)
+{
+    return codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                     codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, name));
+}
+
+/// @brief Collision-free attribute names for one section's fields.
+///
+/// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
+/// dataclass would silently declare one attribute for two DSDL fields and the (de)serializer would
+/// read/write the wrong one with no error. Built from `section.fields` order so every site agrees.
+CodegenIdentifierAllocator makePyFieldIdents(const SemanticSection& section)
+{
+    std::vector<std::string> names;
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            names.push_back(field.name);
+        }
+    }
+    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return pyFieldIdentBase(name); });
+}
+
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
 {
     out << std::string(static_cast<std::size_t>(indent) * 4U, ' ') << line << '\n';
@@ -387,7 +411,8 @@ void emitStructSectionType(std::ostringstream&    out,
     emitLine(out, 0, "@dataclass(slots=True)");
     emitLine(out, 0, "class " + typeName + ":");
 
-    bool emittedField = false;
+    bool                             emittedField = false;
+    const CodegenIdentifierAllocator fieldIdents  = makePyFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -396,9 +421,7 @@ void emitStructSectionType(std::ostringstream&    out,
         }
         emittedField = true;
         emitAttachedDocPy(out, 1, field.doc);
-        const auto fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, field.name));
+        const auto fieldName = fieldIdents.get(field.name);
         emitLine(out,
                  1,
                  fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
@@ -426,6 +449,7 @@ void emitUnionSectionType(std::ostringstream&    out,
     emitLine(out, 0, "class " + typeName + ":");
     emitLine(out, 1, "_tag: int = 0");
 
+    const CodegenIdentifierAllocator fieldIdents = makePyFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -433,9 +457,7 @@ void emitUnionSectionType(std::ostringstream&    out,
             continue;
         }
         emitAttachedDocPy(out, 1, field.doc);
-        const auto fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, field.name));
+        const auto fieldName = fieldIdents.get(field.name);
         emitLine(out, 1, fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " | None = None");
     }
 
@@ -1177,13 +1199,12 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
     {
         return operationPlan.takeError();
     }
+    const CodegenIdentifierAllocator fieldIdents = makePyFieldIdents(section);
     for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
-        field.fieldName =
-            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, semanticName));
+        field.fieldName          = fieldIdents.get(semanticName);
     }
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
