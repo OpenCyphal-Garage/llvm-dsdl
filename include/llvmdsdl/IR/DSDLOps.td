@@ -40,17 +40,32 @@ def DSDL_SchemaOp
 }
 
 def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
-  let summary = "A field declaration in schema space";
-  let arguments = (ins StrAttr:$name, StrAttr:$type_name, UnitAttr:$padding,
-      OptionalAttr<StrAttr>:$doc);
+  let summary = "A field declaration in schema space (introspection/documentation)";
+  let description = [{
+    Carries a field's schema-level identity (name, resolved type name, optional
+    generated C name, docs, and owning service section) for introspection and
+    comment propagation. It is NOT consumed by the serialization path — the wire
+    layout lives in `dsdl.serialization_plan` — but it IS a first-class,
+    verified op so malformed schema IR is rejected during lowering.
+  }];
+  let arguments = (ins StrAttr:$name, StrAttr:$type_name,
+      OptionalAttr<StrAttr>:$c_name, UnitAttr:$padding,
+      OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section);
   let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
 }
 
 def DSDL_ConstantOp : DSDL_Op<"constant", [NoMemoryEffect]> {
-  let summary = "A constant declaration in schema space";
+  let summary = "A constant declaration in schema space (introspection/documentation)";
+  let description = [{
+    Carries a constant's schema-level identity (name, type name, rendered value
+    text, docs, owning service section) for introspection and comment
+    propagation. Not consumed by the serialization path, but verified.
+  }];
   let arguments = (ins StrAttr:$name, StrAttr:$type_name, StrAttr:$value_text,
-      OptionalAttr<StrAttr>:$doc);
+      OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section);
   let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
 }
 
 def DSDL_SerializationPlanOp

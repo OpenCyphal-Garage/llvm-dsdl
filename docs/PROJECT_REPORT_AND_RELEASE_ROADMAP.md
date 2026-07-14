@@ -398,7 +398,30 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 ### P2 — Maturity / maintainability
 
 - [x] Reduce per-backend control-flow duplication (shared render template, or a verifier that the six emit orders match) — directly strengthens G1. **Execution plan: [docs/plans/P2_emit_order_dedup.md](plans/P2_emit_order_dedup.md)** (sequenced emit-order verifier → shared render template; canonical-order oracle in [P2_canonical_emit_order.md](plans/P2_canonical_emit_order.md)). ✅ **Phases 0–1 done (2026-07-12, branch `p2-emit-order-dedup`): the emit-order verifier is live.** All 5 string emitters (honest scope: C has no string emitter — it is covered by MLIR/EmitC + the C↔{Go,Rust,Cpp} parity harnesses) trace their abstract serialize/deserialize op stream per (type, direction) through a zero-cost-when-off side channel (`LLVMDSDL_EMIT_TRACE`); the comparator (`tools/convergence/emit_order_verifier.py`, three ctests incl. a checker selftest and an end-to-end trace-mutation negative control) asserts per-backend membership in the Dafny-proven safe ordering class (`spec/dafny/CyphalSerdes.dfy`, re-verified in CI) **and** cross-backend payload-aware wire-skeleton equality over union/array/float/padding/composite/service fixtures (26 segments) **plus the full UAVCAN public-regulated corpus (424 segments)** — all green, zero unmodeled divergences (accepted D2/D3/D4 differences are explicitly modeled in the comparator, D3 via an honest `BULK_COPY` op). The convergence scorecard preamble now points behavioral step-order claims at this verifier. ✅ **Phase 2 union prologue done (2026-07-12): the shared render template is live.** All five string backends render the union serialize/deserialize prologue through one shared step template (`include/llvmdsdl/CodeGen/EmitStep.h` — `buildUnionSectionSteps` is the single in-code statement of the canonical order) with per-backend `UnionSectionSpelling` classes expressing only the real divergence axes (match/switch/if-chain dispatch, Result/(rc,0)/negative-int/throw/raise error channels, mask folding). Proven behavior-preserving: Rust/Go/C++ full-corpus generated output is **byte-identical** pre/post (rebuild-and-diff), and the TS/Python diff is exactly the deliberate D4 bookkeeping normalization (now all five backends emit the canonical `READ→MASK→STORE→VALIDATE→ADVANCE` order by construction — D4 closed; lit snapshots updated; C↔TS parity + Python runtime suites green). ✅ **2d for the native backends also done (2026-07-12): the recursion is shared.** `buildFieldEmitSteps` builds a recursive step *tree* (array nodes own their element's step subtree) from shared facts, and `renderFieldSteps` owns every cross-statement ordering decision — scalar helper-before-write, array length-group-before-loop, loop-contains-element, composite delimiter mechanics — recursively, for Rust/Go/C++, whose spellings now carry zero sequencing (D2/D3 became declared interface points: `spellFixedArrayLenCheck`, `trySpellArrayBulkFastPath`). Each backend proven full-corpus byte-identical pre/post. ✅ **TS/Python converged onto the same tree (same day)**: the shared scripted operation plan carries per-field step trees from the same builder, and both scripted emitters render through `renderFieldSteps` (`PyFieldSpelling`, `TsFieldSpelling`), proven full-corpus byte-identical. **All five string backends now derive their complete serdes-body sequencing from one shared source; adding a backend means writing only spelling classes. The P2 item is closed** (this was the G1 end-state).
-- [ ] Remove dead `dsdl.field`/`dsdl.constant` ops; add proactive verifiers in lowering.
+- [x] Remove dead `dsdl.field`/`dsdl.constant` ops; add proactive verifiers in lowering.
+  ✅ **Done (2026-07-12) — premise corrected + verifiers made proactive.** The review's
+  "dead ops" premise was **wrong**: `dsdl.field`/`dsdl.constant` are *not* dead — they are
+  schema-space introspection/documentation ops, emitted by `LowerToMLIR`, round-tripped
+  through the embedded UAVCAN catalog (`UavcanEmbeddedCatalog.cpp` reads `dsdl.constant`),
+  and asserted by `comments-propagation.txt`. Removing them would break doc propagation and
+  the catalog. What *was* stale: the ODS **typed classes** were vestigial (created generically
+  via `OperationState`, never via the generated builder) and the ODS **omitted attributes the
+  lowering actually sets** (`c_name`, `section`). Fixed by making the ops first-class and
+  verified rather than deleting them: ODS now declares the real attributes (optional `c_name`/
+  `section`) with `let description`, and both ops carry `hasVerifier` +
+  `FieldOp::verify()`/`ConstantOp::verify()` (non-empty `name` for non-padding fields —
+  padding is anonymous by construction — plus non-empty `type_name`, and `value_text` for
+  constants). **Verifiers are now proactive for every backend:** `lowerToMLIR` calls
+  `mlir::verify()` on its own output under a scoped diagnostic handler, so all op verifiers
+  (`serialization_plan`/`io`/`align`/`field`/`constant`) fire at lowering time — previously
+  they ran only on the C path via its pass manager, so the native backends consumed unverified
+  IR (the concrete G6 "verifier-first is actually post-hoc" gap). Adding the verify pass
+  immediately caught a real over-strict invariant (padding fields legitimately have empty
+  names), which the fix accommodates. Byte-identity preserved (generic creation retained, so
+  no emitted-text change; full UAVCAN corpus byte-identical across all six backends); embedded
+  catalog + `comments-propagation` still green. Negative test:
+  `test/lit/dsdl-field-invalid-empty-name.mlir`. This closes the G2 "dead ops" note and the
+  G6 "post-hoc verifier" critique.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
 - [ ] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
 - [~] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.

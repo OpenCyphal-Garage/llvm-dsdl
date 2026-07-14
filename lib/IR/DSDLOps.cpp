@@ -316,6 +316,38 @@ LogicalResult AlignOp::verify()
     return success();
 }
 
+LogicalResult FieldOp::verify()
+{
+    // Padding fields (e.g. void8) are anonymous by construction; only named fields
+    // must carry a name.
+    if (!getPadding() && getName().empty())
+    {
+        return emitOpError("requires a non-empty 'name' for non-padding fields");
+    }
+    if (getTypeName().empty())
+    {
+        return emitOpError("requires a non-empty 'type_name'");
+    }
+    return success();
+}
+
+LogicalResult ConstantOp::verify()
+{
+    if (getName().empty())
+    {
+        return emitOpError("requires a non-empty 'name'");
+    }
+    if (getTypeName().empty())
+    {
+        return emitOpError("requires a non-empty 'type_name'");
+    }
+    if (getValueText().empty())
+    {
+        return emitOpError("requires a non-empty 'value_text'");
+    }
+    return success();
+}
+
 LogicalResult IOOp::verify()
 {
     const auto kindAttr = (*this)->getAttrOfType<StringAttr>("kind");

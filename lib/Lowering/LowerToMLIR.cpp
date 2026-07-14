@@ -23,7 +23,9 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Verifier.h>
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -451,6 +453,25 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
     if (diagnostics.hasErrors())
     {
         return nullptr;
+    }
+
+    // Proactively verify the lowered module here, in the lowering itself, so every op
+    // verifier (serialization plan / io / align / field / constant) fires for ALL backends
+    // — not only the C path, which happens to verify via its pass manager. Malformed IR is
+    // rejected loudly at construction rather than flowing silently into a backend.
+    {
+        std::string              verifyError;
+        llvm::raw_string_ostream verifyStream(verifyError);
+        mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& diag) {
+            verifyStream << diag.str() << '\n';
+            return mlir::success();
+        });
+        if (mlir::failed(mlir::verify(m.getOperation())))
+        {
+            verifyStream.flush();
+            diagnostics.error({"<mlir>", 1, 1}, "lowered MLIR failed verification: " + verifyError);
+            return nullptr;
+        }
     }
     return m;
 }
