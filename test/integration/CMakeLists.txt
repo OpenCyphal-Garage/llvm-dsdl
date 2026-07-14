@@ -805,6 +805,28 @@ else()
     "Skipping cross-language primitive equivalence: need C compiler, cargo, go, and python3")
 endif()
 
+if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
+  # Robustness fuzz over the generated TS decoders (memory-safe, so the caught
+  # class is a runtime fault / hang on attacker-controlled bytes, not OOB).
+  add_test(
+    NAME llvmdsdl-ts-decoder-fuzz
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-decoder-fuzz-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsDecoderFuzz.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-decoder-fuzz
+    PROPERTIES
+      LABELS "integration;ts;fuzz;slow"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
   add_test(
     NAME llvmdsdl-c-ts-parity
