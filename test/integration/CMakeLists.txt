@@ -2639,6 +2639,28 @@ if(GO_EXECUTABLE)
       LABELS "integration;uavcan;go;go-differential;slow"
   )
 
+  # Coverage-guided fuzz lane over the generated Go decoders (memory-safe, so the
+  # caught class is a panic on attacker-controlled bytes). Default run replays the
+  # committed seed corpus; the deep/cron run passes -DFUZZTIME.
+  add_test(
+    NAME llvmdsdl-go-decoder-fuzz
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/go-decoder-fuzz-out
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DFUZZTIME=$ENV{LLVMDSDL_GO_FUZZTIME}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunGoDecoderFuzz.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-go-decoder-fuzz
+    PROPERTIES
+      LABELS "integration;uavcan;go;fuzz;go-differential;slow"
+  )
+
   if(CMAKE_AR)
     add_test(
       NAME llvmdsdl-uavcan-c-go-parity
