@@ -1,0 +1,11 @@
+[package]
+name = "llvmdsdl_forward_compat"
+version = "@LLVMDSDL_TOOL_VERSION@"
+edition = "2021"
+
+[[bin]]
+name = "forward_compat"
+path = "src/main.rs"
+
+[dependencies]
+dsdl_generated = { path = "@RUST_OUT@" }

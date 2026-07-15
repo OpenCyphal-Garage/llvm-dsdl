@@ -805,6 +805,33 @@ else()
     "Skipping cross-language primitive equivalence: need C compiler, cargo, go, and python3")
 endif()
 
+if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
+  # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
+  # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend
+  # delimited forward-compat fix). Each backend must skip an appended field on decode and zero-fill an
+  # absent one, and all three must agree.
+  add_test(
+    NAME llvmdsdl-forward-compat
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/forward-compat-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunForwardCompat.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-forward-compat
+    PROPERTIES
+      LABELS "integration;runtime;differential;rust;go;go-differential;release-blocking"
+  )
+else()
+  message(STATUS
+    "Skipping forward/backward compatibility lane: need C compiler, cargo, and go")
+endif()
+
 if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
   # Robustness fuzz over the generated TS decoders (memory-safe, so the caught
   # class is a runtime fault / hang on attacker-controlled bytes, not OOB).
