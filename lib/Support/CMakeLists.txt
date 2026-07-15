@@ -9,6 +9,7 @@
 
 add_library(llvmdsdlSupport
   Diagnostics.cpp
+  NameCanonicalization.cpp
   Rational.cpp
   ReservedIdentifiers.cpp
   SourceLocation.cpp

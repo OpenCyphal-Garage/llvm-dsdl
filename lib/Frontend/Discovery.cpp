@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NameCanonicalization.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
 #include <algorithm>
@@ -225,6 +226,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
 
     std::unordered_map<std::string, std::string> caseInsensitiveNames;
     std::unordered_map<std::string, std::string> versionUnique;
+    std::unordered_map<std::string, std::string> generatedFileNames;
 
     for (const auto& def : definitions)
     {
@@ -235,6 +237,29 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
             diagnostics.error({def.filePath, 1, 1},
                               "name collision on case-insensitive filesystem: " + def.fullName + " conflicts with " +
                                   itName->second);
+        }
+
+        // The Go/Rust/TypeScript/Python backends derive the output file (and module) name by
+        // snake_casing each name component, which is many-to-one: two distinct types in a namespace
+        // that differ only in case/underscore style (e.g. `FooBar` and `Foo_bar`) fold to the same
+        // file (`foo_bar_1_0`), so one would silently overwrite the other and a whole type would be
+        // lost. Reject the pair up front (the case-insensitive check above does not catch
+        // underscore-only differences). The fold matches the emitters' projection exactly.
+        std::string generatedStem;
+        for (const auto& component : def.namespaceComponents)
+        {
+            generatedStem += canonicalSnakeCase(component);
+            generatedStem.push_back('/');
+        }
+        generatedStem += canonicalSnakeCase(def.shortName);
+        const std::string fileKey = generatedStem + ":" + std::to_string(def.majorVersion) + ":" +
+                                    std::to_string(def.minorVersion);
+        const auto [itFile, insertedFile] = generatedFileNames.emplace(fileKey, def.fullName);
+        if (!insertedFile && itFile->second != def.fullName)
+        {
+            diagnostics.error({def.filePath, 1, 1},
+                              "type name collision in generated output: " + def.fullName + " and " + itFile->second +
+                                  " map to the same generated file name (they differ only in case or underscores)");
         }
 
         const std::string versionKey =

@@ -1,0 +1,23 @@
+# Regression: two distinct, spec-valid DSDL types in one namespace that differ only in case/underscore
+# style (`FooBar.1.0` and `Foo_bar.1.0`) both snake_case to the same generated file/module stem
+# (`foo_bar_1_0`) in the Go/Rust/TypeScript/Python backends, so one output file silently overwrote the
+# other and an entire type was lost. The frontend now rejects the pair up front (the case-insensitive
+# filesystem check does not catch underscore-only differences). Types whose snake_case stems actually
+# differ (`foobar` vs `foo_bar`) must still be accepted. See the type-filename-collision finding.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+
+# Colliding pair -> hard error (no silent type loss).
+# RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/FooBar.1.0.dsdl
+# RUN: printf 'uint16 b\n@sealed\n' > %t/dsdl/ns/Foo_bar.1.0.dsdl
+# RUN: not %dsdlc --target-language ast %t/dsdl 2>&1 | FileCheck %s --check-prefix=COLLIDE
+# COLLIDE: type name collision in generated output: {{.*}} map to the same generated file name
+
+# Distinct snake stems (foobar vs foo_bar) must NOT be rejected, and both files are generated.
+# RUN: rm -rf %t/ok && mkdir -p %t/ok/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/ok/ns/foobar.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n' > %t/ok/ns/foo_bar.1.0.dsdl
+# RUN: %dsdlc --target-language go %t/ok --outdir %t/go --go-module ok
+# RUN: ls %t/go/ok/ns | FileCheck %s --check-prefix=OK
+# OK-DAG: foobar_1_0.go
+# OK-DAG: foo_bar_1_0.go
