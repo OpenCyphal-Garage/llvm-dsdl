@@ -1,0 +1,24 @@
+# Regression: delimited (non-sealed) composite forward-compatibility skip in the C backend.
+#
+# On decode, a delimited composite is a 32-bit byte-length header followed by the nested object. The
+# nested deserialize reports how many bytes it actually consumed, which may be FEWER than the header
+# declares when a newer peer appended fields this reader does not understand. The outer offset MUST
+# advance by the header-declared size, not by what the nested reader consumed -- otherwise every
+# subsequent field is read from the wrong position (a decoded-buffer 04 00 00 00 01 02 AA BB 77 with a
+# 2-field/2-byte reader would read `tail` as 0xAA instead of 0x77). The C/EmitC path reused one variable
+# as both the nested inout-size (overwritten with consumed) and the advance amount; it now keeps the
+# header size immutable and passes a separate consumed variable to the nested call. Rust/Go/C++/Python/TS
+# already separated the two. See the wire-layout math read-as-review.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/dl
+# RUN: printf 'uint8 x\nuint8 y\n@extent 64 * 8\n' > %t/dsdl/dl/Inner.1.0.dsdl
+# RUN: printf 'dl.Inner.1.0 inner\nuint8 tail\n@sealed\n' > %t/dsdl/dl/Outer.1.0.dsdl
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
+
+# The nested deserialize must receive a SEPARATE consumed variable (not the header size)...
+# RUN: cat %t/c/dsdl/dl/Outer_1_0.c | FileCheck %s
+# CHECK: size_t _size_bytes_[[N:[0-9]+]] = (size_t)dsdl_runtime_get_u32(
+# CHECK: size_t _consumed_bytes_[[N]] = _size_bytes_[[N]];
+# CHECK: dl__dl__Inner__deserialize_({{.*}}&_consumed_bytes_[[N]]);
+# ...and the outer offset must advance by the header size, not the consumed count.
+# CHECK: offset_bits += _size_bytes_[[N]] * 8U;

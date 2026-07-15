@@ -1143,10 +1143,19 @@ bool emitDeserializeField(std::ostringstream& out,
             emitMalformedCategoryComment(out, indent + 1, codegen_diagnostic_text::malformedDelimiterHeaderCategory());
             emitLine(out, indent + 1, "return _delim_chk_" + std::to_string(index) + ";");
             emitLine(out, indent, "}");
+            // The nested deserialize writes back how many bytes it actually consumed, which for a
+            // delimited field may be FEWER than the header declares (a newer peer appended fields this
+            // reader does not understand). Capture that in a separate variable and advance the outer
+            // offset by the header-declared size (`_size_bytes_`) -- advancing by the consumed count
+            // would misplace every subsequent field, breaking delimited forward compatibility.
+            emitLine(out,
+                     indent,
+                     "size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" +
+                         std::to_string(index) + ";");
             emitLine(out,
                      indent,
                      "const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName +
-                         "__deserialize_(&" + expr + ", &buffer[offset_bits / 8U], &_size_bytes_" +
+                         "__deserialize_(&" + expr + ", &buffer[offset_bits / 8U], &_consumed_bytes_" +
                          std::to_string(index) + ");");
             emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
             emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
