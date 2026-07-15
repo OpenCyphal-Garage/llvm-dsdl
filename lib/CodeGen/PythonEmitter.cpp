@@ -19,6 +19,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -91,7 +92,12 @@ CodegenIdentifierAllocator makePyFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return pyFieldIdentBase(name); });
+    // A field attribute must not shadow a generated method (a dataclass attribute named `serialize`
+    // hides `serialize()`, so `self.serialize()` would call an int); escape such a field instead.
+    static constexpr std::array<llvm::StringRef, 4> kReservedMethods = {
+        "serialize", "deserialize", "_serialize_to", "_deserialize_from"};
+    return CodegenIdentifierAllocator(
+        names, [](llvm::StringRef name) { return pyFieldIdentBase(name); }, kReservedMethods);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)

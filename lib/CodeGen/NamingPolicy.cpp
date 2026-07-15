@@ -29,11 +29,18 @@ namespace llvmdsdl
 {
 CodegenIdentifierAllocator::CodegenIdentifierAllocator(
     llvm::ArrayRef<std::string>                       sourceNames,
-    llvm::function_ref<std::string(llvm::StringRef)> transform)
+    llvm::function_ref<std::string(llvm::StringRef)> transform,
+    llvm::ArrayRef<llvm::StringRef>                   reserved)
 {
     // `used` holds every identifier already handed out, so a disambiguating suffix cannot itself
     // collide with another field's base identifier (e.g. sources `foo_bar`, `fooBar`, `foo_bar_2`).
+    // Pre-seed it with names that are already taken in the target scope (generated method names) so a
+    // field projecting onto one of them is escaped rather than shadowing it.
     llvm::StringSet<> used;
+    for (const auto& name : reserved)
+    {
+        used.insert(name);
+    }
     for (const auto& source : sourceNames)
     {
         const std::string base      = transform(source);

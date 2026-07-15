@@ -94,8 +94,12 @@ public:
     /// @brief Builds the allocation over @p sourceNames (declaration order) using @p transform.
     /// @param[in] sourceNames Distinct source names, in the order they should claim identifiers.
     /// @param[in] transform Projection from a source name to its (possibly colliding) base identifier.
+    /// @param[in] reserved Identifiers that are already taken in the target scope (e.g. generated
+    ///            method names like Go `Serialize`/`Deserialize` that share the struct's namespace);
+    ///            a source name projecting onto one of these is disambiguated with a suffix.
     CodegenIdentifierAllocator(llvm::ArrayRef<std::string>                       sourceNames,
-                               llvm::function_ref<std::string(llvm::StringRef)> transform);
+                               llvm::function_ref<std::string(llvm::StringRef)> transform,
+                               llvm::ArrayRef<llvm::StringRef>                   reserved = {});
 
     /// @brief Returns the collision-free identifier assigned to @p sourceName.
     /// @param[in] sourceName A name provided at construction.

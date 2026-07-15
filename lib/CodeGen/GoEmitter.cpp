@@ -17,6 +17,7 @@
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 
 #include <llvm/ADT/StringRef.h>
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <filesystem>
@@ -100,7 +101,11 @@ CodegenIdentifierAllocator makeExportedFieldIdents(const SemanticSection& sectio
             names.push_back(field.name);
         }
     }
-    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return toExportedIdent(name); });
+    // A field must not take the name of a generated method (Go forbids a field and method sharing a
+    // name); such a field is escaped instead of clashing with `obj.Serialize()` / `obj.Deserialize()`.
+    static constexpr std::array<llvm::StringRef, 2> kReservedMethods = {"Serialize", "Deserialize"};
+    return CodegenIdentifierAllocator(
+        names, [](llvm::StringRef name) { return toExportedIdent(name); }, kReservedMethods);
 }
 
 std::string packagePathFromComponents(const std::vector<std::string>& components)
