@@ -820,12 +820,15 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
         -DC_COMPILER=${CMAKE_C_COMPILER}
         -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
         -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunForwardCompat.cmake
   )
   set_tests_properties(
     llvmdsdl-forward-compat
     PROPERTIES
-      LABELS "integration;runtime;differential;rust;go;go-differential;release-blocking"
+      LABELS "integration;runtime;differential;rust;go;python;ts;go-differential;release-blocking"
   )
 else()
   message(STATUS

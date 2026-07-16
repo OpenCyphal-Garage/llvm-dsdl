@@ -138,10 +138,66 @@ if(NOT go_run_result EQUAL 0 OR NOT go_output STREQUAL expected_output)
   message(FATAL_ERROR "forward-compat Go harness failed (rc=${go_run_result})")
 endif()
 
-# --- Cross-language parity ---------------------------------------------------------------------------
-if(NOT (c_output STREQUAL rust_output AND rust_output STREQUAL go_output))
-  message(FATAL_ERROR
-    "forward-compat marker mismatch across backends:\n C: ${c_output}\n Rust: ${rust_output}\n Go: ${go_output}")
+set(ran_backends "C" "Rust" "Go")
+
+# --- Python (optional; run when a python3 interpreter is provided) ------------------------------------
+if(PYTHON_EXECUTABLE AND NOT "${PYTHON_EXECUTABLE}" STREQUAL "")
+  set(py_out "${OUT_DIR}/py")
+  dsdlc_generate(python "" "${py_out}")
+  execute_process(
+    COMMAND
+      "${CMAKE_COMMAND}" -E env "PYTHONPATH=${py_out}"
+        "${PYTHON_EXECUTABLE}" "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.py"
+    RESULT_VARIABLE py_run_result
+    OUTPUT_VARIABLE py_run_stdout
+    ERROR_VARIABLE py_run_stderr
+  )
+  string(STRIP "${py_run_stdout}" py_output)
+  if(NOT py_run_result EQUAL 0 OR NOT py_output STREQUAL expected_output)
+    message(STATUS "Python harness stdout:\n${py_run_stdout}")
+    message(STATUS "Python harness stderr:\n${py_run_stderr}")
+    message(FATAL_ERROR "forward-compat Python harness failed (rc=${py_run_result})")
+  endif()
+  list(APPEND ran_backends "Python")
 endif()
 
-message(STATUS "forward/backward compatibility lane passed (C, Rust, Go)")
+# --- TypeScript (optional; run when both tsc and node are provided) -----------------------------------
+if(TSC_EXECUTABLE AND NOT "${TSC_EXECUTABLE}" STREQUAL "" AND NODE_EXECUTABLE AND NOT "${NODE_EXECUTABLE}" STREQUAL "")
+  set(ts_out "${OUT_DIR}/ts")
+  dsdlc_generate(ts "--ts-module;fcwire" "${ts_out}")
+  configure_file(
+    "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.ts" "${ts_out}/forward_compat_driver.ts" COPYONLY)
+  file(WRITE "${ts_out}/tsconfig-forward-compat.json"
+    "{ \"compilerOptions\": { \"target\": \"ES2020\", \"module\": \"CommonJS\", \"moduleResolution\": \"Node\", \"strict\": true, \"outDir\": \"./js\" }, \"include\": [\"./**/*.ts\"] }\n")
+  execute_process(
+    COMMAND "${TSC_EXECUTABLE}" -p "${ts_out}/tsconfig-forward-compat.json" --pretty false
+    WORKING_DIRECTORY "${ts_out}"
+    RESULT_VARIABLE tsc_result
+    OUTPUT_VARIABLE tsc_stdout
+    ERROR_VARIABLE tsc_stderr
+  )
+  if(NOT tsc_result EQUAL 0)
+    message(STATUS "tsc stdout:\n${tsc_stdout}")
+    message(STATUS "tsc stderr:\n${tsc_stderr}")
+    message(FATAL_ERROR "forward-compat TypeScript harness failed to compile")
+  endif()
+  file(WRITE "${ts_out}/js/package.json" "{\n  \"type\": \"commonjs\"\n}\n")
+  execute_process(
+    COMMAND "${NODE_EXECUTABLE}" "${ts_out}/js/forward_compat_driver.js"
+    RESULT_VARIABLE ts_run_result
+    OUTPUT_VARIABLE ts_run_stdout
+    ERROR_VARIABLE ts_run_stderr
+  )
+  string(STRIP "${ts_run_stdout}" ts_output)
+  if(NOT ts_run_result EQUAL 0 OR NOT ts_output STREQUAL expected_output)
+    message(STATUS "node stdout:\n${ts_run_stdout}")
+    message(STATUS "node stderr:\n${ts_run_stderr}")
+    message(FATAL_ERROR "forward-compat TypeScript harness failed (rc=${ts_run_result})")
+  endif()
+  list(APPEND ran_backends "TypeScript")
+endif()
+
+# Each backend above is asserted equal to `expected_output`, so they are equal to each other; the run
+# list records which backends actually participated (Python/TS are skipped if their tools are absent).
+string(REPLACE ";" ", " ran_backends_pretty "${ran_backends}")
+message(STATUS "forward/backward compatibility lane passed (${ran_backends_pretty})")
