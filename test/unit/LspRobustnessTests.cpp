@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -234,6 +235,75 @@ bool runLspRobustnessTests()
     if (!server.shutdownRequested() || !server.shouldExit())
     {
         std::cerr << "robustness test expected orderly shutdown state\n";
+        return false;
+    }
+
+    return true;
+}
+
+// The server represents positions as byte (UTF-8) offsets, so it must negotiate the LSP position
+// encoding: advertise utf-8 when the client supports it (byte offsets are then correct by declaration)
+// and fall back to the protocol's utf-16 default otherwise.
+bool runLspPositionEncodingTests()
+{
+    const auto negotiatedEncoding = [](const llvm::json::Value& initializeParams) -> std::optional<std::string> {
+        std::mutex                     mutex;
+        std::vector<llvm::json::Value> outgoing;
+        llvmdsdl::lsp::Server          server([&mutex, &outgoing](llvm::json::Value message) {
+            std::lock_guard<std::mutex> lock(mutex);
+            outgoing.push_back(std::move(message));
+        });
+        server.handleMessage(llvm::json::Object{
+            {"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 response = findResponseByIntegerId(outgoing, 1);
+        if (response == nullptr)
+        {
+            return std::nullopt;
+        }
+        const auto* capabilities = response->getObject("result");
+        if (capabilities == nullptr)
+        {
+            return std::nullopt;
+        }
+        const auto* caps = capabilities->getObject("capabilities");
+        if (caps == nullptr)
+        {
+            return std::nullopt;
+        }
+        const auto encoding = caps->getString("positionEncoding");
+        if (!encoding.has_value())
+        {
+            return std::nullopt;
+        }
+        return encoding->str();
+    };
+
+    // Client advertises utf-8 support -> server negotiates utf-8.
+    const auto utf8 = negotiatedEncoding(llvm::json::Object{
+        {"capabilities", llvm::json::Object{{"general", llvm::json::Object{{"positionEncodings",
+                                                                            llvm::json::Array{"utf-16", "utf-8"}}}}}}});
+    if (utf8 != "utf-8")
+    {
+        std::cerr << "expected utf-8 negotiation, got " << utf8.value_or("<none>") << "\n";
+        return false;
+    }
+
+    // Client offers only utf-16 -> server falls back to utf-16.
+    const auto utf16Only = negotiatedEncoding(llvm::json::Object{
+        {"capabilities",
+         llvm::json::Object{{"general", llvm::json::Object{{"positionEncodings", llvm::json::Array{"utf-16"}}}}}}});
+    if (utf16Only != "utf-16")
+    {
+        std::cerr << "expected utf-16 fallback, got " << utf16Only.value_or("<none>") << "\n";
+        return false;
+    }
+
+    // Client (older) advertises no encodings -> server falls back to utf-16.
+    const auto legacy = negotiatedEncoding(llvm::json::Object{{"capabilities", llvm::json::Object{}}});
+    if (legacy != "utf-16")
+    {
+        std::cerr << "expected utf-16 for a client without positionEncodings, got " << legacy.value_or("<none>") << "\n";
         return false;
     }
 

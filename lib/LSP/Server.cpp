@@ -123,6 +123,41 @@ std::optional<std::string> parseDidOpenText(const llvm::json::Value* params)
     return text->str();
 }
 
+// Chooses the LSP position encoding to advertise. The server represents `character` offsets as byte
+// offsets into the line, which are exactly UTF-8 code-unit offsets; a plain LSP client instead assumes
+// UTF-16 (the protocol default), so the two disagree on any line where a character before the position
+// occupies more than one UTF-8 byte. LSP 3.17 lets the server negotiate: prefer UTF-8 when the client
+// lists it in `general.positionEncodings` (then the byte offsets are correct by declaration), otherwise
+// fall back to UTF-16. DSDL tokens are ASCII and non-ASCII bytes appear only in trailing comment text,
+// where byte and UTF-16 offsets coincide up to any token, so the UTF-16 fallback stays accurate for the
+// interactive positions that matter.
+std::string negotiatePositionEncoding(const llvm::json::Value* params)
+{
+    if (params != nullptr)
+    {
+        if (const auto* paramsObject = params->getAsObject())
+        {
+            if (const auto* capabilities = paramsObject->getObject("capabilities"))
+            {
+                if (const auto* general = capabilities->getObject("general"))
+                {
+                    if (const auto* encodings = general->getArray("positionEncodings"))
+                    {
+                        for (const llvm::json::Value& encoding : *encodings)
+                        {
+                            if (const auto text = encoding.getAsString(); text && *text == "utf-8")
+                            {
+                                return "utf-8";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return "utf-16";
+}
+
 std::optional<std::string> parseDidChangeText(const llvm::json::Value* params)
 {
     if (!params)
@@ -774,8 +809,10 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
 {
     if (method == "initialize")
     {
+        const std::string positionEncoding = negotiatePositionEncoding(message.get("params"));
         llvm::json::Object result;
         result["capabilities"] = llvm::json::Object{
+            {"positionEncoding", positionEncoding},
             {"textDocumentSync", llvm::json::Object{{"openClose", true}, {"change", 1}}},
             {"completionProvider", llvm::json::Object{{"resolveProvider", true}}},
             {"renameProvider", llvm::json::Object{{"prepareProvider", true}}},
