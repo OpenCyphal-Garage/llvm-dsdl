@@ -140,6 +140,15 @@ private:
     /// @brief Current token index.
     std::size_t cursor_{0};
 
+    /// @brief Current nesting depth of the recursive-descent expression parser. Bounded to reject
+    ///        pathologically nested expressions (e.g. tens of thousands of parentheses or set literals)
+    ///        with a diagnostic instead of overflowing the stack.
+    std::size_t expressionDepth_{0};
+
+    /// @brief Maximum expression nesting depth. Far above any real DSDL expression yet safely below the
+    ///        stack-overflow threshold on a small worker-thread stack.
+    static constexpr std::size_t kMaxExpressionDepth = 128;
+
     /// @brief Diagnostic sink.
     DiagnosticEngine& diagnostics_;
 };

@@ -1,0 +1,16 @@
+# Regression: a pathologically nested expression (tens of thousands of parentheses or set literals)
+# must be rejected with a diagnostic, not overflow the recursive-descent expression parser's stack.
+# Parenthesised sub-expressions and set literals re-enter Parser::parseExpression, which is now depth
+# bounded (kMaxExpressionDepth); this crashed dsdlc and dsdld (shared frontend) before. See the
+# recursion-depth / stack-overflow audit.
+
+# RUN: rm -rf %t && mkdir -p %t/x/x
+# RUN: %{python} -c "d=4000; open('%t/x/x/E.1.0.dsdl','w').write('uint64 X = ' + '('*d + '1' + ')'*d + '\nuint8 a\n@sealed\n')"
+# RUN: not %dsdlc --target-language ast %t/x 2>&1 | FileCheck %s
+# CHECK: expression nesting is too deep
+
+# A normally nested expression is accepted.
+# RUN: rm -rf %t/ok && mkdir -p %t/ok/x
+# RUN: printf 'uint64 X = ((1 + 2) * (3 - 1))\nuint8 a\n@sealed\n' > %t/ok/x/E.1.0.dsdl
+# RUN: %dsdlc --target-language ast %t/ok | FileCheck %s --check-prefix=OK
+# OK: definition "ok.x.E.1.0"

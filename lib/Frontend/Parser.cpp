@@ -22,6 +22,7 @@
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
 
 #include <cctype>
@@ -1038,6 +1039,16 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
 // must be one of `ops`. Mirrors the PEG shape `level = lower (_? op2 _? lower)*`.
 std::shared_ptr<ExprAST> Parser::parseExpression()
 {
+    // Parenthesised sub-expressions and set literals re-enter here, so bounding this single choke point
+    // caps the recursive-descent nesting. (Unary operators are limited to one by the grammar, so they
+    // add no unbounded recursion.) A pathological `(((...)))` is rejected instead of overflowing.
+    if (expressionDepth_ >= kMaxExpressionDepth)
+    {
+        diagnostics_.error(current().location, "expression nesting is too deep");
+        return nullptr;
+    }
+    ++expressionDepth_;
+    const auto depthGuard = llvm::make_scope_exit([this]() { --expressionDepth_; });
     return parseLogical();
 }
 
