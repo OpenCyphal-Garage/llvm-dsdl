@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/Semantics/Analyzer.h"
 
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
 #include <array>
@@ -276,11 +277,20 @@ private:
         Done,
     };
 
+    /// @brief Upper bound on nested composite-type analysis depth. Far above any real DSDL nesting
+    ///        (the standard set stays in the low tens) yet safely below the stack-overflow threshold
+    ///        even on a small (512 KiB) worker-thread stack such as the LSP scheduler's, so a
+    ///        pathological deep reference chain (T0 -> T1 -> ... -> Tn) is rejected with a diagnostic
+    ///        instead of crashing dsdlc / dsdld. Cycle detection catches repeats, not a deep-but-finite
+    ///        chain.
+    static constexpr std::size_t kMaxAnalysisDepth = 128;
+
     const ASTModule&                                           module_;
     DiagnosticEngine&                                          diagnostics_;
     AnalyzeOptions                                             options_;
     std::vector<State>                                         state_;
     std::vector<std::optional<SemanticDefinition>>             results_;
+    std::size_t                                               analysisDepth_ = 0;
     std::unordered_map<std::string, std::size_t>               indexByKey_;
     std::unordered_map<std::string, const SemanticDefinition*> externalByKey_;
 
@@ -387,9 +397,21 @@ private:
             diagnostics_.error(module_.definitions[idx].ast.location, "circular dependency detected");
             return &results_[idx];
         }
+        if (analysisDepth_ >= kMaxAnalysisDepth)
+        {
+            // A deep-but-finite chain of composite references (T0 -> T1 -> ... -> Tn) would otherwise
+            // recurse until the stack overflows; reject it instead. Mark Done so it is not retried.
+            diagnostics_.error(module_.definitions[idx].ast.location,
+                               "composite type nesting is too deep (exceeds " +
+                                   std::to_string(kMaxAnalysisDepth) + " levels)");
+            state_[idx] = State::Done;
+            return &results_[idx];
+        }
 
-        state_[idx]        = State::Visiting;
-        const auto& parsed = module_.definitions[idx];
+        state_[idx] = State::Visiting;
+        ++analysisDepth_;
+        const auto depthGuard = llvm::make_scope_exit([this]() { --analysisDepth_; });
+        const auto& parsed    = module_.definitions[idx];
 
         SemanticDefinition sem;
         sem.info      = parsed.info;

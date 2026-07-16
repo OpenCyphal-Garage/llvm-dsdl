@@ -1,0 +1,20 @@
+# Regression: a deep-but-finite chain of composite references (T0 -> T1 -> ... -> Tn) must be rejected
+# with a diagnostic rather than overflowing the stack. The analyzer's cycle detection only catches
+# repeats (A -> B -> A), not a long acyclic chain, so each level recursed one frame deeper until the
+# process crashed (SIGILL/EXC_BAD_ACCESS) -- taking down both dsdlc and the dsdld language server, which
+# share the analyzer. A depth bound (kMaxAnalysisDepth) now caps the recursion. See the
+# recursion-depth / stack-overflow audit.
+
+# RUN: rm -rf %t && mkdir -p %t/deep/deep
+# RUN: %{python} -c "import sys; N=400; [open(f'%t/deep/deep/T{i}.1.0.dsdl','w').write((f'deep.T{i+1}.1.0 next\n@sealed\n') if i+1<N else 'uint8 leaf\n@sealed\n') for i in range(N)]"
+
+# The tool must fail gracefully with the nesting diagnostic (not crash / not hang).
+# RUN: not %dsdlc --target-language ast %t/deep 2>&1 | FileCheck %s
+# CHECK: composite type nesting is too deep
+
+# A chain within the limit is accepted and generates.
+# RUN: rm -rf %t/ok && mkdir -p %t/ok/ok
+# RUN: %{python} -c "N=32; [open(f'%t/ok/ok/T{i}.1.0.dsdl','w').write((f'ok.T{i+1}.1.0 next\n@sealed\n') if i+1<N else 'uint8 leaf\n@sealed\n') for i in range(N)]"
+# RUN: %dsdlc --target-language c %t/ok --outdir %t/ok_c
+# RUN: ls %t/ok_c/ok/ok | FileCheck %s --check-prefix=OK
+# OK: T0_1_0.h
