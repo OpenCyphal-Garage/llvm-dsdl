@@ -239,3 +239,119 @@ bool runLspRobustnessTests()
 
     return true;
 }
+
+// Language-feature requests carry editor-controlled positions and URIs. These must never crash on
+// out-of-bounds positions, documents that were never opened or already closed, malformed params, or
+// degenerate document contents; the server must answer each gracefully and stay responsive afterwards.
+bool runLspAdversarialRequestTests()
+{
+    std::mutex                     mutex;
+    std::condition_variable        cv;
+    std::vector<llvm::json::Value> outgoing;
+
+    llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            outgoing.push_back(std::move(message));
+        }
+        cv.notify_all();
+    });
+
+    server.handleMessage(parseJson(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})"));
+
+    const std::string uri = "file:///tmp/adversarial.dsdl";
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"method", "textDocument/didOpen"},
+        {"params",
+         llvm::json::Object{
+             {"textDocument", llvm::json::Object{{"uri", uri}, {"version", 1}, {"text", "uint8 value\n@sealed\n"}}}}},
+    });
+
+    const auto positionParams = [](const std::string& targetUri, std::int64_t line, std::int64_t character) {
+        return llvm::json::Object{
+            {"textDocument", llvm::json::Object{{"uri", targetUri}}},
+            {"position", llvm::json::Object{{"line", line}, {"character", character}}},
+        };
+    };
+
+    // Each entry is a request the server must survive. Feature methods return null/empty on any miss.
+    std::vector<llvm::json::Value> hostileRequests;
+    const char* const              featureMethods[] = {"textDocument/hover",
+                                                       "textDocument/definition",
+                                                       "textDocument/references",
+                                                       "textDocument/completion"};
+    std::int64_t                    nextId           = 100;
+    for (const char* method : featureMethods)
+    {
+        // Position far beyond the document (max uint32) on an open document.
+        hostileRequests.push_back(llvm::json::Object{
+            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}, {"params", positionParams(uri, 4294967295LL, 4294967295LL)}});
+        // A document that was never opened.
+        hostileRequests.push_back(llvm::json::Object{
+            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}, {"params", positionParams("file:///tmp/never-opened.dsdl", 0, 0)}});
+        // Missing position object entirely.
+        hostileRequests.push_back(llvm::json::Object{
+            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method},
+            {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+        // Position fields present but the wrong JSON type.
+        hostileRequests.push_back(llvm::json::Object{
+            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method},
+            {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}},
+                                          {"position", llvm::json::Object{{"line", "nan"}, {"character", true}}}}}});
+        // Params missing altogether.
+        hostileRequests.push_back(
+            llvm::json::Object{{"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}});
+    }
+    // Structural requests on a never-opened document.
+    hostileRequests.push_back(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/documentSymbol"},
+        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
+    hostileRequests.push_back(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/semanticTokens/full"},
+        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
+
+    for (const auto& request : hostileRequests)
+    {
+        server.handleMessage(request);
+    }
+
+    // Degenerate document contents, then feature requests over them.
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}, {"version", 2}}},
+                                      {"contentChanges", llvm::json::Array{llvm::json::Object{{"text", ""}}}}}}});
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/hover"}, {"params", positionParams(uri, 0, 0)}});
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/completion"}, {"params", positionParams(uri, 100, 100)}});
+
+    // Close the document, then request against it.
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"method", "textDocument/didClose"},
+        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/definition"}, {"params", positionParams(uri, 0, 0)}});
+
+    // Sentinel: after the barrage the server must still answer a well-formed request.
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", 999999}, {"method", "textDocument/didOpen"},
+        {"params",
+         llvm::json::Object{
+             {"textDocument", llvm::json::Object{{"uri", uri}, {"version", 3}, {"text", "uint8 ok\n@sealed\n"}}}}}});
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"}, {"id", 999999}, {"method", "textDocument/documentSymbol"},
+        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        if (!cv.wait_for(lock, std::chrono::seconds(5), [&outgoing]() {
+                return findResponseByIntegerId(outgoing, 999999) != nullptr;
+            }))
+        {
+            std::cerr << "server unresponsive after adversarial request barrage\n";
+            return false;
+        }
+    }
+
+    return true;
+}
