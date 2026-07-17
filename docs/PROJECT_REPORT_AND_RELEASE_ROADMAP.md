@@ -119,7 +119,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
 | Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
 | Transforms | **6** | Real contract enforcement; zero-overhead/endianness passes renamed/redescribed (2026-07-03); big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. |
 | Codegen shared layer | **6** | Genuine shared planning; semantics still re-rendered per backend. |
-| LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; DocumentStore thread-safety still open. |
+| LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; ~~DocumentStore thread-safety still open~~ **verified thread-safe (2026-07-15): every method locks `mutex_` and `lookup` returns a snapshot copy, so no reference escapes to a concurrent scheduler-worker request.** |
 | Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
 | Build / CI / test infra | **6** | Strong test culture; **gates are name-presence metrics**; silent toolchain skips; CI uncommitted. |
 | **Headline-claim integrity** | **5** | The dominant production risk: docs promise proofs the code doesn't deliver. |
