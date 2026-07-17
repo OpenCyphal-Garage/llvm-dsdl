@@ -464,7 +464,23 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   method/latency/outcome; failures surface as `error_response` warnings. Records deliberately
   carry no document text or secrets. Replaces the ad-hoc `[dsdld][telemetry]` line that printed
   unstructured text on **every** request regardless of trace level.
-  **Remaining under this item:** the written LSP AI-surface data-flow document.
+  ✅ **LSP AI-surface data-flow document done (2026-07-15)** — `docs/LSP_AI_DATA_FLOW.md`, traced
+  from code rather than asserted. It answers the operator's real question ("does my DSDL source leave
+  my machine?"): **no** — `OfflineAiProvider` is the only `AiProvider` implementation, it runs
+  in-process, and there is no network code in the surface at all; `aiProvider_` has exactly one
+  invocation site, which is the seam a future remote provider would have to cross. It records the
+  bounds on what reaches the provider (`MaxSnippetBytes = 640` of source, 8 diagnostics, 24 symbol
+  hints, plus structural facts), the closed four-entry read-only tool allow-list, the edit gate
+  (`ApplyWithConfirmation` only), and retention (audit log is **in-memory only** — no filesystem or
+  network persistence — redacted *before* a 4096-byte cap so truncation cannot unmask a secret,
+  ringed at 256 records for a ~1 MiB bound). Honest about the limit: redaction is pattern-based
+  masking of known secret shapes, not a proof of absence.
+  **Remaining under this item: multi-version EmitC testing only.** Note the tension worth a
+  maintainer decision: the *lock* exists precisely because EmitC text may vary across MLIR majors,
+  so pinning one major and testing many are competing strategies rather than complementary ones. If
+  the lock is the answer, this sub-item should be explicitly descoped rather than left open; if
+  cross-major EmitC stability is a real goal, it needs a CI matrix that builds against more than one
+  LLVM major (none exists today — every lane pins 22).
 - [x] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
   ✅ **Union-tag review done (2026-07-12); SBOM done (2026-07-15).** The review was cheap because
   the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC

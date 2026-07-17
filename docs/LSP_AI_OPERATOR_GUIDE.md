@@ -7,6 +7,10 @@ This guide describes how to operate AI-assisted features in `dsdld` safely.
 AI support in `dsdld` is optional and policy-gated.
 The default provider is deterministic and offline (`OfflineAiProvider`).
 
+For **what data enters the AI surface, what leaves it, and what is retained** — including the bounds on
+how much source can reach the provider and why nothing is transmitted off the machine — see
+[`LSP_AI_DATA_FLOW.md`](LSP_AI_DATA_FLOW.md).
+
 Relevant code:
 
 1. `include/llvmdsdl/LSP/AI.h`
