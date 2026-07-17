@@ -453,8 +453,18 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   callback returns `success()`, so diagnostics are captured into the diagnostic engine and never
   reach the default (stderr) handler; the LSP's partial-model path does not verify at all. The
   stderr text seen in test output comes from negative-path tests that mutate IR deliberately.
-  **Remaining under this item:** LSP structured logging for post-mortems; the written LSP
-  AI-surface data-flow document.
+  ✅ **LSP structured logging done (2026-07-15)** — `docs/LSP_LOGGING.md`. `dsdld` now emits one
+  JSON object per line to **stderr** (stdout carries the protocol frames and must never be
+  interleaved; the logger serialises writes so records from the main thread and the scheduler
+  worker stay intact). This also makes an existing dead knob real: `ServerConfig::traceLevel` was
+  parsed and documented as driving "server logs and telemetry" but **nothing consumed it** —
+  verbosity is now gated by it, settable via `initialize` params, the `$/setTrace` notification
+  (previously unhandled), or the `trace` setting. `request` records cover synchronous *and*
+  scheduler-completed requests alike by hooking the single telemetry choke point, carrying
+  method/latency/outcome; failures surface as `error_response` warnings. Records deliberately
+  carry no document text or secrets. Replaces the ad-hoc `[dsdld][telemetry]` line that printed
+  unstructured text on **every** request regardless of trace level.
+  **Remaining under this item:** the written LSP AI-surface data-flow document.
 - [x] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
   ✅ **Union-tag review done (2026-07-12); SBOM done (2026-07-15).** The review was cheap because
   the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC

@@ -123,6 +123,21 @@ std::optional<std::string> parseDidOpenText(const llvm::json::Value* params)
     return text->str();
 }
 
+// Maps an LSP trace value ("off" | "messages" | "verbose") onto the server's verbosity. Shared by
+// `initialize` (which carries the client's initial trace) and the `$/setTrace` notification.
+TraceLevel parseTraceValue(const llvm::StringRef value)
+{
+    if (value == "off")
+    {
+        return TraceLevel::Off;
+    }
+    if (value == "verbose")
+    {
+        return TraceLevel::Verbose;
+    }
+    return TraceLevel::Basic;
+}
+
 // Chooses the LSP position encoding to advertise. The server represents `character` offsets as byte
 // offsets into the line, which are exactly UTF-8 code-unit offsets; a plain LSP client instead assumes
 // UTF-16 (the protocol default), so the two disagree on any line where a character before the position
@@ -732,11 +747,13 @@ llvm::json::Object rankingBreakdownToJson(const RankingBreakdown& breakdown)
 
 }  // namespace
 
-Server::Server(SendMessageFn sendMessage, RequestMetricSink metricSink)
+Server::Server(SendMessageFn sendMessage, RequestMetricSink metricSink, LogSink logSink)
     : sendMessage_(std::move(sendMessage))
+    , logger_(std::move(logSink))
 {
     aiProvider_ = std::make_unique<OfflineAiProvider>();
     telemetry_.setSink(std::move(metricSink));
+    logger_.setTraceLevel(config_.traceLevel);
 }
 
 Server::~Server()
@@ -809,6 +826,19 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
 {
     if (method == "initialize")
     {
+        // The client's initial trace verbosity arrives with `initialize`; adopt it before answering so
+        // the handshake itself is logged at the level the client asked for.
+        if (const auto* params = message.get("params"))
+        {
+            if (const auto* paramsObject = params->getAsObject())
+            {
+                if (const auto trace = paramsObject->getString("trace"))
+                {
+                    config_.traceLevel = parseTraceValue(*trace);
+                    logger_.setTraceLevel(config_.traceLevel);
+                }
+            }
+        }
         const std::string positionEncoding = negotiatePositionEncoding(message.get("params"));
         llvm::json::Object result;
         result["capabilities"] = llvm::json::Object{
@@ -1671,8 +1701,29 @@ void Server::handleNotification(const llvm::json::Object& message, const llvm::S
         {
             const bool applied = applyDidChangeConfiguration(*params, config_);
             (void) applied;
+            // The `trace` setting drives log verbosity; adopt it as soon as it changes.
+            logger_.setTraceLevel(config_.traceLevel);
+            logger_.log(LogLevel::Debug, "configuration_changed", llvm::json::Object{{"applied", applied}});
             invalidateAnalysisSnapshot();
             publishDiagnosticsFromAnalysis();
+        }
+        return;
+    }
+
+    // `$/setTrace` is the protocol's own verbosity control; honour it alongside the `trace` setting.
+    if (method == "$/setTrace")
+    {
+        if (const auto* params = message.get("params"))
+        {
+            if (const auto* paramsObject = params->getAsObject())
+            {
+                if (const auto value = paramsObject->getString("value"))
+                {
+                    config_.traceLevel = parseTraceValue(*value);
+                    logger_.setTraceLevel(config_.traceLevel);
+                    logger_.log(LogLevel::Info, "set_trace", llvm::json::Object{{"value", *value}});
+                }
+            }
         }
         return;
     }
@@ -1719,6 +1770,11 @@ void Server::sendResult(const llvm::json::Value& id, llvm::json::Value result)
 
 void Server::sendError(const llvm::json::Value& id, const int code, std::string message)
 {
+    // Log before moving `message` into the response. Cancellations are routine flow control, not
+    // faults, so they stay at Info while genuine failures surface as warnings.
+    logger_.log(code == JsonRpcErrorRequestCancelled ? LogLevel::Info : LogLevel::Warn,
+                "error_response",
+                llvm::json::Object{{"code", code}, {"message", message}});
     sendMessage_(llvm::json::Object{
         {"jsonrpc", "2.0"},
         {"id", cloneJsonId(id)},
@@ -2063,6 +2119,13 @@ void Server::recordRequestTelemetry(const llvm::StringRef method,
                                     const bool            cancelled)
 {
     telemetry_.record(method.str(), latencyMicros, cancelled);
+    // Every request -- synchronous and scheduler-completed alike -- funnels through here, so this is
+    // the one place that yields a complete request trail for a post-mortem.
+    logger_.log(LogLevel::Info,
+                "request",
+                llvm::json::Object{{"method", method},
+                                   {"latency_us", static_cast<std::int64_t>(latencyMicros)},
+                                   {"outcome", cancelled ? "cancelled" : "ok"}});
 }
 
 std::string Server::requestKeyFromId(const llvm::json::Value& id)

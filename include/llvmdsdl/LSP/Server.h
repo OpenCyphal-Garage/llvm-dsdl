@@ -21,6 +21,7 @@
 #include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/DocumentStore.h"
 #include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/Logging.h"
 #include "llvmdsdl/LSP/Ranking.h"
 #include "llvmdsdl/LSP/RequestScheduler.h"
 #include "llvmdsdl/LSP/ServerConfig.h"
@@ -48,7 +49,12 @@ public:
     /// @brief Constructs the server with send callback and optional telemetry sink.
     /// @param[in] sendMessage Outbound message sink.
     /// @param[in] metricSink Optional telemetry sample sink.
-    Server(SendMessageFn sendMessage, RequestMetricSink metricSink = {});
+    /// @param[in] sendMessage Outbound JSON-RPC sink.
+    /// @param[in] metricSink Optional per-request telemetry sink.
+    /// @param[in] logSink Optional structured-log sink. `dsdld` points this at stderr; stdout carries
+    ///            the protocol frames and must not be interleaved with log text. Omitting it makes the
+    ///            server silent regardless of the negotiated trace level.
+    Server(SendMessageFn sendMessage, RequestMetricSink metricSink = {}, LogSink logSink = {});
     ~Server();
 
     Server(const Server&)            = delete;
@@ -157,6 +163,7 @@ private:
     AnalysisPipeline                                        analysis_;
     RequestScheduler                                        scheduler_;
     Telemetry                                               telemetry_;
+    StructuredLogger                                        logger_;
     std::unique_ptr<IndexManager>                           indexManager_;
     std::string                                             indexCacheDirectory_;
     std::unique_ptr<AdaptiveSignalStore>                    signalStore_;

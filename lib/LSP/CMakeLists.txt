@@ -13,6 +13,7 @@ add_library(llvmdsdlLSP
   Analysis.cpp
   DocumentStore.cpp
   Index.cpp
+  Logging.cpp
   JsonRpcIO.cpp
   Lint.cpp
   Ranking.cpp

@@ -56,6 +56,7 @@ bool runLspServerTests();
 bool runLspTelemetryAuditTests();
 bool runLspRobustnessTests();
 bool runLspPositionEncodingTests();
+bool runLspStructuredLoggingTests();
 bool runLspAdversarialRequestTests();
 bool runLspJsonRpcFuzzTests();
 bool runLexerFuzzTests();
@@ -113,6 +114,7 @@ int main()
     ok      = runLspTelemetryAuditTests() && ok;
     ok      = runLspRobustnessTests() && ok;
     ok      = runLspPositionEncodingTests() && ok;
+    ok      = runLspStructuredLoggingTests() && ok;
     ok      = runLspAdversarialRequestTests() && ok;
     ok      = runLspJsonRpcFuzzTests() && ok;
     ok      = runLexerFuzzTests() && ok;

@@ -46,11 +46,14 @@ int main(int argc, char** argv)
                 llvm::errs() << "[dsdld] failed to write JSON-RPC message\n";
             }
         },
-        [](const llvmdsdl::lsp::RequestMetric& metric) {
-            llvm::errs() << "[dsdld][telemetry] method=" << metric.method
-                         << " latency_us=" << static_cast<std::uint64_t>(metric.latencyMicros)
-                         << " cancelled=" << (metric.cancelled ? "true" : "false") << "\n";
-        });
+        // No external telemetry sink: the structured log below carries the same per-request facts
+        // (method / latency_us / outcome) as parseable JSON, and unlike the previous ad-hoc line it
+        // honours the negotiated trace level instead of printing on every request unconditionally.
+        /*metricSink=*/{},
+        // Structured records go to stderr: stdout carries the JSON-RPC frames and must never be
+        // interleaved with log text. The logger serialises writes, so lines stay intact across the
+        // main thread and the request-scheduler worker.
+        [](const std::string& line) { llvm::errs() << line << '\n'; });
 
     while (!server.shouldExit())
     {
