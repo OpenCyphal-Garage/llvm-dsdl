@@ -525,6 +525,35 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/llvmdsdl
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
 
+# CycloneDX SBOM for the release artifacts: records the tool version and source revision, the locked
+# LLVM/MLIR version actually linked in, and the pinned commits of the build/test submodules. Built with
+# the default target so `cmake --install` always ships an SBOM that matches the binaries; the generator
+# is deterministic (no wall-clock timestamp) so it does not perturb the reproducibility lanes.
+# See docs/SUPPLY_CHAIN.md.
+set(LLVMDSDL_SBOM_FILE "${LLVMDSDL_BINARY_DIR}/llvm-dsdl-sbom.cdx.json")
+if(DEFINED zstd_VERSION)
+  set(LLVMDSDL_SBOM_ZSTD_ARG "-DZSTD_VERSION=${zstd_VERSION}")
+else()
+  set(LLVMDSDL_SBOM_ZSTD_ARG "-DZSTD_VERSION=")
+endif()
+add_custom_target(sbom ALL
+  COMMAND ${CMAKE_COMMAND}
+    -DOUTPUT_FILE=${LLVMDSDL_SBOM_FILE}
+    -DTOOL_VERSION=${LLVMDSDL_TOOL_VERSION}
+    -DLLVM_VERSION=${LLVM_PACKAGE_VERSION}
+    -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+    "-DTOOLS=${LLVMDSDL_INSTALLABLE_TOOLS}"
+    ${LLVMDSDL_SBOM_ZSTD_ARG}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateSBOM.cmake
+  BYPRODUCTS ${LLVMDSDL_SBOM_FILE}
+  COMMENT "Generating CycloneDX SBOM"
+  VERBATIM)
+
+install(
+  FILES ${LLVMDSDL_SBOM_FILE}
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/llvm-dsdl
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
 set(LLVMDSDL_INSTALL_CONFIG_ARGS)
 if(CMAKE_CONFIGURATION_TYPES)
   list(APPEND LLVMDSDL_INSTALL_CONFIG_ARGS --config $<CONFIG>)

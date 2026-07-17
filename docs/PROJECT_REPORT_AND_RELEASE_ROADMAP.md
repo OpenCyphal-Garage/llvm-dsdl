@@ -443,13 +443,20 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   `initialize` both handled). Regression tests added for all five. **Reviewed and found clean:** the Server request
   dispatch and param parsers (position/range/uri) are optional-based and guarded (negatives
   rejected, empty-container guards present, fixed-size array indexing); the redaction/gate
-  consistency holds. **Remaining under this item:** LSP structured logging for post-mortems
-  (which will also route the MLIR verify diagnostics the LSP currently leaks to stderr when
-  lowering partial models); the written LSP AI-surface data-flow document; and the
-  LLVM-version-lock write-up (the policy is already *enforced* by the cross-stdlib CI lane
-  pinning both hosts to LLVM 22 with an asserted major — see the determinism item).
-- [~] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
-  ✅ **Union-tag review done (2026-07-12); SBOM still open.** The review was cheap because
+  consistency holds. ✅ **LLVM-version-lock write-up done (2026-07-15)** — `docs/SUPPLY_CHAIN.md`
+  records why the major is a semantic input to the output (MLIR/EmitC text may vary across MLIR
+  majors, so the lock is what makes the reproducibility guarantee meaningful), where it is
+  enforced (CI pins on both hosts; `--require-c` turns a major skew into a hard failure rather
+  than silently retiring C coverage), and that the build itself does not assert it.
+  ✅ **The "MLIR verify diagnostics leak to stderr" concern was investigated and does not exist**
+  (2026-07-15): the sole `mlir::verify` call is wrapped in a `ScopedDiagnosticHandler` whose
+  callback returns `success()`, so diagnostics are captured into the diagnostic engine and never
+  reach the default (stderr) handler; the LSP's partial-model path does not verify at all. The
+  stderr text seen in test output comes from negative-path tests that mutate IR deliberately.
+  **Remaining under this item:** LSP structured logging for post-mortems; the written LSP
+  AI-surface data-flow document.
+- [x] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
+  ✅ **Union-tag review done (2026-07-12); SBOM done (2026-07-15).** The review was cheap because
   the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC
   path). **One real defect found and fixed (UT-1, high — decode-time type confusion from
   untrusted bytes):** the union tag was stored in a hardcoded 8-bit field
@@ -482,8 +489,14 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   computed width, so it already emits `uint16_t _tag_;` for a wide tag. Both peers are
   correct; the spec adjudicated against us. (No standard UAVCAN type has a >256-option union,
   which is why neither the differential-parity lane nor real-world use ever exercised it — the
-  bug lived only in the tail we reached by construction.) **Remaining: supply-chain/SBOM for
-  release artifacts** (separate work, belongs with alpha release mechanics).
+  bug lived only in the tail we reached by construction.) ✅ **SBOM done (2026-07-15):** every
+  build emits a CycloneDX 1.5 document (`cmake/GenerateSBOM.cmake`, `sbom` target in `ALL`,
+  installed to `<datadir>/llvm-dsdl/` with the `bin` component) recording the tool version and
+  exact source commit, the **LLVM/MLIR version actually linked** (not an aspiration), zstd when
+  present, the first-party runtime, and the pinned submodule commits scoped `excluded` (build/test
+  inputs, not shipped). The generator carries no wall-clock timestamp or random serial, so it
+  regenerates byte-identically and does not undercut the reproducibility lanes. See
+  `docs/SUPPLY_CHAIN.md`.
 - [x] **Float serialization: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signaling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match is now applied to the shared float helper (`lib/CodeGen/HelperBindingRender.cpp`: `const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialize/deserialize caller (`CppEmitter.cpp`, `RustEmitter.cpp`, `GoEmitter.cpp`), so all four native backends keep floats in native width end-to-end and no longer canonicalize signaling-NaN payloads via a double round-trip. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **Locked in by directed signaling-NaN payload regression cases** added to the cpp-c, c-rust, and c-go parity harnesses (feed the sNaN wire bytes `01 00 80 7F`, deserialize→reserialize, assert the quiet bit stays clear); a mutation reintroducing the round-trip makes them fail. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless. *(Open spec question about what "the original value will be preserved" means for a NaN at `float16` width is captured in `NAN_PRESERVATION_QUESTION_FOR_MAINTAINERS.md`.)*
 
 **Bottom line for the maintainer:** the hard part — a real MLIR pipeline, a hardened frontend, a defensible runtime, and a genuine differential-testing harness — is already built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.
