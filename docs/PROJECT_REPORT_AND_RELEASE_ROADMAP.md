@@ -423,7 +423,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   `test/lit/dsdl-field-invalid-empty-name.mlir`. This closes the G2 "dead ops" note and the
   G6 "post-hoc verifier" critique.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
-- [~] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
+- [x] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
   **LSP adversarial data-flow / robustness audit done (2026-07-12) — four DoS defects
   found and fixed** in code the review had rated as done. All are unbounded-growth on
   attacker-controlled JSON-RPC input: **(1)** `Telemetry` keyed `requestCounts_` by the raw
@@ -475,12 +475,15 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   network persistence — redacted *before* a 4096-byte cap so truncation cannot unmask a secret,
   ringed at 256 records for a ~1 MiB bound). Honest about the limit: redaction is pattern-based
   masking of known secret shapes, not a proof of absence.
-  **Remaining under this item: multi-version EmitC testing only.** Note the tension worth a
-  maintainer decision: the *lock* exists precisely because EmitC text may vary across MLIR majors,
-  so pinning one major and testing many are competing strategies rather than complementary ones. If
-  the lock is the answer, this sub-item should be explicitly descoped rather than left open; if
-  cross-major EmitC stability is a real goal, it needs a CI matrix that builds against more than one
-  LLVM major (none exists today — every lane pins 22).
+  ✅ **LLVM-version lock made authoritative + multi-version EmitC testing descoped (2026-07-17).**
+  Maintainer decision: pin to LLVM 22 (23 is not yet stable). The lock is now enforced at configure
+  time (`CMakeLists.txt` asserts `LLVM_VERSION_MAJOR == LLVMDSDL_REQUIRED_LLVM_MAJOR`, default 22, with
+  a `-DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON` escape hatch for evaluating a future major) rather than
+  by CI alone, so an accidental build against another major fails loudly instead of silently producing
+  divergent EmitC. "Multi-version EmitC testing" is explicitly **descoped**: it competes with the lock
+  (the lock exists precisely because EmitC text may vary across MLIR majors), so guaranteeing
+  reproducibility against one major is the strategy, not chasing stability across several. Rationale
+  and the path to revisit are recorded in `docs/SUPPLY_CHAIN.md`. **This line item is now complete.**
 - [x] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
   ✅ **Union-tag review done (2026-07-12); SBOM done (2026-07-15).** The review was cheap because
   the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC

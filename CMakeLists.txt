@@ -52,6 +52,36 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 
+# LLVM major-version lock. The C backend is routed through MLIR/EmitC, whose printed output can vary
+# across MLIR majors (which are released with LLVM), so the linked major is a semantic input to the
+# byte-reproducible generated code -- see docs/SUPPLY_CHAIN.md. Pinning one major and testing across
+# many are competing strategies; this project takes the pin. It was previously enforced only in CI;
+# asserting it at configure time makes the lock authoritative everywhere, so an accidental build against
+# another major fails loudly instead of silently producing divergent EmitC.
+#
+# Currently LLVM 22 (23 is not yet stable). Bumping is a deliberate one-line change here plus updating
+# the CI pins together (both determinism hosts must move at once). A maintainer evaluating another major
+# can opt out with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON; MLIR ships with LLVM at the same version, so
+# asserting the LLVM major covers MLIR too.
+set(LLVMDSDL_REQUIRED_LLVM_MAJOR "22" CACHE STRING
+    "LLVM/MLIR major version this project is locked to (see docs/SUPPLY_CHAIN.md).")
+option(LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH
+       "Permit configuring against an LLVM major other than LLVMDSDL_REQUIRED_LLVM_MAJOR." OFF)
+if(NOT LLVM_VERSION_MAJOR STREQUAL LLVMDSDL_REQUIRED_LLVM_MAJOR)
+  if(LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH)
+    message(WARNING
+      "LLVM major ${LLVM_VERSION_MAJOR} != locked major ${LLVMDSDL_REQUIRED_LLVM_MAJOR}; "
+      "byte-reproducibility of the C/EmitC backend is not guaranteed against this toolchain.")
+  else()
+    message(FATAL_ERROR
+      "LLVM/MLIR major ${LLVM_VERSION_MAJOR} does not match the locked major "
+      "${LLVMDSDL_REQUIRED_LLVM_MAJOR} (found LLVM ${LLVM_PACKAGE_VERSION}). Point LLVM_DIR/MLIR_DIR at "
+      "an LLVM ${LLVMDSDL_REQUIRED_LLVM_MAJOR} install, or, to evaluate another major deliberately, "
+      "reconfigure with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON. See docs/SUPPLY_CHAIN.md.")
+  endif()
+endif()
+message(STATUS "LLVM major-version lock: ${LLVMDSDL_REQUIRED_LLVM_MAJOR} (linked ${LLVM_VERSION_MAJOR})")
+
 if(APPLE)
   find_program(LLVMDSDL_OTOOL_EXE NAMES otool otool-classic)
   set(LLVMDSDL_LLVM_DYLIB "")

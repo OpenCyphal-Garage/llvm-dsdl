@@ -49,9 +49,14 @@ cross-toolchain determinism guarantees meaningful.
 
 ### Where it is enforced
 
-The lock is enforced by **CI, not by the build system** — a local build against another LLVM will
-configure and compile.
+The lock is enforced **at configure time** by the build system and **again** by CI.
 
+- **Build system:** after `find_package(LLVM/MLIR)`, CMake asserts `LLVM_VERSION_MAJOR` equals
+  `LLVMDSDL_REQUIRED_LLVM_MAJOR` (currently `22`) and fails configuration with a pointed error
+  otherwise, so an accidental build against another major stops immediately rather than silently
+  producing divergent EmitC. A maintainer deliberately evaluating another major (e.g. LLVM 23 once it
+  stabilises) opts out with `-DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON`, which downgrades the failure to a
+  warning. Because MLIR ships with LLVM at the same version, asserting the LLVM major covers MLIR too.
 - **Linux (x86-64, libstdc++):** `LLVM_DIR`/`MLIR_DIR`/`CMAKE_PREFIX_PATH` pin `/usr/lib/llvm-22`, and
   the determinism job records the real version via `llvm-config --version` into the corpus-hash
   manifest (`--meta llvm=…`).
@@ -67,5 +72,16 @@ configure and compile.
 - Build against the locked major to reproduce released artifacts byte-for-byte.
 - The SBOM records the LLVM/MLIR version *actually linked*, so an artifact built against a different
   major is self-describing rather than silently divergent.
-- Raising the lock is a deliberate change: bump the CI pins together (both hosts must move at once, or
-  `--require-c` fails), then re-baseline the determinism corpus hashes.
+- Raising the lock is a deliberate change: bump `LLVMDSDL_REQUIRED_LLVM_MAJOR` and the CI pins together
+  (both hosts must move at once, or `--require-c` fails), then re-baseline the determinism corpus hashes.
+
+## "Multi-version EmitC testing" — descoped in favour of the lock
+
+An earlier roadmap line paired the version lock with "multi-version EmitC testing." Those are
+**competing** strategies, not complementary: the lock exists *because* EmitC text may vary across MLIR
+majors, so the project's answer is to guarantee reproducibility against exactly one major rather than to
+chase textual stability across several. Multi-version EmitC testing is therefore **not a goal** while
+the lock is in force. The escape hatch (`LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH`) is the seam through which a
+maintainer would build against a new major to *evaluate* a lock bump — not a standing multi-major test
+matrix. If cross-major EmitC stability ever becomes a real requirement, it would need its own CI matrix
+(none exists today; every lane pins 22) and this decision revisited.
