@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CppEmitter.h"
+#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
@@ -1893,41 +1894,25 @@ void emitSection(std::ostringstream&              out,
 
 llvm::Expected<std::string> loadCRuntimeHeader()
 {
-    const std::filesystem::path absoluteRuntimeHeader =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "dsdl_runtime.h";
-    std::ifstream in(absoluteRuntimeHeader.string());
-    if (!in)
+    if (const auto data = embedded_runtime::find("dsdl_runtime.h"))
     {
-        in.open("runtime/dsdl_runtime.h");
+        return std::string(*data);
     }
-    if (!in)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read runtime header");
-    }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: dsdl_runtime.h");
 }
 
 llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
 {
-    const std::filesystem::path relativeRuntimeHeader =
-        isAutosarFlavor(flavor) ? std::filesystem::path("runtime") / "cpp" / "autosar" / "dsdl_runtime.hpp"
-                                : std::filesystem::path("runtime") / "cpp" / "dsdl_runtime.hpp";
-    const std::filesystem::path absoluteRuntimeHeader =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / relativeRuntimeHeader;
-    std::ifstream in(absoluteRuntimeHeader.string());
-    if (!in)
+    const std::string_view relativeRuntimeHeader =
+        isAutosarFlavor(flavor) ? "cpp/autosar/dsdl_runtime.hpp" : "cpp/dsdl_runtime.hpp";
+    if (const auto data = embedded_runtime::find(relativeRuntimeHeader))
     {
-        in.open(relativeRuntimeHeader.string());
+        return std::string(*data);
     }
-    if (!in)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read C++ runtime header");
-    }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: %s",
+                                   std::string(relativeRuntimeHeader).c_str());
 }
 
 std::string renderHeader(const SemanticDefinition& def,

@@ -15,6 +15,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -1538,18 +1539,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)
 {
-    const std::filesystem::path runtimePath =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "python" / fileName;
-    std::ifstream in(runtimePath.string());
-    if (!in)
+    if (const auto data = embedded_runtime::find("python/" + fileName))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "failed to read Python runtime file '%s'",
-                                       fileName.c_str());
+        return std::string(*data);
     }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: python/%s",
+                                   fileName.c_str());
 }
 
 /// @brief Returns the runtime scaffold file name for a Python specialization.

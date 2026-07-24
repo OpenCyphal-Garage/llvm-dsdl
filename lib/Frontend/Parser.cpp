@@ -1048,7 +1048,7 @@ std::shared_ptr<ExprAST> Parser::parseExpression()
         return nullptr;
     }
     ++expressionDepth_;
-    const auto depthGuard = llvm::make_scope_exit([this]() { --expressionDepth_; });
+    const llvm::scope_exit depthGuard([this]() { --expressionDepth_; });
     return parseLogical();
 }
 

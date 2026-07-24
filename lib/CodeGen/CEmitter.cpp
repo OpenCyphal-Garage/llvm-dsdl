@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -600,22 +601,12 @@ void emitSection(std::ostringstream&       out,
 
 llvm::Expected<std::string> loadRuntimeHeader()
 {
-    const std::filesystem::path absoluteRuntimeHeader =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "dsdl_runtime.h";
-    std::ifstream in(absoluteRuntimeHeader.string());
-    if (!in)
+    if (const auto data = embedded_runtime::find("dsdl_runtime.h"))
     {
-        // Fallback for environments where compile-time source definitions are
-        // unavailable or altered.
-        in.open("runtime/dsdl_runtime.h");
+        return std::string(*data);
     }
-    if (!in)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read runtime header");
-    }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: dsdl_runtime.h");
 }
 
 std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)

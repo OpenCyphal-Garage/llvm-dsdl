@@ -410,7 +410,7 @@ private:
 
         state_[idx] = State::Visiting;
         ++analysisDepth_;
-        const auto depthGuard = llvm::make_scope_exit([this]() { --analysisDepth_; });
+        const llvm::scope_exit depthGuard([this]() { --analysisDepth_; });
         const auto& parsed    = module_.definitions[idx];
 
         SemanticDefinition sem;

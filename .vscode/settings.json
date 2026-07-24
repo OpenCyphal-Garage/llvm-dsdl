@@ -1,7 +1,6 @@
 {
-    "clangd.arguments": [
-        "--compile-commands-dir=build"
-    ],
+    "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
+    "C_Cpp.intelliSenseEngine": "disabled",
     "cSpell.words": [
         "appendable",
         "BITLENGTHSET",

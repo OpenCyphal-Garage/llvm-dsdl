@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -1600,18 +1601,13 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)
 {
-    const std::filesystem::path runtimePath =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "rust" / fileName;
-    std::ifstream in(runtimePath.string());
-    if (!in)
+    if (const auto data = embedded_runtime::find("rust/" + fileName))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "failed to read Rust runtime file: %s",
-                                       fileName.c_str());
+        return std::string(*data);
     }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: rust/%s",
+                                   fileName.c_str());
 }
 
 std::string renderCargoToml(const RustEmitOptions& options)

@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -1454,16 +1455,12 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadGoRuntime()
 {
-    const std::filesystem::path runtimePath =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "go" / "dsdl_runtime.go";
-    std::ifstream in(runtimePath.string());
-    if (!in)
+    if (const auto data = embedded_runtime::find("go/dsdl_runtime.go"))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read Go runtime");
+        return std::string(*data);
     }
-    std::ostringstream content;
-    content << in.rdbuf();
-    return content.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "embedded runtime source missing: go/dsdl_runtime.go");
 }
 
 std::string renderGoMod(const GoEmitOptions& options)
