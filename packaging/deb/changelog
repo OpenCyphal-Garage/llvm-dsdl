@@ -1,0 +1,7 @@
+llvm-dsdl (0.1.0) unstable; urgency=medium
+
+  * Demo release.
+  * This is a proof-of-concept release to the community. It's probably broken.
+    YMMV.
+
+ -- OpenCyphal Maintainers <maintainers@opencyphal.org>  Sat, 25 Jul 2026 16:28:28 +0000

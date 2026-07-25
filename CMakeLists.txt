@@ -584,6 +584,176 @@ install(
   DESTINATION ${CMAKE_INSTALL_DATADIR}/llvm-dsdl
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
 
+# Licence terms travel with the binaries. Distribution policy (Debian in particular) requires every
+# binary package to ship its licence under /usr/share/doc/<package>/, and an installed tree without
+# them cannot be redistributed. LICENSES/ carries the Apache-2.0-with-LLVM-exception text, which
+# release .debs need because they vendor libLLVM -- see docs/plans/P3_release_packaging.md.
+install(
+  FILES
+    ${LLVMDSDL_SOURCE_DIR}/LICENSE.md
+    ${LLVMDSDL_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
+  DESTINATION ${CMAKE_INSTALL_DOCDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+install(
+  DIRECTORY ${LLVMDSDL_SOURCE_DIR}/LICENSES
+  DESTINATION ${CMAKE_INSTALL_DOCDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+# Debian keys the copyright path off the *binary package* name, so each package
+# needs its own copy -- llvm-dsdl and llvm-dsdl-dev are separate packages and
+# lintian checks both. CMAKE_INSTALL_DOCDIR only covers the first: GNUInstallDirs
+# derives it from PROJECT_NAME, so the -dev destination is spelled out.
+install(
+  FILES ${LLVMDSDL_SOURCE_DIR}/packaging/deb/copyright
+  DESTINATION ${CMAKE_INSTALL_DOCDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+install(
+  FILES ${LLVMDSDL_SOURCE_DIR}/packaging/deb/copyright
+  DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/llvm-dsdl-dev
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
+
+# The tools ship unstripped on purpose; the override records that decision where
+# lintian will read it, so the package is policy-clean by declaration rather than
+# quietly failing a check. The file name must match the binary package name.
+install(
+  FILES ${LLVMDSDL_SOURCE_DIR}/packaging/deb/lintian-overrides/llvm-dsdl
+  DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/lintian/overrides
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+# Debian requires a compressed changelog per binary package. CPack has no
+# changelog support of any kind, so it is compressed and installed here.
+set(LLVMDSDL_DEB_CHANGELOG_SRC "${LLVMDSDL_SOURCE_DIR}/packaging/deb/changelog")
+
+# The changelog's top entry carries its own copy of the version, and a package
+# whose changelog disagrees with its control file is malformed. Catch the drift
+# at configure time rather than in a lintian run after the release is cut.
+file(STRINGS "${LLVMDSDL_DEB_CHANGELOG_SRC}" LLVMDSDL_DEB_CHANGELOG_FIRST_LINE LIMIT_COUNT 1)
+if(NOT LLVMDSDL_DEB_CHANGELOG_FIRST_LINE MATCHES "^llvm-dsdl \\(([^)]+)\\)")
+  message(FATAL_ERROR
+    "Malformed first line in ${LLVMDSDL_DEB_CHANGELOG_SRC}; expected 'llvm-dsdl (<version>) ...'")
+endif()
+if(NOT CMAKE_MATCH_1 STREQUAL LLVMDSDL_TOOL_VERSION)
+  message(FATAL_ERROR
+    "Debian changelog version '${CMAKE_MATCH_1}' does not match VERSION '${LLVMDSDL_TOOL_VERSION}'. "
+    "Add a new top entry to ${LLVMDSDL_DEB_CHANGELOG_SRC} when bumping VERSION.")
+endif()
+
+find_program(LLVMDSDL_GZIP_EXE gzip)
+if(LLVMDSDL_GZIP_EXE)
+  set(LLVMDSDL_DEB_CHANGELOG_GZ "${LLVMDSDL_BINARY_DIR}/packaging/changelog.gz")
+  # -n omits the source name and mtime from the gzip header, so the compressed
+  # changelog is byte-identical across builds of the same source.
+  add_custom_command(
+    OUTPUT "${LLVMDSDL_DEB_CHANGELOG_GZ}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_BINARY_DIR}/packaging"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${LLVMDSDL_DEB_CHANGELOG_SRC}" "${LLVMDSDL_BINARY_DIR}/packaging/changelog"
+    COMMAND "${LLVMDSDL_GZIP_EXE}" -9 -n -f "${LLVMDSDL_BINARY_DIR}/packaging/changelog"
+    DEPENDS "${LLVMDSDL_DEB_CHANGELOG_SRC}"
+    COMMENT "Compressing Debian changelog"
+    VERBATIM)
+  add_custom_target(deb-changelog ALL DEPENDS "${LLVMDSDL_DEB_CHANGELOG_GZ}")
+
+  install(
+    FILES ${LLVMDSDL_DEB_CHANGELOG_GZ}
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+  install(
+    FILES ${LLVMDSDL_DEB_CHANGELOG_GZ}
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/llvm-dsdl-dev
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
+else()
+  message(WARNING
+    "gzip not found; the Debian changelog will be omitted and .deb packages "
+    "produced from this build will not satisfy Debian policy.")
+endif()
+
+# Man pages, generated from each tool's own --help so the two cannot drift.
+#
+# The page date comes from the changelog's release trailer rather than the clock:
+# a build-time timestamp would make every rebuild produce a different page, which
+# this project's reproducibility posture does not tolerate.
+set(LLVMDSDL_MAN_DATE "")
+file(STRINGS "${LLVMDSDL_DEB_CHANGELOG_SRC}" LLVMDSDL_CHANGELOG_LINES)
+foreach(line IN LISTS LLVMDSDL_CHANGELOG_LINES)
+  if(line MATCHES "^ -- .*  [A-Za-z]+, ([0-9]+) ([A-Za-z]+) ([0-9]+) ")
+    set(_day "${CMAKE_MATCH_1}")
+    set(_mon "${CMAKE_MATCH_2}")
+    set(_year "${CMAKE_MATCH_3}")
+    set(_months Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
+    list(FIND _months "${_mon}" _mon_index)
+    if(_mon_index GREATER_EQUAL 0)
+      math(EXPR _mon_num "${_mon_index} + 1")
+      string(LENGTH "${_day}" _day_len)
+      if(_day_len EQUAL 1)
+        set(_day "0${_day}")
+      endif()
+      if(_mon_num LESS 10)
+        set(_mon_num "0${_mon_num}")
+      endif()
+      set(LLVMDSDL_MAN_DATE "${_year}-${_mon_num}-${_day}")
+    endif()
+    break()
+  endif()
+endforeach()
+if(NOT LLVMDSDL_MAN_DATE)
+  message(FATAL_ERROR
+    "Could not read a release date from the trailer line of ${LLVMDSDL_DEB_CHANGELOG_SRC}.")
+endif()
+
+if(LLVMDSDL_PYTHON3_EXE AND LLVMDSDL_GZIP_EXE)
+  set(LLVMDSDL_MAN_GENERATOR "${LLVMDSDL_SOURCE_DIR}/tools/man/generate_manpage.py")
+  set(LLVMDSDL_MAN_DIR "${LLVMDSDL_BINARY_DIR}/man")
+
+  # dsdlc and dsdld print their own NAME line; dsdl-opt uses LLVM's cl::opt help,
+  # whose OVERVIEW just repeats the program name, so its summary is supplied here.
+  set(LLVMDSDL_MAN_DESC_dsdlc "")
+  set(LLVMDSDL_MAN_DESC_dsdl_opt "MLIR pass driver for the dsdl dialect")
+  set(LLVMDSDL_MAN_DESC_dsdld "")
+
+  set(LLVMDSDL_MAN_PAGES)
+  foreach(tool IN LISTS LLVMDSDL_INSTALLABLE_TOOLS)
+    # dsdl-opt would otherwise form a variable name containing a hyphen.
+    string(MAKE_C_IDENTIFIER "${tool}" tool_key)
+    set(man_page "${LLVMDSDL_MAN_DIR}/${tool}.1")
+    set(desc_arg)
+    if(LLVMDSDL_MAN_DESC_${tool_key})
+      set(desc_arg --description "${LLVMDSDL_MAN_DESC_${tool_key}}")
+    endif()
+    # gzip -f consumes the .1 and leaves only the .1.gz, so the .gz is what this
+    # command actually produces; declaring the .1 would leave the build convinced
+    # the output was never created and regenerate it on every invocation.
+    add_custom_command(
+      OUTPUT "${man_page}.gz"
+      COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_MAN_GENERATOR}"
+              --tool "$<TARGET_FILE:${tool}>"
+              --name "${tool}"
+              --version "${LLVMDSDL_TOOL_VERSION}"
+              --date "${LLVMDSDL_MAN_DATE}"
+              ${desc_arg}
+              --output "${man_page}"
+      COMMAND "${LLVMDSDL_GZIP_EXE}" -9 -n -f "${man_page}"
+      DEPENDS ${tool} "${LLVMDSDL_MAN_GENERATOR}"
+      COMMENT "Generating man page for ${tool}"
+      VERBATIM)
+    list(APPEND LLVMDSDL_MAN_PAGES "${man_page}.gz")
+
+    install(
+      FILES "${man_page}.gz"
+      DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+      COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+  endforeach()
+
+  add_custom_target(man-pages ALL DEPENDS ${LLVMDSDL_MAN_PAGES})
+else()
+  message(WARNING
+    "python3 or gzip not found; man pages will not be generated and .deb packages "
+    "produced from this build will not satisfy Debian policy.")
+endif()
+
 set(LLVMDSDL_INSTALL_CONFIG_ARGS)
 if(CMAKE_CONFIGURATION_TYPES)
   list(APPEND LLVMDSDL_INSTALL_CONFIG_ARGS --config $<CONFIG>)
@@ -960,3 +1130,7 @@ if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
     DEPENDS coverage-report
   )
 endif()
+
+# Release packaging (CPack). Included last: include(CPack) snapshots every CPACK_*
+# variable at that point, so it must follow all install() rules and settings.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Packaging.cmake)

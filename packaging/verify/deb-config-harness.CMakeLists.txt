@@ -1,0 +1,87 @@
+# Harness for exercising cmake/Packaging.cmake's Debian output on Linux.
+# Driven by packaging/verify/check_deb_config.py; not part of the real build.
+#
+# It includes the REAL cmake/Packaging.cmake and mirrors the real install rules --
+# same components, same destinations, same project name (which is what
+# CMAKE_INSTALL_DOCDIR keys off). Only the binaries are stand-ins: with shlibdeps
+# off, no control field is derived from what the binaries link, so the control
+# files produced here are the ones a real build produces.
+cmake_minimum_required(VERSION 3.24)
+project(llvm-dsdl LANGUAGES C)
+include(GNUInstallDirs)
+
+# The repository is mounted read-only at /repo by check_deb_config.py.
+set(LLVMDSDL_REPO "/repo")
+
+set(LLVMDSDL_SOURCE_DIR "${LLVMDSDL_REPO}")
+set(LLVMDSDL_TOOL_VERSION "0.1.0")
+set(LLVMDSDL_VERSION_MAJOR 0)
+set(LLVMDSDL_VERSION_MINOR 1)
+set(LLVMDSDL_VERSION_PATCH 0)
+set(LLVMDSDL_INSTALL_COMPONENT_BIN "bin")
+set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
+
+foreach(tool dsdlc dsdl-opt dsdld)
+  add_executable(${tool} stub.c)
+endforeach()
+add_library(llvmdsdlSupport STATIC stub.c)
+
+install(TARGETS dsdlc dsdl-opt dsdld
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT bin)
+install(TARGETS llvmdsdlSupport
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
+install(DIRECTORY ${LLVMDSDL_REPO}/include/llvmdsdl
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT dev
+        FILES_MATCHING PATTERN "*.h")
+install(FILES ${LLVMDSDL_REPO}/LICENSE.md ${LLVMDSDL_REPO}/THIRD_PARTY_NOTICES.md
+        DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT bin)
+install(DIRECTORY ${LLVMDSDL_REPO}/LICENSES
+        DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT bin)
+install(FILES ${LLVMDSDL_REPO}/packaging/deb/copyright
+        DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT bin)
+install(FILES ${LLVMDSDL_REPO}/packaging/deb/copyright
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/llvm-dsdl-dev COMPONENT dev)
+install(FILES ${LLVMDSDL_REPO}/packaging/deb/lintian-overrides/llvm-dsdl
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/lintian/overrides COMPONENT bin)
+
+find_program(GZIP_EXE gzip REQUIRED)
+
+# Man pages. The stand-in binaries have no --help for tools/man/generate_manpage.py
+# to read, so minimal valid pages stand in here: what this harness checks is that
+# they install where Debian expects them. The generated pages' *content* is
+# validated separately by linting the real output with mandoc.
+foreach(tool dsdlc dsdl-opt dsdld)
+  # The page is written once at configure time into man-src/ and copied before
+  # gzipping, because gzip -f consumes its input: compressing man-src/ in place
+  # would leave the next build with no source and no rule to remake it.
+  file(WRITE "${CMAKE_BINARY_DIR}/man-src/${tool}.1"
+       ".TH ${tool} 1 \"2026-07-25\" \"llvm-dsdl 0.1.0\" \"llvm-dsdl Manual\"\n"
+       ".SH NAME\n${tool} \\- packaging harness placeholder\n")
+  add_custom_command(
+    OUTPUT "${CMAKE_BINARY_DIR}/man/${tool}.1.gz"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/man"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_BINARY_DIR}/man-src/${tool}.1" "${CMAKE_BINARY_DIR}/man/${tool}.1"
+    COMMAND "${GZIP_EXE}" -9 -n -f "${CMAKE_BINARY_DIR}/man/${tool}.1"
+    DEPENDS "${CMAKE_BINARY_DIR}/man-src/${tool}.1"
+    VERBATIM)
+  list(APPEND HARNESS_MAN_PAGES "${CMAKE_BINARY_DIR}/man/${tool}.1.gz")
+  install(FILES "${CMAKE_BINARY_DIR}/man/${tool}.1.gz"
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT bin)
+endforeach()
+add_custom_target(man-pages ALL DEPENDS ${HARNESS_MAN_PAGES})
+add_custom_command(
+  OUTPUT "${CMAKE_BINARY_DIR}/packaging/changelog.gz"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/packaging"
+  COMMAND ${CMAKE_COMMAND} -E copy
+          "${LLVMDSDL_REPO}/packaging/deb/changelog" "${CMAKE_BINARY_DIR}/packaging/changelog"
+  COMMAND "${GZIP_EXE}" -9 -n -f "${CMAKE_BINARY_DIR}/packaging/changelog"
+  DEPENDS "${LLVMDSDL_REPO}/packaging/deb/changelog"
+  VERBATIM)
+add_custom_target(deb-changelog ALL DEPENDS "${CMAKE_BINARY_DIR}/packaging/changelog.gz")
+install(FILES "${CMAKE_BINARY_DIR}/packaging/changelog.gz"
+        DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT bin)
+install(FILES "${CMAKE_BINARY_DIR}/packaging/changelog.gz"
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/llvm-dsdl-dev COMPONENT dev)
+
+include(${LLVMDSDL_REPO}/cmake/Packaging.cmake)

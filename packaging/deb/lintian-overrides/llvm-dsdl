@@ -1,0 +1,12 @@
+# The tools ship unstripped, deliberately.
+#
+# Release builds are RelWithDebInfo and the debug information is left in place
+# rather than stripped or split into a -dbgsym package. dsdlc is a compiler for
+# an avionics-adjacent wire format: when it misbehaves in the field, the symbols
+# needed to read a backtrace or a core file have to already be on the machine
+# that produced it. A -dbgsym package puts them one apt-install away, which is
+# one apt-install too many when the failure is not reproducible.
+#
+# The cost is package size and this override. Revisit if the packages grow
+# enough for that to matter.
+llvm-dsdl: unstripped-binary-or-object [usr/bin/*]

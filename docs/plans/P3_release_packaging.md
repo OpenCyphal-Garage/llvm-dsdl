@@ -7,69 +7,36 @@ managers and CPU architectures.
 designed for here but built later, and the pilot's job is to prove the *factoring* is right so
 those are additive.
 
-**Status:** plan only. Nothing in this document is implemented yet.
+**Status:** [cmake/Packaging.cmake](../../cmake/Packaging.cmake) is in place — CPack emits the
+distribution tarball and, on Linux, the `llvm-dsdl` / `llvm-dsdl-dev` `.deb` pair. Both packages
+build `lintian`-clean, install into a clean container, put all three tools on `PATH`, and carry
+man pages; dpkg enforces the `-dev` version pin.
+[packaging/verify/check_deb_config.py](../../packaging/verify/check_deb_config.py) reproduces all
+of that, and both it and its verdict logic run under ctest (see §6). No workflow, apt repo, or
+tap exists.
 
 ---
 
-## 0. The load-bearing constraint (read this first)
+## 0. Build-side prerequisites
 
-**Five of the six backends cannot run from an installed binary today.** The C, C++, Rust, Go,
-and Python emitters read their runtime support sources from a path baked into the executable at
-compile time:
+Two gaps on the build side have to close before any packaging job can produce something
+installable. Neither is large; both are on the critical path.
 
-| Backend | Site | Reads |
-|---|---|---|
-| C | [CEmitter.cpp:604](../../lib/CodeGen/CEmitter.cpp) | `${LLVMDSDL_SOURCE_DIR}/runtime/dsdl_runtime.h` |
-| C++ | [CppEmitter.cpp:1897](../../lib/CodeGen/CppEmitter.cpp) | same, plus `:1918` |
-| Rust | [RustEmitter.cpp:1604](../../lib/CodeGen/RustEmitter.cpp) | `${LLVMDSDL_SOURCE_DIR}/runtime/rust/…` |
-| Go | [GoEmitter.cpp:1458](../../lib/CodeGen/GoEmitter.cpp) | `${LLVMDSDL_SOURCE_DIR}/runtime/go/dsdl_runtime.go` |
-| Python | [PythonEmitter.cpp:1542](../../lib/CodeGen/PythonEmitter.cpp) | `${LLVMDSDL_SOURCE_DIR}/runtime/python/…` |
-
-`LLVMDSDL_SOURCE_DIR` is a compile definition set at
-[lib/CodeGen/CMakeLists.txt:72](../../lib/CodeGen/CMakeLists.txt) to the **build machine's**
-absolute source path. In a package built by GitHub Actions that is
-`/home/runner/work/llvm-dsdl/llvm-dsdl` — a directory that does not exist on the user's machine.
-`loadRuntimeHeader()` then falls back to the *cwd-relative* `runtime/dsdl_runtime.h`, which only
-resolves if the user happens to be standing in a source checkout. Otherwise: `failed to read
-runtime header`.
-
-Nothing else in this plan matters until this is fixed. It is **Phase 0, item 1**, and §6 exists
-largely so a regression here fails a release rather than reaching a user.
-
-Two candidate fixes:
-
-- **(A) Embed the runtime sources in the binary** as a generated `.inc`, exactly like the
-  existing 545 KB `lib/CodeGen/UavcanEmbeddedMlir.inc` catalog. Precedent in-tree, no path
-  resolution at runtime, no packaging split, works identically from a build tree, a `.deb`, a
-  bottle, and a snap. The runtime sources are small (~3.6k LOC total across five languages).
-- **(B) Install to `${CMAKE_INSTALL_DATADIR}/llvm-dsdl/runtime/` and resolve relative to
-  `argv[0]`** (via `llvm::sys::fs::getMainExecutable`), with `LLVMDSDL_SOURCE_DIR` kept as a
-  dev-tree fallback. More conventional, but adds a relocation concern to every package format
-  and a new failure mode per format.
-
-**Recommendation: (A).** Ship the `.inc` generator with a checksum assertion, and — learning
-from G8's stale-catalog finding in the
-[review](../PROJECT_REPORT_AND_RELEASE_ROADMAP.md) — have CMake *invoke* the generator rather
-than trusting a committed artifact, or add a build-time test that regenerates and diffs.
-
-### Other Phase-0 gaps found
-
-2. **Runtime sources are not installed at all.** The `install()` rules in
-   [CMakeLists.txt:522-585](../../CMakeLists.txt) cover the three tools, eight static libraries,
-   `include/llvmdsdl`, the generated dialect headers, `Version.h`, and the SBOM. `runtime/` is
-   absent. Fix (A) above makes this moot for codegen, but consumers compiling generated C still
-   want `dsdl_runtime.h` on disk — install it under `${CMAKE_INSTALL_DATADIR}/llvm-dsdl/runtime/`
-   in the `bin` component regardless.
-3. **No CPack configuration.** There is no `include(CPack)`, no `CPACK_*`. The install
-   *components* (`bin`, `dev`) already exist and map 1:1 onto `llvm-dsdl` / `llvm-dsdl-dev`
-   Debian packages, which is the good news.
-4. **No tag/VERSION consistency check.** `VERSION` says `0.1.0`; nothing stops a `v0.2.0` tag
-   from shipping binaries that self-report `0.1.0`.
-5. **The self-contained bundle is flat.** `bundle-tools-self-contained`
+1. **No tag/VERSION consistency check.** `VERSION` says `0.1.0`; nothing stops a `v0.2.0` tag
+   from shipping binaries that self-report `0.1.0`. [cmake/Packaging.cmake](../../cmake/Packaging.cmake)
+   already takes the package version from the `VERSION` file, so the check has one value to
+   assert the tag against.
+2. **The self-contained bundle is flat.** `bundle-tools-self-contained`
    ([cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)) already
    does the hard part — `patchelf` / `install_name_tool` rewrites, `@loader_path`, ad-hoc
    codesign — but emits binaries and libraries into one flat directory, and only covers `dsdlc`
    and `dsdl-opt` (not `dsdld`). Packaging needs a `bin/` + `lib/` split and all three tools.
+   This is what the vendored private-libdir layout in §3 waits on; CPack currently packages the
+   standard `/usr/bin` + `/usr/lib` layout.
+
+Each backend writes its own runtime support scaffold into the generated output tree, so a
+package ships no runtime sources of its own and the generated code is self-sufficient wherever
+it lands.
 
 ---
 
@@ -77,7 +44,7 @@ than trusting a committed artifact, or add a build-time test that regenerates an
 
 | Component | Contents | Package |
 |---|---|---|
-| `bin` | `dsdlc`, `dsdl-opt`, `dsdld`, SBOM, runtime sources, licences | `llvm-dsdl` |
+| `bin` | `dsdlc`, `dsdl-opt`, `dsdld`, SBOM, licences | `llvm-dsdl` |
 | `dev` | 8 static libs, `include/llvmdsdl`, generated dialect headers, `Version.h` | `llvm-dsdl-dev` |
 
 The `dev` component is only interesting to someone linking the libraries. For the pilot, build
@@ -170,12 +137,19 @@ tag v* ──▶ stage ──▶ build (os × arch) ──▶ package (format ×
 
 - **`stage`** — derive the version, assert `git tag == VERSION`, emit a matrix JSON so the
   build/package/verify matrices are defined in exactly one place, and decide dry-run vs publish.
-- **`build`** — package-format-agnostic. Configure with a new `release` preset, build
-  `RelWithDebInfo`, run the release-blocking gates, `cmake --install` each component into a
-  `DESTDIR` staging tree, run the bundle target, and upload `dist-<os>-<arch>.tar.gz`. **One
-  artifact per platform, consumed by every packaging job for that platform.**
-- **`package`** — downloads a dist artifact, emits one package format. Pure metadata + repack;
+- **`build`** — configure with a new `release` preset, build `RelWithDebInfo`, run the
+  release-blocking gates, run the bundle target, then `cpack` to emit
+  `llvm-dsdl-<version>-<triple>.tar.gz` (plus its SHA-256) and, on Linux, the two `.deb`s.
+  **One tarball per platform, consumed by every packaging job for that platform.**
+- **`package`** — downloads the dist tarball, emits one package format. Pure metadata + repack;
   no compiler runs. Fast, and trivially parallel across formats.
+
+  `cpack` re-runs the install rules, so it needs the build tree — never a compiler, but the tree.
+  Shipping hundreds of megabytes of objects between jobs to preserve a stage boundary is a bad
+  trade, so the `.deb` is emitted in `build` alongside the tarball. The goal that matters is
+  intact: RPM becomes another generator in
+  [cmake/Packaging.cmake](../../cmake/Packaging.cmake), and snap / WinGet / brew become `package`
+  jobs consuming the tarball. Neither adds a build job.
 - **`verify`** — §6. The centerpiece.
 - **`publish`** — gated on all verifies passing; creates the GitHub release, pushes to the apt
   repo and the brew tap, and attaches provenance attestations.
@@ -185,12 +159,13 @@ tag v* ──▶ stage ──▶ build (os × arch) ──▶ package (format ×
 ```
 .github/workflows/release.yml            # the pipeline above
 .github/workflows/packaging-smoke.yml    # PR-time: build+verify the amd64 .deb only
-.github/actions/build-dist/action.yml    # composite: configure → build → gates → install → bundle → tar
+.github/actions/build-dist/action.yml    # composite: configure → build → gates → bundle → cpack
 packaging/
   dist/triples.json                      # single source of truth for the matrix
-  deb/                                   # control template, copyright, lintian overrides
+  deb/                                   # copyright, lintian overrides
   brew/llvm-dsdl.rb.in                   # formula template (version/sha256 substituted)
-  verify/smoke.sh                        # ONE script, run against every installed package
+  verify/smoke.py                        # ONE script, run against every installed package
+  verify/check_deb_config.py             # .deb control/lintian check, no LLVM build needed
 cmake/Packaging.cmake                    # CPack config, included from CMakeLists.txt
 ```
 
@@ -239,7 +214,6 @@ roughly 5–10× slower, which is tolerable for a tag-triggered pipeline.
 /usr/bin/dsdl-opt, /usr/bin/dsdld       → likewise
 /usr/lib/llvm-dsdl/bin/                 RPATH=$ORIGIN/../lib
 /usr/lib/llvm-dsdl/lib/libLLVM.so.22.1  vendored
-/usr/share/llvm-dsdl/runtime/           dsdl_runtime.h + per-language runtime sources
 /usr/share/llvm-dsdl/llvm-dsdl-sbom.cdx.json
 /usr/share/doc/llvm-dsdl/copyright      MIT + Apache-2.0-WITH-LLVM-exception
 ```
@@ -248,16 +222,54 @@ roughly 5–10× slower, which is tolerable for a tag-triggered pipeline.
 
 ### Generation
 
-Use **CPack's DEB generator** driven by the existing install components — packaging metadata
-lives beside the build, and `CPACK_DEB_COMPONENT_INSTALL` maps `bin`/`dev` onto the two
-packages directly.
+CPack's DEB generator, driven by the existing install components, in
+[cmake/Packaging.cmake](../../cmake/Packaging.cmake). `CPACK_DEB_COMPONENT_INSTALL` maps
+`bin`/`dev` onto the two packages, and `llvm-dsdl-dev` pins `llvm-dsdl (= <version>)` so headers
+and static libraries can never be paired with a different build.
 
-Turn `CPACK_DEBIAN_PACKAGE_SHLIBDEPS` **off**: it would try to resolve the vendored `libLLVM`
-against the dpkg database and either fail or generate a wrong dependency. Write `Depends`
-explicitly, and derive the correct list mechanically (`objdump -p` over the staged binaries,
-minus anything in the private libdir, mapped through `dpkg -S`) rather than guessing. A wrong
-`Depends` is precisely what the clean-container verify job catches, so this needs to be correct,
-not clever.
+`CPACK_DEBIAN_PACKAGE_SHLIBDEPS` is **off**: it resolves each linked library against the local
+dpkg database, and the vendored `libLLVM` would either make it fail or map to a wrong system
+package. `Depends` is therefore explicit, via the `LLVMDSDL_DEB_DEPENDS` cache variable. Its
+default (`libc6, libstdc++6`) is a baseline, **not** the answer — the real list is derived on the
+target distribution with `objdump -p` over the staged binaries, minus anything in the private
+libdir, through `dpkg -S`. A wrong `Depends` is exactly what the clean-container verify job
+catches, so it needs to be correct, not clever.
+
+### Policy metadata
+
+Debian keys both files off the *binary package* name, so each needs its own copy —
+`CMAKE_INSTALL_DOCDIR` only covers `llvm-dsdl`, and the `llvm-dsdl-dev` destination is spelled
+out explicitly in [CMakeLists.txt](../../CMakeLists.txt).
+
+- **`packaging/deb/copyright`** — DEP-5. Carries the project's MIT terms and a staged
+  Apache-2.0-with-LLVM-exception paragraph for the `libLLVM` that vendoring will put in the
+  package; it needs a `Files:` stanza once that lands.
+- **`packaging/deb/changelog`** — CPack has no changelog support, so it is gzipped (`-n`, for a
+  byte-identical result across builds) and installed by hand. Its top entry restates the version,
+  and a package whose changelog disagrees with its control file is malformed, so configure fails
+  on the mismatch rather than letting a release ship with it.
+
+- **`packaging/deb/lintian-overrides/llvm-dsdl`** — the tools ship unstripped, and neither
+  stripped nor split into `-dbgsym`. For a compiler of an avionics-adjacent wire format, the
+  symbols needed to read a backtrace should already be on the machine that produced it. The
+  override records that as a decision where lintian reads it.
+
+**Both packages are lintian-clean.**
+
+### Man pages
+
+Generated from each tool's own `--help` by
+[tools/man/generate_manpage.py](../../tools/man/generate_manpage.py), so the two cannot drift —
+a newly documented flag reaches the man page at the next build, with no second copy to forget.
+Two help dialects are parsed: the `NAME`/`SYNOPSIS` sections that `dsdlc` and `dsdld` print, and
+LLVM's `cl::opt` format that `dsdl-opt` inherits. Anything not structurally mappable is emitted
+verbatim in a preformatted block rather than guessed at.
+
+The page date comes from the changelog's release trailer, not the clock, so rebuilding the same
+source yields byte-identical pages.
+
+Note this runs each tool to document it, so it needs host-executable binaries. Native builds are
+fine; a cross-build (§10) would have to generate the pages host-side or ship them prebuilt.
 
 ### Publishing
 
@@ -337,14 +349,15 @@ Packaging has exactly the same failure mode: a green pipeline that only proves a
 produced*. So the pilot's centerpiece is one script run against every installed package on a
 pristine machine:
 
-**`packaging/verify/smoke.sh`** — run inside a clean `ubuntu:22.04` container (`apt install
+**`packaging/verify/smoke.py`** — run inside a clean `ubuntu:22.04` container (`apt install
 ./llvm-dsdl_*.deb`) and on a clean macOS runner (`brew install`):
 
 1. `dsdlc --version` matches the released version exactly.
 2. `dsdld --version` starts and responds to an LSP `initialize` over stdio.
-3. **Generate C from a real DSDL type and compile the result with a stock `cc`.** This is the
-   test that catches §0 — it fails loudly on any packaged build whose runtime-source resolution
-   is broken.
+3. **Generate C from a real DSDL type and compile the result with a stock `cc`.** Exercises the
+   whole emit path from an installed binary — codegen, the runtime scaffold it writes beside the
+   generated code, and whether the result is actually compilable on a machine that has never
+   seen the source tree.
 4. Same for at least one non-C backend (Go is cheapest — `go build` the generated package).
 5. **Re-run the determinism corpus hash** with
    [tools/determinism/cross_stdlib_corpus_hash.py](../../tools/determinism/cross_stdlib_corpus_hash.py)
@@ -356,6 +369,25 @@ pristine machine:
 
 Steps 3 and 5 are the ones with teeth. Step 5 in particular is a genuinely strong claim that
 most projects cannot make, and this repo already has the tooling for it.
+
+### What runs under ctest today
+
+| Test | Needs | Labels |
+|---|---|---|
+| `llvmdsdl-packaging-deb-config-selftest` | nothing beyond python3 | `integration;packaging` |
+| `llvmdsdl-packaging-deb-config` | Docker | `integration;packaging;slow` |
+
+The split is deliberate. The checker's verdict logic — control-field assertions, the shared-synopsis
+trap, the version-pin check — is exercised against recorded container output by the self-test, so it
+stays covered on hosts that cannot build a `.deb` at all. That is exactly where a silent regression
+in those assertions would otherwise survive.
+
+The containerised check registers only when a `docker` binary exists, and exits `77` when the daemon
+is unreachable, which `SKIP_RETURN_CODE` turns into a ctest **skip** rather than a pass. Both paths
+matter: the CI Linux lane runs inside a container and has no Docker of its own, so without this it
+would either fail to configure or report a green test that never ran. Pass `--require-docker` to turn
+an unusable daemon into a hard failure — the release lane should, since a skip there would let an
+unverified package through.
 
 **`packaging-smoke.yml`** runs steps 1–4 for linux-amd64 on every PR that touches `packaging/`,
 `cmake/Packaging.cmake`, or the release workflow — so control-file rot is caught at review time
@@ -381,38 +413,38 @@ rather than at 2am on a tag.
 
 ## 8. Sequencing
 
-**Phase 0 — prerequisites (blocking; no packaging work is meaningful before these).**
-1. Fix runtime-source resolution — embed via generated `.inc` (§0). Add a test that runs `dsdlc`
-   from a directory containing no source tree and compiles the generated C.
-2. Install runtime sources under `${CMAKE_INSTALL_DATADIR}/llvm-dsdl/runtime/`.
-3. Extend `bundle-tools-self-contained` to cover `dsdld` and emit `bin/` + `lib/`.
-4. Add a `release` configure preset (RelWithDebInfo, install prefix, bundle on).
-5. Add the tag ↔ `VERSION` consistency check.
-6. `cmake/Packaging.cmake` with CPack component config.
+**Phase 0 — build-side prerequisites (blocking; no packaging work is meaningful before these).**
+1. Extend `bundle-tools-self-contained` to cover `dsdld` and emit `bin/` + `lib/`, then move
+   CPack onto the vendored private-libdir layout of §3.
+2. Add a `release` configure preset (RelWithDebInfo, install prefix, bundle on).
+3. Add the tag ↔ `VERSION` consistency check.
 
 **Phase 1 — the 2×2 pilot.**
-7. Spike: confirm runner availability (Intel macOS, `ubuntu-22.04-arm`) and which Ubuntu release
+4. Spike: confirm runner availability (Intel macOS, `ubuntu-22.04-arm`) and which Ubuntu release
    `apt.llvm.org` still ships LLVM 22 for. **This determines the matrix; do it first.**
-8. `build-dist` composite action + the four-cell build matrix → dist tarballs.
-9. `package` jobs: 2 `.deb` (amd64/arm64), 2 bottles.
-10. `packaging/verify/smoke.sh` + the four verify jobs. **Do not skip to publishing.**
-11. Draft GitHub release with all artifacts + checksums + attestations. Dry-run mode by default.
+5. Derive the real `Depends` on a Linux host with a real build (`objdump -p` over the staged
+   binaries, through `dpkg -S`) and set `LLVMDSDL_DEB_DEPENDS` from it — the configured default
+   is a baseline, not an answer.
+6. `build-dist` composite action + the four-cell build matrix → dist tarballs and `.deb`s.
+7. `package` jobs: 2 bottles.
+8. `packaging/verify/smoke.py` + the four verify jobs. **Do not skip to publishing.**
+9. Draft GitHub release with all artifacts + checksums + attestations. Dry-run mode by default.
 
 **Phase 1b — cached LLVM toolchain (parallel track, not blocking the pilot).**
-12. `llvm-toolchain.yml`: build LLVM/MLIR 22 at a pinned revision per target, publish as a GHCR
+10. `llvm-toolchain.yml`: build LLVM/MLIR 22 at a pinned revision per target, publish as a GHCR
     image (Linux) / release artifact (macOS), keyed by `llvm-rev + triple + stdlib`. Runs on pin
     change, not per release.
-13. A restore step for the `build` job, behind a flag so the pilot can switch over one cell at a
+11. A restore step for the `build` job, behind a flag so the pilot can switch over one cell at a
     time.
 
 **Phase 2 — real distribution.**
-14. Swap `build` onto the cached toolchain; lower the glibc floor deliberately and record it.
-15. apt repo on `gh-pages` with GPG-signed `InRelease`, additive publishing.
-16. Homebrew tap repo + automated formula/bottle commit.
-17. `packaging-smoke.yml` on PRs.
-18. `llvm@22` availability canary — becomes moot once 1b lands and the formula builds against
+12. Swap `build` onto the cached toolchain; lower the glibc floor deliberately and record it.
+13. apt repo on `gh-pages` with GPG-signed `InRelease`, additive publishing.
+14. Homebrew tap repo + automated formula/bottle commit.
+15. `packaging-smoke.yml` on PRs.
+16. `llvm@22` availability canary — becomes moot once 1b lands and the formula builds against
     our own toolchain, but needed until then.
-19. Install instructions in [README.md](../../README.md).
+17. Install instructions in [README.md](../../README.md).
 
 **Phase 3 — breadth.** snap; Windows (requires 1b, then zip + Scoop, then WinGet); RPM/COPR;
 `llvm-dsdl-dev` promotion if anyone actually links the libraries.

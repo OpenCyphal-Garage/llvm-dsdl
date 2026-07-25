@@ -140,6 +140,52 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;runtime"
   )
 
+  # Verdict logic of the Debian packaging checker, run against recorded container
+  # output. Needs no Docker and no .deb, so it guards the assertions on exactly
+  # the hosts that cannot build a package and would otherwise never exercise them.
+  add_test(
+    NAME llvmdsdl-packaging-deb-config-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunPackagingDebConfigSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-packaging-deb-config-selftest
+    PROPERTIES
+      LABELS "integration;packaging"
+  )
+
+  # The real thing: build both .deb packages in a container and check the control
+  # files, policy metadata, lintian verdict, and the -dev version pin.
+  #
+  # Invoked directly rather than through a cmake -P wrapper like its neighbours,
+  # because ctest must see the script's own exit code: 77 means Docker is
+  # unusable here, which SKIP_RETURN_CODE turns into a skip. A `cmake -P` wrapper
+  # exits 0 or 1 and would collapse that distinction, reporting either a false
+  # pass or a false failure on every host without a running daemon.
+  find_program(DOCKER_EXECUTABLE docker QUIET)
+  if(DOCKER_EXECUTABLE)
+    add_test(
+      NAME llvmdsdl-packaging-deb-config
+      COMMAND
+        ${PYTHON_EXECUTABLE}
+          ${LLVMDSDL_SOURCE_DIR}/packaging/verify/check_deb_config.py
+    )
+
+    set_tests_properties(
+      llvmdsdl-packaging-deb-config
+      PROPERTIES
+        LABELS "integration;packaging;slow"
+        SKIP_RETURN_CODE 77
+        TIMEOUT 900
+    )
+  else()
+    message(STATUS "Skipping containerised .deb packaging check: docker unavailable")
+  endif()
+
   add_test(
     NAME llvmdsdl-execution-engine-boundary-guard
     COMMAND
