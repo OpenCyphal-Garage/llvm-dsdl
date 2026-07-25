@@ -15,11 +15,12 @@
 #define LLVMDSDL_SEMANTICS_BITLENGTHSET_H
 
 #include <cstdint>
-#include <flat_set>
 #include <memory>
 #include <set>
 #include <string>
 #include <cstddef>
+
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace llvmdsdl
 {
@@ -254,15 +255,15 @@ public:
     ///       "Exactness model".
     /// @note Intended for alignment reasoning (e.g. "can this offset be misaligned?"),
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
-    [[nodiscard]] std::flat_set<std::int64_t> modulo(std::int64_t divisor) const;
+    [[nodiscard]] FlatSet<std::int64_t> modulo(std::int64_t divisor) const;
 
     /// @brief An expansion together with a completeness signal.
     struct Expansion final
     {
         /// @brief A subset of S; equals S exactly iff `exact` is true. Never empty, never larger
-        ///        than the requested (clamped-to-`>= 1`) limit. A `std::flat_set` (sorted, contiguous)
+        ///        than the requested (clamped-to-`>= 1`) limit. A `FlatSet` (sorted, contiguous)
         ///        — these sets are built once and iterated, so the flat layout beats a node-based set.
-        std::flat_set<std::int64_t> values;
+        FlatSet<std::int64_t> values;
 
         /// @brief True iff `values == S` — i.e. no node in the expression was truncated.
         bool exact{true};
@@ -276,7 +277,7 @@ public:
     ///         particular `max()` of the expansion may be less than `max()` of the set). No
     ///         completeness signal is reported; use `expandChecked()` when that matters.
     /// @warning Expansion cost is NOT bounded by `limit` alone; see class-level complexity caveats.
-    [[nodiscard]] std::flat_set<std::int64_t> expand(std::size_t limit = 16384) const;
+    [[nodiscard]] FlatSet<std::int64_t> expand(std::size_t limit = 16384) const;
 
     /// @brief Like `expand()`, but also reports whether the result is complete (`== S`).
     /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.

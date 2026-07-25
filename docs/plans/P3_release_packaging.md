@@ -7,36 +7,41 @@ managers and CPU architectures.
 designed for here but built later, and the pilot's job is to prove the *factoring* is right so
 those are additive.
 
-**Status:** [cmake/Packaging.cmake](../../cmake/Packaging.cmake) is in place — CPack emits the
-distribution tarball and, on Linux, the `llvm-dsdl` / `llvm-dsdl-dev` `.deb` pair. Both packages
-build `lintian`-clean, install into a clean container, put all three tools on `PATH`, and carry
-man pages; dpkg enforces the `-dev` version pin.
-[packaging/verify/check_deb_config.py](../../packaging/verify/check_deb_config.py) reproduces all
-of that, and both it and its verdict logic run under ctest (see §6). No workflow, apt repo, or
-tap exists.
+**v1 is narrower still:** a `.deb` attached to a GitHub Release — no apt repository (see §3),
+arm64 first (native on the development machine; amd64 follows under emulation), brew after.
+
+**Build target: Ubuntu 22.04 (jammy).** It is the oldest release apt.llvm.org publishes LLVM 22
+for, which puts the glibc floor at 2.35 and lets one package install on 22.04, 24.04 and 26.04.
+Reaching back that far cost one code change: `std::flat_set` reached libstdc++ only in GCC 15
+(Ubuntu 26.04), so [include/llvmdsdl/Support/FlatSet.h](../../include/llvmdsdl/Support/FlatSet.h)
+provides it instead, on every platform. Building against libc++ — which does have `flat_set` —
+is not an option: the distro `libLLVM` links libstdc++, and two C++ runtimes either side of
+MLIR's `std::string` boundary is the ABI hazard described in §10.
+
+**Status:** the arm64 `.deb` works end to end.
+[.github/workflows/release.yml](../../.github/workflows/release.yml) builds it on a tag, verifies
+it on a pristine Ubuntu system, and attaches it to a draft GitHub Release with checksums and a
+provenance attestation. The package installs against stock Ubuntu 22.04 with no repository
+configured, all three tools run against the vendored LLVM, and generated C compiles with a stock
+compiler; both packages are `lintian`-clean. Not yet done: amd64, brew, and the apt repository.
 
 ---
 
-## 0. Build-side prerequisites
+## 0. Build-side notes
 
-Two gaps on the build side have to close before any packaging job can produce something
-installable. Neither is large; both are on the critical path.
+Two facts about the build that shape everything downstream.
 
-1. **No tag/VERSION consistency check.** `VERSION` says `0.1.0`; nothing stops a `v0.2.0` tag
-   from shipping binaries that self-report `0.1.0`. [cmake/Packaging.cmake](../../cmake/Packaging.cmake)
-   already takes the package version from the `VERSION` file, so the check has one value to
-   assert the tag against.
-2. **The self-contained bundle is flat.** `bundle-tools-self-contained`
-   ([cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)) already
-   does the hard part — `patchelf` / `install_name_tool` rewrites, `@loader_path`, ad-hoc
-   codesign — but emits binaries and libraries into one flat directory, and only covers `dsdlc`
-   and `dsdl-opt` (not `dsdld`). Packaging needs a `bin/` + `lib/` split and all three tools.
-   This is what the vendored private-libdir layout in §3 waits on; CPack currently packages the
-   standard `/usr/bin` + `/usr/lib` layout.
+**The generated output is self-sufficient.** Each backend writes its own runtime support scaffold
+into the output tree, so a package ships no runtime sources of its own and generated code
+compiles wherever it lands — including on a machine that has never seen this source tree.
 
-Each backend writes its own runtime support scaffold into the generated output tree, so a
-package ships no runtime sources of its own and the generated code is self-sufficient wherever
-it lands.
+**Vendoring did not need the bundle target.** `bundle-tools-self-contained`
+([cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)) does the
+`patchelf` / `install_name_tool` work for a relocatable directory, and the original plan was to
+extend it to drive the package layout. That turned out to be unnecessary: CMake's own
+`INSTALL_RPATH` places `$ORIGIN/../<libdir>/llvm-dsdl` on the installed binaries directly, with no
+post-processing. The bundle target is still flat and still omits `dsdld`, but that is now a
+pre-existing wart rather than anything packaging waits on.
 
 ---
 
@@ -65,12 +70,16 @@ The tools link MLIR component libraries (static on both Debian and Homebrew LLVM
 
 **Recommendation:**
 
-- **apt: vendor.** Ship `/usr/lib/llvm-dsdl/lib/libLLVM.so.22.1` with `RPATH=$ORIGIN/../lib`,
-  reusing the bundle target. This is *our* apt repo, not Debian proper, so Debian's
-  no-vendoring policy does not bind us. LLVM is Apache-2.0-WITH-LLVM-exception — redistribution
-  is fine with attribution; extend [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) and
-  ship it as `/usr/share/doc/llvm-dsdl/copyright`. The package then depends only on `libc6`,
-  `libstdc++6`, and a short list of small system libraries.
+- **apt: vendor** — done. `libLLVM.so.22.1` ships at
+  `/usr/lib/<multiarch>/llvm-dsdl/`, with `INSTALL_RPATH=$ORIGIN/../<libdir>/llvm-dsdl` on the
+  three tools. Not a Debian-archive package, so the no-vendoring policy does not bind us; LLVM is
+  Apache-2.0-WITH-LLVM-exception, and [packaging/deb/copyright](../../packaging/deb/copyright)
+  carries the stanza covering the shipped library.
+
+  The dependency list this leaves is larger than "libc6 and libstdc++6": the vendored library
+  drags in `libedit2`, `libffi8`, `libicu70`, `libxml2`, `libz3-4`, `libzstd1` and more, all from
+  the stock Ubuntu archive. Guessing that list is how a package installs cleanly and then dies on
+  a missing `libz3.so.4`, so it is derived from the built binaries at package time — see §3.
 - **brew: `depends_on "llvm@22"`.** Idiomatic, and Homebrew users already have large LLVM
   installs. **But this couples us to Homebrew's formula lifecycle:** when brew's `llvm` rolls to
   23 and `llvm@22` ages out, our formula breaks. Add a scheduled CI job that asserts `llvm@22`
@@ -271,7 +280,26 @@ source yields byte-identical pages.
 Note this runs each tool to document it, so it needs host-executable binaries. Native builds are
 fine; a cross-build (§10) would have to generate the pages host-side or ship them prebuilt.
 
-### Publishing
+### Publishing — v1 is a downloadable file, not a repository
+
+The first release ships the `.deb` as a **GitHub Release asset**. Users run:
+
+```
+sudo apt install ./llvm-dsdl_0.1.0_arm64.deb
+```
+
+This defers the whole apt-repository apparatus (below) at the cost of no automatic updates. It
+does **not** defer vendoring — the opposite. A package installed from a local file resolves its
+dependencies against stock Ubuntu only, and no Ubuntu release carries LLVM 22, so without the
+vendored `libLLVM` the package would install cleanly and then fail on first run with a missing
+shared object. There is no repository of ours for apt to fall back on. Vendoring is what makes a
+bare downloadable file work at all.
+
+Deferring the repo drops: `gh-pages`, `apt-ftparchive`, GPG-signed `InRelease`, additive
+`Packages` indices, and the `signed-by=` install instructions. Checksums and build-provenance
+attestations still ship with the release assets.
+
+### Publishing — the apt repository (future work)
 
 An apt repo is a static file tree, so host it on GitHub Pages from a `gh-pages` branch:
 

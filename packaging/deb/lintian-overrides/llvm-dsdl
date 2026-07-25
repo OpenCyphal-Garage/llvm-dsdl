@@ -9,4 +9,9 @@
 #
 # The cost is package size and this override. Revisit if the packages grow
 # enough for that to matter.
-llvm-dsdl: unstripped-binary-or-object [usr/bin/*]
+#
+# Deliberately no file hint: lintian releases disagree on how the hint is
+# rendered (bracketed on 24.04, bare on 22.04), and a hint that does not match
+# the running version is silently inert -- it reports mismatched-override and
+# lets the original tag through. Matching on the tag alone works on both.
+llvm-dsdl: unstripped-binary-or-object

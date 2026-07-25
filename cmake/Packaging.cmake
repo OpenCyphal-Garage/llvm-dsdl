@@ -134,6 +134,12 @@ endif()
 
 set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
+
+# xz over CPack's default gzip. The package is dominated by a vendored libLLVM
+# that compresses well, and this is a file people download directly rather than
+# fetch from a mirror: 74 MB -> 46 MB measured on the arm64 package. Costs a
+# little packaging time and nothing at install time.
+set(CPACK_DEBIAN_COMPRESSION_TYPE "xz")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "${CPACK_PACKAGE_CONTACT}")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${CPACK_PACKAGE_HOMEPAGE_URL}")
 set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
@@ -148,9 +154,38 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 # developer's machine, and a guess here would be worse than an honest baseline.
 # The clean-container install in the release verify lane is what proves it right.
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
-set(LLVMDSDL_DEB_DEPENDS "libc6, libstdc++6" CACHE STRING
-    "Debian Depends: for the llvm-dsdl package. Override with the list derived on the target distribution.")
+set(LLVMDSDL_DEB_DEPENDS "" CACHE STRING
+    "Debian Depends: for the llvm-dsdl package. Empty means derive it from the built \
+binaries at package time, which is what you want; set it only to pin a list deliberately.")
 set(CPACK_DEBIAN_BIN_PACKAGE_DEPENDS "${LLVMDSDL_DEB_DEPENDS}")
+
+# Deriving the list needs the binaries, which do not exist at configure time, so
+# it happens in a CPack project-config script evaluated after the build. Written
+# with file(GENERATE) so $<TARGET_FILE:...> resolves to real paths.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LLVMDSDL_PYTHON3_EXE)
+  set(LLVMDSDL_DEPENDS_ANALYSIS_TARGETS
+      "$<TARGET_FILE:dsdlc>;$<TARGET_FILE:dsdl-opt>;$<TARGET_FILE:dsdld>")
+  set(LLVMDSDL_DEPENDS_VENDORED_ARGS "")
+  if(LLVMDSDL_VENDOR_LLVM AND LLVMDSDL_LLVM_SHARED_LIB_REAL)
+    # The vendored library's own dependencies are equally load-bearing: omitting
+    # them is precisely what makes a package install cleanly and then fail.
+    string(APPEND LLVMDSDL_DEPENDS_ANALYSIS_TARGETS ";${LLVMDSDL_LLVM_SHARED_LIB_REAL}")
+    # ...and the library itself must not become a dependency on itself.
+    set(LLVMDSDL_DEPENDS_VENDORED_ARGS "--vendored;libLLVM.so")
+  endif()
+
+  # CMAKE_BINARY_DIR rather than LLVMDSDL_BINARY_DIR: this file is also included
+  # by the packaging test harness, which does not define the project's own vars.
+  set(LLVMDSDL_CPACK_PROJECT_CONFIG "${CMAKE_BINARY_DIR}/PackagingProjectConfig.cmake")
+  configure_file(
+    "${LLVMDSDL_SOURCE_DIR}/cmake/PackagingProjectConfig.cmake.in"
+    "${LLVMDSDL_CPACK_PROJECT_CONFIG}.in-configured"
+    @ONLY)
+  file(GENERATE
+    OUTPUT "${LLVMDSDL_CPACK_PROJECT_CONFIG}"
+    INPUT "${LLVMDSDL_CPACK_PROJECT_CONFIG}.in-configured")
+  set(CPACK_PROJECT_CONFIG_FILE "${LLVMDSDL_CPACK_PROJECT_CONFIG}")
+endif()
 
 # Each description is ONE string whose first line is the synopsis and whose
 # remaining lines are the extended description. CPack indents the continuation

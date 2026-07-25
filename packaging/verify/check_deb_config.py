@@ -56,7 +56,9 @@ CONTAINER_SCRIPT = r"""
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null 2>&1
-apt-get install -y -qq cmake make gcc dpkg-dev lintian >/dev/null 2>&1
+# python3 is needed by Packaging.cmake's Depends derivation, which runs at
+# package time; without it the harness would skip the very path it is checking.
+apt-get install -y -qq cmake make gcc dpkg-dev lintian python3 >/dev/null 2>&1
 
 cmake -S /work -B /tmp/b -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build /tmp/b >/dev/null

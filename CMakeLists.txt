@@ -519,6 +519,112 @@ set(LLVMDSDL_INSTALLABLE_LIBRARIES
 set(LLVMDSDL_INSTALL_COMPONENT_BIN "bin")
 set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
 
+# Vendoring libLLVM into the package.
+#
+# No Ubuntu release carries LLVM 22, so a downloadable .deb that merely *depended*
+# on it would install against stock Ubuntu and then die on first run with a missing
+# shared object -- there is no apt repository of ours to resolve it from. Shipping
+# the library inside the package is what makes `apt install ./llvm-dsdl_*.deb` work
+# on a machine that has never heard of apt.llvm.org.
+#
+# Off by default: a developer's `cmake --install` should not copy a ~100 MB library
+# into the install tree. The release build turns it on explicitly.
+#
+# LLVM is Apache-2.0-WITH-LLVM-exception, so redistribution is fine with
+# attribution -- packaging/deb/copyright carries the licence paragraph, and its
+# Files: stanza must be activated when this is enabled for a published package.
+option(LLVMDSDL_VENDOR_LLVM
+       "Ship libLLVM inside the install tree and point the tools at it via RPATH."
+       OFF)
+
+if(LLVMDSDL_VENDOR_LLVM)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR
+      "LLVMDSDL_VENDOR_LLVM is implemented for Linux only (it relies on ELF RPATH). "
+      "macOS distribution goes through Homebrew, which depends on llvm@22 instead.")
+  endif()
+
+  # A private directory rather than ${CMAKE_INSTALL_LIBDIR}: this is our copy of
+  # someone else's library, and it must never satisfy anything but our own tools.
+  set(LLVMDSDL_VENDOR_LLVM_SUBDIR "${CMAKE_INSTALL_LIBDIR}/llvm-dsdl")
+
+  find_library(LLVMDSDL_LLVM_SHARED_LIB
+    NAMES LLVM LLVM-${LLVM_VERSION_MAJOR}
+    HINTS ${LLVM_LIBRARY_DIRS}
+    NO_DEFAULT_PATH)
+  if(NOT LLVMDSDL_LLVM_SHARED_LIB)
+    message(FATAL_ERROR
+      "LLVMDSDL_VENDOR_LLVM is ON but no shared libLLVM was found in ${LLVM_LIBRARY_DIRS}. "
+      "This LLVM install may be static-only, which vendoring cannot help with.")
+  endif()
+
+  # find_library resolves to the versioned SONAME target through any symlinks;
+  # install that real file, since a dangling symlink in a package is worse than
+  # no package. The loader finds it by SONAME, so no symlink is needed beside it.
+  get_filename_component(LLVMDSDL_LLVM_SHARED_LIB_REAL "${LLVMDSDL_LLVM_SHARED_LIB}" REALPATH)
+  get_filename_component(LLVMDSDL_LLVM_SHARED_LIB_NAME "${LLVMDSDL_LLVM_SHARED_LIB_REAL}" NAME)
+  message(STATUS "Vendoring LLVM runtime: ${LLVMDSDL_LLVM_SHARED_LIB_REAL}")
+
+  # Debug information in the vendored library is of no use to us: a backtrace
+  # through LLVM internals is not something this project can act on, and anyone
+  # debugging LLVM itself has the distro's own -dbgsym packages. This project's
+  # own binaries stay unstripped, which is where post-mortems actually land --
+  # see packaging/deb/lintian-overrides/llvm-dsdl.
+  #
+  # Against a distro libLLVM this saves nothing, because Debian and Ubuntu already
+  # ship their libraries stripped (measured: byte-identical before and after, no
+  # .debug sections present). It is kept for the case that motivates it -- an LLVM
+  # we build ourselves, which arrives unstripped and carries a great deal of debug
+  # information. See the cached-toolchain pipeline in docs/plans/P3_release_packaging.md.
+  option(LLVMDSDL_STRIP_VENDORED_LLVM
+         "Strip the vendored libLLVM. Does not affect this project's own binaries."
+         ON)
+
+  set(LLVMDSDL_VENDORED_LLVM_SOURCE "${LLVMDSDL_LLVM_SHARED_LIB_REAL}")
+
+  if(LLVMDSDL_STRIP_VENDORED_LLVM)
+    find_program(LLVMDSDL_STRIP_EXE NAMES llvm-strip strip)
+    if(NOT LLVMDSDL_STRIP_EXE)
+      message(FATAL_ERROR
+        "LLVMDSDL_STRIP_VENDORED_LLVM is ON but no strip was found. Install binutils, "
+        "or reconfigure with -DLLVMDSDL_STRIP_VENDORED_LLVM=OFF to ship it unstripped.")
+    endif()
+
+    # Strip a copy rather than the system library: the source is root-owned and
+    # shared with the rest of the machine, and mutating it would corrupt the
+    # build host's own LLVM install.
+    set(LLVMDSDL_VENDORED_LLVM_STRIPPED
+        "${LLVMDSDL_BINARY_DIR}/vendor/${LLVMDSDL_LLVM_SHARED_LIB_NAME}")
+    add_custom_command(
+      OUTPUT "${LLVMDSDL_VENDORED_LLVM_STRIPPED}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_BINARY_DIR}/vendor"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${LLVMDSDL_LLVM_SHARED_LIB_REAL}" "${LLVMDSDL_VENDORED_LLVM_STRIPPED}"
+      # --strip-unneeded, not --strip-all: a shared object must keep its dynamic
+      # symbol table or nothing can resolve against it at load time.
+      COMMAND "${LLVMDSDL_STRIP_EXE}" --strip-unneeded "${LLVMDSDL_VENDORED_LLVM_STRIPPED}"
+      DEPENDS "${LLVMDSDL_LLVM_SHARED_LIB_REAL}"
+      COMMENT "Stripping vendored ${LLVMDSDL_LLVM_SHARED_LIB_NAME}"
+      VERBATIM)
+    add_custom_target(vendored-llvm ALL DEPENDS "${LLVMDSDL_VENDORED_LLVM_STRIPPED}")
+    set(LLVMDSDL_VENDORED_LLVM_SOURCE "${LLVMDSDL_VENDORED_LLVM_STRIPPED}")
+  endif()
+
+  install(
+    FILES "${LLVMDSDL_VENDORED_LLVM_SOURCE}"
+    DESTINATION "${LLVMDSDL_VENDOR_LLVM_SUBDIR}"
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+  # $ORIGIN is the directory of the running binary, so from /usr/bin this resolves
+  # to /usr/lib/llvm-dsdl. Relative rather than absolute so the tree stays
+  # relocatable, which the tarball and any future prefix change both depend on.
+  set_target_properties(${LLVMDSDL_INSTALLABLE_TOOLS} PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../${LLVMDSDL_VENDOR_LLVM_SUBDIR}"
+    # The build tree keeps pointing at the system LLVM; only the installed copies
+    # get the private path, so running from the build directory is unaffected.
+    BUILD_WITH_INSTALL_RPATH OFF)
+endif()
+
 install(
   TARGETS ${LLVMDSDL_INSTALLABLE_TOOLS}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

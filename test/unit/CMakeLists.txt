@@ -4,6 +4,7 @@ add_executable(llvmdsdl-unit-tests
   ParserTests.cpp
   ConformanceTests.cpp
   BitLengthSetTests.cpp
+  FlatSetTests.cpp
   EvaluatorTests.cpp
   DepfileRenderTests.cpp
   DepfilePlannerTests.cpp

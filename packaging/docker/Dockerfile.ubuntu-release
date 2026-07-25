@@ -1,0 +1,55 @@
+# Build environment for the downloadable Ubuntu .deb.
+#
+# Ubuntu 22.04 is the oldest release apt.llvm.org still publishes LLVM 22 for, so
+# building here sets the glibc floor at 2.35 and the resulting package installs on
+# 22.04, 24.04, and 26.04 alike. This deliberately is NOT the CI toolshed image:
+# that one is Ubuntu 26.04, and a .deb built against its glibc would refuse to
+# install on anything older.
+#
+# Two third-party apt sources are needed because Ubuntu 22.04 ships neither:
+#   * apt.llvm.org  -- LLVM/MLIR 22 (no Ubuntu release carries it)
+#   * apt.kitware.com -- CMake >= 3.24 (jammy has 3.22; the project requires 3.24)
+FROM ubuntu:jammy
+
+ARG LLVM_MAJOR=22
+ARG UBUNTU_CODENAME=jammy
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        ca-certificates gnupg wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+      | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-${LLVM_MAJOR} main" \
+      > /etc/apt/sources.list.d/llvm.list
+
+RUN wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
+      | gpg --dearmor -o /usr/share/keyrings/kitware.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ ${UBUNTU_CODENAME} main" \
+      > /etc/apt/sources.list.d/kitware.list
+
+# clang rather than jammy's GCC 11: the project is C++23, and GCC 11 predates
+# much of it. Pairing clang-22 with libc++-22 from the same source keeps the
+# standard library as new as the compiler.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        llvm-${LLVM_MAJOR}-dev \
+        libmlir-${LLVM_MAJOR}-dev \
+        mlir-${LLVM_MAJOR}-tools \
+        clang-${LLVM_MAJOR} \
+        lld-${LLVM_MAJOR} \
+        libc++-${LLVM_MAJOR}-dev \
+        libc++abi-${LLVM_MAJOR}-dev \
+        cmake ninja-build \
+        git python3 gzip file \
+        dpkg-dev lintian \
+        zlib1g-dev libzstd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+    MLIR_DIR=/usr/lib/llvm-22/lib/cmake/mlir \
+    CMAKE_PREFIX_PATH=/usr/lib/llvm-22 \
+    CC=clang-22 \
+    CXX=clang++-22
+
+WORKDIR /src

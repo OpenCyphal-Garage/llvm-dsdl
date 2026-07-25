@@ -21,6 +21,11 @@ set(LLVMDSDL_VERSION_PATCH 0)
 set(LLVMDSDL_INSTALL_COMPONENT_BIN "bin")
 set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
 
+# Packaging.cmake derives Depends from the built binaries at package time and
+# needs an interpreter for it. Supplying it here means the harness exercises the
+# real derivation path rather than silently skipping it.
+find_program(LLVMDSDL_PYTHON3_EXE NAMES python3 python REQUIRED)
+
 foreach(tool dsdlc dsdl-opt dsdld)
   add_executable(${tool} stub.c)
 endforeach()

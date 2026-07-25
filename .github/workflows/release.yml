@@ -1,0 +1,203 @@
+name: Release
+
+# Builds the downloadable Ubuntu .deb and attaches it to a GitHub Release.
+#
+# There is no apt repository yet (see docs/plans/P3_release_packaging.md §3), so
+# the package is a file people fetch and install with `apt install ./…deb`
+# against stock Ubuntu. That is what makes the verify job load-bearing rather
+# than ceremonial: a package that only works where it was built has no
+# repository to fall back on, and nothing else in this pipeline would notice.
+#
+# Built inside packaging/docker/Dockerfile.ubuntu-release, an Ubuntu 22.04 image
+# with LLVM 22 from apt.llvm.org. 22.04 is the oldest release that has LLVM 22,
+# which puts the glibc floor at 2.35 so one package covers 22.04, 24.04 and
+# 26.04. The CI toolshed image is deliberately NOT reused: it is Ubuntu 26.04,
+# and a package built there installs on nothing older.
+#
+# arm64 only for now; amd64 follows once this shape is proven.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify, but do not create a release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "release-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      publish: ${{ steps.resolve.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve and cross-check the version
+        id: resolve
+        # The VERSION file is the single source of truth: CPack takes the package
+        # version from it, and the tools compile it into --version. A tag that
+        # disagrees would ship binaries that misreport themselves, so it fails
+        # here rather than after the artifacts exist.
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION file: ${version}"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "${tag}" != "${version}" ]; then
+              echo "::error::tag v${tag} does not match VERSION ${version}"
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            # A manual run publishes only when explicitly asked to.
+            if [ "${{ inputs.dry_run }}" = "false" ]; then
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the changelog describes this version
+        # A Debian package whose changelog disagrees with its control file is
+        # malformed; CMake enforces the match at configure time, but catching it
+        # here costs nothing and reports it before a long build.
+        run: |
+          set -euo pipefail
+          head -1 packaging/deb/changelog | grep -qF "(${{ steps.resolve.outputs.version }})" || {
+            echo "::error::packaging/deb/changelog top entry is not for ${{ steps.resolve.outputs.version }}"
+            exit 1
+          }
+
+  build:
+    name: Build .deb (${{ matrix.arch }})
+    needs: stage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build the release image
+        # Built from the committed Dockerfile rather than replicated as workflow
+        # steps, so the release environment is the same one reproducible locally.
+        run: |
+          docker build \
+            -f packaging/docker/Dockerfile.ubuntu-release \
+            -t llvmdsdl-release:jammy \
+            packaging/docker/
+
+      - name: Configure, build, and package
+        # Vendoring is what lets the package install against stock Ubuntu: no
+        # Ubuntu release carries LLVM 22, so without it the .deb would install
+        # cleanly and then fail on a missing shared object. The Depends list is
+        # derived from the built binaries at package time, not hand-maintained.
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}":/src:ro \
+            -v "${GITHUB_WORKSPACE}/out":/build \
+            llvmdsdl-release:jammy bash -euo pipefail -c '
+              cmake -S /src -B /build -G Ninja \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DLLVM_DIR="$LLVM_DIR" -DMLIR_DIR="$MLIR_DIR" \
+                -DLLVMDSDL_VENDOR_LLVM=ON \
+                -DCMAKE_INSTALL_PREFIX=/usr
+              cmake --build /build
+              cd /build && cpack -G DEB
+            '
+
+      - name: Collect packages
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp out/*.deb dist/
+          cd dist
+          # `--` so a file whose name began with a dash could not be read as options.
+          sha256sum -- *.deb > SHA256SUMS
+          ls -la
+
+      - name: Verify on a pristine Ubuntu system
+        # A different image from the build one, on purpose: this proves the
+        # package carries what it needs rather than inheriting it from the
+        # machine that produced it.
+        run: |
+          python3 packaging/verify/smoke.py \
+            --deb "dist/llvm-dsdl_${{ needs.stage.outputs.version }}_${{ matrix.arch }}.deb" \
+            --expect-version "${{ needs.stage.outputs.version }}" \
+            --image ubuntu:jammy
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [stage, build]
+    if: needs.stage.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the release
+      id-token: write        # provenance attestation
+      attestations: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.deb
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.stage.outputs.version) }}
+          name: llvm-dsdl ${{ needs.stage.outputs.version }}
+          draft: true
+          files: |
+            dist/*.deb
+            dist/SHA256SUMS
+          body: |
+            ## Install (Ubuntu 22.04 / 24.04 / 26.04, arm64)
+
+            ```
+            sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_arm64.deb
+            ```
+
+            No repository to add: the package bundles the LLVM 22 runtime it needs,
+            because no Ubuntu release carries it. Everything else it depends on comes
+            from the stock Ubuntu archive.
+
+            `llvm-dsdl-dev` is also attached, for linking against the frontend,
+            MLIR dialect, and emitter libraries.
+
+            Verify the download against `SHA256SUMS`, or check build provenance with
+            `gh attestation verify <file> --repo ${{ github.repository }}`.

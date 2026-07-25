@@ -1,0 +1,53 @@
+# Evaluated by CPack once per generator, after the build. That timing is the
+# point: the Depends list is derived from the binaries that were actually built,
+# which cannot be done at configure time because they do not exist yet.
+#
+# Generated from cmake/PackagingProjectConfig.cmake.in -- do not edit the copy in
+# the build tree.
+
+if(NOT CPACK_GENERATOR STREQUAL "DEB")
+  return()
+endif()
+
+# An explicitly supplied list wins, so a release lane can pin one if it ever
+# needs to differ from what the build host reports.
+if(NOT "@LLVMDSDL_DEB_DEPENDS@" STREQUAL "")
+  set(CPACK_DEBIAN_BIN_PACKAGE_DEPENDS "@LLVMDSDL_DEB_DEPENDS@")
+  message(STATUS "Debian Depends (explicit): ${CPACK_DEBIAN_BIN_PACKAGE_DEPENDS}")
+  return()
+endif()
+
+# Derivation runs whether or not libLLVM is vendored: the binaries have runtime
+# dependencies either way, and a package with no Depends at all is worse than one
+# with a stale list -- it claims to need nothing.
+#
+# The two cases differ only in whether libLLVM itself counts. Vendored, it ships
+# inside the package and must not appear; not vendored, it is a genuine external
+# dependency and must.
+#
+# Both lists are intentionally unquoted: they are semicolon-separated, and CMake
+# expands that into separate arguments. Quoting would hand the script a single
+# path with embedded semicolons.
+set(_llvmdsdl_analysis_targets "@LLVMDSDL_DEPENDS_ANALYSIS_TARGETS@")
+set(_llvmdsdl_vendored_args "@LLVMDSDL_DEPENDS_VENDORED_ARGS@")
+
+execute_process(
+  COMMAND "@LLVMDSDL_PYTHON3_EXE@" "@LLVMDSDL_SOURCE_DIR@/packaging/deb/derive_depends.py"
+          ${_llvmdsdl_vendored_args}
+          ${_llvmdsdl_analysis_targets}
+  OUTPUT_VARIABLE _llvmdsdl_derived_depends
+  ERROR_VARIABLE _llvmdsdl_derive_stderr
+  RESULT_VARIABLE _llvmdsdl_derive_result
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if(NOT _llvmdsdl_derive_result EQUAL 0 OR _llvmdsdl_derived_depends STREQUAL "")
+  message(FATAL_ERROR
+    "Failed to derive Debian Depends from the built binaries.\n"
+    "${_llvmdsdl_derive_stderr}\n"
+    "Shipping a package with an unverified dependency list is how it installs "
+    "cleanly and then fails at runtime; set LLVMDSDL_DEB_DEPENDS explicitly if "
+    "derivation cannot work on this host.")
+endif()
+
+set(CPACK_DEBIAN_BIN_PACKAGE_DEPENDS "${_llvmdsdl_derived_depends}")
+message(STATUS "Debian Depends (derived): ${CPACK_DEBIAN_BIN_PACKAGE_DEPENDS}")

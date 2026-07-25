@@ -7,6 +7,13 @@ Files: *
 Copyright: 2026 OpenCyphal contributors
 License: MIT
 
+Files: usr/lib/*/llvm-dsdl/libLLVM.so.*
+Copyright: 2003-2026 LLVM Project contributors
+License: Apache-2.0-with-LLVM-exception
+Comment: Not part of this source package. The LLVM runtime is redistributed
+ inside the binary package because no Ubuntu release carries LLVM 22, so a
+ downloadable .deb has nothing to resolve a dependency on it against.
+
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
