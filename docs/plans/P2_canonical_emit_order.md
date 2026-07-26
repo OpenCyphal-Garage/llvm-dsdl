@@ -6,7 +6,7 @@ Phase 0 output for [P2_emit_order_dedup.md](P2_emit_order_dedup.md). This is the
 produces it by construction.
 
 This prose is the human-readable projection of the machine-checked model in
-[spec/dafny/CyphalSerdes.dfy](../../spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
+[spec/dafny/CyphalSerdes.dfy](https://github.com/thirtytwobits/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
 by induction) that serialize/deserialize round-trip and that the read path is bounds-safe, and
 defines the accepted op orderings (`SerOrderOK`/`DeOrderOK`). The model is the source of truth;
 this doc is the readable shadow.

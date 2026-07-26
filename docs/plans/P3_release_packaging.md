@@ -21,7 +21,7 @@ coherent against the exact build they shipped with, and dpkg refuses the pairing
 
 The generated output is self-sufficient. Each backend writes its own runtime support scaffold
 into the output tree, and those scaffolds are compiled into the binary
-([tools/runtime/generate_embedded_runtime.py](../../tools/runtime/generate_embedded_runtime.py)),
+([tools/runtime/generate_embedded_runtime.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/tools/runtime/generate_embedded_runtime.py)),
 so a packaged `dsdlc` emits code that compiles on a machine which has never seen this source
 tree.
 
@@ -31,7 +31,7 @@ tree.
 
 ### Linux: Ubuntu 22.04 (jammy)
 
-Built in [packaging/docker/Dockerfile.ubuntu-release](../../packaging/docker/Dockerfile.ubuntu-release).
+Built in [packaging/docker/Dockerfile.ubuntu-release](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/docker/Dockerfile.ubuntu-release).
 22.04 is the oldest release apt.llvm.org publishes LLVM 22 for, which puts the glibc floor at
 2.35 and lets one package install on 22.04, 24.04 and 26.04 alike. The image adds two third-party
 apt sources because Ubuntu 22.04 ships neither: apt.llvm.org for LLVM/MLIR 22, and apt.kitware.com
@@ -42,7 +42,7 @@ there links a glibc that refuses to install on anything older — which would si
 24.04 user, the largest group.
 
 Reaching back to 22.04 cost one code change. `std::flat_set` reached libstdc++ only in GCC 15
-(Ubuntu 26.04), so [include/llvmdsdl/Support/FlatSet.h](../../include/llvmdsdl/Support/FlatSet.h)
+(Ubuntu 26.04), so [include/llvmdsdl/Support/FlatSet.h](https://github.com/thirtytwobits/llvm-dsdl/blob/main/include/llvmdsdl/Support/FlatSet.h)
 provides it instead, on every platform. Building against libc++, which does have `flat_set`, is
 the obvious-looking alternative and is closed: the distro `libLLVM` links libstdc++, and putting
 two C++ runtimes either side of MLIR's `std::string` boundary is an ABI hazard that yields
@@ -67,13 +67,13 @@ the install tree) means "self-contained" on both platforms, by platform-appropri
   `INSTALL_RPATH` putting `$ORIGIN/../<libdir>/llvm-dsdl` on the three tools. A private directory,
   not `${CMAKE_INSTALL_LIBDIR}`: this is our copy of someone else's library and must satisfy
   nothing but our own tools.
-- **macOS** — [cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)
+- **macOS** — [cmake/BundleSelfContainedTools.cmake](https://github.com/thirtytwobits/llvm-dsdl/blob/main/cmake/BundleSelfContainedTools.cmake)
   copies the tools and their dylibs into `bin/` + `lib/`, rewrites Mach-O install names to
   `@executable_path/../lib` and `@loader_path`, and ad-hoc codesigns. When vendoring is on, the
   install rules install that bundle rather than the raw targets.
 
 LLVM is Apache-2.0-WITH-LLVM-exception, so redistribution is fine with attribution;
-[packaging/deb/copyright](../../packaging/deb/copyright) carries the stanza covering the shipped
+[packaging/deb/copyright](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/deb/copyright) carries the stanza covering the shipped
 library.
 
 ### Dependencies are derived, never written by hand
@@ -83,7 +83,7 @@ the dpkg database, and the vendored `libLLVM` belongs to no installed package, s
 or invents a wrong dependency.
 
 The list is instead derived from the built binaries at package time by
-[packaging/deb/derive_depends.py](../../packaging/deb/derive_depends.py): walk what the tools
+[packaging/deb/derive_depends.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/deb/derive_depends.py): walk what the tools
 *and the vendored library* link, drop what ships inside the package, map the rest through
 `dpkg -S`. It runs from a CPack project-config script, because the binaries do not exist at
 configure time.
@@ -98,7 +98,7 @@ than by our own code.
 ## 4. Debian packaging
 
 `.deb` generation is CPack's DEB generator driven by the existing install components
-([cmake/Packaging.cmake](../../cmake/Packaging.cmake)). `CPACK_DEB_COMPONENT_INSTALL` maps
+([cmake/Packaging.cmake](https://github.com/thirtytwobits/llvm-dsdl/blob/main/cmake/Packaging.cmake)). `CPACK_DEB_COMPONENT_INSTALL` maps
 `bin`/`dev` onto the two packages.
 
 Compression is **xz**, not CPack's default gzip: the package is dominated by a vendored library
@@ -109,13 +109,13 @@ that compresses well, and this is a file people download directly — 74 MB → 
 Debian keys these off the *binary package* name, so each package needs its own copy.
 `CMAKE_INSTALL_DOCDIR` only covers `llvm-dsdl`; the `llvm-dsdl-dev` destination is spelled out.
 
-- **[packaging/deb/copyright](../../packaging/deb/copyright)** — DEP-5, covering the project's MIT
+- **[packaging/deb/copyright](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/deb/copyright)** — DEP-5, covering the project's MIT
   terms and the Apache-2.0-with-LLVM-exception of the shipped `libLLVM`.
-- **[packaging/deb/changelog](../../packaging/deb/changelog)** — CPack has no changelog support, so
+- **[packaging/deb/changelog](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/deb/changelog)** — CPack has no changelog support, so
   it is gzipped (`-n`, for a byte-identical result across builds) and installed by hand. Its top
   entry restates the version; a package whose changelog disagrees with its control file is
   malformed, so configure fails on the mismatch.
-- **[packaging/deb/lintian-overrides/llvm-dsdl](../../packaging/deb/lintian-overrides/llvm-dsdl)** —
+- **[packaging/deb/lintian-overrides/llvm-dsdl](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/deb/lintian-overrides/llvm-dsdl)** —
   the tools ship unstripped, neither stripped nor split into `-dbgsym`. For a compiler of an
   avionics-adjacent wire format, the symbols needed to read a backtrace should already be on the
   machine that produced the core. The override carries no file hint: lintian releases disagree on
@@ -126,7 +126,7 @@ Both packages are lintian-clean.
 ### Man pages
 
 Generated from each tool's own `--help` by
-[tools/man/generate_manpage.py](../../tools/man/generate_manpage.py), so the two cannot drift.
+[tools/man/generate_manpage.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/tools/man/generate_manpage.py), so the two cannot drift.
 Two help dialects are parsed: the `NAME`/`SYNOPSIS` sections `dsdlc` and `dsdld` print, and LLVM's
 `cl::opt` format `dsdl-opt` inherits. Anything not structurally mappable is emitted verbatim in a
 preformatted block rather than guessed at. The page date comes from the changelog's release
@@ -164,7 +164,7 @@ certificate, `notarytool`, and secrets; it buys only the Finder row.
 
 ## 6. The release workflow
 
-[.github/workflows/release.yml](../../.github/workflows/release.yml), triggered by a `v*` tag or
+[.github/workflows/release.yml](https://github.com/thirtytwobits/llvm-dsdl/blob/main/.github/workflows/release.yml), triggered by a `v*` tag or
 by `workflow_dispatch` (which defaults to a dry run that builds and verifies without publishing).
 
 ```
@@ -197,10 +197,10 @@ and with no repository behind a downloaded file, nothing else would notice.
 
 | Check | What it proves | Where |
 |---|---|---|
-| [smoke.py](../../packaging/verify/smoke.py) | The `.deb` installs on **pristine** Ubuntu with no apt.llvm.org, all three tools run, `libLLVM` resolves through RPATH, generated C compiles with stock `cc`, a non-C backend emits | release workflow |
-| [smoke_macos.py](../../packaging/verify/smoke_macos.py) | Every non-system reference in every binary and dylib resolves **inside the bundle**, tools run, generated C compiles | release workflow |
-| [check_deb_config.py](../../packaging/verify/check_deb_config.py) | Control fields, component split, version pin, lintian verdict — against real packages built in a container | ctest (`llvmdsdl-packaging-deb-config`) |
-| [test_check_deb_config.py](../../packaging/verify/test_check_deb_config.py) | The verdict logic itself, against recorded output — no Docker needed | ctest (`llvmdsdl-packaging-deb-config-selftest`) |
+| [smoke.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/verify/smoke.py) | The `.deb` installs on **pristine** Ubuntu with no apt.llvm.org, all three tools run, `libLLVM` resolves through RPATH, generated C compiles with stock `cc`, a non-C backend emits | release workflow |
+| [smoke_macos.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/verify/smoke_macos.py) | Every non-system reference in every binary and dylib resolves **inside the bundle**, tools run, generated C compiles | release workflow |
+| [check_deb_config.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/verify/check_deb_config.py) | Control fields, component split, version pin, lintian verdict — against real packages built in a container | ctest (`llvmdsdl-packaging-deb-config`) |
+| [test_check_deb_config.py](https://github.com/thirtytwobits/llvm-dsdl/blob/main/packaging/verify/test_check_deb_config.py) | The verdict logic itself, against recorded output — no Docker needed | ctest (`llvmdsdl-packaging-deb-config-selftest`) |
 
 Two design points worth keeping:
 
@@ -325,7 +325,7 @@ or the MLIR archives we link.
    libc++, and zig bundles its own libc++ with no libstdc++ at all. MLIR exports a great deal of
    templated C++; mixing standard libraries across that boundary yields undefined symbols or a
    quietly ODR-broken binary.
-3. **TableGen must run on the build host.** [include/llvmdsdl/IR/CMakeLists.txt](../../include/llvmdsdl/IR/CMakeLists.txt)
+3. **TableGen must run on the build host.** [include/llvmdsdl/IR/CMakeLists.txt](https://github.com/thirtytwobits/llvm-dsdl/blob/main/include/llvmdsdl/IR/CMakeLists.txt)
    invokes `mlir_tablegen()` eight times; pointing CMake at a target-arch MLIR yields a
    `mlir-tblgen` that cannot execute on the builder.
 4. **Verification requires execution anyway.** Every check in §7 runs the binary. Cross-compiling
