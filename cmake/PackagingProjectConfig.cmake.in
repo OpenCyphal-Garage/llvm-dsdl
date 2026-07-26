@@ -25,10 +25,33 @@ endif()
 # inside the package and must not appear; not vendored, it is a genuine external
 # dependency and must.
 #
-# Both lists are intentionally unquoted: they are semicolon-separated, and CMake
-# expands that into separate arguments. Quoting would hand the script a single
-# path with embedded semicolons.
-set(_llvmdsdl_analysis_targets "@LLVMDSDL_DEPENDS_ANALYSIS_TARGETS@")
+# The binaries to analyse are read from a per-configuration file rather than
+# embedded here. Their paths depend on the configuration, while this script is a
+# single file shared by all of them -- embedding them directly makes CMake try to
+# write one file with several different contents, which it rejects with
+# "Evaluation file to be written multiple times with different content".
+#
+# CPACK_BUILD_CONFIG names the configuration being packaged under a multi-config
+# generator; single-config generators leave it empty, hence the fallback baked in
+# at configure time.
+set(_llvmdsdl_config "${CPACK_BUILD_CONFIG}")
+if(NOT _llvmdsdl_config)
+  set(_llvmdsdl_config "@LLVMDSDL_DEPENDS_FALLBACK_CONFIG@")
+endif()
+set(_llvmdsdl_targets_file "@LLVMDSDL_DEPENDS_TARGETS_STEM@-${_llvmdsdl_config}.txt")
+
+if(NOT EXISTS "${_llvmdsdl_targets_file}")
+  message(FATAL_ERROR
+    "Cannot derive Debian Depends: ${_llvmdsdl_targets_file} does not exist. "
+    "It is written during the build, so this usually means the configuration "
+    "being packaged (${_llvmdsdl_config}) was never built.")
+endif()
+file(READ "${_llvmdsdl_targets_file}" _llvmdsdl_analysis_targets)
+string(STRIP "${_llvmdsdl_analysis_targets}" _llvmdsdl_analysis_targets)
+
+# Both lists are intentionally unquoted below: they are semicolon-separated, and
+# CMake expands that into separate arguments. Quoting would hand the script a
+# single path with embedded semicolons.
 set(_llvmdsdl_vendored_args "@LLVMDSDL_DEPENDS_VENDORED_ARGS@")
 
 execute_process(

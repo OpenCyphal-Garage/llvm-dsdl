@@ -1,30 +1,23 @@
-name: "Prepare toolshed container for a full run"
+name: "Assert the toolshed container has what a full run needs"
 description: >-
-  Add everything the OpenCyphal toolshed image is missing for a full, unabridged
-  run: MLIR dev libraries matching LLVM_DIR/MLIR_DIR plus the generated-output
-  language toolchains the integration lanes detect at configure time (Go, Rust,
-  TypeScript/tsc, llvm-lit). Node/npm, clang, cmake and ninja are already in the
-  image. Every install is guarded so `act --reuse` re-runs are effectively no-ops.
-
-inputs:
-  go-version:
-    description: "Go toolchain version"
-    default: "1.22.10"
-  typescript-version:
-    description: "Global TypeScript (tsc) version"
-    default: "5.4"
-  rust-toolchain:
-    description: "Rust toolchain channel"
-    default: "stable"
+  Check that every toolchain the unabridged suite depends on is present, and fail
+  loudly if one is missing. This action deliberately installs nothing: the
+  toolshed image is the single source of truth for the build environment, and an
+  action that quietly filled gaps would let the image drift while CI still looked
+  green -- silently shedding whole language lanes, because the integration suite
+  registers a language's tests only when its toolchain is found at configure time.
+  A missing toolchain is an image bug and should read as one.
 
 runs:
   using: "composite"
   steps:
-    - name: MLIR dev libraries + zstd
+    - name: Assert toolchains
       shell: bash
       run: |
-        set -euo pipefail
+        set -uo pipefail
 
+        # Resolved the same way the build does, so a mismatch surfaces here
+        # rather than as a confusing CMake error later.
         llvm_version="${LLVM_VERSION:-${TOOLSHED_LLVM_VERSION:-}}"
         if [[ -z "${llvm_version}" && "${MLIR_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
           llvm_version="${BASH_REMATCH[1]}"
@@ -33,79 +26,65 @@ runs:
           llvm_version="${BASH_REMATCH[1]}"
         fi
         if [[ -z "${llvm_version}" ]]; then
-          echo "Could not infer LLVM version from LLVM_DIR/MLIR_DIR/TOOLSHED_LLVM_VERSION" >&2
+          echo "::error::Could not infer the LLVM version from LLVM_DIR, MLIR_DIR, or TOOLSHED_LLVM_VERSION"
           exit 1
         fi
 
-        mlir_dir="${MLIR_DIR:-/usr/lib/llvm-${llvm_version}/lib/cmake/mlir}"
-        packages=()
-        if [ ! -f "${mlir_dir}/MLIRConfig.cmake" ]; then
-          packages+=("libmlir-${llvm_version}-dev" "mlir-${llvm_version}-tools")
-        fi
+        missing=()
+
+        require_command() {
+          command -v "$1" >/dev/null 2>&1 || missing+=("command: $1 ($2)")
+        }
+        require_file() {
+          [ -f "$1" ] || missing+=("file: $1 ($2)")
+        }
+
+        require_command cmake        "configure and build"
+        require_command ninja        "build"
+        require_command python3      "codegen tooling, man pages, report gates"
+        require_command git          "submodule-backed DSDL corpora"
+        require_command lit          "llvm-lit test lanes"
+        require_command gzip         "compressed changelog and man pages"
+        # One per generated-output language. The suite registers a language's
+        # tests only if its toolchain is found, so a missing one means silently
+        # fewer tests rather than a failure.
+        require_command go           "Go backend integration lane"
+        require_command cargo        "Rust backend integration lane"
+        require_command tsc          "TypeScript backend integration lane"
+        require_command node         "TypeScript backend integration lane"
+
+        require_command "clang-${llvm_version}" "sanitizer and fuzz lanes"
+        require_file "/usr/lib/llvm-${llvm_version}/lib/cmake/mlir/MLIRConfig.cmake" \
+                     "MLIR dev libraries (libmlir-${llvm_version}-dev)"
+        require_file "/usr/lib/llvm-${llvm_version}/lib/cmake/llvm/LLVMConfig.cmake" \
+                     "LLVM dev libraries"
+
         if ! find /usr/lib -path "*/cmake/zstd/zstdConfig.cmake" -print -quit | grep -q .; then
-          packages+=("libzstd-dev")
+          missing+=("file: zstdConfig.cmake (libzstd-dev)")
         fi
 
-        if [ "${#packages[@]}" -gt 0 ]; then
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends "${packages[@]}"
+        if [ "${#missing[@]}" -gt 0 ]; then
+          echo "::error::The toolshed image is missing prerequisites for a full run:"
+          printf '::error::  %s\n' "${missing[@]}"
+          echo "These belong in the image rather than being installed per run;" >&2
+          echo "see .devcontainer/ and the toolshed image definition." >&2
+          exit 1
         fi
-
-    - name: Go
-      shell: bash
-      run: |
-        set -euo pipefail
-        if ! command -v go >/dev/null 2>&1 && [ ! -x /usr/local/go/bin/go ]; then
-          arch="$(dpkg --print-architecture)"
-          curl -sSL "https://go.dev/dl/go${{ inputs.go-version }}.linux-${arch}.tar.gz" -o /tmp/go.tgz
-          rm -rf /usr/local/go
-          tar -C /usr/local -xzf /tmp/go.tgz
-        fi
-        echo "/usr/local/go/bin" >> "${GITHUB_PATH}"
-
-    - name: Rust
-      shell: bash
-      run: |
-        set -euo pipefail
-        if [ ! -x "${HOME}/.cargo/bin/cargo" ]; then
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain "${{ inputs.rust-toolchain }}"
-        fi
-        echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
-
-    - name: TypeScript (tsc)
-      shell: bash
-      run: |
-        set -euo pipefail
-        if ! command -v tsc >/dev/null 2>&1; then
-          npm install -g --silent "typescript@${{ inputs.typescript-version }}"
-        fi
-
-    - name: llvm-lit
-      shell: bash
-      run: |
-        set -euo pipefail
-        command -v lit >/dev/null 2>&1 || pip install --break-system-packages -q lit
+        echo "All required toolchains present."
 
     - name: Report toolchain versions
       shell: bash
+      # Diagnostics, not provisioning: when a lane behaves differently from a
+      # local run, the first question is always which toolchain versions the
+      # image actually shipped.
       run: |
-        export PATH="/usr/local/go/bin:${HOME}/.cargo/bin:${PATH}"
-        llvm_version="${LLVM_VERSION:-${TOOLSHED_LLVM_VERSION:-}}"
-        if [[ -z "${llvm_version}" && "${MLIR_DIR:-}" =~ /llvm-([0-9]+)(/|$) ]]; then
-          llvm_version="${BASH_REMATCH[1]}"
-        fi
-        clang_bin="clang"
-        if [[ -n "${llvm_version}" ]] && command -v "clang-${llvm_version}" >/dev/null 2>&1; then
-          clang_bin="clang-${llvm_version}"
-        fi
         {
           echo "## Toolchains"
           echo '```'
           echo "cmake:  $(cmake --version | head -1)"
-          echo "clang:  $(${clang_bin} --version | head -1)"
+          echo "clang:  $(clang --version 2>&1 | head -1)"
           echo "python: $(python3 --version 2>&1)"
-          echo "lit:    $(lit --version 2>&1 || echo missing)"
+          echo "lit:    $(lit --version 2>&1)"
           echo "go:     $(go version 2>&1)"
           echo "node:   $(node --version 2>&1)  npm $(npm --version 2>&1)"
           echo "tsc:    $(tsc --version 2>&1)"

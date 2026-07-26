@@ -165,13 +165,14 @@ def docker_unavailable_reason() -> str | None:
     return None
 
 
-def run(deb: Path, image: str) -> str:
+def run(deb: Path, image: str, platform: str | None) -> str:
     docker = shutil.which("docker")
     script = CONTAINER_SCRIPT.replace("PACKAGE_FILE", deb.name)
-    proc = subprocess.run(
-        [docker, "run", "--rm", "-v", f"{deb.parent.resolve()}:/pkg:ro",
-         image, "bash", "-c", script],
-        capture_output=True, text=True)
+    argv = [docker, "run", "--rm"]
+    if platform:
+        argv += ["--platform", platform]
+    argv += ["-v", f"{deb.parent.resolve()}:/pkg:ro", image, "bash", "-c", script]
+    proc = subprocess.run(argv, capture_output=True, text=True)
     if proc.returncode != 0 and not proc.stdout:
         sys.stderr.write(proc.stderr)
         raise SystemExit(f"container run failed with exit code {proc.returncode}")
@@ -187,6 +188,11 @@ def main(argv: list[str]) -> int:
              "is to prove the package works where nothing was pre-installed.")
     parser.add_argument(
         "--expect-version", help="Assert the tools report this version.")
+    parser.add_argument(
+        "--platform",
+        help="Container platform, e.g. linux/amd64. Needed only when checking a "
+             "package built for an architecture other than this host's -- in CI each "
+             "runner is native and the default is correct.")
     parser.add_argument("--print-output", action="store_true")
     args = parser.parse_args(argv)
 
@@ -198,7 +204,7 @@ def main(argv: list[str]) -> int:
         print(f"SKIPPED: {reason}")
         return EXIT_SKIP
 
-    output = run(args.deb, args.image)
+    output = run(args.deb, args.image, args.platform)
     if args.print_output:
         print(output)
 

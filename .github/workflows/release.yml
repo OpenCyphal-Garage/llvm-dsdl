@@ -14,7 +14,9 @@ name: Release
 # 26.04. The CI toolshed image is deliberately NOT reused: it is Ubuntu 26.04,
 # and a package built there installs on nothing older.
 #
-# arm64 only for now; amd64 follows once this shape is proven.
+# arm64 and amd64, each on its own native runner -- no emulation in CI. The two
+# legs are independent (fail-fast off): one architecture's package is installable
+# without the other, so a failure in one should not withhold the other.
 
 on:
   push:
@@ -88,11 +90,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
+      # Independent legs: one architecture failing should not deny the other its
+      # artifact, since they are separately installable packages.
       fail-fast: false
       matrix:
         include:
           - arch: arm64
             runner: ubuntu-22.04-arm
+          - arch: amd64
+            runner: ubuntu-22.04
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -102,10 +108,12 @@ jobs:
       - name: Build the release image
         # Built from the committed Dockerfile rather than replicated as workflow
         # steps, so the release environment is the same one reproducible locally.
+        # Each runner is native for its own architecture, so no emulation here --
+        # only a developer cross-checking the other leg locally needs --platform.
         run: |
           docker build \
             -f packaging/docker/Dockerfile.ubuntu-release \
-            -t llvmdsdl-release:jammy \
+            -t llvmdsdl-release:jammy-${{ matrix.arch }} \
             packaging/docker/
 
       - name: Configure, build, and package
@@ -117,7 +125,7 @@ jobs:
           docker run --rm \
             -v "${GITHUB_WORKSPACE}":/src:ro \
             -v "${GITHUB_WORKSPACE}/out":/build \
-            llvmdsdl-release:jammy bash -euo pipefail -c '
+            llvmdsdl-release:jammy-${{ matrix.arch }} bash -euo pipefail -c '
               cmake -S /src -B /build -G Ninja \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DLLVM_DIR="$LLVM_DIR" -DMLIR_DIR="$MLIR_DIR" \
@@ -186,9 +194,12 @@ jobs:
             dist/*.deb
             dist/SHA256SUMS
           body: |
-            ## Install (Ubuntu 22.04 / 24.04 / 26.04, arm64)
+            ## Install — Ubuntu 22.04, 24.04, or 26.04
+
+            Pick the package matching your architecture (`dpkg --print-architecture`):
 
             ```
+            sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_amd64.deb
             sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_arm64.deb
             ```
 

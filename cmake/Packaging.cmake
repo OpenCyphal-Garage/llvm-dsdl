@@ -160,8 +160,17 @@ binaries at package time, which is what you want; set it only to pin a list deli
 set(CPACK_DEBIAN_BIN_PACKAGE_DEPENDS "${LLVMDSDL_DEB_DEPENDS}")
 
 # Deriving the list needs the binaries, which do not exist at configure time, so
-# it happens in a CPack project-config script evaluated after the build. Written
-# with file(GENERATE) so $<TARGET_FILE:...> resolves to real paths.
+# it happens in a CPack project-config script evaluated after the build.
+#
+# The binary paths must come from $<TARGET_FILE:...>, and under a multi-config
+# generator those differ per configuration. So the *paths* are written to one
+# small file per configuration -- $<CONFIG> in the OUTPUT path, which is what
+# file(GENERATE) supports -- and the project-config script, which is a single
+# config-agnostic file, reads whichever one matches the configuration being
+# packaged. Putting the paths directly in the script instead makes CMake try to
+# write one path with several different contents, which it rejects outright:
+#
+#   Evaluation file to be written multiple times with different content.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LLVMDSDL_PYTHON3_EXE)
   set(LLVMDSDL_DEPENDS_ANALYSIS_TARGETS
       "$<TARGET_FILE:dsdlc>;$<TARGET_FILE:dsdl-opt>;$<TARGET_FILE:dsdld>")
@@ -176,14 +185,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LLVMDSDL_PYTHON3_EXE)
 
   # CMAKE_BINARY_DIR rather than LLVMDSDL_BINARY_DIR: this file is also included
   # by the packaging test harness, which does not define the project's own vars.
+  set(LLVMDSDL_DEPENDS_TARGETS_STEM "${CMAKE_BINARY_DIR}/packaging/analysis-targets")
+  file(GENERATE
+    OUTPUT "${LLVMDSDL_DEPENDS_TARGETS_STEM}-$<CONFIG>.txt"
+    CONTENT "${LLVMDSDL_DEPENDS_ANALYSIS_TARGETS}")
+
+  # Single-config generators leave CPACK_BUILD_CONFIG empty, so the script needs
+  # the build type to fall back on; multi-config sets it above.
+  set(LLVMDSDL_DEPENDS_FALLBACK_CONFIG "${CMAKE_BUILD_TYPE}")
+
   set(LLVMDSDL_CPACK_PROJECT_CONFIG "${CMAKE_BINARY_DIR}/PackagingProjectConfig.cmake")
   configure_file(
     "${LLVMDSDL_SOURCE_DIR}/cmake/PackagingProjectConfig.cmake.in"
-    "${LLVMDSDL_CPACK_PROJECT_CONFIG}.in-configured"
+    "${LLVMDSDL_CPACK_PROJECT_CONFIG}"
     @ONLY)
-  file(GENERATE
-    OUTPUT "${LLVMDSDL_CPACK_PROJECT_CONFIG}"
-    INPUT "${LLVMDSDL_CPACK_PROJECT_CONFIG}.in-configured")
   set(CPACK_PROJECT_CONFIG_FILE "${LLVMDSDL_CPACK_PROJECT_CONFIG}")
 endif()
 

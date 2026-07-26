@@ -8,7 +8,9 @@ designed for here but built later, and the pilot's job is to prove the *factorin
 those are additive.
 
 **v1 is narrower still:** a `.deb` attached to a GitHub Release — no apt repository (see §3),
-arm64 first (native on the development machine; amd64 follows under emulation), brew after.
+Linux only, brew after. Both architectures ship: each builds on its own native runner
+(`ubuntu-22.04-arm`, `ubuntu-22.04`), so CI never emulates. Emulation is only how a developer on
+one architecture cross-checks the other locally, which is what `smoke.py --platform` exists for.
 
 **Build target: Ubuntu 22.04 (jammy).** It is the oldest release apt.llvm.org publishes LLVM 22
 for, which puts the glibc floor at 2.35 and lets one package install on 22.04, 24.04 and 26.04.
@@ -18,12 +20,14 @@ provides it instead, on every platform. Building against libc++ — which does h
 is not an option: the distro `libLLVM` links libstdc++, and two C++ runtimes either side of
 MLIR's `std::string` boundary is the ABI hazard described in §10.
 
-**Status:** the arm64 `.deb` works end to end.
+**Status:** the `.deb` works end to end on both architectures.
 [.github/workflows/release.yml](../../.github/workflows/release.yml) builds it on a tag, verifies
 it on a pristine Ubuntu system, and attaches it to a draft GitHub Release with checksums and a
 provenance attestation. The package installs against stock Ubuntu 22.04 with no repository
 configured, all three tools run against the vendored LLVM, and generated C compiles with a stock
-compiler; both packages are `lintian`-clean. Not yet done: amd64, brew, and the apt repository.
+compiler; all four packages are `lintian`-clean. arm64 was verified natively and amd64 under
+emulation, each installing into a pristine container of its own architecture. Not yet done: brew,
+and the apt repository.
 
 ---
 
