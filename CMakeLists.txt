@@ -518,6 +518,17 @@ set(LLVMDSDL_INSTALLABLE_LIBRARIES
 
 set(LLVMDSDL_INSTALL_COMPONENT_BIN "bin")
 set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
+set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
+if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT ON)
+endif()
+
+option(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE
+       "Enable self-contained tool bundle target (copies the tools with runtime deps)"
+       ${LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT})
+
+set(LLVMDSDL_SELF_CONTAINED_TOOLS_DIR "${LLVMDSDL_BINARY_DIR}/self-contained-tools")
+
 
 # Vendoring libLLVM into the package.
 #
@@ -527,23 +538,35 @@ set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
 # the library inside the package is what makes `apt install ./llvm-dsdl_*.deb` work
 # on a machine that has never heard of apt.llvm.org.
 #
-# Off by default: a developer's `cmake --install` should not copy a ~100 MB library
+# The same reasoning applies to the macOS tarball: a bare download has no
+# dependency resolver either, and a tree whose binaries reference
+# /opt/homebrew/opt/llvm only runs on a machine that already has Homebrew LLVM.
+#
+# Off by default: a developer's `cmake --install` should not copy a ~150 MB library
 # into the install tree. The release build turns it on explicitly.
 #
 # LLVM is Apache-2.0-WITH-LLVM-exception, so redistribution is fine with
 # attribution -- packaging/deb/copyright carries the licence paragraph, and its
 # Files: stanza must be activated when this is enabled for a published package.
 option(LLVMDSDL_VENDOR_LLVM
-       "Ship libLLVM inside the install tree and point the tools at it via RPATH."
+       "Ship libLLVM inside the install tree so the package runs without a system LLVM."
        OFF)
 
-if(LLVMDSDL_VENDOR_LLVM)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR
-      "LLVMDSDL_VENDOR_LLVM is implemented for Linux only (it relies on ELF RPATH). "
-      "macOS distribution goes through Homebrew, which depends on llvm@22 instead.")
-  endif()
+# Linux and macOS reach the same outcome by different mechanisms: ELF RPATH set
+# on the installed binaries, versus Mach-O install names rewritten by the bundle
+# target. The flag means "self-contained" on both; only the plumbing differs.
+set(LLVMDSDL_VENDOR_LLVM_VIA_BUNDLE OFF)
+if(LLVMDSDL_VENDOR_LLVM AND APPLE)
+  set(LLVMDSDL_VENDOR_LLVM_VIA_BUNDLE ON)
+endif()
 
+if(LLVMDSDL_VENDOR_LLVM AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT APPLE)
+  message(FATAL_ERROR
+    "LLVMDSDL_VENDOR_LLVM is implemented for Linux (ELF RPATH) and macOS "
+    "(Mach-O install names) only.")
+endif()
+
+if(LLVMDSDL_VENDOR_LLVM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # A private directory rather than ${CMAKE_INSTALL_LIBDIR}: this is our copy of
   # someone else's library, and it must never satisfy anything but our own tools.
   set(LLVMDSDL_VENDOR_LLVM_SUBDIR "${CMAKE_INSTALL_LIBDIR}/llvm-dsdl")
@@ -625,10 +648,39 @@ if(LLVMDSDL_VENDOR_LLVM)
     BUILD_WITH_INSTALL_RPATH OFF)
 endif()
 
-install(
-  TARGETS ${LLVMDSDL_INSTALLABLE_TOOLS}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+if(LLVMDSDL_VENDOR_LLVM_VIA_BUNDLE)
+  # macOS gets its self-contained tree from the bundle target, which rewrites
+  # Mach-O install names in place. Installing the bundle rather than the raw
+  # targets is the whole point: the raw binaries reference
+  # /opt/homebrew/opt/llvm and only run where Homebrew LLVM is already present,
+  # which is exactly the trap a downloadable tarball must not contain.
+  #
+  # The bundle's layout is bin/ + lib/ and its install names are
+  # @executable_path/../lib, so it must land at the prefix root unchanged --
+  # relocating lib/ elsewhere would break every reference in it.
+  if(NOT LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE)
+    message(FATAL_ERROR
+      "LLVMDSDL_VENDOR_LLVM on macOS is implemented via the self-contained bundle, "
+      "but LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE is OFF.")
+  endif()
+
+  install(
+    DIRECTORY "${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}/bin/"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN}
+    USE_SOURCE_PERMISSIONS)
+
+  install(
+    DIRECTORY "${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}/lib/"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN}
+    USE_SOURCE_PERMISSIONS)
+else()
+  install(
+    TARGETS ${LLVMDSDL_INSTALLABLE_TOOLS}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+endif()
 
 install(
   TARGETS ${LLVMDSDL_INSTALLABLE_LIBRARIES}
@@ -921,27 +973,27 @@ if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
   )
 endif()
 
-set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
-if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT ON)
-endif()
-
-option(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE
-       "Enable self-contained tool bundle target (copies dsdlc/dsdl-opt with runtime deps)"
-       ${LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT})
-
 if(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE)
-  set(LLVMDSDL_SELF_CONTAINED_TOOLS_DIR
-      "${LLVMDSDL_BINARY_DIR}/self-contained-tools")
-  add_custom_target(bundle-tools-self-contained
+  # All three tools, not just the two that generate code: the macOS release
+  # tarball ships this tree, and a package missing the language server would be
+  # a strange thing to hand someone.
+  #
+  # Part of ALL only when the install rules consume it (macOS vendoring), because
+  # then `cmake --install` must find it already built. Otherwise it stays opt-in:
+  # it copies and re-signs ~150 MB of LLVM, which no ordinary build should pay for.
+  set(LLVMDSDL_BUNDLE_IN_ALL "")
+  if(LLVMDSDL_VENDOR_LLVM_VIA_BUNDLE)
+    set(LLVMDSDL_BUNDLE_IN_ALL ALL)
+  endif()
+
+  add_custom_target(bundle-tools-self-contained ${LLVMDSDL_BUNDLE_IN_ALL}
     COMMAND
       ${CMAKE_COMMAND}
-        -DTOOL_DSDLC=$<TARGET_FILE:dsdlc>
-        -DTOOL_DSDLOPT=$<TARGET_FILE:dsdl-opt>
+        "-DTOOLS=$<TARGET_FILE:dsdlc>;$<TARGET_FILE:dsdl-opt>;$<TARGET_FILE:dsdld>"
         -DOUTPUT_DIR=${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}
         -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/BundleSelfContainedTools.cmake
-    DEPENDS dsdlc dsdl-opt
+    DEPENDS ${LLVMDSDL_INSTALLABLE_TOOLS}
     USES_TERMINAL
     VERBATIM
     COMMENT

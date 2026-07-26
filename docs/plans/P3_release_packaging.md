@@ -1,311 +1,272 @@
 # P3 — Release packaging and distribution
 
-How `dsdlc` / `dsdl-opt` / `dsdld` get from a git tag to a user's machine, across package
-managers and CPU architectures.
+How `dsdlc` / `dsdl-opt` / `dsdld` get from a git tag to a user's machine.
 
-**Pilot scope:** a 2×2 matrix — {apt, brew} × {amd64, arm64}. Snap, Windows, and RPM are
-designed for here but built later, and the pilot's job is to prove the *factoring* is right so
-those are additive.
-
-**v1 is narrower still:** a `.deb` attached to a GitHub Release — no apt repository (see §3),
-Linux only, brew after. Both architectures ship: each builds on its own native runner
-(`ubuntu-22.04-arm`, `ubuntu-22.04`), so CI never emulates. Emulation is only how a developer on
-one architecture cross-checks the other locally, which is what `smoke.py --platform` exists for.
-
-**Build target: Ubuntu 22.04 (jammy).** It is the oldest release apt.llvm.org publishes LLVM 22
-for, which puts the glibc floor at 2.35 and lets one package install on 22.04, 24.04 and 26.04.
-Reaching back that far cost one code change: `std::flat_set` reached libstdc++ only in GCC 15
-(Ubuntu 26.04), so [include/llvmdsdl/Support/FlatSet.h](../../include/llvmdsdl/Support/FlatSet.h)
-provides it instead, on every platform. Building against libc++ — which does have `flat_set` —
-is not an option: the distro `libLLVM` links libstdc++, and two C++ runtimes either side of
-MLIR's `std::string` boundary is the ABI hazard described in §10.
-
-**Status:** the `.deb` works end to end on both architectures.
-[.github/workflows/release.yml](../../.github/workflows/release.yml) builds it on a tag, verifies
-it on a pristine Ubuntu system, and attaches it to a draft GitHub Release with checksums and a
-provenance attestation. The package installs against stock Ubuntu 22.04 with no repository
-configured, all three tools run against the vendored LLVM, and generated C compiles with a stock
-compiler; all four packages are `lintian`-clean. arm64 was verified natively and amd64 under
-emulation, each installing into a pristine container of its own architecture. Not yet done: brew,
-and the apt repository.
-
----
-
-## 0. Build-side notes
-
-Two facts about the build that shape everything downstream.
-
-**The generated output is self-sufficient.** Each backend writes its own runtime support scaffold
-into the output tree, so a package ships no runtime sources of its own and generated code
-compiles wherever it lands — including on a machine that has never seen this source tree.
-
-**Vendoring did not need the bundle target.** `bundle-tools-self-contained`
-([cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)) does the
-`patchelf` / `install_name_tool` work for a relocatable directory, and the original plan was to
-extend it to drive the package layout. That turned out to be unnecessary: CMake's own
-`INSTALL_RPATH` places `$ORIGIN/../<libdir>/llvm-dsdl` on the installed binaries directly, with no
-post-processing. The bundle target is still flat and still omits `dsdld`, but that is now a
-pre-existing wart rather than anything packaging waits on.
+**Today:** a tag pushes packages to a draft GitHub release — `.deb` for Ubuntu on amd64 and
+arm64, and a self-contained tarball for macOS on Apple silicon. Each carries the LLVM 22 runtime
+it needs, so nothing has to be added to the user's machine first. There is no apt repository and
+no Homebrew formula yet; both are designed for below.
 
 ---
 
 ## 1. What ships
 
-| Component | Contents | Package |
-|---|---|---|
-| `bin` | `dsdlc`, `dsdl-opt`, `dsdld`, SBOM, licences | `llvm-dsdl` |
-| `dev` | 8 static libs, `include/llvmdsdl`, generated dialect headers, `Version.h` | `llvm-dsdl-dev` |
+| Component | Contents | Debian package | macOS |
+|---|---|---|---|
+| `bin` | `dsdlc`, `dsdl-opt`, `dsdld`, vendored LLVM runtime, SBOM, licences | `llvm-dsdl` | `bin/` + `lib/` in the tarball |
+| `dev` | 8 static libraries, `include/llvmdsdl`, generated dialect headers, `Version.h` | `llvm-dsdl-dev` | included in the tarball |
 
-The `dev` component is only interesting to someone linking the libraries. For the pilot, build
-it but publish only `bin` to brew (Homebrew has no split-package concept worth using here);
-apt gets both.
+`llvm-dsdl-dev` pins `llvm-dsdl (= <version>)`: the static libraries and headers are only
+coherent against the exact build they shipped with, and dpkg refuses the pairing otherwise.
 
-### The LLVM linkage question
-
-The tools link MLIR component libraries (static on both Debian and Homebrew LLVM builds) plus
-`libLLVM` **shared** (`libLLVM.so.22.1` / `libLLVM.dylib`). Combined with the
-[LLVM 22 major-version lock](../SUPPLY_CHAIN.md), that gives three options:
-
-| Option | apt | brew |
-|---|---|---|
-| Depend on the distro's LLVM | needs the user to add `apt.llvm.org` — unacceptable UX | `depends_on "llvm@22"` — plausible |
-| Vendor `libLLVM` into a private libdir | **recommended** | not idiomatic |
-| Static-link LLVM | huge binaries, and MLIR's static story is painful | same |
-
-**Recommendation:**
-
-- **apt: vendor** — done. `libLLVM.so.22.1` ships at
-  `/usr/lib/<multiarch>/llvm-dsdl/`, with `INSTALL_RPATH=$ORIGIN/../<libdir>/llvm-dsdl` on the
-  three tools. Not a Debian-archive package, so the no-vendoring policy does not bind us; LLVM is
-  Apache-2.0-WITH-LLVM-exception, and [packaging/deb/copyright](../../packaging/deb/copyright)
-  carries the stanza covering the shipped library.
-
-  The dependency list this leaves is larger than "libc6 and libstdc++6": the vendored library
-  drags in `libedit2`, `libffi8`, `libicu70`, `libxml2`, `libz3-4`, `libzstd1` and more, all from
-  the stock Ubuntu archive. Guessing that list is how a package installs cleanly and then dies on
-  a missing `libz3.so.4`, so it is derived from the built binaries at package time — see §3.
-- **brew: `depends_on "llvm@22"`.** Idiomatic, and Homebrew users already have large LLVM
-  installs. **But this couples us to Homebrew's formula lifecycle:** when brew's `llvm` rolls to
-  23 and `llvm@22` ages out, our formula breaks. Add a scheduled CI job that asserts `llvm@22`
-  still exists and still reports major 22 — a canary, so the break is a red check rather than a
-  user's bug report. (CI already asserts the LLVM major on the macOS lane at
-  [ci.yml:295](../../.github/workflows/ci.yml); reuse the idea.)
-
-### glibc floor
-
-The CI Linux lane builds inside `ghcr.io/opencyphal/toolshed:ts26.4.1` on `ubuntu-26.04`. A
-`.deb` built there links a very new glibc and will refuse to install on anything older.
-**Release builds must not reuse the CI container.** Build release Linux artifacts on the oldest
-still-supported Ubuntu that has LLVM 22 available from `apt.llvm.org` — verify which that is as
-part of the Phase-1 spike; assume 22.04 (jammy) until proven otherwise. The verify job (§6)
-pins the floor honestly by installing into a pristine container of that release.
-
-Note that with vendoring, **the floor is set by the prebuilt `libLLVM` we ship, not by our own
-code** — so it cannot be lowered by build flags alone. Choosing the floor freely requires
-building LLVM ourselves; see below.
-
-### Where LLVM 22 comes from — the cached-toolchain pipeline
-
-Every hard constraint in this document traces back to *whose* LLVM 22 we build against:
-
-| Constraint | Root cause |
-|---|---|
-| glibc floor on the `.deb` | apt.llvm.org's build, not ours |
-| brew formula breaks when `llvm@22` ages out | Homebrew's formula lifecycle |
-| No Windows target at all (§5) | no prebuilt LLVM **with MLIR** for Windows exists |
-| Cross-compilation is impractical (§10) | no target-built LLVM/MLIR to link against |
-| macOS/Linux stdlib mismatch (libc++ vs libstdc++) | two different vendors' builds |
-
-All five dissolve with one piece of infrastructure: **build LLVM/MLIR 22 once per target, cache
-the result, and restore it in the build job.** A separate workflow builds LLVM at a pinned
-revision for each target triple, publishes the install tree as a GHCR image (Linux) or a release
-artifact (macOS/Windows), keyed by `llvm-rev + triple + stdlib`. It runs when the pin changes,
-not per release. The `build` job then restores a toolchain instead of `apt install`-ing one.
-
-This is the highest-leverage item in the plan. It is **not, however, a prerequisite for the
-pilot** — and deliberately so. The four-stage factoring in §2 exists precisely so the toolchain
-source is an implementation detail of the `build` job: the pilot proves the pipeline shape using
-distro and Homebrew LLVM, and the cached toolchain swaps in later **without touching the
-package, verify, or publish stages**. Building it first would delay the pilot by the cost of
-four multi-hour LLVM builds to de-risk something the pilot doesn't exercise.
-
-Sequencing: Phase 1 pilots on distro/brew LLVM; Phase 1b builds the cached toolchain as a
-parallel track; Phase 2 swaps the build job onto it and lowers the glibc floor deliberately.
-Windows (Phase 3) cannot start until 1b lands.
+The generated output is self-sufficient. Each backend writes its own runtime support scaffold
+into the output tree, and those scaffolds are compiled into the binary
+([tools/runtime/generate_embedded_runtime.py](../../tools/runtime/generate_embedded_runtime.py)),
+so a packaged `dsdlc` emits code that compiles on a machine which has never seen this source
+tree.
 
 ---
 
-## 2. Workflow architecture
+## 2. Build environments
 
-The single most important structural decision: **separate build from package from verify from
-publish.** Adding snap or WinGet later must add a *packaging* job, not another *build* job.
+### Linux: Ubuntu 22.04 (jammy)
 
-```
-tag v* ──▶ stage ──▶ build (os × arch) ──▶ package (format × arch) ──▶ verify (format × arch) ──▶ publish
-             │            │                      │                          │                       │
-        version/tag   dist-<triple>.tar.gz   .deb / bottle             clean-container         GH release,
-        consistency   (component staging      + checksums              install + smoke         apt repo,
-                       tree, relocatable)                                                       brew tap
-```
+Built in [packaging/docker/Dockerfile.ubuntu-release](../../packaging/docker/Dockerfile.ubuntu-release).
+22.04 is the oldest release apt.llvm.org publishes LLVM 22 for, which puts the glibc floor at
+2.35 and lets one package install on 22.04, 24.04 and 26.04 alike. The image adds two third-party
+apt sources because Ubuntu 22.04 ships neither: apt.llvm.org for LLVM/MLIR 22, and apt.kitware.com
+for CMake ≥ 3.24 (jammy has 3.22).
 
-- **`stage`** — derive the version, assert `git tag == VERSION`, emit a matrix JSON so the
-  build/package/verify matrices are defined in exactly one place, and decide dry-run vs publish.
-- **`build`** — configure with a new `release` preset, build `RelWithDebInfo`, run the
-  release-blocking gates, run the bundle target, then `cpack` to emit
-  `llvm-dsdl-<version>-<triple>.tar.gz` (plus its SHA-256) and, on Linux, the two `.deb`s.
-  **One tarball per platform, consumed by every packaging job for that platform.**
-- **`package`** — downloads the dist tarball, emits one package format. Pure metadata + repack;
-  no compiler runs. Fast, and trivially parallel across formats.
+**The CI toolshed image is not reused for releases.** It is Ubuntu 26.04, and a `.deb` built
+there links a glibc that refuses to install on anything older — which would silently cost every
+24.04 user, the largest group.
 
-  `cpack` re-runs the install rules, so it needs the build tree — never a compiler, but the tree.
-  Shipping hundreds of megabytes of objects between jobs to preserve a stage boundary is a bad
-  trade, so the `.deb` is emitted in `build` alongside the tarball. The goal that matters is
-  intact: RPM becomes another generator in
-  [cmake/Packaging.cmake](../../cmake/Packaging.cmake), and snap / WinGet / brew become `package`
-  jobs consuming the tarball. Neither adds a build job.
-- **`verify`** — §6. The centerpiece.
-- **`publish`** — gated on all verifies passing; creates the GitHub release, pushes to the apt
-  repo and the brew tap, and attaches provenance attestations.
+Reaching back to 22.04 cost one code change. `std::flat_set` reached libstdc++ only in GCC 15
+(Ubuntu 26.04), so [include/llvmdsdl/Support/FlatSet.h](../../include/llvmdsdl/Support/FlatSet.h)
+provides it instead, on every platform. Building against libc++, which does have `flat_set`, is
+the obvious-looking alternative and is closed: the distro `libLLVM` links libstdc++, and putting
+two C++ runtimes either side of MLIR's `std::string` boundary is an ABI hazard that yields
+undefined symbols or a quietly ODR-broken binary.
 
-### Files
+### macOS: `macos-15`, Apple silicon
 
-```
-.github/workflows/release.yml            # the pipeline above
-.github/workflows/packaging-smoke.yml    # PR-time: build+verify the amd64 .deb only
-.github/actions/build-dist/action.yml    # composite: configure → build → gates → bundle → cpack
-packaging/
-  dist/triples.json                      # single source of truth for the matrix
-  deb/                                   # copyright, lintian overrides
-  brew/llvm-dsdl.rb.in                   # formula template (version/sha256 substituted)
-  verify/smoke.py                        # ONE script, run against every installed package
-  verify/check_deb_config.py             # .deb control/lintian check, no LLVM build needed
-cmake/Packaging.cmake                    # CPack config, included from CMakeLists.txt
-```
-
-### Triples
-
-`linux-amd64`, `linux-arm64`, `darwin-arm64`, `darwin-amd64`. Artifacts are named
-`llvm-dsdl-<version>-<triple>.tar.gz`.
-
-### Runners
-
-| Cell | Runner | Notes |
-|---|---|---|
-| linux-amd64 | `ubuntu-22.04` | container: release image, not the CI toolshed image |
-| linux-arm64 | `ubuntu-22.04-arm` | free for public repos; this repo is public |
-| darwin-arm64 | `macos-15` | native arm64 |
-| darwin-amd64 | `macos-13` **if it still exists** | see risk below |
-
-**Risk — Intel macOS.** GitHub has been retiring Intel macOS runners. If no x86_64 macOS runner
-is available at implementation time, there are two fallbacks, in preference order:
-
-1. **Build `-arch x86_64` on the arm64 runner and verify under Rosetta 2.** Apple clang
-   cross-compiles to x86_64 natively (no zig needed), and an arm64 macOS runner can *execute*
-   x86_64 binaries under Rosetta — so the §6 smoke test still runs for real, which is the part
-   that matters. Two things need a spike: whether Rosetta 2 is actually present on GitHub's
-   arm64 images, and whether an x86_64 `llvm@22` bottle can be fetched and linked against
-   (Homebrew bottles are per-arch, not universal, so this means pulling the x86_64 bottle
-   manually rather than via `brew install`).
-2. **Declare Intel macOS unsupported** and make the brew axis (`arm64_sequoia`,
-   `arm64_sonoma`) instead of (arm64, x86_64). Still two bottle targets, still a 2×2.
-
-Confirming runner availability is the first Phase-1 task because it changes the matrix
-definition.
-
-**Fallback for Linux arm64** if native runners are ever unavailable: `docker/setup-qemu-action`
-plus a `linux/arm64` container. Drop-in, since the Linux build already runs in a container;
-roughly 5–10× slower, which is tolerable for a tag-triggered pipeline.
+Homebrew LLVM at build time, vendored into the artifact. Intel macOS is not built; see §8.
 
 ---
 
-## 3. apt
+## 3. Vendoring the LLVM runtime
 
-### Layout
+Neither Ubuntu nor a stock macOS carries LLVM 22, and a downloaded file has no dependency
+resolver behind it. Without vendoring, a package installs cleanly and dies on first run with a
+missing shared object, with nothing to fall back on.
 
-```
-/usr/bin/dsdlc                          → symlink to ../lib/llvm-dsdl/bin/dsdlc
-/usr/bin/dsdl-opt, /usr/bin/dsdld       → likewise
-/usr/lib/llvm-dsdl/bin/                 RPATH=$ORIGIN/../lib
-/usr/lib/llvm-dsdl/lib/libLLVM.so.22.1  vendored
-/usr/share/llvm-dsdl/llvm-dsdl-sbom.cdx.json
-/usr/share/doc/llvm-dsdl/copyright      MIT + Apache-2.0-WITH-LLVM-exception
-```
+`LLVMDSDL_VENDOR_LLVM` (default off — an ordinary `cmake --install` should not copy ~150 MB into
+the install tree) means "self-contained" on both platforms, by platform-appropriate means:
 
-`llvm-dsdl-dev` adds `/usr/include/llvmdsdl/**` and `/usr/lib/*.a`, and `Depends: llvm-dsdl (= ${binary:Version})`.
+- **Linux** — `libLLVM.so.22.1` installs to `/usr/lib/<multiarch>/llvm-dsdl/`, with CMake's
+  `INSTALL_RPATH` putting `$ORIGIN/../<libdir>/llvm-dsdl` on the three tools. A private directory,
+  not `${CMAKE_INSTALL_LIBDIR}`: this is our copy of someone else's library and must satisfy
+  nothing but our own tools.
+- **macOS** — [cmake/BundleSelfContainedTools.cmake](../../cmake/BundleSelfContainedTools.cmake)
+  copies the tools and their dylibs into `bin/` + `lib/`, rewrites Mach-O install names to
+  `@executable_path/../lib` and `@loader_path`, and ad-hoc codesigns. When vendoring is on, the
+  install rules install that bundle rather than the raw targets.
 
-### Generation
+LLVM is Apache-2.0-WITH-LLVM-exception, so redistribution is fine with attribution;
+[packaging/deb/copyright](../../packaging/deb/copyright) carries the stanza covering the shipped
+library.
 
-CPack's DEB generator, driven by the existing install components, in
-[cmake/Packaging.cmake](../../cmake/Packaging.cmake). `CPACK_DEB_COMPONENT_INSTALL` maps
-`bin`/`dev` onto the two packages, and `llvm-dsdl-dev` pins `llvm-dsdl (= <version>)` so headers
-and static libraries can never be paired with a different build.
+### Dependencies are derived, never written by hand
 
-`CPACK_DEBIAN_PACKAGE_SHLIBDEPS` is **off**: it resolves each linked library against the local
-dpkg database, and the vendored `libLLVM` would either make it fail or map to a wrong system
-package. `Depends` is therefore explicit, via the `LLVMDSDL_DEB_DEPENDS` cache variable. Its
-default (`libc6, libstdc++6`) is a baseline, **not** the answer — the real list is derived on the
-target distribution with `objdump -p` over the staged binaries, minus anything in the private
-libdir, through `dpkg -S`. A wrong `Depends` is exactly what the clean-container verify job
-catches, so it needs to be correct, not clever.
+`CPACK_DEBIAN_PACKAGE_SHLIBDEPS` is off. `dpkg-shlibdeps` resolves every linked library against
+the dpkg database, and the vendored `libLLVM` belongs to no installed package, so it either fails
+or invents a wrong dependency.
+
+The list is instead derived from the built binaries at package time by
+[packaging/deb/derive_depends.py](../../packaging/deb/derive_depends.py): walk what the tools
+*and the vendored library* link, drop what ships inside the package, map the rest through
+`dpkg -S`. It runs from a CPack project-config script, because the binaries do not exist at
+configure time.
+
+The vendored library's own dependencies are the ones that bite. The current list is `libbsd0`,
+`libc6`, `libedit2`, `libffi8`, `libicu70`, `libmd0`, `libstdc++6`, `libxml2`, `libz3-4`,
+`libzstd1` — all from the stock Ubuntu archive, and all but two contributed by `libLLVM` rather
+than by our own code.
+
+---
+
+## 4. Debian packaging
+
+`.deb` generation is CPack's DEB generator driven by the existing install components
+([cmake/Packaging.cmake](../../cmake/Packaging.cmake)). `CPACK_DEB_COMPONENT_INSTALL` maps
+`bin`/`dev` onto the two packages.
+
+Compression is **xz**, not CPack's default gzip: the package is dominated by a vendored library
+that compresses well, and this is a file people download directly — 74 MB → 46 MB measured.
 
 ### Policy metadata
 
-Debian keys both files off the *binary package* name, so each needs its own copy —
-`CMAKE_INSTALL_DOCDIR` only covers `llvm-dsdl`, and the `llvm-dsdl-dev` destination is spelled
-out explicitly in [CMakeLists.txt](../../CMakeLists.txt).
+Debian keys these off the *binary package* name, so each package needs its own copy.
+`CMAKE_INSTALL_DOCDIR` only covers `llvm-dsdl`; the `llvm-dsdl-dev` destination is spelled out.
 
-- **`packaging/deb/copyright`** — DEP-5. Carries the project's MIT terms and a staged
-  Apache-2.0-with-LLVM-exception paragraph for the `libLLVM` that vendoring will put in the
-  package; it needs a `Files:` stanza once that lands.
-- **`packaging/deb/changelog`** — CPack has no changelog support, so it is gzipped (`-n`, for a
-  byte-identical result across builds) and installed by hand. Its top entry restates the version,
-  and a package whose changelog disagrees with its control file is malformed, so configure fails
-  on the mismatch rather than letting a release ship with it.
+- **[packaging/deb/copyright](../../packaging/deb/copyright)** — DEP-5, covering the project's MIT
+  terms and the Apache-2.0-with-LLVM-exception of the shipped `libLLVM`.
+- **[packaging/deb/changelog](../../packaging/deb/changelog)** — CPack has no changelog support, so
+  it is gzipped (`-n`, for a byte-identical result across builds) and installed by hand. Its top
+  entry restates the version; a package whose changelog disagrees with its control file is
+  malformed, so configure fails on the mismatch.
+- **[packaging/deb/lintian-overrides/llvm-dsdl](../../packaging/deb/lintian-overrides/llvm-dsdl)** —
+  the tools ship unstripped, neither stripped nor split into `-dbgsym`. For a compiler of an
+  avionics-adjacent wire format, the symbols needed to read a backtrace should already be on the
+  machine that produced the core. The override carries no file hint: lintian releases disagree on
+  how hints are rendered, and a hint that does not match the running version is silently inert.
 
-- **`packaging/deb/lintian-overrides/llvm-dsdl`** — the tools ship unstripped, and neither
-  stripped nor split into `-dbgsym`. For a compiler of an avionics-adjacent wire format, the
-  symbols needed to read a backtrace should already be on the machine that produced it. The
-  override records that as a decision where lintian reads it.
-
-**Both packages are lintian-clean.**
+Both packages are lintian-clean.
 
 ### Man pages
 
 Generated from each tool's own `--help` by
-[tools/man/generate_manpage.py](../../tools/man/generate_manpage.py), so the two cannot drift —
-a newly documented flag reaches the man page at the next build, with no second copy to forget.
-Two help dialects are parsed: the `NAME`/`SYNOPSIS` sections that `dsdlc` and `dsdld` print, and
-LLVM's `cl::opt` format that `dsdl-opt` inherits. Anything not structurally mappable is emitted
-verbatim in a preformatted block rather than guessed at.
+[tools/man/generate_manpage.py](../../tools/man/generate_manpage.py), so the two cannot drift.
+Two help dialects are parsed: the `NAME`/`SYNOPSIS` sections `dsdlc` and `dsdld` print, and LLVM's
+`cl::opt` format `dsdl-opt` inherits. Anything not structurally mappable is emitted verbatim in a
+preformatted block rather than guessed at. The page date comes from the changelog's release
+trailer, not the clock, so rebuilds are byte-identical.
 
-The page date comes from the changelog's release trailer, not the clock, so rebuilding the same
-source yields byte-identical pages.
+This runs each tool to document it, so it needs host-executable binaries — fine natively, but a
+cross-build would have to generate the pages host-side.
 
-Note this runs each tool to document it, so it needs host-executable binaries. Native builds are
-fine; a cross-build (§10) would have to generate the pages host-side or ship them prebuilt.
+---
 
-### Publishing — v1 is a downloadable file, not a repository
+## 5. macOS packaging
 
-The first release ships the `.deb` as a **GitHub Release asset**. Users run:
+The tarball is the bundle described in §3: `bin/`, `lib/`, licences, and a manifest. It is
+relocatable — extract anywhere, add `bin/` to `PATH`.
+
+### Gatekeeper
+
+The binaries are ad-hoc signed rather than notarized, and `spctl -a -t exec` rejects them. That
+matters only for files carrying `com.apple.quarantine`, which depends entirely on how the archive
+is opened:
+
+| Path | Quarantine on extracted files | Result |
+|---|:--:|---|
+| `curl` + `tar -xzf` | no | runs |
+| Browser download + `tar -xzf` | no | runs |
+| Browser download + Finder double-click | yes | **blocked** |
+| `brew install` | no — brew strips it | runs |
+
+`tar` does not propagate quarantine; Archive Utility does. So the tarball needs no Developer ID
+and no notarization, **provided the install instructions say `tar -xzf`** — which the release
+notes do. Notarization is the usual answer for shipping macOS binaries and would cost a paid
+certificate, `notarytool`, and secrets; it buys only the Finder row.
+
+---
+
+## 6. The release workflow
+
+[.github/workflows/release.yml](../../.github/workflows/release.yml), triggered by a `v*` tag or
+by `workflow_dispatch` (which defaults to a dry run that builds and verifies without publishing).
 
 ```
-sudo apt install ./llvm-dsdl_0.1.0_arm64.deb
+tag v* ──▶ stage ──▶ build   (ubuntu-22.04-arm, ubuntu-22.04) ──▶ publish
+             │       macos   (macos-15)                            │
+        version/tag      each: build → package → verify        draft release,
+        consistency                                            checksums, attestation
 ```
 
-This defers the whole apt-repository apparatus (below) at the cost of no automatic updates. It
-does **not** defer vendoring — the opposite. A package installed from a local file resolves its
-dependencies against stock Ubuntu only, and no Ubuntu release carries LLVM 22, so without the
-vendored `libLLVM` the package would install cleanly and then fail on first run with a missing
-shared object. There is no repository of ours for apt to fall back on. Vendoring is what makes a
-bare downloadable file work at all.
+- **stage** — derives the version from `VERSION`, fails if a tag disagrees with it, and checks the
+  changelog's top entry matches. A tag that disagreed would ship binaries misreporting themselves.
+- **build** / **macos** — each runs on a native runner for its architecture; CI never emulates.
+  Emulation is only how a developer on one architecture cross-checks the other locally, which is
+  what `smoke.py --platform` exists for. The legs are independent (`fail-fast: false`): one
+  architecture's package is installable without the other.
+- **publish** — downloads each artifact into its own subdirectory (every build job writes a
+  `SHA256SUMS`, so merging would leave one overwriting the others), rebuilds one checksum file
+  from what is actually attached, attests provenance, and creates a **draft** release.
 
-Deferring the repo drops: `gh-pages`, `apt-ftparchive`, GPG-signed `InRelease`, additive
-`Packages` indices, and the `signed-by=` install instructions. Checksums and build-provenance
-attestations still ship with the release assets.
+Reference point for capacity planning: the arm64 Linux leg, including building the release
+container image from scratch, completed in 5m30s on GitHub's arm64 runner against a 90-minute
+timeout.
 
-### Publishing — the apt repository (future work)
+---
 
-An apt repo is a static file tree, so host it on GitHub Pages from a `gh-pages` branch:
+## 7. Verification
+
+A package that only works where it was built is the failure mode all of this is built to catch,
+and with no repository behind a downloaded file, nothing else would notice.
+
+| Check | What it proves | Where |
+|---|---|---|
+| [smoke.py](../../packaging/verify/smoke.py) | The `.deb` installs on **pristine** Ubuntu with no apt.llvm.org, all three tools run, `libLLVM` resolves through RPATH, generated C compiles with stock `cc`, a non-C backend emits | release workflow |
+| [smoke_macos.py](../../packaging/verify/smoke_macos.py) | Every non-system reference in every binary and dylib resolves **inside the bundle**, tools run, generated C compiles | release workflow |
+| [check_deb_config.py](../../packaging/verify/check_deb_config.py) | Control fields, component split, version pin, lintian verdict — against real packages built in a container | ctest (`llvmdsdl-packaging-deb-config`) |
+| [test_check_deb_config.py](../../packaging/verify/test_check_deb_config.py) | The verdict logic itself, against recorded output — no Docker needed | ctest (`llvmdsdl-packaging-deb-config-selftest`) |
+
+Two design points worth keeping:
+
+**macOS asserts linkage, not just behaviour.** There is no pristine container to install into, and
+the build runner is the worst possible judge — it has Homebrew LLVM at exactly the paths a
+non-relocated binary would reference, so a tarball that only works there would pass every
+behavioural test.
+
+**The verdict logic is tested without Docker.** The containerised check registers only when a
+`docker` binary exists and exits 77 — which `SKIP_RETURN_CODE` turns into a ctest *skip* — when
+the daemon is unreachable. The CI Linux lane runs inside a container and has no Docker of its own,
+so without this it would either fail to configure or report a green test that never ran. Pass
+`--require-docker` to make an unusable daemon a hard failure; the release lane should, since a
+silent skip there would let an unverified package through.
+
+---
+
+## 8. Not yet built
+
+### Homebrew
+
+A tap (`OpenCyphal-Garage/homebrew-llvm-dsdl`) needing a PAT held as a secret here. The formula
+builds from source, and CI additionally produces bottles so the common path is a binary download:
+`brew install --build-bottle`, `brew bottle --json --root-url=<release asset URL>`, attach the
+bottle to the release, `brew bottle --merge --write`, commit to the tap.
+
+Bottles are keyed by macOS version, not just architecture — a bottle built on `macos-15` is
+`arm64_sequoia`, and a Sonoma user silently builds from source instead. Build the newest two the
+runners offer and let the rest compile. Run `brew style` and `brew audit --strict --online` in the
+package job.
+
+**The formula should vendor**, matching the `.deb`, via `depends_on "llvm@22" => :build` plus the
+install-name rewriting §3 already does. `depends_on "llvm@22"` at runtime is the idiomatic answer
+and the one to reach for by default, but the measured cost is lopsided: a 218 MB vendored bundle
+against the 1.7 GB `llvm` keg a user would otherwise install to run a ~12 MB compiler. The usual
+objection — that vendoring forecloses homebrew-core — does not bite here, because homebrew-core is
+blocked by the LLVM pin below regardless, and a formula is a few dozen lines to rewrite if that
+ever changes.
+
+For reference when writing the formula: Homebrew's current `llvm` is 22.1.8, our locked major, and
+`llvm@22` is an alias for it. Real versioned formulae exist for `llvm@14` through `llvm@21`, so
+each major gains one as it is superseded — `depends_on "llvm@22"` should keep resolving across the
+rollover. A scheduled canary asserting that `llvm@22` resolves *and* reports major 22 turns a
+break into a red check rather than a user's bug report.
+
+### Upstream homebrew-core
+
+Blocked by the **LLVM major lock**, not by packaging. homebrew-core rebuilds dependents when
+`llvm` bumps, and `LLVMDSDL_REQUIRED_LLVM_MAJOR` hard-fails configure against any other major — by
+design, because EmitC output varies across MLIR majors and this project pins byte-reproducibility
+to one (see [SUPPLY_CHAIN.md](../SUPPLY_CHAIN.md)). A formula that refuses to build the day `llvm`
+rolls is one homebrew-core will not carry.
+
+| Option | Cost |
+|---|---|
+| Track LLVM majors promptly, bumping the lock as each lands | Ongoing maintenance tied to LLVM's cadence |
+| Accept a range of majors, reproducibility guaranteed per-major | Weakens the single-major guarantee |
+| Stay in our own tap | No upstream, no compromise |
+
+The tap costs nothing and forecloses nothing. This should be decided on its own merits rather than
+under a packaging deadline. (homebrew-core also has a notability bar, which is a matter of
+adoption rather than engineering.)
+
+### apt repository
+
+A static file tree on GitHub Pages from a `gh-pages` branch:
 
 ```
 dists/stable/{InRelease,Release,Release.gpg}
@@ -313,228 +274,80 @@ dists/stable/main/binary-{amd64,arm64}/Packages{,.gz}
 pool/main/l/llvm-dsdl/*.deb
 ```
 
-Generate with `apt-ftparchive`, sign `InRelease` with a release GPG key held in repository
-secrets. **Sign from the start** — the alternative is teaching users `[trusted=yes]`, which is a
-bad habit to hand out. Install instructions become the standard
-`signed-by=/usr/share/keyrings/llvm-dsdl.gpg` three-liner.
+Generated with `apt-ftparchive`, `InRelease` signed with a release key held in secrets. Sign from
+the start — the alternative is teaching users `[trusted=yes]`. Publishing must be **additive**:
+download the existing index, add the new pool entries, regenerate. Regenerating from only the
+current release silently deletes every prior version.
 
-Publishing must be **additive**: download the existing `Packages` index, add the new pool
-entries, regenerate. Never regenerate the repo from only the current release's artifacts, or
-every publish silently deletes every prior version.
+The DEP-5 `copyright` already covers the vendored library, so nothing about the repo changes the
+packaging.
 
----
+### Other platforms
 
-## 4. brew
+- **Intel macOS.** Requires either an x86_64 runner or `-arch x86_64` on the arm64 runner with
+  verification under Rosetta 2. The bundle is architecture-specific, so a universal binary would
+  mean building both halves.
+- **snap.** A natural fit — snaps bundle everything, so the vendoring question disappears. `base:
+  core24`, `confinement: strict`, plugs `home` and `removable-media`.
+- **Windows.** WinGet accepts a plain zip with `NestedInstallerType: portable`, and Scoop is nearly
+  free on top of the same zip. The packaging is easy; the *build* is not, because there is no
+  prebuilt LLVM 22 with MLIR for Windows. It is blocked on the cached-toolchain pipeline below.
+- **RPM.** CPack's RPM generator plus a Fedora COPR project — the cheapest format to add, since the
+  component split and vendoring are already settled.
 
-Tap repo: `OpenCyphal-Garage/homebrew-llvm-dsdl` (`brew install opencyphal-garage/llvm-dsdl/llvm-dsdl`).
-Requires a PAT with write access to the tap repo, stored as a secret in this repo.
+### Cached LLVM toolchain
 
-The formula **builds from source** (`depends_on "llvm@22"`, `depends_on "cmake" => :build`,
-`ninja`, `python@3.12`) — that keeps the tap honest and gives an escape hatch on unbottled
-platforms. CI additionally produces **bottles** so the common path is a binary download:
+Several constraints trace back to *whose* LLVM 22 we build against: the glibc floor is
+apt.llvm.org's choice, the brew formula follows Homebrew's lifecycle, and Windows has no prebuilt
+LLVM with MLIR at all. Building LLVM/MLIR 22 ourselves once per target, caching it as a GHCR image
+or release artifact keyed by `llvm-rev + triple + stdlib`, and restoring it in the build job
+dissolves all three. It runs when the pin changes, not per release.
 
-1. `brew install --build-bottle --formula ./llvm-dsdl.rb`
-2. `brew bottle --json --root-url=<release asset URL>`
-3. Attach the `.bottle.tar.gz` to the GitHub release; `brew bottle --merge --write` updates the
-   `bottle do` block; commit to the tap.
-
-**Bottles are keyed by macOS version, not just arch** — a bottle built on macos-15 is
-`arm64_sequoia` and will not be used by a Sonoma user, who silently builds from source instead
-(slow, but correct). The real brew axis is therefore (macOS version × arch); the pilot should
-build the newest two the runners offer and let everything else compile.
-
-Also run `brew style` and `brew audit --strict --online` in the package job — cheap, and catches
-formula rot before the tap does.
-
----
-
-## 5. Later formats (designed for, not built in the pilot)
-
-**snap.** Natural fit: snaps bundle everything, so the vendoring question disappears. `base:
-core24`, `confinement: strict`, plugs `home` + `removable-media` (dsdlc reads DSDL trees and
-writes generated output; `dsdld` speaks LSP over stdio, which needs nothing). Build with
-`snapcore/action-build`, publish with `snapcraft/action-publish` and a
-`SNAPCRAFT_STORE_CREDENTIALS` secret; arm64 via the arm runner or Launchpad remote-build.
-
-**Windows.** The honest state of "what-the-fuck-ever-windows-is-doing-these-days" is: **WinGet**
-is the answer, and it accepts a plain zip with `NestedInstallerType: portable` — no MSI needed.
-**Scoop** is nearly free on top of the same zip (a JSON manifest). MSI (WiX v5) only if someone
-with enterprise deployment asks.
-
-The hard part is not the packaging, it is the *build*: there is no prebuilt LLVM 22 **with
-MLIR** for Windows. Chocolatey's `llvm` has no MLIR; `vcpkg install llvm[mlir]` builds from
-source and takes hours. **Windows is therefore blocked on the cached-toolchain pipeline in §1**
-— it is that pipeline's most demanding consumer, and the reason the pipeline should exist
-whether or not we ever cross-compile. Sequence: zip + Scoop → WinGet portable → MSI if demanded.
-
-**RPM.** CPack's RPM generator plus a Fedora COPR project is a small increment once the
-component split and vendoring approach are settled — probably the cheapest format to add after
-the pilot.
+This is deliberately not a prerequisite for anything shipping today. The four-stage workflow
+factoring exists so the toolchain source is an implementation detail of the build job: it can swap
+in later without touching the package, verify, or publish stages.
 
 ---
 
-## 6. Verification — the part that makes this real
+## 9. Why not cross-compile
 
-This repository's own architectural review is scathing about assurance metrics that measure
-*presence* rather than *behavior* (G4: "a backend scores 100 by mentioning the shared helpers").
-Packaging has exactly the same failure mode: a green pipeline that only proves a `.deb` *was
-produced*. So the pilot's centerpiece is one script run against every installed package on a
-pristine machine:
+Building every target from one Linux runner is the obvious way to avoid a native runner per
+architecture, and `zig cc` is the obvious tool. It does not work here, and the reason is worth
+recording because the idea will resurface.
 
-**`packaging/verify/smoke.py`** — run inside a clean `ubuntu:22.04` container (`apt install
-./llvm-dsdl_*.deb`) and on a clean macOS runner (`brew install`):
+**This is a dependency problem, not a compiler problem.** Zig supplies a clang that emits aarch64
+or Mach-O code, libc headers, and glibc version stubs. It does not supply `libLLVM` for the target
+or the MLIR archives we link.
 
-1. `dsdlc --version` matches the released version exactly.
-2. `dsdld --version` starts and responds to an LSP `initialize` over stdio.
-3. **Generate C from a real DSDL type and compile the result with a stock `cc`.** Exercises the
-   whole emit path from an installed binary — codegen, the runtime scaffold it writes beside the
-   generated code, and whether the result is actually compilable on a machine that has never
-   seen the source tree.
-4. Same for at least one non-C backend (Go is cheapest — `go build` the generated package).
-5. **Re-run the determinism corpus hash** with
-   [tools/determinism/cross_stdlib_corpus_hash.py](../../tools/determinism/cross_stdlib_corpus_hash.py)
-   and assert it equals the hash the build job recorded. This connects the shipped artifact to
-   the existing cross-stdlib determinism gate: the binary a user installs demonstrably generates
-   the same bytes as the binary CI tested.
-6. `ldd` / `otool -L` shows no reference to any path outside the package and the declared system
-   dependencies — a direct check that vendoring and RPATH rewriting worked.
+1. **No target-built LLVM/MLIR.** You would have to cross-build LLVM first — which is the cached
+   toolchain above, at which point native is simpler — or scrape prebuilts into ad-hoc sysroots.
+2. **C++ ABI mismatch if you scrape.** apt.llvm.org builds against libstdc++, Homebrew against
+   libc++, and zig bundles its own libc++ with no libstdc++ at all. MLIR exports a great deal of
+   templated C++; mixing standard libraries across that boundary yields undefined symbols or a
+   quietly ODR-broken binary.
+3. **TableGen must run on the build host.** [include/llvmdsdl/IR/CMakeLists.txt](../../include/llvmdsdl/IR/CMakeLists.txt)
+   invokes `mlir_tablegen()` eight times; pointing CMake at a target-arch MLIR yields a
+   `mlir-tblgen` that cannot execute on the builder.
+4. **Verification requires execution anyway.** Every check in §7 runs the binary. Cross-compiling
+   removes the build runner and leaves the test runner — the one that matters. On a public
+   repository the native runners are free.
 
-Steps 3 and 5 are the ones with teeth. Step 5 in particular is a genuinely strong claim that
-most projects cannot make, and this repo already has the tooling for it.
+The intuition it comes from is sound: zig's real strength is decoupling the glibc floor from the
+build host. But with vendoring, that floor is set by the prebuilt `libLLVM` we ship rather than by
+our own objects, so the cure for it is owning our LLVM toolchain.
 
-### What runs under ctest today
+Worth revisiting if the cached toolchain lands *and* someone wants to collapse the build matrix
+further: blockers 1 and 2 disappear, 3 is mechanical, and only 4 remains — capping the win at
+"fewer build runners, same number of test runners".
 
-| Test | Needs | Labels |
+---
+
+## 10. Open decisions
+
+| # | Decision | Current answer |
 |---|---|---|
-| `llvmdsdl-packaging-deb-config-selftest` | nothing beyond python3 | `integration;packaging` |
-| `llvmdsdl-packaging-deb-config` | Docker | `integration;packaging;slow` |
-
-The split is deliberate. The checker's verdict logic — control-field assertions, the shared-synopsis
-trap, the version-pin check — is exercised against recorded container output by the self-test, so it
-stays covered on hosts that cannot build a `.deb` at all. That is exactly where a silent regression
-in those assertions would otherwise survive.
-
-The containerised check registers only when a `docker` binary exists, and exits `77` when the daemon
-is unreachable, which `SKIP_RETURN_CODE` turns into a ctest **skip** rather than a pass. Both paths
-matter: the CI Linux lane runs inside a container and has no Docker of its own, so without this it
-would either fail to configure or report a green test that never ran. Pass `--require-docker` to turn
-an unusable daemon into a hard failure — the release lane should, since a skip there would let an
-unverified package through.
-
-**`packaging-smoke.yml`** runs steps 1–4 for linux-amd64 on every PR that touches `packaging/`,
-`cmake/Packaging.cmake`, or the release workflow — so control-file rot is caught at review time
-rather than at 2am on a tag.
-
----
-
-## 7. Provenance and signing
-
-- `actions/attest-build-provenance` on every dist artifact and every package — SLSA-style
-  provenance, verifiable with `gh attestation verify`. Cheap, and it complements the existing
-  CycloneDX SBOM: the SBOM says what is inside, the attestation says where it came from.
-- The SBOM is already generated as part of `ALL` and installed with the `bin` component, so it
-  ships automatically. Add an assertion in `verify` that the installed SBOM's `TOOL_VERSION`
-  matches the release tag.
-- apt: GPG-signed `InRelease` (§3).
-- macOS: bottles installed through brew do not need notarization (brew clears quarantine), and
-  the bundle target already ad-hoc-codesigns. **Do not ship standalone macOS `.tar.gz`/`.dmg`
-  downloads in the pilot** — those *would* need a Developer ID and `notarytool`, which is a
-  separate chunk of secrets and process. brew only.
-
----
-
-## 8. Sequencing
-
-**Phase 0 — build-side prerequisites (blocking; no packaging work is meaningful before these).**
-1. Extend `bundle-tools-self-contained` to cover `dsdld` and emit `bin/` + `lib/`, then move
-   CPack onto the vendored private-libdir layout of §3.
-2. Add a `release` configure preset (RelWithDebInfo, install prefix, bundle on).
-3. Add the tag ↔ `VERSION` consistency check.
-
-**Phase 1 — the 2×2 pilot.**
-4. Spike: confirm runner availability (Intel macOS, `ubuntu-22.04-arm`) and which Ubuntu release
-   `apt.llvm.org` still ships LLVM 22 for. **This determines the matrix; do it first.**
-5. Derive the real `Depends` on a Linux host with a real build (`objdump -p` over the staged
-   binaries, through `dpkg -S`) and set `LLVMDSDL_DEB_DEPENDS` from it — the configured default
-   is a baseline, not an answer.
-6. `build-dist` composite action + the four-cell build matrix → dist tarballs and `.deb`s.
-7. `package` jobs: 2 bottles.
-8. `packaging/verify/smoke.py` + the four verify jobs. **Do not skip to publishing.**
-9. Draft GitHub release with all artifacts + checksums + attestations. Dry-run mode by default.
-
-**Phase 1b — cached LLVM toolchain (parallel track, not blocking the pilot).**
-10. `llvm-toolchain.yml`: build LLVM/MLIR 22 at a pinned revision per target, publish as a GHCR
-    image (Linux) / release artifact (macOS), keyed by `llvm-rev + triple + stdlib`. Runs on pin
-    change, not per release.
-11. A restore step for the `build` job, behind a flag so the pilot can switch over one cell at a
-    time.
-
-**Phase 2 — real distribution.**
-12. Swap `build` onto the cached toolchain; lower the glibc floor deliberately and record it.
-13. apt repo on `gh-pages` with GPG-signed `InRelease`, additive publishing.
-14. Homebrew tap repo + automated formula/bottle commit.
-15. `packaging-smoke.yml` on PRs.
-16. `llvm@22` availability canary — becomes moot once 1b lands and the formula builds against
-    our own toolchain, but needed until then.
-17. Install instructions in [README.md](../../README.md).
-
-**Phase 3 — breadth.** snap; Windows (requires 1b, then zip + Scoop, then WinGet); RPM/COPR;
-`llvm-dsdl-dev` promotion if anyone actually links the libraries.
-
----
-
-## 9. Open decisions
-
-| # | Decision | Default assumed here |
-|---|---|---|
-| D1 | Which org owns the tap and apt repo — `OpenCyphal-Garage` or `thirtytwobits`? | `OpenCyphal-Garage` (matches `upstream`) |
-| D2 | Is Intel macOS supported? | Yes via `-arch x86_64` + Rosetta verification if the spike holds; otherwise dropped for (sequoia, sonoma) on arm64 |
-| D3 | Vendor `libLLVM` in the `.deb`, or require `apt.llvm.org`? | Vendor |
-| D4 | Does `llvm-dsdl-dev` ship in the pilot? | Built and verified, published to apt only |
-| D5 | Release trigger | tag `v*` push, plus `workflow_dispatch` with a dry-run input |
-| D6 | Build our own LLVM 22 (Phase 1b) or stay on distro/brew builds indefinitely? | Build our own — it is the only path to Windows and to a chosen glibc floor |
-| D7 | What glibc floor do we commit to once 1b lands? | Undecided; needs a supported-distro policy, not a technical answer |
-
----
-
-## 10. Why not cross-compile (zig cc, clang sysroots, etc.)
-
-Cross-compiling everything from one amd64 Linux runner is the obvious way to avoid a native
-runner per cell, and `zig cc` is the obvious tool. It does not work for this project, and the
-reason is worth recording so it does not get re-litigated.
-
-**Cross-compiling this project is not a compiler problem, it is a dependency problem.** Zig
-supplies a clang that emits aarch64 or Mach-O code, libc headers, and glibc version stubs. It
-does not supply `libLLVM.so.22.1` for arm64 or the MLIR static archives we link. Four concrete
-blockers:
-
-1. **No target-built LLVM/MLIR.** You would have to cross-build LLVM 22 per target first — which
-   is the Phase 1b pipeline, at which point you may as well build natively — or scrape prebuilts
-   out of apt.llvm.org arm64 debs and Homebrew bottles into ad-hoc sysroots.
-2. **C++ ABI mismatch if you scrape.** apt.llvm.org builds against **libstdc++**; Homebrew
-   against Apple's **libc++**. Zig bundles its own libc++ and ships no libstdc++ at all. MLIR
-   exports a great deal of templated C++; mixing libc++ versions across that boundary yields
-   undefined symbols from inline-namespace differences, or — worse — a binary that links and is
-   quietly ODR-broken. A project that pins an LLVM *major* because EmitC output drifts across
-   them should not accept a sharper version hazard one layer down.
-3. **TableGen must run on the build host.** [include/llvmdsdl/IR/CMakeLists.txt:9](../../include/llvmdsdl/IR/CMakeLists.txt)
-   invokes `mlir_tablegen()` eight times; `MLIR_TABLEGEN_EXE` comes from the MLIRConfig package.
-   Point CMake at a target-arch MLIR install and you get a target-arch `mlir-tblgen` that cannot
-   execute on the builder. Solvable — provision host *and* target MLIR, override the exe — but
-   it is another cross-build-only invariant to keep correct.
-4. **Verification requires execution anyway.** §6 is the point of this whole plan, and every
-   step of it runs the binary. A cross-built artifact cannot be verified without emulation, so
-   cross-compiling removes the *build* runner and leaves the *test* runner — the one that
-   matters. On a public repository, `ubuntu-22.04-arm` and the macOS runners are free; the cost
-   of native runners is YAML, not money.
-
-**What the intuition does get right:** zig's genuine strength is decoupling the glibc floor from
-the build host, which *is* a real problem here. But with vendoring, the floor is set by the
-prebuilt `libLLVM` we ship, not by our own objects — so zig only half-solves it, and closing the
-other half means building LLVM ourselves. That is Phase 1b, and it addresses the same underlying
-cause more completely. The one-line summary: **the answer to "we need too many native runners"
-is not a cross-compiler, it is owning our LLVM toolchain.**
-
-Worth revisiting if: Phase 1b lands and produces target-built LLVM/MLIR *and* someone wants to
-collapse the build matrix further. At that point blockers 1 and 2 are gone, 3 is mechanical, and
-only 4 remains — which caps the win at "fewer build runners, same number of test runners."
+| D1 | Who owns the tap and apt repo | `OpenCyphal-Garage`, matching `upstream` |
+| D2 | Is Intel macOS supported | Not built; `-arch x86_64` plus Rosetta verification is the likely route if wanted |
+| D3 | Does `llvm-dsdl-dev` publish | Built and verified; published to apt when the repo exists |
+| D4 | Glibc floor once we build our own LLVM | Undecided — a supported-distro policy question, not a technical one |
+| D5 | The LLVM major lock vs upstream homebrew-core | Undecided; see §8 |

@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 
-foreach(var TOOL_DSDLC TOOL_DSDLOPT OUTPUT_DIR)
+# Build a relocatable directory containing every llvm-dsdl tool and the shared
+# libraries they need, with their dynamic-link references rewritten to point
+# inside the bundle. The result runs from anywhere, on a machine that has neither
+# Homebrew nor apt.llvm.org installed.
+#
+# Layout is bin/ + lib/ rather than one flat directory, because this tree is what
+# the macOS release tarball ships: a flat pile of executables and dylibs is a
+# poor thing to hand someone, and separating them lets the executables carry a
+# single relative reference (../lib) instead of depending on their own directory
+# also being the library directory.
+
+foreach(var TOOLS OUTPUT_DIR)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
     message(FATAL_ERROR "Missing required variable: ${var}")
   endif()
@@ -10,7 +21,7 @@ if(NOT DEFINED LLVMDSDL_SOURCE_DIR OR "${LLVMDSDL_SOURCE_DIR}" STREQUAL "")
   get_filename_component(LLVMDSDL_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
 
-foreach(tool "${TOOL_DSDLC}" "${TOOL_DSDLOPT}")
+foreach(tool IN LISTS TOOLS)
   if(NOT EXISTS "${tool}")
     message(FATAL_ERROR "Tool executable not found: ${tool}")
   endif()
@@ -57,6 +68,11 @@ function(_llvmdsdl_codesign_macos target_file)
     endif()
   endif()
 
+  # Ad-hoc, because a Developer ID signature would need a paid certificate and
+  # notarisation. Rewriting a Mach-O invalidates any existing signature, and an
+  # invalid signature is worse than an ad-hoc one: the loader refuses it
+  # outright. See docs/plans/P3_release_packaging.md §4 for what this means for
+  # Gatekeeper (short version: fine via `tar`, blocked via Finder).
   execute_process(
     COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - --timestamp=none "${target_file}"
     RESULT_VARIABLE codesign_result
@@ -80,8 +96,11 @@ function(_llvmdsdl_is_linux_system_dep dep_path out_result)
 endfunction()
 
 set(bundle_dir "${OUTPUT_DIR}")
+set(bundle_bin "${bundle_dir}/bin")
+set(bundle_lib "${bundle_dir}/lib")
 file(REMOVE_RECURSE "${bundle_dir}")
-file(MAKE_DIRECTORY "${bundle_dir}")
+file(MAKE_DIRECTORY "${bundle_bin}")
+file(MAKE_DIRECTORY "${bundle_lib}")
 
 set(notice_files "")
 foreach(notice_rel
@@ -98,20 +117,20 @@ foreach(notice_rel
   endif()
 endforeach()
 
-set(bundled_items "")
-foreach(tool "${TOOL_DSDLC}" "${TOOL_DSDLOPT}")
-  file(COPY "${tool}" DESTINATION "${bundle_dir}")
+set(bundled_executables "")
+foreach(tool IN LISTS TOOLS)
+  file(COPY "${tool}" DESTINATION "${bundle_bin}")
   get_filename_component(tool_name "${tool}" NAME)
-  set(dst "${bundle_dir}/${tool_name}")
+  set(dst "${bundle_bin}/${tool_name}")
   file(CHMOD "${dst}"
        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
                    GROUP_READ GROUP_EXECUTE
                    WORLD_READ WORLD_EXECUTE)
-  list(APPEND bundled_items "${dst}")
+  list(APPEND bundled_executables "${dst}")
 endforeach()
 
 file(GET_RUNTIME_DEPENDENCIES
-  EXECUTABLES "${TOOL_DSDLC}" "${TOOL_DSDLOPT}"
+  EXECUTABLES ${TOOLS}
   RESOLVED_DEPENDENCIES_VAR resolved_deps
   UNRESOLVED_DEPENDENCIES_VAR unresolved_deps
 )
@@ -125,50 +144,70 @@ set(copied_deps "")
 if(APPLE)
   foreach(dep IN LISTS resolved_deps)
     if(EXISTS "${dep}")
-      file(COPY "${dep}" DESTINATION "${bundle_dir}" FOLLOW_SYMLINK_CHAIN)
+      file(COPY "${dep}" DESTINATION "${bundle_lib}" FOLLOW_SYMLINK_CHAIN)
     endif()
   endforeach()
 
-  file(GLOB copied_deps "${bundle_dir}/*.dylib")
-  list(APPEND bundled_items ${copied_deps})
-  list(REMOVE_DUPLICATES bundled_items)
+  file(GLOB copied_deps "${bundle_lib}/*.dylib")
 
-  foreach(item IN LISTS bundled_items)
-    _llvmdsdl_collect_macos_deps("${item}" item_deps)
-    if(item MATCHES "\\.dylib$")
-      get_filename_component(item_name "${item}" NAME)
-      execute_process(
-        COMMAND install_name_tool -id "@loader_path/${item_name}" "${item}"
-        RESULT_VARIABLE id_result
-        OUTPUT_QUIET
-        ERROR_VARIABLE id_stderr
-      )
-      if(NOT id_result EQUAL 0)
-        message(FATAL_ERROR "install_name_tool -id failed for ${item}: ${id_stderr}")
-      endif()
-      set(prefix "@loader_path")
-    else()
-      set(prefix "@executable_path")
+  # Libraries first: an executable's references are rewritten against whatever is
+  # present in lib/, so the set has to be complete before the executables are
+  # walked. A library's siblings live beside it, hence @loader_path; an
+  # executable reaches them one directory up, hence @executable_path/../lib.
+  foreach(item IN LISTS copied_deps)
+    get_filename_component(item_name "${item}" NAME)
+    execute_process(
+      COMMAND install_name_tool -id "@loader_path/${item_name}" "${item}"
+      RESULT_VARIABLE id_result
+      OUTPUT_QUIET
+      ERROR_VARIABLE id_stderr
+    )
+    if(NOT id_result EQUAL 0)
+      message(FATAL_ERROR "install_name_tool -id failed for ${item}: ${id_stderr}")
     endif()
 
+    _llvmdsdl_collect_macos_deps("${item}" item_deps)
     foreach(dep IN LISTS item_deps)
       get_filename_component(dep_name "${dep}" NAME)
-      if(EXISTS "${bundle_dir}/${dep_name}")
+      if(EXISTS "${bundle_lib}/${dep_name}")
         execute_process(
-          COMMAND install_name_tool -change "${dep}" "${prefix}/${dep_name}" "${item}"
+          COMMAND install_name_tool -change "${dep}" "@loader_path/${dep_name}" "${item}"
           RESULT_VARIABLE ch_result
           OUTPUT_QUIET
           ERROR_VARIABLE ch_stderr
         )
         if(NOT ch_result EQUAL 0)
           message(FATAL_ERROR
-            "install_name_tool -change failed for ${item}: ${dep} -> ${prefix}/${dep_name}\n${ch_stderr}")
+            "install_name_tool -change failed for ${item}: ${dep} -> @loader_path/${dep_name}\n${ch_stderr}")
         endif()
       endif()
     endforeach()
   endforeach()
 
-  foreach(item IN LISTS bundled_items)
+  foreach(item IN LISTS bundled_executables)
+    _llvmdsdl_collect_macos_deps("${item}" item_deps)
+    foreach(dep IN LISTS item_deps)
+      get_filename_component(dep_name "${dep}" NAME)
+      if(EXISTS "${bundle_lib}/${dep_name}")
+        execute_process(
+          COMMAND install_name_tool -change "${dep}" "@executable_path/../lib/${dep_name}" "${item}"
+          RESULT_VARIABLE ch_result
+          OUTPUT_QUIET
+          ERROR_VARIABLE ch_stderr
+        )
+        if(NOT ch_result EQUAL 0)
+          message(FATAL_ERROR
+            "install_name_tool -change failed for ${item}: ${dep} -> @executable_path/../lib/${dep_name}\n${ch_stderr}")
+        endif()
+      endif()
+    endforeach()
+  endforeach()
+
+  # Signing last: every install_name_tool write invalidates the signature.
+  foreach(item IN LISTS copied_deps)
+    _llvmdsdl_codesign_macos("${item}")
+  endforeach()
+  foreach(item IN LISTS bundled_executables)
     _llvmdsdl_codesign_macos("${item}")
   endforeach()
 elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -179,8 +218,6 @@ elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
       "Install patchelf and re-run the Release bundle target.")
   endif()
 
-  find_program(LDD_EXECUTABLE ldd)
-
   foreach(dep IN LISTS resolved_deps)
     if(NOT EXISTS "${dep}")
       continue()
@@ -189,16 +226,20 @@ elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     if(is_system_dep)
       continue()
     endif()
-    file(COPY "${dep}" DESTINATION "${bundle_dir}" FOLLOW_SYMLINK_CHAIN)
+    file(COPY "${dep}" DESTINATION "${bundle_lib}" FOLLOW_SYMLINK_CHAIN)
   endforeach()
 
-  file(GLOB copied_deps "${bundle_dir}/*.so" "${bundle_dir}/*.so.*")
-  list(APPEND bundled_items ${copied_deps})
-  list(REMOVE_DUPLICATES bundled_items)
+  file(GLOB copied_deps "${bundle_lib}/*.so" "${bundle_lib}/*.so.*")
 
-  foreach(item IN LISTS bundled_items)
+  # Executables look one directory up; libraries look beside themselves.
+  foreach(item IN LISTS bundled_executables copied_deps)
+    if(item IN_LIST bundled_executables)
+      set(rpath "$ORIGIN/../lib")
+    else()
+      set(rpath "$ORIGIN")
+    endif()
     execute_process(
-      COMMAND "${PATCHELF_EXECUTABLE}" --set-rpath "$ORIGIN" "${item}"
+      COMMAND "${PATCHELF_EXECUTABLE}" --set-rpath "${rpath}" "${item}"
       RESULT_VARIABLE rpath_result
       OUTPUT_QUIET
       ERROR_VARIABLE rpath_stderr
@@ -225,7 +266,7 @@ elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
       endif()
       if(needed MATCHES "^/")
         get_filename_component(needed_name "${needed}" NAME)
-        if(EXISTS "${bundle_dir}/${needed_name}")
+        if(EXISTS "${bundle_lib}/${needed_name}")
           execute_process(
             COMMAND "${PATCHELF_EXECUTABLE}" --replace-needed "${needed}" "${needed_name}" "${item}"
             RESULT_VARIABLE replace_result
@@ -246,72 +287,40 @@ else()
 endif()
 
 set(manifest "${bundle_dir}/MANIFEST.txt")
-file(WRITE "${manifest}" "Self-contained llvm-dsdl tools bundle\n")
-file(APPEND "${manifest}" "Output directory: ${bundle_dir}\n")
-file(APPEND "${manifest}" "Bundled executables:\n")
-file(APPEND "${manifest}" "  ${bundle_dir}/dsdlc\n")
-file(APPEND "${manifest}" "  ${bundle_dir}/dsdl-opt\n\n")
+file(WRITE "${manifest}" "Self-contained llvm-dsdl tools bundle\n\n")
+file(APPEND "${manifest}" "Bundled executables (bin/):\n")
+foreach(item IN LISTS bundled_executables)
+  get_filename_component(item_name "${item}" NAME)
+  file(APPEND "${manifest}" "  ${item_name}\n")
+endforeach()
+file(APPEND "${manifest}" "\n")
 if(notice_files)
   file(APPEND "${manifest}" "Bundled notice/license files:\n")
   foreach(notice_file IN LISTS notice_files)
-    file(APPEND "${manifest}" "  ${notice_file}\n")
+    get_filename_component(notice_name "${notice_file}" NAME)
+    file(APPEND "${manifest}" "  ${notice_name}\n")
   endforeach()
   file(APPEND "${manifest}" "\n")
 endif()
-file(APPEND "${manifest}" "Bundled shared libraries:\n")
+file(APPEND "${manifest}" "Bundled shared libraries (lib/):\n")
 foreach(dep IN LISTS copied_deps)
-  file(APPEND "${manifest}" "  ${dep}\n")
+  get_filename_component(dep_name "${dep}" NAME)
+  file(APPEND "${manifest}" "  ${dep_name}\n")
 endforeach()
 
-if(APPLE)
-  file(APPEND "${manifest}" "\nRuntime links after rewrite (otool -L):\n")
-  foreach(item "${bundle_dir}/dsdlc" "${bundle_dir}/dsdl-opt")
-    if(EXISTS "${item}")
-      execute_process(
-        COMMAND otool -L "${item}"
-        OUTPUT_VARIABLE otool_out
-        RESULT_VARIABLE otool_result
-      )
-      if(otool_result EQUAL 0)
-        file(APPEND "${manifest}" "\n${item}:\n${otool_out}\n")
-      endif()
-    endif()
-  endforeach()
-elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-  file(APPEND "${manifest}" "\nRuntime links after rewrite:\n")
-  foreach(item "${bundle_dir}/dsdlc" "${bundle_dir}/dsdl-opt")
-    if(NOT EXISTS "${item}")
-      continue()
-    endif()
-    execute_process(
-      COMMAND "${PATCHELF_EXECUTABLE}" --print-rpath "${item}"
-      OUTPUT_VARIABLE rpath_out
-      RESULT_VARIABLE rpath_result
-      ERROR_VARIABLE rpath_stderr
-    )
-    if(rpath_result EQUAL 0)
-      string(STRIP "${rpath_out}" rpath_out)
-      file(APPEND "${manifest}" "\n${item}:\n  rpath=${rpath_out}\n")
-    else()
-      file(APPEND "${manifest}" "\n${item}:\n  rpath=<error: ${rpath_stderr}>\n")
-    endif()
-
-    if(LDD_EXECUTABLE)
-      execute_process(
-        COMMAND "${LDD_EXECUTABLE}" "${item}"
-        OUTPUT_VARIABLE ldd_out
-        RESULT_VARIABLE ldd_result
-        ERROR_VARIABLE ldd_stderr
-      )
-      if(ldd_result EQUAL 0)
-        file(APPEND "${manifest}" "${ldd_out}\n")
-      else()
-        file(APPEND "${manifest}" "  ldd failed: ${ldd_stderr}\n")
-      endif()
-    else()
-      file(APPEND "${manifest}" "  ldd unavailable on PATH\n")
-    endif()
-  endforeach()
-endif()
+file(APPEND "${manifest}" "\nRuntime links after rewrite:\n")
+foreach(item IN LISTS bundled_executables)
+  if(APPLE)
+    execute_process(COMMAND otool -L "${item}"
+                    OUTPUT_VARIABLE link_out RESULT_VARIABLE link_result)
+  else()
+    execute_process(COMMAND "${PATCHELF_EXECUTABLE}" --print-rpath "${item}"
+                    OUTPUT_VARIABLE link_out RESULT_VARIABLE link_result)
+  endif()
+  if(link_result EQUAL 0)
+    get_filename_component(item_name "${item}" NAME)
+    file(APPEND "${manifest}" "\n${item_name}:\n${link_out}\n")
+  endif()
+endforeach()
 
 message(STATUS "Wrote self-contained tool bundle: ${bundle_dir}")

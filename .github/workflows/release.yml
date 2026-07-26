@@ -162,9 +162,75 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  macos:
+    name: Build tarball (macOS ${{ matrix.arch }})
+    needs: stage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install LLVM 22
+        # Homebrew's current `llvm` is the locked major; the configure-time
+        # major check fails loudly if that ever stops being true, so this does
+        # not silently build against the wrong one.
+        run: |
+          set -euo pipefail
+          brew install llvm ninja
+          echo "LLVM_PREFIX=$(brew --prefix llvm)" >> "$GITHUB_ENV"
+
+      - name: Configure, build, and package
+        # LLVMDSDL_VENDOR_LLVM on macOS installs the self-contained bundle rather
+        # than the raw targets: without it the tarball's binaries reference
+        # /opt/homebrew and run only on a machine that already has Homebrew LLVM.
+        run: |
+          set -euo pipefail
+          cmake -S . -B out -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DLLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm" \
+            -DMLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir" \
+            -DLLVMDSDL_VENDOR_LLVM=ON
+          cmake --build out
+          cd out && cpack -G TGZ
+
+      - name: Collect tarball
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp out/*.tar.gz dist/
+          cd dist
+          shasum -a 256 -- *.tar.gz > SHA256SUMS
+          ls -la
+
+      - name: Verify the tarball is self-contained
+        # There is no pristine container to install into, and this runner is the
+        # worst possible judge -- it has Homebrew LLVM at exactly the paths a
+        # non-relocated binary would reference. So the check asserts linkage,
+        # not just behaviour.
+        run: |
+          python3 packaging/verify/smoke_macos.py \
+            --tarball "dist/llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz" \
+            --expect-version "${{ needs.stage.outputs.version }}"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
   publish:
     name: Publish release
-    needs: [stage, build]
+    needs: [stage, build, macos]
     if: needs.stage.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -172,17 +238,38 @@ jobs:
       id-token: write        # provenance attestation
       attestations: write
     steps:
-      - name: Download packages
+      # Two steps rather than one brace pattern, and into per-artifact
+      # subdirectories rather than merged: every build job writes its own
+      # SHA256SUMS, and merging would silently leave one overwriting the others.
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: deb-*
-          path: dist
-          merge-multiple: true
+          path: staging
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-*
+          path: staging
+
+      - name: Combine artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find staging -type f ! -name SHA256SUMS -exec cp {} dist/ \;
+          # One checksum file covering everything, rebuilt from the artifacts
+          # themselves rather than concatenated, so it cannot disagree with what
+          # is actually attached.
+          cd dist && sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/*.deb
+          subject-path: |
+            dist/*.deb
+            dist/*.tar.gz
 
       - name: Create the release
         uses: softprops/action-gh-release@v2
@@ -192,9 +279,10 @@ jobs:
           draft: true
           files: |
             dist/*.deb
+            dist/*.tar.gz
             dist/SHA256SUMS
           body: |
-            ## Install — Ubuntu 22.04, 24.04, or 26.04
+            ## Ubuntu 22.04, 24.04, or 26.04
 
             Pick the package matching your architecture (`dpkg --print-architecture`):
 
@@ -203,12 +291,32 @@ jobs:
             sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_arm64.deb
             ```
 
-            No repository to add: the package bundles the LLVM 22 runtime it needs,
-            because no Ubuntu release carries it. Everything else it depends on comes
-            from the stock Ubuntu archive.
-
             `llvm-dsdl-dev` is also attached, for linking against the frontend,
             MLIR dialect, and emitter libraries.
+
+            ## macOS (Apple silicon)
+
+            Extract with `tar`, not by double-clicking:
+
+            ```
+            tar -xzf llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-arm64.tar.gz
+            ./llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-arm64/bin/dsdlc --version
+            ```
+
+            The binaries are ad-hoc signed rather than notarized. Extracting with
+            `tar` keeps them runnable; opening the archive in Finder marks them
+            with macOS's quarantine attribute and Gatekeeper will refuse to run
+            them. Move the extracted directory wherever you like — it is
+            relocatable — and add its `bin/` to your `PATH`.
+
+            ## Both platforms
+
+            No repository or package manager to configure: each package bundles the
+            LLVM 22 runtime it needs, because neither Ubuntu nor a stock macOS
+            carries it. Everything else comes from the platform.
+
+            Verify downloads against `SHA256SUMS`, or check build provenance with
+            `gh attestation verify <file> --repo ${{ github.repository }}`.
 
             Verify the download against `SHA256SUMS`, or check build provenance with
             `gh attestation verify <file> --repo ${{ github.repository }}`.
