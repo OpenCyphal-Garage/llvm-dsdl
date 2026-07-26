@@ -33,7 +33,7 @@ jobs:
       CXX: clang++-22
     steps:
       - name: Checkout (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: |
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload to Codecov
         if: ${{ steps.codecov.outputs.available == 'true' && !env.ACT }}
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: build/coverage/coverage/RelWithDebInfo/coverage.lcov

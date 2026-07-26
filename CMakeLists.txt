@@ -178,8 +178,12 @@ option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
        "Remove repository .venv when running distclean"
        OFF)
 
+# -LE bench: the benchmarks assert wall-clock thresholds, which say nothing about
+# coverage and cannot hold under instrumentation anyway -- a coverage build is
+# several times slower by construction, so including them would fail the lane for
+# doing exactly what it was asked to do.
 set(LLVMDSDL_COVERAGE_CTEST_ARGS
-    "--output-on-failure"
+    "--output-on-failure -LE bench"
     CACHE STRING
     "Additional arguments forwarded to ctest by coverage-run (space-separated).")
 
