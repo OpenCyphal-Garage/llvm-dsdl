@@ -265,6 +265,10 @@ jobs:
         # the LLVM/MLIR build matrix and must not be taken down by a Go or
         # TypeScript gap. It needs exactly two things, and Dafny's NuGet package
         # ships no solver, so a `dafny` that launches proves nothing on its own.
+        #
+        # `shell: bash` is required, not decorative: a container job without it
+        # runs steps under sh, where the array syntax below is a syntax error.
+        shell: bash
         run: |
           set -uo pipefail
           missing=()
