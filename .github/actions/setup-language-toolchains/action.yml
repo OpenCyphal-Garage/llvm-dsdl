@@ -53,6 +53,12 @@ runs:
         require_command tsc          "TypeScript backend integration lane"
         require_command node         "TypeScript backend integration lane"
 
+        # Dafny needs a solver as well as itself. Its NuGet package ships no
+        # native binaries, so a `dafny` that launches proves nothing about
+        # whether it can discharge an obligation -- check for z3 separately.
+        require_command dafny        "formal model check (spec/dafny)"
+        require_command z3           "SMT solver Dafny drives"
+
         require_command "clang-${llvm_version}" "sanitizer and fuzz lanes"
         require_file "/usr/lib/llvm-${llvm_version}/lib/cmake/mlir/MLIRConfig.cmake" \
                      "MLIR dev libraries (libmlir-${llvm_version}-dev)"

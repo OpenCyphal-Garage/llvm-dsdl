@@ -884,6 +884,9 @@ module CyphalSerdes {
     assert [TokScal(8, 1), TokScal(8, 9)][..2] == [TokScal(8, 1), TokScal(8, 9)];
     assert DeCompat(TScal(8), [TokScal(8, 1), TokScal(8, 9)])
         == Some((Scal(8, 1), [TokScal(8, 9)]));
+    // The skipped-leftover case returns body[take..], not the inner reader's
+    // remainder. Without this the outer cursor's final position is opaque.
+    assert [TokScal(8, 1), TokScal(8, 9)][2..] == [];
     assert DeCompat(TScal(8), []) == Some((Scal(8, 0), []));
     var e: seq<Token> := [];
     assert [TScal(8)][1..] == [];

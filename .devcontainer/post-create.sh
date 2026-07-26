@@ -22,7 +22,7 @@ if [[ -z "${llvm_version}" ]]; then
 fi
 
 missing=()
-for tool in cmake ninja python3 git lit gzip go cargo tsc node "clang-${llvm_version}"; do
+for tool in cmake ninja python3 git lit gzip go cargo tsc node dafny z3 "clang-${llvm_version}"; do
   command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
 done
 for f in "/usr/lib/llvm-${llvm_version}/lib/cmake/mlir/MLIRConfig.cmake" \

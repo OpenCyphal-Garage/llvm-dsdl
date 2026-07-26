@@ -67,10 +67,17 @@ file(WRITE "${go_dir}/go.mod"
   "replace github.com/thirtytwobits/llvm-dsdl/runtime/go => ${runtime_go}\n")
 file(COPY_FILE "${driver_dir}/PrimitiveEquivalenceDriver.go" "${go_dir}/main.go")
 set(go_bin "${go_dir}/go_primitive_driver")
+# -buildvcs=false because this module is written into the build tree, which sits
+# inside the repository: left to itself `go build` walks up, finds .git, and
+# stamps the driver with commit metadata. That consults git, and git refuses a
+# checkout owned by another user -- the ordinary situation in a CI container,
+# where it exits 128 and takes the build with it. The stamp is unwanted here
+# regardless: this is a throwaway test driver, and baking a commit hash into it
+# would make the binary differ between builds of identical source.
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
     "GOFLAGS=-mod=mod" "GOCACHE=${go_dir}/.gocache" "GOMODCACHE=${go_dir}/.gomodcache"
-    "${GO_EXECUTABLE}" build -o "${go_bin}" .
+    "${GO_EXECUTABLE}" build -buildvcs=false -o "${go_bin}" .
   WORKING_DIRECTORY "${go_dir}"
   RESULT_VARIABLE go_build_rc OUTPUT_VARIABLE go_build_out ERROR_VARIABLE go_build_err)
 if(NOT go_build_rc EQUAL 0)

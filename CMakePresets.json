@@ -181,7 +181,23 @@
       "name": "test-ci-full",
       "displayName": "Test (ci full)",
       "inherits": "test-base",
-      "configurePreset": "ci"
+      "configurePreset": "ci",
+      "filter": {
+        "exclude": {
+          "label": "bench"
+        }
+      }
+    },
+    {
+      "name": "test-ci-bench",
+      "displayName": "Test (ci benchmarks)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
+      "filter": {
+        "include": {
+          "label": "bench"
+        }
+      }
     },
     {
       "name": "test-ci-release-blocking",

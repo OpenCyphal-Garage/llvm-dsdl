@@ -3,16 +3,15 @@ name: CI
 # Full, unabridged test + report run for the core tools (dsdlc, dsdl-opt, dsdld)
 # across every supported host platform and every generated-output language.
 #
-# The Linux job runs INSIDE the project's own toolshed image
-# (ghcr.io/opencyphal/toolshed:ts26.4.1 — the same image .devcontainer uses), so
-# LLVM/MLIR 22, clang, cmake and ninja are already present: no per-run toolchain
-# install of LLVM. The setup action only adds what the image lacks (MLIR dev libs,
-# Go, Rust, tsc, lit). This job runs identically under `act` locally and on
-# GitHub-hosted runners.
-#
-# The integration suite registers a language's tests only when its toolchain is
-# found at configure time, so installing the full toolchain set is what makes the
-# run actually unabridged.
+# The container jobs run INSIDE the project's own toolshed image
+# (ghcr.io/opencyphal/toolshed:ts26.4.2 — the same image .devcontainer uses). That
+# image is the single source of truth for the build environment: LLVM/MLIR 22,
+# clang, cmake, ninja, the generated-output language toolchains, and Dafny with
+# its solver all come from it. Nothing is installed per run; the setup action
+# asserts the toolchains are present and fails loudly if one is missing, because
+# the integration suite registers a language's tests only when its toolchain is
+# found at configure time — so a silently incomplete image sheds whole lanes
+# while still reporting green.
 
 on:
   push:
@@ -36,7 +35,7 @@ jobs:
     name: Full suite (linux / toolshed)
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.1
+      image: ghcr.io/opencyphal/toolshed:ts26.4.2
     timeout-minutes: 120
     env:
       LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
@@ -167,7 +166,7 @@ jobs:
     # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.1
+      image: ghcr.io/opencyphal/toolshed:ts26.4.2
     timeout-minutes: 120
     env:
       LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
@@ -252,15 +251,32 @@ jobs:
     # LLVM/MLIR build matrix, so it is fast and cannot be skipped by a toolchain gap in
     # the heavy lanes.
     runs-on: ubuntu-26.04
+    # Dafny and its solver come from the toolshed image rather than being fetched
+    # per run.
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.2
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Dafny
-        uses: dafny-lang/setup-dafny-action@v1.7.0
-        with:
-          dafny-version: "4.11.0"
+      - name: Assert the Dafny toolchain
+        # Deliberately not the shared toolchain action: this lane is independent of
+        # the LLVM/MLIR build matrix and must not be taken down by a Go or
+        # TypeScript gap. It needs exactly two things, and Dafny's NuGet package
+        # ships no solver, so a `dafny` that launches proves nothing on its own.
+        run: |
+          set -uo pipefail
+          missing=()
+          for tool in dafny z3; do
+            command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::toolshed image is missing: ${missing[*]} — these belong in the image"
+            exit 1
+          fi
+          dafny --version
+          z3 --version
 
       - name: Verify CyphalSerdes
         # `dafny verify` exits non-zero on any failed proof obligation, so a broken model
@@ -284,7 +300,7 @@ jobs:
           submodules: recursive
 
       - name: Install LLVM/MLIR + ninja (Homebrew; links libc++)
-        # Pin to the toolshed image's LLVM major (ts26.4.1 -> 22) so the C backend
+        # Pin to the toolshed image's LLVM major (ts26.4.2 -> 22) so the C backend
         # (routed through MLIR/EmitC, whose text may vary across MLIR majors) stays
         # comparable. Prefer the versioned formula; fall back to `llvm` (which IS 22
         # while 22 is current). The assertion below is the real pin: a Homebrew
