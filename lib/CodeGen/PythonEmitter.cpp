@@ -419,9 +419,14 @@ void emitStructSectionType(std::ostringstream&    out,
                            const std::string&     typeName,
                            const SemanticSection& section,
                            const AttachedDoc&     typeDoc,
-                           const EmitterContext&  ctx)
+                           const EmitterContext&  ctx,
+                           const std::string&     fullName,
+                           const std::uint32_t    majorVersion,
+                           const std::uint32_t    minorVersion)
 {
-    emitAttachedDocPy(out, 0, typeDoc);
+    emitAttachedDocPy(out,
+                      0,
+                      docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     emitLine(out, 0, "@dataclass(slots=True)");
     emitLine(out, 0, "class " + typeName + ":");
 
@@ -456,9 +461,14 @@ void emitUnionSectionType(std::ostringstream&    out,
                           const std::string&     typeName,
                           const SemanticSection& section,
                           const AttachedDoc&     typeDoc,
-                          const EmitterContext&  ctx)
+                          const EmitterContext&  ctx,
+                          const std::string&     fullName,
+                          const std::uint32_t    majorVersion,
+                          const std::uint32_t    minorVersion)
 {
-    emitAttachedDocPy(out, 0, typeDoc);
+    emitAttachedDocPy(out,
+                      0,
+                      docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     emitLine(out, 0, "@dataclass(slots=True)");
     emitLine(out, 0, "class " + typeName + ":");
     emitLine(out, 1, "_tag: int = 0");
@@ -483,15 +493,18 @@ void emitSectionType(std::ostringstream&    out,
                      const std::string&     typeName,
                      const SemanticSection& section,
                      const AttachedDoc&     typeDoc,
-                     const EmitterContext&  ctx)
+                     const EmitterContext&  ctx,
+                     const std::string&     fullName,
+                     const std::uint32_t    majorVersion,
+                     const std::uint32_t    minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(out, typeName, section, typeDoc, ctx);
+        emitUnionSectionType(out, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(out, typeName, section, typeDoc, ctx);
+        emitStructSectionType(out, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
     }
 }
 
@@ -1446,6 +1459,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto baseType = ctx.typeName(def.info);
     emitLine(out, 0, "LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\"");
     emitLine(out, 0, "DSDL_FULL_NAME = \"" + def.info.fullName + "\"");
+    emitLine(out, 0, "DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
     emitLine(out, 0, "DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion));
     emitLine(out, 0, "DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion));
     const bool requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
@@ -1475,7 +1489,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        emitSectionType(out, baseType, def.request, def.doc, ctx);
+        emitSectionType(out, baseType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         if (!def.request.constants.empty())
@@ -1498,7 +1512,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto reqType  = baseType + "_Request";
     const auto respType = baseType + "_Response";
 
-    emitSectionType(out, reqType, def.request, def.doc, ctx);
+    emitSectionType(out, reqType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
@@ -1516,7 +1530,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        emitSectionType(out, respType, *def.response, def.doc, ctx);
+        emitSectionType(out, respType, *def.response, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");

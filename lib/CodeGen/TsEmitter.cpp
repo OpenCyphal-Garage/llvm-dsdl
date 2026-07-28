@@ -290,13 +290,46 @@ CodegenIdentifierAllocator makeTsFieldIdents(const SemanticSection& section)
     return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return tsFieldIdentBase(name); });
 }
 
+void emitDeprecationJsDocTs(std::ostringstream& out,
+                            const bool          deprecated,
+                            const std::string&  fullName,
+                            const std::uint32_t majorVersion,
+                            const std::uint32_t minorVersion)
+{
+    if (!deprecated)
+    {
+        return;
+    }
+    // The `Deprecated: ` prefix that the shared notice carries for Go's benefit is redundant next to
+    // the JSDoc tag, so it is dropped here.
+    const std::string notice = deprecationNotice(fullName, majorVersion, minorVersion);
+    const std::string prefix = "Deprecated: ";
+    const std::string body   = notice.rfind(prefix, 0) == 0 ? notice.substr(prefix.size()) : notice;
+
+    // Wrapped and split across lines for the same reason the notice itself is: a single-line JSDoc
+    // block would be twice the width of the code around it. Budget allows for the " * " continuation.
+    const auto lines = wrapCommentText(body, 68U);
+    out << "/**\n";
+    out << " * @deprecated " << lines.front() << "\n";
+    for (std::size_t i = 1; i < lines.size(); ++i)
+    {
+        out << " *   " << lines[i] << "\n";
+    }
+    out << " */\n";
+}
+
 void emitStructSectionType(std::ostringstream&    out,
                            const std::string&     typeName,
                            const SemanticSection& section,
                            const AttachedDoc&     typeDoc,
-                           const EmitterContext&  ctx)
+                           const EmitterContext&  ctx,
+                           const std::string&     fullName,
+                           const std::uint32_t    majorVersion,
+                           const std::uint32_t    minorVersion,
+                           const bool             deprecated)
 {
     emitAttachedDocTs(out, 0, typeDoc);
+    emitDeprecationJsDocTs(out, deprecated, fullName, majorVersion, minorVersion);
     emitLine(out, 0, "export interface " + typeName + " {");
     const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
     for (const auto& field : section.fields)
@@ -316,7 +349,10 @@ void emitUnionSectionType(std::ostringstream&    out,
                           const std::string&     typeName,
                           const SemanticSection& section,
                           const AttachedDoc&     typeDoc,
-                          const EmitterContext&  ctx)
+                          const EmitterContext&  ctx,
+                          const std::string&     fullName,
+                          const std::uint32_t    majorVersion,
+                          const std::uint32_t    minorVersion)
 {
     std::vector<const SemanticField*> options;
     for (const auto& field : section.fields)
@@ -330,11 +366,13 @@ void emitUnionSectionType(std::ostringstream&    out,
     if (options.empty())
     {
         emitAttachedDocTs(out, 0, typeDoc);
+        emitDeprecationJsDocTs(out, section.deprecated, fullName, majorVersion, minorVersion);
         emitLine(out, 0, "export type " + typeName + " = { _tag: number };");
         return;
     }
 
     emitAttachedDocTs(out, 0, typeDoc);
+    emitDeprecationJsDocTs(out, section.deprecated, fullName, majorVersion, minorVersion);
     emitLine(out, 0, "export type " + typeName + " =");
     const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
     for (std::size_t i = 0; i < options.size(); ++i)
@@ -354,15 +392,26 @@ void emitSectionType(std::ostringstream&    out,
                      const std::string&     typeName,
                      const SemanticSection& section,
                      const AttachedDoc&     typeDoc,
-                     const EmitterContext&  ctx)
+                     const EmitterContext&  ctx,
+                     const std::string&     fullName,
+                     const std::uint32_t    majorVersion,
+                     const std::uint32_t    minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(out, typeName, section, typeDoc, ctx);
+        emitUnionSectionType(out, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(out, typeName, section, typeDoc, ctx);
+        emitStructSectionType(out,
+                              typeName,
+                              section,
+                              typeDoc,
+                              ctx,
+                              fullName,
+                              majorVersion,
+                              minorVersion,
+                              section.deprecated);
     }
 }
 
@@ -1475,6 +1524,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto baseType = ctx.typeName(def.info);
     emitLine(out, 0, "export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
     emitLine(out, 0, "export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
+    emitLine(out,
+             0,
+             "export const DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "true" : "false") + ";");
     emitLine(out, 0, "export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
     emitLine(out, 0, "export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
     const bool requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
@@ -1506,7 +1558,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        emitSectionType(out, baseType, def.request, def.doc, ctx);
+        emitSectionType(out, baseType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         emitLine(out, 0, "");
@@ -1526,7 +1578,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto reqType  = baseType + "_Request";
     const auto respType = baseType + "_Response";
 
-    emitSectionType(out, reqType, def.request, def.doc, ctx);
+    emitSectionType(out, reqType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
@@ -1544,7 +1596,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        emitSectionType(out, respType, *def.response, def.doc, ctx);
+        emitSectionType(out, respType, *def.response, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");

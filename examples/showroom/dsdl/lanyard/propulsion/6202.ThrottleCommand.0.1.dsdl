@@ -1,0 +1,29 @@
+# Group throttle setpoint for the propulsion array -- PRE-RELEASE, DO
+# NOT DEPLOY.
+#
+# VERSIONING: this is a 0.x definition. Major version zero carries no
+# compatibility guarantee whatsoever: 0.1 and 0.2 may differ
+# arbitrarily, and neither is required to interoperate with the other or
+# with any 1.x release. Zero-major types exist so that a design can be
+# flown on a bench and iterated on without burning major version numbers
+# or promising anything to downstream integrators.
+#
+# It is retained here alongside ThrottleCommand.1.0 to show the
+# stabilization step: once the field set settled, the definition was
+# promoted to 1.0 on a different port identifier, and this one was
+# frozen. Production nodes subscribe to 1.0.
+#
+# TRANSPORT TIER: CAN FD.
+
+float16[<=8] ratio
+# Normalized throttle command per motor, in the range 0.0 (idle) to 1.0
+# (full). The array length implicitly declares how many motors the
+# flight controller believes are present; a controller whose index
+# exceeds the array length holds its last commanded value until the
+# arming timeout expires.
+#
+# A variable-length array serializes as an implicit length prefix
+# followed by the elements, so a quadrotor pays for four elements and an
+# octorotor for eight, out of the same definition.
+
+@sealed

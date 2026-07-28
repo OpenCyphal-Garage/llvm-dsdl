@@ -1,0 +1,62 @@
+# Consolidated vehicle state, published by the flight controller at 50
+# Hz.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# VERSIONING -- THIS IS THE NON-BREAKING CHANGE EXAMPLE.
+#
+# Relative to VehicleState.1.0 this definition appends one field and
+# changes nothing else. That is permissible without a major version bump
+# because:
+#
+#   1. The type is delimited (@extent), so every serialized value is
+#      preceded by a length header and a reader may skip a tail it does
+#      not recognize.
+#   2. The extent is unchanged, so a 1.0 reader's buffer is still large
+#      enough for a 1.1 message.
+#   3. Existing fields keep their order, type, and meaning, so a 1.0
+#      reader decoding a 1.1 message gets correct values for everything
+#      it knows about and ignores height_above_takeoff.
+#   4. A 1.1 reader decoding a 1.0 message sees a short tail and leaves
+#      height_above_takeoff at its zero value -- which is why an
+#      appended field must have a sane interpretation when absent.
+#
+# Because it is compatible in both directions, 1.1 keeps the same fixed
+# port identifier as 1.0: both minor versions share port 6210 and
+# coexist on the same subject.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# The network-synchronized moment this state estimate is valid for.
+
+lanyard.flight.FlightMode.1.0 mode
+# The active flight mode.
+
+uavcan.si.unit.angle.Quaternion.1.0 orientation_ned
+# Vehicle attitude as a unit quaternion in the North-East-Down reference
+# frame.
+
+uavcan.si.unit.angular_velocity.Vector3.1.0 angular_velocity
+# Body-frame roll, pitch, and yaw rates in radians per second.
+
+uavcan.si.unit.velocity.Vector3.1.0 velocity_ned
+# Velocity over ground in the North-East-Down frame, in meters per
+# second.
+
+bool armed
+# True when the propulsion system is energized and will respond to
+# throttle commands.
+
+void7
+# Padding to a byte boundary.
+
+uavcan.si.unit.length.Scalar.1.0 height_above_takeoff
+# NEW IN 1.1. Height above the recorded takeoff elevation, in meters.
+# Zero -- the value a 1.0 sender effectively transmits by omission --
+# correctly means "at takeoff elevation", so the absent case degrades
+# gracefully. An appended field whose zero value meant something
+# dangerous would have been a breaking change in practice even though
+# the wire format tolerated it.
+
+@extent 128 * 8
+# Unchanged from 1.0. Growing the extent would break 1.0 readers whose
+# buffers are sized from it.

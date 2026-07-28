@@ -1,0 +1,12 @@
+# Post-mixer actuator commands for a multirotor airframe.
+#
+# Nested type with no fixed port identifier; published as one option of
+# ControlSurfaces.1.0.
+
+float16[<=12] motor
+# Normalized motor command per position, 0.0 (idle) to 1.0 (full), in
+# geometry order. Twelve is the largest rotor count in the fleet (a
+# coaxial hexrotor); a quadrotor sends four elements and pays for four,
+# because the length of a variable-length array is carried on the wire.
+
+@sealed

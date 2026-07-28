@@ -1,0 +1,32 @@
+# Portable MkDocs toolchain for the llvm-dsdl user manual.
+#
+# The image carries the toolchain and nothing else: no repository content is baked in. The project to
+# render is bind-mounted at /project when the container runs, so one image serves this repository, a
+# worktree, a branch checkout elsewhere on disk, or a colleague's machine, without a rebuild.
+#
+# Python 3.11 matches the version .github/workflows/docs.yml uses. That parity is the point of pinning
+# it here: `mkdocs build --strict` inside this image should fail for the same reasons CI fails, and a
+# different Python could resolve the dependency set differently.
+#
+# The dependency pins come from docs/requirements.txt rather than being restated, so this image and a
+# local .venv-docs install the same set. See that file for why the Pygments ceiling is where it is.
+FROM python:3.11-slim
+
+# Copied as the only build context input, so editing documentation never invalidates the layer cache.
+# Only a change to the pinned dependency set triggers a reinstall.
+COPY docs/requirements.txt /tmp/requirements.txt
+
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
+
+# The bind mount target. Nothing is copied here; `docker run -v <dir>:/project` supplies it.
+WORKDIR /project
+
+EXPOSE 8000
+
+# 0.0.0.0 rather than the 127.0.0.1 default: the loopback interface inside the container is not the
+# host's, so a server bound to it would be unreachable through a published port.
+#
+# Note that mkdocs.yml sets site_url with the GitHub Pages base path, so the served site lives under
+# /llvm-dsdl/ rather than at the root -- the same as a local `mkdocs serve`.
+CMD ["mkdocs", "serve", "--dev-addr", "0.0.0.0:8000"]

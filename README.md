@@ -68,6 +68,20 @@ dsdlc --target-language <lang> [options] <root_namespace_or_files...>
 - `python`
 - `obj`
 
+### See what it generates
+
+[`examples/showroom`](examples/showroom) is a namespace of plausible vendor-specific drone datatypes
+— sealed types packed into a classic-CAN frame, delimited types that grow across minor versions,
+unions, services, and a mission plan sized for a UDP datagram — generated into every language and
+profile:
+
+```bash
+cmake --build <build-dir> --target showroom
+```
+
+The rendered pages, pairing each definition with its wire-layout facts and the generated declaration
+in each language, are in [`docs/showroom`](docs/showroom/index.md).
+
 ### Practical examples
 
 AST output:

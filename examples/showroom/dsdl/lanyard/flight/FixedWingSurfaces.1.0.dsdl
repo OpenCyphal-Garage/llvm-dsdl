@@ -1,0 +1,24 @@
+# Post-mixer actuator commands for a fixed-wing airframe.
+#
+# Nested type with no fixed port identifier; published as one option of
+# ControlSurfaces.1.0.
+
+float16 aileron_left
+# Left aileron deflection, -1.0 (full down) to +1.0 (full up).
+
+float16 aileron_right
+# Right aileron deflection, -1.0 (full down) to +1.0 (full up). Carried
+# separately from the left surface rather than as a single roll command
+# so that flaperon and differential-aileron mixes can be expressed
+# without a second message.
+
+float16 elevator
+# Elevator deflection, -1.0 (full down) to +1.0 (full up).
+
+float16 rudder
+# Rudder deflection, -1.0 (full left) to +1.0 (full right).
+
+float16 throttle
+# Normalized thrust command, 0.0 (idle) to 1.0 (full).
+
+@sealed

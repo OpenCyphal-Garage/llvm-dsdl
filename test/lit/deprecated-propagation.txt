@@ -1,0 +1,122 @@
+# `@deprecated` reaches MLIR as a schema attribute but used to be dropped by every language backend,
+# so a definition marked retired generated code that said nothing about it. Two dozen definitions in
+# the standard uavcan namespace are deprecated, including all of uavcan.file, so this was not a
+# hypothetical gap.
+#
+# Two layers are checked here:
+#   * the notice and the IS_DEPRECATED constant, emitted unconditionally in every backend;
+#   * the language-native attribute, emitted only under --emit-deprecation-attributes because it turns
+#     a documentation signal into a compiler diagnostic.
+#
+# A non-deprecated sibling (dep.Current.1.0) is checked in the same run to prove the marking does not
+# leak across definitions.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --outdir %t/c >/dev/null 2>&1
+# RUN: cat %t/c/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_DEP
+# RUN: cat %t/c/dep/Current_1_0.h | FileCheck %s --check-prefix=C_OK
+
+# RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --outdir %t/cpp >/dev/null 2>&1
+# RUN: cat %t/cpp/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_DEP
+# RUN: cat %t/cpp/dep/Current_1_0.hpp | FileCheck %s --check-prefix=CPP_OK
+
+# RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --outdir %t/rust >/dev/null 2>&1
+# RUN: cat %t/rust/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_DEP
+# RUN: cat %t/rust/src/dep/current_1_0.rs | FileCheck %s --check-prefix=RUST_OK
+
+# RUN: %dsdlc --target-language go %S/fixtures_deprecated/dep --go-module dep/fixture --outdir %t/go >/dev/null 2>&1
+# RUN: cat %t/go/dep/retired_1_0.go | FileCheck %s --check-prefix=GO_DEP
+# RUN: cat %t/go/dep/current_1_0.go | FileCheck %s --check-prefix=GO_OK
+
+# RUN: %dsdlc --target-language ts %S/fixtures_deprecated/dep --ts-module dep_fixture --outdir %t/ts >/dev/null 2>&1
+# RUN: cat %t/ts/dep/retired_1_0.ts | FileCheck %s --check-prefix=TS_DEP
+# RUN: cat %t/ts/dep/current_1_0.ts | FileCheck %s --check-prefix=TS_OK
+
+# RUN: %dsdlc --target-language python %S/fixtures_deprecated/dep --py-package dep_fixture --outdir %t/py >/dev/null 2>&1
+# RUN: cat %t/py/dep_fixture/dep/retired_1_0.py | FileCheck %s --check-prefix=PY_DEP
+# RUN: cat %t/py/dep_fixture/dep/current_1_0.py | FileCheck %s --check-prefix=PY_OK
+
+# The notice names the type, never the section: a service's request and response are two halves of one
+# deprecated definition, and `dep.Retired.Request.1.0` is not something a user can migrate off.
+# C_DEP: _IS_DEPRECATED_ true
+# C_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
+# C_DEP-NOT: dep.Retired.Request.1.0 is marked
+# Without the flag there must be no language attribute.
+# C_DEP-NOT: __attribute__((deprecated))
+
+# C_OK: _IS_DEPRECATED_ false
+# C_OK-NOT: Deprecated:
+
+# CPP_DEP: IS_DEPRECATED = true
+# CPP_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
+# CPP_DEP-NOT: {{\[\[}}deprecated{{\]\]}}
+
+# CPP_OK: IS_DEPRECATED = false
+# CPP_OK-NOT: Deprecated:
+
+# RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
+# RUST_DEP: IS_DEPRECATED: bool = true;
+# RUST_DEP-NOT: #[deprecated]
+
+# RUST_OK: IS_DEPRECATED: bool = false;
+# RUST_OK-NOT: Deprecated:
+
+# Go recognises a deprecation only from a doc-comment paragraph beginning exactly `Deprecated: `.
+# GO_DEP: _IS_DEPRECATED = true
+# GO_DEP: // Deprecated: dep.Retired.1.0 is marked @deprecated
+
+# GO_OK: _IS_DEPRECATED = false
+# GO_OK-NOT: Deprecated:
+
+# TypeScript needs a JSDoc block; this backend's ordinary doc comments are `//` lines, which tsc
+# ignores, so the tag is emitted as its own `/** */` block instead of being appended to the doc.
+# TS_DEP: DSDL_IS_DEPRECATED = true;
+# The JSDoc block is wrapped rather than emitted as one line: the notice is a full sentence, and a
+# single-line block would be more than twice the width of the code it sits above.
+# TS_DEP: {{^}}/**
+# TS_DEP-NEXT: * @deprecated dep.Retired.1.0 is marked @deprecated
+# TS_DEP-NOT: // Deprecated:
+
+# TS_OK: DSDL_IS_DEPRECATED = false;
+# TS_OK-NOT: @deprecated
+
+# PY_DEP: DSDL_IS_DEPRECATED = True
+# PY_DEP: # Deprecated: dep.Retired.1.0 is marked @deprecated
+
+# PY_OK: DSDL_IS_DEPRECATED = False
+# PY_OK-NOT: Deprecated:
+
+# --------------------------------------------------------------------------------------------------
+# Attribute mode.
+
+# RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --emit-deprecation-attributes --outdir %t/c-attr >/dev/null 2>&1
+# RUN: cat %t/c-attr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_ATTR
+# RUN: cat %t/c-attr/dep/Current_1_0.h | FileCheck %s --check-prefix=C_ATTR_OK
+
+# RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --emit-deprecation-attributes --outdir %t/cpp-attr >/dev/null 2>&1
+# RUN: cat %t/cpp-attr/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_ATTR
+
+# RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --emit-deprecation-attributes --outdir %t/rust-attr >/dev/null 2>&1
+# RUN: cat %t/rust-attr/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_ATTR
+
+# The suppression region must open before the declaration and close after the generated functions:
+# the deprecated name is referenced by its own declaration, by the serializer signatures, and by any
+# struct that embeds it. Generated code must never warn about itself.
+# C_ATTR: #pragma GCC diagnostic push
+# C_ATTR: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+# C_ATTR: } __attribute__((deprecated)) dep__Retired__Request;
+# C_ATTR: #pragma GCC diagnostic pop
+
+# The guard is emitted for every file in attribute mode, including files with nothing deprecated in
+# them, because a non-deprecated type may hold a deprecated one as a field.
+# C_ATTR_OK: #pragma GCC diagnostic push
+# C_ATTR_OK-NOT: __attribute__((deprecated))
+
+# CPP_ATTR: #pragma GCC diagnostic push
+# CPP_ATTR: struct {{\[\[}}deprecated{{\]\]}} Retired__Request {
+# CPP_ATTR: #pragma GCC diagnostic pop
+
+# RUST_ATTR: #![allow(deprecated)]
+# RUST_ATTR: #[deprecated]
+# RUST_ATTR: pub struct dep_Retired_1_0_Request {

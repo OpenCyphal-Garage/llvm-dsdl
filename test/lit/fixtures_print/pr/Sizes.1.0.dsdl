@@ -1,0 +1,6 @@
+uint16 a
+uint16 b
+@print _offset_.max / 8
+@print 6 * 7
+@print
+@sealed

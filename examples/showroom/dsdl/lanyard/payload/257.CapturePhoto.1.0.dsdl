@@ -1,0 +1,67 @@
+# Command the payload to capture one or more still images.
+#
+# TRANSPORT TIER: CAN FD and Cyphal/UDP.
+#
+# WHY THE TWO SECTIONS SEAL DIFFERENTLY: the request is a fixed
+# five-byte command issued from the flight controller's real-time loop
+# when a survey trigger fires, so it is @sealed and pays no delimiter
+# header. The response is consumed by a ground station that tolerates
+# latency and benefits from richer diagnostics over time, so it is
+# delimited and may grow in later minor versions.
+#
+# Request and response are independent definitions that happen to share
+# a file and a port. Nothing requires them to make the same sealing,
+# extent, or size decision, and here they do not.
+
+uint16 count
+# Number of images to capture. Zero cancels an in-progress sequence.
+
+float16 interval_s
+# Seconds between exposures when count is greater than one. Ignored when
+# count is one.
+
+uint2 mode
+# Capture mode; one of the constants below.
+
+uint2 MODE_SINGLE = 0
+# One exposure at the current settings.
+
+uint2 MODE_BRACKET = 1
+# An exposure bracket around the metered value, for high-dynamic-range
+# compositing.
+
+uint2 MODE_SURVEY = 2
+# Capture at a fixed ground sample distance, with the payload computing
+# the interval from vehicle ground speed and altitude. `interval_s` is
+# ignored.
+
+void6
+# Padding to a byte boundary.
+
+@assert _offset_.max == 40
+# Five bytes: the request is issued from a real-time loop and its size
+# is part of that contract.
+
+@sealed
+
+---
+
+bool accepted
+# True when the payload has queued the capture.
+
+void7
+# Padding to a byte boundary.
+
+uint32 first_image_id
+# Identifier assigned to the first image of the sequence. Subsequent
+# images increment from it, so a ground station can name every file in
+# the sequence from this one value.
+
+uint16 remaining_capacity_images
+# Images that will still fit on the payload's storage medium after this
+# sequence completes.
+
+uint8[<=32] detail
+# Optional human-readable elaboration, UTF-8. Empty on success.
+
+@extent 64 * 8

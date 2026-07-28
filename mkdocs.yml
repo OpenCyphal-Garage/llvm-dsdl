@@ -20,6 +20,8 @@ nav:
   - Backends:
       - Backend Overview: backends/overview.md
       - Object Backend: backends/object.md
+  - Showroom:
+      - Overview: showroom/index.md
   - Design:
       - Architecture: design/architecture.md
       - Dialect and Contracts: design/dialect-contracts.md

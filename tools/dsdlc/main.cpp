@@ -129,6 +129,7 @@ struct CliOptions final
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
     bool optimizeLoweredSerDes{false};
+    bool emitDeprecationAttributes{false};
     bool dryRun{false};
     bool listOutputs{false};
     bool listInputs{false};
@@ -229,6 +230,11 @@ void printHelp()
                  << "      Output directory root for codegen languages (default: dsdl_out).\n"
                  << "  --optimize-lowered-serdes\n"
                  << "      Enable optional MLIR optimization for lowered serialization plans.\n"
+                 << "  --emit-deprecation-attributes\n"
+                 << "      Emit language-native deprecation attributes for @deprecated definitions\n"
+                 << "      (C, C++, Rust). Off by default: the attribute turns a documentation signal\n"
+                 << "      into a compiler diagnostic and can break -Werror builds. The deprecation\n"
+                 << "      notice and metadata constant are emitted regardless.\n"
                  << "  --no-overwrite\n"
                  << "      Fail if an output file already exists.\n"
                  << "  --file-mode <mode>\n"
@@ -555,6 +561,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--optimize-lowered-serdes")
         {
             options.optimizeLoweredSerDes = true;
+            continue;
+        }
+        if (arg == "--emit-deprecation-attributes")
+        {
+            options.emitDeprecationAttributes = true;
             continue;
         }
         if (arg == "--cpp-profile")
@@ -1440,6 +1451,7 @@ int main(int argc, char** argv)
         llvmdsdl::CEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
@@ -1463,6 +1475,7 @@ int main(int argc, char** argv)
         emitOptions.outDir                = options.outDir;
         emitOptions.profile               = options.cppProfile;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 
@@ -1494,6 +1507,7 @@ int main(int argc, char** argv)
         emitOptions.memoryMode            = options.rustMemoryMode;
         emitOptions.inlineThresholdBytes  = options.rustInlineThresholdBytes;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;
 

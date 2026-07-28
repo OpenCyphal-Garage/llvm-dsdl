@@ -317,6 +317,11 @@ void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
                                   std::make_move_iterator(doc.lines.end()));
         },
         statement);
+    // Moving out of the elements leaves the source vector at its original size holding hollowed-out
+    // lines. The caller keeps using that vector -- in the trailing-comment path it goes on to seed the
+    // *next* statement's doc -- so a stale size here prefixes every subsequent field's documentation
+    // with one blank line per line of the preceding field's comment block.
+    doc.lines.clear();
 }
 
 struct CollectedDocTrivia final

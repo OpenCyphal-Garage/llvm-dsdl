@@ -1,0 +1,51 @@
+# Per-frame metadata emitted by the imaging payload alongside the video
+# stream.
+#
+# TRANSPORT TIER: Cyphal/UDP ONLY.
+#
+# The EXIF blob at the end can reach two kilobytes, which rules out any
+# CAN transport. This message rides the same Ethernet segment as the
+# video itself, where a two-kilobyte datagram is unremarkable.
+#
+# This definition also carries the showroom's cast-mode demonstration.
+# Every scalar field in DSDL has a cast mode that decides what happens
+# when a value is too large for its field. `saturated` -- the default,
+# applied to every field in this namespace that does not say otherwise
+# -- clamps to the nearest representable value. `truncated` discards the
+# high bits and wraps. Saturation is almost always what a measurement
+# wants; truncation is what a counter that is meant to wrap wants, and
+# stating it explicitly documents the intent to everyone reading the
+# generated code.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# Network-synchronized moment of the shutter midpoint, used to register
+# the frame against the navigation solution.
+
+truncated uint32 frame_index
+# Free-running frame counter. Explicitly truncated: this counter is
+# designed to wrap at 2^32 and be interpreted modulo that, and
+# saturating it at the maximum would turn a wrap into a permanent stall
+# at 4294967295 that a consumer computing frame deltas would never
+# recover from.
+
+uint16 width_px
+# Frame width in pixels.
+
+uint16 height_px
+# Frame height in pixels.
+
+saturated uint32 exposure_us
+# Exposure time in microseconds. Explicitly saturated even though
+# saturation is the default, because the contrast with `frame_index`
+# above is the point: an over-range exposure should clamp to the longest
+# representable exposure, never wrap around to a near-zero one.
+
+saturated float32 gain_db
+# Sensor analog gain in decibels.
+
+uint8[<=2048] exif
+# Raw EXIF/XMP metadata block as written into the stored image, passed
+# through verbatim so that consumers are not restricted to the subset of
+# fields this definition happens to model.
+
+@extent 4096 * 8

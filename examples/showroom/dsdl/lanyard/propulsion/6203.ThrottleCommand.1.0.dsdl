@@ -1,0 +1,42 @@
+# Group throttle setpoint for the propulsion array.
+#
+# VERSIONING: the stabilized successor to ThrottleCommand.0.1. Promoting
+# a 0.x definition to 1.0 is not a "non-breaking change" -- it is the
+# moment the definition acquires a compatibility promise for the first
+# time. The field set was allowed to change on the way (a sequence
+# counter and an emergency-stop flag were added) precisely because 0.1
+# promised nothing.
+#
+# WHY SEALED: this message is published at the inner-loop rate on every
+# armed flight. It is latency critical and never grows, so it pays
+# neither the delimiter header nor the extent slack. When the field set
+# does need to change, this definition will be superseded by 2.0 on a
+# new port.
+#
+# TRANSPORT TIER: CAN FD.
+
+uint4 MAX_MOTORS = 8
+# Largest propulsion array this definition addresses. Exposed as a
+# constant so that generated code carries the bound as a named value
+# rather than a literal duplicated at every call site.
+
+float16[<=8] ratio
+# Normalized throttle command per motor, 0.0 (idle) to 1.0 (full),
+# indexed by motor number.
+
+uint7 sequence
+# Free-running command counter, incremented once per published message
+# and wrapping at 128. A controller that observes a gap knows it missed
+# a command and may enter its own failsafe rather than continuing to
+# actuate a stale setpoint.
+
+bool emergency_stop
+# When true, every controller shall cut drive current immediately and
+# ignore the ratio array. This is a commanded stop, not a failsafe: it
+# is asserted deliberately by the flight controller.
+
+@assert _offset_.max <= 63 * 8
+# The CAN FD single-frame budget: 63 payload bytes plus the Cyphal/CAN
+# tail byte.
+
+@sealed

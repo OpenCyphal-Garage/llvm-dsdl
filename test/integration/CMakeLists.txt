@@ -325,6 +325,34 @@ if(PYTHON_EXECUTABLE)
         LABELS "integration;uavcan;release-blocking"
     )
 
+    # --emit-deprecation-attributes turns a documentation signal into a compiler diagnostic, so the
+    # generated code has to suppress that diagnostic for its own internal references while still
+    # letting it reach user code. Both halves are asserted by compiling the regulated corpus, which
+    # carries two dozen deprecated definitions.
+    # CARGO_EXECUTABLE is otherwise probed further down this file, well after this point; without the
+    # probe here the cache variable is empty and the Rust half of the gate silently skips itself.
+    # find_program is idempotent against an already-populated cache entry.
+    find_program(CARGO_EXECUTABLE cargo QUIET)
+
+    add_test(
+      NAME llvmdsdl-deprecation-attribute-compile-gate
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+          -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/deprecation-attribute-gate
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+          -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunDeprecationAttributeCompileGate.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-deprecation-attribute-compile-gate
+      PROPERTIES
+        LABELS "integration;uavcan;deprecation"
+    )
+
     add_test(
       NAME llvmdsdl-embedded-uavcan-catalog-guard-selftest
       COMMAND

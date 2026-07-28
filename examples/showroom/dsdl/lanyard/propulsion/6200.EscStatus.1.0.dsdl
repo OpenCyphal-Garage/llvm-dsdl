@@ -1,0 +1,59 @@
+# High-rate telemetry from a single electronic speed controller (ESC).
+#
+# TRANSPORT TIER: Classic CAN (CAN 2.0B). This definition is sealed and
+# hand-packed so that a complete serialized value fits inside the seven
+# payload bytes of one classic-CAN frame, leaving the eighth byte for
+# the Cyphal/CAN tail byte. A multi-frame transfer would cost an extra
+# transfer-CRC and would make the message vulnerable to frame loss,
+# which is unacceptable for a value published at 100 Hz per ESC on a
+# shared bus.
+#
+# WHY SEALED: sealing removes the four-byte delimiter header that a
+# delimited (extensible) type carries, and it lets the serializer emit a
+# fixed-size, fully static layout. The price is that this definition can
+# never gain a field: any addition is a breaking change requiring a new
+# major version. See EscStatus.2.0 for the extensible successor and the
+# reasoning behind the migration.
+#
+# The scaled-integer fields below are the classic embedded trade: they
+# cost a multiply on each side but a fraction of the bits that an IEEE
+# 754 float would.
+
+uint14 erpm_x10
+# Electrical RPM divided by ten. Multiply by ten to recover eRPM; divide
+# by the motor pole pair count to recover mechanical RPM. Range 0 to
+# 163,830 eRPM, which covers every rotorcraft ESC in the fleet.
+
+uint12 dc_voltage_dv
+# DC bus voltage in decivolts (0.1 V per LSB). Range 0 to 409.5 V.
+
+int12 dc_current_da
+# DC bus current in deciamperes (0.1 A per LSB). Range -204.8 to +204.7
+# A. Negative values indicate regenerative braking current flowing back
+# into the pack.
+
+int9 motor_temperature_c
+# Motor winding temperature in whole degrees Celsius, range -256 to
+# +255. Whole degrees are adequate because the thermal time constant of
+# a motor is measured in tens of seconds.
+
+uint4 error_flags
+# Bit mask of latched controller faults. Cleared when the controller is
+# re-armed.
+#   bit 0 - over-current trip
+#   bit 1 - over-temperature trip
+#   bit 2 - desynchronization detected
+#   bit 3 - supply under-voltage
+
+void5
+# Explicit padding to a whole number of bytes. Void fields are
+# serialized as zeros and are not surfaced in generated code; they exist
+# so that the wire layout is byte-aligned by construction rather than by
+# accident.
+
+@assert _offset_.max == 56
+# The single-frame classic-CAN budget, asserted rather than merely
+# documented. Adding a field or widening one breaks this build instead
+# of silently pushing the message into a multi-frame transfer.
+
+@sealed

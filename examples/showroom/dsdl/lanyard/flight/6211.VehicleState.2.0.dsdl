@@ -1,0 +1,60 @@
+# Consolidated vehicle state, published by the flight controller at 50
+# Hz.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# VERSIONING -- THIS IS THE BREAKING CHANGE EXAMPLE.
+#
+# Every difference from VehicleState.1.1 below is individually
+# sufficient to require a major bump:
+#
+#   1. `height_above_takeoff` is retyped from length.Scalar (float32) to
+#      length.WideScalar (float64). Same name, same position, different
+#      wire width: a 1.x reader would decode garbage from that offset
+#      onward. Retyping a field is always breaking, even when the new
+#      type is strictly more precise.
+#   2. `armed` (bool) is replaced by `status_flags` (uint8), folding
+#      several booleans into one field. Removing or repurposing a field
+#      is breaking.
+#   3. The extent grows from 128 to 192 bytes. A 1.x reader sizes its
+#      receive buffer from the extent it was compiled against, so a
+#      larger message can overrun it.
+#
+# Because major versions are not interchangeable, this definition takes
+# a new fixed port identifier (6211). A subject carries exactly one
+# major version; nodes migrate by switching subscriptions, and a bridge
+# node may publish both during a transition.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# The network-synchronized moment this state estimate is valid for.
+
+lanyard.flight.FlightMode.1.0 mode
+# The active flight mode.
+
+uavcan.si.unit.angle.Quaternion.1.0 orientation_ned
+# Vehicle attitude as a unit quaternion in the North-East-Down reference
+# frame.
+
+uavcan.si.unit.angular_velocity.Vector3.1.0 angular_velocity
+# Body-frame roll, pitch, and yaw rates in radians per second.
+
+uavcan.si.unit.velocity.Vector3.1.0 velocity_ned
+# Velocity over ground in the North-East-Down frame, in meters per
+# second.
+
+uavcan.si.unit.length.WideScalar.1.0 height_above_takeoff
+# Height above the recorded takeoff elevation, in meters. Widened from
+# float32 to float64 in 2.0 so that the integrated altitude solution
+# stops accumulating rounding error over long survey flights.
+
+uint8 status_flags
+# Bit mask replacing the standalone `armed` boolean of 1.x.
+#   bit 0 - propulsion armed
+#   bit 1 - navigation solution valid
+#   bit 2 - geofence breached
+#   bit 3 - low battery threshold crossed
+#   bits 4..7 - reserved, transmitted as zero
+
+@extent 192 * 8
+# Grown from 128 bytes to accommodate the wider velocity field and leave
+# a growth budget for 2.x.

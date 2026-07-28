@@ -1,0 +1,51 @@
+# Consolidated vehicle state, published by the flight controller at 50
+# Hz.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# WHY DELIMITED: this is the definition most likely to acquire new
+# fields as the airframe evolves, and it is consumed by a wide
+# population of nodes that are updated on their own schedules. The
+# @extent below reserves wire space so that a future minor version may
+# append fields; a reader built against 1.0 will decode the fields it
+# knows and skip the rest instead of failing.
+#
+# Compare EscStatus.1.0, which makes the opposite trade: sealed,
+# minimal, and frozen forever.
+#
+# See VehicleState.1.1 for a non-breaking extension of this definition,
+# and VehicleState.2.0 for a breaking one.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# The network-synchronized moment this state estimate is valid for.
+# Reusing the standard timestamp type rather than declaring a local
+# uint64 is what allows a receiver to correlate this message with
+# samples from any other node on the bus without knowing anything about
+# this vendor's definitions.
+
+lanyard.flight.FlightMode.1.0 mode
+# The active flight mode.
+
+uavcan.si.unit.angle.Quaternion.1.0 orientation_ned
+# Vehicle attitude as a unit quaternion in the North-East-Down reference
+# frame. Quaternions are used rather than Euler angles because they do
+# not gimbal-lock at +/-90 degrees of pitch, which a vehicle with any
+# aerobatic envelope will reach.
+
+uavcan.si.unit.angular_velocity.Vector3.1.0 angular_velocity
+# Body-frame roll, pitch, and yaw rates in radians per second.
+
+uavcan.si.unit.velocity.Vector3.1.0 velocity_ned
+# Velocity over ground in the North-East-Down frame, in meters per
+# second.
+
+bool armed
+# True when the propulsion system is energized and will respond to
+# throttle commands.
+
+void7
+# Padding to a byte boundary.
+
+@extent 128 * 8
+# Roughly 50 bytes are in use; the remainder is the growth budget for
+# future 1.x minor versions.

@@ -28,6 +28,9 @@ This manual is organized for three reader paths: users, backend integrators, and
 - Backends
   - `backends/overview.md`
   - `backends/object.md`
+- Showroom
+  - `showroom/index.md`
+  - `showroom/types/*.md` (generated; reachable from the overview, not listed in `nav`)
 - Design
   - `design/architecture.md`
   - `design/dialect-contracts.md`

@@ -1,0 +1,80 @@
+# Upload a mission to the vehicle one chunk at a time.
+#
+# TRANSPORT TIER: CAN FD and Cyphal/UDP.
+#
+# WHY A SERVICE: mission upload needs an acknowledgement per chunk so
+# that the ground station can retry a lost chunk rather than restarting
+# the transfer. A service definition carries a request and a response in
+# one file, separated by the `---` marker, and the two sections are
+# independent: they have their own fields, their own documentation, and
+# -- as here -- their own sealing decision.
+#
+# Chunking exists so that this service can be flown over CAN FD as well
+# as UDP. The MissionPlan message carries an entire plan at once and is
+# UDP-only; this service carries the same content in pieces small enough
+# for either transport, at the cost of a round trip per chunk.
+
+uint16 first_item_index
+# Index within the destination plan at which `item` should be written.
+# The ground station uploads ascending chunks; the vehicle rejects a
+# chunk that does not begin where the previous one ended.
+
+bool is_last
+# True on the final chunk. The vehicle commits the plan to storage and
+# increments its plan identifier only when a chunk with this flag is
+# accepted.
+
+void7
+# Padding to a byte boundary.
+
+lanyard.nav.Waypoint.1.0[<=8] item
+# The mission items in this chunk. Bounded at eight so that a chunk
+# stays within a short CAN FD multi-frame transfer: 548 bytes worst
+# case, against a little over 17 KiB for a whole plan.
+
+@extent 640 * 8
+# Eight waypoints at the 64-byte waypoint extent plus a four-byte
+# delimiter header each, plus the array length prefix and the leading
+# fields. The extent must cover the worst case, not the typical one: the
+# compiler rejects an extent smaller than the maximal serialized length.
+
+---
+
+bool accepted
+# True when the chunk was written to the staging buffer.
+
+void7
+# Padding to a byte boundary.
+
+uint16 next_expected_index
+# The index the vehicle expects the next chunk to begin at. On rejection
+# this tells the ground station where to resume rather than forcing it
+# to restart the upload.
+
+uint8 error
+# Reason for rejection; zero when `accepted` is true.
+
+uint8 ERROR_NONE = 0
+# No error.
+
+uint8 ERROR_OUT_OF_SEQUENCE = 1
+# first_item_index did not match next_expected_index.
+
+uint8 ERROR_CAPACITY = 2
+# The plan would exceed the vehicle's stored mission capacity.
+
+uint8 ERROR_INVALID_ITEM = 3
+# A waypoint in the chunk failed validation, for example an altitude
+# outside the configured envelope.
+
+uint8 ERROR_BUSY = 4
+# The vehicle is armed or otherwise unwilling to accept a mission change
+# right now.
+
+uint8[<=64] detail
+# Optional human-readable elaboration on `error`, UTF-8, for display in
+# the ground station log. The response section is delimited so that this
+# field and future diagnostics may grow independently of the request
+# section, which is size-critical.
+
+@extent 128 * 8

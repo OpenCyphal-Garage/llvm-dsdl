@@ -1,0 +1,13 @@
+# A retired service.
+
+@deprecated
+
+uint8 index
+
+@sealed
+
+---
+
+uint16 value
+
+@sealed

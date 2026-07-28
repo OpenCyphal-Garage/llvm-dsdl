@@ -1,0 +1,63 @@
+# A single mission item.
+#
+# Nested type with no fixed port identifier: waypoints are only ever
+# transported inside MissionPlan or UploadMission. It is delimited
+# rather than sealed so that a future minor version may add mission item
+# parameters without forcing a major bump of every container that embeds
+# it.
+#
+# A delimited type nested inside another type carries its own 32-bit
+# length header, which is what lets the outer type skip over an element
+# it cannot fully parse. That is four bytes per waypoint -- a real cost
+# at 256 waypoints, and the reason this trade is worth stating
+# explicitly rather than defaulting either way.
+
+int32 latitude_deg_1e7
+# WGS 84 latitude in units of 1e-7 degrees. This fixed-point encoding is
+# the standard trick for geodetic coordinates: it holds about 11 mm of
+# resolution over the whole globe in 32 bits, whereas float32 degrees
+# would degrade to roughly a meter near the poles and float64 would cost
+# twice the bandwidth for precision no airframe can fly to.
+
+int32 longitude_deg_1e7
+# WGS 84 longitude in units of 1e-7 degrees.
+
+float32 altitude_amsl_m
+# Target altitude above mean sea level, in meters.
+
+float16 speed_mps
+# Ground speed to hold on the leg approaching this waypoint, in meters
+# per second. A negative value means "unchanged from the previous leg".
+
+float16 acceptance_radius_m
+# Distance from the waypoint at which it is considered reached, in
+# meters.
+
+uint16 loiter_time_s
+# Seconds to hold position after reaching the waypoint before
+# proceeding. Zero means fly through.
+
+uint8 command
+# The action to perform at this waypoint; one of the constants below.
+
+uint8 COMMAND_NAVIGATE = 0
+# Fly to the waypoint and continue.
+
+uint8 COMMAND_LOITER = 1
+# Fly to the waypoint and orbit for loiter_time_s.
+
+uint8 COMMAND_LAND = 2
+# Descend and land at the waypoint.
+
+uint8 COMMAND_TAKEOFF = 3
+# Climb to altitude_amsl_m before proceeding to the next item.
+
+uint8 COMMAND_TRIGGER_PAYLOAD = 4
+# Fire the payload action configured for this mission at the waypoint.
+
+uint8[<=16] label
+# Short human-readable label shown in the ground station, UTF-8, not
+# null-terminated. Bounded at 16 bytes because the array is replicated
+# up to 256 times inside a mission plan.
+
+@extent 64 * 8

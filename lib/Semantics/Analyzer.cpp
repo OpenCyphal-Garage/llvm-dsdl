@@ -1086,7 +1086,12 @@ private:
                         diagnostics_.error(d.location, "@assert requires an expression");
                         continue;
                     }
-                    if (d.expression)
+                    if (!d.expression)
+                    {
+                        // @print without an operand is legal and prints an empty line.
+                        diagnostics_.note(d.location, "");
+                        continue;
+                    }
                     {
                         auto value =
                             evaluateExpression(*d.expression, env, diagnostics_, d.location, &typeAttrResolver);
@@ -1100,6 +1105,12 @@ private:
                             {
                                 diagnostics_.error(d.location, "assertion failed");
                             }
+                        }
+                        else if (value)
+                        {
+                            // The whole point of @print is the operand's value reaching the build log; evaluating it
+                            // and dropping the result made the directive a no-op.
+                            diagnostics_.note(d.location, value->str());
                         }
                     }
                     continue;

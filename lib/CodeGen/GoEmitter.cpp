@@ -1279,12 +1279,16 @@ void emitSectionType(std::ostringstream&                       out,
                      std::uint32_t                             minorVersion,
                      const SemanticSection&                    section,
                      const AttachedDoc&                        typeDoc,
+                     const std::string&                        definitionFullName,
                      const std::string&                        currentPackagePath,
                      const std::map<std::string, std::string>& importAliases,
                      const LoweredSectionFacts*                sectionFacts)
 {
     const auto typeConstPrefix = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, typeName);
     emitLine(out, 0, "const " + typeConstPrefix + "_FULL_NAME = \"" + fullName + "\"");
+    emitLine(out,
+             0,
+             "const " + typeConstPrefix + "_IS_DEPRECATED = " + std::string(section.deprecated ? "true" : "false"));
     emitLine(out,
              0,
              "const " + typeConstPrefix + "_FULL_NAME_AND_VERSION = \"" + fullName + "." +
@@ -1333,7 +1337,9 @@ void emitSectionType(std::ostringstream&                       out,
     }
     out << "\n";
 
-    emitAttachedDocGo(out, 0, typeDoc);
+    emitAttachedDocGo(out,
+                      0,
+                      docWithDeprecationNotice(typeDoc, section.deprecated, definitionFullName, majorVersion, minorVersion));
     emitLine(out, 0, "type " + typeName + " struct {");
     const CodegenIdentifierAllocator fieldIdents = makeExportedFieldIdents(section);
     for (const auto& field : section.fields)
@@ -1410,6 +1416,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         def.info.minorVersion,
                         def.request,
                         def.doc,
+                        def.info.fullName,
                         currentPackagePath,
                         imports,
                         lookupLoweredSectionFacts(loweredFacts, def, ""));
@@ -1426,6 +1433,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                     def.info.minorVersion,
                     def.request,
                     def.doc,
+                    def.info.fullName,
                     currentPackagePath,
                     imports,
                     lookupLoweredSectionFacts(loweredFacts, def, "request"));
@@ -1440,6 +1448,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         def.info.minorVersion,
                         *def.response,
                         def.doc,
+                        def.info.fullName,
                         currentPackagePath,
                         imports,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));

@@ -504,6 +504,7 @@ add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
+add_subdirectory(examples/showroom)
 
 set(LLVMDSDL_INSTALLABLE_TOOLS
     dsdlc
@@ -1065,7 +1066,7 @@ if(LLVMDSDL_UAVCAN_ROOT)
   endfunction()
 
   llvmdsdl_add_uavcan_c_impl_target(generate-uavcan-c
-                                    --target-language c)
+                                    c)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-std
                                      cpp-std
                                      --target-language cpp --cpp-profile std)

@@ -196,9 +196,16 @@ std::string signedStorageType(const std::uint32_t bitLength)
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
         : index_(semantic)
+        , emitDeprecationAttributes_(emitDeprecationAttributes)
     {
+    }
+
+    /// @brief True when `@deprecated` definitions should carry a language-native attribute.
+    bool emitDeprecationAttributes() const
+    {
+        return emitDeprecationAttributes_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -259,6 +266,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    bool            emitDeprecationAttributes_{false};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -347,7 +355,8 @@ void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const
 void emitSectionTypedef(std::ostringstream&    out,
                         const std::string&     typeName,
                         const SemanticSection& section,
-                        const EmitterContext&  ctx)
+                        const EmitterContext&  ctx,
+                        const bool             deprecatedAttribute)
 {
     emitLine(out, 0, "typedef struct " + typeName + " {");
 
@@ -422,7 +431,14 @@ void emitSectionTypedef(std::ostringstream&    out,
         emitLine(out, 1, "uint8_t _dummy_;");
     }
 
-    emitLine(out, 0, "} " + typeName + ";");
+    if (deprecatedAttribute)
+    {
+        emitLine(out, 0, "} __attribute__((deprecated)) " + typeName + ";");
+    }
+    else
+    {
+        emitLine(out, 0, "} " + typeName + ";");
+    }
     out << "\n";
 
     if (section.isUnion)
@@ -482,6 +498,7 @@ void emitSectionMetadata(std::ostringstream&    out,
                                                   : std::string("not-proven"));
     emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
     emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
+    emitLine(out, 0, "#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     out << "\n";
 }
 
@@ -498,8 +515,8 @@ void emitSection(std::ostringstream&       out,
     emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
     emitSectionConstants(out, typeName, section);
     emitArrayMacros(out, typeName, section);
-    emitAttachedDocC(out, 0, typeDoc);
-    emitSectionTypedef(out, typeName, section, ctx);
+    emitAttachedDocC(out, 0, docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+    emitSectionTypedef(out, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
 
     const auto irStem = sectionIRFunctionStem(def, sectionName);
     emitLine(out,
@@ -635,6 +652,17 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     out << "\n";
 
+    // Generated code must never warn about itself. A deprecated typedef is referenced by this very
+    // header -- in its own declaration, in its serializer signatures, and, when a deprecated type is
+    // used as a field, in the struct body of an unrelated type (uavcan.file.Path.1.0 is deprecated and
+    // embedded by five other definitions). Suppressing across the whole body covers all three. The
+    // region ends before the include guard closes, so a user naming the type still gets the warning.
+    if (ctx.emitDeprecationAttributes())
+    {
+        out << "#pragma GCC diagnostic push\n";
+        out << "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n\n";
+    }
+
     if (def.isService)
     {
         const auto requestType  = baseTypeName + "__Request";
@@ -694,6 +722,11 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                     lookupLoweredSectionFacts(loweredFacts, def, ""));
     }
 
+    if (ctx.emitDeprecationAttributes())
+    {
+        out << "#pragma GCC diagnostic pop\n\n";
+    }
+
     out << "#endif /* " << guard << " */\n";
     return out.str();
 }
@@ -711,7 +744,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    EmitterContext        ctx(semantic);
+    EmitterContext        ctx(semantic, options.emitDeprecationAttributes);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
 

@@ -1,0 +1,56 @@
+# High-rate telemetry from a single electronic speed controller (ESC),
+# extensible revision.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# WHY A MAJOR BUMP: EscStatus.1.0 is @sealed. A sealed type has no
+# delimiter header, so a reader compiled against 1.0 cannot skip over
+# fields it does not know about -- appending anything would make every
+# existing reader misinterpret the tail of the message. Sealing is
+# therefore a one-way door: the only way to add a field to a sealed type
+# is to publish a new major version, which also means a new fixed port
+# identifier (6200 -> 6201) because a port carries exactly one major
+# version.
+#
+# This revision buys extensibility with an @extent: the serialized value
+# is prefixed with a 32-bit length header, and any reader may skip a
+# longer-than-expected tail. Minor versions of this type (2.1, 2.2, ...)
+# may append fields without breaking readers built against 2.0, as long
+# as they stay within the declared extent. That flexibility costs four
+# bytes on the wire plus the slack reserved by the extent, which is why
+# 1.0 remains the right choice for classic-CAN deployments.
+
+uint14 erpm_x10
+# Electrical RPM divided by ten, as in EscStatus.1.0.
+
+uint12 dc_voltage_dv
+# DC bus voltage in decivolts (0.1 V per LSB).
+
+int12 dc_current_da
+# DC bus current in deciamperes (0.1 A per LSB).
+
+int9 motor_temperature_c
+# Motor winding temperature in whole degrees Celsius.
+
+int9 controller_temperature_c
+# Power stage (MOSFET) temperature in whole degrees Celsius. New in 2.0:
+# the field that could not be added to the sealed 1.0 layout, and the
+# reason this major version exists.
+
+uint8 duty_cycle_pct
+# Commanded duty cycle as a percentage of the DC bus voltage, 0 to 100.
+
+uint4 error_flags
+# Latched controller faults; see EscStatus.1.0 for the bit assignments.
+
+void4
+# Padding to a byte boundary.
+
+uint32 total_run_time_s
+# Cumulative powered-on time of this controller in seconds. Used for
+# maintenance scheduling.
+
+@extent 32 * 8
+# 32 bytes of room, of which 13 are in use. The remaining 19 are the
+# budget available to future minor versions; a reader of 2.0 will
+# tolerate any 2.x message up to this size, and none larger.

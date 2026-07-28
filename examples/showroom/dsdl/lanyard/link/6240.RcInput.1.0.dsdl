@@ -1,0 +1,43 @@
+# Decoded pilot control input from the radio receiver, published at 50
+# Hz.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# WHY SEALED: this message sits on the manual-control path, where a lost
+# or late frame is felt directly by the pilot. It is fixed-size,
+# single-frame, and never grows.
+
+uint11[16] channel
+# Sixteen channel values in raw receiver counts, 0 to 2047, in channel
+# order.
+#
+# A fixed-size array of a non-byte-aligned type: the sixteen eleven-bit
+# values are packed end to end across byte boundaries with no padding
+# between them, for 22 bytes rather than the 32 that sixteen uint16
+# fields would cost. Eleven bits is the native resolution of the
+# receiver's serial protocol, so nothing is lost. Generated code exposes
+# this as a plain sixteen-element array and hides the cross-byte packing
+# inside the serializer.
+
+uint8 rssi
+# Received signal strength as a normalized 0 to 255 value, where 255 is
+# the strongest reading the receiver can report. Not in dBm: the scale
+# is receiver-specific and only meaningful as a trend.
+
+bool failsafe
+# True when the receiver has lost the transmitter and is emitting its
+# configured failsafe positions. Consumers shall treat the channel array
+# as invalid for manual control while this flag is set.
+
+bool frame_lost
+# True when at least one radio frame was missed since the previous
+# message. Distinct from failsafe: an occasional lost frame is normal at
+# range, whereas failsafe means the link is gone.
+
+void6
+# Padding to a byte boundary.
+
+@assert _offset_.max <= 63 * 8
+# Must remain a single CAN FD frame.
+
+@sealed

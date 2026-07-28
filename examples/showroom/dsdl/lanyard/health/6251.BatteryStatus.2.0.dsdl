@@ -1,0 +1,53 @@
+# State of one battery pack, published at 2 Hz by the smart battery or
+# power module.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# VERSIONING: this definition replaces the polled LegacyBatteryPoll.1.0
+# service, which is @deprecated. The change of shape -- from a service
+# the flight controller had to poll to a message the pack publishes on
+# its own -- is why this is a 2.0 and not a minor revision of anything.
+# The deprecated service remains in the namespace so that both halves of
+# a migration are visible.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# Moment the measurements were sampled.
+
+uavcan.si.unit.voltage.Scalar.1.0 voltage
+# Pack terminal voltage in volts.
+
+uavcan.si.unit.electric_current.Scalar.1.0 current
+# Pack current in amperes. Positive is discharge, negative is charge.
+
+uavcan.si.unit.temperature.Scalar.1.0 temperature
+# Hottest cell temperature in kelvin. Kelvin, not Celsius, because that
+# is the SI unit the standard type carries; using the standard type
+# means a generic consumer needs no per-vendor conversion, and the
+# arithmetic to display Celsius belongs in the display layer.
+
+float16 remaining_capacity_ratio
+# State of charge, 0.0 (empty) to 1.0 (full).
+
+float16 full_charge_capacity_ah
+# Capacity of the pack when fully charged, in ampere-hours. Declines
+# over the pack's life, so a consumer computing endurance uses this
+# rather than the nameplate capacity.
+
+uint16 cycle_count
+# Completed charge/discharge cycles, for maintenance scheduling.
+
+uint8 status_flags
+# Bit mask of active pack conditions.
+#   bit 0 - charging
+#   bit 1 - cell imbalance beyond threshold
+#   bit 2 - over-temperature
+#   bit 3 - under-voltage cutoff imminent
+#   bit 4 - pack requires service
+#   bits 5..7 - reserved, transmitted as zero
+
+float16[<=24] cell_voltage
+# Per-cell voltages in volts. The array length reports the pack's series
+# count, so one definition serves the 6S and 12S packs in the fleet and
+# the 24S pack on the heavy airframe.
+
+@extent 128 * 8

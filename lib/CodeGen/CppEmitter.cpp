@@ -192,13 +192,20 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
         : index_(semantic)
+        , emitDeprecationAttributes_(emitDeprecationAttributes)
     {
         for (const auto& def : semantic.definitions)
         {
             versionCountByFullName_[def.info.fullName] += 1U;
         }
+    }
+
+    /// @brief True when `@deprecated` definitions should carry a language-native attribute.
+    bool emitDeprecationAttributes() const
+    {
+        return emitDeprecationAttributes_;
     }
 
     /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
@@ -294,6 +301,7 @@ private:
     DefinitionIndex                              index_;
     std::unordered_map<std::string, std::size_t> versionCountByFullName_;
     EmitTraceSink*                               traceSink_ = nullptr;
+    bool                                         emitDeprecationAttributes_{false};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -1534,7 +1542,9 @@ void emitSectionStruct(std::ostringstream&    out,
                        const LoweredSectionFacts* const sectionFacts)
 {
     emitAttachedDocCpp(out, 0, typeDoc);
-    emitLine(out, 0, "struct " + typeName + " {");
+    const std::string structAttribute =
+        (section.deprecated && ctx.emitDeprecationAttributes()) ? "[[deprecated]] " : "";
+    emitLine(out, 0, "struct " + structAttribute + typeName + " {");
 
     std::size_t              emitted = 0;
     std::vector<std::string> variableArrayMembers;
@@ -1678,6 +1688,9 @@ void emitSectionStruct(std::ostringstream&    out,
     }
 
     emitLine(out, 1, "static constexpr const char* FULL_NAME = \"" + fullName + "\";");
+    emitLine(out,
+             1,
+             "static constexpr bool IS_DEPRECATED = " + std::string(section.deprecated ? "true" : "false") + ";");
     emitLine(out,
              1,
              "static constexpr const char* FULL_NAME_AND_VERSION = \"" + fullName + "." + std::to_string(majorVersion) +
@@ -1869,7 +1882,6 @@ void emitSection(std::ostringstream&              out,
                  const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
-    (void) def;
     emitFunctionPrototypes(out, typeName, flavor);
     emitSectionStruct(out,
                       typeName,
@@ -1879,7 +1891,7 @@ void emitSection(std::ostringstream&              out,
                       section,
                       ctx,
                       flavor,
-                      typeDoc,
+                      docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion),
                       sectionFacts);
 
     const auto canonicalSectionName = fullName + "." + std::to_string(def.info.majorVersion) + "." +
@@ -1951,6 +1963,16 @@ std::string renderHeader(const SemanticDefinition& def,
         }
     }
     out << "\n";
+
+    // Generated code must never warn about itself; see the C backend for the three ways a deprecated
+    // type is referenced from within its own generated file. The region closes before the include
+    // guard, so user code naming the type still gets the diagnostic.
+    if (ctx.emitDeprecationAttributes())
+    {
+        out << "#pragma GCC diagnostic push\n";
+        out << "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n\n";
+    }
+
     emitNamespaceOpen(out, def.info.namespaceComponents);
 
     if (def.isService)
@@ -2071,6 +2093,10 @@ std::string renderHeader(const SemanticDefinition& def,
     }
 
     emitNamespaceClose(out, def.info.namespaceComponents);
+    if (ctx.emitDeprecationAttributes())
+    {
+        out << "\n#pragma GCC diagnostic pop\n";
+    }
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
 }
@@ -2107,7 +2133,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         return err;
     }
 
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.emitDeprecationAttributes);
     ctx.setTraceSink(traceSink);
     for (const auto& def : semantic.definitions)
     {

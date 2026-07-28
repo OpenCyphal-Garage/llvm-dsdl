@@ -1,0 +1,47 @@
+# A complete stored mission, published once after upload and on request.
+#
+# TRANSPORT TIER: Cyphal/UDP ONLY. This message does not fit any CAN
+# frame and is not intended to.
+#
+# It exists in this showroom as the counterweight to EscStatus.1.0: the
+# same compiler, the same language, and the same generated-code surface,
+# but sized for a transport with a 64 KiB datagram rather than a 7-byte
+# frame. On CAN this would fragment into hundreds of frames and
+# monopolize the bus; on UDP it is one unremarkable datagram. The
+# transport, not the compiler, is what makes a definition of this shape
+# reasonable or not.
+#
+# On a mixed vehicle the CAN nodes never subscribe to this subject. They
+# receive mission items one chunk at a time through the UploadMission
+# service instead.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# The moment this plan was committed to storage.
+
+uint32 plan_id
+# Monotonic identifier of the stored plan, incremented on every
+# successful upload. A consumer uses it to detect that the plan changed
+# without re-reading the item list.
+
+uint16 current_item
+# Index into `item` of the waypoint the vehicle is currently navigating
+# toward.
+
+lanyard.nav.Waypoint.1.0[<=256] item
+# The mission items in execution order.
+#
+# Each element is a delimited composite and therefore carries its own
+# four-byte length header. Note that the bound is the waypoint's 64-byte
+# *extent*, not the 36 bytes a 1.0 waypoint actually occupies: a reader
+# must be prepared for any 1.x waypoint, and the extent is what states
+# how large that can be. So the worst case is 256 * (64 + 4) plus the
+# array's own length prefix, which puts this message a little over 17
+# KiB -- roughly 2500 classic-CAN frames, and one UDP datagram.
+
+@extent 24576 * 8
+# 24 KiB. Deliberately not accompanied by an @assert on _offset_: the
+# value set of a 256-element array of delimited composites is far too
+# large to enumerate, and the analyzer will say so. Bounding a
+# definition of this shape is the extent's job. See GlobalPosition.1.0
+# for the compile-time size check that is worth writing, on a definition
+# whose layout is small enough to evaluate.

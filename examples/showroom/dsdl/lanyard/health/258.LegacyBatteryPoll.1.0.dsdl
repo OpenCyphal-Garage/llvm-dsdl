@@ -1,0 +1,60 @@
+# Read the state of one battery pack. DEPRECATED -- use the
+# BatteryStatus.2.0 message instead.
+#
+# TRANSPORT TIER: Classic CAN.
+#
+# WHY IT IS STILL HERE: this is the showroom's deprecation example. The
+# @deprecated directive marks a definition as scheduled for removal
+# without deleting it, so that nodes still speaking it keep working
+# while integrators migrate.
+#
+# WHAT THE GENERATED CODE CARRIES: every backend appends a `Deprecated:
+# ...` notice to this comment block and emits an IS_DEPRECATED constant,
+# so the marking is visible to a developer who never opens the DSDL. Go
+# picks it up as a real deprecation (its toolchain keys on a
+# `Deprecated: ` doc paragraph), and TypeScript additionally gets a `/**
+# @deprecated */` JSDoc block, which is what tsc and editors read.
+#
+# Compile-time enforcement in C, C++, and Rust is opt-in behind `dsdlc
+# --emit-deprecation-attributes`, which adds
+# `__attribute__((deprecated))`, `[[deprecated]]`, and `#[deprecated]`
+# respectively. It is not the default because it turns documentation
+# into a build diagnostic, and enough of the standard uavcan namespace
+# is deprecated that switching it on unannounced would break -Werror
+# builds.
+#
+# Note the placement: @deprecated appears in the request section, ahead
+# of the first attribute, and applies to the whole service. The language
+# accepts it nowhere else -- not after a field, and not in the response
+# section -- because a service is deprecated or not as a unit; you
+# cannot retire half a request/response pair.
+#
+# MIGRATION: subscribe to lanyard.health.BatteryStatus.2.0 (port 6251),
+# which the pack publishes at 2 Hz on its own. Polling cost the bus a
+# request and a response per pack per interval and gave the flight
+# controller a scheduling problem it did not need.
+
+@deprecated
+
+uint8 battery_index
+# Zero-based index of the pack to read.
+
+@sealed
+
+---
+
+uint16 voltage_mv
+# Pack terminal voltage in millivolts.
+
+int16 current_ca
+# Pack current in centiamperes. Positive is discharge.
+
+uint8 remaining_pct
+# State of charge as a percentage, 0 to 100.
+
+int8 temperature_c
+# Hottest cell temperature in whole degrees Celsius. Note that the
+# replacement message reports temperature in kelvin via the standard SI
+# type, so a migration is not a straight field copy.
+
+@sealed

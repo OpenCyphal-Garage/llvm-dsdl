@@ -1,0 +1,74 @@
+# Fused navigation solution published by the GNSS/INS estimator at 10
+# Hz.
+#
+# TRANSPORT TIER: CAN FD.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# The network-synchronized moment this solution is valid for.
+
+int32 latitude_deg_1e7
+# WGS 84 latitude in units of 1e-7 degrees.
+
+int32 longitude_deg_1e7
+# WGS 84 longitude in units of 1e-7 degrees.
+
+uavcan.si.unit.length.Scalar.1.0 altitude_amsl
+# Altitude above mean sea level, in meters.
+
+uavcan.si.unit.length.Scalar.1.0 altitude_ellipsoid
+# Altitude above the WGS 84 reference ellipsoid, in meters. Both
+# altitudes are carried because the geoid separation is not constant and
+# consumers differ in which datum they expect.
+
+float16[9] position_covariance
+# Row-major 3x3 position covariance in the North-East-Down frame, in
+# meters squared.
+#
+# A fixed-size array, unlike the variable-length arrays elsewhere in
+# this namespace: the length is part of the type, so nothing is
+# transmitted to describe it and generated code exposes it as a plain
+# nine-element array rather than a length-carrying container. float16 is
+# adequate here because a covariance is only ever consumed as an
+# order-of-magnitude confidence estimate.
+
+uint8 satellites_visible
+# Number of satellites contributing to the solution.
+
+uint4 fix_type
+# Quality of the GNSS fix; one of the constants below.
+
+uint4 FIX_NONE = 0
+# No position solution.
+
+uint4 FIX_2D = 1
+# Horizontal position only; altitude is dead-reckoned.
+
+uint4 FIX_3D = 2
+# Full three-dimensional position solution.
+
+uint4 FIX_DGPS = 3
+# Three-dimensional solution with differential corrections applied.
+
+uint4 FIX_RTK_FLOAT = 4
+# Real-time kinematic solution with an unresolved carrier phase
+# ambiguity, decimeter class.
+
+uint4 FIX_RTK_FIXED = 5
+# Real-time kinematic solution with a fixed carrier phase ambiguity,
+# centimeter class.
+
+void4
+# Padding to a byte boundary.
+
+@assert _offset_.max <= 63 * 8
+# Must remain a single CAN FD frame; the covariance array is the field
+# most likely to break this.
+
+@print _offset_.max / 8
+# Compile-time diagnostic: prints the worst-case serialized size of this
+# definition, in bytes, while the namespace is being compiled. @print is
+# evaluated by the frontend and contributes nothing to the generated
+# code -- it is a build-log message, useful when tuning a layout against
+# a frame budget.
+
+@extent 96 * 8

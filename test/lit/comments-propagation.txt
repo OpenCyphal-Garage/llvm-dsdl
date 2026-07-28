@@ -51,3 +51,19 @@
 # PY_DOC-DAG: # Type doc line2
 # PY_DOC-DAG: # field doc
 # PY_DOC-DAG: # const doc
+
+# The OpenCyphal house style places an attribute's documentation on the lines *after* it, terminated
+# by a blank line, which is what the whole regulated namespace uses. Appending such a block to the
+# preceding statement used to move the doc lines out of the trivia buffer without shrinking it, so
+# the hollowed-out entries went on to seed the next attribute's doc -- every attribute after the
+# first came out prefixed with one blank line per line of its predecessor's comment block.
+# RUN: %dsdlc --target-language mlir %S/fixtures_docs/trailing | FileCheck %s --check-prefix=TRAILING
+
+# TRAILING: dsdl.schema
+# TRAILING-SAME: doc = "Type doc line1\0AType doc line2"
+# TRAILING: dsdl.field
+# TRAILING-SAME: doc = "alpha doc line1\0Aalpha doc line2"
+# TRAILING: dsdl.field
+# TRAILING-SAME: doc = "bravo doc"
+# TRAILING: dsdl.constant
+# TRAILING-SAME: doc = "limit doc"

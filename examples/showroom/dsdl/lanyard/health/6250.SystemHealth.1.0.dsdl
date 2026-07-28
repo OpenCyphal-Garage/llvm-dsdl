@@ -1,0 +1,28 @@
+# Vehicle-level health summary, published at 1 Hz by the flight
+# controller.
+#
+# TRANSPORT TIER: CAN FD.
+#
+# WHY DELIMITED: the subsystem list grows as the airframe gains
+# hardware, and the ground station is the slowest thing in the fleet to
+# be updated. An extent lets the ground station keep decoding this
+# message across several vehicle software releases.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# Moment the summary was assembled.
+
+uavcan.node.Health.1.0 aggregate_health
+# Worst health level among all subsystems below. Precomputed so that a
+# consumer that only needs the top-level state -- an annunciator light,
+# say -- does not have to walk the array.
+
+void6
+# Padding to a byte boundary.
+
+lanyard.health.SubsystemReport.1.0[<=8] subsystem
+# One report per monitored subsystem. Sealed elements, so unlike the
+# waypoint array in MissionPlan these carry no per-element delimiter
+# header; the trade is that SubsystemReport can never gain a field
+# without a major bump of its own.
+
+@extent 512 * 8

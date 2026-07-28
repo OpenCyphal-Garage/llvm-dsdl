@@ -1,0 +1,19 @@
+# @print exists to put a compile-time value in front of whoever is running the compiler -- it is how
+# you check a layout against a frame budget while tuning it. The frontend used to evaluate the
+# operand and then drop the result on the floor, which made the directive a silent no-op.
+#
+# The operand is evaluated in the same environment as @assert, so _offset_ and ordinary arithmetic
+# both work, and an operand-less @print is legal and prints nothing.
+
+# RUN: %dsdlc --target-language mlir %S/fixtures_print/pr 2>&1 >/dev/null | FileCheck %s --check-prefix=PRINT
+
+# PRINT: Sizes.1.0.dsdl:3:1: note: 4
+# PRINT: Sizes.1.0.dsdl:4:1: note: 42
+# PRINT: Sizes.1.0.dsdl:5:1: note:
+
+# @print must not affect the generated artifacts.
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c %S/fixtures_print/pr --outdir %t/c 2>/dev/null
+# RUN: cat %t/c/pr/Sizes_1_0.h | FileCheck %s --check-prefix=NO_LEAK
+
+# NO_LEAK-NOT: @print

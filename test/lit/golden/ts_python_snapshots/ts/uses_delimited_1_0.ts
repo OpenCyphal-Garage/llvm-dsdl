@@ -6,6 +6,7 @@ import { deserializeDelimited_1_0, serializeDelimited_1_0 } from "./delimited_1_
 import type { Delimited_1_0 } from "./delimited_1_0";
 export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
 export const DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited";
+export const DSDL_IS_DEPRECATED = false;
 export const DSDL_VERSION_MAJOR = 1;
 export const DSDL_VERSION_MINOR = 0;
 export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = false;

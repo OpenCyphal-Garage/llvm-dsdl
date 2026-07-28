@@ -53,6 +53,61 @@ struct EmitWritePolicy final
 /// @return Key in the form `fullName:major:minor`.
 std::string definitionTypeKey(const DiscoveredDefinition& info);
 
+/// @brief Renders the human-readable notice attached to a `@deprecated` definition.
+///
+/// @details
+/// Every backend renders the same sentence so that the marking reads identically across languages;
+/// this is the single source of truth for its wording. DSDL's `@deprecated` carries no author-supplied
+/// message, so the notice is derived from the definition's own identity.
+///
+/// The returned text deliberately begins with `Deprecated: ` because Go's toolchain (gopls,
+/// staticcheck, pkg.go.dev) recognises a deprecation only when a doc-comment paragraph starts with
+/// exactly that prefix. Backends that need a different prefix strip or replace it.
+///
+/// @param[in] fullName Full type name, e.g. `uavcan.file.Read`.
+/// @param[in] majorVersion Major version.
+/// @param[in] minorVersion Minor version.
+/// @return One-line notice with no trailing newline.
+std::string deprecationNotice(const std::string& fullName, std::uint32_t majorVersion, std::uint32_t minorVersion);
+
+/// @brief Wraps text to a column budget on word boundaries.
+///
+/// @details
+/// Generated comments inherit whatever width their source was written at, but text synthesised by the
+/// compiler has no source width to inherit -- so it must be wrapped here or it lands as one very long
+/// line. The showroom renders generated code in a documentation site whose code column fits roughly
+/// eighty characters, and the widest comment prefix any backend adds is eight characters, which is
+/// where the default budget comes from.
+///
+/// Words longer than the budget are never broken; a long identifier overflows rather than being cut.
+///
+/// @param[in] text Text to wrap; existing newlines are not preserved.
+/// @param[in] columns Maximum line width, exclusive of any comment prefix the backend adds.
+/// @return Wrapped lines, never empty for non-empty input.
+std::vector<std::string> wrapCommentText(const std::string& text, std::size_t columns = 72U);
+
+/// @brief Returns a type's documentation with the deprecation notice appended when applicable.
+///
+/// @details
+/// The notice is appended as its own trailing paragraph, separated from any existing documentation by
+/// a blank line. Go requires exactly that shape to recognise the deprecation, and it reads correctly
+/// in every other language's comment syntax, so all backends share it.
+///
+/// When @p deprecated is false the input documentation is returned unchanged, so a non-deprecated
+/// definition's generated output is byte-identical to what it was before deprecation support existed.
+///
+/// @param[in] doc Documentation attached to the definition.
+/// @param[in] deprecated True when the section carries `@deprecated`.
+/// @param[in] fullName Full type name.
+/// @param[in] majorVersion Major version.
+/// @param[in] minorVersion Minor version.
+/// @return Documentation to emit.
+AttachedDoc docWithDeprecationNotice(const AttachedDoc& doc,
+                                     bool               deprecated,
+                                     const std::string& fullName,
+                                     std::uint32_t      majorVersion,
+                                     std::uint32_t      minorVersion);
+
 /// @brief Builds a hash-set from a list of type keys.
 /// @param[in] typeKeys Input key list.
 /// @return Hash-set containing all keys.

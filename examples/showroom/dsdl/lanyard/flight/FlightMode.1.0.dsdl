@@ -1,0 +1,48 @@
+# The commanded flight mode of the vehicle.
+#
+# This is a nested type: it has no fixed port identifier and is never
+# published on its own. It exists so that the mode enumeration is
+# defined exactly once and embedded by value into every message that
+# needs it, rather than being redeclared as a bare integer in each.
+#
+# The DSDL idiom for an enumeration is a value field followed by a set
+# of constants of the same type. Constants are compile-time only -- they
+# occupy no bits on the wire -- and every backend surfaces them as named
+# values in the generated code, together with the documentation attached
+# here.
+
+uint8 value
+# The active mode, one of the constants below. Values not listed are
+# reserved and shall be treated by a receiver as equivalent to FAILSAFE.
+
+uint8 MANUAL = 0
+# Direct passthrough of pilot stick positions to the mixer. No
+# stabilization.
+
+uint8 STABILIZE = 1
+# Attitude is stabilized; stick position commands lean angle. Altitude
+# is not held.
+
+uint8 ALTITUDE_HOLD = 2
+# As STABILIZE, plus barometric altitude hold when the throttle stick is
+# centered.
+
+uint8 POSITION_HOLD = 3
+# Full three-axis position hold using the navigation solution. Requires
+# a valid GNSS fix.
+
+uint8 AUTO_MISSION = 4
+# The vehicle is flying a stored mission plan without pilot input.
+
+uint8 RETURN_TO_LAUNCH = 5
+# The vehicle is navigating autonomously back to its recorded launch
+# position.
+
+uint8 LAND = 6
+# Controlled descent to touchdown at the current horizontal position.
+
+uint8 FAILSAFE = 7
+# The flight controller has lost a resource it requires (link, GNSS, or
+# power margin) and is running its configured contingency behavior.
+
+@sealed

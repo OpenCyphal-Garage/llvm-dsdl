@@ -165,6 +165,91 @@ std::string definitionTypeKey(const DiscoveredDefinition& info)
     return info.fullName + ":" + std::to_string(info.majorVersion) + ":" + std::to_string(info.minorVersion);
 }
 
+std::string deprecationNotice(const std::string&  fullName,
+                              const std::uint32_t majorVersion,
+                              const std::uint32_t minorVersion)
+{
+    return "Deprecated: " + fullName + "." + std::to_string(majorVersion) + "." + std::to_string(minorVersion) +
+           " is marked @deprecated in its DSDL definition and is scheduled for removal; "
+           "migrate to a newer version of this type.";
+}
+
+std::vector<std::string> wrapCommentText(const std::string& text, const std::size_t columns)
+{
+    std::vector<std::string> lines;
+    std::string              current;
+
+    std::size_t pos = 0;
+    while (pos < text.size())
+    {
+        const std::size_t wordStart = text.find_first_not_of(" \t", pos);
+        if (wordStart == std::string::npos)
+        {
+            break;
+        }
+        std::size_t wordEnd = text.find_first_of(" \t", wordStart);
+        if (wordEnd == std::string::npos)
+        {
+            wordEnd = text.size();
+        }
+        const std::string word = text.substr(wordStart, wordEnd - wordStart);
+        pos                    = wordEnd;
+
+        if (current.empty())
+        {
+            current = word;
+        }
+        else if (current.size() + 1U + word.size() <= columns)
+        {
+            current += " " + word;
+        }
+        else
+        {
+            lines.push_back(current);
+            current = word;
+        }
+    }
+
+    if (!current.empty())
+    {
+        lines.push_back(current);
+    }
+    if (lines.empty())
+    {
+        lines.push_back(std::string{});
+    }
+    return lines;
+}
+
+AttachedDoc docWithDeprecationNotice(const AttachedDoc&  doc,
+                                     const bool          deprecated,
+                                     const std::string&  fullName,
+                                     const std::uint32_t majorVersion,
+                                     const std::uint32_t minorVersion)
+{
+    if (!deprecated)
+    {
+        return doc;
+    }
+
+    // The location is synthetic: doc emission renders only the text of each line, and this line has no
+    // source token of its own.
+    const SourceLocation location{"<deprecated>", 1, 1};
+
+    AttachedDoc out = doc;
+    if (!out.lines.empty())
+    {
+        out.lines.push_back(AttachedDocLine{location, ""});
+    }
+    // Wrapped, not pushed as one line: the notice is a full sentence and would otherwise be several
+    // times wider than the surrounding documentation, which is wrapped by whoever authored the DSDL.
+    for (const auto& line : wrapCommentText(deprecationNotice(fullName, majorVersion, minorVersion)))
+    {
+        out.lines.push_back(AttachedDocLine{location, line});
+    }
+    return out;
+}
+
 std::unordered_set<std::string> makeTypeKeySet(const std::vector<std::string>& typeKeys)
 {
     return std::unordered_set<std::string>(typeKeys.begin(), typeKeys.end());

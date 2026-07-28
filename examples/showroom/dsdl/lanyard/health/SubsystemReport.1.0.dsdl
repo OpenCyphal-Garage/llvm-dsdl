@@ -1,0 +1,34 @@
+# Health of one subsystem, as reported by the node that owns it.
+#
+# Nested type with no fixed port identifier; carried as an array element
+# inside SystemHealth.1.0.
+#
+# The two leading fields are standard UAVCAN types rather than local
+# enumerations. That is the point of reusing the regulated namespace: a
+# generic health monitor, a logger, or a ground station can interpret
+# the severity and health of a vendor-specific subsystem without knowing
+# anything about this vendor, because those two fields mean exactly what
+# they mean everywhere else on the network.
+
+uavcan.node.Health.1.0 health
+# Aggregate health of the subsystem, using the standard four-level
+# scale: NOMINAL, ADVISORY, CAUTION, WARNING.
+
+uavcan.diagnostic.Severity.1.0 severity
+# Severity of the most significant active condition, on the standard
+# eight-level scale.
+
+void3
+# Padding to a byte boundary. The two standard types above occupy two
+# and three bits respectively.
+
+uint16 fault_code
+# Vendor-specific code identifying the active condition, or zero when
+# there is none. Meaningful only in combination with the subsystem name
+# below.
+
+uint8[<=24] name
+# Subsystem name, UTF-8, for example "gnss" or "esc.3". Bounded because
+# up to eight of these are carried in a single SystemHealth message.
+
+@sealed

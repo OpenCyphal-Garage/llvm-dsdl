@@ -17,11 +17,11 @@ Use this guide to:
 - [`include/llvmdsdl/`](./include/llvmdsdl/): public headers for frontend, IR, semantics, transforms,
   codegen, and LSP
 - [`lib/`](./lib/): implementation libraries
-- [`tools/`](./tools/): user-facing binaries
-  - `dsdlc`
-  - `dsdl-opt`
-  - `dsdld`
-- [`test/`](./test/): unit, lit, integration, and benchmark suites
+- [`tools/`](./tools/): user-facing binaries plus their build/report helpers
+  - `dsdlc`, `dsdl-opt`, `dsdld`: installed binaries
+  - `convergence/`, `determinism/`, `runtime/`, `man/`: scripts driven by custom
+    targets and tests, not installed as tools
+- [`test/`](./test/): `unit`, `lit`, `integration`, `benchmark`, `fuzz`, and `lint` suites
 - [`runtime/`](./runtime/): language runtime scaffolds used by generators
 - [`cmake/`](./cmake/): utility scripts used by custom targets and tests
 - [`CMakePresets.json`](./CMakePresets.json): canonical configure/build/test/workflow automation
@@ -30,7 +30,9 @@ Use this guide to:
 
 Required:
 
-- CMake `>= 3.25` (required for workflow presets)
+- CMake `>= 3.25` (the project itself declares `cmake_minimum_required(3.24)`, but
+  [`CMakePresets.json`](./CMakePresets.json) is schema version 6 and declares 3.25, so preset-driven
+  development needs 3.25)
 - Ninja
 - C++20-capable compiler toolchain
 - LLVM + MLIR CMake packages (`LLVMConfig.cmake`, `MLIRConfig.cmake`)
@@ -45,6 +47,8 @@ Common optional tools (enable more checks/lanes):
 - `include-what-you-use`
 - `cargo`/`rustc`, `go`, Node/TypeScript (`tsc`) for language-specific
   integration lanes
+- MkDocs, to preview the documentation site — installed into its own virtualenv from
+  [`docs/requirements.txt`](./docs/requirements.txt), not needed by the CMake build; see section 10
 
 ## 4. Clone and Initialize
 
@@ -75,7 +79,14 @@ cmake --preset dev-homebrew
 cmake --preset dev-llvm-env
 # or
 cmake --preset ci
+# or
+cmake --preset ci-asan
 ```
+
+All configure presets use the `Ninja Multi-Config` generator with
+`CMAKE_CONFIGURATION_TYPES=Debug;RelWithDebInfo;Release` and
+`CMAKE_DEFAULT_BUILD_TYPE=RelWithDebInfo`. `ci-asan` additionally compiles the
+generated native decoders under ASan+UBSan for the sanitizer lanes.
 
 If using `dev-llvm-env`, set:
 
@@ -92,7 +103,13 @@ cmake --workflow --preset matrix-dev-llvm-env
 cmake --workflow --preset matrix-ci
 ```
 
-These run configured build/test sequences using current preset policy.
+Each workflow runs configure, then build, then a fixed sequence of test lanes:
+
+- `matrix-dev-homebrew` / `matrix-dev-llvm-env`: smoke, release-blocking, full
+- `matrix-ci`: smoke, release-blocking, python-accel-required, full
+
+The `ci-asan` preset has no matrix workflow; drive it with the build and test
+presets directly.
 
 ## 6. Install Modes
 
@@ -108,17 +125,18 @@ The CMake custom targets are:
 
 ### 6.1 Manual Install Invocations
 
-From an already-configured build tree:
+From an already-configured build tree. Both targets install the configuration
+named by `--config`, so that configuration must already be built:
 
 ```bash
 cmake --build build/matrix/ci --config Release --target install-bin
-cmake --build build/matrix/ci --config Debug --target install-dev
+cmake --build build/matrix/ci --config Release --target install-dev
 ```
 
-Default install prefix for each configure preset is under its matrix build dir,
-for example:
+Default install prefix for each configure preset is under its matrix build dir:
 
 - `build/matrix/ci/install`
+- `build/matrix/ci-asan/install`
 - `build/matrix/dev-homebrew/install`
 - `build/matrix/dev-llvm-env/install`
 
@@ -135,14 +153,28 @@ cmake --build build/matrix/ci --config Debug --target install-dev
 
 ### 7.1 Build presets
 
-Each build preset builds the default configuration (`Debug`).  Pass `--config <cfg>` to
-override:
+Because the generator is multi-config, every build and test invocation selects a
+configuration, and the presets do *not* all select the same one:
+
+| Preset | Configuration built/tested |
+| --- | --- |
+| `build-dev-homebrew`, `build-dev-llvm-env` | `RelWithDebInfo` (from `CMAKE_DEFAULT_BUILD_TYPE`) |
+| `build-ci`, `build-ci-asan` | `Debug` (pinned by the preset) |
+| every `test-*` preset | `Debug` (pinned by the hidden `test-base` preset) |
+
+Pass `--config <cfg>` to override a build preset:
 
 ```bash
-cmake --build --preset build-dev-homebrew
-cmake --build --preset build-dev-homebrew --config RelWithDebInfo
+cmake --build --preset build-dev-homebrew                        # RelWithDebInfo
+cmake --build --preset build-dev-homebrew --config Debug
 cmake --build --preset build-dev-homebrew --config Release
 ```
+
+Consequence worth remembering: since the `test-*` presets run `Debug`, a bare
+`cmake --build --preset build-dev-homebrew` does **not** build what
+`ctest --preset test-dev-homebrew-*` will try to run. When driving the dev
+presets by hand, either build `Debug` explicitly before running a test preset,
+or use `ctest --test-dir ... -C RelWithDebInfo` as in section 7.3.
 
 ### 7.2 Test presets
 
@@ -153,11 +185,18 @@ ctest --preset test-dev-homebrew-smoke
 ctest --preset test-ci-smoke
 ```
 
-Full suite (preset-defined full lane):
+Full suite (preset-defined full lane). Note that `test-ci-full` excludes
+`bench`-labeled tests; the dev full lanes do not filter at all:
 
 ```bash
 ctest --preset test-dev-homebrew-full
 ctest --preset test-ci-full
+```
+
+Benchmark-only lane (the `bench` label that `test-ci-full` excludes):
+
+```bash
+ctest --preset test-ci-bench
 ```
 
 Release-blocking architecture gates:
@@ -188,6 +227,13 @@ CI accelerator-required lane:
 
 ```bash
 ctest --preset test-ci-python-accel-required
+```
+
+Sanitizer lanes (require the `ci-asan` configure preset):
+
+```bash
+ctest --preset test-ci-asan-sanitizer
+ctest --preset test-ci-asan-full
 ```
 
 ### 7.3 Direct targeted test runs
@@ -229,6 +275,17 @@ cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target deter
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target release-blocking-report-gates
 ```
 
+Showroom targets. `showroom` regenerates the example namespace into every language and profile under
+`<build-dir>/showroom/`; `showroom-docs` renders that tree into `docs/showroom/`, which is checked in
+because the documentation site is built on a runner that never compiles dsdlc. **If you change
+anything under `examples/showroom/dsdl/` or anything that alters generated output, run
+`showroom-docs` and commit the result** — CI regenerates and fails on a dirty tree.
+
+```bash
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom-docs
+```
+
 ## 9. Optional Coverage Workflow
 
 Enable coverage at configure time:
@@ -246,9 +303,112 @@ Run coverage pipeline:
 cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j1
 ```
 
-## 10. Development Expectations
+Outputs land in `build/coverage/coverage/RelWithDebInfo/`:
 
-### 10.1 Keep behavior centralized
+- `summary.txt`
+- `coverage.lcov`
+- `html/`
+
+This mirrors [`.github/workflows/coverage.yml`](./.github/workflows/coverage.yml); keep the two in sync.
+
+## 10. Documentation Site Workflow
+
+The user manual under [`docs/`](./docs/) is a MkDocs site. This mirrors
+[`.github/workflows/docs.yml`](./.github/workflows/docs.yml); keep the two in sync.
+
+### 10.1 One-time setup
+
+The docs toolchain is independent of the CMake build — it needs no compiler and no LLVM. A virtualenv
+at `.venv-docs/` is the repository convention (it is gitignored, as is the generated `site/`). To skip
+the host install entirely, use the container in section 10.4 instead.
+
+```bash
+python3 -m venv .venv-docs
+```
+
+```bash
+.venv-docs/bin/pip install -r docs/requirements.txt
+```
+
+Install from [`docs/requirements.txt`](./docs/requirements.txt) rather than by name: the versions there
+are pinned as a set, and the file explains why the Pygments ceiling in particular cannot be raised on
+its own.
+
+### 10.2 Live preview
+
+```bash
+.venv-docs/bin/mkdocs serve
+```
+
+**The site is served under `/llvm-dsdl/`, not at the root**, because `site_url` in
+[`mkdocs.yml`](./mkdocs.yml) carries the GitHub Pages base path. Opening
+<http://127.0.0.1:8000/> redirects there, but a deep link typed by hand needs the prefix — for example
+<http://127.0.0.1:8000/llvm-dsdl/showroom/>. Edits to any page reload the browser automatically;
+changes to `mkdocs.yml` need a restart.
+
+### 10.3 Build exactly what CI builds
+
+```bash
+.venv-docs/bin/mkdocs build --strict
+```
+
+`--strict` promotes warnings to errors and is what the Docs workflow runs, so a page that builds
+locally without it can still fail CI — a broken internal link is the usual cause. Output lands in
+`site/`. Pages that exist but are absent from the `nav` in `mkdocs.yml` are reported as INFO and do not
+fail the build; the per-type showroom pages are intentionally in that category.
+
+### 10.4 Containerised toolchain
+
+If you would rather not keep a Python environment on the host — or want the same toolchain on a second
+machine, a fresh clone, or a colleague's laptop — use the container. The image holds the toolchain and
+nothing else; the project being rendered is bind-mounted at run time, so one image serves any
+directory containing an `mkdocs.yml`.
+
+```bash
+tools/docs/docs-container.sh build
+```
+
+```bash
+tools/docs/docs-container.sh serve
+```
+
+```bash
+tools/docs/docs-container.sh check
+```
+
+`serve` and `check` take an optional directory argument and default to this repository, so the same
+image renders a worktree or an unrelated checkout without rebuilding:
+
+```bash
+tools/docs/docs-container.sh serve ~/src/some-other-worktree
+```
+
+Behavior worth knowing:
+
+- The image is built if it is missing, so `build` is only needed to pick up a dependency change.
+- `serve` mounts read-only and live-reloads on edit, exactly like a host `mkdocs serve`; the same
+  `/llvm-dsdl/` base path applies.
+- `check` needs a writable mount because it renders into `site/`, and runs the container as your own
+  UID/GID so the output is not left root-owned.
+- Overrides: `LLVMDSDL_DOCS_PORT` (default 8000), `LLVMDSDL_DOCS_IMAGE`, and `DOCKER` (set it to
+  `podman` if that is what you run).
+
+The image pins Python 3.11 to match [`.github/workflows/docs.yml`](./.github/workflows/docs.yml), and
+installs from the same [`docs/requirements.txt`](./docs/requirements.txt) as a local `.venv-docs`, so
+`check` inside the container fails for the same reasons CI fails. See
+[`packaging/docker/Dockerfile.docs`](./packaging/docker/Dockerfile.docs).
+
+### 10.5 Generated pages
+
+[`docs/showroom/`](./docs/showroom/) is generated from the compiler's own output and checked in,
+because the Docs workflow runs on a runner that never builds `dsdlc` and so cannot produce it. If you
+changed anything under `examples/showroom/dsdl/` or anything that alters generated code, regenerate it
+before previewing — see the `showroom-docs` target in section 8 — and commit the result. CI
+regenerates and fails on a dirty tree.
+
+## 11. Development Expectations
+
+### 11.1 Keep behavior centralized
 
 When touching backend code generation semantics, prefer shared planning and
 helper layers in [`lib/CodeGen`](./lib/CodeGen) and avoid re-introducing backend-local duplicate
@@ -263,14 +423,14 @@ Validate allowlist integrity with the release-blocking integration lane
 Use `llvmdsdl-runtime-semantic-wrapper-allowlist-selftest` to regression-test
 validator and generation-check mutation coverage.
 
-### 10.2 Add tests with behavior changes
+### 11.2 Add tests with behavior changes
 
 For any semantic/codegen/runtime behavior change, include:
 
 - at least one focused unit test and/or integration test
 - updates to affected golden expectations if applicable
 
-### 10.3 Keep docs in sync
+### 11.3 Keep docs in sync
 
 If you change CLI behavior, targets, workflows, or runtime contracts, update:
 
@@ -279,7 +439,9 @@ If you change CLI behavior, targets, workflows, or runtime contracts, update:
 - relevant docs under [`docs/`](./docs/)
 - tool-specific docs (for example [`tools/dsdld/README.md`](./tools/dsdld/README.md))
 
-## 11. Pull Request Checklist
+Preview the rendered result before opening the PR, and build it the way CI does — see section 10.
+
+## 12. Pull Request Checklist
 
 Before opening a PR:
 
@@ -296,7 +458,7 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
-## 12. Troubleshooting Quick Notes
+## 13. Troubleshooting Quick Notes
 
 ### CMake cannot find LLVM/MLIR
 
@@ -319,8 +481,13 @@ In the PR description, include:
 - verify Python/Rust/Go/Node toolchains installed for impacted lanes
 - use smoke presets first to validate core build health
 
-## 13. Useful References
+## 14. Useful References
 
 - [`README.md`](./README.md)
 - [`DESIGN.md`](./DESIGN.md)
+- [`AGENTS.md`](./AGENTS.md)
+- [`docs/index.md`](./docs/index.md)
+- [`mkdocs.yml`](./mkdocs.yml), [`docs/requirements.txt`](./docs/requirements.txt): documentation site
+  configuration and pinned toolchain
 - [`tools/dsdld/README.md`](./tools/dsdld/README.md)
+- [`.github/workflows/`](./.github/workflows/): `ci.yml`, `coverage.yml`, `docs.yml`, `release.yml`

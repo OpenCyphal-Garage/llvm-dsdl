@@ -4,6 +4,7 @@ import * as dsdlRuntime from "../../dsdl_runtime";
 
 export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
 export const DSDL_FULL_NAME = "fixtures.vendor.UnionTag";
+export const DSDL_IS_DEPRECATED = false;
 export const DSDL_VERSION_MAJOR = 1;
 export const DSDL_VERSION_MINOR = 0;
 export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = false;

@@ -1,0 +1,14 @@
+# Type doc line1
+# Type doc line2
+
+uint8 alpha
+# alpha doc line1
+# alpha doc line2
+
+uint8 bravo
+# bravo doc
+
+uint8 LIMIT = 7
+# limit doc
+
+@sealed

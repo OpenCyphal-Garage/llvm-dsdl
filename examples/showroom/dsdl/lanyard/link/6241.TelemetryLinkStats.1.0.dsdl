@@ -1,0 +1,40 @@
+# Health of the air-to-ground telemetry link, published at 1 Hz by the
+# radio modem node.
+#
+# TRANSPORT TIER: CAN FD.
+
+uavcan.time.SynchronizedTimestamp.1.0 timestamp
+# Moment the counters below were sampled. Because every node timestamps
+# against the same synchronized clock, a ground station can align this
+# sample with the vehicle state that produced it without assuming
+# anything about bus latency.
+
+int8 rssi_dbm
+# Received signal strength in dBm at the air end of the link. Signed and
+# in real units, unlike the receiver-specific scale in RcInput.1.0,
+# because a modem reports a calibrated figure.
+
+int8 noise_floor_dbm
+# Measured noise floor in dBm. The difference between this and rssi_dbm
+# is the link margin, which is the number an operator actually watches.
+
+uint8 link_quality_pct
+# Percentage of expected packets successfully received over the last
+# second, 0 to 100.
+
+uint32 tx_packets
+# Packets transmitted since power-on.
+
+uint32 rx_packets
+# Packets received since power-on.
+
+uint32 dropped_packets
+# Packets lost since power-on, as counted by sequence number gaps.
+
+uint16 round_trip_ms
+# Most recent measured round-trip time in milliseconds.
+
+@assert _offset_.max <= 63 * 8
+# Must remain a single CAN FD frame.
+
+@sealed

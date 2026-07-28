@@ -1282,6 +1282,7 @@ void emitSectionType(std::ostringstream&              out,
                      std::uint32_t                    majorVersion,
                      std::uint32_t                    minorVersion,
                      const AttachedDoc&               typeDoc,
+                     const std::string&               definitionFullName,
                      const LoweredSectionFacts* const sectionFacts)
 {
     std::unordered_map<std::string, std::string>       poolClassConstExprByField;
@@ -1305,7 +1306,14 @@ void emitSectionType(std::ostringstream&              out,
         poolClassConstants.emplace_back(constName, nextPoolClassId++);
     }
 
-    emitAttachedDocRust(out, 0, typeDoc);
+    emitAttachedDocRust(
+        out,
+        0,
+        docWithDeprecationNotice(typeDoc, section.deprecated, definitionFullName, majorVersion, minorVersion));
+    if (section.deprecated && options.emitDeprecationAttributes)
+    {
+        emitLine(out, 0, "#[deprecated]");
+    }
     emitLine(out, 0, "#[derive(Clone, Debug, PartialEq)]");
     emitLine(out, 0, "pub struct " + typeName + " {");
 
@@ -1383,6 +1391,7 @@ void emitSectionType(std::ostringstream&              out,
 
     emitLine(out, 0, "impl " + typeName + " {");
     emitLine(out, 1, "pub const FULL_NAME: &'static str = \"" + fullName + "\";");
+    emitLine(out, 1, std::string("pub const IS_DEPRECATED: bool = ") + (section.deprecated ? "true;" : "false;"));
     emitLine(out,
              1,
              "pub const FULL_NAME_AND_VERSION: &'static str = \"" + fullName + "." + std::to_string(majorVersion) +
@@ -1517,7 +1526,15 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                  std::to_string(def.info.minorVersion));
     emitLine(out, 0, "#![allow(non_camel_case_types)]");
     emitLine(out, 0, "#![allow(non_snake_case)]");
-    emitLine(out, 0, "#![allow(non_upper_case_globals)]\n");
+    emitLine(out, 0, "#![allow(non_upper_case_globals)]");
+    if (options.emitDeprecationAttributes)
+    {
+        // Generated code must never warn about itself: the deprecated struct is named by its own impl
+        // blocks and derives, and by any struct that holds it as a field. The allow is module-scoped,
+        // so a consumer outside this module still gets the lint.
+        emitLine(out, 0, "#![allow(deprecated)]");
+    }
+    out << "\n";
 
     const auto deps = collectDefinitionCompositeDependencies(def);
 
@@ -1560,6 +1577,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         def.info.majorVersion,
                         def.info.minorVersion,
                         def.doc,
+                        def.info.fullName,
                         lookupLoweredSectionFacts(loweredFacts, def, ""));
         return out.str();
     }
@@ -1576,6 +1594,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                     def.info.majorVersion,
                     def.info.minorVersion,
                     def.doc,
+                    def.info.fullName,
                     lookupLoweredSectionFacts(loweredFacts, def, "request"));
 
     if (def.response)
@@ -1590,6 +1609,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         def.info.majorVersion,
                         def.info.minorVersion,
                         def.doc,
+                        def.info.fullName,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
     }
 

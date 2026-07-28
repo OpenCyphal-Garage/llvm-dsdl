@@ -64,6 +64,15 @@ struct CppEmitOptions final
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
 
+    /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
+    ///
+    /// @details
+    /// Off by default. The attribute turns a documentation signal into a compiler diagnostic, and
+    /// the standard `uavcan` namespace contains two dozen deprecated definitions, so enabling it
+    /// unconditionally would break `-Werror` builds on upgrade. The deprecation notice and the
+    /// metadata constant are emitted regardless of this setting.
+    bool emitDeprecationAttributes{false};
+
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 

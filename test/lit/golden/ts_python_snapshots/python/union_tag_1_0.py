@@ -8,6 +8,7 @@ from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
+DSDL_IS_DEPRECATED = False
 DSDL_VERSION_MAJOR = 1
 DSDL_VERSION_MINOR = 0
 DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = False
