@@ -603,7 +603,7 @@ if(LLVMDSDL_VENDOR_LLVM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # ship their libraries stripped (measured: byte-identical before and after, no
   # .debug sections present). It is kept for the case that motivates it -- an LLVM
   # we build ourselves, which arrives unstripped and carries a great deal of debug
-  # information. See the cached-toolchain pipeline in docs/plans/P3_release_packaging.md.
+  # information. See the cached-toolchain pipeline in docs/plans/P3_release_packaging.md §5.
   option(LLVMDSDL_STRIP_VENDORED_LLVM
          "Strip the vendored libLLVM. Does not affect this project's own binaries."
          ON)
@@ -750,7 +750,7 @@ install(
 # Licence terms travel with the binaries. Distribution policy (Debian in particular) requires every
 # binary package to ship its licence under /usr/share/doc/<package>/, and an installed tree without
 # them cannot be redistributed. LICENSES/ carries the Apache-2.0-with-LLVM-exception text, which
-# release .debs need because they vendor libLLVM -- see docs/plans/P3_release_packaging.md.
+# release .debs need because they vendor libLLVM -- see docs/design/release-packaging.md §3.
 install(
   FILES
     ${LLVMDSDL_SOURCE_DIR}/LICENSE.md

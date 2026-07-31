@@ -16,7 +16,7 @@
 /// surface spelling. Each backend records these ops into an @ref EmitTraceSink
 /// at the point it emits the corresponding text; a null sink is the default and
 /// costs nothing. The canonical order these ops must follow is specified in
-/// docs/plans/P2_canonical_emit_order.md.
+/// docs/design/canonical-emit-order.md.
 ///
 /// This header is intentionally dependency-free: it is the shared contract
 /// between the five emitters and the verifier, and pulls in no MLIR/LLVM types.
@@ -39,7 +39,7 @@ enum class EmitTraceDirection
     Deserialize,
 };
 
-/// @brief One abstract emit operation. Names mirror docs/plans/P2_canonical_emit_order.md.
+/// @brief One abstract emit operation. Names mirror docs/design/canonical-emit-order.md.
 ///
 /// These are *abstract* ops: the verifier compares the ordered sequence of them
 /// across backends. Surface spelling (statement vs sub-expression, match vs

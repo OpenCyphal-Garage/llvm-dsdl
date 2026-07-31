@@ -1,10 +1,9 @@
 mkdocs==1.6.1
-mkdocs-material==9.5.50
 pymdown-extensions==10.14.3
-# Pygments arrives as a transitive dependency and is pinned deliberately: 2.20
-# escapes the highlighter's `filename` option unconditionally, while
-# pymdown-extensions 10.14.3 passes it as None, which fails every page holding a
-# fenced code block. Raising pymdown-extensions instead is not open --
-# mkdocs-material 9.5.50 constrains it to ~=10.2 -- so the ceiling belongs here
-# until that pair moves together.
+# Pygments is not used to render anything: the site runs MkDocs' bundled theme, which highlights in
+# the browser with highlight.js, and pymdownx.highlight is configured with `use_pygments: false`.
+# It stays pinned because pymdown-extensions imports it, and a pinned transitive dependency is one
+# fewer way for a rebuild to differ from the last one. The 2.20 incompatibility that originally
+# forced this ceiling -- it escapes the highlighter's `filename` option unconditionally, which
+# pymdown-extensions 10.14.3 passes as None -- is no longer reachable on this configuration.
 pygments==2.19.2

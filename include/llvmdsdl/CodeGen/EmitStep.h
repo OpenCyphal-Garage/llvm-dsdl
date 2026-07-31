@@ -11,7 +11,7 @@
 /// Shared render template for section bodies (P2 Phase 2).
 ///
 /// The canonical serialize/deserialize step order
-/// (docs/plans/P2_canonical_emit_order.md, proven safe by
+/// (docs/design/canonical-emit-order.md, proven safe by
 /// spec/dafny/CyphalSerdes.dfy) lives in exactly one place per construct:
 /// @ref buildUnionSectionSteps for the union prologue/dispatch, and
 /// @ref buildFieldEmitSteps + @ref renderFieldSteps for the recursive field
@@ -220,6 +220,16 @@ struct FieldEmitStep final
 /// shapes, temp names, error channel) and records the abstract trace ops for
 /// exactly what it emits; the *cross-group* order is renderer-owned. Spellings
 /// track their own indentation across loop begin/end.
+///
+/// @warning Temp-name allocation order is load-bearing. `nextName` counters are
+/// shared and order-sensitive, so the sequence of `nextName` calls inside a
+/// spelling method determines the generated identifier suffixes for the whole
+/// section. Backends legitimately differ — C++ allocates `count_raw` before
+/// `count`, Rust/Go the reverse — and each preserves the allocation order its
+/// generated output had before the sequencing was shared. Reordering these
+/// calls is not a no-op refactor: it renames identifiers across the entire
+/// corpus and will churn the golden/lit snapshots even though the emit-order
+/// trace is unchanged.
 class FieldStepSpelling
 {
 public:

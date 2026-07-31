@@ -39,7 +39,7 @@
 //
 // SerOps(v) / DeOps(v) are the emit-order oracle -- the accepted op orderings the B1
 // verifier checks each generated backend against. SerOrderOK / DeOrderOK are those
-// ordering constraints; docs/plans/P2_canonical_emit_order.md is the prose projection.
+// ordering constraints; docs/design/canonical-emit-order.md is the prose projection.
 //
 // ASSURANCE SCOPE: this proves the abstract model, not the emitted C++/Rust/Go code.
 // The link from model to code is B1 (testing each backend's op-trace against the

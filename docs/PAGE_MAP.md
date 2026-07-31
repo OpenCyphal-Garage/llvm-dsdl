@@ -34,6 +34,8 @@ This manual is organized for three reader paths: users, backend integrators, and
 - Design
   - `design/architecture.md`
   - `design/dialect-contracts.md`
+  - `design/canonical-emit-order.md`
+  - `design/release-packaging.md`
 - Validation
   - `PARITY_MATRIX.md`
   - `MALFORMED_INPUT_CONTRACT_MATRIX.md`

@@ -25,6 +25,8 @@ nav:
   - Design:
       - Architecture: design/architecture.md
       - Dialect and Contracts: design/dialect-contracts.md
+      - Canonical Emit Order: design/canonical-emit-order.md
+      - Release Packaging: design/release-packaging.md
   - Validation:
       - Parity Matrix: PARITY_MATRIX.md
       - Malformed Input Matrix: MALFORMED_INPUT_CONTRACT_MATRIX.md
@@ -42,39 +44,21 @@ nav:
       - Page Map: PAGE_MAP.md
       - Review & Release Roadmap: PROJECT_REPORT_AND_RELEASE_ROADMAP.md
 
+# MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
+# browser) and its own light/dark handling, so the configuration below is mostly about not fighting
+# it -- see the `use_pygments: false` note under markdown_extensions.
 theme:
-  name: material
-  logo: llvm-dsdl.png
-  favicon: llvm-dsdl.png
-  language: en
-  features:
-    - navigation.instant
-    - navigation.instant.progress
-    - navigation.tabs
-    - navigation.sections
-    - navigation.top
-    - navigation.footer
-    - content.action.edit
-    - content.code.copy
-    - content.tabs.link
-    - search.suggest
-    - search.highlight
-    - toc.follow
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: cyan
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: cyan
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
+  name: mkdocs
+  locale: en
+  highlightjs: true
+  hljs_languages:
+    - c
+    - cpp
+    - rust
+    - go
+    - typescript
+    - python
+    - yaml
 
 markdown_extensions:
   - admonition
@@ -91,26 +75,18 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.tabbed:
-      alternate_style: true
+  # Highlighting is the theme's job, in the browser. Left at its default, superfences would render
+  # code through Pygments instead, and this theme ships no Pygments stylesheet -- every code block
+  # would come out as unstyled spans. Turning Pygments off makes superfences emit plain
+  # `<code class="language-...">`, which is exactly what highlight.js consumes.
   - pymdownx.highlight:
-      anchor_linenums: true
+      use_pygments: false
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.keys
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 plugins:
   - search
-
-extra:
-  homepage: index.md
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/thirtytwobits/llvm-dsdl
-      name: GitHub Repository
 
 extra_javascript:
   - https://unpkg.com/mermaid@10/dist/mermaid.min.js

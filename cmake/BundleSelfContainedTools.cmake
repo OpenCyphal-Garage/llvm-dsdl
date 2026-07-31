@@ -71,7 +71,7 @@ function(_llvmdsdl_codesign_macos target_file)
   # Ad-hoc, because a Developer ID signature would need a paid certificate and
   # notarisation. Rewriting a Mach-O invalidates any existing signature, and an
   # invalid signature is worse than an ad-hoc one: the loader refuses it
-  # outright. See docs/plans/P3_release_packaging.md §4 for what this means for
+  # outright. See docs/design/release-packaging.md §5 for what this means for
   # Gatekeeper (short version: fine via `tar`, blocked via Finder).
   execute_process(
     COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - --timestamp=none "${target_file}"

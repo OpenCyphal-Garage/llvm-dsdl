@@ -424,29 +424,33 @@ def render_type_page(info: TypeInfo, generated_root: Path) -> str:
     )
     out.append("")
 
+    # One heading per variant rather than a tab set. Content tabs need the theme to supply the CSS
+    # that hides the inactive panes; under a theme that does not, every pane renders at once with the
+    # radio inputs showing -- which is worse than plain sections. Headings also put each language in
+    # the page's table of contents, which the tabs never did.
     for variant in VARIANTS:
         variant_root = generated_root / variant.key
         path = find_generated_file(variant_root, variant, info)
-        out.append(f'=== "{variant.title}"')
+        out.append(f"### {variant.title}")
         out.append("")
         if variant.note:
-            out.append(f"    {variant.note}")
+            out.append(variant.note)
             out.append("")
         if path is None:
-            out.append("    _Not generated for this variant._")
+            out.append("_Not generated for this variant._")
             out.append("")
             continue
         chunks = EXTRACTORS[variant.style](path.read_text(encoding="utf-8").splitlines())
         if not chunks:
-            out.append("    _No aggregate declaration found in the generated artifact._")
+            out.append("_No aggregate declaration found in the generated artifact._")
             out.append("")
             continue
-        out.append(f"    ```{variant.fence}")
-        for chunk in chunks:
-            for line in chunk.splitlines():
-                out.append(f"    {line}" if line else "")
-            out.append("")
-        out.append("    ```")
+        out.append(f"```{variant.fence}")
+        for index, chunk in enumerate(chunks):
+            if index:
+                out.append("")
+            out.extend(chunk.splitlines())
+        out.append("```")
         out.append("")
 
     return "\n".join(out).rstrip() + "\n"

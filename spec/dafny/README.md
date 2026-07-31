@@ -4,7 +4,7 @@ A Dafny model of Cyphal DSDL serialize/deserialize as functions over an abstract
 with machine-checked proofs. It is the normative **oracle** for the emit-order verifier
 (B1): the op-orderings established here are what each generated backend
 (C/C++/Rust/Go/TS/Python) is checked against. The prose
-[P2_canonical_emit_order.md](../../docs/plans/P2_canonical_emit_order.md) is the
+[canonical-emit-order.md](../../docs/design/canonical-emit-order.md) is the
 human-readable projection of this module.
 
 ## Scope (deliberate)
