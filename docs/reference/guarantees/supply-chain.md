@@ -74,14 +74,3 @@ The lock is enforced **at configure time** by the build system and **again** by 
   major is self-describing rather than silently divergent.
 - Raising the lock is a deliberate change: bump `LLVMDSDL_REQUIRED_LLVM_MAJOR` and the CI pins together
   (both hosts must move at once, or `--require-c` fails), then re-baseline the determinism corpus hashes.
-
-## "Multi-version EmitC testing" — descoped in favour of the lock
-
-An earlier roadmap line paired the version lock with "multi-version EmitC testing." Those are
-**competing** strategies, not complementary: the lock exists *because* EmitC text may vary across MLIR
-majors, so the project's answer is to guarantee reproducibility against exactly one major rather than to
-chase textual stability across several. Multi-version EmitC testing is therefore **not a goal** while
-the lock is in force. The escape hatch (`LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH`) is the seam through which a
-maintainer would build against a new major to *evaluate* a lock bump — not a standing multi-major test
-matrix. If cross-major EmitC stability ever becomes a real requirement, it would need its own CI matrix
-(none exists today; every lane pins 22) and this decision revisited.

@@ -23,6 +23,6 @@ dsdld
 
 ## Related operator docs
 
-- [LSP AI Operator Guide](../LSP_AI_OPERATOR_GUIDE.md)
-- [LSP Index Schema](../LSP_INDEX_SCHEMA.md)
-- [LSP Lint Rules](../LSP_LINT_RULES.md)
+- [AI Operation](../lsp/ai-operation.md)
+- [Index Schema](../lsp/index-schema.md)
+- [Lint Rules](../lsp/lint-rules.md)

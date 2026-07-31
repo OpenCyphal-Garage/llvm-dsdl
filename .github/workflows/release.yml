@@ -2,7 +2,7 @@ name: Release
 
 # Builds the downloadable Ubuntu .deb and attaches it to a GitHub Release.
 #
-# There is no apt repository yet (see docs/plans/P3_release_packaging.md §3), so
+# There is no apt repository yet (see docs/development/distribution-channels.md §3), so
 # the package is a file people fetch and install with `apt install ./…deb`
 # against stock Ubuntu. That is what makes the verify job load-bearing rather
 # than ceremonial: a package that only works where it was built has no

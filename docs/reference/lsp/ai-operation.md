@@ -9,7 +9,7 @@ The default provider is deterministic and offline (`OfflineAiProvider`).
 
 For **what data enters the AI surface, what leaves it, and what is retained** — including the bounds on
 how much source can reach the provider and why nothing is transmitted off the machine — see
-[`LSP_AI_DATA_FLOW.md`](LSP_AI_DATA_FLOW.md).
+[`ai-data-flow.md`](ai-data-flow.md).
 
 Relevant code:
 
@@ -120,4 +120,4 @@ Before release, verify:
 2. Confirmation gate behavior passes.
 3. Tool allow-list rejects unsupported tools.
 4. Redaction tests pass.
-5. `docs/LSP_AI_OPERATOR_GUIDE.md` matches current behavior.
+5. `docs/reference/lsp/ai-operation.md` matches current behavior.

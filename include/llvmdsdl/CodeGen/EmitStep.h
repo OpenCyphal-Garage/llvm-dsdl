@@ -11,7 +11,7 @@
 /// Shared render template for section bodies (P2 Phase 2).
 ///
 /// The canonical serialize/deserialize step order
-/// (docs/design/canonical-emit-order.md, proven safe by
+/// (docs/reference/codegen/emit-order.md, proven safe by
 /// spec/dafny/CyphalSerdes.dfy) lives in exactly one place per construct:
 /// @ref buildUnionSectionSteps for the union prologue/dispatch, and
 /// @ref buildFieldEmitSteps + @ref renderFieldSteps for the recursive field

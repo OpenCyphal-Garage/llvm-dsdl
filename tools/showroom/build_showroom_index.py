@@ -80,7 +80,10 @@ RENDERED_CODE_COLUMNS = 80
 MAX_COMMENT_PREFIX = 8
 DSDL_COMMENT_COLUMNS = RENDERED_CODE_COLUMNS - MAX_COMMENT_PREFIX
 
-TIER_PATTERN = re.compile(r"^#\s*TRANSPORT TIER:\s*(.+?)\.?\s*$", re.MULTILINE)
+# The marker the lanyard definitions actually write. It is prose, and the annotation is its first
+# sentence: several definitions continue past it into commentary about why that transport is the
+# floor, which belongs on the page but not in a table cell.
+TRANSPORT_PATTERN = re.compile(r"^#\s*LEAST SUPPORTED TRANSPORT:\s*(.+?)\s*$", re.MULTILINE)
 
 
 @dataclasses.dataclass
@@ -122,20 +125,39 @@ class TypeInfo:
         return "\n---\n" in f"\n{self.dsdl_text}\n"
 
     @property
-    def transport_tier(self) -> str:
-        match = TIER_PATTERN.search(self.dsdl_text)
-        return match.group(1).strip() if match else "unspecified"
+    def least_supported_transport(self) -> str:
+        """The transport floor the definition declares, or "unspecified" when it declares none.
+
+        Nested types -- a mission item, a mixer, an enumeration -- are not published on their own,
+        so the question does not apply to them and they say so.
+        """
+        match = TRANSPORT_PATTERN.search(self.dsdl_text)
+        if not match:
+            return "unspecified"
+        # ". " and not "." : the values contain periods of their own ("CAN 2.0B").
+        return match.group(1).split(". ")[0].rstrip(".").strip()
 
     @property
     def summary(self) -> str:
-        """First line of the type's documentation block."""
+        """First paragraph of the type's documentation block.
+
+        The paragraph, not the first line: DSDL comments are hard-wrapped, so a first-line summary
+        cuts wherever the author happened to hit the margin ("published by the flight controller at
+        50"). The paragraph ends at the first blank comment line, which is where the author actually
+        ended the thought.
+        """
+        paragraph: list[str] = []
         for line in self.dsdl_text.splitlines():
             stripped = line.strip()
             if stripped.startswith("#"):
-                return stripped.lstrip("#").strip()
-            if stripped:
+                body = stripped.lstrip("#").strip()
+                if not body:
+                    break  # a bare `#` ends the opening paragraph
+                paragraph.append(body)
+                continue
+            if stripped or paragraph:
                 break
-        return ""
+        return " ".join(paragraph)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -160,6 +182,26 @@ def check_comment_widths(types: list[TypeInfo]) -> list[str]:
                     f"budget is {DSDL_COMMENT_COLUMNS}"
                 )
     return problems
+
+
+def check_transport_declarations(types: list[TypeInfo]) -> list[str]:
+    """Report published types that declare no least-supported transport.
+
+    A tripwire for a silent failure this table has already had once: the marker was renamed on one
+    side, nothing matched, and every row rendered as "unspecified" -- which reads as an answer, not
+    as an absence, so the page looked fine while saying nothing. A default that can quietly become
+    universal needs something asserting it stays rare.
+
+    Scoped to types with a fixed port ID because those are exactly the ones the question applies to:
+    they are published on their own, so they have a transport to be sized for. A nested type is a
+    field of something else and inherits its budget.
+    """
+    return [
+        f"{info.dsdl_path}: {info.versioned_name} has a fixed port ID but declares no "
+        f"`# LEAST SUPPORTED TRANSPORT:` -- it would render as \"unspecified\""
+        for info in types
+        if info.port_id is not None and info.least_supported_transport == "unspecified"
+    ]
 
 
 def discover_types(dsdl_root: Path) -> list[TypeInfo]:
@@ -390,7 +432,7 @@ def render_type_page(info: TypeInfo, generated_root: Path) -> str:
     out.append(f"| Version | {info.major}.{info.minor} |")
     out.append(f"| Kind | {'Service' if info.is_service else 'Message'} |")
     out.append(f"| Fixed port ID | {info.port_id if info.port_id is not None else 'none (nested type)'} |")
-    out.append(f"| Transport tier | {info.transport_tier} |")
+    out.append(f"| Least supported transport | {info.least_supported_transport} |")
     out.append("")
 
     if info.sections:
@@ -475,7 +517,7 @@ FENCE = re.compile(r"^\s*(?:```|~~~)")
 # Links in the README resolve against examples/showroom/. The site page lives at docs/showroom/, so
 # every link that survives into it has to be re-pointed: at the site when the target is under docs/,
 # and at the repository otherwise. Kept in step with `repo_url` in mkdocs.yml.
-REPO_BLOB_URL = "https://github.com/thirtytwobits/llvm-dsdl/blob/main"
+REPO_BLOB_URL = "https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main"
 INLINE_LINK = re.compile(r"\[(?P<text>[^]]*)\]\((?P<target>[^)\s]+)\)")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -518,12 +560,12 @@ def _rewrite_links(line: str, readme_dir: Path, output_dir: Path) -> str:
 
 
 def render_type_table(types: list[TypeInfo]) -> list[str]:
-    rows = ["| Type | Port | Tier | Kind |", "|---|---:|---|---|"]
+    rows = ["| Type | Port | Least supported transport | Kind |", "|---|---:|---|---|"]
     for info in types:
         port = str(info.port_id) if info.port_id is not None else "--"
         kind = "service" if info.is_service else "message"
         rows.append(
-            f"| [`{info.versioned_name}`](types/{info.slug}.md) | {port} | {info.transport_tier} | {kind} |"
+            f"| [`{info.versioned_name}`](types/{info.slug}.md) | {port} | {info.least_supported_transport} | {kind} |"
         )
     return rows
 
@@ -641,6 +683,16 @@ def main() -> int:
             print(f"  {problem}", file=sys.stderr)
         if len(problems) > 20:
             print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
+        return 1
+
+    problems = check_transport_declarations(types)
+    if problems:
+        print(
+            f"error: {len(problems)} published definition(s) declare no least-supported transport:",
+            file=sys.stderr,
+        )
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
         return 1
 
     c_root = args.generated_root / "c"

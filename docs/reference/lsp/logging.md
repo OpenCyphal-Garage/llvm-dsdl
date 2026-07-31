@@ -56,7 +56,7 @@ Every record carries `event` and `level`; the rest is event-specific.
 ## What is deliberately absent
 
 Records carry **no document text and no secrets** — method names, latencies, and error codes only. The
-AI surface's separate audit log applies its own redaction (see `LSP_AI_OPERATOR_GUIDE.md`); this channel
+AI surface's separate audit log applies its own redaction (see `ai-operation.md`); this channel
 avoids the problem by never carrying payloads in the first place.
 
 Omitting the log sink entirely (the library default when embedding `lsp::Server`) makes the server

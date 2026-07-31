@@ -1,7 +1,7 @@
 # LSP AI surface: data flow
 
 What data enters the `dsdld` AI surface, what happens to it, what leaves, and what is retained. This is
-the *data-flow* companion to `LSP_AI_OPERATOR_GUIDE.md` (which covers modes, configuration, and
+the *data-flow* companion to `ai-operation.md` (which covers modes, configuration, and
 playbooks); read this one to answer "does my DSDL source leave my machine?".
 
 Every claim below is traced to code, with the governing constant or call site named so it can be
@@ -107,6 +107,6 @@ secret in half and leave the first part unmasked.
 - **Tools:** four read-only introspection calls, closed allow-list.
 - **Retention:** in-memory, redacted, ~1 MiB bounded, gone on restart.
 
-See `LSP_AI_OPERATOR_GUIDE.md` for turning modes on, configuration keys, and incident-response
-playbooks, and `LSP_LOGGING.md` for the server's separate structured log (which carries no payloads at
+See `ai-operation.md` for turning modes on, configuration keys, and incident-response
+playbooks, and `logging.md` for the server's separate structured log (which carries no payloads at
 all).

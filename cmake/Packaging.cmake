@@ -16,7 +16,7 @@
 ## later stays cheap: RPM is another generator here, and archive-based formats
 ## consume the TGZ without touching this file.
 ##
-## See docs/design/release-packaging.md §4.
+## See docs/development/release-packaging.md §4.
 ##
 #===----------------------------------------------------------------------===#
 

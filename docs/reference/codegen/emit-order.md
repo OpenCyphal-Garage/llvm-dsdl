@@ -7,15 +7,15 @@ verifier (`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order
 independently pins it on every build.
 
 This prose is the human-readable projection of the machine-checked model in
-[spec/dafny/CyphalSerdes.dfy](https://github.com/thirtytwobits/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
+[spec/dafny/CyphalSerdes.dfy](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
 by induction) that serialize/deserialize round-trip and that the read path is bounds-safe, and
 defines the accepted op orderings (`SerOrderOK`/`DeOrderOK`). The model is the source of truth;
 this doc is the readable shadow.
 
 **Where the order lives in code.** `buildUnionSectionSteps` and `buildFieldEmitSteps`
-([`include/llvmdsdl/CodeGen/EmitStep.h`](https://github.com/thirtytwobits/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/EmitStep.h)) build the step list/tree;
+([`include/llvmdsdl/CodeGen/EmitStep.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/EmitStep.h)) build the step list/tree;
 `renderUnionSection` and `renderFieldSteps`
-([`lib/CodeGen/EmitStepRender.cpp`](https://github.com/thirtytwobits/llvm-dsdl/blob/main/lib/CodeGen/EmitStepRender.cpp)) own every
+([`lib/CodeGen/EmitStepRender.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/EmitStepRender.cpp)) own every
 cross-statement ordering decision, recursively. Per-backend `UnionSectionSpelling` /
 `FieldStepSpelling` classes contain *zero sequencing* — only leaf statement idioms. A
 backend cannot reorder these steps; it can only exercise a declared right
@@ -172,7 +172,7 @@ ALIGN(pad.bits) → PAD(write/skip zeroed bits) → ADVANCE(pad.bits)
 ## Abstract op vocabulary
 
 Mirrored by `enum class EmitTraceOp` in
-[`include/llvmdsdl/CodeGen/EmitTrace.h`](https://github.com/thirtytwobits/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/EmitTrace.h) — this doc and
+[`include/llvmdsdl/CodeGen/EmitTrace.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/EmitTrace.h) — this doc and
 that enum are kept in step.
 
 `VALIDATE_TAG` · `MASK_TAG` · `WRITE_TAG` · `READ_TAG` · `STORE_TAG` · `SWITCH` · `CASE` ·
@@ -232,5 +232,5 @@ sequenced the emit-order verifier before the shared render template and complete
 2026-07-12. That work is closed and its execution plan has been retired; this document
 outlives it as the standing specification. The plan's own record of how it landed —
 per-phase status, the byte-identity proofs, the LOC-delta accounting — is preserved in the
-G1 section of [the project report](../PROJECT_REPORT_AND_RELEASE_ROADMAP.md) and in git
+G1 section of [the project report](../../development/roadmap.md) and in git
 history (`docs/plans/P2_emit_order_dedup.md`, removed 2026-07-31).

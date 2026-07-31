@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	rt "github.com/thirtytwobits/llvm-dsdl/runtime/go"
+	rt "opencyphal.org/llvm-dsdl/runtime/go"
 )
 
 func parseHexBytes(s string) ([]byte, error) {

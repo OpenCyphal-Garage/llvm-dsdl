@@ -41,7 +41,7 @@ lanyard.nav.Waypoint.1.0[<=256] item
 @extent 24576 * 8
 # 24 KiB. Deliberately not accompanied by an @assert on _offset_: the
 # value set of a 256-element array of delimited composites is far too
-# large to enumerate, and the analyzer will say so. Bounding a
+# large to enumerate, and the analyser will say so. Bounding a
 # definition of this shape is the extent's job. See GlobalPosition.1.0
 # for the compile-time size check that is worth writing, on a definition
 # whose layout is small enough to evaluate.

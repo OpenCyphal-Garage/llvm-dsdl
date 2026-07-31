@@ -7,7 +7,7 @@ emits diagnostics with optional autofix edits.
 
 Rule IDs are stable and can be suppressed via configuration or source comments.
 
-For rule implementation workflow, see `docs/LSP_LINT_RULE_AUTHORING.md`.
+For rule implementation workflow, see `docs/development/lint-rule-authoring.md`.
 
 ## Baseline Rules (v1)
 

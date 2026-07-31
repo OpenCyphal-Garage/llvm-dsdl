@@ -1,12 +1,14 @@
 name: Docs
 
 # The site is built inside the project's toolshed image (the same one CI and .devcontainer use) so
-# that this job can compile dsdlc and generate docs/showroom itself. Those pages are the compiler's
-# own output; generating them here is what lets them stay out of the repository instead of being
-# checked in and policed for staleness.
+# that this job can compile dsdlc and generate the produced pages itself: docs/showroom (the
+# compiler's own output), the guarantee matrices (the report generators' output), and
+# llms.txt/llms-full.txt (derived from the nav). Generating them here is what lets them stay out of
+# the repository instead of being checked in and policed for staleness.
 #
-# The cost is small: `showroom-docs` pulls in 62 translation units -- dsdlc and its libraries, none
-# of the tests or the other tools -- which is a fraction of the full build.
+# The cost is small: `docs-generate` pulls in 62 translation units -- dsdlc and its libraries, none
+# of the tests or the other tools -- which is a fraction of the full build. Everything downstream of
+# that is python.
 #
 # There is deliberately no `paths:` filter. Once the showroom is generated rather than committed, the
 # site depends on the backends as much as on docs/, so any change to main can change what is
@@ -47,10 +49,17 @@ jobs:
       - name: Configure
         run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
 
-      - name: Generate the showroom and render its pages
+      - name: Generate the pages that are produced rather than written
+        # `docs-generate` covers all three kinds: the showroom (compiler output), the guarantee
+        # matrices (report-generator output), and llms.txt/llms-full.txt (derived from the nav).
+        #
         # Debug because this dsdlc only has to run over 24 definitions; what matters is how fast it
         # compiles, not how fast it runs.
-        run: cmake --build build/matrix/ci --config Debug --target showroom-docs
+        #
+        # The matrices come out in STRUCTURAL mode here -- coverage inferred from registered test
+        # names -- because this job does not run the suite. Each page says so in its own banner. The
+        # behavioral run, which consumes executed pass/fail, is a release gate in the CI workflow.
+        run: cmake --build build/matrix/ci --config Debug --target docs-generate
 
       - name: Install the pinned docs toolchain
         # A virtual environment for two reasons: the image ships its own mkdocs at distro versions,
@@ -63,6 +72,12 @@ jobs:
 
       - name: Build docs site
         run: .venv-docs/bin/mkdocs build --strict
+
+      - name: Check that diagrams reach the page in a renderable shape
+        # `--strict` cannot see this one: the markdown is valid and the page builds, but the diagram
+        # becomes a red "Syntax error in text" card once mermaid runs in the reader's browser.
+        # Checked here as well as in CI so that nothing publishes a page that renders an error.
+        run: python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

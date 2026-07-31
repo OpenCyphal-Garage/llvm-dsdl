@@ -1,5 +1,9 @@
 # Quick Start
 
+Compile a DSDL namespace into generated code. Each block below is a complete command; run them
+against a root namespace directory of your own, or against the `lanyard` namespace in the
+[Showroom](../showroom/index.md) if you do not have one yet.
+
 ## Show tool help
 
 ```bash
@@ -42,6 +46,6 @@ cmake --build <build-dir> --target showroom
 
 ## Next
 
-- CLI options: [dsdlc](../cli/dsdlc.md)
-- Backend behavior: [Backend Overview](../backends/overview.md)
-- Object backend details: [Object Backend](../backends/object.md)
+- CLI options: [dsdlc](../reference/commands/dsdlc.md)
+- Backend behavior: [Backend Overview](../reference/codegen/backends.md)
+- Object backend details: [Object Backend](../reference/codegen/object.md)

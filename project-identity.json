@@ -1,0 +1,18 @@
+{
+  "$comment": [
+    "Where this project lives. The single place a human edits when it moves.",
+    "",
+    "The repository has moved before and will move again: it began in a personal fork, lives in",
+    "OpenCyphal-Garage today, and is promoted to OpenCyphal at v1.0. Every other mention of the",
+    "owner in this tree -- documentation links, the README badge, mkdocs, the packaging homepage,",
+    "the manpage bug address -- is derived from this file by tools/repo_identity.py, and CI fails",
+    "on any that disagrees. Change these three strings, run `python3 tools/repo_identity.py --fix`,",
+    "and the move is done.",
+    "",
+    "Deliberately not covered: runtime/go/go.mod. Its module path is opencyphal.org/... precisely",
+    "so that it does not encode a GitHub owner and survives every such move untouched."
+  ],
+  "owner": "OpenCyphal-Garage",
+  "repo": "llvm-dsdl",
+  "docs_url": "https://opencyphal-garage.github.io/llvm-dsdl/"
+}

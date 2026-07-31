@@ -31,6 +31,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  repo-hygiene:
+    name: Repository hygiene (identity + committed paths)
+    # Deliberately not in the toolshed container and deliberately first: this needs nothing but
+    # python3 and a checkout, finishes in seconds, and tells a contributor that a URL or a home
+    # directory is wrong long before the full suite has finished pulling its image.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # No submodules: this checks what this repository commits, not what its dependencies do.
+        uses: actions/checkout@v7
+
+      - name: Check that every mention of where this project lives is current
+        # The repository has moved before and moves again at v1.0. Everything that names the owner is
+        # derived from project-identity.json, and this is what stops a hand-edit from drifting back.
+        # It also fails on a committed /Users/<somebody>/ path, which is wrong for every other reader.
+        run: python3 tools/repo_identity.py
+
   linux:
     name: Full suite (linux / toolshed)
     runs-on: ubuntu-26.04
@@ -117,19 +135,41 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
-      - name: Behavioral scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
+      - name: Behavioural scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
         # Runs after the suite so it can consume the executed JUnit results. `if: always()`
         # ensures the gate still runs (and can fail the job) even if an earlier test failed.
         if: always()
         run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
 
-      - name: Showroom docs (build the target the Docs workflow depends on)
-        # docs/showroom is generated at publish time by the Docs workflow rather than checked in, so
-        # there is no staleness to police here. What this step still buys is a fast signal: the docs
-        # site is only publishable if this target succeeds, and its comment-width and DSDL-discovery
-        # checks are cheap enough to be worth failing a PR on rather than a push to main.
+      - name: Generated docs (build the target the Docs workflow depends on)
+        # Nothing under docs/ that is generated gets committed, so there is no staleness to police
+        # here. What this step buys is a fast signal: the site is only publishable if this target
+        # succeeds, and its checks -- the showroom's comment-width and DSDL-discovery rules, and the
+        # llms.txt coverage rule that every page is either in the nav or declared unlisted -- are
+        # cheap enough to be worth failing a PR on rather than a push to main.
+        #
+        # The report generators run twice on this job: once above as the behavioural release gate,
+        # once here as page generation. They are python over an existing test tree, the second run
+        # costs seconds, and it is what puts the gate's own numbers on the page.
         if: always()
-        run: cmake --build build/matrix/ci --config Debug --target showroom-docs
+        run: cmake --build build/matrix/ci --config Debug --target docs-generate
+
+      - name: Build the docs site (strict)
+        # The nav is the page map, and `--strict` is what makes that true: an unfiled page, a broken
+        # cross-reference, or a nav entry with no page behind it fails here, on the PR, instead of
+        # surfacing as a hole in the published site. A virtual environment because the image ships
+        # its own mkdocs at distro versions and its Python is PEP 668 externally-managed.
+        if: always()
+        #
+        # The mermaid check is separate because `--strict` cannot see that failure: the markdown is
+        # valid and the page builds, but the diagram becomes a red error card in the reader's
+        # browser. It asserts the diagram reaches the page in the shape vanilla mermaid can read.
+        run: |
+          python3 -m venv .venv-docs
+          .venv-docs/bin/pip install --quiet --upgrade pip
+          .venv-docs/bin/pip install --quiet -r docs/requirements.txt
+          .venv-docs/bin/mkdocs build --strict
+          python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
       - name: Collect reports
         if: always()

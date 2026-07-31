@@ -22,6 +22,6 @@
     }
   },
   "schema_version": 1,
-  "source_report": "/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/build/matrix/dev-llvm-env/test/benchmark/complex-codegen/record-report.json",
+  "source_report": "build/matrix/dev-llvm-env/test/benchmark/complex-codegen/record-report.json",
   "suite_name": "llvmdsdl-codegen-complex-thresholds"
 }

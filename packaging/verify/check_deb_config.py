@@ -19,7 +19,7 @@ The stand-ins are sound because nothing in the control files derives from the
 binaries: ``shlibdeps`` is off, so no field depends on what is linked. What this
 does NOT cover is the payload of a real build or the real dependency list --
 those need a Linux build of the project and belong to the release verify lane
-(docs/design/release-packaging.md §7).
+(docs/development/release-packaging.md §7).
 
 Only the container payload is shell, because it is a fixed sequence of
 distribution commands (``apt-get``, ``cpack``, ``dpkg-deb``, ``lintian``) running

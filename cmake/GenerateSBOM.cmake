@@ -116,7 +116,7 @@ ${tool_properties}      ],
       \"version\": \"${LLVM_VERSION}\",
       \"scope\": \"required\",
       \"licenses\": [ { \"license\": { \"id\": \"Apache-2.0 WITH LLVM-exception\" } } ],
-      \"description\": \"LLVM support libraries linked into the shipped tools. The major version is locked; see docs/SUPPLY_CHAIN.md.\"
+      \"description\": \"LLVM support libraries linked into the shipped tools. The major version is locked; see docs/reference/guarantees/supply-chain.md.\"
     },
     {
       \"type\": \"library\",

@@ -60,7 +60,7 @@ own pipeline, and warnings there would be about code the user never sees.
 
 ## Object backend options
 
-- `--target-endianness <little|big>` (required for `obj`; wire is little-endian on both — `big` disables the zero-copy view fast-path, see [Endianness semantics](../backends/object.md#endianness-semantics))
+- `--target-endianness <little|big>` (required for `obj`; wire is little-endian on both — `big` disables the zero-copy view fast-path, see [Endianness semantics](../codegen/object.md#endianness-semantics))
 - `--target-triple <triple>`
 - `--obj-archive-name <name>`
 - `--obj-abi-language <c|cpp>`

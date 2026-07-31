@@ -1,7 +1,7 @@
 # LSP Lint Rule Authoring Guide
 
 This guide explains how to add, test, and ship lint rules for `dsdld`.
-For baseline rule catalog and suppression schema, see `docs/LSP_LINT_RULES.md`.
+For baseline rule catalog and suppression schema, see `docs/reference/lsp/lint-rules.md`.
 
 ## 1. Architecture
 
@@ -138,7 +138,7 @@ Current implementation uses `dlopen`/`dlsym` (POSIX dynamic loading).
 
 When adding/removing/changing rules:
 
-1. Update `docs/LSP_LINT_RULES.md` baseline list and behavior notes.
+1. Update `docs/reference/lsp/lint-rules.md` baseline list and behavior notes.
 2. Mention autofix behavior if applicable.
 3. Add migration notes if rule IDs changed.
 

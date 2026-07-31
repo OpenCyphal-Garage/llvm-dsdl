@@ -1,48 +1,88 @@
 site_name: llvm-dsdl User Manual
 site_description: Compiler and language tooling for OpenCyphal DSDL
-site_url: https://thirtytwobits.github.io/llvm-dsdl/
-repo_url: https://github.com/thirtytwobits/llvm-dsdl
-repo_name: thirtytwobits/llvm-dsdl
+# site_url and repo_url are normalised from project-identity.json by tools/repo_identity.py; edit
+# that file when the project moves, not these lines. `repo_name` is left unset on purpose: mkdocs
+# derives it from repo_url, and setting it by hand is one more copy of the owner that nothing keeps
+# true. Setting it to get `owner/repo` back in the header is not worth that.
+site_url: https://opencyphal-garage.github.io/llvm-dsdl/
+repo_url: https://github.com/OpenCyphal-Garage/llvm-dsdl
 edit_uri: edit/main/docs/
 
 docs_dir: docs
 site_dir: site
 
+# One section per reader, and a page belongs to exactly one of them:
+#
+#   Get Started  read once, in order, by someone who has not run the tools
+#   Reference    looked up, never read through -- what the tools promise
+#   Development  only useful if you are changing this repository -- why they promise it
+#   For Agents   machine-first: the crawl surface and the stable identifiers
+#
+# The Reference/Development line is the one that decides most pages: a guarantee a user holds the
+# output against is reference material, the architecture that delivers it is not.
+#
+# Depth stops at three. The bundled theme renders a third level as a nested dropdown flyout, which
+# works but is the last level that does; a fourth would be a flyout inside a flyout.
 nav:
   - Home: index.md
-  - Getting Started:
-      - Install: getting-started/install.md
-      - Quick Start: getting-started/quickstart.md
-  - CLI:
-      - dsdlc: cli/dsdlc.md
-      - dsdl-opt: cli/dsdl-opt.md
-      - dsdld: cli/dsdld.md
-  - Backends:
-      - Backend Overview: backends/overview.md
-      - Object Backend: backends/object.md
-  - Showroom:
-      - Overview: showroom/index.md
-  - Design:
-      - Architecture: design/architecture.md
-      - Dialect and Contracts: design/dialect-contracts.md
-      - Canonical Emit Order: design/canonical-emit-order.md
-      - Release Packaging: design/release-packaging.md
-  - Validation:
-      - Parity Matrix: PARITY_MATRIX.md
-      - Malformed Input Matrix: MALFORMED_INPUT_CONTRACT_MATRIX.md
-      - Shared-Infra Consistency Lint: CONVERGENCE_SCORECARD.md
-  - LSP Guides:
-      - AI Operator Guide: LSP_AI_OPERATOR_GUIDE.md
-      - Index Schema: LSP_INDEX_SCHEMA.md
-      - Lint Rules: LSP_LINT_RULES.md
-      - Lint Rule Authoring: LSP_LINT_RULE_AUTHORING.md
-      - Ranking Model: LSP_RANKING_MODEL.md
+  - Get Started:
+      - Install: start/install.md
+      - Quick Start: start/quickstart.md
+  - Reference:
+      - Overview: reference/index.md
+      - Commands:
+          - dsdlc: reference/commands/dsdlc.md
+          - dsdl-opt: reference/commands/dsdl-opt.md
+          - dsdld: reference/commands/dsdld.md
+      - Code Generation:
+          - Backends: reference/codegen/backends.md
+          - Object Backend: reference/codegen/object.md
+          - Emit Order: reference/codegen/emit-order.md
+      - Language Server:
+          - Lint Rules: reference/lsp/lint-rules.md
+          - Index Schema: reference/lsp/index-schema.md
+          - Ranking Model: reference/lsp/ranking-model.md
+          - Logging: reference/lsp/logging.md
+          - AI Operation: reference/lsp/ai-operation.md
+          - AI Data Flow: reference/lsp/ai-data-flow.md
+      - Guarantees:
+          - Cross-Language Parity: reference/guarantees/parity-matrix.md
+          - Malformed Input: reference/guarantees/malformed-input.md
+          - Determinism: reference/guarantees/determinism.md
+          - Supply Chain: reference/guarantees/supply-chain.md
+      - Showroom: showroom/index.md
   - Development:
       - Contributing: development/contributing.md
       - Testing and CI: development/testing.md
-  - Project:
-      - Page Map: PAGE_MAP.md
-      - Review & Release Roadmap: PROJECT_REPORT_AND_RELEASE_ROADMAP.md
+      - Architecture: development/architecture.md
+      - Authoring Lint Rules: development/lint-rule-authoring.md
+      - Project:
+          - Review & Release Roadmap: development/roadmap.md
+          - Release Packaging: development/release-packaging.md
+          - Distribution Channels (backlog): development/distribution-channels.md
+          - Consistency Lint: development/convergence-scorecard.md
+  - For Agents:
+      - Agent Guide: agents/index.md
+      - Documentation Index: agents/index-format.md
+
+# The nav is the page map, and this makes it true rather than aspirational: a page under docs/ that
+# nobody filed fails the build instead of quietly becoming unreachable, as do a link to a page that
+# does not exist and a link to a heading that does not exist. Under `--strict` each of these is an
+# error, which is how the site is built in CI and on publish.
+#
+# `not_in_nav` is the one sanctioned exception -- two dozen generated type pages would drown the
+# dropdown they belong to, so they are reachable from the showroom overview (and, in full, from
+# llms.txt) instead.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+
+not_in_nav: |
+  showroom/types/*.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
 # browser) and its own light/dark handling, so the configuration below is mostly about not fighting
@@ -74,7 +114,14 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+          # `fence_div_format`, not the `fence_code_format` most mermaid recipes show. Those recipes
+          # are written for mkdocs-material, which ships JavaScript that pulls the diagram out of
+          # `pre.mermaid > code` by its textContent. Vanilla mermaid does not: it reads the element's
+          # innerHTML, so the `<code>` wrapper ends up inside the diagram source and every diagram
+          # fails with "No diagram type detected ... for text: <code>flowchart LR". The div format
+          # puts the text directly in the element, which is what mermaid expects. (Entities are fine
+          # either way -- mermaid decodes `--&gt;` itself.)
+          format: !!python/name:pymdownx.superfences.fence_div_format
   # Highlighting is the theme's job, in the browser. Left at its default, superfences would render
   # code through Pygments instead, and this theme ships no Pygments stylesheet -- every code block
   # would come out as unstyled spans. Turning Pygments off makes superfences emit plain

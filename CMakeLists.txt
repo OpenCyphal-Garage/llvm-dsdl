@@ -54,7 +54,7 @@ message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 
 # LLVM major-version lock. The C backend is routed through MLIR/EmitC, whose printed output can vary
 # across MLIR majors (which are released with LLVM), so the linked major is a semantic input to the
-# byte-reproducible generated code -- see docs/SUPPLY_CHAIN.md. Pinning one major and testing across
+# byte-reproducible generated code -- see docs/reference/guarantees/supply-chain.md. Pinning one major and testing across
 # many are competing strategies; this project takes the pin. It was previously enforced only in CI;
 # asserting it at configure time makes the lock authoritative everywhere, so an accidental build against
 # another major fails loudly instead of silently producing divergent EmitC.
@@ -64,7 +64,7 @@ message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 # can opt out with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON; MLIR ships with LLVM at the same version, so
 # asserting the LLVM major covers MLIR too.
 set(LLVMDSDL_REQUIRED_LLVM_MAJOR "22" CACHE STRING
-    "LLVM/MLIR major version this project is locked to (see docs/SUPPLY_CHAIN.md).")
+    "LLVM/MLIR major version this project is locked to (see docs/reference/guarantees/supply-chain.md).")
 option(LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH
        "Permit configuring against an LLVM major other than LLVMDSDL_REQUIRED_LLVM_MAJOR." OFF)
 if(NOT LLVM_VERSION_MAJOR STREQUAL LLVMDSDL_REQUIRED_LLVM_MAJOR)
@@ -77,7 +77,7 @@ if(NOT LLVM_VERSION_MAJOR STREQUAL LLVMDSDL_REQUIRED_LLVM_MAJOR)
       "LLVM/MLIR major ${LLVM_VERSION_MAJOR} does not match the locked major "
       "${LLVMDSDL_REQUIRED_LLVM_MAJOR} (found LLVM ${LLVM_PACKAGE_VERSION}). Point LLVM_DIR/MLIR_DIR at "
       "an LLVM ${LLVMDSDL_REQUIRED_LLVM_MAJOR} install, or, to evaluate another major deliberately, "
-      "reconfigure with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON. See docs/SUPPLY_CHAIN.md.")
+      "reconfigure with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON. See docs/reference/guarantees/supply-chain.md.")
   endif()
 endif()
 message(STATUS "LLVM major-version lock: ${LLVMDSDL_REQUIRED_LLVM_MAJOR} (linked ${LLVM_VERSION_MAJOR})")
@@ -386,6 +386,17 @@ add_custom_target(distclean
 set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
   "JUnit XML from an executed ctest run; enables behavioral parity/malformed/determinism gating.")
 
+# Where the four report generators put their markdown: straight into docs/, because that markdown
+# *is* the published page (Reference > Guarantees, plus the consistency lint under Development).
+# Generating it is what keeps the numbers on the site the numbers the gates just computed; a
+# committed copy could only ever be a snapshot of some earlier run. Like docs/showroom, these pages
+# are gitignored and produced at publish time -- see the Docs workflow.
+#
+# The JSON stays in the build tree. It is the machine-readable form the gates and the CI artifact
+# collector consume, and it is not documentation.
+set(LLVMDSDL_DOCS_GUARANTEES_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/guarantees")
+set(LLVMDSDL_DOCS_DEVELOPMENT_DIR "${LLVMDSDL_SOURCE_DIR}/docs/development")
+
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(convergence-report
     COMMAND
@@ -393,7 +404,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
         -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/report.json
-        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/CONVERGENCE_SCORECARD.md
+        -DOUTPUT_MD=${LLVMDSDL_DOCS_DEVELOPMENT_DIR}/convergence-scorecard.md
         -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
         -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
@@ -421,7 +432,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DCTEST_CONFIG=$<CONFIG>
         -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/parity-matrix-report.json
-        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/PARITY_MATRIX.md
+        -DOUTPUT_MD=${LLVMDSDL_DOCS_GUARANTEES_DIR}/parity-matrix.md
         -DPARITY_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_baseline.json
         -DPARITY_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunParityMatrixReport.cmake
@@ -449,7 +460,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DCTEST_CONFIG=$<CONFIG>
         -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/malformed-contract-matrix-report.json
-        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/MALFORMED_INPUT_CONTRACT_MATRIX.md
+        -DOUTPUT_MD=${LLVMDSDL_DOCS_GUARANTEES_DIR}/malformed-input.md
         -DMALFORMED_CONTRACT_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_baseline.json
         -DMALFORMED_CONTRACT_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMalformedContractMatrixReport.cmake
@@ -477,7 +488,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DCTEST_CONFIG=$<CONFIG>
         -DCTEST_JUNIT=${LLVMDSDL_REPORT_GATE_JUNIT}
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/determinism-matrix-report.json
-        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/DETERMINISM_MATRIX.md
+        -DOUTPUT_MD=${LLVMDSDL_DOCS_GUARANTEES_DIR}/determinism.md
         -DDETERMINISM_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_baseline.json
         -DDETERMINISM_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunDeterminismMatrixReport.cmake
@@ -505,6 +516,46 @@ add_subdirectory(tools)
 add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
 add_subdirectory(examples/showroom)
+
+# --------------------------------------------------------------------------------------------------
+# Generated documentation.
+#
+# Three kinds of page under docs/ are produced rather than written: the showroom (the compiler's own
+# output), the guarantee matrices (the report generators' output), and the machine-readable index
+# that agents and documentation crawlers read. `docs-generate` produces all of them, in that order,
+# and is the single target the Docs workflow builds.
+#
+# Ordering is load-bearing for the last one: llms.txt lists every published page, so it has to run
+# after the pages that are generated exist. It also fails if a page under docs/ is in neither the
+# mkdocs nav nor its exclusion list, which is the same coverage rule mkdocs' own `not_in_nav` applies
+# -- enforced here so a missing page is caught by a build that does not need mkdocs installed.
+set(LLVMDSDL_LLMS_INDEX_SCRIPT "${LLVMDSDL_SOURCE_DIR}/tools/docs/build_llms_index.py")
+
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(docs-llms
+    COMMAND
+      ${LLVMDSDL_PYTHON3_EXE} "${LLVMDSDL_LLMS_INDEX_SCRIPT}"
+        --mkdocs-yml "${LLVMDSDL_SOURCE_DIR}/mkdocs.yml"
+        --docs-dir "${LLVMDSDL_SOURCE_DIR}/docs"
+    DEPENDS "${LLVMDSDL_LLMS_INDEX_SCRIPT}"
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Docs: regenerating llms.txt and llms-full.txt"
+  )
+else()
+  add_custom_target(docs-llms
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run docs-llms"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "docs-llms requires python3"
+  )
+endif()
+
+add_dependencies(docs-llms showroom-docs release-blocking-report-gates)
+
+add_custom_target(docs-generate)
+add_dependencies(docs-generate docs-llms)
 
 set(LLVMDSDL_INSTALLABLE_TOOLS
     dsdlc
@@ -603,7 +654,7 @@ if(LLVMDSDL_VENDOR_LLVM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # ship their libraries stripped (measured: byte-identical before and after, no
   # .debug sections present). It is kept for the case that motivates it -- an LLVM
   # we build ourselves, which arrives unstripped and carries a great deal of debug
-  # information. See the cached-toolchain pipeline in docs/plans/P3_release_packaging.md §5.
+  # information. See the cached-toolchain pipeline in docs/development/distribution-channels.md §5.
   option(LLVMDSDL_STRIP_VENDORED_LLVM
          "Strip the vendored libLLVM. Does not affect this project's own binaries."
          ON)
@@ -722,7 +773,7 @@ install(
 # LLVM/MLIR version actually linked in, and the pinned commits of the build/test submodules. Built with
 # the default target so `cmake --install` always ships an SBOM that matches the binaries; the generator
 # is deterministic (no wall-clock timestamp) so it does not perturb the reproducibility lanes.
-# See docs/SUPPLY_CHAIN.md.
+# See docs/reference/guarantees/supply-chain.md.
 set(LLVMDSDL_SBOM_FILE "${LLVMDSDL_BINARY_DIR}/llvm-dsdl-sbom.cdx.json")
 if(DEFINED zstd_VERSION)
   set(LLVMDSDL_SBOM_ZSTD_ARG "-DZSTD_VERSION=${zstd_VERSION}")
@@ -750,7 +801,7 @@ install(
 # Licence terms travel with the binaries. Distribution policy (Debian in particular) requires every
 # binary package to ship its licence under /usr/share/doc/<package>/, and an installed tree without
 # them cannot be redistributed. LICENSES/ carries the Apache-2.0-with-LLVM-exception text, which
-# release .debs need because they vendor libLLVM -- see docs/design/release-packaging.md §3.
+# release .debs need because they vendor libLLVM -- see docs/development/release-packaging.md §3.
 install(
   FILES
     ${LLVMDSDL_SOURCE_DIR}/LICENSE.md

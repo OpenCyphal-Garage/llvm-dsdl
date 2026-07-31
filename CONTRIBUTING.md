@@ -48,7 +48,7 @@ Common optional tools (enable more checks/lanes):
 - `cargo`/`rustc`, `go`, Node/TypeScript (`tsc`) for language-specific
   integration lanes
 - MkDocs, to preview the documentation site — installed into its own virtualenv from
-  [`docs/requirements.txt`](./docs/requirements.txt), not needed by the CMake build; see section 10
+  [`docs/requirements.txt`](./docs/requirements.txt), not needed by the CMake build; see section 11
 
 ## 4. Clone and Initialize
 
@@ -265,7 +265,11 @@ Formatting rewrite:
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target format-source
 ```
 
-Convergence/parity/contract report targets:
+Convergence/parity/contract report targets. Each writes two things: the JSON the gate consumes, into
+the build tree, and the markdown *page* it produces, into `docs/` — `parity-matrix.md`,
+`malformed-input.md`, and `determinism.md` under `docs/reference/guarantees/`, and
+`docs/development/convergence-scorecard.md`. Those pages are generated, gitignored, and never edited
+by hand; running a target overwrites them.
 
 ```bash
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target convergence-report
@@ -276,17 +280,55 @@ cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target relea
 ```
 
 Showroom targets. `showroom` regenerates the example namespace into every language and profile under
-`<build-dir>/showroom/`; `showroom-docs` renders that tree into `docs/showroom/`, which is *not*
-committed — the Docs workflow builds dsdlc in the toolshed container and produces those pages at
-publish time. Nothing to regenerate and commit, then, but you do need to run `showroom-docs` before
-previewing the site locally, or mkdocs will fail on a nav entry pointing at a page that is not there.
+`<build-dir>/showroom/`; `showroom-docs` renders that tree into `docs/showroom/`.
 
 ```bash
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom-docs
 ```
 
-## 9. Optional Coverage Workflow
+Documentation targets. Three kinds of page under `docs/` are produced rather than written — the
+showroom (compiler output), the guarantee matrices (report-generator output), and
+`llms.txt`/`llms-full.txt` (derived from the nav, for agents and documentation crawlers). None are
+committed: the Docs workflow builds dsdlc in the toolshed container and produces all of them at
+publish time. Nothing to regenerate and commit, then, but you do need `docs-generate` before
+previewing the site locally, or mkdocs will fail on a nav entry pointing at a page that is not there.
+
+```bash
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target docs-generate
+```
+
+`docs-llms` also enforces the coverage rule that keeps the nav honest: every page under `docs/` is
+either in the mkdocs nav or listed in `not_in_nav:`, and a page that is neither fails the build.
+Adding a page means adding it to the nav in `mkdocs.yml`.
+
+One check needs the built site rather than the source tree, so it runs after `mkdocs build` in both
+workflows rather than from CMake — mermaid diagrams fail in the browser, not at build time, so
+`--strict` cannot see them:
+
+```bash
+python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
+```
+
+## 9. Where This Project Lives
+
+`project-identity.json` at the repository root is the only place that names the owner. Everything
+else that mentions it — documentation links, the README badge, `mkdocs.yml`, the packaging homepage,
+the manpage bug address — is derived from it:
+
+```bash
+python3 tools/repo_identity.py          # report anything that disagrees (CI runs this)
+python3 tools/repo_identity.py --fix    # rewrite it
+```
+
+The repository has moved before and moves again at v1.0, so treat a hand-edited URL as a defect: put
+the new value in `project-identity.json` and run `--fix`. The same check rejects a committed
+`/Users/<somebody>/…` path, which is wrong for every reader but its author.
+
+`runtime/go/go.mod` is deliberately outside this: its module path is `opencyphal.org/llvm-dsdl/…`,
+which encodes no GitHub owner and therefore survives the moves untouched.
+
+## 10. Optional Coverage Workflow
 
 Enable coverage at configure time:
 
@@ -311,16 +353,16 @@ Outputs land in `build/coverage/coverage/RelWithDebInfo/`:
 
 This mirrors [`.github/workflows/coverage.yml`](./.github/workflows/coverage.yml); keep the two in sync.
 
-## 10. Documentation Site Workflow
+## 11. Documentation Site Workflow
 
 The user manual under [`docs/`](./docs/) is a MkDocs site. This mirrors
 [`.github/workflows/docs.yml`](./.github/workflows/docs.yml); keep the two in sync.
 
-### 10.1 One-time setup
+### 11.1 One-time setup
 
 The docs toolchain is independent of the CMake build — it needs no compiler and no LLVM. A virtualenv
 at `.venv-docs/` is the repository convention (it is gitignored, as is the generated `site/`). To skip
-the host install entirely, use the container in section 10.4 instead.
+the host install entirely, use the container in section 11.4 instead.
 
 ```bash
 python3 -m venv .venv-docs
@@ -334,7 +376,7 @@ Install from [`docs/requirements.txt`](./docs/requirements.txt) rather than by n
 are pinned as a set, and the file explains why the Pygments ceiling in particular cannot be raised on
 its own.
 
-### 10.2 Live preview
+### 11.2 Live preview
 
 ```bash
 .venv-docs/bin/mkdocs serve
@@ -346,7 +388,7 @@ its own.
 <http://127.0.0.1:8000/llvm-dsdl/showroom/>. Edits to any page reload the browser automatically;
 changes to `mkdocs.yml` need a restart.
 
-### 10.3 Build exactly what CI builds
+### 11.3 Build exactly what CI builds
 
 ```bash
 .venv-docs/bin/mkdocs build --strict
@@ -357,7 +399,7 @@ locally without it can still fail CI — a broken internal link is the usual cau
 `site/`. Pages that exist but are absent from the `nav` in `mkdocs.yml` are reported as INFO and do not
 fail the build; the per-type showroom pages are intentionally in that category.
 
-### 10.4 Containerised toolchain
+### 11.4 Containerised toolchain
 
 If you would rather not keep a Python environment on the host — or want the same toolchain on a second
 machine, a fresh clone, or a colleague's laptop — use the container. The image holds the toolchain and
@@ -398,7 +440,7 @@ installs from the same [`docs/requirements.txt`](./docs/requirements.txt) as a l
 `check` inside the container fails for the same reasons CI fails. See
 [`packaging/docker/Dockerfile.docs`](./packaging/docker/Dockerfile.docs).
 
-### 10.5 Generated pages
+### 11.5 Generated pages
 
 `docs/showroom/` is generated from the compiler's own output and is not committed — it is gitignored.
 The Docs workflow runs inside the toolshed container, builds `dsdlc`, and produces those pages as
@@ -410,9 +452,9 @@ section 8 before previewing or `check`ing the site. Regenerate it again after ch
 `examples/showroom/` or anything that alters generated code, since the pages carry backend output
 verbatim.
 
-## 11. Development Expectations
+## 12. Development Expectations
 
-### 11.1 Keep behavior centralized
+### 12.1 Keep behavior centralized
 
 When touching backend code generation semantics, prefer shared planning and
 helper layers in [`lib/CodeGen`](./lib/CodeGen) and avoid re-introducing backend-local duplicate
@@ -427,14 +469,14 @@ Validate allowlist integrity with the release-blocking integration lane
 Use `llvmdsdl-runtime-semantic-wrapper-allowlist-selftest` to regression-test
 validator and generation-check mutation coverage.
 
-### 11.2 Add tests with behavior changes
+### 12.2 Add tests with behavior changes
 
 For any semantic/codegen/runtime behavior change, include:
 
 - at least one focused unit test and/or integration test
 - updates to affected golden expectations if applicable
 
-### 11.3 Keep docs in sync
+### 12.3 Keep docs in sync
 
 If you change CLI behavior, targets, workflows, or runtime contracts, update:
 
@@ -443,9 +485,9 @@ If you change CLI behavior, targets, workflows, or runtime contracts, update:
 - relevant docs under [`docs/`](./docs/)
 - tool-specific docs (for example [`tools/dsdld/README.md`](./tools/dsdld/README.md))
 
-Preview the rendered result before opening the PR, and build it the way CI does — see section 10.
+Preview the rendered result before opening the PR, and build it the way CI does — see section 11.
 
-## 12. Pull Request Checklist
+## 13. Pull Request Checklist
 
 Before opening a PR:
 
@@ -462,7 +504,7 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
-## 13. Troubleshooting Quick Notes
+## 14. Troubleshooting Quick Notes
 
 ### CMake cannot find LLVM/MLIR
 
@@ -485,7 +527,7 @@ In the PR description, include:
 - verify Python/Rust/Go/Node toolchains installed for impacted lanes
 - use smoke presets first to validate core build health
 
-## 14. Useful References
+## 15. Useful References
 
 - [`README.md`](./README.md)
 - [`DESIGN.md`](./DESIGN.md)

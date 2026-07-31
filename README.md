@@ -2,7 +2,7 @@
 
 ![llvm-dsdl logo](./llvm-dsdl.png)
 
-[![Release](https://img.shields.io/github/v/release/thirtytwobits/llvm-dsdl?display_name=tag)](https://github.com/thirtytwobits/llvm-dsdl/releases)
+[![Release](https://img.shields.io/github/v/release/OpenCyphal-Garage/llvm-dsdl?display_name=tag)](https://github.com/OpenCyphal-Garage/llvm-dsdl/releases)
 
 `llvm-dsdl` provides command-line tooling for Cyphal DSDL:
 
@@ -18,14 +18,14 @@ release process), use [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 Download the latest release artifacts from:
 
-- <https://github.com/thirtytwobits/llvm-dsdl/releases>
+- <https://github.com/OpenCyphal-Garage/llvm-dsdl/releases>
 
 Then place the binaries you need on your `PATH` (`dsdlc`, `dsdld`).
 
 ### Option 2: Build and install binaries from source
 
 ```bash
-git clone https://github.com/thirtytwobits/llvm-dsdl.git
+git clone https://github.com/OpenCyphal-Garage/llvm-dsdl.git
 cd llvm-dsdl
 git submodule update --init --recursive
 
@@ -81,7 +81,7 @@ cmake --build <build-dir> --target showroom
 
 The rendered pages, pairing each definition with its wire-layout facts and the generated declaration
 in each language, are published at
-[the Showroom section of the user manual](https://thirtytwobits.github.io/llvm-dsdl/showroom/). They
+[the Showroom section of the user manual](https://opencyphal-garage.github.io/llvm-dsdl/showroom/). They
 are generated from the compiler's own output rather than committed; `showroom-docs` produces them
 locally, into `docs/showroom/`.
 
@@ -259,7 +259,18 @@ For build internals, workflows, tests, and contribution standards, use:
 
 ## User manual (MkDocs)
 
-This repository ships a MkDocs + Material documentation site under [`docs/`](./docs).
+This repository ships a MkDocs documentation site under [`docs/`](./docs), organised into four
+sections: **Get Started** (first run), **Reference** (what the tools promise), **Development**
+(changing this repository), and **For Agents** (the machine-readable index at
+[`/llms.txt`](https://opencyphal-garage.github.io/llvm-dsdl/llms.txt)).
+
+Several pages are generated rather than written — the showroom, the guarantee matrices, and the
+agent index. Produce them before previewing, or `--strict` will fail on the nav entries with nothing
+behind them:
+
+```bash
+cmake --build <build-dir> --target docs-generate
+```
 
 Local preview:
 

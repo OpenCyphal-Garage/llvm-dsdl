@@ -10,18 +10,20 @@ Compiler tooling for OpenCyphal DSDL, built on MLIR and LLVM.
 
 ## Where to go
 
-| Section | What it covers | Pages |
+| Section | Read it when | Starts at |
 |---|---|---|
-| Start here | Install quickly and generate your first artifacts | [Install](getting-started/install.md) · [Quick Start](getting-started/quickstart.md) |
-| CLI reference | Command surfaces and backend-specific options | [dsdlc](cli/dsdlc.md) · [dsdl-opt](cli/dsdl-opt.md) · [dsdld](cli/dsdld.md) |
-| Backends | Language targets and object-code output | [Overview](backends/overview.md) · [Object Backend](backends/object.md) |
-| Showroom | Real definitions with their wire layout and generated code | [Overview](showroom/index.md) |
-| Design | Architecture and contract boundaries | [Architecture](design/architecture.md) · [Dialect and Contracts](design/dialect-contracts.md) |
-| Validation | Parity and malformed-input behavior | [Parity Matrix](PARITY_MATRIX.md) · [Malformed Input Matrix](MALFORMED_INPUT_CONTRACT_MATRIX.md) |
-| Development | Build, test, and contribute | [Contributing](development/contributing.md) · [Testing and CI](development/testing.md) |
+| [Get Started](start/install.md) | You have not run the tools yet. Two pages, read in order, ending with generated code on disk. | [Install](start/install.md) · [Quick Start](start/quickstart.md) |
+| [Reference](reference/index.md) | You know what you want and need the exact spelling, or the exact guarantee. | [Overview](reference/index.md) |
+| [Development](development/contributing.md) | You are changing this repository. | [Contributing](development/contributing.md) · [Testing and CI](development/testing.md) |
+| [For Agents](agents/index.md) | You are a coding agent or a documentation indexer. | [Agent Guide](agents/index.md) |
+
+The split between the middle two is worth knowing: **Reference is what the tools promise**, Development
+is why they are built the way they are. A guarantee you can hold the output against — parity across
+languages, behavior on malformed input, emit order — is reference material. The architecture that
+delivers it is not.
 
 ## Source of truth
 
-- Project README: [README.md](https://github.com/thirtytwobits/llvm-dsdl/blob/main/README.md)
-- Design details: [DESIGN.md](https://github.com/thirtytwobits/llvm-dsdl/blob/main/DESIGN.md)
-- Contributor workflow: [CONTRIBUTING.md](https://github.com/thirtytwobits/llvm-dsdl/blob/main/CONTRIBUTING.md)
+- Project README: [README.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/README.md)
+- Design details: [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)
+- Contributor workflow: [CONTRIBUTING.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/CONTRIBUTING.md)

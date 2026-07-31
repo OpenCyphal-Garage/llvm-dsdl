@@ -1,5 +1,8 @@
 # LSP Ranking Model
 
+How `dsdld` orders the results it returns — which completion comes first, which symbol match wins —
+and which signals feed that ordering.
+
 ## Scope
 
 This model is used by `dsdld` for:

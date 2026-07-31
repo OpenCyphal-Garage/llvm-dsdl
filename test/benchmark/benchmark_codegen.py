@@ -380,6 +380,20 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def describe_source_report(path: Path) -> str:
+    """Where a threshold file came from, said in a way that means the same thing on another machine.
+
+    Provenance, so it wants to be readable rather than resolvable: the recorded report lives in a
+    build tree that no one else has. Recording the absolute path put one developer's home directory
+    in a committed file, which is both noise in every diff and wrong for every other reader.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    try:
+        return path.resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        return str(path.resolve())  # outside the repo: nothing relative to say
+
+
 def init_thresholds_from_report(args: argparse.Namespace) -> dict[str, Any]:
     report = read_json(Path(args.report_json).resolve())
     baselines: dict[str, float] = {}
@@ -390,7 +404,7 @@ def init_thresholds_from_report(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": 1,
         "suite_name": "llvmdsdl-codegen-complex-thresholds",
         "created_utc": utc_now(),
-        "source_report": str(Path(args.report_json).resolve()),
+        "source_report": describe_source_report(Path(args.report_json)),
         "baselines_sec": baselines,
         "profiles": {
             "dev_ab": {

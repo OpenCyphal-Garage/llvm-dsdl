@@ -1,3 +1,3 @@
-module github.com/thirtytwobits/llvm-dsdl/runtime/go
+module opencyphal.org/llvm-dsdl/runtime/go
 
 go 1.22

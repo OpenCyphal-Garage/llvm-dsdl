@@ -67,7 +67,7 @@ make different design choices based on the limitations of certain transports. In
 choices are not clear unless these limitations are called out in type comments or by using DSDL assert
 statements.
 
-| Tier | Budget | Examples |
+| Transport | Budget | Examples |
 |---|---|---|
 | Classic CAN | 7 payload bytes, one frame | `propulsion.EscStatus.1.0`, hand-packed to exactly 56 bits |
 | CAN FD | 63 payload bytes, one frame | `nav.GlobalPosition.1.0`, `link.RcInput.1.0`, `payload.GimbalStatus.1.0` |

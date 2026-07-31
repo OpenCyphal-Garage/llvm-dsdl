@@ -19,5 +19,5 @@ dsdl-opt input.mlir -pass-pipeline='builtin.module(lower-dsdl-exec,dsdl-annotate
 
 ## Related
 
-- [Dialect and Contracts](../design/dialect-contracts.md)
-- [Architecture](../design/architecture.md)
+- [Architecture](../../development/architecture.md) — the dialect as a contract boundary, and the
+  pass sequence these pipelines are built from

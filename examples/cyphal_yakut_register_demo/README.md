@@ -14,9 +14,9 @@ Both node variants implement:
 
 ## Build
 
-```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
+Every command below runs from the repository root.
 
+```bash
 cmake -S . -B build/dev-homebrew
 cmake --build build/dev-homebrew --target cyphal-yakut-register-node -j
 cmake --build build/dev-homebrew --target cyphal-yakut-register-go-node -j
@@ -26,8 +26,6 @@ cmake --build build/dev-homebrew --target cyphal-yakut-register-rust-node -j
 ## Run Native Node
 
 ```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
-
 build/dev-homebrew/examples/cyphal_yakut_register_demo/cyphal-yakut-register-node \
   --name native \
   --node-id 42 \
@@ -38,8 +36,6 @@ build/dev-homebrew/examples/cyphal_yakut_register_demo/cyphal-yakut-register-nod
 ## Run Go Node
 
 ```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
-
 build/dev-homebrew/examples/cyphal_yakut_register_demo/go-node/cyphal-yakut-register-go-node-bin \
   --name go \
   --node-id 42 \
@@ -50,8 +46,6 @@ build/dev-homebrew/examples/cyphal_yakut_register_demo/go-node/cyphal-yakut-regi
 ## Run Rust Node
 
 ```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
-
 build/dev-homebrew/examples/cyphal_yakut_register_demo/rust-node/target/debug/cyphal-yakut-register-rust-node \
   --name rust \
   --node-id 42 \
@@ -64,7 +58,7 @@ build/dev-homebrew/examples/cyphal_yakut_register_demo/rust-node/target/debug/cy
 In a second terminal:
 
 ```bash
-export CYPHAL_PATH="/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/submodules/public_regulated_data_types"
+export CYPHAL_PATH="$PWD/submodules/public_regulated_data_types"
 export UAVCAN__UDP__IFACE="127.0.0.1"
 export UAVCAN__NODE__ID="100"
 ```

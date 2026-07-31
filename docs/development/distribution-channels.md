@@ -1,11 +1,11 @@
-# P3 — Release distribution channels (backlog)
+# Distribution channels (backlog)
 
 Distribution channels that do not exist yet, and the decisions still open about them.
 
 The pipeline that **does** ship today — what the `.deb` and macOS tarball contain, the build
 environments, LLVM vendoring, Debian and macOS packaging, the release workflow, verification,
 and why cross-compiling is closed — is documented as built in
-[docs/design/release-packaging.md](../design/release-packaging.md). A bare section reference
+[docs/development/release-packaging.md](release-packaging.md). A bare section reference
 below (§3, §6, §8) points *there*; a reference to a section of this document says "above".
 
 ---
@@ -41,7 +41,7 @@ break into a red check rather than a user's bug report.
 Blocked by the **LLVM major lock**, not by packaging. homebrew-core rebuilds dependents when
 `llvm` bumps, and `LLVMDSDL_REQUIRED_LLVM_MAJOR` hard-fails configure against any other major — by
 design, because EmitC output varies across MLIR majors and this project pins byte-reproducibility
-to one (see [SUPPLY_CHAIN.md](../SUPPLY_CHAIN.md)). A formula that refuses to build the day `llvm`
+to one (see [supply-chain.md](../reference/guarantees/supply-chain.md)). A formula that refuses to build the day `llvm`
 rolls is one homebrew-core will not carry.
 
 | Option | Cost |

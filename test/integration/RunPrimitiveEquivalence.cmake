@@ -63,8 +63,8 @@ set(go_dir "${OUT_DIR}/go")
 file(MAKE_DIRECTORY "${go_dir}")
 file(WRITE "${go_dir}/go.mod"
   "module primitive_equivalence_driver\n\ngo 1.22\n\n"
-  "require github.com/thirtytwobits/llvm-dsdl/runtime/go v0.0.0\n\n"
-  "replace github.com/thirtytwobits/llvm-dsdl/runtime/go => ${runtime_go}\n")
+  "require opencyphal.org/llvm-dsdl/runtime/go v0.0.0\n\n"
+  "replace opencyphal.org/llvm-dsdl/runtime/go => ${runtime_go}\n")
 file(COPY_FILE "${driver_dir}/PrimitiveEquivalenceDriver.go" "${go_dir}/main.go")
 set(go_bin "${go_dir}/go_primitive_driver")
 # -buildvcs=false because this module is written into the build tree, which sits
