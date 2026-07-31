@@ -1,0 +1,27 @@
+# Operating mode of a kitbag sensor.
+#
+# The smallest useful definition in the namespace: constants, a narrow
+# integer, and the padding that follows from it. It exists so that a
+# build-integration cell has something to include that is not itself
+# interesting, and so that every language's constant rendering appears
+# in the generated tree.
+
+uint3 value
+# The active mode; one of the constants below.
+
+uint3 OFF = 0
+# Powered but not sampling.
+
+uint3 STANDBY = 1
+# Sampling internally, publishing nothing.
+
+uint3 ACTIVE = 2
+# Sampling and publishing.
+
+uint3 FAULT = 7
+# Sampling has stopped because of a fault. The reason is out of band.
+
+void5
+# Padding to a byte boundary.
+
+@sealed

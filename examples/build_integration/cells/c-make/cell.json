@@ -1,0 +1,20 @@
+{
+  "name": "c-make",
+  "title": "GNU Make",
+  "row": "C / C++",
+  "language": "C",
+  "build_system": "GNU Make",
+  "idiom": "B",
+  "dep_strategy": "depfile",
+  "summary": "The same integration with no helpers at all -- just the dsdlc command line and GNU Make. Worth reading even if you use CMake, because it shows what `dsdlc_generate()` is doing on your behalf: a query for the file lists, a stamp to stand in for a multiple-output rule, and depfiles for the dependencies nothing else can work out.",
+  "notes": "Portable back to GNU Make 3.81, which is what macOS still ships -- hence the stamp file rather than 4.3's grouped targets (`&:`). Two independent sets of depfiles are included: dsdlc's `-MD`, which records the definitions behind each generated file, and the C compiler's `-MMD`, which records the headers behind each object. They answer different questions and neither substitutes for the other.",
+  "generated_dir": "generated",
+  "requires": [
+    {"command": "make", "reason": "drives the build"},
+    {"command": "cc", "reason": "compiles the generated C and the round-trip program"}
+  ],
+  "steps": [
+    {"name": "build", "run": ["make", "DSDLC={dsdlc}"]},
+    {"name": "round-trip", "run": ["./roundtrip"]}
+  ]
+}

@@ -55,6 +55,7 @@ site/
 # time with `cmake --build <dir> --target docs-generate`; run that locally before previewing the
 # site, or mkdocs --strict will fail on the nav entries with nothing behind them.
 docs/showroom/
+docs/build-integration/
 docs/reference/guarantees/parity-matrix.md
 docs/reference/guarantees/malformed-input.md
 docs/reference/guarantees/determinism.md
@@ -72,3 +73,6 @@ docs/llms-full.txt
 spec/dafny/bin/
 .claude/settings.json
 compile_commands.json
+
+# Scratch directory for staged build-integration cells when run_cell.py is invoked by hand.
+examples/build_integration/.work/

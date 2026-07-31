@@ -1,0 +1,20 @@
+{
+  "name": "rust-cargo",
+  "title": "cargo",
+  "row": "Rust",
+  "language": "Rust",
+  "build_system": "cargo",
+  "idiom": "A",
+  "dep_strategy": "none",
+  "summary": "The simplest cell in the matrix. dsdlc writes a complete crate -- `Cargo.toml`, feature flags, and the runtime inside it -- so consuming it is a one-line path dependency and cargo does the rest.",
+  "notes": "The generated crate has no external dependencies, so this builds offline. Generation is a separate step here rather than a `build.rs`: keeping it explicit is the honest default, since a build script that regenerates on every `cargo build` makes the schema an invisible input. If you want it automatic, a `build.rs` calling dsdlc with `cargo:rerun-if-changed` on the namespace directory is the shape to reach for.\n\n**Build values from `Default`, not from a struct literal.** A variable-length field is a `DsdlVec` carrying the memory contract declared for that field, and `Default` is what installs it; `DsdlVec::new()` installs a default contract instead. `VarArray` derives `PartialEq` over that metadata as well as over the payload, so a value built with `DsdlVec::new()` compares unequal to the same value after a round trip even though every field you can see matches -- an `assert_eq!` that fails with an enormous diff in which nothing appears to differ. Starting from `Default` and filling fields in avoids it entirely.",
+  "generated_dir": "generated",
+  "requires": [
+    {"command": "cargo", "reason": "builds the crate and the round-trip binary"}
+  ],
+  "steps": [
+    {"name": "generate", "run": ["{dsdlc}", "--target-language", "rust", "dsdl/kitbag", "--rust-profile", "std", "--rust-crate-name", "kitbag", "--outdir", "generated"]},
+    {"name": "build", "run": ["cargo", "build", "--quiet", "--offline"]},
+    {"name": "round-trip", "run": ["cargo", "run", "--quiet", "--offline"]}
+  ]
+}

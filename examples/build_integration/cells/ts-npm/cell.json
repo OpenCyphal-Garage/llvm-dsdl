@@ -1,0 +1,22 @@
+{
+  "name": "ts-npm",
+  "title": "npm",
+  "row": "TypeScript",
+  "language": "TypeScript",
+  "build_system": "npm",
+  "idiom": "B",
+  "dep_strategy": "none",
+  "summary": "dsdlc emits TypeScript *source*, so it joins your program as source: point `tsconfig.json` at the generated tree and compile it with everything else. npm installs the compiler and runs the scripts.",
+  "notes": "**This is Idiom B even though dsdlc writes a `package.json`, and that is worth knowing before you try the other way.** The emitted manifest declares `\"type\": \"module\"` but no `main`, `exports`, or `types`, and the tree contains only `.ts` files. `npm install file:generated` therefore succeeds and then fails at run time: Node falls back to looking for `index.js` and finds only `index.ts`. Consuming the tree as a package would mean compiling it to JavaScript first and patching entry points into a generated manifest, which is more work than simply compiling it with your own program.\n\nThe `tsconfig.json` here targets `commonjs` rather than an ES module build, and that is load-bearing rather than taste: the generated files import each other without file extensions, which Node's ESM resolver rejects, so an ESM emit would produce JavaScript that Node will not load without a bundler rewriting every specifier. The CommonJS emit resolves those specifiers at `require()` time and runs unmodified.",
+  "generated_dir": "generated",
+  "requires": [
+    {"command": "npm", "reason": "installs the TypeScript compiler and runs the scripts"},
+    {"command": "node", "reason": "runs the compiled round-trip program"}
+  ],
+  "steps": [
+    {"name": "generate", "run": ["{dsdlc}", "--target-language", "ts", "dsdl/kitbag", "--ts-module", "kitbag", "--outdir", "generated"]},
+    {"name": "install", "run": ["npm", "install", "--silent", "--no-audit", "--no-fund"]},
+    {"name": "build", "run": ["npm", "run", "--silent", "build"]},
+    {"name": "round-trip", "run": ["npm", "run", "--silent", "start"]}
+  ]
+}

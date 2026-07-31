@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    // commonjs, not esnext, and this is the load-bearing choice.
+    //
+    // The generated files import each other without file extensions ("./reading_1_0"). Node's ESM
+    // resolver requires extensions, so an ESM build emits JavaScript that Node then refuses to load
+    // -- you would need a bundler to rewrite the specifiers. The CommonJS emit resolves them at
+    // require() time and runs as-is, which is why this is a two-command build with no bundler.
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "outDir": "dist",
+    "skipLibCheck": true
+  },
+  "include": ["src/ts/**/*.ts", "generated/**/*.ts"]
+}

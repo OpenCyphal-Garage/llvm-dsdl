@@ -1,0 +1,59 @@
+#===----------------------------------------------------------------------===#
+#
+# Part of the OpenCyphal project, under the MIT licence
+# SPDX-License-Identifier: MIT
+#
+#===----------------------------------------------------------------------===#
+#
+# find_package(llvm-dsdl) -- the downstream entry point.
+#
+# Provides the imported executable llvm-dsdl::dsdlc and the dsdlc_generate() function. See
+# DSDLCGenerate.cmake for what the function does and why.
+#
+# HOW dsdlc IS LOCATED, AND WHY NOT install(EXPORT)
+#
+# The canonical CMake answer is install(TARGETS ... EXPORT), which writes a targets file recording
+# where the binary landed. That does not work here, because this project has two install paths: the
+# ordinary one, and a macOS self-contained bundle whose binaries are copied in with
+# install(DIRECTORY) after having their Mach-O install names rewritten. An exported target file would
+# describe the first and quietly misdescribe the second.
+#
+# So the binary is found relative to this file instead. That is one assumption -- the layout inside
+# the install prefix -- and it holds for both paths, for the tarball, and for the .deb, all of which
+# put tools in <prefix>/bin. It is also what keeps the tree relocatable: nothing here bakes in the
+# prefix the package was configured with, so an unpacked tarball works wherever it is unpacked.
+
+@PACKAGE_INIT@
+
+set(LLVM_DSDL_VERSION "@LLVMDSDL_TOOL_VERSION@")
+
+# From <prefix>/@LLVMDSDL_CMAKE_CONFIG_SUBDIR@ back to <prefix>, then into bin.
+set(_llvm_dsdl_prefix "${CMAKE_CURRENT_LIST_DIR}/@LLVMDSDL_CMAKE_CONFIG_TO_PREFIX@")
+get_filename_component(_llvm_dsdl_prefix "${_llvm_dsdl_prefix}" ABSOLUTE)
+
+find_program(DSDLC_EXECUTABLE
+  NAMES dsdlc
+  HINTS "${_llvm_dsdl_prefix}/bin"
+  # The installed tree is the answer; a dsdlc that merely happens to be on PATH may be a different
+  # version than the one this config was installed with, and generated output embeds the generator
+  # version. Searching the system path anyway would turn a broken install into a silently mismatched
+  # build, which is worse.
+  NO_DEFAULT_PATH)
+
+if(NOT DSDLC_EXECUTABLE)
+  set(llvm-dsdl_FOUND FALSE)
+  set(llvm-dsdl_NOT_FOUND_MESSAGE
+      "llvm-dsdl was found at ${_llvm_dsdl_prefix} but no dsdlc binary is in its bin directory. "
+      "This usually means only the development component was installed.")
+  return()
+endif()
+
+if(NOT TARGET llvm-dsdl::dsdlc)
+  add_executable(llvm-dsdl::dsdlc IMPORTED)
+  set_target_properties(llvm-dsdl::dsdlc PROPERTIES
+    IMPORTED_LOCATION "${DSDLC_EXECUTABLE}")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/DSDLCGenerate.cmake")
+
+check_required_components(llvm-dsdl)

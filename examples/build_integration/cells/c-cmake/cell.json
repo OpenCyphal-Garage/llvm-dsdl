@@ -1,0 +1,21 @@
+{
+  "name": "c-cmake",
+  "title": "CMake",
+  "row": "C / C++",
+  "language": "C",
+  "build_system": "CMake",
+  "idiom": "B",
+  "dep_strategy": "list-outputs",
+  "summary": "The shortest correct integration there is. `find_package(llvm-dsdl)` gives you `dsdlc_generate()`, which queries dsdlc for the exact input and output lists at configure time and hands you a static library you can link. Four lines of build file, and adding a definition needs none of them edited.",
+  "notes": "Requires llvm-dsdl to have been installed, not merely built -- the package config and the function ship in the `bin` install component. Editing a definition regenerates; adding or removing one re-runs configure first, so the file list stays honest. Removing a definition also deletes its generated header, so code that includes a type you deleted stops compiling instead of quietly continuing to work.",
+  "generated_dir": "build/kitbag",
+  "requires": [
+    {"command": "cmake", "reason": "configures and drives the build"},
+    {"command": "cc", "reason": "compiles the generated C and the round-trip program"}
+  ],
+  "steps": [
+    {"name": "configure", "run": ["cmake", "-S", ".", "-B", "build", "-DCMAKE_PREFIX_PATH={prefix}"]},
+    {"name": "build", "run": ["cmake", "--build", "build"]},
+    {"name": "round-trip", "run": ["./build/roundtrip"]}
+  ]
+}

@@ -17,12 +17,7 @@ Compiler tooling for OpenCyphal DSDL, built on MLIR and LLVM.
 | [Development](development/contributing.md) | You are changing this repository. | [Contributing](development/contributing.md) · [Testing and CI](development/testing.md) |
 | [For Agents](agents/index.md) | You are a coding agent or a documentation indexer. | [Agent Guide](agents/index.md) |
 
-The split between the middle two is worth knowing: **Reference is what the tools promise**, Development
-is why they are built the way they are. A guarantee you can hold the output against — parity across
-languages, behavior on malformed input, emit order — is reference material. The architecture that
-delivers it is not.
-
-## Source of truth
+## Canonical Documents
 
 - Project README: [README.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/README.md)
 - Design details: [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)

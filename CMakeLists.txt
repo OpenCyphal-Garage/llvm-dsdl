@@ -769,6 +769,50 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/llvmdsdl
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
 
+# --------------------------------------------------------------------------------------------------
+# The downstream CMake package: find_package(llvm-dsdl) + dsdlc_generate().
+#
+# This is supported API, versioned with the tool, and the reason the c-cmake build-integration cell
+# is three lines instead of thirty. See cmake/DSDLCGenerate.cmake for what the function does and
+# cmake/llvm-dsdlConfig.cmake.in for why dsdlc is located relative to the config rather than through
+# install(EXPORT).
+#
+# It ships in the BIN component, not DEV. The dev component is about linking against the compiler's
+# own libraries; this is about running the compiler, which is what someone who installed only the
+# tool wants to do from their build -- and DSDLC_EXECUTABLE resolves to a binary that would not be
+# there if the two could be installed apart.
+set(LLVMDSDL_CMAKE_CONFIG_SUBDIR "${CMAKE_INSTALL_LIBDIR}/cmake/llvm-dsdl")
+
+# Walk back up from the config directory to the install prefix, so the installed tree stays
+# relocatable. Computed rather than written out because CMAKE_INSTALL_LIBDIR is not always one
+# component deep -- Debian multiarch makes it lib/x86_64-linux-gnu.
+file(RELATIVE_PATH LLVMDSDL_CMAKE_CONFIG_TO_PREFIX
+     "${CMAKE_CURRENT_BINARY_DIR}/${LLVMDSDL_CMAKE_CONFIG_SUBDIR}"
+     "${CMAKE_CURRENT_BINARY_DIR}")
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/llvm-dsdlConfig.cmake.in"
+  "${LLVMDSDL_BINARY_DIR}/cmake-package/llvm-dsdlConfig.cmake"
+  INSTALL_DESTINATION "${LLVMDSDL_CMAKE_CONFIG_SUBDIR}")
+
+# SameMinorVersion: generated output embeds the generator version, and the function's argument
+# surface is part of what a caller pins. A patch release may be swapped in freely; a minor release
+# may add a keyword the caller's build does not know about, so it has to be asked for.
+write_basic_package_version_file(
+  "${LLVMDSDL_BINARY_DIR}/cmake-package/llvm-dsdlConfigVersion.cmake"
+  VERSION "${LLVMDSDL_TOOL_VERSION}"
+  COMPATIBILITY SameMinorVersion)
+
+install(
+  FILES
+    "${LLVMDSDL_BINARY_DIR}/cmake-package/llvm-dsdlConfig.cmake"
+    "${LLVMDSDL_BINARY_DIR}/cmake-package/llvm-dsdlConfigVersion.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DSDLCGenerate.cmake"
+  DESTINATION "${LLVMDSDL_CMAKE_CONFIG_SUBDIR}"
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
 # CycloneDX SBOM for the release artifacts: records the tool version and source revision, the locked
 # LLVM/MLIR version actually linked in, and the pinned commits of the build/test submodules. Built with
 # the default target so `cmake --install` always ships an SBOM that matches the binaries; the generator
@@ -1267,6 +1311,11 @@ endif()
 
 enable_testing()
 add_subdirectory(test)
+
+# Below enable_testing() rather than beside the other examples, because this one is the only example
+# that registers ctests and add_test() in a directory processed before enable_testing() is not
+# reliably picked up.
+add_subdirectory(examples/build_integration)
 
 if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
   separate_arguments(LLVMDSDL_COVERAGE_CTEST_ARGS_LIST

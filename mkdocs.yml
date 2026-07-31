@@ -51,6 +51,7 @@ nav:
           - Determinism: reference/guarantees/determinism.md
           - Supply Chain: reference/guarantees/supply-chain.md
       - Showroom: showroom/index.md
+      - Build Integration: build-integration/index.md
   - Development:
       - Contributing: development/contributing.md
       - Testing and CI: development/testing.md
@@ -83,6 +84,7 @@ validation:
 
 not_in_nav: |
   showroom/types/*.md
+  build-integration/cells/*.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
 # browser) and its own light/dark handling, so the configuration below is mostly about not fighting

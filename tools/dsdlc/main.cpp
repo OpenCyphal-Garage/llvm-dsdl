@@ -235,8 +235,6 @@ void printHelp()
                  << "      definitions carry by default in C, C++, and Rust. Use this when a\n"
                  << "      -Werror build must keep using deprecated definitions. The deprecation\n"
                  << "      notice and metadata constant are emitted regardless.\n"
-                 << "  --emit-deprecation-attributes\n"
-                 << "      Accepted for compatibility; this is the default.\n"
                  << "  --no-overwrite\n"
                  << "      Fail if an output file already exists.\n"
                  << "  --file-mode <mode>\n"
@@ -563,11 +561,6 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--optimize-lowered-serdes")
         {
             options.optimizeLoweredSerDes = true;
-            continue;
-        }
-        if (arg == "--emit-deprecation-attributes")
-        {
-            options.emitDeprecationAttributes = true;
             continue;
         }
         if (arg == "--no-deprecation-attributes")

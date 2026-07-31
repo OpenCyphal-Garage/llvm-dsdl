@@ -53,7 +53,7 @@ clean under `-Werror` and only your own code naming a deprecated type is diagnos
 
 `--no-deprecation-attributes` suppresses the attributes, leaving the notice and the metadata constant
 in place. Reach for it when a `-Werror` build depends on a deprecated definition that has no migration
-target yet. `--emit-deprecation-attributes` is still accepted and now selects the default.
+target yet.
 
 The `obj` backend never emits these attributes: it compiles the C or C++ it generates as part of its
 own pipeline, and warnings there would be about code the user never sees.

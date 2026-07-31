@@ -142,9 +142,3 @@
 # RUST_NOATTR-NOT: #![allow(deprecated)]
 # RUST_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
 # RUST_NOATTR_DOC: IS_DEPRECATED: bool = true;
-
-# --------------------------------------------------------------------------------------------------
-# --emit-deprecation-attributes remains accepted and is a no-op against the default.
-
-# RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --emit-deprecation-attributes --outdir %t/c-attr >/dev/null 2>&1
-# RUN: diff -r %t/c %t/c-attr
