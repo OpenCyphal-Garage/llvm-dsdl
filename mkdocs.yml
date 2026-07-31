@@ -71,9 +71,11 @@ nav:
 # does not exist and a link to a heading that does not exist. Under `--strict` each of these is an
 # error, which is how the site is built in CI and on publish.
 #
-# `not_in_nav` is the one sanctioned exception -- two dozen generated type pages would drown the
-# dropdown they belong to, so they are reachable from the showroom overview (and, in full, from
-# llms.txt) instead.
+# `not_in_nav` is the sanctioned exception, for pages that should stay in the repository without
+# adding density to what readers browse: two dozen generated type pages would drown the dropdown
+# they belong to, so they are reachable from the showroom overview (and, in full, from llms.txt)
+# instead; design notes are rationale records for whoever next changes the code, not reference
+# material.
 validation:
   nav:
     omitted_files: warn
@@ -85,6 +87,7 @@ validation:
 not_in_nav: |
   showroom/types/*.md
   build-integration/cells/*.md
+  development/embedded-catalog-targets.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
 # browser) and its own light/dark handling, so the configuration below is mostly about not fighting

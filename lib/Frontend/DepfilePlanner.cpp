@@ -84,8 +84,13 @@ void appendSectionDependencyIndexes(const SemanticSection&                      
 
 }  // namespace
 
-DepfilePlanner::DepfilePlanner(const SemanticModule& semantic)
+DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, std::string toolchainStampPath)
 {
+    if (!toolchainStampPath.empty())
+    {
+        toolchainStampPath_ = normalizePathForDepfile(toolchainStampPath);
+    }
+
     nodes_.reserve(semantic.definitions.size());
     nodeIndexByTypeKey_.reserve(semantic.definitions.size());
     visitEpochByNode_.reserve(semantic.definitions.size());
@@ -106,7 +111,7 @@ DepfilePlanner::DepfilePlanner(const SemanticModule& semantic)
 
         Node node;
         node.normalizedInputPath = normalizePathForDepfile(def.info.filePath);
-        node.emitAsInput         = !isEmbeddedUavcanSyntheticPath(def.info.filePath);
+        node.fromEmbeddedCatalog = isEmbeddedUavcanSyntheticPath(def.info.filePath);
         nodes_.push_back(std::move(node));
         definitionsByIndex.push_back(&def);
     }
@@ -154,6 +159,8 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
     std::vector<std::string> deps;
     deps.reserve(nodes_.size());
 
+    bool drawsOnEmbeddedCatalog = false;
+
     for (std::size_t cursor = 0; cursor < queue.size(); ++cursor)
     {
         const auto nodeIndex = queue[cursor];
@@ -164,12 +171,23 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
         visitEpochByNode_[nodeIndex] = visitEpoch;
 
         const auto& node = nodes_[nodeIndex];
-        if (node.emitAsInput)
+        if (node.fromEmbeddedCatalog)
+        {
+            drawsOnEmbeddedCatalog = true;
+        }
+        else
         {
             deps.push_back(node.normalizedInputPath);
         }
 
         queue.insert(queue.end(), node.dependencyIndexes.begin(), node.dependencyIndexes.end());
+    }
+
+    // The catalog has no source file to name, so the binary carrying it stands in. Without this the
+    // rule would have no prerequisites at all and never rebuild across a compiler upgrade.
+    if (drawsOnEmbeddedCatalog && !toolchainStampPath_.empty())
+    {
+        deps.push_back(toolchainStampPath_);
     }
 
     std::sort(deps.begin(), deps.end());

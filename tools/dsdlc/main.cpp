@@ -59,6 +59,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -116,6 +117,10 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
 struct CliOptions final
 {
     std::vector<std::string> positionalTargets;
+
+    /// `+`-sigil targets naming the embedded catalog, with the sigil stripped.
+    std::vector<std::string> builtinTargets;
+
     std::vector<std::string> lookupDirs;
 
     std::string targetLanguage;
@@ -218,6 +223,10 @@ void printHelp()
                  << "      One or more DSDL files or root-namespace folders.\n"
                  << "      Folder targets expand recursively to .dsdl files unless --no-target-namespaces.\n"
                  << "      Colon syntax is supported: <root>:<relative/path/Type.1.0.dsdl>.\n"
+                 << "  +<selector>\n"
+                 << "      Target the embedded uavcan catalog: a namespace (+uavcan.node), a type\n"
+                 << "      (+uavcan.node.Heartbeat), or a version (+uavcan.node.Heartbeat.1.0).\n"
+                 << "      Requires --target-language 'mlir' or a codegen language.\n"
                  << "  --no-target-namespaces\n"
                  << "      Reject folder positional targets.\n"
                  << "  --lookup-dir, -I <dir>\n"
@@ -413,6 +422,18 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         return std::string(argv[++i]);
     };
 
+    // A leading '+' names the embedded catalog rather than the filesystem. This is target-token
+    // syntax, not option syntax, so it stays significant after `--`; a real file whose name starts
+    // with '+' is reached as `./+name`.
+    const auto addTargetToken = [&options](llvm::StringRef token) {
+        if (token.starts_with('+'))
+        {
+            options.builtinTargets.emplace_back(token.substr(1U).str());
+            return;
+        }
+        options.positionalTargets.emplace_back(token.str());
+    };
+
     for (int i = 1; i < argc; ++i)
     {
         llvm::StringRef arg(argv[i]);
@@ -421,7 +442,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         {
             for (++i; i < argc; ++i)
             {
-                options.positionalTargets.emplace_back(argv[i]);
+                addTargetToken(argv[i]);
             }
             break;
         }
@@ -838,7 +859,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "unknown argument: %s", arg.str().c_str());
         }
 
-        options.positionalTargets.emplace_back(arg.str());
+        addTargetToken(arg);
     }
 
     return options;
@@ -858,6 +879,27 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
                                        optionName.data(),
                                        expectedLang.data());
     };
+
+    // Embedded targets are gated the same way the catalog itself is. Both of these must fail rather
+    // than resolve to nothing: a build that silently generates no files is the failure mode the
+    // whole '+' design exists to avoid.
+    if (!options.builtinTargets.empty())
+    {
+        if (options.noEmbeddedUavcan)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "cannot select embedded target '+%s' with --no-embedded-uavcan",
+                                           options.builtinTargets.front().c_str());
+        }
+        if (language != "mlir" && !isCodegenLanguage(language))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "embedded target '+%s' requires --target-language 'mlir' or a codegen "
+                                           "language, not '%s'",
+                                           options.builtinTargets.front().c_str(),
+                                           options.targetLanguage.c_str());
+        }
+    }
 
     if (auto r = failIf(options.sawCppProfile && language != "cpp", "--cpp-profile", "cpp"); !r)
     {
@@ -1003,6 +1045,24 @@ std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::Semanti
     }
 
     return closure;
+}
+
+// Path recorded as the depfile prerequisite for outputs generated from the embedded uavcan catalog.
+// The catalog is compiled into this binary and has no source file to name, so the binary is the
+// honest stand-in: upgrading dsdlc genuinely changes those outputs' inputs.
+//
+// argv[0] alone is not a reliable path (PATH lookup, symlinks, some platforms), so this defers to
+// getMainExecutable, which additionally needs the address of a symbol in this image to locate it.
+std::string resolveToolchainStampPath(const char* argv0)
+{
+    static int  anchor         = 0;
+    void* const anchorAddress  = static_cast<void*>(&anchor);
+    std::string mainExecutable = llvm::sys::fs::getMainExecutable(argv0, anchorAddress);
+    if (!mainExecutable.empty())
+    {
+        return mainExecutable;
+    }
+    return (argv0 != nullptr) ? std::string(argv0) : std::string{};
 }
 
 llvmdsdl::SemanticModule filterSemanticModule(const llvmdsdl::SemanticModule&        semantic,
@@ -1201,7 +1261,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (resolved->explicitTargetFiles.empty())
+    // Embedded targets need no files on disk, so an empty filesystem target set is only "nothing to
+    // do" when no '+' target was named either.
+    if (resolved->explicitTargetFiles.empty() && options.builtinTargets.empty())
     {
         const auto outputRoot =
             isCodegenLanguage(options.targetLanguage) ? resolveOutputRoot(options.outDir) : "stdout";
@@ -1265,6 +1327,42 @@ int main(int argc, char** argv)
         embeddedCatalog.emplace(std::move(*loadedCatalog));
     }
 
+    // Resolve '+' targets before analysis so a typo fails here, loudly, rather than surviving as a
+    // successful build that quietly generated nothing.
+    std::unordered_set<std::string> builtinExplicitKeys;
+    if (!options.builtinTargets.empty() && !embeddedCatalog)
+    {
+        diagnostics.error({"<cli>", 1, 1}, "embedded targets were requested but no embedded catalog is loaded");
+        printDiagnostics(diagnostics);
+        return 1;
+    }
+    for (const auto& selector : options.builtinTargets)
+    {
+        const auto expansion = llvmdsdl::expandEmbeddedCatalogSelector(*embeddedCatalog, selector);
+        if (expansion.typeKeys.empty())
+        {
+            std::string message = "no embedded type matches target '+" + selector + "'";
+            if (!expansion.suggestions.empty())
+            {
+                message += "; did you mean ";
+                for (std::size_t i = 0; i < expansion.suggestions.size(); ++i)
+                {
+                    message += (i > 0) ? ((i + 1U == expansion.suggestions.size()) ? " or " : ", ") : "";
+                    message += "'+" + expansion.suggestions[i] + "'";
+                }
+                message += "?";
+            }
+            diagnostics.error({"<cli>", 1, 1}, message);
+            printDiagnostics(diagnostics);
+            return 1;
+        }
+        builtinExplicitKeys.insert(expansion.typeKeys.begin(), expansion.typeKeys.end());
+    }
+    if (!builtinExplicitKeys.empty())
+    {
+        logVerbose(1, "embedded targets selected " + std::to_string(builtinExplicitKeys.size()) + " type(s)");
+    }
+
     logVerbose(1, "running semantic analysis");
     llvmdsdl::AnalyzeOptions analyzeOptions;
     analyzeOptions.allowUnregulatedFixedPortId = options.allowUnregulatedFixedPortId;
@@ -1285,7 +1383,11 @@ int main(int argc, char** argv)
     const auto mergedSemantic =
         embeddedCatalog ? mergeSemanticModulesPreferPrimary(localSemantic, embeddedCatalog->semantic) : localSemantic;
 
-    const auto explicitKeys = collectExplicitKeys(localSemantic);
+    // '+' targets are explicit in exactly the sense filesystem targets are; they just cannot be
+    // marked by path, since embedded definitions have none. Note that a local definition sharing a
+    // key shadows the embedded one here, because `mergedSemantic` prefers local.
+    auto explicitKeys = collectExplicitKeys(localSemantic);
+    explicitKeys.insert(builtinExplicitKeys.begin(), builtinExplicitKeys.end());
     if (explicitKeys.empty())
     {
         diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
@@ -1387,7 +1489,13 @@ int main(int argc, char** argv)
     if (options.emitDepfiles)
     {
         const auto plannerBuildStart = std::chrono::steady_clock::now();
-        depfilePlanner               = std::make_unique<llvmdsdl::DepfilePlanner>(*semantic);
+        // Built from the closure over the *merged* module, not the local one: embedded definitions
+        // must be present as nodes for the planner to tell "resolved from the compiled-in catalog"
+        // apart from "unknown type". Both used to produce an empty dependency list, so generated
+        // uavcan sources were pinned to a rule with no prerequisites and never rebuilt.
+        depfilePlanner = std::make_unique<llvmdsdl::DepfilePlanner>(closureSemantic,
+                                                                    embeddedCatalog ? resolveToolchainStampPath(argv[0])
+                                                                                    : std::string{});
         if (options.verbose >= 2)
         {
             const std::string message =

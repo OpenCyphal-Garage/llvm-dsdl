@@ -75,6 +75,32 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
 /// @brief Returns true when `filePath` is synthetic embedded UAVCAN metadata.
 bool isEmbeddedUavcanSyntheticPath(const std::string& filePath);
 
+/// @brief Outcome of expanding one embedded-catalog target selector.
+struct EmbeddedSelectorExpansion final
+{
+    /// @brief Matching catalog type keys (`full_name:major:minor`), sorted. Empty means no match.
+    std::vector<std::string> typeKeys;
+
+    /// @brief Near-miss candidates in selector spelling, offered when `typeKeys` is empty.
+    std::vector<std::string> suggestions;
+};
+
+/// @brief Expands one embedded-catalog target selector into catalog type keys.
+///
+/// @details
+/// `selector` is a `+`-sigil CLI target with the sigil already stripped. Three spellings resolve:
+/// - `uavcan.node.Heartbeat.1.0` -- one exact version;
+/// - `uavcan.node.Heartbeat` -- every version of one type;
+/// - `uavcan` / `uavcan.node` -- every type under a namespace.
+///
+/// Namespace matching is anchored at a dot boundary, so `uavcan.n` selects nothing rather than
+/// silently standing in for `uavcan.node`.
+///
+/// A selector matching nothing is never silently empty: the result carries `suggestions` so the
+/// caller can turn a typo into a diagnostic. A well-formed type name with an unavailable version
+/// suggests the versions the catalog does carry.
+EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCatalog& catalog, llvm::StringRef selector);
+
 /// @brief Appends embedded schemas for selected keys into destination module.
 llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&           catalog,
                                                mlir::ModuleOp                         destination,

@@ -196,5 +196,61 @@ bool runDepfilePlannerTests()
         return false;
     }
 
+    // With no stamp configured, a type supplied entirely by the embedded catalog has nothing to
+    // depend on. That is the defect the stamp exists to fix: the rule would never rebuild.
+    const auto& embeddedOnlyWithoutStamp = planner.depsForTypeKey("uavcan.node.Heartbeat:1:0");
+    if (!embeddedOnlyWithoutStamp.empty())
+    {
+        std::cerr << "depsForTypeKey for an embedded type should be empty when no stamp is configured\n";
+        return false;
+    }
+
+    llvmdsdl::DepfilePlanner stamped(module, "/tmp/depfile_planner/bin/dsdlc");
+
+    // The regression pin: an output generated purely from the compiled-in catalog must carry the
+    // toolchain stamp, so upgrading the compiler rebuilds it.
+    const auto& stampedEmbeddedOnly = stamped.depsForTypeKey("uavcan.node.Heartbeat:1:0");
+    if (stampedEmbeddedOnly.size() != 1U || !containsSuffix(stampedEmbeddedOnly, "/dsdlc"))
+    {
+        std::cerr << "depsForTypeKey for an embedded type should be exactly the toolchain stamp\n";
+        return false;
+    }
+
+    // Mixed closure: real inputs are still listed, and the stamp joins them.
+    const auto& stampedMixed = stamped.depsForTypeKey("ns.A:1:0");
+    if (!isSortedAndUnique(stampedMixed))
+    {
+        std::cerr << "depsForTypeKey(ns.A:1:0) must stay sorted and unique with the stamp appended\n";
+        return false;
+    }
+    if (!containsSuffix(stampedMixed, "/dsdlc") || !containsSuffix(stampedMixed, "/A.1.0.dsdl") ||
+        !containsSuffix(stampedMixed, "/B.1.0.dsdl") || !containsSuffix(stampedMixed, "/D.1.0.dsdl"))
+    {
+        std::cerr << "depsForTypeKey(ns.A:1:0) should list real inputs plus the toolchain stamp\n";
+        return false;
+    }
+    if (containsSuffix(stampedMixed, "Heartbeat.1.0.dsdl"))
+    {
+        std::cerr << "the stamp must not reintroduce synthetic embedded paths\n";
+        return false;
+    }
+
+    // A closure that never touches the catalog must not gain the stamp; a compiler upgrade is not a
+    // reason to rebuild output that owes the catalog nothing.
+    const auto& stampedLocalOnly = stamped.depsForTypeKey("ns.B:1:0");
+    if (containsSuffix(stampedLocalOnly, "/dsdlc"))
+    {
+        std::cerr << "depsForTypeKey(ns.B:1:0) draws on no embedded type and must not carry the stamp\n";
+        return false;
+    }
+
+    // Merging must not duplicate the stamp contributed by several keys.
+    const auto& stampedMerged = stamped.depsForRequiredTypeKeys({"ns.A:1:0", "uavcan.node.Heartbeat:1:0"});
+    if (!isSortedAndUnique(stampedMerged) || !containsSuffix(stampedMerged, "/dsdlc"))
+    {
+        std::cerr << "depsForRequiredTypeKeys should carry exactly one toolchain stamp entry\n";
+        return false;
+    }
+
     return true;
 }

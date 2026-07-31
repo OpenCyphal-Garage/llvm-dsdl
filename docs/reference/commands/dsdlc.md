@@ -29,6 +29,56 @@
 - `--optimize-lowered-serdes`
 - `--no-deprecation-attributes`
 
+## Dependency files
+
+`-MD` writes a make-style `.d` beside each generated output listing the `.dsdl` files it was built
+from: its own definition plus the transitive closure of the composite types it references.
+
+Definitions from the [embedded `uavcan` catalog](#embedded-uavcan-catalog) are compiled into the
+binary and have no source file, so outputs drawing on them name **the `dsdlc` executable** as the
+prerequisite instead — upgrading the compiler rebuilds what its catalog produced. An output mixing
+local and embedded definitions lists its real inputs and the executable.
+
+Every path emitted in a depfile or by `--list-inputs` exists on disk, so both can be fed to a build
+system verbatim.
+
+## Embedded uavcan catalog
+
+For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog used by the `mlir` and
+codegen targets. Types referencing core `uavcan` definitions resolve without external `uavcan`
+source roots. `--no-embedded-uavcan` disables it, after which such references must resolve against
+a `--lookup-dir`.
+
+The catalog is consulted automatically during dependency resolution, and can be named directly as a
+target with `+`.
+
+### Targeting the catalog with `+`
+
+A positional target beginning with `+` names the embedded catalog instead of the filesystem:
+
+```bash
+dsdlc --target-language c --outdir out +uavcan.node.Heartbeat.1.0
+```
+
+| Selector | Selects |
+| --- | --- |
+| `+uavcan` | Every type in the catalog |
+| `+uavcan.node` | Every type under a namespace |
+| `+uavcan.node.Heartbeat` | Every version of one type |
+| `+uavcan.node.Heartbeat.1.0` | One exact version |
+
+`+` targets behave as explicit targets: their dependency closure is generated too, and
+`--omit-dependencies` restricts output to what was named. They mix freely with filesystem targets,
+and a local definition sharing a type key shadows the embedded one.
+
+Namespace matching is anchored at a dot boundary, so `+uavcan.n` selects nothing rather than
+standing in for `+uavcan.node`. A selector matching nothing is an error with a did-you-mean; an
+unavailable version reports the versions the catalog carries.
+
+Requires `--target-language` of `mlir` or a codegen language, and conflicts with
+`--no-embedded-uavcan`. The sigil stays significant after `--`; a file literally named `+x` is
+reached as `./+x`.
+
 ## Deprecation
 
 A definition marked `@deprecated` always generates a `Deprecated: …` notice in its documentation

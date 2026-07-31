@@ -33,12 +33,24 @@ namespace llvmdsdl
 /// 2) per-required-type-set merged input paths.
 ///
 /// Returned dependency vectors are normalized absolute paths, sorted, and de-duplicated.
-/// Synthetic embedded-uavcan paths are excluded from emitted dependencies.
+///
+/// Synthetic embedded-uavcan paths are never emitted as dependencies -- they do not name files a
+/// build system can stat. An output that depends on the compiled-in catalog is not thereby
+/// dependency-free, though: the catalog is a real input that changes when the compiler carrying it
+/// changes. Such outputs get `toolchainStampPath` (normally the `dsdlc` executable) as a stand-in
+/// prerequisite, so upgrading the compiler rebuilds what its catalog produced.
 class DepfilePlanner final
 {
 public:
     /// @brief Build planner index from semantic definitions.
-    explicit DepfilePlanner(const SemanticModule& semantic);
+    ///
+    /// @param[in] semantic Semantic module covering every type reachable from generated outputs.
+    ///     Embedded-catalog definitions must be present when they participate in the closure;
+    ///     otherwise the planner cannot distinguish "supplied by the compiled-in catalog" from
+    ///     "unknown type", and both silently yield no dependencies.
+    /// @param[in] toolchainStampPath Prerequisite recorded for outputs that draw on the embedded
+    ///     catalog. Empty disables the behavior.
+    explicit DepfilePlanner(const SemanticModule& semantic, std::string toolchainStampPath = {});
 
     /// @brief Returns transitive input dependencies for one type key.
     ///
@@ -57,9 +69,10 @@ private:
     {
         std::vector<std::size_t> dependencyIndexes;
         std::string              normalizedInputPath;
-        bool                     emitAsInput{false};
+        bool                     fromEmbeddedCatalog{false};
     };
 
+    std::string                                               toolchainStampPath_;
     std::vector<Node>                                         nodes_;
     std::unordered_map<std::string, std::size_t>              nodeIndexByTypeKey_;
     std::unordered_map<std::string, std::vector<std::string>> depsByTypeKey_;

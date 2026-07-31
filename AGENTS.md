@@ -1,4 +1,4 @@
-# No documentation ghosts
+# No documentation ghosts (no bananas rule)
 
 When you **remove** something, remove it cleanly — don't leave behind a note that it
 used to be there or a negative explaining its absence. The deletion does not need to
@@ -6,12 +6,12 @@ be written down.
 
 Turning a removal into a stated negative weakens the logic of the text:
 
-> V1: We want apples and oranges for the table.
-> *(remove apples)*
-> ❌ V2: We want oranges but not apples for the table.
+> V1: We want bananas and oranges for the table.
+> *(remove bananas)*
+> ❌ V2: We want oranges but not bananas for the table.
 
-"Not apples" is bizarre on its face — it invites the reader to ask *why apples? why
-not bananas? does excluding apples imply bananas are fine?* A clean elision carries
+"Not bananas" is bizarre on its face — it invites the reader to ask *why bananas? why
+not apples? Does excluding bananas imply apples are fine?* A clean elision carries
 no such baggage:
 
 > ✅ V2: We want oranges for the table.
@@ -28,6 +28,38 @@ pre-empting the wrong answer — and should carry its *reason*:
 Here "we tried orange juice" earns its place because the OJ-for-a-cold prior is
 strong and would otherwise creep back in. Absent that kind of pull, prefer the
 clean elision.
+
+# No Stupid Docs Rule
+
+Be Precise and Concise When Writing Documentation
+
+## Do not pontificate.
+
+> ❌ The obj backend never emits these attributes: it compiles the C or C++ it generates as part of its own pipeline, and warnings there would be about code the user never sees.
+
+> ✅ The obj backend never emits these attributes.
+
+## Do not prevaricate.
+
+> ❌ There are ways this is implemented and these ways include several which are dangerous and should be used with caution.
+
+> ✅ Do not use raw pointers.
+
+## Do not ramble
+
+Where the banner is self explanatory:
+
+> ❌ Each page carries a gating mode banner. Structural means coverage was inferred from registered test names; behavioural means a cell counts as covered only if a matching test actually executed and passed. The published pages are structural: the docs build compiles the compiler but does not run the test suite. The behavioural run is a release gate in CI, where the generators consume the suite's JUnit results and fail the build on a regression. Read the banner rather than assuming.
+
+> ✅ Each page carries a gating mode banner.
+
+## Do not be inane.
+
+Do not assume the user is an idiot.
+
+> ❌ ... are written by the report generators and rebuilt whenever the site is published. Editing them by hand accomplishes nothing — the next build overwrites the file.
+
+> ✅ ... are written by the report generators and rebuilt whenever the site is published.
 
 # Prefer Python over Shell Scripts
 

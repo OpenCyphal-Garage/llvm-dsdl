@@ -1,0 +1,85 @@
+# Targeting the embedded uavcan catalog with the '+' sigil.
+
+# Granularity: exact version pulls its dependency closure.
+# RUN: rm -rf %t.exact && %dsdlc --target-language c --outdir %t.exact +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.exact/uavcan/node/Heartbeat_1_0.h
+# RUN: test -f %t.exact/uavcan/node/Health_1_0.h
+# RUN: test -f %t.exact/uavcan/node/Mode_1_0.h
+
+# ...and --omit-dependencies restricts to what was actually named.
+# RUN: rm -rf %t.omit && %dsdlc --target-language c --omit-dependencies --outdir %t.omit +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.omit/uavcan/node/Heartbeat_1_0.h
+# RUN: not test -f %t.omit/uavcan/node/Health_1_0.h
+
+# Namespace granularity, and the dot-boundary anchor that keeps a prefix from standing in for it.
+# RUN: rm -rf %t.ns && %dsdlc --target-language c --outdir %t.ns +uavcan.node >/dev/null 2>&1
+# RUN: test -f %t.ns/uavcan/node/Heartbeat_1_0.h
+# RUN: not %dsdlc --target-language c --outdir %t.partial +uavcan.n 2>&1 | FileCheck %s --check-prefix=PARTIAL_NS
+
+# Type granularity: every version of one type, no version suffix.
+# RUN: rm -rf %t.type && %dsdlc --target-language c --outdir %t.type +uavcan.node.Heartbeat >/dev/null 2>&1
+# RUN: test -f %t.type/uavcan/node/Heartbeat_1_0.h
+
+# mlir accepts embedded targets too.
+# RUN: %dsdlc --target-language mlir +uavcan.node.Heartbeat.1.0 2>/dev/null | FileCheck %s --check-prefix=MLIR_PLUS
+
+# Listing: outputs are real files, inputs are not -- a synthetic path must never reach a build
+# system's DEPENDS set, so a purely embedded target contributes no inputs at all.
+# RUN: %dsdlc --target-language c --list-outputs +uavcan.node.Heartbeat.1.0 2>/dev/null | FileCheck %s --check-prefix=PLUS_OUTPUTS
+# RUN: %dsdlc --target-language c --list-inputs +uavcan.node.Heartbeat.1.0 >%t.inputs 2>/dev/null
+# RUN: not test -s %t.inputs
+
+# The dependency that does get recorded is the binary carrying the catalog.
+# RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: cat %t.md/uavcan/node/Heartbeat_1_0.h.d | FileCheck %s --check-prefix=PLUS_DEPFILE
+
+# A local definition shadows the embedded one of the same key, even when named through '+'.
+# RUN: rm -rf %t.shadow && mkdir -p %t.shadow/uavcan/node
+# RUN: printf "uint8 SHADOW_MARKER = 42\n@sealed\n" > %t.shadow/uavcan/node/Heartbeat.1.0.dsdl
+# RUN: rm -rf %t.shadow.out && %dsdlc --target-language c -MD --outdir %t.shadow.out %t.shadow/uavcan +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h | FileCheck %s --check-prefix=SHADOWED
+# RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h.d 2>/dev/null | FileCheck %s --check-prefix=SHADOWED_DEPS --allow-empty
+
+# Nothing resolves silently to zero targets. Each of these must be a diagnostic, because a build
+# that succeeds while generating nothing is the failure this syntax exists to prevent.
+# RUN: not %dsdlc --target-language c --outdir %t.typo +uavcna 2>&1 | FileCheck %s --check-prefix=TYPO_NS
+# RUN: not %dsdlc --target-language c --outdir %t.typo2 +uavcan.node.Hartbeat.1.0 2>&1 | FileCheck %s --check-prefix=TYPO_TYPE
+# RUN: not %dsdlc --target-language c --outdir %t.ver +uavcan.node.Heartbeat.9.9 2>&1 | FileCheck %s --check-prefix=BAD_VERSION
+
+# Gating.
+# RUN: not %dsdlc --target-language c --no-embedded-uavcan --outdir %t.gate +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_NO_EMBEDDED
+# RUN: not %dsdlc --target-language ast +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_LANGUAGE
+
+# The sigil is target-token syntax, not option syntax, so `--` does not disable it...
+# RUN: %dsdlc --target-language c --list-outputs -- +uavcan.node.Heartbeat.1.0 2>/dev/null | FileCheck %s --check-prefix=PLUS_OUTPUTS
+# ...and a file literally named '+x' is reached as './+x', which is a path and must fail as one.
+# RUN: not %dsdlc --target-language c --outdir %t.escape ./+uavcan 2>&1 | FileCheck %s --check-prefix=ESCAPED_PATH
+
+# Empty-root colon syntax stays an error. '+' was chosen over spelling the builtin root as ':name'
+# precisely so a build system that drops a variable fails here instead of silently resolving to the
+# embedded catalog and shipping the wrong definition.
+# RUN: not %dsdlc --target-language c --outdir %t.colon :uavcan/node/Heartbeat.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=EMPTY_ROOT
+
+# MLIR_PLUS: full_name = "uavcan.node.Heartbeat"
+
+# PLUS_OUTPUTS: uavcan/node/Heartbeat_1_0.h
+
+# PLUS_DEPFILE: Heartbeat_1_0.h: {{.*}}dsdlc
+# PLUS_DEPFILE-NOT: embedded-uavcan
+
+# SHADOWED: SHADOW_MARKER
+# The shadowing definition is a real file, so the rule names it and not the binary.
+# SHADOWED_DEPS-NOT: dsdlc{{$}}
+
+# PARTIAL_NS: no embedded type matches target '+uavcan.n'
+# TYPO_NS: no embedded type matches target '+uavcna'; did you mean '+uavcan'?
+# TYPO_TYPE: no embedded type matches target '+uavcan.node.Hartbeat.1.0'; did you mean '+uavcan.node.Heartbeat'
+# BAD_VERSION: no embedded type matches target '+uavcan.node.Heartbeat.9.9'; did you mean '+uavcan.node.Heartbeat.1.0'
+
+# GATE_NO_EMBEDDED: cannot select embedded target '+uavcan' with --no-embedded-uavcan
+# GATE_LANGUAGE: embedded target '+uavcan' requires --target-language 'mlir' or a codegen language
+
+# ESCAPED_PATH: target path does not exist: ./+uavcan
+
+# EMPTY_ROOT: error: directory does not exist:
+# EMPTY_ROOT-NOT: Heartbeat_1_0

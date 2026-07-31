@@ -188,6 +188,14 @@ For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog for
 that reference core `uavcan` definitions resolve without needing external
 `uavcan` source roots. Use `--no-embedded-uavcan` to disable this behavior.
 
+A `+` target names that catalog directly, generating standard types without a
+`public_regulated_data_types` checkout. A selector takes a namespace, a type, or an
+exact version:
+
+```bash
+dsdlc --target-language c --outdir out/c +uavcan.node.Heartbeat.1.0
+```
+
 ### Useful options
 
 - `--outdir <dir>`: output directory (default: `dsdl_out`)

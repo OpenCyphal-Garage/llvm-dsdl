@@ -5,6 +5,7 @@
 # RUN: %dsdlc --target-language c --list-inputs %S/fixtures_embedded_uavcan/demo 2>/dev/null | FileCheck %s --check-prefix=LIST_INPUTS
 # RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md %S/fixtures_embedded_uavcan/demo >/dev/null 2>&1
 # RUN: cat %t.md/demo/UsesHeartbeat_1_0.h.d | FileCheck %s --check-prefix=DEPFILE_LOCAL
+# RUN: cat %t.md/uavcan/node/Heartbeat_1_0.h.d | FileCheck %s --check-prefix=DEPFILE_EMBEDDED
 # RUN: rm -rf %t.noembed && mkdir -p %t.noembed/demo %t.noembed/uavcan/node
 # RUN: cp %S/fixtures_embedded_uavcan/demo/UsesHeartbeat.1.0.dsdl %t.noembed/demo/UsesHeartbeat.1.0.dsdl
 # RUN: printf "@sealed\n" > %t.noembed/uavcan/node/Heartbeat.1.0.dsdl
@@ -19,13 +20,26 @@
 # LIST_INPUTS: UsesHeartbeat.1.0.dsdl
 # LIST_INPUTS-NOT: embedded-uavcan
 
-# DEPFILE_LOCAL: UsesHeartbeat.1.0.dsdl
+# A mixed output lists its real inputs and, because its closure reaches the compiled-in catalog,
+# the dsdlc binary standing in for that catalog. Order within the rule follows path sort order,
+# which varies by build layout, so the two prerequisites are matched unordered.
+# DEPFILE_LOCAL: UsesHeartbeat_1_0.h:
+# DEPFILE_LOCAL-DAG: UsesHeartbeat.1.0.dsdl
+# DEPFILE_LOCAL-DAG: dsdlc
 # DEPFILE_LOCAL-NOT: embedded-uavcan
+
+# An output generated entirely from the embedded catalog has no .dsdl source to name, so the binary
+# is its only prerequisite. Before the stamp existed this rule had none at all and never rebuilt.
+# DEPFILE_EMBEDDED: Heartbeat_1_0.h: {{.*}}dsdlc
+# DEPFILE_EMBEDDED-NOT: embedded-uavcan
+# DEPFILE_EMBEDDED-NOT: Heartbeat.1.0.dsdl
 
 # DEPFILE_NO_EMBED: UsesHeartbeat_1_0.h:
 # DEPFILE_NO_EMBED: UsesHeartbeat.1.0.dsdl
 # DEPFILE_NO_EMBED: Heartbeat.1.0.dsdl
 # DEPFILE_NO_EMBED-NOT: embedded-uavcan
+# A closure that never reaches the catalog must not be pinned to the compiler.
+# DEPFILE_NO_EMBED-NOT: dsdlc
 
 # DEPFILE_NO_EMBED_HEARTBEAT: Heartbeat_1_0.h:
 # DEPFILE_NO_EMBED_HEARTBEAT: Heartbeat.1.0.dsdl

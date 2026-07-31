@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <iostream>
 #include <unordered_set>
 
@@ -174,6 +175,98 @@ bool runUavcanEmbeddedCatalogTests()
     if (!sawHeartbeatSchema)
     {
         std::cerr << "appended embedded UAVCAN module missing heartbeat schema\n";
+        return false;
+    }
+
+    // '+' target selector expansion.
+    const auto exact = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat.1.0");
+    if (exact.typeKeys.size() != 1U || exact.typeKeys.front() != "uavcan.node.Heartbeat:1:0")
+    {
+        std::cerr << "versioned selector should expand to exactly its own key\n";
+        return false;
+    }
+
+    // Leading zeros are re-rendered from the parsed integers, so they agree with the key format.
+    const auto paddedVersion = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat.01.00");
+    if (paddedVersion.typeKeys != exact.typeKeys)
+    {
+        std::cerr << "zero-padded versions should resolve identically to their canonical spelling\n";
+        return false;
+    }
+
+    const auto byTypeName = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat");
+    if (byTypeName.typeKeys.empty())
+    {
+        std::cerr << "unversioned type selector should expand to that type's versions\n";
+        return false;
+    }
+    for (const auto& key : byTypeName.typeKeys)
+    {
+        if (key.rfind("uavcan.node.Heartbeat:", 0U) != 0U)
+        {
+            std::cerr << "unversioned type selector leaked an unrelated key: " << key << "\n";
+            return false;
+        }
+    }
+
+    const auto namespaceKeys = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node");
+    const auto rootKeys      = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan");
+    if (namespaceKeys.typeKeys.size() <= byTypeName.typeKeys.size() ||
+        rootKeys.typeKeys.size() <= namespaceKeys.typeKeys.size())
+    {
+        std::cerr << "selector granularity should widen strictly: type < namespace < root\n";
+        return false;
+    }
+    if (rootKeys.typeKeys.size() != catalog.typeKeys.size())
+    {
+        std::cerr << "root namespace selector should select the whole catalog\n";
+        return false;
+    }
+    if (!std::is_sorted(rootKeys.typeKeys.begin(), rootKeys.typeKeys.end()))
+    {
+        std::cerr << "selector expansion should return sorted keys\n";
+        return false;
+    }
+
+    // Namespace matching is anchored at a dot, so a truncated prefix selects nothing rather than
+    // silently standing in for the namespace the caller meant.
+    const auto partialPrefix = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.n");
+    if (!partialPrefix.typeKeys.empty())
+    {
+        std::cerr << "a partial namespace prefix must not match at a non-dot boundary\n";
+        return false;
+    }
+    if (partialPrefix.suggestions.empty())
+    {
+        std::cerr << "an unmatched selector should carry suggestions\n";
+        return false;
+    }
+
+    // A known type with an unavailable version suggests the versions that exist.
+    const auto badVersion = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat.9.9");
+    if (!badVersion.typeKeys.empty())
+    {
+        std::cerr << "an unavailable version must not resolve\n";
+        return false;
+    }
+    if (std::find(badVersion.suggestions.begin(), badVersion.suggestions.end(), "uavcan.node.Heartbeat.1.0") ==
+        badVersion.suggestions.end())
+    {
+        std::cerr << "an unavailable version should suggest the versions the catalog carries\n";
+        return false;
+    }
+
+    const auto typo = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcna");
+    if (!typo.typeKeys.empty() ||
+        std::find(typo.suggestions.begin(), typo.suggestions.end(), "uavcan") == typo.suggestions.end())
+    {
+        std::cerr << "a transposed namespace should suggest the namespace it was reaching for\n";
+        return false;
+    }
+
+    if (!llvmdsdl::expandEmbeddedCatalogSelector(catalog, "").typeKeys.empty())
+    {
+        std::cerr << "an empty selector must select nothing\n";
         return false;
     }
 

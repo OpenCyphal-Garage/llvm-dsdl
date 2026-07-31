@@ -758,6 +758,160 @@ bool isEmbeddedUavcanSyntheticPath(const std::string& filePath)
     return filePath.rfind(kEmbeddedUavcanSyntheticPathPrefix, 0U) == 0U;
 }
 
+namespace
+{
+
+/// Full name portion of a `full_name:major:minor` key. Full names never contain a colon.
+llvm::StringRef fullNameOfKey(llvm::StringRef key)
+{
+    return key.take_until([](char c) { return c == ':'; });
+}
+
+/// Selector spelling for a key, i.e. the inverse of the key format: `uavcan.node.Heartbeat.1.0`.
+std::string selectorSpellingOfKey(llvm::StringRef key)
+{
+    std::string out = key.str();
+    std::replace(out.begin(), out.end(), ':', '.');
+    return out;
+}
+
+/// Reads a trailing `.<major>.<minor>` off a selector, if both components are numeric.
+/// Versions are re-rendered from the parsed integers so `01.0` and `1.0` agree with the key format.
+std::optional<std::string> keyFromVersionedSelector(llvm::StringRef selector)
+{
+    const auto lastDot = selector.rfind('.');
+    if (lastDot == llvm::StringRef::npos || lastDot == 0U)
+    {
+        return std::nullopt;
+    }
+    const auto priorDot = selector.substr(0, lastDot).rfind('.');
+    if (priorDot == llvm::StringRef::npos || priorDot == 0U)
+    {
+        return std::nullopt;
+    }
+
+    const llvm::StringRef fullName = selector.substr(0, priorDot);
+    const llvm::StringRef majorRef = selector.substr(priorDot + 1U, lastDot - priorDot - 1U);
+    const llvm::StringRef minorRef = selector.substr(lastDot + 1U);
+
+    std::uint32_t major = 0;
+    std::uint32_t minor = 0;
+    if (majorRef.empty() || minorRef.empty() || majorRef.getAsInteger(10, major) || minorRef.getAsInteger(10, minor))
+    {
+        return std::nullopt;
+    }
+
+    return typeKey(fullName, major, minor);
+}
+
+/// True when `fullName` sits at or under `prefix`, anchored at a dot so `uavcan.n` never stands in
+/// for `uavcan.node`.
+bool isAtOrUnderNamespace(llvm::StringRef fullName, llvm::StringRef prefix)
+{
+    if (fullName == prefix)
+    {
+        return true;
+    }
+    return fullName.starts_with(prefix) && fullName.size() > prefix.size() && fullName[prefix.size()] == '.';
+}
+
+std::vector<std::string> suggestionsForSelector(const UavcanEmbeddedCatalog& catalog, llvm::StringRef selector)
+{
+    // A well-formed type name carrying a version the catalog lacks is the common near-miss, and the
+    // useful answer is the versions that do exist rather than a spelling guess.
+    if (const auto versioned = keyFromVersionedSelector(selector); versioned.has_value())
+    {
+        const llvm::StringRef requestedName = fullNameOfKey(*versioned);
+        std::set<std::string> versions;
+        for (const auto& key : catalog.typeKeys)
+        {
+            if (fullNameOfKey(key) == requestedName)
+            {
+                versions.insert(selectorSpellingOfKey(key));
+            }
+        }
+        if (!versions.empty())
+        {
+            return {versions.begin(), versions.end()};
+        }
+    }
+
+    // Otherwise rank every type name and namespace by edit distance and offer the closest few.
+    std::set<std::string> candidates;
+    for (const auto& key : catalog.typeKeys)
+    {
+        const llvm::StringRef fullName = fullNameOfKey(key);
+        candidates.insert(fullName.str());
+        for (std::size_t i = 0; i < fullName.size(); ++i)
+        {
+            if (fullName[i] == '.')
+            {
+                candidates.insert(fullName.substr(0, i).str());
+            }
+        }
+    }
+
+    std::vector<std::pair<unsigned, std::string>> ranked;
+    ranked.reserve(candidates.size());
+    for (const auto& candidate : candidates)
+    {
+        ranked.emplace_back(llvm::StringRef(candidate).edit_distance(selector), candidate);
+    }
+    std::sort(ranked.begin(), ranked.end());
+
+    // Past roughly a third of the selector's length the "suggestion" is noise, not a correction.
+    const unsigned tolerance = std::max<unsigned>(2U, static_cast<unsigned>(selector.size()) / 3U);
+
+    std::vector<std::string> out;
+    for (const auto& [distance, candidate] : ranked)
+    {
+        if (distance > tolerance || out.size() >= 3U)
+        {
+            break;
+        }
+        out.push_back(candidate);
+    }
+    return out;
+}
+
+}  // namespace
+
+EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCatalog& catalog,
+                                                        const llvm::StringRef        selector)
+{
+    EmbeddedSelectorExpansion expansion;
+    if (selector.empty())
+    {
+        return expansion;
+    }
+
+    // Exact version first: no catalog full name ever equals `<name>.<major>.<minor>`, so this can
+    // never race the namespace interpretation below.
+    if (const auto versioned = keyFromVersionedSelector(selector); versioned.has_value())
+    {
+        if (catalog.typeKeys.contains(*versioned))
+        {
+            expansion.typeKeys.push_back(*versioned);
+            return expansion;
+        }
+    }
+
+    for (const auto& key : catalog.typeKeys)
+    {
+        if (isAtOrUnderNamespace(fullNameOfKey(key), selector))
+        {
+            expansion.typeKeys.push_back(key);
+        }
+    }
+    std::sort(expansion.typeKeys.begin(), expansion.typeKeys.end());
+
+    if (expansion.typeKeys.empty())
+    {
+        expansion.suggestions = suggestionsForSelector(catalog, selector);
+    }
+    return expansion;
+}
+
 llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&           catalog,
                                                mlir::ModuleOp                         destination,
                                                const std::unordered_set<std::string>& selectedTypeKeys,
