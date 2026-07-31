@@ -1,19 +1,19 @@
 # High-rate telemetry from a single electronic speed controller (ESC).
 #
-# TRANSPORT TIER: Classic CAN (CAN 2.0B). This definition is sealed and
-# hand-packed so that a complete serialized value fits inside the seven
-# payload bytes of one classic-CAN frame, leaving the eighth byte for
-# the Cyphal/CAN tail byte. A multi-frame transfer would cost an extra
-# transfer-CRC and would make the message vulnerable to frame loss,
-# which is unacceptable for a value published at 100 Hz per ESC on a
-# shared bus.
+# LEAST SUPPORTED TRANSPORT: Classic CAN (CAN 2.0B). This definition
+# is sealed and hand-packed so that a complete serialized value fits
+# inside the seven payload bytes of one classic-CAN frame, leaving the
+# eighth byte for the Cyphal/CAN tail byte. A multi-frame transfer
+# would cost an extra transfer-CRC and would make the message
+# vulnerable to frame loss, which is unacceptable for a value published
+# at 100 Hz per ESC on a shared bus.
 #
 # WHY SEALED: sealing removes the four-byte delimiter header that a
-# delimited (extensible) type carries, and it lets the serializer emit a
-# fixed-size, fully static layout. The price is that this definition can
-# never gain a field: any addition is a breaking change requiring a new
-# major version. See EscStatus.2.0 for the extensible successor and the
-# reasoning behind the migration.
+# delimited (extensible) type carries, and it lets the serializer emit
+# a fixed-size, fully static layout. The price is that this definition
+# can never gain a field: any addition is a breaking change requiring a
+# new major version. See EscStatus.2.0 for the extensible successor and
+# the reasoning behind the migration.
 #
 # The scaled-integer fields below are the classic embedded trade: they
 # cost a multiply on each side but a fraction of the bits that an IEEE

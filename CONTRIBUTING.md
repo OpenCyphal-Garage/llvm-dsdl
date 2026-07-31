@@ -276,10 +276,10 @@ cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target relea
 ```
 
 Showroom targets. `showroom` regenerates the example namespace into every language and profile under
-`<build-dir>/showroom/`; `showroom-docs` renders that tree into `docs/showroom/`, which is checked in
-because the documentation site is built on a runner that never compiles dsdlc. **If you change
-anything under `examples/showroom/dsdl/` or anything that alters generated output, run
-`showroom-docs` and commit the result** — CI regenerates and fails on a dirty tree.
+`<build-dir>/showroom/`; `showroom-docs` renders that tree into `docs/showroom/`, which is *not*
+committed — the Docs workflow builds dsdlc in the toolshed container and produces those pages at
+publish time. Nothing to regenerate and commit, then, but you do need to run `showroom-docs` before
+previewing the site locally, or mkdocs will fail on a nav entry pointing at a page that is not there.
 
 ```bash
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom
@@ -393,18 +393,22 @@ Behavior worth knowing:
 - Overrides: `LLVMDSDL_DOCS_PORT` (default 8000), `LLVMDSDL_DOCS_IMAGE`, and `DOCKER` (set it to
   `podman` if that is what you run).
 
-The image pins Python 3.11 to match [`.github/workflows/docs.yml`](./.github/workflows/docs.yml), and
+The image pins Python 3.14 to match [`.github/workflows/docs.yml`](./.github/workflows/docs.yml), and
 installs from the same [`docs/requirements.txt`](./docs/requirements.txt) as a local `.venv-docs`, so
 `check` inside the container fails for the same reasons CI fails. See
 [`packaging/docker/Dockerfile.docs`](./packaging/docker/Dockerfile.docs).
 
 ### 10.5 Generated pages
 
-[`docs/showroom/`](./docs/showroom/) is generated from the compiler's own output and checked in,
-because the Docs workflow runs on a runner that never builds `dsdlc` and so cannot produce it. If you
-changed anything under `examples/showroom/dsdl/` or anything that alters generated code, regenerate it
-before previewing — see the `showroom-docs` target in section 8 — and commit the result. CI
-regenerates and fails on a dirty tree.
+`docs/showroom/` is generated from the compiler's own output and is not committed — it is gitignored.
+The Docs workflow runs inside the toolshed container, builds `dsdlc`, and produces those pages as
+part of publishing, so the repository never carries a copy that can go stale.
+
+The consequence for you is local: a fresh clone has no `docs/showroom/`, and `mkdocs build --strict`
+fails on the `Showroom / Overview` nav entry until you make one. Run the `showroom-docs` target from
+section 8 before previewing or `check`ing the site. Regenerate it again after changing anything under
+`examples/showroom/` or anything that alters generated code, since the pages carry backend output
+verbatim.
 
 ## 11. Development Expectations
 

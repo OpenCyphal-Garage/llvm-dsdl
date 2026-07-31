@@ -1,6 +1,6 @@
 # Upload a mission to the vehicle one chunk at a time.
 #
-# TRANSPORT TIER: CAN FD and Cyphal/UDP.
+# LEAST SUPPORTED TRANSPORT: CAN FD and Cyphal/UDP.
 #
 # WHY A SERVICE: mission upload needs an acknowledgement per chunk so
 # that the ground station can retry a lost chunk rather than restarting

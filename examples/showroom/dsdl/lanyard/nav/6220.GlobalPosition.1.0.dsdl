@@ -1,7 +1,7 @@
 # Fused navigation solution published by the GNSS/INS estimator at 10
 # Hz.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 
 uavcan.time.SynchronizedTimestamp.1.0 timestamp
 # The network-synchronized moment this solution is valid for.

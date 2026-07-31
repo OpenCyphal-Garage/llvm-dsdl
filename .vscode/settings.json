@@ -18,12 +18,14 @@
         "invertibility",
         "llvmdsdl",
         "metaserializable",
+        "microcontroller",
         "minkowski",
         "mlir",
         "nodiscard",
         "opencyphal",
         "RUSTEMITTER",
         "SERDES",
-        "thirtytwobits"
+        "thirtytwobits",
+        "uavcan"
     ]
 }

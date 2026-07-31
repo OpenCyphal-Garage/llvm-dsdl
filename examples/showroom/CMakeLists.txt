@@ -145,13 +145,18 @@ add_custom_target(showroom DEPENDS ${LLVMDSDL_SHOWROOM_VARIANT_TARGETS})
 # --------------------------------------------------------------------------------------------------
 # Browsable documentation.
 #
-# docs/showroom/ is checked into the repository because the docs workflow builds mkdocs on a runner
-# that never compiles dsdlc and therefore cannot generate it. `showroom-docs` regenerates it; CI
-# re-runs the target and fails on a dirty tree, which is the same freshness contract the convergence
-# and parity reports use.
+# docs/showroom/ is generated, not committed. The docs workflow runs inside the toolshed container,
+# builds dsdlc, and invokes this target as part of publishing, so the site is produced from the
+# compiler rather than from a checked-in copy that could drift from it. Locally, run this target
+# before previewing the site: mkdocs has a nav entry for the showroom overview and --strict fails
+# without a page behind it.
 
 set(LLVMDSDL_SHOWROOM_DOCS_DIR "${LLVMDSDL_SOURCE_DIR}/docs/showroom")
 set(LLVMDSDL_SHOWROOM_INDEX_SCRIPT "${LLVMDSDL_SOURCE_DIR}/tools/showroom/build_showroom_index.py")
+
+# docs/showroom/index.md is this README rendered for the site, so that the file a contributor edits
+# is the file the site shows.
+set(LLVMDSDL_SHOWROOM_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(showroom-docs
@@ -161,7 +166,8 @@ if(LLVMDSDL_PYTHON3_EXE)
         --generated-root "${LLVMDSDL_SHOWROOM_OUT_ROOT}"
         --mlir-file "${LLVMDSDL_SHOWROOM_MLIR_FILE}"
         --output-dir "${LLVMDSDL_SHOWROOM_DOCS_DIR}"
-    DEPENDS showroom "${LLVMDSDL_SHOWROOM_INDEX_SCRIPT}"
+        --readme "${LLVMDSDL_SHOWROOM_README}"
+    DEPENDS showroom "${LLVMDSDL_SHOWROOM_INDEX_SCRIPT}" "${LLVMDSDL_SHOWROOM_README}"
     USES_TERMINAL
     VERBATIM
     COMMENT "Showroom: regenerating docs/showroom from the generated tree")

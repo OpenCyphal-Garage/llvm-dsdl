@@ -1,6 +1,6 @@
 # Attitude and mode of the camera gimbal, published at 20 Hz.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 #
 # WHY SEALED: the gimbal controller is a small microcontroller with a
 # static receive buffer, and this message has been stable across three

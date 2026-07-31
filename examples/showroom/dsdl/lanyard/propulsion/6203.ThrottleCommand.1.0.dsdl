@@ -13,7 +13,7 @@
 # does need to change, this definition will be superseded by 2.0 on a
 # new port.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 
 uint4 MAX_MOTORS = 8
 # Largest propulsion array this definition addresses. Exposed as a

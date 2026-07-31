@@ -80,7 +80,10 @@ cmake --build <build-dir> --target showroom
 ```
 
 The rendered pages, pairing each definition with its wire-layout facts and the generated declaration
-in each language, are in [`docs/showroom`](docs/showroom/index.md).
+in each language, are published at
+[the Showroom section of the user manual](https://thirtytwobits.github.io/llvm-dsdl/showroom/). They
+are generated from the compiler's own output rather than committed; `showroom-docs` produces them
+locally, into `docs/showroom/`.
 
 ### Practical examples
 

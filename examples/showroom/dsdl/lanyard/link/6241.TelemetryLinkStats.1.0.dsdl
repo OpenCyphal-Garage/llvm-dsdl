@@ -1,7 +1,7 @@
 # Health of the air-to-ground telemetry link, published at 1 Hz by the
 # radio modem node.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 
 uavcan.time.SynchronizedTimestamp.1.0 timestamp
 # Moment the counters below were sampled. Because every node timestamps

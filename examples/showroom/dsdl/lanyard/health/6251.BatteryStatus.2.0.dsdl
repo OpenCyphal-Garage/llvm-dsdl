@@ -1,7 +1,7 @@
 # State of one battery pack, published at 2 Hz by the smart battery or
 # power module.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 #
 # VERSIONING: this definition replaces the polled LegacyBatteryPoll.1.0
 # service, which is @deprecated. The change of shape -- from a service

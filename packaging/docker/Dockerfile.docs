@@ -4,13 +4,18 @@
 # render is bind-mounted at /project when the container runs, so one image serves this repository, a
 # worktree, a branch checkout elsewhere on disk, or a colleague's machine, without a rebuild.
 #
-# Python 3.11 matches the version .github/workflows/docs.yml uses. That parity is the point of pinning
-# it here: `mkdocs build --strict` inside this image should fail for the same reasons CI fails, and a
-# different Python could resolve the dependency set differently.
+# Python 3.14 matches the interpreter .github/workflows/docs.yml uses -- that workflow now runs inside
+# the toolshed image, whose Python is 3.14, so the pin follows it. That parity is the point: `mkdocs
+# build --strict` inside this image should fail for the same reasons CI fails, and a different Python
+# could resolve the dependency set differently.
 #
 # The dependency pins come from docs/requirements.txt rather than being restated, so this image and a
 # local .venv-docs install the same set. See that file for why the Pygments ceiling is where it is.
-FROM python:3.11-slim
+#
+# This image renders the site; it does not build dsdlc, so it cannot generate docs/showroom. Those
+# pages are untracked -- run the `showroom-docs` target on the host first or the nav entry for the
+# showroom has no page behind it and --strict fails.
+FROM python:3.14-slim
 
 # Copied as the only build context input, so editing documentation never invalidates the layer cache.
 # Only a change to the pinned dependency set triggers a reinstall.

@@ -129,7 +129,7 @@ struct CliOptions final
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
     bool optimizeLoweredSerDes{false};
-    bool emitDeprecationAttributes{false};
+    bool emitDeprecationAttributes{true};
     bool dryRun{false};
     bool listOutputs{false};
     bool listInputs{false};
@@ -230,11 +230,13 @@ void printHelp()
                  << "      Output directory root for codegen languages (default: dsdl_out).\n"
                  << "  --optimize-lowered-serdes\n"
                  << "      Enable optional MLIR optimization for lowered serialization plans.\n"
-                 << "  --emit-deprecation-attributes\n"
-                 << "      Emit language-native deprecation attributes for @deprecated definitions\n"
-                 << "      (C, C++, Rust). Off by default: the attribute turns a documentation signal\n"
-                 << "      into a compiler diagnostic and can break -Werror builds. The deprecation\n"
+                 << "  --no-deprecation-attributes\n"
+                 << "      Suppress the language-native deprecation attributes that @deprecated\n"
+                 << "      definitions carry by default in C, C++, and Rust. Use this when a\n"
+                 << "      -Werror build must keep using deprecated definitions. The deprecation\n"
                  << "      notice and metadata constant are emitted regardless.\n"
+                 << "  --emit-deprecation-attributes\n"
+                 << "      Accepted for compatibility; this is the default.\n"
                  << "  --no-overwrite\n"
                  << "      Fail if an output file already exists.\n"
                  << "  --file-mode <mode>\n"
@@ -566,6 +568,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--emit-deprecation-attributes")
         {
             options.emitDeprecationAttributes = true;
+            continue;
+        }
+        if (arg == "--no-deprecation-attributes")
+        {
+            options.emitDeprecationAttributes = false;
             continue;
         }
         if (arg == "--cpp-profile")

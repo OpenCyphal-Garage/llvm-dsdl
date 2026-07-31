@@ -1,7 +1,7 @@
 # Consolidated vehicle state, published by the flight controller at 50
 # Hz.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 #
 # WHY DELIMITED: this is the definition most likely to acquire new
 # fields as the airframe evolves, and it is consumed by a wide

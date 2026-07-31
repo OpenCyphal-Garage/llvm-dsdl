@@ -1,15 +1,20 @@
 name: Docs
 
+# The site is built inside the project's toolshed image (the same one CI and .devcontainer use) so
+# that this job can compile dsdlc and generate docs/showroom itself. Those pages are the compiler's
+# own output; generating them here is what lets them stay out of the repository instead of being
+# checked in and policed for staleness.
+#
+# The cost is small: `showroom-docs` pulls in 62 translation units -- dsdlc and its libraries, none
+# of the tests or the other tools -- which is a fraction of the full build.
+#
+# There is deliberately no `paths:` filter. Once the showroom is generated rather than committed, the
+# site depends on the backends as much as on docs/, so any change to main can change what is
+# published, and a filter that tried to enumerate that would be wrong the first time a file moved.
+
 on:
   push:
     branches: ["main"]
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "README.md"
-      - "DESIGN.md"
-      - "CONTRIBUTING.md"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,26 +28,41 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.2
+    timeout-minutes: 30
+    env:
+      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
     steps:
       - name: Checkout
+        # No submodules: every reference to submodules/public_regulated_data_types is EXISTS-guarded,
+        # and the showroom resolves its uavcan dependencies from dsdlc's embedded catalog.
         uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
-      - name: Install docs dependencies
+      - name: Configure
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+
+      - name: Generate the showroom and render its pages
+        # Debug because this dsdlc only has to run over 24 definitions; what matters is how fast it
+        # compiles, not how fast it runs.
+        run: cmake --build build/matrix/ci --config Debug --target showroom-docs
+
+      - name: Install the pinned docs toolchain
+        # A virtual environment for two reasons: the image ships its own mkdocs at distro versions,
+        # and its Python is PEP 668 externally-managed, so installing into it is refused outright.
+        # The pins in docs/requirements.txt are load-bearing -- see the Pygments note in that file.
         run: |
-          python -m pip install --upgrade pip
-          pip install -r docs/requirements.txt
+          python3 -m venv .venv-docs
+          .venv-docs/bin/pip install --upgrade pip
+          .venv-docs/bin/pip install -r docs/requirements.txt
 
       - name: Build docs site
-        run: mkdocs build --strict
+        run: .venv-docs/bin/mkdocs build --strict
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

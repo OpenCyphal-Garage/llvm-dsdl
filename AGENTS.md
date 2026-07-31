@@ -28,3 +28,11 @@ pre-empting the wrong answer — and should carry its *reason*:
 Here "we tried orange juice" earns its place because the OJ-for-a-cold prior is
 strong and would otherwise creep back in. Absent that kind of pull, prefer the
 clean elision.
+
+# Prefer Python over Shell Scripts
+
+Shell scripts suffer from multiple compatibility issues including different shells on
+different platforms using different system tools. Python is Python. Prefer using Python
+where scripting is needed. Only use scripting where another technology does not already
+provide adequate automation capabilities. For example, if working in the build system
+prefer using cmake first and Python only if cmake is not suitable.

@@ -7,20 +7,26 @@
 # ===----------------------------------------------------------------------===#
 """Render the showroom's generated tree into browsable Markdown under docs/showroom.
 
-The docs are checked into the repository because the documentation workflow builds mkdocs on a
-runner that never compiles dsdlc, and therefore cannot generate them itself. This script is what
-`cmake --build <dir> --target showroom-docs` runs; CI re-runs it and fails on a dirty tree.
+The docs are generated rather than committed: the documentation workflow runs inside the toolshed
+container, builds dsdlc, and runs this script as part of publishing, so what the site shows is the
+compiler's current output rather than a copy of it. This script is what
+`cmake --build <dir> --target showroom-docs` runs.
 
 Each type page carries the authored DSDL in full, the wire-layout facts, and a declaration excerpt
 per language. Excerpts rather than whole files: the complete generated tree is tens of thousands of
 lines, and what a prospective user wants to see is the shape of the data structure and whether the
 documentation survived the trip. The full output is what the `showroom` build target produces.
+
+The index page is the showroom README rendered for the site rather than prose maintained here, so
+that a contributor editing the README -- the file they would naturally reach for -- also updates the
+documentation site, and the dirty-tree check in CI enforces the two staying in step.
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import re
 import sys
 from pathlib import Path
@@ -326,9 +332,16 @@ def _extract_python(lines: list[str]) -> list[str]:
     return chunks
 
 
+# A `@deprecated` definition carries a language-native attribute, which lands between the closing
+# brace and the typedef name in C and between `struct` and the name in C++. Both patterns tolerate it;
+# without that the deprecated types are the one kind of definition these pages cannot show.
 EXTRACTORS = {
-    "c": lambda lines: _extract_braced(lines, re.compile(r"^typedef struct\b"), re.compile(r"^\}\s*\w+;")),
-    "cpp": lambda lines: _extract_braced(lines, re.compile(r"^struct\s+\w+\s*\{"), re.compile(r"^\};")),
+    "c": lambda lines: _extract_braced(
+        lines, re.compile(r"^typedef struct\b"), re.compile(r"^\}\s*(?:__attribute__\(\(.*?\)\)\s*)*\w+;")
+    ),
+    "cpp": lambda lines: _extract_braced(
+        lines, re.compile(r"^struct\s+(?:\[\[.*?\]\]\s+)?\w+\s*\{"), re.compile(r"^\};")
+    ),
     "rust": lambda lines: _extract_braced(lines, re.compile(r"^pub struct\s+\w+\s*\{"), re.compile(r"^\}")),
     "go": lambda lines: _extract_braced(lines, re.compile(r"^type\s+\w+\s+struct\s*\{"), re.compile(r"^\}")),
     "ts": _extract_ts,
@@ -439,142 +452,147 @@ def render_type_page(info: TypeInfo, generated_root: Path) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def render_index(types: list[TypeInfo]) -> str:
-    out: list[str] = []
-    out.append("# Showroom")
-    out.append("")
-    out.append(
-        "`lanyard` is a fictional vendor namespace of aerial-vehicle datatypes. It exists so that you "
-        "can see what dsdlc produces for definitions shaped like the ones you are about to write, "
-        "before you write them. Nothing here is a test fixture and nothing here is regulated: these "
-        "are the sort of vendor-specific types a drone programme adds alongside the standard `uavcan` "
-        "namespace, and they lean on the standard types wherever a standard type exists."
-    )
-    out.append("")
-    out.append("Generate the full output for every supported language and profile with:")
-    out.append("")
-    out.append("```bash")
-    out.append("cmake --build <build-dir> --target showroom")
-    out.append("```")
-    out.append("")
-    out.append(
-        "The tree lands under `<build-dir>/showroom/<variant>/`. The pages below carry the authored "
-        "DSDL, the resulting wire-layout facts, and a declaration excerpt per language."
-    )
-    out.append("")
+# --------------------------------------------------------------------------------------------------
+# Index page.
+#
+# The index is the showroom README rendered for the documentation site, not a second document that
+# says the same things in different words. Two directives let the one source serve both readers:
+#
+#   <!-- showroom-docs: skip -->        drops the enclosing section from the site page
+#   <!-- showroom-docs: type-table -->  expands to the generated table of types
+#
+# Both are HTML comments, so GitHub renders the README with no trace of them. A directive occupies a
+# line of its own, and `skip` is only honoured as the first non-blank line of a section body.
 
-    out.append("## What each type demonstrates")
-    out.append("")
-    out.append("| Type | Port | Tier | Kind |")
-    out.append("|---|---:|---|---|")
+DIRECTIVE = re.compile(r"^<!--\s*showroom-docs:\s*(?P<name>[a-z-]+)\s*-->\s*$")
+HEADING = re.compile(r"^(?P<hashes>#{1,6})\s")
+FENCE = re.compile(r"^\s*(?:```|~~~)")
+
+# Links in the README resolve against examples/showroom/. The site page lives at docs/showroom/, so
+# every link that survives into it has to be re-pointed: at the site when the target is under docs/,
+# and at the repository otherwise. Kept in step with `repo_url` in mkdocs.yml.
+REPO_BLOB_URL = "https://github.com/thirtytwobits/llvm-dsdl/blob/main"
+INLINE_LINK = re.compile(r"\[(?P<text>[^]]*)\]\((?P<target>[^)\s]+)\)")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+INDEX_BANNER = (
+    "<!-- Generated from examples/showroom/README.md by tools/showroom/build_showroom_index.py.\n"
+    "     Edit the README and re-run the `showroom-docs` target; edits made here are overwritten. -->"
+)
+
+
+class ReadmeError(Exception):
+    """A directive in the showroom README could not be honoured."""
+
+
+def _rewrite_link_target(target: str, readme_dir: Path, output_dir: Path) -> str:
+    """Re-point a README-relative link so that it still resolves from docs/showroom/index.md."""
+    if "://" in target or target.startswith(("#", "/", "mailto:", "<")):
+        return target
+    path_part, _, fragment = target.partition("#")
+    anchor = f"#{fragment}" if fragment else ""
+    if not path_part:
+        return target
+    resolved = (readme_dir / path_part).resolve()
+    try:
+        relative_to_repo = resolved.relative_to(REPO_ROOT)
+    except ValueError:
+        # Outside the source tree entirely; there is nothing sensible to rewrite it to.
+        return target
+    if relative_to_repo.parts[:1] == ("docs",):
+        return Path(os.path.relpath(resolved, output_dir)).as_posix() + anchor
+    return f"{REPO_BLOB_URL}/{relative_to_repo.as_posix()}{anchor}"
+
+
+def _rewrite_links(line: str, readme_dir: Path, output_dir: Path) -> str:
+    def substitute(match: re.Match) -> str:
+        target = _rewrite_link_target(match.group("target"), readme_dir, output_dir)
+        return f"[{match.group('text')}]({target})"
+
+    return INLINE_LINK.sub(substitute, line)
+
+
+def render_type_table(types: list[TypeInfo]) -> list[str]:
+    rows = ["| Type | Port | Tier | Kind |", "|---|---:|---|---|"]
     for info in types:
         port = str(info.port_id) if info.port_id is not None else "--"
         kind = "service" if info.is_service else "message"
-        out.append(
+        rows.append(
             f"| [`{info.versioned_name}`](types/{info.slug}.md) | {port} | {info.transport_tier} | {kind} |"
         )
-    out.append("")
+    return rows
 
-    out.append("## Versioning")
-    out.append("")
-    out.append(
-        "Five migrations are laid out across the namespace, each answering a different question about "
-        "when a change forces a major version bump."
-    )
-    out.append("")
-    out.append("| Transition | Breaking | What it shows |")
-    out.append("|---|---|---|")
-    out.append(
-        "| `ThrottleCommand` 0.1 -> 1.0 | n/a | A `0.x` definition promises nothing; promotion to 1.0 is "
-        "where the compatibility promise begins, not a compatible change. |"
-    )
-    out.append(
-        "| `VehicleState` 1.0 -> 1.1 | no | A field appended inside an unchanged `@extent`. Both minor "
-        "versions share port 6210 and interoperate in both directions. |"
-    )
-    out.append(
-        "| `VehicleState` 1.1 -> 2.0 | yes | A field retyped, a field replaced, and the extent grown -- "
-        "any one of which forces a new major version and a new port. |"
-    )
-    out.append(
-        "| `EscStatus` 1.0 -> 2.0 | yes | `@sealed` is a one-way door: a sealed type cannot gain a "
-        "field, so extensibility costs a major version. |"
-    )
-    out.append(
-        "| `LegacyBatteryPoll` 1.0 -> `BatteryStatus` 2.0 | yes | `@deprecated` marking a superseded "
-        "service while both halves of the migration stay in the namespace. |"
-    )
-    out.append("")
 
-    out.append("## Transport tiers")
-    out.append("")
-    out.append(
-        "Every definition states the transport it was sized for, and most of them assert that budget "
-        "with `@assert _offset_.max <= ...` so that a layout change breaks the build rather than "
-        "quietly spilling into a multi-frame transfer."
-    )
-    out.append("")
-    out.append("| Tier | Budget | Examples |")
-    out.append("|---|---|---|")
-    out.append(
-        "| Classic CAN | 7 payload bytes in one frame | `EscStatus.1.0`, hand-packed to exactly 56 bits |"
-    )
-    out.append(
-        "| CAN FD | 63 payload bytes in one frame | `GlobalPosition.1.0`, `RcInput.1.0`, `GimbalStatus.1.0` |"
-    )
-    out.append(
-        "| Cyphal/UDP | a datagram, kilobytes | `MissionPlan.1.0`, `CameraFrameMetadata.1.0` |"
-    )
-    out.append("")
+def _section_is_skipped(lines: list[str], body_start: int) -> bool:
+    """True when the first non-blank line of a section body is the `skip` directive."""
+    for line in lines[body_start:]:
+        if not line.strip():
+            continue
+        if HEADING.match(line):
+            return False
+        directive = DIRECTIVE.match(line)
+        return bool(directive and directive.group("name") == "skip")
+    return False
 
-    out.append("## Language features covered")
-    out.append("")
-    out.append("| Feature | Where |")
-    out.append("|---|---|")
-    out.append("| `@sealed` | `EscStatus.1.0`, `RcInput.1.0`, `SubsystemReport.1.0` |")
-    out.append("| `@extent` | `VehicleState.1.0`, `MissionPlan.1.0`, `Waypoint.1.0` |")
-    out.append("| `@union` | `ControlSurfaces.1.0` |")
-    out.append("| `@assert` | `EscStatus.1.0`, `GlobalPosition.1.0`, `CapturePhoto.1.0` |")
-    out.append("| `@print` | `GlobalPosition.1.0` |")
-    out.append("| `@deprecated` | `LegacyBatteryPoll.1.0` |")
-    out.append("| Service request/response sections | `UploadMission.1.0`, `CapturePhoto.1.0` |")
-    out.append("| Non-byte-aligned scalars | `EscStatus.1.0` (`uint14`, `int12`, `int9`, `uint4`) |")
-    out.append("| `void` padding | `EscStatus.1.0`, `GlobalPosition.1.0`, `SubsystemReport.1.0` |")
-    out.append("| Fixed-size arrays | `GlobalPosition.1.0` (`float16[9]`), `RcInput.1.0` (`uint11[16]`) |")
-    out.append("| Variable-length arrays | `ThrottleCommand.1.0`, `MissionPlan.1.0`, `BatteryStatus.2.0` |")
-    out.append("| Arrays of composites | `MissionPlan.1.0` (delimited), `SystemHealth.1.0` (sealed) |")
-    out.append("| Cast modes | `CameraFrameMetadata.1.0` (`truncated` against `saturated`) |")
-    out.append("| Constants as enumerations | `FlightMode.1.0`, `Waypoint.1.0`, `GlobalPosition.1.0` |")
-    out.append("| Reuse of standard `uavcan` types | throughout; see `SubsystemReport.1.0` |")
-    out.append("")
 
-    out.append("## A note on documentation")
-    out.append("")
-    out.append(
-        "Every comment block in these definitions reaches the generated source in all six languages, "
-        "attached to the type, field, or constant it documents. That is the reason the definitions are "
-        "commented as heavily as they are: the DSDL is the only place the documentation is written, and "
-        "the generated code is where most people will read it."
-    )
-    out.append("")
-    out.append(
-        "Comment placement follows the OpenCyphal convention used by the regulated namespace -- the "
-        "block goes *after* the field it documents and is followed by a blank line. A block placed "
-        "before a field attaches to whatever precedes it instead."
-    )
-    out.append("")
-    out.append("!!! note")
-    out.append("")
-    out.append(
-        "    `@deprecated` reaches generated source in all six languages as a `Deprecated: ...` notice "
-        "appended to the type's documentation, plus an `IS_DEPRECATED` metadata constant. Go reads the "
-        "notice as a real deprecation, and TypeScript additionally gets a `/** @deprecated */` JSDoc "
-        "block. Compile-time enforcement in C, C++, and Rust is opt-in behind "
-        "`dsdlc --emit-deprecation-attributes`, because it turns documentation into a build diagnostic."
-    )
-    out.append("")
+def render_index(types: list[TypeInfo], readme: Path, output_dir: Path) -> str:
+    source = readme.read_text(encoding="utf-8").splitlines()
+    readme_dir = readme.parent.resolve()
 
-    return "\n".join(out).rstrip() + "\n"
+    rendered: list[str] = [INDEX_BANNER, ""]
+    skip_level: int | None = None
+    in_fence = False
+
+    for number, line in enumerate(source, start=1):
+        if FENCE.match(line):
+            in_fence = not in_fence
+            if skip_level is None:
+                rendered.append(line)
+            continue
+
+        if not in_fence:
+            heading = HEADING.match(line)
+            if heading:
+                level = len(heading.group("hashes"))
+                if skip_level is not None and level <= skip_level:
+                    skip_level = None
+                if skip_level is None and _section_is_skipped(source, number):
+                    skip_level = level
+                    continue
+
+            directive = DIRECTIVE.match(line)
+            if directive:
+                name = directive.group("name")
+                if name == "skip":
+                    if skip_level is None:
+                        raise ReadmeError(
+                            f"{readme}:{number}: `showroom-docs: skip` is only honoured as the first "
+                            "line of a section body"
+                        )
+                elif name == "type-table":
+                    if skip_level is None:
+                        rendered.extend(render_type_table(types))
+                else:
+                    raise ReadmeError(
+                        f"{readme}:{number}: unknown directive `showroom-docs: {name}`"
+                    )
+                continue
+
+        if skip_level is None:
+            rendered.append(line if in_fence else _rewrite_links(line, readme_dir, output_dir))
+
+    # Dropping a section leaves the blank lines that surrounded it stacked against each other.
+    collapsed: list[str] = []
+    in_fence = False
+    for line in rendered:
+        if FENCE.match(line):
+            in_fence = not in_fence
+        elif not in_fence and not line.strip() and collapsed and not collapsed[-1].strip():
+            continue
+        collapsed.append(line)
+
+    return "\n".join(collapsed).rstrip() + "\n"
 
 
 # --------------------------------------------------------------------------------------------------
@@ -585,10 +603,15 @@ def main() -> int:
     parser.add_argument("--generated-root", required=True, type=Path)
     parser.add_argument("--mlir-file", required=False, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--readme", required=True, type=Path,
+                        help="showroom README; rendered into the index page")
     args = parser.parse_args()
 
     if not args.dsdl_root.is_dir():
         print(f"error: DSDL root does not exist: {args.dsdl_root}", file=sys.stderr)
+        return 1
+    if not args.readme.is_file():
+        print(f"error: README does not exist: {args.readme}", file=sys.stderr)
         return 1
     if not args.generated_root.is_dir():
         print(
@@ -622,6 +645,14 @@ def main() -> int:
     else:
         print("warning: C output not found; wire-layout facts will be omitted", file=sys.stderr)
 
+    # Rendered before anything is written so that a malformed directive fails without leaving the
+    # docs tree half-updated.
+    try:
+        index_text = render_index(types, args.readme, args.output_dir)
+    except ReadmeError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
     types_dir = args.output_dir / "types"
     types_dir.mkdir(parents=True, exist_ok=True)
 
@@ -634,7 +665,7 @@ def main() -> int:
     for info in types:
         (types_dir / f"{info.slug}.md").write_text(render_type_page(info, args.generated_root), encoding="utf-8")
 
-    (args.output_dir / "index.md").write_text(render_index(types), encoding="utf-8")
+    (args.output_dir / "index.md").write_text(index_text, encoding="utf-8")
 
     print(f"showroom docs: wrote {len(types)} type pages and an index to {args.output_dir}")
     return 0

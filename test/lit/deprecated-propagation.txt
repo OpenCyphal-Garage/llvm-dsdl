@@ -5,25 +5,32 @@
 #
 # Two layers are checked here:
 #   * the notice and the IS_DEPRECATED constant, emitted unconditionally in every backend;
-#   * the language-native attribute, emitted only under --emit-deprecation-attributes because it turns
-#     a documentation signal into a compiler diagnostic.
+#   * the language-native attribute in C, C++, and Rust, emitted by default and suppressed only by
+#     --no-deprecation-attributes.
 #
 # A non-deprecated sibling (dep.Current.1.0) is checked in the same run to prove the marking does not
 # leak across definitions.
 
 # RUN: rm -rf %t && mkdir -p %t
 
+# Negative assertions get their own check prefixes throughout this test, so that each -NOT scans the
+# whole file instead of only the span between the positive matches it happens to sit between.
+
 # RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --outdir %t/c >/dev/null 2>&1
 # RUN: cat %t/c/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_DEP
+# RUN: cat %t/c/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_DEP_NEG
 # RUN: cat %t/c/dep/Current_1_0.h | FileCheck %s --check-prefix=C_OK
+# RUN: cat %t/c/dep/Current_1_0.h | FileCheck %s --check-prefix=C_OK_NEG
 
 # RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_DEP
 # RUN: cat %t/cpp/dep/Current_1_0.hpp | FileCheck %s --check-prefix=CPP_OK
+# RUN: cat %t/cpp/dep/Current_1_0.hpp | FileCheck %s --check-prefix=CPP_OK_NEG
 
 # RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --outdir %t/rust >/dev/null 2>&1
 # RUN: cat %t/rust/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_DEP
 # RUN: cat %t/rust/src/dep/current_1_0.rs | FileCheck %s --check-prefix=RUST_OK
+# RUN: cat %t/rust/src/dep/current_1_0.rs | FileCheck %s --check-prefix=RUST_OK_NEG
 
 # RUN: %dsdlc --target-language go %S/fixtures_deprecated/dep --go-module dep/fixture --outdir %t/go >/dev/null 2>&1
 # RUN: cat %t/go/dep/retired_1_0.go | FileCheck %s --check-prefix=GO_DEP
@@ -37,30 +44,48 @@
 # RUN: cat %t/py/dep_fixture/dep/retired_1_0.py | FileCheck %s --check-prefix=PY_DEP
 # RUN: cat %t/py/dep_fixture/dep/current_1_0.py | FileCheck %s --check-prefix=PY_OK
 
+# The suppression region must open before the first declaration and close after the last generated
+# function: the deprecated name is referenced by its own declaration, by the serializer signatures,
+# and by any struct that embeds it. Generated code must never warn about itself.
+#
 # The notice names the type, never the section: a service's request and response are two halves of one
 # deprecated definition, and `dep.Retired.Request.1.0` is not something a user can migrate off.
+# C_DEP: #pragma GCC diagnostic push
+# C_DEP: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # C_DEP: _IS_DEPRECATED_ true
 # C_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# C_DEP-NOT: dep.Retired.Request.1.0 is marked
-# Without the flag there must be no language attribute.
-# C_DEP-NOT: __attribute__((deprecated))
+# C_DEP: } __attribute__((deprecated)) dep__Retired__Request;
+# C_DEP: #pragma GCC diagnostic pop
+# C_DEP_NEG-NOT: dep.Retired.Request.1.0 is marked
 
+# The guard is emitted for every file, including files with nothing deprecated in them, because a
+# non-deprecated type may hold a deprecated one as a field.
+# C_OK: #pragma GCC diagnostic push
 # C_OK: _IS_DEPRECATED_ false
-# C_OK-NOT: Deprecated:
+# C_OK: #pragma GCC diagnostic pop
+# C_OK_NEG-NOT: Deprecated:
+# C_OK_NEG-NOT: __attribute__((deprecated))
 
-# CPP_DEP: IS_DEPRECATED = true
+# CPP_DEP: #pragma GCC diagnostic push
+# CPP_DEP: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # CPP_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# CPP_DEP-NOT: {{\[\[}}deprecated{{\]\]}}
+# CPP_DEP: struct {{\[\[}}deprecated{{\]\]}} Retired__Request {
+# CPP_DEP: IS_DEPRECATED = true
+# CPP_DEP: #pragma GCC diagnostic pop
 
 # CPP_OK: IS_DEPRECATED = false
-# CPP_OK-NOT: Deprecated:
+# CPP_OK_NEG-NOT: Deprecated:
+# CPP_OK_NEG-NOT: {{\[\[}}deprecated{{\]\]}}
 
+# RUST_DEP: #![allow(deprecated)]
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
+# RUST_DEP: #[deprecated]
+# RUST_DEP: pub struct dep_Retired_1_0_Request {
 # RUST_DEP: IS_DEPRECATED: bool = true;
-# RUST_DEP-NOT: #[deprecated]
 
 # RUST_OK: IS_DEPRECATED: bool = false;
-# RUST_OK-NOT: Deprecated:
+# RUST_OK_NEG-NOT: Deprecated:
+# RUST_OK_NEG-NOT: #[deprecated]
 
 # Go recognises a deprecation only from a doc-comment paragraph beginning exactly `Deprecated: `.
 # GO_DEP: _IS_DEPRECATED = true
@@ -88,35 +113,38 @@
 # PY_OK-NOT: Deprecated:
 
 # --------------------------------------------------------------------------------------------------
-# Attribute mode.
+# Opt-out mode: --no-deprecation-attributes drops the attribute and its suppression guard, and must
+# leave the notice and the constant untouched.
+
+# RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --no-deprecation-attributes --outdir %t/c-noattr >/dev/null 2>&1
+# RUN: cat %t/c-noattr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_NOATTR
+# RUN: cat %t/c-noattr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_NOATTR_DOC
+
+# RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --no-deprecation-attributes --outdir %t/cpp-noattr >/dev/null 2>&1
+# RUN: cat %t/cpp-noattr/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_NOATTR
+# RUN: cat %t/cpp-noattr/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_NOATTR_DOC
+
+# RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --no-deprecation-attributes --outdir %t/rust-noattr >/dev/null 2>&1
+# RUN: cat %t/rust-noattr/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_NOATTR
+# RUN: cat %t/rust-noattr/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_NOATTR_DOC
+
+# C_NOATTR-NOT: __attribute__((deprecated))
+# C_NOATTR-NOT: -Wdeprecated-declarations
+# C_NOATTR_DOC: _IS_DEPRECATED_ true
+# C_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
+
+# CPP_NOATTR-NOT: {{\[\[}}deprecated{{\]\]}}
+# CPP_NOATTR-NOT: -Wdeprecated-declarations
+# CPP_NOATTR_DOC: IS_DEPRECATED = true
+# CPP_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
+
+# RUST_NOATTR-NOT: #[deprecated]
+# RUST_NOATTR-NOT: #![allow(deprecated)]
+# RUST_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
+# RUST_NOATTR_DOC: IS_DEPRECATED: bool = true;
+
+# --------------------------------------------------------------------------------------------------
+# --emit-deprecation-attributes remains accepted and is a no-op against the default.
 
 # RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --emit-deprecation-attributes --outdir %t/c-attr >/dev/null 2>&1
-# RUN: cat %t/c-attr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_ATTR
-# RUN: cat %t/c-attr/dep/Current_1_0.h | FileCheck %s --check-prefix=C_ATTR_OK
-
-# RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --emit-deprecation-attributes --outdir %t/cpp-attr >/dev/null 2>&1
-# RUN: cat %t/cpp-attr/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_ATTR
-
-# RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --emit-deprecation-attributes --outdir %t/rust-attr >/dev/null 2>&1
-# RUN: cat %t/rust-attr/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_ATTR
-
-# The suppression region must open before the declaration and close after the generated functions:
-# the deprecated name is referenced by its own declaration, by the serializer signatures, and by any
-# struct that embeds it. Generated code must never warn about itself.
-# C_ATTR: #pragma GCC diagnostic push
-# C_ATTR: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-# C_ATTR: } __attribute__((deprecated)) dep__Retired__Request;
-# C_ATTR: #pragma GCC diagnostic pop
-
-# The guard is emitted for every file in attribute mode, including files with nothing deprecated in
-# them, because a non-deprecated type may hold a deprecated one as a field.
-# C_ATTR_OK: #pragma GCC diagnostic push
-# C_ATTR_OK-NOT: __attribute__((deprecated))
-
-# CPP_ATTR: #pragma GCC diagnostic push
-# CPP_ATTR: struct {{\[\[}}deprecated{{\]\]}} Retired__Request {
-# CPP_ATTR: #pragma GCC diagnostic pop
-
-# RUST_ATTR: #![allow(deprecated)]
-# RUST_ATTR: #[deprecated]
-# RUST_ATTR: pub struct dep_Retired_1_0_Request {
+# RUN: diff -r %t/c %t/c-attr

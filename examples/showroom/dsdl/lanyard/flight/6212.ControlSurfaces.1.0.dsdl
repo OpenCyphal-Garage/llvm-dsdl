@@ -1,6 +1,6 @@
 # Post-mixer actuator commands, discriminated by airframe class.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 #
 # WHY A UNION: the three airframe classes in the fleet need disjoint
 # actuator sets, and a message that carried all of them would waste

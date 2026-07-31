@@ -13,7 +13,7 @@
 # promoted to 1.0 on a different port identifier, and this one was
 # frozen. Production nodes subscribe to 1.0.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 
 float16[<=8] ratio
 # Normalized throttle command per motor, in the range 0.0 (idle) to 1.0

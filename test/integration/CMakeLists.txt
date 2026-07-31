@@ -325,10 +325,11 @@ if(PYTHON_EXECUTABLE)
         LABELS "integration;uavcan;release-blocking"
     )
 
-    # --emit-deprecation-attributes turns a documentation signal into a compiler diagnostic, so the
+    # The deprecation attributes turn a documentation signal into a compiler diagnostic, so the
     # generated code has to suppress that diagnostic for its own internal references while still
     # letting it reach user code. Both halves are asserted by compiling the regulated corpus, which
-    # carries two dozen deprecated definitions.
+    # carries two dozen deprecated definitions. They are on by default, so this guards the default
+    # path; the gate also checks that --no-deprecation-attributes remains a working escape hatch.
     # CARGO_EXECUTABLE is otherwise probed further down this file, well after this point; without the
     # probe here the cache variable is empty and the Rust half of the gate silently skips itself.
     # find_program is idempotent against an already-populated cache entry.

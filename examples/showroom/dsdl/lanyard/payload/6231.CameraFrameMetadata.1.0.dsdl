@@ -1,7 +1,7 @@
 # Per-frame metadata emitted by the imaging payload alongside the video
 # stream.
 #
-# TRANSPORT TIER: Cyphal/UDP ONLY.
+# LEAST SUPPORTED TRANSPORT: Cyphal/UDP ONLY.
 #
 # The EXIF blob at the end can reach two kilobytes, which rules out any
 # CAN transport. This message rides the same Ethernet segment as the

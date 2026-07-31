@@ -128,6 +128,10 @@ configure_file("${main_go_template}" "${harness_out}/main.go" COPYONLY)
 set(c_harness_src "${build_out}/c_harness.c")
 configure_file("${c_harness_template}" "${c_harness_src}" COPYONLY)
 
+# The harness round-trips every type in the corpus, deprecated ones included, so it trips the
+# deprecation attributes the C backend emits by default. That diagnostic is working as intended --
+# this is user code naming a deprecated type -- and it is not what this test is measuring, so it is
+# silenced here only. The generated sources below stay strict: nothing there may warn.
 set(harness_obj "${build_out}/c_harness.o")
 execute_process(
   COMMAND
@@ -136,6 +140,7 @@ execute_process(
       -Wall
       -Wextra
       -Werror
+      -Wno-deprecated-declarations
       ${san_compile_flags}
       -I "${c_out}"
       -c "${c_harness_src}"

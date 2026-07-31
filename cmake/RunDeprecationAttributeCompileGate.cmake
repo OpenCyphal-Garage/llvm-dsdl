@@ -5,7 +5,7 @@
 #
 #===----------------------------------------------------------------------===#
 #
-# Compile gate for --emit-deprecation-attributes.
+# Compile gate for the language-native deprecation attributes.
 #
 # A language-native deprecation attribute makes the *generated* code warn about itself: the deprecated
 # name is referenced by its own declaration, by its serializer signatures, and by any struct that
@@ -13,12 +13,18 @@
 # keeps that suppression honest -- without it a misplaced pragma only shows up in a downstream
 # -Werror build.
 #
+# The attributes are on by default, so no generation run here passes a flag: the default is exactly
+# what needs guarding.
+#
 # The regulated uavcan namespace is the corpus on purpose: it contains two dozen deprecated
 # definitions, including uavcan.file.Path.1.0, which five other definitions embed as a field.
 #
-# The gate asserts both halves of the contract:
+# The gate asserts three things:
 #   1. Including every generated header is clean under -Werror.
 #   2. Naming a deprecated type from user code still warns.
+#   3. --no-deprecation-attributes is a real escape hatch: the same user code is then diagnostic-free
+#      under -Werror. This is the supported answer for a -Werror build that cannot yet migrate, so it
+#      has to keep working.
 
 if(NOT DEFINED DSDLC OR DSDLC STREQUAL "")
   message(FATAL_ERROR "DSDLC must be provided")
@@ -54,8 +60,7 @@ endfunction()
 # C
 
 llvmdsdl_run_or_fail("dsdlc C generation"
-  "${DSDLC}" --target-language c "${UAVCAN_ROOT}"
-             --emit-deprecation-attributes --outdir "${WORK_DIR}/c")
+  "${DSDLC}" --target-language c "${UAVCAN_ROOT}" --outdir "${WORK_DIR}/c")
 
 # A deprecated service, a deprecated type embedded as a field by other definitions, and a
 # non-deprecated type, all in one translation unit.
@@ -70,6 +75,18 @@ llvmdsdl_run_or_fail("C include-only compile under -Werror"
   "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
                   -I "${WORK_DIR}/c" -c "${WORK_DIR}/c_include_probe.c"
                   -o "${WORK_DIR}/c_include_probe.o")
+
+# The generated .c translation units need the same clean bill of health as the headers, and for a
+# separate reason: each one defines the serializer functions, so it names the deprecated typedef in
+# every signature it emits. Including a header exercises the header's suppression only -- compiling
+# the implementation is what proves the .c carries its own.
+foreach(_tu IN ITEMS "uavcan/file/Read_1_0" "uavcan/file/Path_1_0" "uavcan/node/Health_1_0")
+  string(REPLACE "/" "_" _tu_object "${_tu}")
+  llvmdsdl_run_or_fail("C translation-unit compile under -Werror (${_tu}.c)"
+    "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
+                    -I "${WORK_DIR}/c" -c "${WORK_DIR}/c/${_tu}.c"
+                    -o "${WORK_DIR}/${_tu_object}.o")
+endforeach()
 
 # The other half: user code naming a deprecated type must still be diagnosed. Compiled *without*
 # -Werror so the build succeeds, then the diagnostic text is asserted.
@@ -95,11 +112,24 @@ if(NOT _c_use_stderr MATCHES "deprecated")
 endif()
 
 # ---------------------------------------------------------------------------------------------------
+# The escape hatch. A -Werror build that still depends on a deprecated definition has no migration
+# target to move to, and --no-deprecation-attributes is the supported answer; compiling the same
+# use-probe against opted-out headers is what keeps that answer true.
+
+llvmdsdl_run_or_fail("dsdlc C generation with --no-deprecation-attributes"
+  "${DSDLC}" --target-language c "${UAVCAN_ROOT}"
+             --no-deprecation-attributes --outdir "${WORK_DIR}/c-noattr")
+
+llvmdsdl_run_or_fail("C use-probe compile under -Werror with --no-deprecation-attributes"
+  "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
+                  -I "${WORK_DIR}/c-noattr" -c "${WORK_DIR}/c_use_probe.c"
+                  -o "${WORK_DIR}/c_use_probe_noattr.o")
+
+# ---------------------------------------------------------------------------------------------------
 # C++
 
 llvmdsdl_run_or_fail("dsdlc C++ generation"
-  "${DSDLC}" --target-language cpp "${UAVCAN_ROOT}" --cpp-profile std
-             --emit-deprecation-attributes --outdir "${WORK_DIR}/cpp")
+  "${DSDLC}" --target-language cpp "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
 file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
@@ -142,8 +172,7 @@ endif()
 
 llvmdsdl_run_or_fail("dsdlc Rust generation"
   "${DSDLC}" --target-language rust "${UAVCAN_ROOT}" --rust-profile std
-             --rust-crate-name deprecation_gate
-             --emit-deprecation-attributes --outdir "${WORK_DIR}/rust")
+             --rust-crate-name deprecation_gate --outdir "${WORK_DIR}/rust")
 
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE STREQUAL "CARGO_EXECUTABLE-NOTFOUND")
   execute_process(

@@ -1,7 +1,7 @@
 # Decoded pilot control input from the radio receiver, published at 50
 # Hz.
 #
-# TRANSPORT TIER: CAN FD.
+# LEAST SUPPORTED TRANSPORT: CAN FD.
 #
 # WHY SEALED: this message sits on the manual-control path, where a lost
 # or late frame is felt directly by the pilot. It is fixed-size,

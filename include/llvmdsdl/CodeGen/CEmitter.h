@@ -46,11 +46,13 @@ struct CEmitOptions final
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
     ///
     /// @details
-    /// Off by default. The attribute turns a documentation signal into a compiler diagnostic, and
-    /// the standard `uavcan` namespace contains two dozen deprecated definitions, so enabling it
-    /// unconditionally would break `-Werror` builds on upgrade. The deprecation notice and the
-    /// metadata constant are emitted regardless of this setting.
-    bool emitDeprecationAttributes{false};
+    /// On by default: a deprecation that only a reader of the documentation can see is a deprecation
+    /// nobody acts on, so the attribute is what gives the marking teeth. Only code that names a
+    /// deprecated type is diagnosed -- each generated file suppresses the diagnostic across its own
+    /// body, so including generated headers stays clean under `-Werror`. Disable this when a
+    /// `-Werror` build must keep using deprecated definitions that have no migration target yet. The
+    /// deprecation notice and the metadata constant are emitted regardless of this setting.
+    bool emitDeprecationAttributes{true};
 
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;

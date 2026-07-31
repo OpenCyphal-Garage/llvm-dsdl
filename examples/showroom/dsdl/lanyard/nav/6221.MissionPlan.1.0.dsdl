@@ -1,7 +1,7 @@
 # A complete stored mission, published once after upload and on request.
 #
-# TRANSPORT TIER: Cyphal/UDP ONLY. This message does not fit any CAN
-# frame and is not intended to.
+# LEAST SUPPORTED TRANSPORT: Cyphal/UDP ONLY. This message does not fit
+# any CAN frame and is not intended to.
 #
 # It exists in this showroom as the counterweight to EscStatus.1.0: the
 # same compiler, the same language, and the same generated-code surface,

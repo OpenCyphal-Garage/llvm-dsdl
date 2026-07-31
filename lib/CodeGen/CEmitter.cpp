@@ -828,8 +828,20 @@ llvm::Error emitC(const SemanticModule& semantic,
         const std::string implPreamble =
             generatedCommentLine("C backend implementation") + "\n" + "/* Source: " + def.info.fullName + "." +
             std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + " */\n\n";
+        // The header suppresses deprecation diagnostics across its own body, and this translation unit
+        // needs the same treatment for the same reason: it names the deprecated typedef in every
+        // serializer signature it defines. The region opens before the includes so that a deprecated
+        // type pulled in as a field is covered too, and closes at end of file, which is where this
+        // translation unit stops being generated code.
+        const std::string implGuardOpen =
+            options.emitDeprecationAttributes
+                ? std::string("#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored "
+                              "\"-Wdeprecated-declarations\"\n\n")
+                : std::string();
+        const std::string implGuardClose =
+            options.emitDeprecationAttributes ? std::string("\n#pragma GCC diagnostic pop\n") : std::string();
         if (auto err = writeGeneratedFile(implDir / implFileName(def.info),
-                                          implPreamble + emitted,
+                                          implPreamble + implGuardOpen + emitted + implGuardClose,
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

@@ -37,21 +37,35 @@ its embedded catalog.
 
 ## Browse it
 
-`cmake --build <build-dir> --target showroom-docs` regenerates [`docs/showroom`](../../docs/showroom),
-which pairs each definition with its wire-layout facts and a declaration excerpt in each language.
-Those pages are checked in because the documentation site is built on a runner that never compiles
-dsdlc.
+<!-- showroom-docs: skip -->
+
+`cmake --build <build-dir> --target showroom-docs` generates `docs/showroom/`, which pairs each
+definition with its wire-layout facts and a declaration excerpt in each language. Those pages are the
+compiler's own output and are gitignored: the documentation workflow runs inside the toolshed
+container, builds dsdlc, and produces them at publish time. Run the target before previewing the site
+locally -- mkdocs has a nav entry for the showroom and `--strict` fails without a page behind it.
+
+This file is also the source of `docs/showroom/index.md`. The target renders the README into that
+page, expanding `<!-- showroom-docs: type-table -->` into the generated table of types and dropping
+any section whose body opens with `<!-- showroom-docs: skip -->` -- as this one does, since it is
+addressed to someone reading the repository rather than the site. Edit the README; `index.md` is
+overwritten on every run.
 
 ## What is in it
 
 Twenty-four definitions across six sub-namespaces, chosen so that between them they exercise the
-language and the three transport tiers a real vehicle spans.
+language and the three LEAST SUPPORTED TRANSPORTs a real vehicle spans.
 
-### Transport tiers
+<!-- showroom-docs: type-table -->
 
-Every definition states the transport it was sized for, and most assert that budget with
-`@assert _offset_.max <= ...` so a layout change breaks the build rather than quietly spilling into a
-multi-frame transfer.
+## Least Supported Transport
+
+Every definition states a minimally capable transport it was sized for, and most of them assert that
+budget with `@assert _offset_.max <= ...` so that a layout change breaks the build rather than quietly
+spilling into a multi-frame transfer. Cyphal does not limit DSDL by transport but type authors often
+make different design choices based on the limitations of certain transports. In some cases these design
+choices are not clear unless these limitations are called out in type comments or by using DSDL assert
+statements.
 
 | Tier | Budget | Examples |
 |---|---|---|
@@ -119,11 +133,12 @@ never opens the DSDL. Go treats the notice as a real deprecation — its toolcha
 `Deprecated: ` doc paragraph — and TypeScript additionally gets a `/** @deprecated */` JSDoc block,
 which is what `tsc` and editors read.
 
-Compile-time enforcement in C, C++, and Rust is opt-in behind
-`dsdlc --emit-deprecation-attributes`, which adds `__attribute__((deprecated))`, `[[deprecated]]`, and
-`#[deprecated]`. It is not the default because it converts documentation into a build diagnostic, and
-two dozen definitions in the standard `uavcan` namespace are deprecated — switching it on unannounced
-would break `-Werror` builds. See `health/258.LegacyBatteryPoll.1.0.dsdl`.
+C, C++, and Rust get compile-time enforcement on top of that, by default: `__attribute__((deprecated))`,
+`[[deprecated]]`, and `#[deprecated]`. Only code that names a deprecated type is diagnosed — each
+generated file suppresses the diagnostic across its own body, so including the headers stays clean
+under `-Werror`. `dsdlc --no-deprecation-attributes` drops the attributes for a `-Werror` build that
+depends on a deprecated definition with no migration target yet. See
+`health/258.LegacyBatteryPoll.1.0.dsdl`.
 
 ## Port identifiers
 

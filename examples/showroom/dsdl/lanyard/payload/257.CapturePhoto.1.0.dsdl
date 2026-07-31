@@ -1,6 +1,6 @@
 # Command the payload to capture one or more still images.
 #
-# TRANSPORT TIER: CAN FD and Cyphal/UDP.
+# LEAST SUPPORTED TRANSPORT: CAN FD and Cyphal/UDP.
 #
 # WHY THE TWO SECTIONS SEAL DIFFERENTLY: the request is a fixed
 # five-byte command issued from the flight controller's real-time loop

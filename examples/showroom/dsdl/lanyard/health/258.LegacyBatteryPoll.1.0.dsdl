@@ -1,7 +1,7 @@
 # Read the state of one battery pack. DEPRECATED -- use the
 # BatteryStatus.2.0 message instead.
 #
-# TRANSPORT TIER: Classic CAN.
+# LEAST SUPPORTED TRANSPORT: Classic CAN.
 #
 # WHY IT IS STILL HERE: this is the showroom's deprecation example. The
 # @deprecated directive marks a definition as scheduled for removal
@@ -15,13 +15,14 @@
 # `Deprecated: ` doc paragraph), and TypeScript additionally gets a `/**
 # @deprecated */` JSDoc block, which is what tsc and editors read.
 #
-# Compile-time enforcement in C, C++, and Rust is opt-in behind `dsdlc
-# --emit-deprecation-attributes`, which adds
-# `__attribute__((deprecated))`, `[[deprecated]]`, and `#[deprecated]`
-# respectively. It is not the default because it turns documentation
-# into a build diagnostic, and enough of the standard uavcan namespace
-# is deprecated that switching it on unannounced would break -Werror
-# builds.
+# C, C++, and Rust go further and add `__attribute__((deprecated))`,
+# `[[deprecated]]`, and `#[deprecated]` respectively, so the compiler
+# says it too. That is the default: a deprecation only a comment-reader
+# can see is one nobody acts on. Each generated file silences the
+# diagnostic across its own body, so including these headers is clean
+# under -Werror and only your code naming the type is flagged. `dsdlc
+# --no-deprecation-attributes` drops the attributes for a -Werror build
+# that has nowhere to migrate to yet.
 #
 # Note the placement: @deprecated appears in the request section, ahead
 # of the first attribute, and applies to the whole service. The language

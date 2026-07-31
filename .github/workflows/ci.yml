@@ -123,20 +123,13 @@ jobs:
         if: always()
         run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
 
-      - name: Showroom freshness (regenerate docs/showroom and require a clean tree)
-        # docs/showroom is checked in because the Docs workflow builds mkdocs on a runner that never
-        # compiles dsdlc and so cannot generate it. Regenerating here is what keeps the checked-in
-        # copy honest: if a definition changed and the pages were not regenerated, or if a backend
-        # changed what it emits, this step fails with the diff.
+      - name: Showroom docs (build the target the Docs workflow depends on)
+        # docs/showroom is generated at publish time by the Docs workflow rather than checked in, so
+        # there is no staleness to police here. What this step still buys is a fast signal: the docs
+        # site is only publishable if this target succeeds, and its comment-width and DSDL-discovery
+        # checks are cheap enough to be worth failing a PR on rather than a push to main.
         if: always()
-        run: |
-          cmake --build build/matrix/ci --config Debug --target showroom-docs
-          if ! git diff --quiet -- docs/showroom; then
-            echo "::error::docs/showroom is stale; run the showroom-docs target and commit the result"
-            git diff --stat -- docs/showroom
-            git diff -- docs/showroom
-            exit 1
-          fi
+        run: cmake --build build/matrix/ci --config Debug --target showroom-docs
 
       - name: Collect reports
         if: always()

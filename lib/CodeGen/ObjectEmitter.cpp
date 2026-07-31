@@ -411,6 +411,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     CEmitOptions cOptions;
     cOptions.outDir                = cStageRoot.string();
     cOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+    // Opted out of the default deliberately. The C emitted here is an intermediate that this backend
+    // compiles itself and the user never sees, so a deprecation diagnostic on it has no audience.
+    cOptions.emitDeprecationAttributes = false;
     cOptions.selectedTypeKeys      = options.selectedTypeKeys;
     cOptions.writePolicy           = options.writePolicy;
     cOptions.writePolicy.recordedOutputs                = nullptr;
