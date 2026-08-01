@@ -515,7 +515,8 @@ add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
-add_subdirectory(examples/showroom)
+# examples/showroom is added below enable_testing(): it registers ctests for its build recipes, and
+# add_test() in a directory processed before enable_testing() is not reliably picked up.
 
 # --------------------------------------------------------------------------------------------------
 # Generated documentation.
@@ -552,7 +553,9 @@ else()
   )
 endif()
 
-add_dependencies(docs-llms showroom-docs release-blocking-report-gates)
+# showroom-docs joins this chain from examples/showroom/CMakeLists.txt, which is processed after
+# this point -- see the note beside the example subdirectories above.
+add_dependencies(docs-llms release-blocking-report-gates)
 
 add_custom_target(docs-generate)
 add_dependencies(docs-generate docs-llms)
@@ -772,7 +775,7 @@ install(
 # --------------------------------------------------------------------------------------------------
 # The downstream CMake package: find_package(llvm-dsdl) + dsdlc_generate().
 #
-# This is supported API, versioned with the tool, and the reason the c-cmake build-integration cell
+# This is supported API, versioned with the tool, and the reason the c-cmake showroom recipe
 # is three lines instead of thirty. See cmake/DSDLCGenerate.cmake for what the function does and
 # cmake/llvm-dsdlConfig.cmake.in for why dsdlc is located relative to the config rather than through
 # install(EXPORT).
@@ -1324,10 +1327,11 @@ endif()
 enable_testing()
 add_subdirectory(test)
 
-# Below enable_testing() rather than beside the other examples, because this one is the only example
-# that registers ctests and add_test() in a directory processed before enable_testing() is not
-# reliably picked up.
-add_subdirectory(examples/build_integration)
+# Below enable_testing() rather than beside the other examples: the showroom registers ctests for its
+# build recipes, and add_test() in a directory processed before enable_testing() is not reliably
+# picked up. It also joins docs-llms to the documentation chain from there, for the same ordering
+# reason in the other direction.
+add_subdirectory(examples/showroom)
 
 if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
   separate_arguments(LLVMDSDL_COVERAGE_CTEST_ARGS_LIST

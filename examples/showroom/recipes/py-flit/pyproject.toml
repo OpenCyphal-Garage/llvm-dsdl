@@ -1,0 +1,12 @@
+# The host owns this file. dsdlc also wrote a pyproject.toml beside the package it generated,
+# declaring setuptools; it is inert here because nothing builds that directory.
+[build-system]
+requires = ["flit_core>=3.9"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "lanyard"
+# flit reads both of these out of the package itself -- the docstring becomes the description and
+# __version__ becomes the version -- which is why dsdlc emits them into the generated __init__.py.
+dynamic = ["version", "description"]
+requires-python = ">=3.10"

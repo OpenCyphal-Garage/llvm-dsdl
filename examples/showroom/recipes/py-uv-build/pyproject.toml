@@ -1,0 +1,17 @@
+# The host owns this file. dsdlc also wrote a pyproject.toml into generated/, declaring setuptools;
+# it is inert here because nothing builds that directory -- only the setuptools recipe uses it.
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[project]
+name = "lanyard"
+version = "0.1.0"
+description = "Host project consuming generated DSDL types"
+requires-python = ">=3.10"
+
+# Point the backend at the package dsdlc generated. Everything under it -- the namespace packages,
+# the runtime, py.typed -- comes along, because it is an ordinary Python package.
+[tool.uv.build-backend]
+module-root = "generated"
+module-name = "lanyard"

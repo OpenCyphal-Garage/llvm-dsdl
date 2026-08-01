@@ -1,0 +1,13 @@
+# Quotes C comment syntax on purpose.
+#
+# Both delimiters have to survive the trip into a C block comment: a /* opens
+# one and a */ closes one, and a doc comment that carries either would
+# otherwise warn under -Wcomment or terminate the comment early and spill
+# prose into code position. Real definitions do this -- the standard
+# namespace and the showroom both quote C and JSDoc syntax when explaining
+# what a backend emits.
+
+uint8 value
+# Also quotes a /* delimiter, to cover field docs as well as type docs.
+
+@sealed

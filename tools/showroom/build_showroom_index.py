@@ -31,6 +31,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import recipes_index  # noqa: E402
+
 # --------------------------------------------------------------------------------------------------
 # Variant descriptions.
 #
@@ -540,6 +544,12 @@ def _rewrite_link_target(target: str, readme_dir: Path, output_dir: Path) -> str
     anchor = f"#{fragment}" if fragment else ""
     if not path_part:
         return target
+    # RECIPES.md is the other half of this same showroom, and it has a rendered page of its own.
+    # Left to the general rule below it would become a link out to the repository, sending a reader
+    # off the site mid-sentence to read a file they are already looking at a rendering of.
+    if path_part == "RECIPES.md":
+        return "recipes/index.md" + anchor
+
     resolved = (readme_dir / path_part).resolve()
     try:
         relative_to_repo = resolved.relative_to(REPO_ROOT)
@@ -651,7 +661,18 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--readme", required=True, type=Path,
                         help="showroom README; rendered into the index page")
+    # The build recipes are the showroom's other half. They are rendered by tools/showroom/
+    # recipes_index.py, which needs neither a compiler nor a generated tree -- so it can also be run
+    # on its own against a bare checkout, and is optional here.
+    parser.add_argument("--recipes-root", type=Path,
+                        help="recipe directory; omit to skip the recipe pages")
+    parser.add_argument("--recipes-readme", type=Path,
+                        help="recipes README; rendered into docs/showroom/recipes/index.md")
     args = parser.parse_args()
+
+    if bool(args.recipes_root) != bool(args.recipes_readme):
+        print("error: --recipes-root and --recipes-readme go together", file=sys.stderr)
+        return 1
 
     if not args.dsdl_root.is_dir():
         print(f"error: DSDL root does not exist: {args.dsdl_root}", file=sys.stderr)
@@ -718,12 +739,32 @@ def main() -> int:
         if stale.name not in expected:
             stale.unlink()
 
+    # Every type page ends pointing at the other half of the showroom. A reader who has just seen
+    # what the compiler makes of a definition is one step from wanting it in their own build, and a
+    # page that stopped at the generated declaration would leave them to find that on their own.
+    footer = (
+        "\n---\n\n"
+        "Every [build recipe](../recipes/index.md) compiles this definition along with the rest of "
+        "the namespace.\n"
+    ) if args.recipes_root else ""
+
     for info in types:
-        (types_dir / f"{info.slug}.md").write_text(render_type_page(info, args.generated_root), encoding="utf-8")
+        (types_dir / f"{info.slug}.md").write_text(
+            render_type_page(info, args.generated_root) + footer, encoding="utf-8")
 
     (args.output_dir / "index.md").write_text(index_text, encoding="utf-8")
 
     print(f"showroom docs: wrote {len(types)} type pages and an index to {args.output_dir}")
+
+    if args.recipes_root:
+        status = recipes_index.generate(
+            args.recipes_root,
+            args.recipes_readme,
+            args.output_dir / "recipes",
+        )
+        if status != 0:
+            return status
+
     return 0
 
 

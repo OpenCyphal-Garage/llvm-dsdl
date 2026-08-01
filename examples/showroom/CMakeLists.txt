@@ -167,7 +167,10 @@ if(LLVMDSDL_PYTHON3_EXE)
         --mlir-file "${LLVMDSDL_SHOWROOM_MLIR_FILE}"
         --output-dir "${LLVMDSDL_SHOWROOM_DOCS_DIR}"
         --readme "${LLVMDSDL_SHOWROOM_README}"
+        --recipes-root "${CMAKE_CURRENT_SOURCE_DIR}/recipes"
+        --recipes-readme "${CMAKE_CURRENT_SOURCE_DIR}/RECIPES.md"
     DEPENDS showroom "${LLVMDSDL_SHOWROOM_INDEX_SCRIPT}" "${LLVMDSDL_SHOWROOM_README}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/RECIPES.md"
     USES_TERMINAL
     VERBATIM
     COMMENT "Showroom: regenerating docs/showroom from the generated tree")
@@ -179,3 +182,85 @@ else()
     VERBATIM
     COMMENT "showroom-docs requires python3")
 endif()
+
+
+# --------------------------------------------------------------------------------------------------
+# Build recipes.
+#
+# The other half of the showroom, and it makes the opposite bet from the half above: these compile
+# and run. Browsing must never fail for a reason unrelated to what it is showing, so it generates and
+# stops; a recipe that did not build would prove nothing, so every recipe builds and executes a
+# round-trip program. Same namespace, same documentation, two policies -- deliberately.
+#
+# CMake's only job here is registration. It does not know how any individual recipe builds, and it
+# must not: a recipe is meant to be copied out of this repository and run on its own, so the moment
+# CMake starts supplying include paths or toolchain flags the recipe has stopped being the thing the
+# documentation claims it is. Everything a recipe needs is in its own build files, and run_recipe.py
+# executes them exactly as a reader would.
+
+set(LLVMDSDL_RECIPES_RUNNER "${CMAKE_CURRENT_SOURCE_DIR}/run_recipe.py")
+
+# CONFIGURE_DEPENDS so that adding a recipe re-runs the glob rather than being silently ignored until
+# someone reconfigures by hand.
+file(GLOB LLVMDSDL_RECIPE_MANIFESTS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/recipes/*/recipe.json")
+
+# Scratch root for staged recipes. Under the build tree, not the source tree: staging copies the
+# recipe plus dsdl/ and src/ and runs there, and a build that dirtied the source directory it is
+# demonstrating would be a poor advertisement.
+set(LLVMDSDL_RECIPES_WORK "${CMAKE_CURRENT_BINARY_DIR}/recipe-work")
+
+# A private install tree for the recipes that call find_package(llvm-dsdl).
+#
+# This is also the selftest for the package config, and it has to be an install rather than a build
+# tree: llvm-dsdlConfig.cmake finds dsdlc relative to its own installed location, so configuring
+# against the build directory would exercise a code path no user ever takes. Whatever breaks the
+# config for a user breaks this fixture first.
+set(LLVMDSDL_RECIPES_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/prefix")
+
+add_test(
+  NAME llvmdsdl-showroom-recipe-install
+  COMMAND "${CMAKE_COMMAND}" --install "${LLVMDSDL_BINARY_DIR}"
+          --config $<CONFIG>
+          --component ${LLVMDSDL_INSTALL_COMPONENT_BIN}
+          --prefix "${LLVMDSDL_RECIPES_PREFIX}")
+set_tests_properties(llvmdsdl-showroom-recipe-install PROPERTIES
+  FIXTURES_SETUP showroom-recipe-prefix
+  LABELS "showroom-recipes")
+
+foreach(_manifest IN LISTS LLVMDSDL_RECIPE_MANIFESTS)
+  get_filename_component(_recipe_dir "${_manifest}" DIRECTORY)
+  get_filename_component(_recipe_name "${_recipe_dir}" NAME)
+
+  add_test(
+    NAME llvmdsdl-showroom-recipe-${_recipe_name}
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_RECIPES_RUNNER}"
+            --dsdlc $<TARGET_FILE:dsdlc>
+            --work "${LLVMDSDL_RECIPES_WORK}"
+            --prefix "${LLVMDSDL_RECIPES_PREFIX}"
+            ${_recipe_name})
+
+  set_tests_properties(llvmdsdl-showroom-recipe-${_recipe_name} PROPERTIES
+    SKIP_RETURN_CODE 77
+    # Recipes fetch build backends and package registries; a stuck network must not hang the suite.
+    TIMEOUT 900
+    FIXTURES_REQUIRED showroom-recipe-prefix
+    LABELS "showroom-recipes")
+endforeach()
+
+list(LENGTH LLVMDSDL_RECIPE_MANIFESTS LLVMDSDL_RECIPE_COUNT)
+message(STATUS "Showroom recipes registered: ${LLVMDSDL_RECIPE_COUNT}")
+
+# The invariant that makes the matrix readable: a recipe carries build wiring and nothing else, so
+# two recipes in a row differ only by the thing a reader is comparing them for. Cheap enough to be a
+# test rather than a lint target, and it needs no toolchain at all.
+add_test(
+  NAME llvmdsdl-showroom-recipe-invariant
+  COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_RECIPES_RUNNER}" --check-invariant)
+set_tests_properties(llvmdsdl-showroom-recipe-invariant PROPERTIES
+  LABELS "showroom-recipes")
+
+# Joined to the documentation chain from here rather than beside the other docs targets, because this
+# directory is processed after they are defined and add_dependencies needs both ends to exist.
+# docs-llms lists every published page, so it must run after these pages are on disk.
+add_dependencies(docs-llms showroom-docs)

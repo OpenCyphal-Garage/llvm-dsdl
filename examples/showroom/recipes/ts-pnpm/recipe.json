@@ -1,0 +1,63 @@
+{
+  "name": "ts-pnpm",
+  "title": "pnpm",
+  "row": "TypeScript",
+  "language": "TypeScript",
+  "build_system": "pnpm",
+  "idiom": "B",
+  "dep_strategy": "none",
+  "summary": "Identical to the npm recipe in every file -- same `package.json`, same `tsconfig.json` -- so the only difference is the package manager. pnpm's content-addressed store and strict `node_modules` layout change nothing about how generated DSDL is consumed.",
+  "notes": "Generated TypeScript is ordinary TypeScript source; nothing about it interacts with how your dependencies are laid out on disk, so a package manager with a strict, non-flat `node_modules` needs no special handling.\n\npnpm is not in the toolshed image, but `corepack` is, and `corepack enable pnpm` is the whole of the provisioning. See the npm recipe for why the generated tree is compiled as source rather than installed as a package.",
+  "generated_dir": "generated",
+  "requires": [
+    {
+      "command": "pnpm",
+      "reason": "installs the TypeScript compiler and runs the scripts"
+    },
+    {
+      "command": "node",
+      "reason": "runs the compiled round-trip program"
+    }
+  ],
+  "steps": [
+    {
+      "name": "generate",
+      "run": [
+        "{dsdlc}",
+        "--target-language",
+        "ts",
+        "dsdl/lanyard",
+        "--ts-module",
+        "lanyard",
+        "--outdir",
+        "generated"
+      ]
+    },
+    {
+      "name": "install",
+      "run": [
+        "pnpm",
+        "install",
+        "--silent"
+      ]
+    },
+    {
+      "name": "build",
+      "run": [
+        "pnpm",
+        "run",
+        "--silent",
+        "build"
+      ]
+    },
+    {
+      "name": "round-trip",
+      "run": [
+        "pnpm",
+        "run",
+        "--silent",
+        "start"
+      ]
+    }
+  ]
+}

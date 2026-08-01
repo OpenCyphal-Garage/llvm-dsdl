@@ -1,0 +1,23 @@
+module(name = "lanyard_roundtrip", version = "0.1.0")
+
+# Until rules_dsdl is published to a registry, the build command points Bazel at the copy installed
+# alongside dsdlc with --override_module. See the commands on this recipe's page.
+bazel_dep(name = "rules_dsdl", version = "0.1.0")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+dsdlc = use_extension("@rules_dsdl//:extensions.bzl", "dsdlc")
+
+# One line per namespace, and nothing to keep in step. Everything the namespace reaches -- including
+# the standard types from the catalog compiled into dsdlc -- is generated at fetch time, so there is
+# no list of transitive dependencies to maintain and no way to leave one out.
+dsdlc.namespace(name = "lanyard", root = "dsdl/lanyard")
+
+# The same definitions as a prebuilt archive. Same one line, different backend.
+dsdlc.namespace(
+    name = "lanyard_prebuilt",
+    root = "dsdl/lanyard",
+    language = "obj",
+    options = ["--target-endianness", "little"],
+)
+
+use_repo(dsdlc, "dsdlc", "lanyard", "lanyard_prebuilt")

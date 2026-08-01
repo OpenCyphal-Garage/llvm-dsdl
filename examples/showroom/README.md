@@ -1,15 +1,26 @@
 # Showroom
 
-A namespace of plausible vendor-specific datatypes for an aerial drone system, generated into every
-language and profile dsdlc supports.
+One namespace of plausible vendor-specific datatypes for an aerial drone system, and everything
+dsdlc does with it -- generated into every language and profile the compiler supports, and then
+built by thirteen real build systems.
 
-It exists so that you can read what the compiler produces for definitions shaped like the ones you
-are about to write, before you write them. It is not a test fixture and nothing here is regulated:
-`lanyard` is a fictional vendor, and these are the sort of types a drone programme adds alongside the
-standard `uavcan` namespace. UDRAL is deliberately not used -- the point is to show what a vendor
-writes from scratch, leaning on the standard types where standard types exist.
+It exists so you can answer three questions in order, without inventing a schema of your own:
 
-## Build it
+1. **What would I write?** `lanyard` is a fictional vendor's namespace, the sort of thing a drone
+   programme adds alongside the standard `uavcan` types. Nothing here is regulated and UDRAL is
+   deliberately unused -- the point is what a vendor writes from scratch, leaning on the standard
+   types where standard types exist.
+2. **What does the compiler make of it?** Every definition below pairs its authored DSDL with its
+   wire-layout facts and a declaration excerpt in each language.
+3. **How do I get that into my build?** The same namespace, wired into CMake, Make, Ninja
+   Multi-Config, Bazel, cargo, go modules, npm, pnpm, and five Python build backends. See
+   **[Build Recipes](RECIPES.md)**.
+
+The two halves make opposite bets on purpose. Browsing generates and stops -- it must never fail for
+a reason unrelated to what it is showing. The recipes compile and run, because a recipe that did not
+build would prove nothing.
+
+## Generate it
 
 ```bash
 cmake --build <build-dir> --target showroom
@@ -27,8 +38,9 @@ Output lands in `<build-dir>/showroom/<variant>/`:
 | `python` | `--target-language python` |
 | `mlir` | `--target-language mlir` (the intermediate form, one file) |
 
-Nothing is compiled. The showroom generates and stops; correctness of the generated code is what
-`test/lit` and the integration suites are for.
+Nothing here is compiled -- correctness of the generated code is what `test/lit` and the integration
+suites are for, and compiling would make browsing depend on six language toolchains being present.
+Building the output is what the [recipes](RECIPES.md) do, deliberately as a separate half.
 
 Individual variants build on their own: `cmake --build <build-dir> --target showroom-rust-std`.
 
@@ -40,10 +52,11 @@ its embedded catalog.
 <!-- showroom-docs: skip -->
 
 `cmake --build <build-dir> --target showroom-docs` generates `docs/showroom/`, which pairs each
-definition with its wire-layout facts and a declaration excerpt in each language. Those pages are the
-compiler's own output and are gitignored: the documentation workflow runs inside the toolshed
-container, builds dsdlc, and produces them at publish time. Run the target before previewing the site
-locally -- mkdocs has a nav entry for the showroom and `--strict` fails without a page behind it.
+definition with its wire-layout facts and a declaration excerpt in each language. Those pages are
+the compiler's own output and are gitignored: the documentation workflow runs inside the toolshed
+container, builds dsdlc, and produces them at publish time. Run the target before previewing the
+site locally -- mkdocs has a nav entry for the showroom and `--strict` fails without a page behind
+it.
 
 This file is also the source of `docs/showroom/index.md`. The target renders the README into that
 page, expanding `<!-- showroom-docs: type-table -->` into the generated table of types and dropping
@@ -61,11 +74,11 @@ language and the three LEAST SUPPORTED TRANSPORTs a real vehicle spans.
 ## Least Supported Transport
 
 Every definition states a minimally capable transport it was sized for, and most of them assert that
-budget with `@assert _offset_.max <= ...` so that a layout change breaks the build rather than quietly
-spilling into a multi-frame transfer. Cyphal does not limit DSDL by transport but type authors often
-make different design choices based on the limitations of certain transports. In some cases these design
-choices are not clear unless these limitations are called out in type comments or by using DSDL assert
-statements.
+budget with `@assert _offset_.max <= ...` so that a layout change breaks the build rather than
+quietly spilling into a multi-frame transfer. Cyphal does not limit DSDL by transport but type
+authors often make different design choices based on the limitations of certain transports. In some
+cases these design choices are not clear unless these limitations are called out in type comments or
+by using DSDL assert statements.
 
 | Transport | Budget | Examples |
 |---|---|---|
@@ -110,26 +123,26 @@ Five migrations, each answering a different question about when a change forces 
 
 ## Documentation
 
-DSDL comment placement follows the OpenCyphal convention used by the regulated namespace: **the block goes
-after the attribute it documents, followed by a blank line.** A block placed *before* a field
-attaches to whatever precedes it instead, or is absorbed into the type's own documentation if the
-field is the first one.
+DSDL comment placement follows the OpenCyphal convention used by the regulated namespace: **the
+block goes after the attribute it documents, followed by a blank line.** A block placed *before* a
+field attaches to whatever precedes it instead, or is absorbed into the type's own documentation if
+the field is the first one.
 
 `@deprecated` rides along with it. Every backend appends a `Deprecated: …` notice to the type's
 documentation and emits an `IS_DEPRECATED` constant. Go treats the notice as a real deprecation, and
 TypeScript additionally gets a `/** @deprecated */` JSDoc block.
 
-C, C++, and Rust get compile-time enforcement on top of that, by default: `__attribute__((deprecated))`,
-`[[deprecated]]`, and `#[deprecated]`. Only code that names a deprecated type is diagnosed — each
-generated file suppresses the diagnostic across its own body, so including the headers stays clean
-under `-Werror`. `dsdlc --no-deprecation-attributes` drops the attributes. See
-`health/258.LegacyBatteryPoll.1.0.dsdl`.
+C, C++, and Rust get compile-time enforcement on top of that, by default:
+`__attribute__((deprecated))`, `[[deprecated]]`, and `#[deprecated]`. Only code that names a
+deprecated type is diagnosed — each generated file suppresses the diagnostic across its own body, so
+including the headers stays clean under `-Werror`. `dsdlc --no-deprecation-attributes` drops the
+attributes. See `health/258.LegacyBatteryPoll.1.0.dsdl`.
 
 ## Port identifiers
 
 `lanyard` is not a standard root namespace, so its fixed port identifiers come from the unregulated
-ranges: **6144–7167 for messages** and **256–383 for services**. Staying inside them is what lets the
-showroom build without `--allow-unregulated-fixed-port-id`.
+ranges: **6144–7167 for messages** and **256–383 for services**. Staying inside them is what lets
+the showroom build without `--allow-unregulated-fixed-port-id`.
 
-A fixed port identifier belongs to one major version. Minor versions share it (`VehicleState.1.0` and
-`1.1` are both on 6210); a major bump takes a new one (`VehicleState.2.0` moves to 6211).
+A fixed port identifier belongs to one major version. Minor versions share it (`VehicleState.1.0`
+and `1.1` are both on 6210); a major bump takes a new one (`VehicleState.2.0` moves to 6211).

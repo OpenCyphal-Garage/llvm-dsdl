@@ -1,0 +1,33 @@
+# TypeScript: two referenced types that share a short name.
+#
+# TypeScript brings referenced types into a file by name, so a definition that reaches
+# `collide.alpha.Vec.1.0` and `collide.beta.Vec.1.0` would import `Vec_1_0` twice -- a duplicate
+# identifier, which tsc rejects outright rather than warning about. The generated file simply does
+# not compile.
+#
+# This is ordinary rather than exotic. The standard namespace carries three `Vector3` types and four
+# `Scalar` types in sibling `uavcan.si.unit` namespaces, so any definition describing a pose or a
+# battery hits it.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language ts %S/fixtures_ts_alias/collide --ts-module collide_demo --outdir %t/ts >/dev/null 2>&1
+
+# The clashing pair is imported under namespace-qualified aliases, for the type and for both runtime
+# functions -- they are all derived from the same local name, so they cannot disagree.
+# RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED
+
+# ALIASED: import { deserializeVec_1_0 as deserializeVec_1_0__collide_alpha, serializeVec_1_0 as serializeVec_1_0__collide_alpha } from "./alpha/vec_1_0";
+# ALIASED: import { deserializeVec_1_0 as deserializeVec_1_0__collide_beta, serializeVec_1_0 as serializeVec_1_0__collide_beta } from "./beta/vec_1_0";
+# ALIASED: import type { Vec_1_0 as Vec_1_0__collide_alpha } from "./alpha/vec_1_0";
+# ALIASED: import type { Vec_1_0 as Vec_1_0__collide_beta } from "./beta/vec_1_0";
+
+# The aliases are what the body refers to, not just what the import line says.
+# RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED_USE
+# ALIASED_USE: from_alpha: Vec_1_0__collide_alpha;
+# ALIASED_USE: from_beta: Vec_1_0__collide_beta;
+
+# Aliasing is confined to the clash. A file whose referenced names are already unique imports them
+# plainly, so ordinary output is untouched by this.
+# RUN: %dsdlc --target-language ts %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/plain >/dev/null 2>&1
+# RUN: cat %t/plain/demo/commented_1_0.ts | FileCheck %s --check-prefix=PLAIN
+# PLAIN-NOT: as {{[A-Za-z_0-9]+__}}

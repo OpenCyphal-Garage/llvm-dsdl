@@ -1,0 +1,15 @@
+[package]
+name = "lanyard-roundtrip"
+version = "0.1.0"
+edition = "2021"
+
+# Idiom A in one line: the generated tree is a crate, so it is a path dependency and nothing else is
+# needed. dsdlc wrote generated/Cargo.toml -- including the `std` / `no-std-alloc` feature flags that
+# match the profile it was asked for -- and the runtime is inside the crate, so there is no companion
+# package to add here and no version to keep in step with the compiler.
+[dependencies]
+lanyard = { path = "generated" }
+
+[[bin]]
+name = "roundtrip"
+path = "src/rust/roundtrip.rs"

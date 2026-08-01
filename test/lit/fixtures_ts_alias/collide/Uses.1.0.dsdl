@@ -1,0 +1,15 @@
+# References both Vec types, which share a short name.
+#
+# TypeScript imports referenced types by name into one file, so without
+# disambiguation this produces two `Vec_1_0` identifiers and tsc rejects
+# the file outright. The standard namespace makes this ordinary rather
+# than exotic: uavcan.si.unit carries several Vector3 and Scalar types
+# in sibling namespaces.
+
+collide.alpha.Vec.1.0 from_alpha
+# Nothing interesting.
+
+collide.beta.Vec.1.0 from_beta
+# Nothing interesting.
+
+@sealed

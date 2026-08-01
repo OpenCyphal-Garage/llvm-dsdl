@@ -50,8 +50,9 @@ nav:
           - Malformed Input: reference/guarantees/malformed-input.md
           - Determinism: reference/guarantees/determinism.md
           - Supply Chain: reference/guarantees/supply-chain.md
-      - Showroom: showroom/index.md
-      - Build Integration: build-integration/index.md
+      - Showroom:
+          - Overview: showroom/index.md
+          - Build Recipes: showroom/recipes/index.md
   - Development:
       - Contributing: development/contributing.md
       - Testing and CI: development/testing.md
@@ -86,7 +87,7 @@ validation:
 
 not_in_nav: |
   showroom/types/*.md
-  build-integration/cells/*.md
+  showroom/recipes/*.md
   development/embedded-catalog-targets.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the

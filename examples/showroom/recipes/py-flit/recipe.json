@@ -1,0 +1,58 @@
+{
+  "name": "py-flit",
+  "title": "flit",
+  "row": "Python",
+  "language": "Python",
+  "build_system": "flit",
+  "idiom": "B",
+  "dep_strategy": "none",
+  "summary": "The awkward one, and the recipe that found a real defect. flit has no setting for where the package lives, so generation has to target a layout flit already recognises.",
+  "notes": "**flit refuses to package a module without a docstring**, and until this recipe was written the generated `__init__.py` carried only a generated-by comment -- so flit failed outright with `NoDocstringError`. The fix went into dsdlc rather than into this recipe: generated packages now carry a docstring and `__version__`, which is what lets the `[project]` table above declare both as `dynamic` and have flit read them out of the package.\n\n**flit looks for the package at the project root or under `src/`, and nowhere else.** There is no equivalent of hatchling's `packages` or poetry's `from`; `[tool.flit.module] directory` does not do it. So this recipe generates into `src/` while the other three generate into `generated/` -- the one place where a Python recipe's `--outdir` is dictated by the build backend rather than by preference.\n\nEvery Python recipe builds its own virtual environment and lets pip fetch the build backend into it. That is correct isolation regardless, and it is the only thing that works on a distribution that marks its interpreter externally managed (PEP 668) -- which the toolshed image does.",
+  "generated_dir": "src",
+  "requires": [
+    {
+      "command": "python3",
+      "reason": "creates the virtual environment the backend installs into"
+    }
+  ],
+  "steps": [
+    {
+      "name": "generate",
+      "run": [
+        "{dsdlc}",
+        "--target-language",
+        "python",
+        "dsdl/lanyard",
+        "--py-package",
+        "lanyard",
+        "--outdir",
+        "src"
+      ]
+    },
+    {
+      "name": "virtual environment",
+      "run": [
+        "{python}",
+        "-m",
+        "venv",
+        ".venv"
+      ]
+    },
+    {
+      "name": "install",
+      "run": [
+        ".venv/bin/pip",
+        "install",
+        "-q",
+        "."
+      ]
+    },
+    {
+      "name": "round-trip",
+      "run": [
+        ".venv/bin/python",
+        "src/python/test_roundtrip.py"
+      ]
+    }
+  ]
+}

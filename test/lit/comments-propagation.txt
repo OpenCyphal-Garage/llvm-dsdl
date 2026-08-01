@@ -2,6 +2,13 @@
 # RUN: %dsdlc --target-language mlir %S/fixtures_docs/demo | FileCheck %s --check-prefix=MLIR_DOC
 # RUN: %dsdlc --target-language c %S/fixtures_docs/demo --outdir %t/c >/dev/null 2>&1
 # RUN: cat %t/c/demo/Commented_1_0.h | FileCheck %s --check-prefix=C_DOC
+
+# Both C block-comment delimiters are broken up in the generated header. `*/` would end the comment
+# early and spill the rest of the sentence into code position; `/*` merely warns under -Wcomment,
+# which is an error under -Werror -- and generated code that cannot compile with warnings as errors
+# is generated code somebody has to work around.
+# RUN: %dsdlc --target-language c %S/fixtures_docs/delimiters --outdir %t/delims >/dev/null 2>&1
+# RUN: cat %t/delims/delimiters/CommentDelimiters_1_0.h | FileCheck %s --check-prefix=C_DELIMS
 # RUN: %dsdlc --target-language cpp %S/fixtures_docs/demo --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/std/demo/Commented_1_0.hpp | FileCheck %s --check-prefix=CPP_DOC
 # RUN: %dsdlc --target-language rust %S/fixtures_docs/demo --rust-crate-name comments_fixture --outdir %t/rust >/dev/null 2>&1
@@ -67,3 +74,6 @@
 # TRAILING-SAME: doc = "bravo doc"
 # TRAILING: dsdl.constant
 # TRAILING-SAME: doc = "limit doc"
+
+# C_DELIMS: a / * opens
+# C_DELIMS: a * / closes

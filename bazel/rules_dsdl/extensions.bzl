@@ -12,6 +12,8 @@
 # against the old one until they wiped the repository cache -- silently, since generated output
 # carries the generator version but nothing compares it.
 
+load("//:repositories.bzl", "dsdl_namespace_repository")
+
 def _dsdlc_repository_impl(repository_ctx):
     explicit = repository_ctx.os.environ.get("DSDLC", "")
     if explicit:
@@ -41,10 +43,36 @@ dsdlc_repository = repository_rule(
     doc = "Exposes the host's dsdlc as @dsdlc//:dsdlc.",
 )
 
-def _dsdlc_extension_impl(_module_ctx):
+def _dsdlc_extension_impl(module_ctx):
     dsdlc_repository(name = "dsdlc")
+
+    for module in module_ctx.modules:
+        for namespace in module.tags.namespace:
+            dsdl_namespace_repository(
+                name = namespace.name,
+                anchor = namespace.anchor,
+                root = namespace.root,
+                language = namespace.language,
+                library_name = namespace.library_name or namespace.name,
+                archive_name = namespace.archive_name,
+                options = namespace.options,
+            )
+
+_namespace = tag_class(
+    attrs = {
+        "name": attr.string(mandatory = True, doc = "Repository name to expose the namespace as."),
+        "root": attr.string(mandatory = True, doc = "Root namespace directory, relative to the anchor."),
+        "anchor": attr.label(default = Label("@@//:MODULE.bazel")),
+        "language": attr.string(default = "c"),
+        "library_name": attr.string(),
+        "archive_name": attr.string(default = "llvmdsdl_generated"),
+        "options": attr.string_list(),
+    },
+    doc = "Generates one root namespace at fetch time; see repositories.bzl for why fetch time.",
+)
 
 dsdlc = module_extension(
     implementation = _dsdlc_extension_impl,
-    doc = "Brings the host dsdlc into the build as @dsdlc.",
+    tag_classes = {"namespace": _namespace},
+    doc = "Brings the host dsdlc into the build as @dsdlc, and generates namespaces on request.",
 )

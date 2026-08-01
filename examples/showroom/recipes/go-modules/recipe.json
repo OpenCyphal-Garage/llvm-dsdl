@@ -1,0 +1,47 @@
+{
+  "name": "go-modules",
+  "title": "go generate + modules",
+  "row": "Go",
+  "language": "Go",
+  "build_system": "go modules",
+  "idiom": "A",
+  "dep_strategy": "none",
+  "summary": "Go tooling only, with no third-party build system: a `//go:generate` directive beside the code that consumes the output, and a `replace` directive pointing the module path at the generated tree. dsdlc writes `generated/go.mod`, so the output is a module and needs no packaging.",
+  "notes": "The `require` line names a version that is never fetched; `replace` resolves the module from disk instead, so the dependency needs no registry, vendor directory, or network.\n\n`go generate` does not type-check, so the directive runs on a clean checkout where `generated/` does not exist and the import cannot yet resolve.",
+  "generated_dir": "generated",
+  "requires": [
+    {
+      "command": "go",
+      "reason": "runs go generate, compiles, and links"
+    }
+  ],
+  "steps": [
+    {
+      "name": "generate",
+      "run": [
+        "go",
+        "generate",
+        "./..."
+      ],
+      "env": {
+        "DSDLC": "{dsdlc}"
+      }
+    },
+    {
+      "name": "build",
+      "run": [
+        "go",
+        "build",
+        "-o",
+        "roundtrip",
+        "./src/go"
+      ]
+    },
+    {
+      "name": "round-trip",
+      "run": [
+        "./roundtrip"
+      ]
+    }
+  ]
+}

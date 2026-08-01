@@ -437,9 +437,9 @@ jobs:
             --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json \
             --require-c
 
-  build-integration:
-    name: Build system integration cells (linux / toolshed)
-    # One (language, build system) pair per cell: generate with dsdlc, compile the output, run a
+  showroom-recipes:
+    name: Showroom build recipes (linux / toolshed)
+    # One (language, build system) pair per recipe: generate with dsdlc, compile the output, run a
     # round-trip program. This lane is not about codegen correctness -- test/lit and the integration
     # suite own that -- it is about whether the recipes published in the manual still work.
     #
@@ -447,10 +447,10 @@ jobs:
     # which is a fraction of the full suite, so a broken integration recipe is reported in minutes
     # instead of after the two-hour lane. It carries its own checkout for the same reason.
     #
-    # A cell whose toolchain is absent SKIPS. That is correct for a developer machine and dangerous
-    # here, because an image that quietly lost a toolchain would shed cells while still reporting
-    # green -- so --require names the cells that must never skip, and a skip among them fails the
-    # job. Keep that list growing as cells land.
+    # A recipe whose toolchain is absent SKIPS. That is correct for a developer machine and dangerous
+    # here, because an image that quietly lost a toolchain would shed recipes while still reporting
+    # green -- so --require names the recipes that must never skip, and a skip among them fails the
+    # job. Keep that list growing as recipes land.
     runs-on: ubuntu-26.04
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
@@ -465,11 +465,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Check the cell invariant (build wiring only)
-        # Needs no toolchain and no compiler, so it runs first and fails fast: a cell that grew its
+      - name: Check the recipe invariant (build wiring only)
+        # Needs no toolchain and no compiler, so it runs first and fails fast: a recipe that grew its
         # own round-trip source has stopped being comparable with its neighbours, which is the whole
         # point of the matrix.
-        run: python3 examples/build_integration/run_cell.py --check-invariant
+        run: python3 examples/showroom/run_recipe.py --check-invariant
 
       - name: Configure (ci preset)
         run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
@@ -478,7 +478,7 @@ jobs:
         run: cmake --build --preset build-ci --target dsdlc
 
       - name: Install llvm-dsdl to a private prefix
-        # Cells that call find_package(llvm-dsdl) need an install tree, not a build tree: the package
+        # Recipes that call find_package(llvm-dsdl) need an install tree, not a build tree: the package
         # config locates dsdlc relative to its own installed location, so configuring against the
         # build directory would exercise a path no user ever takes. This step is therefore also the
         # selftest for the CMake package -- if the config is broken for a user, c-cmake fails here.
@@ -490,20 +490,20 @@ jobs:
 
       - name: Enable pnpm
         # corepack ships with the image's node; pnpm itself does not. This is the whole of the
-        # provisioning the TypeScript row needs, and it is why the pnpm cell does not require an
-        # image change. Non-fatal: a corepack failure should skip the pnpm cell, not fail the job.
-        run: corepack enable pnpm || echo "corepack could not enable pnpm; the pnpm cell will skip"
+        # provisioning the TypeScript row needs, and it is why the pnpm recipe does not require an
+        # image change. Non-fatal: a corepack failure should skip the pnpm recipe, not fail the job.
+        run: corepack enable pnpm || echo "corepack could not enable pnpm; the pnpm recipe will skip"
         continue-on-error: true
 
-      - name: Run the cells
-        # --require names the cells that must never skip. Everything in it is backed by a toolchain
+      - name: Run the recipes
+        # --require names the recipes that must never skip. Everything in it is backed by a toolchain
         # the toolshed image ships, so a skip there means the image lost something and the matrix is
         # quietly shedding coverage -- which must fail rather than report green. Extend the list as
-        # each remaining core cell lands: py-setuptools.
+        # each remaining core recipe lands: py-setuptools.
         #
         # ts-pnpm is deliberately absent: pnpm comes from `corepack enable` in the step above, which
         # is allowed to fail, so a skip there is a provisioning outcome rather than a lost toolchain.
-        # c-bazel joined the list in ts26.4.3, which carries bazel; the cell pins the same 9.2.0 the
+        # c-bazel joined the list in ts26.4.3, which carries bazel; the recipe pins the same 9.2.0 the
         # image pre-warms, so it neither downloads a compiler nor drifts off it.
         run: |
           dsdlc="$(find build/matrix/ci -name dsdlc -type f -perm -u+x | head -1)"
@@ -511,11 +511,11 @@ jobs:
             echo "::error::dsdlc was not built" >&2
             exit 1
           fi
-          python3 examples/build_integration/run_cell.py \
+          python3 examples/showroom/run_recipe.py \
             --dsdlc "${dsdlc}" \
             --prefix "${RUNNER_TEMP}/llvm-dsdl-prefix" \
-            --work "${RUNNER_TEMP}/build-integration" \
-            --json "${GITHUB_WORKSPACE}/build-integration-results.json" \
+            --work "${RUNNER_TEMP}/showroom-recipes" \
+            --json "${GITHUB_WORKSPACE}/showroom-recipe-results.json" \
             --markdown "${GITHUB_STEP_SUMMARY}" \
             --require "c-bazel,c-cmake,c-cmake-ninja-multi,c-make,rust-cargo,go-modules,ts-npm,py-setuptools,py-hatchling,py-uv-build,py-poetry,py-flit"
 
@@ -523,11 +523,11 @@ jobs:
         if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v7
         with:
-          name: build-integration-results
-          path: build-integration-results.json
+          name: showroom-recipe-results
+          path: showroom-recipe-results.json
           if-no-files-found: ignore
 
       - name: Regenerate the documentation pages
-        # Cheap, needs no compiler, and proves the generator still runs against the cells as they
-        # actually are -- a cell.json the renderer chokes on should fail here, not at publish time.
-        run: python3 tools/build_integration/build_integration_index.py
+        # Cheap, needs no compiler, and proves the generator still runs against the recipes as they
+        # actually are -- a recipe.json the renderer chokes on should fail here, not at publish time.
+        run: python3 tools/showroom/recipes_index.py

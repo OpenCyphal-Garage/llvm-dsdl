@@ -119,6 +119,10 @@ public:
         return index_.find(ref);
     }
 
+    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable for the same
+    /// reason `trace` is const: the free render functions are handed a `const EmitterContext&`.
+    mutable std::map<std::string, std::string> importAliases_;
+
     std::string namespacePath(const DiscoveredDefinition& info) const
     {
         return renderNamespaceRelativePath(CodegenNamingLanguage::TypeScript, info.namespaceComponents)
@@ -133,10 +137,26 @@ public:
                                        info.minorVersion);
     }
 
+    /// @brief Local name for a *referenced* type in the file currently being emitted.
+    ///
+    /// @details
+    /// Usually the plain versioned name, which is what the import brings in. It differs when one
+    /// file references two types that share a short name from different namespaces --
+    /// `uavcan.si.unit.angular_velocity.Vector3.1.0` and `uavcan.si.unit.velocity.Vector3.1.0` are
+    /// both `Vector3_1_0`, and importing both under that name is a duplicate-identifier error that
+    /// stops `tsc` outright. Such types are imported under a namespace-qualified alias instead, and
+    /// this is where every reference site picks that alias up: the type annotations, the serialize
+    /// and deserialize call names, and the import list all resolve through here, so they cannot
+    /// disagree.
     std::string typeName(const SemanticTypeRef& ref) const
     {
         if (const auto* def = find(ref))
         {
+            if (const auto alias = importAliases_.find(importAliasKey(def->info));
+                alias != importAliases_.end())
+            {
+                return alias->second;
+            }
             return typeName(def->info);
         }
 
@@ -145,6 +165,19 @@ public:
         tmp.majorVersion = ref.majorVersion;
         tmp.minorVersion = ref.minorVersion;
         return typeName(tmp);
+    }
+
+    /// @brief Identity of a definition for alias bookkeeping: unique across namespaces and versions.
+    static std::string importAliasKey(const DiscoveredDefinition& info)
+    {
+        return info.fullName + ":" + std::to_string(info.majorVersion) + "." +
+               std::to_string(info.minorVersion);
+    }
+
+    /// @brief Installs the alias table for the file about to be emitted, replacing any previous one.
+    void setImportAliases(std::map<std::string, std::string> aliases) const
+    {
+        importAliases_ = std::move(aliases);
     }
 
     std::string fileStem(const DiscoveredDefinition& info) const
@@ -1445,8 +1478,69 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         responseRuntimePlan        = &(*responseRuntimePlanStorage);
     }
 
-    std::map<std::string, std::set<std::string>> importsByModule;
-    const auto                                   ownerPath         = ctx.relativeFilePath(def.info);
+    const auto ownerPath = ctx.relativeFilePath(def.info);
+
+    // Disambiguate before anything is rendered.
+    //
+    // Two types from different namespaces can share a short name -- `uavcan.si.unit.velocity.Vector3`
+    // and `uavcan.si.unit.angular_velocity.Vector3` are both `Vector3_1_0` -- and a file that
+    // references both would import the same identifier twice, which `tsc` rejects outright as a
+    // duplicate identifier. So the referenced set is collected first, short-name clashes are found,
+    // and the clashing types are given namespace-qualified local names. Installing the table on the
+    // context before any rendering is what keeps the import list, the type annotations, and the
+    // serialize/deserialize call names in agreement: they all resolve through ctx.typeName().
+    {
+        std::map<std::string, std::vector<const DiscoveredDefinition*>> byShortName;
+        const auto collectReferenced = [&](const SemanticSection& section) {
+            for (const auto& ref : collectCompositeDependencies(section, def.info))
+            {
+                if (const auto* referenced = ctx.find(ref))
+                {
+                    auto& bucket = byShortName[ctx.typeName(referenced->info)];
+                    const auto key = EmitterContext::importAliasKey(referenced->info);
+                    const bool seen = std::any_of(bucket.begin(), bucket.end(), [&](const auto* other) {
+                        return EmitterContext::importAliasKey(*other) == key;
+                    });
+                    if (!seen)
+                    {
+                        bucket.push_back(&referenced->info);
+                    }
+                }
+            }
+        };
+        collectReferenced(def.request);
+        if (def.response)
+        {
+            collectReferenced(*def.response);
+        }
+
+        std::map<std::string, std::string> aliases;
+        for (const auto& [shortName, definitions] : byShortName)
+        {
+            if (definitions.size() < 2U)
+            {
+                continue;
+            }
+            for (const auto* info : definitions)
+            {
+                // Namespace as a suffix rather than a prefix. The serialize and deserialize call
+                // names are built by sticking a verb on the front of this, and a leading lowercase
+                // namespace would run the two together -- `deserializeuavcan_si_unit_...`. Keeping
+                // the type name where it has always been leaves those readable and leaves the
+                // recognisable part of the identifier first.
+                std::string qualified = shortName + "__";
+                for (const auto& component : info->namespaceComponents)
+                {
+                    qualified += component + "_";
+                }
+                qualified.pop_back();
+                aliases.emplace(EmitterContext::importAliasKey(*info), qualified);
+            }
+        }
+        ctx.setImportAliases(std::move(aliases));
+    }
+
+    std::map<std::string, std::set<std::pair<std::string, std::string>>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
         const auto dependencies = collectCompositeDependencies(section, def.info);
         const auto imports      = projectCompositeImports(
@@ -1455,7 +1549,17 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
         for (const auto& importSpec : imports)
         {
-            importsByModule[importSpec.modulePath].insert(importSpec.typeName);
+            std::string original = importSpec.typeName;
+            for (const auto& ref : dependencies)
+            {
+                if (const auto* referenced = ctx.find(ref); referenced != nullptr &&
+                    ctx.typeName(ref) == importSpec.typeName)
+                {
+                    original = ctx.typeName(referenced->info);
+                    break;
+                }
+            }
+            importsByModule[importSpec.modulePath].emplace(original, importSpec.typeName);
         }
     };
     addSectionImports(def.request);
@@ -1464,7 +1568,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         addSectionImports(*def.response);
     }
 
-    std::map<std::string, std::set<std::string>> runtimeImportsByModule;
+    std::map<std::string, std::set<std::pair<std::string, std::string>>> runtimeImportsByModule;
     const auto                                   addRuntimeImportsForPlan = [&](const RuntimeSectionPlan* const plan) {
         if (plan == nullptr)
         {
@@ -1482,9 +1586,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                 continue;
             }
             const auto modulePath = relativeImportPath(ownerPath, targetPath);
-            const auto typeName   = compositeTypeName(field, ctx);
-            runtimeImportsByModule[modulePath].insert(tsRuntimeSerializeFn(typeName));
-            runtimeImportsByModule[modulePath].insert(tsRuntimeDeserializeFn(typeName));
+            const auto localName  = compositeTypeName(field, ctx);
+            const auto* referenced = ctx.find(*field.compositeType);
+            const auto originalName = (referenced != nullptr) ? ctx.typeName(referenced->info) : localName;
+            runtimeImportsByModule[modulePath].emplace(tsRuntimeSerializeFn(originalName),
+                                                      tsRuntimeSerializeFn(localName));
+            runtimeImportsByModule[modulePath].emplace(tsRuntimeDeserializeFn(originalName),
+                                                      tsRuntimeDeserializeFn(localName));
         }
     };
     addRuntimeImportsForPlan(&(*requestRuntimePlan));
@@ -1494,32 +1602,29 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "import * as dsdlRuntime from \"" + runtimePath + "\";");
     emitLine(out, 0, "");
 
+    // `Original as Local`, collapsing to plain `Original` when nothing had to be renamed -- so a
+    // file that references no clashing names looks exactly as it did before aliasing existed.
+    const auto renderImportList = [](const std::set<std::pair<std::string, std::string>>& names) {
+        std::string rendered;
+        for (const auto& [original, local] : names)
+        {
+            if (!rendered.empty())
+            {
+                rendered += ", ";
+            }
+            rendered += (original == local) ? original : (original + " as " + local);
+        }
+        return rendered;
+    };
+
     for (const auto& [modulePath, names] : runtimeImportsByModule)
     {
-        std::string importNames;
-        for (const auto& name : names)
-        {
-            if (!importNames.empty())
-            {
-                importNames += ", ";
-            }
-            importNames += name;
-        }
-        emitLine(out, 0, "import { " + importNames + " } from \"" + modulePath + "\";");
+        emitLine(out, 0, "import { " + renderImportList(names) + " } from \"" + modulePath + "\";");
     }
 
     for (const auto& [modulePath, names] : importsByModule)
     {
-        std::string importNames;
-        for (const auto& name : names)
-        {
-            if (!importNames.empty())
-            {
-                importNames += ", ";
-            }
-            importNames += name;
-        }
-        emitLine(out, 0, "import type { " + importNames + " } from \"" + modulePath + "\";");
+        emitLine(out, 0, "import type { " + renderImportList(names) + " } from \"" + modulePath + "\";");
     }
     const auto baseType = ctx.typeName(def.info);
     emitLine(out, 0, "export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
