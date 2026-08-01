@@ -71,7 +71,10 @@ def _find_default_dsdlc(repo_root: Path) -> str:
 
 
 def _run_dsdlc(dsdlc: str, uavcan_root: Path) -> str:
-    command = [dsdlc, "--target-language", "mlir", str(uavcan_root)]
+    # --no-embedded-uavcan keeps this hermetic: the catalog is derived from uavcan_root alone, never
+    # from the copy compiled into the dsdlc doing the deriving. It also means a dsdlc whose embedded
+    # catalog is corrupt -- the one case where regeneration is the fix -- can still run this.
+    command = [dsdlc, "--target-language", "mlir", "--no-embedded-uavcan", str(uavcan_root)]
     process = subprocess.run(command, capture_output=True, text=True, check=False)
     if process.returncode != 0:
         sys.stderr.write(process.stderr)
@@ -88,7 +91,7 @@ def _run_dsdlc(dsdlc: str, uavcan_root: Path) -> str:
 
 
 def _render(mlir_text: str) -> str:
-    schema_count = len(re.findall(r"\\bdsdl\\.schema\\b", mlir_text))
+    schema_count = len(re.findall(r"\bdsdl\.schema\b", mlir_text))
     # The raw-string literal embeds this exact content (a leading newline keeps the generated file
     # readable). Hash the same bytes so the runtime SHA-256 check verifies what is actually embedded,
     # not a differently-normalized copy.

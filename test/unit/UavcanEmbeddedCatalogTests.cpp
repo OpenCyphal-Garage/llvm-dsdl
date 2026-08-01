@@ -66,6 +66,15 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "verifyEmbeddedCatalogIntegrity accepted a mismatched hash\n";
         return false;
     }
+    // (4) The two accessors the integrity-failure diagnostic quotes must agree on a healthy binary,
+    //     and must be the same pair the check itself compares.
+    if (llvmdsdl::embeddedUavcanCatalogComputedSha256() != llvmdsdl::embeddedUavcanCatalogRecordedSha256())
+    {
+        std::cerr << "embedded UAVCAN catalog hash accessors disagree: computed "
+                  << llvmdsdl::embeddedUavcanCatalogComputedSha256() << ", recorded "
+                  << llvmdsdl::embeddedUavcanCatalogRecordedSha256().str() << "\n";
+        return false;
+    }
 
     mlir::DialectRegistry registry;
     registry.insert<mlir::dsdl::DSDLDialect,

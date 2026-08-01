@@ -430,7 +430,7 @@ Behaviour worth knowing:
 - The image is built if it is missing, so `build` is only needed to pick up a dependency change.
 - `serve` mounts read-only and live-reloads on edit, exactly like a host `mkdocs serve`; the same
   `/llvm-dsdl/` base path applies.
-- `check` needs a writable mount because it renders into `site/`, and runs the container as your own
+- `check` needs a writeable mount because it renders into `site/`, and runs the container as your own
   UID/GID so the output is not left root-owned.
 - Overrides: `LLVMDSDL_DOCS_PORT` (default 8000), `LLVMDSDL_DOCS_IMAGE`, and `DOCKER` (set it to
   `podman` if that is what you run).

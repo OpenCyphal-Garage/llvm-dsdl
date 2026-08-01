@@ -677,6 +677,19 @@ bool embeddedUavcanCatalogIntegrityOk()
                                           uavcan_embedded_mlir::kEmbeddedUavcanMlirSha256);
 }
 
+llvm::StringRef embeddedUavcanCatalogRecordedSha256()
+{
+    return uavcan_embedded_mlir::kEmbeddedUavcanMlirSha256;
+}
+
+std::string embeddedUavcanCatalogComputedSha256()
+{
+    const llvm::StringRef        text = uavcan_embedded_mlir::kEmbeddedUavcanMlirText;
+    const std::array<uint8_t, 32> digest =
+        llvm::SHA256::hash(llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size()));
+    return llvm::toHex(digest, /*LowerCase=*/true);
+}
+
 llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContext& context,
                                                                 DiagnosticEngine&  diagnostics)
 {
@@ -684,8 +697,22 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
     // tampering, or a text/hash mismatch introduced during the build).
     if (!embeddedUavcanCatalogIntegrityOk())
     {
-        diagnostics.error({"<embedded-uavcan>", 1, 1},
-                          "embedded UAVCAN catalog failed SHA-256 integrity verification");
+        const SourceLocation here{"<embedded-uavcan>", 1, 1};
+        diagnostics.error(here, "embedded UAVCAN catalog failed SHA-256 integrity verification");
+        diagnostics.note(here,
+                         "recorded " + embeddedUavcanCatalogRecordedSha256().str() + ", computed " +
+                             embeddedUavcanCatalogComputedSha256());
+        diagnostics.note(here,
+                         std::string("both values are generated into ") + kEmbeddedUavcanCatalogSourceFile +
+                             ", so they disagree only when that file was hand-edited, partially regenerated, "
+                             "or merged badly");
+        diagnostics.note(here,
+                         std::string("restore it with 'git checkout -- ") + kEmbeddedUavcanCatalogSourceFile +
+                             "', or regenerate it with 'python3 tools/dsdlc/generate_embedded_uavcan_mlir.py "
+                             "--dsdlc <path-to-dsdlc>', then rebuild");
+        diagnostics.note(here,
+                         "to build without the compiled-in catalog, pass --no-embedded-uavcan and add "
+                         "--lookup-dir <checkout>/public_regulated_data_types/uavcan");
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "embedded UAVCAN catalog failed SHA-256 integrity verification");
     }

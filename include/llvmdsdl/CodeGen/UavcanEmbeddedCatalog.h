@@ -66,6 +66,21 @@ struct UavcanEmbeddedCatalog final
 /// @return True when the embedded MLIR text matches its recorded SHA-256.
 [[nodiscard]] bool embeddedUavcanCatalogIntegrityOk();
 
+/// @brief Returns the SHA-256 recorded next to the catalog blob, as lowercase hex.
+[[nodiscard]] llvm::StringRef embeddedUavcanCatalogRecordedSha256();
+
+/// @brief Hashes the catalog blob compiled into this binary, as lowercase hex.
+///
+/// Computed from the text rather than read from the recorded constant, so a failing integrity check
+/// can name both halves of the mismatch.
+[[nodiscard]] std::string embeddedUavcanCatalogComputedSha256();
+
+/// @brief Repository-relative path of the generated file carrying the catalog text and its hash.
+///
+/// Named in the integrity-failure diagnostic: both values live in this one generated file, so a
+/// mismatch is always a defect in it rather than in the two sources disagreeing.
+inline constexpr const char* kEmbeddedUavcanCatalogSourceFile = "lib/CodeGen/UavcanEmbeddedMlir.inc";
+
 /// @brief Loads and parses embedded UAVCAN catalog artifacts.
 ///
 /// Fails (without parsing) when the embedded MLIR blob does not match its recorded SHA-256.

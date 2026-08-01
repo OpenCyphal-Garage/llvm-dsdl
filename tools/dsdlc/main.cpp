@@ -1403,7 +1403,17 @@ int main(int argc, char** argv)
         auto loadedCatalog = llvmdsdl::loadUavcanEmbeddedCatalog(context, diagnostics);
         if (!loadedCatalog)
         {
-            llvm::errs() << llvm::toString(loadedCatalog.takeError()) << "\n";
+            // Every failure path in the loader files a diagnostic first, and that one carries the
+            // remediation notes. Printing the Error's text too would only repeat its first line.
+            auto loadError = loadedCatalog.takeError();
+            if (diagnostics.hasErrors())
+            {
+                llvm::consumeError(std::move(loadError));
+            }
+            else
+            {
+                llvm::errs() << llvm::toString(std::move(loadError)) << "\n";
+            }
             printDiagnostics(diagnostics);
             return 1;
         }
