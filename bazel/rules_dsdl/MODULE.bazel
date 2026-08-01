@@ -1,0 +1,20 @@
+# rules_dsdl -- Bazel integration for the DSDL compiler.
+#
+# Consumed by a project with:
+#
+#   bazel_dep(name = "rules_dsdl", version = "0.1.0")
+#
+# Until this is published to a registry, point Bazel at the copy installed alongside dsdlc:
+#
+#   bazel build --override_module=rules_dsdl=<prefix>/share/rules_dsdl //...
+module(
+    name = "rules_dsdl",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+# Bazel 8 removed the native C/C++ rules, so the generated code is wrapped with rules_cc.
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+dsdlc = use_extension("//:extensions.bzl", "dsdlc")
+use_repo(dsdlc, "dsdlc")

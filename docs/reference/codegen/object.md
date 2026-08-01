@@ -9,6 +9,17 @@ The object backend compiles generated sources into static objects and optional a
 - Stages generated C under `.obj_stage_c`
 - Compiles C translation units to `.o`
 - Optionally archives into `.a`
+- Publishes the staged headers into `--outdir`
+
+## Headers
+
+The staged sources are an intermediate this backend compiles itself, but the headers are the only way
+to call what ends up in the archive, so they are copied into `--outdir` and reported by
+`--list-outputs` like any other output. The layout matches what the `c` backend produces, so
+`-I<outdir>` plus the archive is a complete interface from a single invocation.
+
+The staging directories remain, and remain private: nothing should read `.obj_stage_c` or
+`.obj_stage_cpp`, and their contents are not declared outputs.
 
 ## C++ lane (`--obj-abi-language cpp`)
 

@@ -1,0 +1,14 @@
+# dsdlc is a host tool, like a compiler: rules_dsdl locates it through the DSDLC environment
+# variable, falling back to PATH. Both lines are needed and they are not redundant -- the repository
+# rule that finds it runs in the repo phase, the genrule that runs it is an action.
+common --repo_env=DSDLC
+build --action_env=DSDLC
+
+# Applies the build:macos / build:linux sections below according to the host.
+common --enable_platform_specific_config
+
+# Bazel's C toolchain autodetection on macOS can settle on a Homebrew gcc and then hand it the
+# Apple-specific link flags it expects clang to understand, which fails with
+# `unrecognized command-line option '-fobjc-link-runtime'`. Pinning the system clang avoids it.
+# Nothing here is specific to DSDL; it is the ordinary Bazel-on-macOS papercut.
+build:macos --repo_env=CC=/usr/bin/clang

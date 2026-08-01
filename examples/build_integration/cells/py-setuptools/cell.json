@@ -1,0 +1,58 @@
+{
+  "name": "py-setuptools",
+  "title": "setuptools",
+  "row": "Python",
+  "language": "Python",
+  "build_system": "setuptools",
+  "idiom": "A",
+  "dep_strategy": "none",
+  "summary": "The one Python cell that needs no `pyproject.toml` of its own. dsdlc writes one declaring setuptools, so the generated tree is already an installable package and the host just installs it.",
+  "notes": "This is the only Python backend that gets Idiom A, and the reason is simply that it is the backend dsdlc's emitted manifest declares. A project cannot have two build backends, so choosing any other one means owning the manifest yourself -- which is what the other four cells show.\n\nEvery Python cell builds its own virtual environment and lets pip fetch the build backend into it. That is correct isolation regardless, and it is the only thing that works on a distribution that marks its interpreter externally managed (PEP 668) -- which the toolshed image does.",
+  "generated_dir": "generated",
+  "requires": [
+    {
+      "command": "python3",
+      "reason": "creates the virtual environment the backend installs into"
+    }
+  ],
+  "steps": [
+    {
+      "name": "generate",
+      "run": [
+        "{dsdlc}",
+        "--target-language",
+        "python",
+        "dsdl/kitbag",
+        "--py-package",
+        "kitbag",
+        "--outdir",
+        "generated"
+      ]
+    },
+    {
+      "name": "virtual environment",
+      "run": [
+        "{python}",
+        "-m",
+        "venv",
+        ".venv"
+      ]
+    },
+    {
+      "name": "install",
+      "run": [
+        ".venv/bin/pip",
+        "install",
+        "-q",
+        "./generated"
+      ]
+    },
+    {
+      "name": "round-trip",
+      "run": [
+        ".venv/bin/python",
+        "src/python/test_roundtrip.py"
+      ]
+    }
+  ]
+}

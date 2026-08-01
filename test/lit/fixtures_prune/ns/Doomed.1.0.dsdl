@@ -1,0 +1,6 @@
+# Deleted partway through the test to make the prune do something.
+
+uint8 doomed
+# Nothing interesting.
+
+@sealed

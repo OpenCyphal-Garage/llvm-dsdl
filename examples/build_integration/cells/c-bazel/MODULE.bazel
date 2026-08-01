@@ -1,0 +1,9 @@
+module(name = "kitbag_roundtrip", version = "0.1.0")
+
+# Until rules_dsdl is published to a registry, the build command points Bazel at the copy installed
+# alongside dsdlc with --override_module. See the commands on this cell's page.
+bazel_dep(name = "rules_dsdl", version = "0.1.0")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+dsdlc = use_extension("@rules_dsdl//:extensions.bzl", "dsdlc")
+use_repo(dsdlc, "dsdlc")

@@ -144,6 +144,9 @@ struct CliOptions final
     bool listInputs{false};
     bool emitDepfiles{false};
 
+    /// @brief Per-tranche manifest enabling removal of outputs this run no longer produces.
+    std::string pruneManifest;
+
     int verbose{0};
 
     llvmdsdl::CppProfile                  cppProfile{llvmdsdl::CppProfile::Both};
@@ -258,6 +261,12 @@ void printHelp()
                  << "        only                - only generate support code.\n"
                  << "      'always' and 'only' need no positional targets. Requires a\n"
                  << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
+                 << "  --prune-manifest <file>\n"
+                 << "      Record this run's outputs in <file> and, on the next run, delete the\n"
+                 << "      outputs it recorded that are no longer produced. One manifest per dsdlc\n"
+                 << "      invocation: a build that splits a namespace into tranches gives each\n"
+                 << "      tranche its own, so a tranche prunes only what it owns. Removals are\n"
+                 << "      confined to --outdir. Ignored under --dry-run and the --list-* modes.\n"
                  << "  --optimize-lowered-serdes\n"
                  << "      Enable optional MLIR optimization for lowered serialization plans.\n"
                  << "  --no-deprecation-attributes\n"
@@ -502,6 +511,16 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.outDir = *value;
+            continue;
+        }
+        if (arg == "--prune-manifest")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.pruneManifest = *value;
             continue;
         }
         if (arg == "--target-language" || arg == "-l")
@@ -1473,12 +1492,36 @@ int main(int argc, char** argv)
             {
                 emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
             }
+            // After the outputs are final and only when this run actually wrote them. The listing
+            // modes imply --dry-run, and pruning on a dry run would delete files while claiming to
+            // have touched nothing.
+            bool pruneFailed = false;
+            if (!options.pruneManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs)
+            {
+                llvmdsdl::PruneReport pruneReport;
+                if (auto err = llvmdsdl::pruneStaleOutputs(options.pruneManifest,
+                                                           std::filesystem::path(outputRoot.str()),
+                                                           generatedOutputs,
+                                                           &pruneReport))
+                {
+                    diagnostics.error({"<cli>", 1, 1}, llvm::toString(std::move(err)));
+                    pruneFailed = true;
+                }
+                for (const auto& removed : pruneReport.removedFiles)
+                {
+                    logVerbose(1, "pruned stale output: " + removed);
+                }
+                for (const auto& removed : pruneReport.removedDirectories)
+                {
+                    logVerbose(1, "pruned empty directory: " + removed);
+                }
+            }
             printDiagnostics(diagnostics);
             printRunSummary(options.targetLanguage,
                             outputRoot,
                             static_cast<std::uint64_t>(generatedOutputs.size()),
                             std::chrono::steady_clock::now() - startTime);
-            return (forceFailure || diagnostics.hasErrors()) ? 1 : 0;
+            return (forceFailure || pruneFailed || diagnostics.hasErrors()) ? 1 : 0;
         };
 
     if (options.targetLanguage == "ast")

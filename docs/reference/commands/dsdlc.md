@@ -35,6 +35,37 @@ inputs and the executable.
 Every path emitted in a depfile or by `--list-inputs` exists on disk, so both can be fed to a build
 system verbatim.
 
+## Pruning stale output
+
+`dsdlc` writes what it is asked for; without `--prune-manifest` it does not remove what it wrote
+last time. Delete a definition and its generated header stays in `--outdir`, still on the include
+path, so code that names a type nobody defines any more keeps compiling.
+
+`--prune-manifest <file>` closes that. The run records its outputs in `<file>` and, on the next run,
+deletes the outputs the previous manifest listed that it no longer produces. Directories emptied
+by pruning are removed too, so a deleted namespace leaves no shape behind.
+
+**One manifest per invocation, not per output directory.** Generation
+[decomposes](#support-code) — a build may split one namespace across several runs for support, the
+embedded catalog, and definitions — and a run owns only the files it emits. A run that swept
+`--outdir` would delete the files its siblings had just written, so each tranche is given its own
+manifest and prunes only what it owns:
+
+```bash
+dsdlc -l c --outdir gen --generate-support only  --prune-manifest .dsdlc/support
+dsdlc -l c --outdir gen --generate-support never --prune-manifest .dsdlc/builtin +uavcan.node
+dsdlc -l c --outdir gen --generate-support never --omit-dependencies \
+      --prune-manifest .dsdlc/types dsdl/myns
+```
+
+Removals are confined to `--outdir`: a manifest naming anything outside it is a hard error rather
+than a deletion, since a manifest is an input and an input that can name any path is a way to turn a
+stale file into an arbitrary `rm`. A manifest in an unrecognised format is treated as absent — a
+format change should cost one stale file, not every configured tree.
+
+The flag is ignored under `--dry-run` and the `--list-*` modes, which imply it. A dry run that
+deleted files while reporting that it wrote none would be worse than either.
+
 ## Embedded uavcan catalog
 
 For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog used by the `mlir` and

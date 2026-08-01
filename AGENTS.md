@@ -29,6 +29,22 @@ Here "we tried orange juice" earns its place because the OJ-for-a-cold prior is
 strong and would otherwise creep back in. Absent that kind of pull, prefer the
 clean elision.
 
+## Oracle variation
+
+Ghosts can also appear as future predictions that have no embodiment. For example:
+
+> ❌ The current UI uses blue and red colours.
+
+"Current" suggests there is a future UI that does not use blue and red colours yet this
+plan is not visible and the user is left wondering, "is this UI deprecated? Should I 
+be using it? Is blue and red a temporary decision?".
+
+> ✅ The UI uses blue and red colours.
+
+Here we are providing actionable documentation. Yes, the UI is supported. Yes, you
+should continue using blue and red colours if you want to be consistent with the
+documented GUI.
+
 # No Stupid Docs Rule
 
 Be Precise and Concise When Writing Documentation
@@ -65,6 +81,17 @@ Do not assume the user is an idiot.
 
 Shell scripts suffer from multiple compatibility issues including different shells on
 different platforms using different system tools. Python is Python. Prefer using Python
-where scripting is needed. Only use scripting where another technology does not already
-provide adequate automation capabilities. For example, if working in the build system
-prefer using cmake first and Python only if cmake is not suitable.
+where scripting is needed. 
+
+## Scripting Use Refinement
+
+Only use scripting where another technology does not already provide adequate automation
+capabilities. For example, if working in the build system prefer using cmake first and 
+Python only if cmake is not suitable.
+
+# CLIs Are Self Documenting
+
+Do not add markdown or other copy-and-paste documentation for CLI flags when `--help` is
+adequate and authoritative. There are times when an example of using the CLI to perform
+some action is relevant but this is only in service of documenting some other concern
+where the CLI can be used, _not_ in documenting the CLI itself.

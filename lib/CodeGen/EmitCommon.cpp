@@ -19,6 +19,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <fstream>
+#include <set>
 #include <system_error>
 
 namespace llvmdsdl
@@ -376,6 +378,174 @@ llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path&    outpu
 
     const std::string depfileContent = renderMakeDepfile(absoluteNormalizedPath(outputPath), normalizedDeps);
     return writeGeneratedFile(depfilePath, depfileContent, policy);
+}
+
+namespace
+{
+
+/// @brief First line of a prune manifest. Version it so a format change is a clean refusal.
+constexpr llvm::StringLiteral kPruneManifestHeader = "# llvm-dsdl prune manifest v1";
+
+/// @brief True when @p candidate is lexically inside @p root.
+///
+/// Lexical rather than filesystem-resolved on purpose: this runs against paths read from a file
+/// that may name things which no longer exist, and `weakly_canonical` on a dangling path is not
+/// obliged to be useful. Both sides are normalised first so `a/../b` cannot walk out.
+bool isInside(const std::filesystem::path& root, const std::filesystem::path& candidate)
+{
+    const auto normalizedRoot      = root.lexically_normal();
+    const auto normalizedCandidate = candidate.lexically_normal();
+    const auto relative            = normalizedCandidate.lexically_relative(normalizedRoot);
+    if (relative.empty() || relative.native() == ".")
+    {
+        return false;
+    }
+    return *relative.begin() != "..";
+}
+
+std::vector<std::string> readPruneManifest(const std::filesystem::path& manifestPath)
+{
+    std::ifstream stream(manifestPath);
+    if (!stream)
+    {
+        return {};
+    }
+    std::string line;
+    if (!std::getline(stream, line) || llvm::StringRef(line).trim() != kPruneManifestHeader)
+    {
+        // An unrecognised manifest is treated as absent rather than as an error. The cost of being
+        // wrong is one stale file surviving a format change, which the next run cleans up; the cost
+        // of failing the build is a compiler upgrade breaking every configured tree.
+        return {};
+    }
+    std::vector<std::string> entries;
+    while (std::getline(stream, line))
+    {
+        const auto trimmed = llvm::StringRef(line).trim();
+        if (!trimmed.empty())
+        {
+            entries.emplace_back(trimmed.str());
+        }
+    }
+    return entries;
+}
+
+}  // namespace
+
+llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
+                              const std::filesystem::path&    outputRoot,
+                              const std::vector<std::string>& currentOutputs,
+                              PruneReport*                    report)
+{
+    const std::vector<std::string> previous = readPruneManifest(manifestPath);
+
+    std::set<std::string> current;
+    for (const auto& output : currentOutputs)
+    {
+        current.insert(std::filesystem::path(output).lexically_normal().string());
+    }
+
+    // Deepest first, so a directory is considered only after everything under it has gone.
+    std::vector<std::filesystem::path> stale;
+    for (const auto& entry : previous)
+    {
+        const auto path = std::filesystem::path(entry).lexically_normal();
+        if (current.count(path.string()) != 0U)
+        {
+            continue;
+        }
+        if (!isInside(outputRoot, path))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "prune manifest %s names %s, which is outside the output "
+                                           "directory %s; refusing to remove it",
+                                           manifestPath.string().c_str(),
+                                           path.string().c_str(),
+                                           outputRoot.string().c_str());
+        }
+        stale.push_back(path);
+    }
+    std::sort(stale.begin(), stale.end(), [](const auto& a, const auto& b) {
+        return a.string().size() > b.string().size();
+    });
+
+    std::set<std::filesystem::path> touchedDirectories;
+    for (const auto& path : stale)
+    {
+        std::error_code ec;
+        // Generated files are written read-only by default (--file-mode), which does not prevent
+        // removal on POSIX -- the directory's permissions govern that -- so no chmod dance here.
+        const bool removed = std::filesystem::remove(path, ec);
+        if (ec)
+        {
+            return llvm::createStringError(ec, "failed to remove stale output %s", path.string().c_str());
+        }
+        if (removed && report != nullptr)
+        {
+            report->removedFiles.push_back(path.string());
+        }
+        touchedDirectories.insert(path.parent_path());
+    }
+
+    // Bottom-up: removing a leaf may empty its parent, which may empty its parent.
+    std::vector<std::filesystem::path> candidates(touchedDirectories.begin(), touchedDirectories.end());
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+        return a.string().size() > b.string().size();
+    });
+    for (std::size_t index = 0; index < candidates.size(); ++index)
+    {
+        const auto& directory = candidates[index];
+        if (!isInside(outputRoot, directory))
+        {
+            continue;
+        }
+        std::error_code ec;
+        if (!std::filesystem::is_empty(directory, ec) || ec)
+        {
+            continue;
+        }
+        if (std::filesystem::remove(directory, ec) && !ec)
+        {
+            if (report != nullptr)
+            {
+                report->removedDirectories.push_back(directory.string());
+            }
+            candidates.push_back(directory.parent_path());
+        }
+    }
+
+    std::error_code ec;
+    const auto      manifestParent = manifestPath.parent_path();
+    if (!manifestParent.empty())
+    {
+        std::filesystem::create_directories(manifestParent, ec);
+        if (ec)
+        {
+            return llvm::createStringError(ec,
+                                           "failed to create prune manifest directory %s",
+                                           manifestParent.string().c_str());
+        }
+    }
+
+    std::ofstream out(manifestPath, std::ios::trunc);
+    if (!out)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "failed to write prune manifest %s",
+                                       manifestPath.string().c_str());
+    }
+    out << kPruneManifestHeader.str() << "\n";
+    for (const auto& entry : current)
+    {
+        out << entry << "\n";
+    }
+    if (!out)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "failed to write prune manifest %s",
+                                       manifestPath.string().c_str());
+    }
+    return llvm::Error::success();
 }
 
 llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path&    outputPath,

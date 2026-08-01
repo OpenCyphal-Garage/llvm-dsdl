@@ -813,6 +813,18 @@ install(
   DESTINATION "${LLVMDSDL_CMAKE_CONFIG_SUBDIR}"
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
 
+# The Bazel module, installed as sources rather than configured: a Bazel module is consumed by path
+# or by registry, and nothing in it needs to know where it landed. Until it is published to a
+# registry, a downstream build reaches it with
+# `--override_module=rules_dsdl=<prefix>/share/rules_dsdl`.
+#
+# In the BIN component with the CMake package, for the same reason: this is about running the
+# compiler from a build, not about linking against its libraries.
+install(
+  DIRECTORY ${LLVMDSDL_SOURCE_DIR}/bazel/rules_dsdl
+  DESTINATION ${CMAKE_INSTALL_DATADIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
 # CycloneDX SBOM for the release artifacts: records the tool version and source revision, the locked
 # LLVM/MLIR version actually linked in, and the pinned commits of the build/test submodules. Built with
 # the default target so `cmake --install` always ships an SBOM that matches the binaries; the generator

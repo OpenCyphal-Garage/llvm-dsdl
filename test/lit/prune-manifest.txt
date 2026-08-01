@@ -1,0 +1,77 @@
+# --prune-manifest: removing outputs a previous run of the same tranche produced.
+#
+# The defect this closes is quiet. Delete a definition and its generated header stays on the include
+# path, so code that includes a type nobody defines any more keeps compiling -- and keeps compiling
+# until somebody wipes the output directory by hand.
+#
+# Pruning is per invocation rather than per output directory because generation decomposes: a build
+# may split one namespace across several dsdlc runs (support, the embedded catalog, definitions), and
+# a run that swept --outdir would delete the files its siblings had just written.
+
+# Set up a working copy, since this test deletes definitions.
+# RUN: rm -rf %t.src && mkdir -p %t.src/ns
+# RUN: cp %S/fixtures_prune/ns/Kept.1.0.dsdl %t.src/ns/
+# RUN: cp %S/fixtures_prune/ns/Doomed.1.0.dsdl %t.src/ns/
+
+# First run: nothing to prune, but the manifest is written.
+# RUN: rm -rf %t.out %t.mf && %dsdlc --target-language c --outdir %t.out --prune-manifest %t.mf %t.src/ns >/dev/null 2>&1
+# RUN: test -f %t.out/ns/Kept_1_0.h
+# RUN: test -f %t.out/ns/Doomed_1_0.h
+# RUN: test -f %t.mf
+
+# A listing run must not prune: --list-outputs implies --dry-run, and a dry run that deleted files
+# while reporting that it touched nothing would be the worst of both.
+# RUN: rm %t.src/ns/Doomed.1.0.dsdl
+# RUN: %dsdlc --target-language c --outdir %t.out --prune-manifest %t.mf --list-outputs %t.src/ns >/dev/null 2>&1
+# RUN: test -f %t.out/ns/Doomed_1_0.h
+
+# The real run removes the deleted definition's outputs and leaves the survivor alone.
+# RUN: %dsdlc --target-language c --outdir %t.out --prune-manifest %t.mf %t.src/ns >/dev/null 2>&1
+# RUN: not test -f %t.out/ns/Doomed_1_0.h
+# RUN: not test -f %t.out/ns/Doomed_1_0.c
+# RUN: test -f %t.out/ns/Kept_1_0.h
+
+# Support code is not derived from a definition, so a types tranche must not take it with it.
+# RUN: test -f %t.out/dsdl_runtime.h
+
+# Tranche isolation: three runs sharing one output directory, each with its own manifest. Deleting a
+# definition and re-running only the types tranche must leave the other two untouched -- this is the
+# property that makes decomposed generation safe, and the one a per-directory sweep would break.
+# RUN: rm -rf %t.multi %t.msrc %t.m1 %t.m2 %t.m3 && mkdir -p %t.msrc/ns
+# RUN: cp %S/fixtures_prune/ns/Kept.1.0.dsdl %t.msrc/ns/
+# RUN: cp %S/fixtures_prune/ns/Doomed.1.0.dsdl %t.msrc/ns/
+# RUN: %dsdlc --target-language c --outdir %t.multi --generate-support only --prune-manifest %t.m1 >/dev/null 2>&1
+# RUN: %dsdlc --target-language c --outdir %t.multi --generate-support never --prune-manifest %t.m2 +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: %dsdlc --target-language c --outdir %t.multi --generate-support never --omit-dependencies --prune-manifest %t.m3 %t.msrc/ns >/dev/null 2>&1
+# RUN: test -f %t.multi/dsdl_runtime.h
+# RUN: test -f %t.multi/uavcan/node/Heartbeat_1_0.h
+# RUN: test -f %t.multi/ns/Doomed_1_0.h
+# RUN: rm %t.msrc/ns/Doomed.1.0.dsdl
+# RUN: %dsdlc --target-language c --outdir %t.multi --generate-support never --omit-dependencies --prune-manifest %t.m3 %t.msrc/ns >/dev/null 2>&1
+# RUN: not test -f %t.multi/ns/Doomed_1_0.h
+# RUN: test -f %t.multi/dsdl_runtime.h
+# RUN: test -f %t.multi/uavcan/node/Heartbeat_1_0.h
+
+# A directory emptied by pruning goes too, so a deleted namespace does not leave a shape behind.
+# RUN: rm %t.msrc/ns/Kept.1.0.dsdl
+# RUN: %dsdlc --target-language c --outdir %t.multi --generate-support only --prune-manifest %t.m3 >/dev/null 2>&1
+# RUN: not test -d %t.multi/ns
+
+# A manifest is an input, and an input that can name any path is a way to turn a stale file into an
+# arbitrary deletion. Anything outside --outdir is refused, loudly, and survives.
+# RUN: rm -rf %t.guard && mkdir -p %t.guard && touch %t.guard/bystander
+# RUN: rm -rf %t.gout && mkdir -p %t.gout
+# RUN: echo '# llvm-dsdl prune manifest v1' >%t.gmf
+# RUN: echo '%t.guard/bystander' >>%t.gmf
+# RUN: not %dsdlc --target-language c --outdir %t.gout --prune-manifest %t.gmf %t.src/ns 2>&1 | FileCheck %s --check-prefix=OUTSIDE
+# RUN: test -f %t.guard/bystander
+
+# OUTSIDE: refusing to remove it
+
+# An unrecognised manifest is treated as absent rather than fatal: the cost of being wrong is one
+# stale file that the next run cleans up, while failing would break every configured tree on a
+# format change.
+# RUN: rm -rf %t.oldout && mkdir -p %t.oldout
+# RUN: echo 'some older format' >%t.oldmf
+# RUN: %dsdlc --target-language c --outdir %t.oldout --prune-manifest %t.oldmf %t.src/ns >/dev/null 2>&1
+# RUN: test -f %t.oldout/ns/Kept_1_0.h

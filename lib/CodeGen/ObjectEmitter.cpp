@@ -181,6 +181,86 @@ llvm::Error setPathMode(const std::filesystem::path& path, const std::uint32_t m
     return llvm::Error::success();
 }
 
+/// @brief Publishes the headers of a staging tree into the output directory as declared outputs.
+///
+/// @details
+/// This backend compiles the sources it generates, so the sources are an intermediate the caller
+/// never sees -- but the *headers* are the only way to call what ends up in the archive, and an
+/// archive with no declared header interface is half a deliverable. Staging them under a dot-prefixed
+/// directory and leaving them out of `--list-outputs` meant a build system could not find them at
+/// all, so a consumer had to run the `c` backend a second time purely for its headers, and keep two
+/// invocations' options in agreement or get headers describing something the archive did not
+/// implement.
+///
+/// The published layout mirrors the staging tree, which is the same layout the `c` backend produces,
+/// so `-I<outdir>` is all a consumer needs.
+///
+/// Recording happens whether or not anything is written, matching `writeGeneratedFile`: under
+/// `--dry-run` (which `--list-outputs` implies) the staged files do not exist on disk, and a listing
+/// that omitted them would describe an output tree the real run does not produce.
+llvm::Error publishStagedHeaders(const std::vector<std::string>&    staged,
+                                 const std::filesystem::path&       stageRoot,
+                                 const std::filesystem::path&       outRoot,
+                                 const EmitWritePolicy&             policy,
+                                 const std::vector<std::string>&    selectedTypeKeys)
+{
+    for (const auto& entry : staged)
+    {
+        const std::filesystem::path source(entry);
+        const auto                  extension = source.extension();
+        if (extension != ".h" && extension != ".hpp")
+        {
+            continue;
+        }
+
+        std::error_code ec;
+        auto            relative = std::filesystem::relative(source, stageRoot, ec);
+        if (ec || relative.empty())
+        {
+            relative = source.filename();
+        }
+        const std::filesystem::path destination = outRoot / relative;
+        if (!isPathWithinRoot(outRoot, destination))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "refusing to publish header outside the output directory: %s",
+                                           destination.string().c_str());
+        }
+
+        if (!policy.dryRun)
+        {
+            std::filesystem::create_directories(destination.parent_path(), ec);
+            if (ec)
+            {
+                return llvm::createStringError(ec,
+                                               "failed to create header output directory %s",
+                                               destination.parent_path().string().c_str());
+            }
+            // Generated files are written read-only by default, and copy_file will not overwrite
+            // one, so a rerun has to remove the previous copy first.
+            std::filesystem::remove(destination, ec);
+            std::filesystem::copy_file(source,
+                                       destination,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       ec);
+            if (ec)
+            {
+                return llvm::createStringError(ec,
+                                               "failed to publish header %s to %s",
+                                               source.string().c_str(),
+                                               destination.string().c_str());
+            }
+            if (auto err = setPathMode(destination, policy.fileMode))
+            {
+                return err;
+            }
+        }
+
+        recordOutput(policy, destination, selectedTypeKeys);
+    }
+    return llvm::Error::success();
+}
+
 std::optional<std::string> environmentValue(const char* name)
 {
     if (name == nullptr)
@@ -427,6 +507,17 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         return err;
     }
 
+    // The C headers are the interface to the archive in the C ABI lane, and the interface to the
+    // C-callable shim symbols in the C++ one, so they are published either way.
+    if (auto err = publishStagedHeaders(cGenerated,
+                                        cStageRoot,
+                                        outRoot,
+                                        options.writePolicy,
+                                        options.selectedTypeKeys))
+    {
+        return err;
+    }
+
     std::vector<std::filesystem::path> sources;
     for (const auto& output : cGenerated)
     {
@@ -531,11 +622,23 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         cppStageOptions.cStageRoot        = cStageRoot;
         cppStageOptions.selectedTypeKeys  = options.selectedTypeKeys;
         cppStageOptions.writePolicy       = options.writePolicy;
-        cppStageOptions.writePolicy.recordedOutputs                = nullptr;
+        std::vector<std::string> cppGenerated;
+        cppStageOptions.writePolicy.recordedOutputs                = &cppGenerated;
         cppStageOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
 
         std::vector<std::filesystem::path> cppSources;
         if (auto err = emitCppObjectAbiStage(semantic, loweredFacts, cppStageOptions, &cppSources))
+        {
+            return err;
+        }
+
+        // The C++ ABI headers are what a C++ consumer calls through; the C ones published above
+        // cover the shim. Relative to the C++ stage root, so the published tree mirrors it.
+        if (auto err = publishStagedHeaders(cppGenerated,
+                                            cppStageRoot,
+                                            outRoot,
+                                            options.writePolicy,
+                                            options.selectedTypeKeys))
         {
             return err;
         }

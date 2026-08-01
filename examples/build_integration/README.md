@@ -40,7 +40,9 @@ build at the output directory and compile it as part of your own target. Forced 
   time, because Node falls back to looking for `index.js` and finds `index.ts`. Generated TypeScript
   is source, and joins your program as source.
 - **Every Python build backend except setuptools** -- the emitted `pyproject.toml` declares
-  `setuptools.build_meta`, and a project cannot have two build backends.
+  `setuptools.build_meta`, and a project cannot have two build backends. Pointing another backend at
+  the generated package is one line of configuration; the generated tree is an ordinary Python
+  package, and dsdlc's own manifest just sits there unused.
 
 Each cell page states which idiom it is and why that build system left no choice.
 
@@ -59,6 +61,62 @@ regenerate? Getting this wrong is how a build serves stale generated code after 
 build can ask what *would* be produced before producing it. `-MD` writes make-style `.d` files next
 to the generated output. Between them, an exact incremental integration is available in any build
 system that can run a command at configure time or read a depfile -- which is all of them.
+
+## Splitting generation up
+
+You are not obliged to treat a namespace as one indivisible run. dsdlc will tell you what it would
+emit for any subset of its work, which means a build can give each subset its own rule, its own
+outputs, and its own lifetime.
+
+| Selector | Selects |
+|---|---|
+| `--generate-support only` | Only code *not* derived from a definition: runtime headers and modules, package manifests, scaffolding. Needs no positional target. |
+| `--generate-support never` | Only code derived from definitions. |
+| `--omit-dependencies` | Only the definitions named, not the ones they refer to. |
+| `+uavcan.node`, `+uavcan.node.Heartbeat.1.0` | Standard types from the catalog compiled into `dsdlc`, with no checkout of `public_regulated_data_types`. |
+| `<root>:<relative/Type.1.0.dsdl>` | One definition, with output paths anchored at `<root>`. |
+
+Combining them gives a build as much granularity as it wants -- per namespace, per tranche, or per
+definition. The reason to bother is that these things change at different rates: the runtime header
+and the standard types move only when the compiler does, while your own definitions change all day.
+Split along that line and editing a definition rebuilds one archive instead of all of them, and the
+standard types become a library that several components share.
+
+**Past one namespace this stops being an optimisation and becomes a requirement.** Two runs that
+both default to `--generate-support as-needed` into the same output directory both emit the runtime
+header, and two rules producing one file is an error Ninja refuses to build at all. The same goes
+for a standard type two namespaces both refer to. So a project with several namespaces gives support
+one owner, the shared standard types another, and passes `--omit-dependencies` to the rest.
+
+The [GNU Make cell](cells/c-make.md) is built this way, in three tranches. `dsdlc_generate()` takes
+`SUPPORT`, `BUILTIN`, and `OMIT_DEPENDENCIES` for the same purpose, and refuses at configure time --
+naming both claimants -- if two calls would produce the same file.
+
+### Prebuilt archives
+
+`-l obj` is the other shape: it runs the C backend and then compiles it, handing back objects and a
+`.a`. Use it when the generated code should be built once -- for a target triple that is not the
+host, or by a party who ships the archive rather than the schema. The archive then only links into a
+build using that same toolchain.
+
+The headers are published beside the archive, in the same layout the `c` backend uses, so one
+invocation gives a complete interface -- add the output directory to your include path and link the
+archive. The [CMake](cells/c-cmake.md) and [Bazel](cells/c-bazel.md) cells both build one.
+
+### Deleting a definition
+
+Generation adds files; it does not remove them. Delete a definition and its generated header stays
+in the output directory, still on the include path, so code naming a type nobody defines any more
+keeps compiling.
+
+`--prune-manifest <file>` fixes that: the run records what it produced and, next time, deletes what
+it no longer produces. One manifest per invocation, never one per directory -- a tranche owns only
+the files it emits, and one that swept the output directory would delete its siblings' work.
+`dsdlc_generate()` passes one automatically.
+
+**If your build has to reshape what dsdlc emits, that is a bug worth reporting rather than a recipe
+worth copying.** Nothing on these pages moves, renames, or post-processes a generated file, and no
+cell should need to.
 
 ## Why the showroom does it differently
 
@@ -100,7 +158,7 @@ thing that works on a distribution that marks its interpreter externally managed
 
 <!-- build-integration: skip -->
 
-Measured against the toolshed image (`ts26.4.2`), which is what CI runs in:
+Measured against the toolshed image (`ts26.4.3`), which is what CI runs in:
 
 | Tool | In the image | How a cell gets it |
 |---|---|---|
@@ -110,9 +168,13 @@ Measured against the toolshed image (`ts26.4.2`), which is what CI runs in:
 | `python3` 3.14, `pip`, `venv` | yes | -- |
 | `pnpm` | no | `corepack enable pnpm` -- `corepack` is in the image |
 | `setuptools`, `uv`, `poetry`, `flit`, `hatchling` | no | per-cell virtual environment |
-| `bazel` | **no** | not yet resolved; the Bazel cell is gated on it |
+| `bazel` 9.2.0 | yes | -- |
 
-Only Bazel is a genuine gap in the image. Every other cell runs on `ts26.4.2` unchanged.
+Every cell's toolchain now comes from the image. Bazel arrived in `ts26.4.3`, which installs
+bazelisk and pre-warms Bazel 9.2.0; the Bazel cell pins that same version in its `.bazelversion`, so
+it neither downloads a compiler nor drifts off the one the image carries. `pnpm` is the only tool
+still provisioned in the job, by `corepack`, which is why `ts-pnpm` is the one cell absent from the
+`--require` list.
 
 ## The cell invariant
 
@@ -137,3 +199,8 @@ schemas. Between them they force a real integration:
 
 An integration that compiles `SensorFrame` but not the `Reading` it embeds is broken, and this
 namespace is shaped to fail loudly when that happens.
+
+There is a second root namespace, `gizmo`, holding one definition. It exists only for the
+[Ninja Multi-Config cell](cells/c-cmake-ninja-multi.md): it refers to the same standard timestamp
+`kitbag` does, which is what forces a build with two namespaces to decide who generates the shared
+type. Every other cell targets `dsdl/kitbag` directly and never sees it.

@@ -1,0 +1,69 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_dsdl//:defs.bzl", "dsdl_builtin_library", "dsdl_c_library", "dsdl_obj_library", "dsdl_support_library")
+
+# Three tranches, for the reason Bazel makes unavoidable: two rules producing one file is an error
+# it refuses to build, so the runtime header and any shared standard type each need exactly one
+# owner. See the cell page.
+
+# 1. The runtime header. Nothing derived from a definition.
+dsdl_support_library(name = "dsdl_support")
+
+# 2. The standard types this namespace refers to, from the catalog compiled into dsdlc -- no
+#    checkout of public_regulated_data_types anywhere in this build.
+dsdl_builtin_library(
+    name = "dsdl_builtin",
+    types = ["uavcan.time.SynchronizedTimestamp.1.0"],
+    deps = [":dsdl_support"],
+)
+
+# 3. Our own definitions. Listed rather than globbed: Bazel wants to know the inputs during
+#    analysis, and a glob would hide a new definition behind a stale analysis cache.
+dsdl_c_library(
+    name = "kitbag",
+    srcs = [
+        "dsdl/kitbag/300.Configure.1.0.dsdl",
+        "dsdl/kitbag/6300.SensorFrame.1.0.dsdl",
+        "dsdl/kitbag/Mode.1.0.dsdl",
+        "dsdl/kitbag/Reading.1.0.dsdl",
+    ],
+    root = "dsdl/kitbag",
+    deps = [
+        ":dsdl_builtin",
+        ":dsdl_support",
+    ],
+)
+
+cc_binary(
+    name = "roundtrip",
+    srcs = ["src/c/roundtrip.c"],
+    deps = [":kitbag"],
+)
+
+# --------------------------------------------------------------------------------------------------
+# The obj backend: the same types as a prebuilt archive rather than as sources.
+#
+# `-l obj` compiles the generated C and hands back the headers, the objects, and a `.a`. Reach for it
+# when the code should be built once -- for a target triple that is not this host, or by a party who
+# ships the archive rather than the schema.
+#
+# One target, and no dependency on the three above: the archive is self-contained and the backend
+# publishes the headers beside it, so this owns its whole interface. `builtin_types` is here only
+# because the *headers* must be declared during analysis and the dependency closure is not derivable
+# from a filename -- the archive already contains the code.
+dsdl_obj_library(
+    name = "kitbag_prebuilt",
+    srcs = [
+        "dsdl/kitbag/300.Configure.1.0.dsdl",
+        "dsdl/kitbag/6300.SensorFrame.1.0.dsdl",
+        "dsdl/kitbag/Mode.1.0.dsdl",
+        "dsdl/kitbag/Reading.1.0.dsdl",
+    ],
+    builtin_types = ["uavcan.time.SynchronizedTimestamp.1.0"],
+    root = "dsdl/kitbag",
+)
+
+cc_binary(
+    name = "roundtrip_prebuilt",
+    srcs = ["src/c/roundtrip.c"],
+    deps = [":kitbag_prebuilt"],
+)

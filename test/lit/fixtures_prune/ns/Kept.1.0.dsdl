@@ -1,0 +1,6 @@
+# Survives every prune in the test.
+
+uint8 kept
+# Nothing interesting.
+
+@sealed

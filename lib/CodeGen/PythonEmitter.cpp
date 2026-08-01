@@ -1621,7 +1621,37 @@ std::string renderPyProjectToml(llvm::StringRef packageName, llvm::StringRef roo
     return out.str();
 }
 
+/// @brief Renders the body of one generated `__init__.py`.
+///
+/// @details
+/// The docstring is not decoration. Several Python build backends read a package's docstring and
+/// `__version__` as its metadata, and flit refuses outright to package a module without a docstring
+/// -- so a package that omits them is one a user cannot build with the backend of their choice.
+/// The leading generated-by comment stays where it is: a comment is not a statement, so the
+/// docstring is still the module's first statement and still its `__doc__`.
+///
+/// `__version__` is the generator's version, which is what a generated package can honestly claim to
+/// be versioned by.
+std::string renderInitFile(llvm::StringRef dottedName, const bool isPackageRoot)
+{
+    std::ostringstream out;
+    out << generatedCommentLine("Python backend") << "\n";
+    if (isPackageRoot)
+    {
+        out << "\"\"\"Generated DSDL types, rooted at the `" << dottedName.str() << "` package.\"\"\"\n";
+        out << "\n";
+        out << "__version__ = \"" << llvmdsdl::kVersionString << "\"\n";
+    }
+    else
+    {
+        out << "\"\"\"Generated DSDL types under `" << dottedName.str() << "`.\"\"\"\n";
+    }
+    return out.str();
+}
+
 llvm::Error ensureInitFile(const std::filesystem::path&     dir,
+                           llvm::StringRef                  dottedName,
+                           const bool                       isPackageRoot,
                            std::set<std::filesystem::path>& initializedPackages,
                            const EmitWritePolicy&           writePolicy)
 {
@@ -1633,7 +1663,7 @@ llvm::Error ensureInitFile(const std::filesystem::path&     dir,
     std::error_code       ec;
     if (!std::filesystem::exists(initPath, ec))
     {
-        if (auto err = writeGeneratedFile(initPath, generatedCommentLine("Python backend") + "\n", writePolicy))
+        if (auto err = writeGeneratedFile(initPath, renderInitFile(dottedName, isPackageRoot), writePolicy))
         {
             return err;
         }
@@ -1642,12 +1672,14 @@ llvm::Error ensureInitFile(const std::filesystem::path&     dir,
 }
 
 llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
+                                   llvm::StringRef                  packageName,
                                    const std::filesystem::path&     relDir,
                                    std::set<std::filesystem::path>& initializedPackages,
                                    const EmitWritePolicy&           writePolicy)
 {
     std::filesystem::path current = packageRoot;
-    if (auto err = ensureInitFile(current, initializedPackages, writePolicy))
+    std::string           dotted  = packageName.str();
+    if (auto err = ensureInitFile(current, dotted, true, initializedPackages, writePolicy))
     {
         return err;
     }
@@ -1660,7 +1692,8 @@ llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
             continue;
         }
         current /= piece;
-        if (auto err = ensureInitFile(current, initializedPackages, writePolicy))
+        dotted += "." + piece;
+        if (auto err = ensureInitFile(current, dotted, false, initializedPackages, writePolicy))
         {
             return err;
         }
@@ -1725,7 +1758,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     if (emitSupport)
     {
         if (auto err =
-                ensurePackageInitChain(packageRoot, std::filesystem::path{}, initializedPackages, options.writePolicy))
+                ensurePackageInitChain(packageRoot, ctx.packageName(), std::filesystem::path{}, initializedPackages, options.writePolicy))
         {
             return err;
         }
@@ -1803,7 +1836,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         const auto                     fullPath = packageRoot / relPath;
 
         if (auto err =
-                ensurePackageInitChain(packageRoot, relPath.parent_path(), initializedPackages, options.writePolicy))
+                ensurePackageInitChain(packageRoot, ctx.packageName(), relPath.parent_path(), initializedPackages, options.writePolicy))
         {
             return err;
         }

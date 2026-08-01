@@ -170,6 +170,43 @@ llvm::Error writeGeneratedFile(const std::filesystem::path&    path,
                                const EmitWritePolicy&          policy,
                                const std::vector<std::string>& requiredTypeKeys = {});
 
+/// @brief Result of one prune pass, for reporting.
+struct PruneReport final
+{
+    /// @brief Files removed because this run no longer produces them.
+    std::vector<std::string> removedFiles;
+
+    /// @brief Directories removed after becoming empty.
+    std::vector<std::string> removedDirectories;
+};
+
+/// @brief Deletes outputs a previous run of the same tranche produced and this one did not.
+///
+/// @details
+/// A build may split one namespace across several dsdlc invocations -- support code, the embedded
+/// catalog, and definitions are the natural seams -- and each invocation owns only the files it
+/// emits. Pruning is therefore scoped by a manifest supplied by the caller, one per tranche, rather
+/// than by sweeping @p outputRoot: a tranche that swept the output directory would delete its
+/// siblings' work.
+///
+/// The manifest is read before it is rewritten, so the first run of a new tranche prunes nothing.
+/// Paths recorded in a manifest but lying outside @p outputRoot are refused rather than removed --
+/// a manifest is an input, and an input that can name any path on the filesystem is a way to turn a
+/// stale file into an arbitrary deletion.
+///
+/// Directories emptied by pruning are removed as well, bottom-up, stopping at @p outputRoot. A
+/// deleted namespace should not leave an empty directory shaped like one that still exists.
+///
+/// @param[in] manifestPath Per-tranche manifest to read and then rewrite.
+/// @param[in] outputRoot Directory that bounds every removal.
+/// @param[in] currentOutputs Absolute paths this run produced.
+/// @param[out] report Optional record of what was removed.
+/// @return Success, or a descriptive I/O error. A manifest that does not exist is not an error.
+llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
+                              const std::filesystem::path&    outputRoot,
+                              const std::vector<std::string>& currentOutputs,
+                              PruneReport*                    report = nullptr);
+
 /// @brief Renders one make-style depfile body.
 ///
 /// @details

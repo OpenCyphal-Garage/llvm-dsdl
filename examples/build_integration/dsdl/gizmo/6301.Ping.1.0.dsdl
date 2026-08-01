@@ -1,0 +1,19 @@
+# A liveness ping from a gizmo.
+#
+# A second root namespace, and its whole reason for existing is that it
+# refers to the same standard timestamp `kitbag` does. Two namespaces
+# sharing a dependency is the ordinary case, and it is the one that
+# forces a build to decide who generates the shared type -- generate it
+# from both and two rules produce one file, which Ninja refuses outright.
+#
+# Only the Ninja cell builds this. The other cells target the kitbag
+# namespace directly and never see it.
+
+uavcan.time.SynchronizedTimestamp.1.0 at
+# When the ping was sent, on the network-synchronised timebase.
+
+uint16 sequence
+# Increments once per ping, wrapping. A receiver uses the gaps to
+# estimate loss.
+
+@sealed

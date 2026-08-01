@@ -35,6 +35,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,6 +84,11 @@ class CellError(Exception):
 class Requirement:
     command: str
     reason: str
+    # Optional "at least this version", compared against the first dotted number the tool prints for
+    # --version. A cell that needs a build-system feature rather than merely the build system is
+    # otherwise indistinguishable from one that does not, and would fail on an old host instead of
+    # skipping -- GNU Make's grouped targets (4.3) are the motivating case, since macOS ships 3.81.
+    min_version: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,9 +168,13 @@ def load_cell(directory: Path) -> Cell:
 
     requires = []
     for entry in raw["requires"]:
-        if not isinstance(entry, dict) or set(entry) != {"command", "reason"}:
-            raise CellError(f"{manifest}: each 'requires' entry needs exactly 'command' and 'reason'")
-        requires.append(Requirement(entry["command"], entry["reason"]))
+        if not isinstance(entry, dict) or not {"command", "reason"} <= set(entry) \
+                or set(entry) - {"command", "reason", "min_version"}:
+            raise CellError(
+                f"{manifest}: each 'requires' entry needs 'command' and 'reason', "
+                "and may add 'min_version'")
+        requires.append(
+            Requirement(entry["command"], entry["reason"], entry.get("min_version", "")))
 
     steps = []
     for entry in raw["steps"]:
@@ -230,8 +240,33 @@ def check_invariant(cell: Cell) -> list[str]:
 # --------------------------------------------------------------------------------------------------
 # Execution.
 
-def missing_requirements(cell: Cell) -> list[Requirement]:
-    return [req for req in cell.requires if shutil.which(req.command) is None]
+def _version_tuple(text: str) -> tuple[int, ...]:
+    match = re.search(r"(\d+(?:\.\d+)+)", text)
+    return tuple(int(p) for p in match.group(1).split(".")) if match else ()
+
+
+def unmet_requirements(cell: Cell) -> list[str]:
+    """Return one human-readable reason per requirement the host does not satisfy."""
+    unmet = []
+    for req in cell.requires:
+        if shutil.which(req.command) is None:
+            unmet.append(f"{req.command} not found ({req.reason})")
+            continue
+        if not req.min_version:
+            continue
+        try:
+            probe = subprocess.run([req.command, "--version"], capture_output=True, text=True,
+                                   timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            unmet.append(f"{req.command} would not report a version (need >= {req.min_version})")
+            continue
+        found = _version_tuple(probe.stdout or probe.stderr or "")
+        if not found:
+            unmet.append(f"{req.command} reported no parseable version (need >= {req.min_version})")
+        elif found < _version_tuple(req.min_version):
+            shown = ".".join(str(p) for p in found)
+            unmet.append(f"{req.command} {shown} < {req.min_version} ({req.reason})")
+    return unmet
 
 
 def stage(cell: Cell, work_root: Path) -> Path:
@@ -258,10 +293,9 @@ def run_cell(cell: Cell, dsdlc: Path, work_root: Path, verbose: bool,
              prefix: Path | None = None) -> Result:
     started = time.monotonic()
 
-    absent = missing_requirements(cell)
-    if absent:
-        detail = "; ".join(f"{r.command} ({r.reason})" for r in absent)
-        return Result(cell.name, SKIP, f"missing: {detail}", 0.0)
+    unmet = unmet_requirements(cell)
+    if unmet:
+        return Result(cell.name, SKIP, "; ".join(unmet), 0.0)
 
     # A cell that calls find_package(llvm-dsdl) needs an install tree, not just the binary. Skipping
     # is right rather than falling back to the raw binary: the point of such a cell is to exercise

@@ -18,3 +18,23 @@ dsdlc_generate(kitbag
 
 add_executable(roundtrip src/c/roundtrip.c)
 target_link_libraries(roundtrip PRIVATE kitbag)
+
+# --------------------------------------------------------------------------------------------------
+# The obj backend: the same types as a prebuilt archive rather than as sources.
+#
+# `-l obj` runs the C backend and then compiles it, handing back the headers, the objects, and a
+# `.a`. That is what you want when the generated code should be built once -- for a target triple
+# that is not this host, or by a party who ships the archive rather than the schema.
+#
+# One call, like the source build above: the headers are declared outputs published beside the
+# archive, so linking the target brings its include path with it.
+dsdlc_generate(kitbag_prebuilt
+  LANGUAGE  obj
+  NAMESPACE "${CMAKE_CURRENT_SOURCE_DIR}/dsdl/kitbag"
+  # Required for obj. It selects the codegen strategy, not the wire format -- DSDL is little-endian
+  # on every target either way. Add --target-triple here to build the archive for a different one,
+  # after which it only links into a build using that same toolchain.
+  OPTIONS   --target-endianness little)
+
+add_executable(roundtrip_prebuilt src/c/roundtrip.c)
+target_link_libraries(roundtrip_prebuilt PRIVATE kitbag_prebuilt)
