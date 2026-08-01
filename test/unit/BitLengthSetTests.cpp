@@ -511,7 +511,7 @@ void testExpandBoundedRepeat(TestContext& t)
 }
 
 // Value-domain safety — negatives clamp to 0, and arithmetic saturates instead of
-// overflowing (no UB). Realistic inputs never reach these regimes; the point is defined behavior.
+// overflowing (no UB). Realistic inputs never reach these regimes; the point is defined behaviour.
 void testValueDomainSafety(TestContext& t)
 {
     // Negative construction values are clamped to 0, keeping the set in-domain.

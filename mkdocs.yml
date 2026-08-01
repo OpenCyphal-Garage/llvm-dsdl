@@ -51,7 +51,7 @@ nav:
           - Determinism: reference/guarantees/determinism.md
           - Supply Chain: reference/guarantees/supply-chain.md
       - Showroom:
-          - Overview: showroom/index.md
+          - Types: showroom/index.md
           - Build Recipes: showroom/recipes/index.md
   - Development:
       - Contributing: development/contributing.md

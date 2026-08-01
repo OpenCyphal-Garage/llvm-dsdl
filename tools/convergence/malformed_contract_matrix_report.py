@@ -32,7 +32,7 @@ CATEGORIES: List[Tuple[str, str]] = [
 
 MATRIX: Dict[str, Dict[str, object]] = {
     "ts_portable_fast": {
-        "behavior": "Error-throwing runtime paths validated by TS smoke/parity lanes.",
+        "behaviour": "Error-throwing runtime paths validated by TS smoke/parity lanes.",
         "cells": {
             "out_of_range_bit_ops": [r"^llvmdsdl-ts-runtime-truncated-decode-smoke$", r"^llvmdsdl-fixtures-c-ts-truncated-decode-parity$"],
             "copy_range_violations": [r"^llvmdsdl-ts-runtime-truncated-decode-smoke$", r"^llvmdsdl-fixtures-c-ts-truncated-decode-parity$"],
@@ -42,7 +42,7 @@ MATRIX: Dict[str, Dict[str, object]] = {
         },
     },
     "python_portable_fast_accel": {
-        "behavior": "Mode-specific malformed contract validated (`portable|fast|accel`) with fuzz/parity lanes.",
+        "behaviour": "Mode-specific malformed contract validated (`portable|fast|accel`) with fuzz/parity lanes.",
         "cells": {
             "out_of_range_bit_ops": [r"^llvmdsdl-fixtures-python-malformed-input-contract$", r"^llvmdsdl-fixtures-python-malformed-decode-fuzz-parity$"],
             "copy_range_violations": [r"^llvmdsdl-fixtures-python-malformed-input-contract$", r"^llvmdsdl-fixtures-python-malformed-decode-fuzz-parity$"],
@@ -52,7 +52,7 @@ MATRIX: Dict[str, Dict[str, object]] = {
         },
     },
     "rust_portable_fast": {
-        "behavior": "Rust runtime contract unit tests plus cross-language parity lanes enforce malformed behavior classes.",
+        "behaviour": "Rust runtime contract unit tests plus cross-language parity lanes enforce malformed behaviour classes.",
         "cells": {
             "out_of_range_bit_ops": [r"^llvmdsdl-fixtures-rust-runtime-unit-tests$", r"^llvmdsdl-fixtures-rust-runtime-unit-tests-no-std-pool$"],
             "copy_range_violations": [r"^llvmdsdl-fixtures-rust-runtime-unit-tests$", r"^llvmdsdl-fixtures-rust-runtime-unit-tests-no-std-pool$"],
@@ -62,7 +62,7 @@ MATRIX: Dict[str, Dict[str, object]] = {
         },
     },
     "native_c_cpp_go_boundaries": {
-        "behavior": "Native C/C++/Go parity lanes enforce malformed decode/capacity behavior compatibility.",
+        "behaviour": "Native C/C++/Go parity lanes enforce malformed decode/capacity behaviour compatibility.",
         "cells": {
             "out_of_range_bit_ops": [r"^llvmdsdl-uavcan-cpp-c-parity$", r"^llvmdsdl-uavcan-c-go-parity$"],
             "copy_range_violations": [r"^llvmdsdl-uavcan-cpp-c-parity$", r"^llvmdsdl-uavcan-c-go-parity$"],
@@ -302,7 +302,7 @@ def _build_report(
                 )
 
         backends[backend] = {
-            "behavior": backend_cfg["behavior"],
+            "behaviour": backend_cfg["behaviour"],
             "covered_cells": backend_covered,
             "total_cells": backend_total,
             "score": int(round((backend_covered * 100.0) / backend_total)),
@@ -371,7 +371,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         row = report["backends"][backend]
         lines.append(f"## `{backend}`")
         lines.append("")
-        lines.append(row["behavior"])
+        lines.append(row["behaviour"])
         lines.append("")
         lines.append("| Category | Status | Evidence |")
         lines.append("| --- | --- | --- |")
@@ -412,15 +412,15 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
             lines.append("All categories covered by an executed, passing test; no failed/skipped evidence.")
         lines.append("")
 
-    lines.append("## Native Behavior Guards")
+    lines.append("## Native Behaviour Guards")
     lines.append("")
-    behavior = report.get("native_behavior_guards", {})
-    lines.append(f"All checks passed: `{bool(behavior.get('all_passed', False))}`")
+    behaviour = report.get("native_behavior_guards", {})
+    lines.append(f"All checks passed: `{bool(behaviour.get('all_passed', False))}`")
     lines.append("")
     lines.append("| Guard | Status | Notes |")
     lines.append("| --- | --- | --- |")
-    for guard_name in sorted(behavior.get("checks", {})):
-        guard = behavior["checks"][guard_name]
+    for guard_name in sorted(behaviour.get("checks", {})):
+        guard = behaviour["checks"][guard_name]
         status = "pass" if guard.get("pass", False) else "fail"
         notes = []
         if "script" in guard:
@@ -486,12 +486,12 @@ def _check_baseline(report: Dict[str, object], baseline_path: Path) -> List[str]
     actual_guards = report.get("native_behavior_guards", {}).get("checks", {})
     for guard_name in required_pass:
         if guard_name not in actual_guards:
-            failures.append(f"native-behavior guard missing from report: {guard_name}")
+            failures.append(f"native-behaviour guard missing from report: {guard_name}")
             continue
         if not actual_guards[guard_name].get("pass", False):
-            failures.append(f"native-behavior guard failed: {guard_name}")
+            failures.append(f"native-behaviour guard failed: {guard_name}")
     if guard_baseline.get("all_passed") is True and not report.get("native_behavior_guards", {}).get("all_passed", False):
-        failures.append("native-behavior guard set expected all_passed=true but report indicates failures")
+        failures.append("native-behaviour guard set expected all_passed=true but report indicates failures")
 
     return failures
 
@@ -574,7 +574,7 @@ def main(argv: List[str]) -> int:
             for guard_name, guard in sorted(report.get("native_behavior_guards", {}).get("checks", {}).items()):
                 if guard.get("pass", False):
                     continue
-                print(f"malformed-contract native-behavior guard failed: '{guard_name}'", file=sys.stderr)
+                print(f"malformed-contract native-behaviour guard failed: '{guard_name}'", file=sys.stderr)
                 if "missing_categories" in guard and guard["missing_categories"]:
                     print("  missing categories: " + ", ".join(guard["missing_categories"]), file=sys.stderr)
                 if "missing_patterns" in guard and guard["missing_patterns"]:

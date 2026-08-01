@@ -17,7 +17,7 @@ The corpus is organized under the root namespace `civildrone` and includes:
   - VSLAM/localization/mapping/fusion/planner/scenegraph style type graphs
 
 Current generated size is intentionally large (thousands of `.dsdl` files) to
-surface combinatorial behavior in discovery, parsing, semantic analysis, and
+surface combinatorial behaviour in discovery, parsing, semantic analysis, and
 downstream lowering/codegen passes.
 
 Benchmark runs should use:

@@ -11,7 +11,7 @@
 /// Builds array wire-layout planning facts for lowered sections.
 ///
 /// The implementation combines semantic array properties with lowered helper contracts so emitters can share consistent
-/// serialization behavior.
+/// serialization behaviour.
 ///
 //===----------------------------------------------------------------------===//
 

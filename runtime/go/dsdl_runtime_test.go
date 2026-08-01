@@ -4,7 +4,7 @@
 /// Unit tests for Go DSDL runtime helper primitives.
 ///
 /// These tests validate bit-copy, integer/float conversion, and error-boundary
-/// behavior used by generated Go code.
+/// behaviour used by generated Go code.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -45,7 +45,7 @@ func copyBitsRef(dst []byte, dstOffsetBits, lengthBits int, src []byte, srcOffse
 	}
 }
 
-// TestChooseMin validates minimum selection behavior.
+// TestChooseMin validates minimum selection behaviour.
 func TestChooseMin(t *testing.T) {
 	if got := ChooseMin(2, 9); got != 2 {
 		t.Fatalf("ChooseMin(2,9) = %d, want 2", got)
@@ -147,7 +147,7 @@ func TestGetBitsImplicitZeroExtension(t *testing.T) {
 	}
 }
 
-// TestSetUxxAndGetU32RoundTrip validates unsigned integer round-trip behavior.
+// TestSetUxxAndGetU32RoundTrip validates unsigned integer round-trip behaviour.
 func TestSetUxxAndGetU32RoundTrip(t *testing.T) {
 	buf := make([]byte, 8)
 	if rc := SetUxx(buf, 3, 0xABCDE, 20); rc != DSDL_RUNTIME_SUCCESS {
@@ -177,7 +177,7 @@ func TestSetBitBufferTooSmall(t *testing.T) {
 	}
 }
 
-// TestSignedGetSignExtension validates narrow signed sign-extension behavior.
+// TestSignedGetSignExtension validates narrow signed sign-extension behaviour.
 func TestSignedGetSignExtension(t *testing.T) {
 	negOne3Bit := []byte{0x07} // 0b111 => -1 when interpreted as signed 3-bit
 	if got := GetI8(negOne3Bit, 0, 3); got != -1 {
@@ -203,7 +203,7 @@ func TestSignedGetSignExtensionWiderTypes(t *testing.T) {
 	}
 }
 
-// TestFloat16PackUnpackSpecials validates NaN and infinity conversion behavior.
+// TestFloat16PackUnpackSpecials validates NaN and infinity conversion behaviour.
 func TestFloat16PackUnpackSpecials(t *testing.T) {
 	if got := Float16Pack(float32(math.Inf(1))); got != 0x7C00 {
 		t.Fatalf("Float16Pack(+Inf)=0x%04X, want 0x7C00", got)
@@ -220,7 +220,7 @@ func TestFloat16PackUnpackSpecials(t *testing.T) {
 	}
 }
 
-// TestSetGetFloatsRoundTrip validates float32/float64 round-trip behavior.
+// TestSetGetFloatsRoundTrip validates float32/float64 round-trip behaviour.
 func TestSetGetFloatsRoundTrip(t *testing.T) {
 	buf := make([]byte, 16)
 

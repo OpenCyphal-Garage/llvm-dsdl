@@ -39,5 +39,5 @@ cmake --build <build-dir> --target showroom
 ## Next
 
 - CLI options: [dsdlc](../reference/commands/dsdlc.md)
-- Backend behavior: [Backend Overview](../reference/codegen/backends.md)
+- Backend behaviour: [Backend Overview](../reference/codegen/backends.md)
 - Object backend details: [Object Backend](../reference/codegen/object.md)

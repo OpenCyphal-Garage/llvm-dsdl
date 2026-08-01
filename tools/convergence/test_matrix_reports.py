@@ -130,7 +130,7 @@ class MatrixReportRegressionTest(unittest.TestCase):
             )
         self.assertNotEqual(result.returncode, 0, msg="expected malformed guard regression failure")
         self.assertIn("malformed-contract regression:", result.stderr)
-        self.assertIn("native-behavior guard missing from report: nonexistent_guard", result.stderr)
+        self.assertIn("native-behaviour guard missing from report: nonexistent_guard", result.stderr)
 
     def test_determinism_baseline_passes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-determinism-selftest-") as tmp_dir:

@@ -10,7 +10,7 @@
 /// @file
 /// Resolves optional helper symbol names from lowered section facts.
 ///
-/// These helpers guard against absent lowering metadata and provide stable symbol lookup behavior for emitters.
+/// These helpers guard against absent lowering metadata and provide stable symbol lookup behaviour for emitters.
 ///
 //===----------------------------------------------------------------------===//
 

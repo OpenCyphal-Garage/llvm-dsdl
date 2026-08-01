@@ -161,7 +161,7 @@ endforeach()
 
 set(
   recommendation
-  "Keep max-inline as the default baseline for deterministic latency/memory behavior. Use inline-then-pool when RAM pressure is high and pool provisioning is available.")
+  "Keep max-inline as the default baseline for deterministic latency/memory behaviour. Use inline-then-pool when RAM pressure is high and pool provisioning is available.")
 if(metric_inline_then_pool_total_elapsed LESS_EQUAL metric_max_inline_total_elapsed)
   set(
     recommendation

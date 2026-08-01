@@ -30,7 +30,7 @@ namespace llvmdsdl
 /// @file
 /// @brief Frontend abstract syntax tree types for parsed DSDL definitions.
 
-/// @brief Cast behavior requested by scalar type expressions.
+/// @brief Cast behaviour requested by scalar type expressions.
 enum class CastMode
 {
 

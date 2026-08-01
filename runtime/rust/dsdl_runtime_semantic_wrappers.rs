@@ -216,7 +216,7 @@ pub struct PassthroughPoolHandle(pub u64);
 
 /// Reference pool provider that accepts all allocation requests.
 ///
-/// This provider is useful for preserving existing generated behavior while
+/// This provider is useful for preserving existing generated behaviour while
 /// still exercising pool allocation routes in code paths.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PassthroughPoolProvider {
@@ -253,7 +253,7 @@ pub struct BudgetPoolHandle(pub u64);
 
 /// Reference pool provider with a fixed byte budget.
 ///
-/// This provider enforces deterministic boundary behavior for tests and
+/// This provider enforces deterministic boundary behaviour for tests and
 /// embedded bring-up. Deallocation is intentionally a no-op in this reference
 /// implementation.
 #[derive(Clone, Debug, PartialEq, Eq)]

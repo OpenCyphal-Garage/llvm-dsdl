@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`llvm-dsdl` is a compiler toolchain for [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl), built to make one semantic interpretation of `.dsdl` definitions reusable across many target languages. DSDL describes message/service data contracts and wire behavior. In practice, this project turns those contracts into language artifacts that can serialize and deserialize bytes consistently.
+`llvm-dsdl` is a compiler toolchain for [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl), built to make one semantic interpretation of `.dsdl` definitions reusable across many target languages. DSDL describes message/service data contracts and wire behaviour. In practice, this project turns those contracts into language artifacts that can serialize and deserialize bytes consistently.
 
 The project deliberately combines three ideas:
 
@@ -123,7 +123,7 @@ The lowered contract attributes are an explicit handshake between producers and 
 
 ### 3.6 Codegen ([`include/llvmdsdl/CodeGen`](./include/llvmdsdl/CodeGen), [`lib/CodeGen`](./lib/CodeGen))
 
-Code generation is split into backend-specific rendering plus shared convergence layers. All backends receive both semantic and MLIR module inputs. Shared planners/helpers reduce divergence in behavior across languages.
+Code generation is split into backend-specific rendering plus shared convergence layers. All backends receive both semantic and MLIR module inputs. Shared planners/helpers reduce divergence in behaviour across languages.
 
 Representative shared layers:
 
@@ -197,7 +197,7 @@ Key file:
 
 ### 4.6 Python backend (`emitPython`)
 
-Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behavior for `auto|pure|accel` backend selection. It mirrors the scripted-backend planning model used by TypeScript.
+Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. It mirrors the scripted-backend planning model used by TypeScript.
 
 Key file:
 
@@ -254,7 +254,7 @@ Entry point:
 
 ### 6.2 `dsdl-opt`
 
-`dsdl-opt` exists so developers can run and debug dialect/pipeline behavior directly through MLIR’s pass-driver tooling. This keeps pass development and contract debugging close to standard MLIR workflows.
+`dsdl-opt` exists so developers can run and debug dialect/pipeline behaviour directly through MLIR’s pass-driver tooling. This keeps pass development and contract debugging close to standard MLIR workflows.
 
 Entry point:
 
@@ -262,7 +262,7 @@ Entry point:
 
 ### 6.3 `dsdld`
 
-`dsdld` provides editor-time services over JSON-RPC/LSP. It reuses core analysis infrastructure so diagnostics and symbol behavior remain aligned with compiler behavior.
+`dsdld` provides editor-time services over JSON-RPC/LSP. It reuses core analysis infrastructure so diagnostics and symbol behaviour remain aligned with compiler behaviour.
 
 Entry points:
 
@@ -283,7 +283,7 @@ Workflow presets include `matrix-dev-llvm-env`, `matrix-dev-homebrew`, and `matr
 
 ## 8. Verification Strategy (Current)
 
-Verification is layered intentionally: unit tests for algorithmic components, lit tests for CLI/pass contracts, and integration tests for end-to-end generation/parity behavior.
+Verification is layered intentionally: unit tests for algorithmic components, lit tests for CLI/pass contracts, and integration tests for end-to-end generation/parity behaviour.
 
 Test roots:
 
@@ -295,7 +295,7 @@ Important characteristics of the current suite:
 
 - Contract checks between lowering and conversion are tested directly.
 - Multi-language generation outputs are smoke-tested and structurally validated.
-- Parity/malformed-input lanes enforce consistent behavior under invalid or adversarial decode paths.
+- Parity/malformed-input lanes enforce consistent behaviour under invalid or adversarial decode paths.
 - CMake exposes coverage and convergence/parity report targets for ongoing hardening.
 
 ## 9. Why LLVM/MLIR Here, Specifically

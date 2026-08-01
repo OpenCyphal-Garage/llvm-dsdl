@@ -49,7 +49,7 @@ public:
     ///     otherwise the planner cannot distinguish "supplied by the compiled-in catalog" from
     ///     "unknown type", and both silently yield no dependencies.
     /// @param[in] toolchainStampPath Prerequisite recorded for outputs that draw on the embedded
-    ///     catalog or on compiled-in support content. Empty disables the behavior.
+    ///     catalog or on compiled-in support content. Empty disables the behaviour.
     explicit DepfilePlanner(const SemanticModule& semantic, std::string toolchainStampPath = {});
 
     /// @brief Returns the dependency list for an output rendered entirely from compiled-in content.

@@ -92,7 +92,7 @@ struct RuntimeFieldPlan final
     /// @brief Runtime field kind.
     RuntimeFieldKind kind{RuntimeFieldKind::Unsigned};
 
-    /// @brief Cast behavior for numeric write paths.
+    /// @brief Cast behaviour for numeric write paths.
     CastMode castMode{CastMode::Saturated};
 
     /// @brief Scalar/composite bit length for one element.

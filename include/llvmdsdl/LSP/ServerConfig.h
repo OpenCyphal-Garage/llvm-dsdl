@@ -30,7 +30,7 @@ namespace llvmdsdl::lsp
 /// @brief Operating mode for optional AI-assisted LSP features.
 enum class AiMode
 {
-    /// @brief Disable all AI-assisted behavior.
+    /// @brief Disable all AI-assisted behaviour.
     Off,
 
     /// @brief Offer read-only suggestions and explanations.

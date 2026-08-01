@@ -131,7 +131,7 @@ extern "C"
     /// Offsets are bit-based and may be unaligned. Byte-aligned copies use an
     /// optimized `memmove` path; unaligned copies use a bitwise transfer path.
     ///
-    /// If `src` and `dst` overlap while offsets are not byte-aligned, behavior is
+    /// If `src` and `dst` overlap while offsets are not byte-aligned, behaviour is
     /// undefined.
     ///
     /// @param[out] dst Destination buffer.

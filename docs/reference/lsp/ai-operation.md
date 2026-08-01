@@ -36,7 +36,7 @@ Recommended default for shared repos:
 
 Implemented controls:
 
-1. Mode gate (`AiPolicyGate`) determines allowed behaviors.
+1. Mode gate (`AiPolicyGate`) determines allowed behaviours.
 2. Confirmed edits only in `apply_with_confirmation`.
 3. Tool-use allow-list blocks unapproved operations.
 4. Context packing is bounded in size.
@@ -83,12 +83,12 @@ VS Code equivalents:
 
 ### 5.3 Incident response
 
-If suspicious AI behavior is observed:
+If suspicious AI behaviour is observed:
 
 1. Set `aiMode` to `off` immediately.
 2. Capture `dsdld/debug/aiAuditLog` output.
 3. Reproduce with minimal fixture and add a unit test.
-4. File fix and document behavior change.
+4. File fix and document behaviour change.
 
 ## 6. Auditing
 
@@ -117,7 +117,7 @@ Audit logs are bounded in memory (`MaxRecords`).
 Before release, verify:
 
 1. Mode gating tests pass.
-2. Confirmation gate behavior passes.
+2. Confirmation gate behaviour passes.
 3. Tool allow-list rejects unsupported tools.
 4. Redaction tests pass.
-5. `docs/reference/lsp/ai-operation.md` matches current behavior.
+5. `docs/reference/lsp/ai-operation.md` matches current behaviour.

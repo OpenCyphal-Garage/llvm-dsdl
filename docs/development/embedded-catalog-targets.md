@@ -79,7 +79,7 @@ a far less likely defect. **Leading sigils degrade safely; infix separators do n
 
 **`@` was rejected on two collisions.** In PowerShell, `@name` is splatting syntax (`@` replaces
 `$` to splat a hashtable into a command's arguments), so `dsdlc @uavcan` would attempt to splat an
-undefined `$uavcan` on a platform the toolchain supports. (Documented PowerShell behavior; not
+undefined `$uavcan` on a platform the toolchain supports. (Documented PowerShell behaviour; not
 reproduced locally — no `pwsh` on the development host.) Separately, `@file` is the
 LLVM/GCC/MSVC response-file convention, and CMake and Ninja *generate* response files
 automatically when a command line exceeds the Windows 32k limit. `dsdlc` has no response-file
@@ -182,7 +182,7 @@ wants its own fix.
 
 ## 5. Interaction matrix
 
-| Surface | Behavior with `+` targets |
+| Surface | Behaviour with `+` targets |
 | --- | --- |
 | `--list-outputs` | Lists embedded-sourced outputs. Already does so for closure-pulled types. |
 | `--list-inputs` | Emits **nothing** for embedded types. Synthetic paths must never leak into a CMake `DEPENDS` set. |
@@ -226,7 +226,7 @@ Two things the design predicted and the implementation did **not** need:
 asymmetry, the depfile stamp, local shadowing, all four diagnostics (typo'd namespace, typo'd type,
 unavailable version, partial prefix), both gates, `--` non-interference, and `./+x` as a path.
 
-It also pins the `:` behavior that motivated the sigil choice, so nobody later makes empty-root
+It also pins the `:` behaviour that motivated the sigil choice, so nobody later makes empty-root
 meaningful: `:uavcan/node/Heartbeat.1.0.dsdl` must stay an error via `resolveExistingDirectory("")`
 ([`TargetResolution.cpp:273`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/Frontend/TargetResolution.cpp)).
 

@@ -5,7 +5,7 @@
 /// @file
 /// Rust parity driver for signed-narrow C-vs-Rust compatibility tests.
 ///
-/// The executable validates randomized and directed behavior parity for signed
+/// The executable validates randomized and directed behaviour parity for signed
 /// 3-bit saturating and truncating integer fixture types.
 ///
 //===----------------------------------------------------------------------===//

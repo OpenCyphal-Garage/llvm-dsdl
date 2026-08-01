@@ -24,7 +24,7 @@ Before coding, define:
 
 1. Stable rule ID (for suppression/config compatibility).
 2. Severity (`Info`, `Warning`, `Error`).
-3. Deterministic ordering behavior.
+3. Deterministic ordering behaviour.
 4. Fix safety (if emitting autofix edits).
 5. Scope (statement-level, file-level, namespace-level).
 
@@ -66,7 +66,7 @@ registry.registerRuleFactory([]() { return std::make_unique<ExampleRule>(); });
 
 ### 3.3 Keep output deterministic
 
-Use stable iteration order and stable location sorting behavior.
+Use stable iteration order and stable location sorting behaviour.
 Avoid non-deterministic containers as final emit order without sorting.
 
 ## 4. Autofix Rules
@@ -103,7 +103,7 @@ Update or add tests in `test/unit/LspLintTests.cpp`:
 1. Rule fires on expected fixture.
 2. Rule does not fire on conformant fixture.
 3. Autofix payload (if any) matches expected edits.
-4. Suppression behavior works.
+4. Suppression behaviour works.
 5. Determinism check remains stable.
 
 If diagnostics goldens are affected, update:
@@ -138,8 +138,8 @@ Current implementation uses `dlopen`/`dlsym` (POSIX dynamic loading).
 
 When adding/removing/changing rules:
 
-1. Update `docs/reference/lsp/lint-rules.md` baseline list and behavior notes.
-2. Mention autofix behavior if applicable.
+1. Update `docs/reference/lsp/lint-rules.md` baseline list and behaviour notes.
+2. Mention autofix behaviour if applicable.
 3. Add migration notes if rule IDs changed.
 
 ## 9. Review Gate

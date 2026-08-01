@@ -128,12 +128,12 @@ int main() {
   const std::int8_t view_rc = fixtures::vendor::Widget::try_deserialize_view(buffer, &view_size, &view);
 #if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)
   if (view_rc != -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT || view_size != 0U || view != nullptr) {
-    std::fprintf(stderr, "big-endian view behavior mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
+    std::fprintf(stderr, "big-endian view behaviour mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
     return 3;
   }
 #else
   if (view_rc != DSDL_RUNTIME_SUCCESS || view_size != size || view != buffer) {
-    std::fprintf(stderr, "little-endian view behavior mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
+    std::fprintf(stderr, "little-endian view behaviour mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
     return 4;
   }
 #endif

@@ -82,7 +82,7 @@ link on each page.
   `/reference/commands/dsdlc/`. A path change is a page move, and there is currently no redirect layer.
 - The site is unversioned and tracks `main`. It is not a record of any released version. Where a page
   states a version, that statement is the version's, not the site's.
-- The manual describes the tools; the repository is the source of truth for behavior. When a page and
+- The manual describes the tools; the repository is the source of truth for behaviour. When a page and
   the code disagree, the code is right and the page is a bug.
 
 ## Related but different

@@ -189,7 +189,7 @@ assert_reject_extract(backend, runtime_module, "fast/pure")
 assert_semantic_malformed_contract(FAST_PKG, runtime_module, "fast/pure")
 
 if HAS_ACCEL:
-    # accel contract currently uses accelerator runtime behavior:
+    # accel contract currently uses accelerator runtime behaviour:
     # tolerant extract_bits for out-of-range read windows.
     backend, runtime_module = load_runtime(PORTABLE_OUT, PORTABLE_PKG, "accel")
     assert backend == "accel", backend

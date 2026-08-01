@@ -95,3 +95,28 @@ Do not add markdown or other copy-and-paste documentation for CLI flags when `--
 adequate and authoritative. There are times when an example of using the CLI to perform
 some action is relevant but this is only in service of documenting some other concern
 where the CLI can be used, _not_ in documenting the CLI itself.
+
+# King's English
+
+Use en-GB spelling
+
+# No Kindergarten Headings
+
+> ❌ What is in it
+
+This talks down to an audience that is technical, highly educated, and whom appreciate concise, precise prose.
+
+> ✅ Contents
+
+# No Click-Bait Teasers
+
+> ❌ The one fact that makes this easy
+>    You can use cyanoacrylate to tack the workpiece down first.
+
+This is click bait. Do _not_ use anything adjacent to "this one weird trick..." or any other tagline meant to titillate or excite a user into reading something. People will read what they need to read. We are not getting paid to make them navigate through our docs.
+
+> ✅ Use cyanoacrylate to tack the workpiece down first.
+
+Write the fact, not the teaser. In some cases, where something really should be emphasised for scanability, use an emoji sigil rather than smarmy text:
+
+> 💡 Tip: Use cyanoacrylate to tack the workpiece down first.

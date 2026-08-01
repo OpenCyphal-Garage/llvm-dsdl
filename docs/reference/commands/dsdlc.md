@@ -3,7 +3,7 @@
 `dsdlc` is the primary compiler/codegen driver. Run `dsdlc --help` for languages, target syntax,
 and the full option set.
 
-This page covers behavior that switch descriptions do not carry.
+This page covers behaviour that switch descriptions do not carry.
 
 ## Support code
 

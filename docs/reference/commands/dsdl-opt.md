@@ -13,7 +13,7 @@ dsdl-opt input.mlir -pass-pipeline='builtin.module(lower-dsdl-exec,dsdl-annotate
 
 ## Why use it
 
-- Debug pass behavior in isolation
+- Debug pass behaviour in isolation
 - Validate contract attributes across pipeline boundaries
 - Build reproducible IR test cases for lit/unit tests
 

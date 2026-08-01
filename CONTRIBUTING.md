@@ -425,7 +425,7 @@ image renders a worktree or an unrelated checkout without rebuilding:
 tools/docs/docs-container.sh serve ~/src/some-other-worktree
 ```
 
-Behavior worth knowing:
+Behaviour worth knowing:
 
 - The image is built if it is missing, so `build` is only needed to pick up a dependency change.
 - `serve` mounts read-only and live-reloads on edit, exactly like a host `mkdocs serve`; the same
@@ -447,19 +447,19 @@ The Docs workflow runs inside the toolshed container, builds `dsdlc`, and produc
 part of publishing, so the repository never carries a copy that can go stale.
 
 The consequence for you is local: a fresh clone has no `docs/showroom/`, and `mkdocs build --strict`
-fails on the `Showroom / Overview` nav entry until you make one. Run the `showroom-docs` target from
+fails on the `Showroom / Types` nav entry until you make one. Run the `showroom-docs` target from
 section 8 before previewing or `check`ing the site. Regenerate it again after changing anything under
 `examples/showroom/` or anything that alters generated code, since the pages carry backend output
 verbatim.
 
 ## 12. Development Expectations
 
-### 12.1 Keep behavior centralized
+### 12.1 Keep behaviour centralized
 
 When touching backend code generation semantics, prefer shared planning and
 helper layers in [`lib/CodeGen`](./lib/CodeGen) and avoid re-introducing backend-local duplicate
 logic for core serdes semantics.
-When touching runtime behavior above primitive bit/number operations, keep
+When touching runtime behaviour above primitive bit/number operations, keep
 exceptions explicit in [`runtime/semantic_wrapper_allowlist.json`](./runtime/semantic_wrapper_allowlist.json)
 with owner and rationale.
 Generate runtime semantic wrappers from templates before commit:
@@ -469,16 +469,16 @@ Validate allowlist integrity with the release-blocking integration lane
 Use `llvmdsdl-runtime-semantic-wrapper-allowlist-selftest` to regression-test
 validator and generation-check mutation coverage.
 
-### 12.2 Add tests with behavior changes
+### 12.2 Add tests with behaviour changes
 
-For any semantic/codegen/runtime behavior change, include:
+For any semantic/codegen/runtime behaviour change, include:
 
 - at least one focused unit test and/or integration test
 - updates to affected golden expectations if applicable
 
 ### 12.3 Keep docs in sync
 
-If you change CLI behavior, targets, workflows, or runtime contracts, update:
+If you change CLI behaviour, targets, workflows, or runtime contracts, update:
 
 - [`README.md`](./README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)

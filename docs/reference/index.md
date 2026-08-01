@@ -33,7 +33,7 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 
 ## Guarantees
 
-- [Cross-Language Parity](guarantees/parity-matrix.md) — which backends are covered for which behaviors
+- [Cross-Language Parity](guarantees/parity-matrix.md) — which backends are covered for which behaviours
 - [Malformed Input](guarantees/malformed-input.md) — what each backend does with input it should reject
 - [Determinism](guarantees/determinism.md) — what is byte-reproducible, and across which axes
 - [Supply Chain](guarantees/supply-chain.md) — the LLVM version lock, SBOM, and what you can verify about a release

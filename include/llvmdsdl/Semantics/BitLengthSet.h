@@ -63,14 +63,14 @@ namespace llvmdsdl
 /// ## Value domain (precondition)
 ///
 /// Elements model bit counts: every value supplied to a constructor SHOULD be non-negative. A
-/// negative element is a caller precondition violation; rather than leave behavior undefined, the
+/// negative element is a caller precondition violation; rather than leave behaviour undefined, the
 /// constructors clamp any negative value to 0, keeping the set in-domain so `min()`, `max()`, and
 /// `modulo()` stay well-defined. Realistic inputs never trigger this.
 ///
 /// Arithmetic is `std::int64_t` but SATURATES at `INT64_MAX` instead of overflowing: any derivable
 /// value that would exceed the range — an intermediate sum `max(a) + max(b)`, a product
 /// `max(x) * k`, or an alignment round-up — clamps to `INT64_MAX` rather than invoking
-/// signed-overflow undefined behavior. Bit lengths of real definitions are far below the ceiling,
+/// signed-overflow undefined behaviour. Bit lengths of real definitions are far below the ceiling,
 /// so saturation is a safety net, not an expected result; when it does engage, a saturated `max()`
 /// simply reads as "astronomically large" to callers (e.g. extent checks).
 ///

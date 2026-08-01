@@ -19,7 +19,7 @@
 /// padding). Every string backend supplies spelling objects that render each
 /// abstract step in the backend's own idiom and record the corresponding
 /// EmitTraceOp events at the spelling site, so the emit-order verifier proves
-/// the template preserved behavior.
+/// the template preserved behaviour.
 ///
 /// A backend can no longer reorder emission on its own: the order is produced
 /// by construction here, and the verifier pins it independently. The two

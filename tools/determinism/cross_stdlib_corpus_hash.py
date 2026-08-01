@@ -151,7 +151,7 @@ def compare(path_a, path_b, require_c=False):
     if failures:
         print("\nCROSS-TOOLCHAIN DETERMINISM FAILED — generated output depends on the "
               "host toolchain (likely unordered container iteration or other "
-              "stdlib-dependent behavior leaking into emission):")
+              "stdlib-dependent behaviour leaking into emission):")
         for f in failures:
             print(f"  - {f}")
         return 1

@@ -43,6 +43,6 @@ uint8 LAND = 6
 
 uint8 FAILSAFE = 7
 # The flight controller has lost a resource it requires (link, GNSS, or
-# power margin) and is running its configured contingency behavior.
+# power margin) and is running its configured contingency behaviour.
 
 @sealed

@@ -86,7 +86,7 @@ exact payload preserved at `float32`/`float64` where the width allows it.
 3. **Signaling NaNs at float32/float64.** We currently preserve signaling NaNs exactly and
    do **not** set the quiet bit, reading "preserve the original value" literally. IEEE 754
    *recommends* quieting signaling NaNs on conversion. For a same-width `float32 → float32`
-   store (which is arguably not a "conversion" at all), which behavior does the spec intend —
+   store (which is arguably not a "conversion" at all), which behaviour does the spec intend —
    preserve the signaling NaN as-is (what we do), or quiet it?
 
 ## Why this matters

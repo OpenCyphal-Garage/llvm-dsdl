@@ -85,7 +85,7 @@ yakut register-access 42 sys.version "attempted overwrite"
 yakut register-access 42 sys.version
 ```
 
-Expected behavior:
+Expected behaviour:
 
 1. `demo.rate_hz` changes and readback reflects new value.
 2. `uavcan.node.description` changes and readback reflects new value.
