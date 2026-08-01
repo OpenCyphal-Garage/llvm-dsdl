@@ -746,6 +746,21 @@ llvm::Error emitC(const SemanticModule& semantic,
     std::filesystem::path outRoot(options.outDir);
     EmitterContext        ctx(semantic, options.emitDeprecationAttributes);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+
+    // Support artifacts are rendered from content compiled into this binary, so whether to write
+    // them is independent of which definitions were selected -- except under `as-needed`, which
+    // ties them to there being type code to support.
+    bool anyTypeEmitted = false;
+    for (const auto& def : semantic.definitions)
+    {
+        if (shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
+        {
+            anyTypeEmitted = true;
+            break;
+        }
+    }
+    const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
+
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
 
     LoweredFactsMap loweredFacts;
@@ -772,7 +787,7 @@ llvm::Error emitC(const SemanticModule& semantic,
 
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }
@@ -849,21 +864,24 @@ llvm::Error emitC(const SemanticModule& semantic,
         }
     }
 
-    auto runtimeHeader = loadRuntimeHeader();
-    if (!runtimeHeader)
+    if (emitSupport)
     {
-        return runtimeHeader.takeError();
-    }
-    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.h",
-                                      generatedCommentLine("C runtime scaffold") + "\n\n" + *runtimeHeader,
-                                      options.writePolicy))
-    {
-        return err;
+        auto runtimeHeader = loadRuntimeHeader();
+        if (!runtimeHeader)
+        {
+            return runtimeHeader.takeError();
+        }
+        if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.h",
+                                          generatedCommentLine("C runtime scaffold") + "\n\n" + *runtimeHeader,
+                                          options.writePolicy))
+        {
+            return err;
+        }
     }
 
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }

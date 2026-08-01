@@ -1191,7 +1191,6 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
 {
     mlir::OpBuilder               builder(module.getContext());
     std::vector<mlir::Operation*> plans;
-    bool                          sawPlan = false;
 
     for (mlir::Operation& op : module.getBodyRegion().front())
     {
@@ -1209,15 +1208,14 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
             {
                 return mlir::failure();
             }
-            sawPlan = true;
             plans.push_back(&child);
         }
     }
 
-    if (sawPlan)
-    {
-        stampLoweredContractAttributes(module, builder);
-    }
+    // Stamped whether or not any plan was found. The attribute records that this pass ran at this
+    // contract version, not that the module contains plans, so a module with no definitions is a
+    // well-formed lowered module rather than an unstamped one a consumer must reject.
+    stampLoweredContractAttributes(module, builder);
 
     for (mlir::Operation* plan : plans)
     {

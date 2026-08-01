@@ -89,6 +89,7 @@ DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, std::string toolc
     if (!toolchainStampPath.empty())
     {
         toolchainStampPath_ = normalizePathForDepfile(toolchainStampPath);
+        compilerOnlyDeps_.push_back(toolchainStampPath_);
     }
 
     nodes_.reserve(semantic.definitions.size());
@@ -131,6 +132,11 @@ DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, std::string toolc
         std::sort(deps.begin(), deps.end());
         deps.erase(std::unique(deps.begin(), deps.end()), deps.end());
     }
+}
+
+const std::vector<std::string>& DepfilePlanner::depsForCompilerOnlyOutput()
+{
+    return compilerOnlyDeps_;
 }
 
 const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string& typeKey)

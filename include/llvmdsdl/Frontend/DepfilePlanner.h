@@ -49,8 +49,18 @@ public:
     ///     otherwise the planner cannot distinguish "supplied by the compiled-in catalog" from
     ///     "unknown type", and both silently yield no dependencies.
     /// @param[in] toolchainStampPath Prerequisite recorded for outputs that draw on the embedded
-    ///     catalog. Empty disables the behavior.
+    ///     catalog or on compiled-in support content. Empty disables the behavior.
     explicit DepfilePlanner(const SemanticModule& semantic, std::string toolchainStampPath = {});
+
+    /// @brief Returns the dependency list for an output rendered entirely from compiled-in content.
+    ///
+    /// @details
+    /// Support artifacts -- runtime headers, manifests, scaffolding -- are rendered from data
+    /// compiled into the compiler and reference no DSDL definition, so the binary is their only
+    /// input. Without this they would get a rule with no prerequisites and never rebuild.
+    ///
+    /// @return A one-element list naming the toolchain stamp, or an empty list when none is set.
+    const std::vector<std::string>& depsForCompilerOnlyOutput();
 
     /// @brief Returns transitive input dependencies for one type key.
     ///
@@ -73,6 +83,7 @@ private:
     };
 
     std::string                                               toolchainStampPath_;
+    std::vector<std::string>                                  compilerOnlyDeps_;
     std::vector<Node>                                         nodes_;
     std::unordered_map<std::string, std::size_t>              nodeIndexByTypeKey_;
     std::unordered_map<std::string, std::vector<std::string>> depsByTypeKey_;

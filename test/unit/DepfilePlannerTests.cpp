@@ -252,5 +252,18 @@ bool runDepfilePlannerTests()
         return false;
     }
 
+    // Support artifacts name no definition at all, so the stamp is their entire dependency list.
+    const auto& compilerOnly = stamped.depsForCompilerOnlyOutput();
+    if (compilerOnly.size() != 1U || !containsSuffix(compilerOnly, "/dsdlc"))
+    {
+        std::cerr << "depsForCompilerOnlyOutput should be exactly the toolchain stamp\n";
+        return false;
+    }
+    if (!planner.depsForCompilerOnlyOutput().empty())
+    {
+        std::cerr << "depsForCompilerOnlyOutput should be empty when no stamp is configured\n";
+        return false;
+    }
+
     return true;
 }

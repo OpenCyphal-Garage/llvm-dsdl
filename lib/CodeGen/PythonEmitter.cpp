@@ -1702,63 +1702,83 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     std::filesystem::path outRoot(options.outDir);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
+    // Support artifacts are rendered from content compiled into this binary, so whether to write
+    // them is independent of which definitions were selected -- except under `as-needed`, which
+    // ties them to there being type code to support.
+    bool anyTypeEmitted = false;
+    for (const auto& def : semantic.definitions)
+    {
+        if (shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
+        {
+            anyTypeEmitted = true;
+            break;
+        }
+    }
+    const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
+
     const std::filesystem::path packageRoot = outRoot / ctx.packageRootPath();
 
+    // Shared with the per-definition emission below, which creates any package chain a type needs.
+    // Generated modules stay importable under `never` even though the scaffolding is skipped here.
     std::set<std::filesystem::path> initializedPackages;
-    if (auto err =
-            ensurePackageInitChain(packageRoot, std::filesystem::path{}, initializedPackages, options.writePolicy))
-    {
-        return err;
-    }
 
-    auto runtime = loadRuntimeFile(runtimeFileForSpecialization(options.runtimeSpecialization));
-    if (!runtime)
+    if (emitSupport)
     {
-        return runtime.takeError();
-    }
-    if (auto err = writeGeneratedFile(packageRoot / "_dsdl_runtime.py",
-                                      generatedCommentLine("Python runtime scaffold") + "\n\n" + *runtime,
-                                      options.writePolicy))
-    {
-        return err;
-    }
+        if (auto err =
+                ensurePackageInitChain(packageRoot, std::filesystem::path{}, initializedPackages, options.writePolicy))
+        {
+            return err;
+        }
 
-    auto runtimeLoader = loadRuntimeFile("_runtime_loader.py");
-    if (!runtimeLoader)
-    {
-        return runtimeLoader.takeError();
-    }
-    if (auto err = writeGeneratedFile(packageRoot / "_runtime_loader.py",
-                                      generatedCommentLine("Python runtime loader") + "\n\n" + *runtimeLoader,
-                                      options.writePolicy))
-    {
-        return err;
-    }
+        auto runtime = loadRuntimeFile(runtimeFileForSpecialization(options.runtimeSpecialization));
+        if (!runtime)
+        {
+            return runtime.takeError();
+        }
+        if (auto err = writeGeneratedFile(packageRoot / "_dsdl_runtime.py",
+                                          generatedCommentLine("Python runtime scaffold") + "\n\n" + *runtime,
+                                          options.writePolicy))
+        {
+            return err;
+        }
 
-    if (auto err = writeGeneratedFile(packageRoot / "llvmdsdl_codegen.json",
-                                      renderPackageMetadata(options),
-                                      options.writePolicy))
-    {
-        return err;
-    }
+        auto runtimeLoader = loadRuntimeFile("_runtime_loader.py");
+        if (!runtimeLoader)
+        {
+            return runtimeLoader.takeError();
+        }
+        if (auto err = writeGeneratedFile(packageRoot / "_runtime_loader.py",
+                                          generatedCommentLine("Python runtime loader") + "\n\n" + *runtimeLoader,
+                                          options.writePolicy))
+        {
+            return err;
+        }
 
-    if (auto err = writeGeneratedFile(outRoot / "pyproject.toml",
-                                      renderPyProjectToml(ctx.packageName(), packageComponents.front()),
-                                      options.writePolicy))
-    {
-        return err;
-    }
+        if (auto err = writeGeneratedFile(packageRoot / "llvmdsdl_codegen.json",
+                                          renderPackageMetadata(options),
+                                          options.writePolicy))
+        {
+            return err;
+        }
 
-    if (auto err = writeGeneratedFile(packageRoot / "py.typed", "", options.writePolicy))
-    {
-        return err;
+        if (auto err = writeGeneratedFile(outRoot / "pyproject.toml",
+                                          renderPyProjectToml(ctx.packageName(), packageComponents.front()),
+                                          options.writePolicy))
+        {
+            return err;
+        }
+
+        if (auto err = writeGeneratedFile(packageRoot / "py.typed", "", options.writePolicy))
+        {
+            return err;
+        }
     }
 
     std::vector<const SemanticDefinition*> ordered;
     ordered.reserve(semantic.definitions.size());
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }

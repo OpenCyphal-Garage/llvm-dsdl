@@ -189,28 +189,13 @@ that reference core `uavcan` definitions resolve without needing external
 `uavcan` source roots. Use `--no-embedded-uavcan` to disable this behavior.
 
 A `+` target names that catalog directly, generating standard types without a
-`public_regulated_data_types` checkout. A selector takes a namespace, a type, or an
-exact version:
+`public_regulated_data_types` checkout:
 
 ```bash
 dsdlc --target-language c --outdir out/c +uavcan.node.Heartbeat.1.0
 ```
 
-### Useful options
-
-- `--outdir <dir>`: output directory (default: `dsdl_out`)
-- `--no-overwrite`: fail if output file exists
-- `--no-embedded-uavcan`: disable embedded `uavcan` catalog for `mlir`/codegen
-- `--dry-run`: validate/plan without writing files
-- `--list-inputs`: print semicolon-separated resolved input set
-- `--list-outputs`: print semicolon-separated output files
-- `-MD`: emit make-style `.d` dependency files for generated outputs
-- `--optimize-lowered-serdes`: enable optional lowered serdes optimization
-- `--target-endianness <little|big>`: required for `--target-language obj`
-- `--target-triple <triple>`: optional target triple for `obj` compiler invocation
-- `--obj-archive-name <name>`: archive stem for `obj` output (default: `llvmdsdl_generated`)
-- `--obj-abi-language <c|cpp>`: object lane ABI language (`c` default; `cpp` adds canonical ABI + C shim exports)
-- `--obj-no-archive`: emit only `.o` files for `obj`
+Run `dsdlc --help` for the full option set.
 
 ## `dsdld` Quick Start
 

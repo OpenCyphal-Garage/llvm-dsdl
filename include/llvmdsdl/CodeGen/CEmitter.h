@@ -57,6 +57,9 @@ struct CEmitOptions final
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 
+    /// @brief Criteria selecting when support code is generated.
+    SupportGeneration supportGeneration{SupportGeneration::AsNeeded};
+
     /// @brief Output write policy.
     EmitWritePolicy writePolicy;
 };

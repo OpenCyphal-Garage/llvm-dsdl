@@ -113,11 +113,46 @@ AttachedDoc docWithDeprecationNotice(const AttachedDoc& doc,
 /// @return Hash-set containing all keys.
 std::unordered_set<std::string> makeTypeKeySet(const std::vector<std::string>& typeKeys);
 
+/// @brief Criteria selecting when support code is generated.
+///
+/// @details
+/// Support code is everything a backend emits that is not derived from a DSDL definition: runtime
+/// headers and modules, package manifests, and scaffolding. It is rendered from content compiled
+/// into this binary, so it is generated independently of which definitions were selected.
+enum class SupportGeneration : std::uint8_t
+{
+    /// @brief Generate support code when type code is also generated. Default.
+    AsNeeded,
+
+    /// @brief Generate support code whether or not any type code is generated.
+    Always,
+
+    /// @brief Generate no support code.
+    Never,
+
+    /// @brief Generate support code and no type code.
+    Only,
+};
+
+/// @brief Indicates whether support artifacts should be written.
+/// @param[in] mode Selected criteria.
+/// @param[in] anyTypeEmitted True when at least one definition is being emitted this run.
+/// @return True when support artifacts should be written.
+bool shouldEmitSupport(SupportGeneration mode, bool anyTypeEmitted);
+
+/// @brief Indicates whether per-definition artifacts should be written.
+/// @param[in] mode Selected criteria.
+/// @return True for every mode except @ref SupportGeneration::Only.
+bool shouldEmitTypes(SupportGeneration mode);
+
 /// @brief Indicates whether one definition should be emitted.
 /// @param[in] info Definition metadata.
 /// @param[in] selectedTypeKeys Optional selected key-set.
+/// @param[in] mode Support-generation criteria; @ref SupportGeneration::Only emits no definitions.
 /// @return True if the definition is selected or if no selection is provided.
-bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered_set<std::string>& selectedTypeKeys);
+bool shouldEmitDefinition(const DiscoveredDefinition&            info,
+                          const std::unordered_set<std::string>& selectedTypeKeys,
+                          SupportGeneration                      mode = SupportGeneration::AsNeeded);
 
 /// @brief Writes one generated file under a policy.
 ///

@@ -2,16 +2,6 @@
 
 The object backend compiles generated sources into static objects and optional archives.
 
-## Primary flags
-
-- `--target-language obj`
-- `--target-endianness <little|big>` (required)
-- `--obj-abi-language <c|cpp>` (`c` default)
-- `--target-triple <triple>` (optional)
-- `--obj-archive-name <name>`
-- `--obj-no-archive`
-- `--jobs, -j <N>` compile parallelism (auto if omitted)
-
 ## ABI lanes
 
 ## C lane (`--obj-abi-language c`)

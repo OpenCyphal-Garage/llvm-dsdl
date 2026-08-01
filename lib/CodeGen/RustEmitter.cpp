@@ -1709,37 +1709,54 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     std::filesystem::path srcRoot          = outRoot / "src";
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
-    if (options.emitCargoToml)
+    // Support artifacts are rendered from content compiled into this binary, so whether to write
+    // them is independent of which definitions were selected -- except under `as-needed`, which
+    // ties them to there being type code to support.
+    bool anyTypeEmitted = false;
+    for (const auto& def : semantic.definitions)
     {
-        if (auto err = writeGeneratedFile(outRoot / "Cargo.toml", renderCargoToml(options), options.writePolicy))
+        if (shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
+        {
+            anyTypeEmitted = true;
+            break;
+        }
+    }
+    const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
+
+    if (emitSupport)
+    {
+        if (options.emitCargoToml)
+        {
+            if (auto err = writeGeneratedFile(outRoot / "Cargo.toml", renderCargoToml(options), options.writePolicy))
+            {
+                return err;
+            }
+        }
+
+        auto runtime = loadRustRuntimeFile("dsdl_runtime.rs");
+        if (!runtime)
+        {
+            return runtime.takeError();
+        }
+        if (auto err = writeGeneratedFile(srcRoot / "dsdl_runtime.rs",
+                                          generatedCommentLine("Rust runtime scaffold") + "\n\n" + *runtime,
+                                          options.writePolicy))
         {
             return err;
         }
-    }
 
-    auto runtime = loadRustRuntimeFile("dsdl_runtime.rs");
-    if (!runtime)
-    {
-        return runtime.takeError();
-    }
-    if (auto err = writeGeneratedFile(srcRoot / "dsdl_runtime.rs",
-                                      generatedCommentLine("Rust runtime scaffold") + "\n\n" + *runtime,
-                                      options.writePolicy))
-    {
-        return err;
-    }
-
-    auto semanticWrappers = loadRustRuntimeFile("dsdl_runtime_semantic_wrappers.rs");
-    if (!semanticWrappers)
-    {
-        return semanticWrappers.takeError();
-    }
-    if (auto err =
-            writeGeneratedFile(srcRoot / "dsdl_runtime_semantic_wrappers.rs",
-                               generatedCommentLine("Rust runtime semantic wrappers") + "\n\n" + *semanticWrappers,
-                               options.writePolicy))
-    {
-        return err;
+        auto semanticWrappers = loadRustRuntimeFile("dsdl_runtime_semantic_wrappers.rs");
+        if (!semanticWrappers)
+        {
+            return semanticWrappers.takeError();
+        }
+        if (auto err =
+                writeGeneratedFile(srcRoot / "dsdl_runtime_semantic_wrappers.rs",
+                                   generatedCommentLine("Rust runtime semantic wrappers") + "\n\n" + *semanticWrappers,
+                                   options.writePolicy))
+        {
+            return err;
+        }
     }
 
     EmitterContext ctx(semantic);
@@ -1750,7 +1767,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
 
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }

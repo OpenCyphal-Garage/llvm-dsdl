@@ -1,0 +1,75 @@
+# --generate-support: the criteria selecting when support code is generated.
+
+# as-needed (the default) emits support alongside type code...
+# RUN: rm -rf %t.asneeded && %dsdlc --target-language c --outdir %t.asneeded +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.asneeded/dsdl_runtime.h
+# RUN: test -f %t.asneeded/uavcan/node/Heartbeat_1_0.h
+# RUN: rm -rf %t.default && %dsdlc --target-language c --generate-support as-needed --outdir %t.default +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.default/dsdl_runtime.h
+
+# ...never emits the types without it...
+# RUN: rm -rf %t.never && %dsdlc --target-language c --generate-support never --outdir %t.never +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: not test -f %t.never/dsdl_runtime.h
+# RUN: test -f %t.never/uavcan/node/Heartbeat_1_0.h
+
+# ...and only emits the support without them.
+# RUN: rm -rf %t.only && %dsdlc --target-language c --generate-support only --outdir %t.only +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.only/dsdl_runtime.h
+# RUN: not test -f %t.only/uavcan/node/Heartbeat_1_0.h
+
+# always matches as-needed when types are present; the two differ only when nothing needs support.
+# RUN: rm -rf %t.always && %dsdlc --target-language c --generate-support always --outdir %t.always +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: test -f %t.always/dsdl_runtime.h
+# RUN: test -f %t.always/uavcan/node/Heartbeat_1_0.h
+
+# Support code is rendered from the compiler, not from definitions, so `only` and `always` have work
+# to do with no positional targets at all -- which is how a project vendors the runtime on its own.
+# RUN: rm -rf %t.bare && %dsdlc --target-language c --generate-support only --outdir %t.bare >/dev/null 2>&1
+# RUN: test -f %t.bare/dsdl_runtime.h
+# RUN: rm -rf %t.bare2 && %dsdlc --target-language c --generate-support always --outdir %t.bare2 >/dev/null 2>&1
+# RUN: test -f %t.bare2/dsdl_runtime.h
+
+# as-needed with no targets stays a no-op, unchanged from before the option existed.
+# RUN: rm -rf %t.bare3 && %dsdlc --target-language c --generate-support as-needed --outdir %t.bare3 >/dev/null 2>&1
+# RUN: not test -f %t.bare3/dsdl_runtime.h
+
+# Every source-emitting backend honours it. Each names its own scaffolding.
+# RUN: rm -rf %t.rust && %dsdlc --target-language rust --generate-support only --outdir %t.rust >/dev/null 2>&1
+# RUN: test -f %t.rust/Cargo.toml
+# RUN: test -f %t.rust/src/dsdl_runtime.rs
+# RUN: rm -rf %t.go && %dsdlc --target-language go --generate-support only --outdir %t.go >/dev/null 2>&1
+# RUN: test -f %t.go/go.mod
+# RUN: test -f %t.go/dsdlruntime/dsdl_runtime.go
+# RUN: rm -rf %t.ts && %dsdlc --target-language ts --generate-support only --outdir %t.ts >/dev/null 2>&1
+# RUN: test -f %t.ts/package.json
+# RUN: test -f %t.ts/dsdl_runtime.ts
+# RUN: rm -rf %t.py && %dsdlc --target-language python --generate-support only --outdir %t.py >/dev/null 2>&1
+# RUN: test -f %t.py/pyproject.toml
+# RUN: rm -rf %t.cpp && %dsdlc --target-language cpp --generate-support only --outdir %t.cpp >/dev/null 2>&1
+# RUN: test -f %t.cpp/std/dsdl_runtime.hpp
+
+# Under `never` the Go module still gets its types, and no runtime beside them.
+# RUN: rm -rf %t.gonever && %dsdlc --target-language go --generate-support never --outdir %t.gonever +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: not test -f %t.gonever/go.mod
+# RUN: not test -f %t.gonever/dsdlruntime/dsdl_runtime.go
+
+# Support artifacts are rendered from content compiled into the binary and reference no definition,
+# so the binary is what their depfile names. An empty rule here would never rebuild.
+# RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: cat %t.md/dsdl_runtime.h.d | FileCheck %s --check-prefix=SUPPORT_DEPFILE
+
+# Gating: the option needs a backend that emits a source tree.
+# RUN: not %dsdlc --target-language mlir --generate-support only +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_MLIR
+# The ast probe carries no `+` target: that gate rejects ast first, and would mask this one.
+# RUN: not %dsdlc --target-language ast --generate-support never 2>&1 | FileCheck %s --check-prefix=GATE_AST
+# RUN: not %dsdlc --target-language obj --generate-support never --target-endianness little +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_OBJ
+# RUN: not %dsdlc --target-language c --generate-support sometimes +uavcan 2>&1 | FileCheck %s --check-prefix=BAD_VALUE
+# RUN: not %dsdlc --target-language c --generate-support 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE
+
+# SUPPORT_DEPFILE: dsdl_runtime.h: {{.*}}dsdlc
+
+# GATE_MLIR: --generate-support requires a source-emitting --target-language (c, cpp, rust, go, ts, python), not 'mlir'
+# GATE_AST: --generate-support requires a source-emitting --target-language
+# GATE_OBJ: --generate-support requires a source-emitting --target-language
+# BAD_VALUE: invalid --generate-support value: sometimes
+# MISSING_VALUE: missing value for --generate-support

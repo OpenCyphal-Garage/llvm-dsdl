@@ -133,6 +133,10 @@ struct CliOptions final
     bool allowUnregulatedFixedPortId{false};
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
+
+    /// @brief Criteria selecting when support code is generated.
+    llvmdsdl::SupportGeneration supportGeneration{llvmdsdl::SupportGeneration::AsNeeded};
+    bool                        sawGenerateSupport{false};
     bool optimizeLoweredSerDes{false};
     bool emitDeprecationAttributes{true};
     bool dryRun{false};
@@ -196,6 +200,13 @@ bool isCodegenLanguage(llvm::StringRef language)
            language == "python" || language == "obj";
 }
 
+// Languages whose output is source the caller then builds. The `obj` lane is excluded: it stages and
+// compiles its own sources, so its support code is an internal detail of a `.o`/`.a` artifact.
+bool emitsSourceTree(llvm::StringRef language)
+{
+    return isCodegenLanguage(language) && language != "obj";
+}
+
 bool isKnownLanguage(llvm::StringRef language)
 {
     return isCodegenLanguage(language) || language == "ast" || language == "mlir";
@@ -237,6 +248,16 @@ void printHelp()
                  << "      Required output mode selector.\n"
                  << "  --outdir, -O <dir>\n"
                  << "      Output directory root for codegen languages (default: dsdl_out).\n"
+                 << "  --generate-support {always,never,as-needed,only}\n"
+                 << "      Change the criteria used to enable or disable support code generation.\n"
+                 << "      Support code is everything not derived from a definition: runtime\n"
+                 << "      headers and modules, package manifests, and scaffolding.\n"
+                 << "        as-needed (default) - generate support if it is needed.\n"
+                 << "        always              - always generate support code.\n"
+                 << "        never               - never generate support code.\n"
+                 << "        only                - only generate support code.\n"
+                 << "      'always' and 'only' need no positional targets. Requires a\n"
+                 << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
                  << "  --optimize-lowered-serdes\n"
                  << "      Enable optional MLIR optimization for lowered serialization plans.\n"
                  << "  --no-deprecation-attributes\n"
@@ -517,6 +538,38 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--allow-unregulated-fixed-port-id")
         {
             options.allowUnregulatedFixedPortId = true;
+            continue;
+        }
+        if (arg == "--generate-support")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawGenerateSupport = true;
+            if (*value == "as-needed")
+            {
+                options.supportGeneration = llvmdsdl::SupportGeneration::AsNeeded;
+            }
+            else if (*value == "always")
+            {
+                options.supportGeneration = llvmdsdl::SupportGeneration::Always;
+            }
+            else if (*value == "never")
+            {
+                options.supportGeneration = llvmdsdl::SupportGeneration::Never;
+            }
+            else if (*value == "only")
+            {
+                options.supportGeneration = llvmdsdl::SupportGeneration::Only;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --generate-support value: %s",
+                                               value->c_str());
+            }
             continue;
         }
         if (arg == "--omit-dependencies")
@@ -901,6 +954,14 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
         }
     }
 
+    if (options.sawGenerateSupport && !emitsSourceTree(language))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "--generate-support requires a source-emitting --target-language "
+                                       "(c, cpp, rust, go, ts, python), not '%s'",
+                                       options.targetLanguage.c_str());
+    }
+
     if (auto r = failIf(options.sawCppProfile && language != "cpp", "--cpp-profile", "cpp"); !r)
     {
         return r.takeError();
@@ -1261,9 +1322,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // Embedded targets need no files on disk, so an empty filesystem target set is only "nothing to
-    // do" when no '+' target was named either.
-    if (resolved->explicitTargetFiles.empty() && options.builtinTargets.empty())
+    // Support code is rendered from the compiler, not from definitions, so `only` and `always` have
+    // work to do with no targets at all. Embedded targets need no files on disk either, so an empty
+    // filesystem target set is only "nothing to do" when neither applies.
+    const bool supportIsSelfSufficient = options.supportGeneration == llvmdsdl::SupportGeneration::Only ||
+                                         options.supportGeneration == llvmdsdl::SupportGeneration::Always;
+    if (resolved->explicitTargetFiles.empty() && options.builtinTargets.empty() && !supportIsSelfSufficient)
     {
         const auto outputRoot =
             isCodegenLanguage(options.targetLanguage) ? resolveOutputRoot(options.outDir) : "stdout";
@@ -1388,7 +1452,7 @@ int main(int argc, char** argv)
     // key shadows the embedded one here, because `mergedSemantic` prefers local.
     auto explicitKeys = collectExplicitKeys(localSemantic);
     explicitKeys.insert(builtinExplicitKeys.begin(), builtinExplicitKeys.end());
-    if (explicitKeys.empty())
+    if (explicitKeys.empty() && !supportIsSelfSufficient)
     {
         diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
         printDiagnostics(diagnostics);
@@ -1493,9 +1557,8 @@ int main(int argc, char** argv)
         // must be present as nodes for the planner to tell "resolved from the compiled-in catalog"
         // apart from "unknown type". Both used to produce an empty dependency list, so generated
         // uavcan sources were pinned to a rule with no prerequisites and never rebuilt.
-        depfilePlanner = std::make_unique<llvmdsdl::DepfilePlanner>(closureSemantic,
-                                                                    embeddedCatalog ? resolveToolchainStampPath(argv[0])
-                                                                                    : std::string{});
+        depfilePlanner =
+            std::make_unique<llvmdsdl::DepfilePlanner>(closureSemantic, resolveToolchainStampPath(argv[0]));
         if (options.verbose >= 2)
         {
             const std::string message =
@@ -1513,11 +1576,13 @@ int main(int argc, char** argv)
 
         std::chrono::steady_clock::duration depResolutionElapsed{0};
         std::chrono::steady_clock::duration depWriteElapsed{0};
-        const std::vector<std::string>      noDeps;
 
         for (const auto& output : regularOutputs)
         {
-            const std::vector<std::string>* deps = &noDeps;
+            // An output with no required type keys was rendered from content compiled into this
+            // binary rather than from any definition -- a runtime header, a manifest, scaffolding --
+            // so the binary is its input.
+            const std::vector<std::string>* deps = &depfilePlanner->depsForCompilerOnlyOutput();
 
             if (const auto metadataIt = generatedOutputRequiredTypeKeys.find(output);
                 metadataIt != generatedOutputRequiredTypeKeys.end())
@@ -1561,6 +1626,7 @@ int main(int argc, char** argv)
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
@@ -1585,6 +1651,7 @@ int main(int argc, char** argv)
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
@@ -1617,6 +1684,7 @@ int main(int argc, char** argv)
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
@@ -1644,6 +1712,7 @@ int main(int argc, char** argv)
         emitOptions.moduleName            = options.goModuleName;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
@@ -1672,6 +1741,7 @@ int main(int argc, char** argv)
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitTs(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
@@ -1700,6 +1770,7 @@ int main(int argc, char** argv)
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))

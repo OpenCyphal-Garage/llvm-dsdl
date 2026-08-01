@@ -2109,35 +2109,52 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
                         const std::unordered_set<std::string>& selectedTypeKeys,
                         EmitTraceSink* const                   traceSink)
 {
-    auto cRuntime = loadCRuntimeHeader();
-    if (!cRuntime)
+    // Support artifacts are rendered from content compiled into this binary, so whether to write
+    // them is independent of which definitions were selected -- except under `as-needed`, which
+    // ties them to there being type code to support.
+    bool anyTypeEmitted = false;
+    for (const auto& def : semantic.definitions)
     {
-        return cRuntime.takeError();
-    }
-    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.h",
-                                      generatedCommentLine("C runtime scaffold for C++ backend") + "\n\n" + *cRuntime,
-                                      options.writePolicy))
-    {
-        return err;
+        if (shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
+        {
+            anyTypeEmitted = true;
+            break;
+        }
     }
 
-    auto cppRuntime = loadCppRuntimeHeader(flavor);
-    if (!cppRuntime)
+    if (shouldEmitSupport(options.supportGeneration, anyTypeEmitted))
     {
-        return cppRuntime.takeError();
-    }
-    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.hpp",
-                                      generatedCommentLine("C++ runtime scaffold") + "\n\n" + *cppRuntime,
-                                      options.writePolicy))
-    {
-        return err;
+        auto cRuntime = loadCRuntimeHeader();
+        if (!cRuntime)
+        {
+            return cRuntime.takeError();
+        }
+        if (auto err =
+                writeGeneratedFile(outRoot / "dsdl_runtime.h",
+                                   generatedCommentLine("C runtime scaffold for C++ backend") + "\n\n" + *cRuntime,
+                                   options.writePolicy))
+        {
+            return err;
+        }
+
+        auto cppRuntime = loadCppRuntimeHeader(flavor);
+        if (!cppRuntime)
+        {
+            return cppRuntime.takeError();
+        }
+        if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.hpp",
+                                          generatedCommentLine("C++ runtime scaffold") + "\n\n" + *cppRuntime,
+                                          options.writePolicy))
+        {
+            return err;
+        }
     }
 
     EmitterContext ctx(semantic, options.emitDeprecationAttributes);
     ctx.setTraceSink(traceSink);
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }

@@ -15,6 +15,7 @@ bool runFlatSetTests();
 bool runEvaluatorTests();
 bool runDepfileRenderTests();
 bool runDepfilePlannerTests();
+bool runSupportGenerationTests();
 bool runAnalyzerTests();
 bool runRuntimeTests();
 bool runArrayWirePlanTests();
@@ -74,6 +75,7 @@ int main()
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;
     ok      = runDepfilePlannerTests() && ok;
+    ok      = runSupportGenerationTests() && ok;
     ok      = runAnalyzerTests() && ok;
     ok      = runRuntimeTests() && ok;
     ok      = runArrayWirePlanTests() && ok;

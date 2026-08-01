@@ -1503,24 +1503,41 @@ llvm::Error emitGo(const SemanticModule& semantic,
     std::filesystem::path outRoot(options.outDir);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
-    if (options.emitGoMod)
+    // Support artifacts are rendered from content compiled into this binary, so whether to write
+    // them is independent of which definitions were selected -- except under `as-needed`, which
+    // ties them to there being type code to support.
+    bool anyTypeEmitted = false;
+    for (const auto& def : semantic.definitions)
     {
-        if (auto err = writeGeneratedFile(outRoot / "go.mod", renderGoMod(options), options.writePolicy))
+        if (shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
+        {
+            anyTypeEmitted = true;
+            break;
+        }
+    }
+    const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
+
+    if (emitSupport)
+    {
+        if (options.emitGoMod)
+        {
+            if (auto err = writeGeneratedFile(outRoot / "go.mod", renderGoMod(options), options.writePolicy))
+            {
+                return err;
+            }
+        }
+
+        auto runtime = loadGoRuntime();
+        if (!runtime)
+        {
+            return runtime.takeError();
+        }
+        if (auto err = writeGeneratedFile(outRoot / "dsdlruntime" / "dsdl_runtime.go",
+                                          generatedCommentLine("Go runtime scaffold") + "\n\n" + *runtime,
+                                          options.writePolicy))
         {
             return err;
         }
-    }
-
-    auto runtime = loadGoRuntime();
-    if (!runtime)
-    {
-        return runtime.takeError();
-    }
-    if (auto err = writeGeneratedFile(outRoot / "dsdlruntime" / "dsdl_runtime.go",
-                                      generatedCommentLine("Go runtime scaffold") + "\n\n" + *runtime,
-                                      options.writePolicy))
-    {
-        return err;
     }
 
     EmitterContext ctx(semantic);
@@ -1528,7 +1545,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
 
     for (const auto& def : semantic.definitions)
     {
-        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }

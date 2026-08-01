@@ -255,13 +255,39 @@ std::unordered_set<std::string> makeTypeKeySet(const std::vector<std::string>& t
     return std::unordered_set<std::string>(typeKeys.begin(), typeKeys.end());
 }
 
-bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered_set<std::string>& selectedTypeKeys)
+bool shouldEmitDefinition(const DiscoveredDefinition&            info,
+                          const std::unordered_set<std::string>& selectedTypeKeys,
+                          const SupportGeneration                mode)
 {
+    if (!shouldEmitTypes(mode))
+    {
+        return false;
+    }
     if (selectedTypeKeys.empty())
     {
         return true;
     }
     return selectedTypeKeys.contains(definitionTypeKey(info));
+}
+
+bool shouldEmitSupport(const SupportGeneration mode, const bool anyTypeEmitted)
+{
+    switch (mode)
+    {
+    case SupportGeneration::Never:
+        return false;
+    case SupportGeneration::Always:
+    case SupportGeneration::Only:
+        return true;
+    case SupportGeneration::AsNeeded:
+        break;
+    }
+    return anyTypeEmitted;
+}
+
+bool shouldEmitTypes(const SupportGeneration mode)
+{
+    return mode != SupportGeneration::Only;
 }
 
 llvm::Error writeGeneratedFile(const std::filesystem::path&    path,
