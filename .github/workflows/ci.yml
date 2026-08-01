@@ -472,28 +472,43 @@ jobs:
         run: python3 examples/showroom/run_recipe.py --check-invariant
 
       - name: Configure (ci preset)
-        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
-
-      - name: Build dsdlc
-        run: cmake --build --preset build-ci --target dsdlc
+        # The install prefix is fixed at configure time because the install happens through the
+        # project's own `install-bin` target below, which takes no --prefix.
+        run: |
+          cmake --preset ci \
+            -DLLVM_DIR="${LLVM_DIR}" \
+            -DMLIR_DIR="${MLIR_DIR}" \
+            -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/llvm-dsdl-prefix"
 
       - name: Install llvm-dsdl to a private prefix
         # Recipes that call find_package(llvm-dsdl) need an install tree, not a build tree: the package
         # config locates dsdlc relative to its own installed location, so configuring against the
         # build directory would exercise a path no user ever takes. This step is therefore also the
         # selftest for the CMake package -- if the config is broken for a user, c-cmake fails here.
+        #
+        # `install-bin` rather than `--target dsdlc` and a hand-written `cmake --install`, because
+        # both halves of that are easy to get subtly wrong and neither fails until here. The `bin`
+        # component installs every tool in LLVMDSDL_INSTALLABLE_TOOLS, not just dsdlc, so building
+        # dsdlc alone leaves the install looking for a dsdl-opt nobody built; and `ci` is a Ninja
+        # Multi-Config preset, so an install with no --config silently resolves to
+        # CMAKE_DEFAULT_BUILD_TYPE (RelWithDebInfo, from `base`) while `build-ci` only ever builds
+        # Debug. The target settles both: it depends on the tool list, so it cannot drift as tools
+        # are added, and it passes --config $<CONFIG> itself.
         run: |
-          cmake --install build/matrix/ci \
-            --component bin \
-            --prefix "${RUNNER_TEMP}/llvm-dsdl-prefix"
+          cmake --build --preset build-ci --target install-bin
+          test -x "${RUNNER_TEMP}/llvm-dsdl-prefix/bin/dsdlc"
           test -f "${RUNNER_TEMP}/llvm-dsdl-prefix/lib/cmake/llvm-dsdl/llvm-dsdlConfig.cmake"
+          test -f "${RUNNER_TEMP}/llvm-dsdl-prefix/share/rules_dsdl/repositories.bzl"
 
-      - name: Enable pnpm
-        # corepack ships with the image's node; pnpm itself does not. This is the whole of the
-        # provisioning the TypeScript row needs, and it is why the pnpm recipe does not require an
-        # image change. Non-fatal: a corepack failure should skip the pnpm recipe, not fail the job.
-        run: corepack enable pnpm || echo "corepack could not enable pnpm; the pnpm recipe will skip"
-        continue-on-error: true
+      - name: Install pnpm
+        # pnpm is the one toolchain in the matrix the image does not ship, so the job provisions it.
+        #
+        # Not `corepack enable pnpm`, which is the obvious way and is worse than failing: the image's
+        # corepack is 0.24.0 against node 22, old enough that the shim it installs dies on startup
+        # with ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. That still puts a `pnpm` on PATH, so the
+        # recipe's toolchain probe is satisfied and the recipe runs and fails, rather than skipping.
+        # Installing the real package sidesteps corepack entirely.
+        run: npm install -g pnpm
 
       - name: Run the recipes
         # --require names the recipes that must never skip. Everything in it is backed by a toolchain
@@ -501,23 +516,23 @@ jobs:
         # quietly shedding coverage -- which must fail rather than report green. Extend the list as
         # each remaining core recipe lands: py-setuptools.
         #
-        # ts-pnpm is deliberately absent: pnpm comes from `corepack enable` in the step above, which
-        # is allowed to fail, so a skip there is a provisioning outcome rather than a lost toolchain.
         # c-bazel joined the list in ts26.4.3, which carries bazel; the recipe pins the same 9.2.0 the
-        # image pre-warms, so it neither downloads a compiler nor drifts off it.
+        # image pre-warms, so it neither downloads a compiler nor drifts off it. ts-pnpm is in the
+        # list too now that the step above installs pnpm outright: provisioning it is no longer
+        # allowed to fail quietly, so a skip is a real loss of coverage like any other.
+        #
+        # The installed dsdlc, not one fished out of the build tree. Under a multi-config generator
+        # the build tree can hold several, and `find | head -1` would pick between them by accident;
+        # the prefix holds exactly one, and it is the same binary find_package(llvm-dsdl) resolves
+        # for the recipes that go through the package config -- so both flags below name one build.
         run: |
-          dsdlc="$(find build/matrix/ci -name dsdlc -type f -perm -u+x | head -1)"
-          if [ -z "${dsdlc}" ]; then
-            echo "::error::dsdlc was not built" >&2
-            exit 1
-          fi
           python3 examples/showroom/run_recipe.py \
-            --dsdlc "${dsdlc}" \
+            --dsdlc "${RUNNER_TEMP}/llvm-dsdl-prefix/bin/dsdlc" \
             --prefix "${RUNNER_TEMP}/llvm-dsdl-prefix" \
             --work "${RUNNER_TEMP}/showroom-recipes" \
             --json "${GITHUB_WORKSPACE}/showroom-recipe-results.json" \
             --markdown "${GITHUB_STEP_SUMMARY}" \
-            --require "c-bazel,c-cmake,c-cmake-ninja-multi,c-make,rust-cargo,go-modules,ts-npm,py-setuptools,py-hatchling,py-uv-build,py-poetry,py-flit"
+            --require "c-bazel,c-cmake,c-cmake-ninja-multi,c-make,rust-cargo,go-modules,ts-npm,ts-pnpm,py-setuptools,py-hatchling,py-uv-build,py-poetry,py-flit"
 
       - name: Upload results
         if: ${{ always() && !env.ACT }}

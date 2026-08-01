@@ -17,8 +17,10 @@
 # nothing needs declaring. The closure problem disappears rather than being managed.
 #
 # The trade is that generation is no longer a build action: it is not sandboxed, and it re-runs when
-# the repository is refetched rather than when an individual output goes stale. `watch()` on the
-# definitions dsdlc reports as inputs is what makes that correct -- edit a `.dsdl` and Bazel refetches.
+# the repository is refetched rather than when an individual output goes stale. `watch()` is what
+# makes that correct, and it has to cover both inputs to the generation -- the definitions dsdlc
+# reports, and dsdlc itself. Under the macros in defs.bzl both are ordinary action inputs and Bazel
+# digests them for free; here nothing is an action input, so anything not watched is invisible.
 
 # Every glob allows an empty result: a C-only namespace has no .cpp and the obj lane has no sources
 # at all, while an empty glob is a hard error by default.
@@ -80,6 +82,13 @@ def _run(repository_ctx, dsdlc, arguments, what):
 
 def _dsdl_namespace_repository_impl(repository_ctx):
     dsdlc = _resolve_dsdlc(repository_ctx)
+
+    # Watch the compiler, not just where it was found. `environ` covers DSDLC and PATH changing, but
+    # the ordinary case is that neither does: a developer rebuilds dsdlc, or a package upgrade drops
+    # a new binary at the same install path. Without this, that build silently serves generated code
+    # from the previous compiler -- a dsdlc that cannot even run still yields "up-to-date", because
+    # nothing in the graph refers to it. Cheap to get wrong and expensive to notice.
+    repository_ctx.watch(dsdlc)
 
     # The anchor is a file in the calling module whose directory is the reference point for `root`.
     # A label cannot name a directory, so a file inside the workspace is the way to find one; the

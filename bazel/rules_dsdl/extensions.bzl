@@ -8,9 +8,11 @@
 # otherwise it is looked up on PATH.
 #
 # The repository is `local = True` and declares `DSDLC` and `PATH` in `environ`, so Bazel refetches
-# it when either changes. Without that a developer who installed a new dsdlc would keep building
-# against the old one until they wiped the repository cache -- silently, since generated output
-# carries the generator version but nothing compares it.
+# it when either changes. Note what that does *not* cover: a new dsdlc installed at the same path
+# leaves both unchanged. It is harmless here, because this repository only publishes a symlink and
+# the macros in defs.bzl pass it to genrules as a tool, where Bazel digests it like any other action
+# input -- swap the binary and the generating actions rerun. The fetch-time path in repositories.bzl
+# has no such backstop and has to watch() the binary explicitly.
 
 load("//:repositories.bzl", "dsdl_namespace_repository")
 

@@ -1034,17 +1034,35 @@ elseif(CMAKE_BUILD_TYPE)
   list(APPEND LLVMDSDL_INSTALL_CONFIG_ARGS --config ${CMAKE_BUILD_TYPE})
 endif()
 
+# The binaries are not all the `bin` component installs: the SBOM, the compressed Debian changelog
+# and the man pages are generated too. They are ALL targets, so a full `cmake --build` produces them
+# and the omission is invisible there -- but `cmake --build --target install-bin` on a fresh tree
+# builds only what the target asks for, and the install then fails on the first generated file that
+# nobody made. Each is added conditionally because two of them are configured out on some platforms.
+set(LLVMDSDL_INSTALL_BIN_DEPENDS ${LLVMDSDL_INSTALLABLE_TOOLS})
+foreach(generated IN ITEMS sbom deb-changelog man-pages)
+  if(TARGET ${generated})
+    list(APPEND LLVMDSDL_INSTALL_BIN_DEPENDS ${generated})
+  endif()
+endforeach()
+
 add_custom_target(install-bin
   COMMAND
     ${CMAKE_COMMAND}
       --install ${LLVMDSDL_BINARY_DIR}
       ${LLVMDSDL_INSTALL_CONFIG_ARGS}
       --component ${LLVMDSDL_INSTALL_COMPONENT_BIN}
-  DEPENDS ${LLVMDSDL_INSTALLABLE_TOOLS}
+  DEPENDS ${LLVMDSDL_INSTALL_BIN_DEPENDS}
   USES_TERMINAL
   VERBATIM
   COMMENT "Installing llvm-dsdl binaries only"
 )
+
+# The `dev` component ships the same changelog alongside the libraries and headers.
+set(LLVMDSDL_INSTALL_DEV_DEPENDS ${LLVMDSDL_INSTALLABLE_LIBRARIES})
+if(TARGET deb-changelog)
+  list(APPEND LLVMDSDL_INSTALL_DEV_DEPENDS deb-changelog)
+endif()
 
 add_custom_target(install-dev
   COMMAND
@@ -1052,7 +1070,7 @@ add_custom_target(install-dev
       --install ${LLVMDSDL_BINARY_DIR}
       ${LLVMDSDL_INSTALL_CONFIG_ARGS}
       --component ${LLVMDSDL_INSTALL_COMPONENT_DEV}
-  DEPENDS ${LLVMDSDL_INSTALLABLE_LIBRARIES}
+  DEPENDS ${LLVMDSDL_INSTALL_DEV_DEPENDS}
   USES_TERMINAL
   VERBATIM
   COMMENT "Installing llvm-dsdl development files"

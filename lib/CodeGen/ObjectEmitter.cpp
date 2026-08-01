@@ -19,6 +19,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/IR/Builders.h>
@@ -27,6 +28,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -227,36 +229,38 @@ llvm::Error publishStagedHeaders(const std::vector<std::string>&    staged,
                                            destination.string().c_str());
         }
 
+        // Published by re-writing the contents rather than copying the file, so that a header lands
+        // exactly the way every other generated file does -- same removal, same open, same mode.
+        //
+        // Copying propagates the staged file's mode, and generated files are read-only by default,
+        // so the destination is created read-only and then has to be chmod'ed to the mode it is
+        // already supposed to have. That is a no-op on a normal filesystem and a hard failure on
+        // ones that will not chmod a file they have already forced read-only -- Docker Desktop's
+        // macOS bind mounts among them, which is to say a devcontainer generating into the user's
+        // own workspace. Creating the file fresh never asks the filesystem that question.
+        //
+        // The read is skipped under --dry-run (which --list-outputs implies) because the staged
+        // file does not exist then; writeGeneratedFile still records the path, so a listing
+        // describes the tree a real run produces.
+        llvm::StringRef                     content;
+        std::unique_ptr<llvm::MemoryBuffer> staging;
         if (!policy.dryRun)
         {
-            std::filesystem::create_directories(destination.parent_path(), ec);
-            if (ec)
+            auto buffer = llvm::MemoryBuffer::getFile(source.string());
+            if (!buffer)
             {
-                return llvm::createStringError(ec,
-                                               "failed to create header output directory %s",
-                                               destination.parent_path().string().c_str());
+                return llvm::createStringError(buffer.getError(),
+                                               "failed to read staged header %s",
+                                               source.string().c_str());
             }
-            // Generated files are written read-only by default, and copy_file will not overwrite
-            // one, so a rerun has to remove the previous copy first.
-            std::filesystem::remove(destination, ec);
-            std::filesystem::copy_file(source,
-                                       destination,
-                                       std::filesystem::copy_options::overwrite_existing,
-                                       ec);
-            if (ec)
-            {
-                return llvm::createStringError(ec,
-                                               "failed to publish header %s to %s",
-                                               source.string().c_str(),
-                                               destination.string().c_str());
-            }
-            if (auto err = setPathMode(destination, policy.fileMode))
-            {
-                return err;
-            }
+            staging = std::move(*buffer);
+            content = staging->getBuffer();
         }
 
-        recordOutput(policy, destination, selectedTypeKeys);
+        if (auto err = writeGeneratedFile(destination, content, policy, selectedTypeKeys))
+        {
+            return err;
+        }
     }
     return llvm::Error::success();
 }
