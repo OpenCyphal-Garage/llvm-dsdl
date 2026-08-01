@@ -51,13 +51,6 @@
       "run": [
         "./bazel-bin/roundtrip_actions"
       ]
-    },
-    {
-      "name": "shut down the build server",
-      "run": [
-        "bazel",
-        "shutdown"
-      ]
     }
   ]
 }

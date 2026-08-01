@@ -1,3 +1,9 @@
+# Bazel keeps a background server between invocations. Left at its default it lingers for hours
+# after a one-shot build, which is wrong for CI and merely untidy for a developer running the
+# recipe once. A short idle timeout retires it on its own -- preferable to an explicit
+# `bazel shutdown`, which is one more thing that can hang waiting on a server it cannot kill.
+startup --max_idle_secs=15
+
 # dsdlc is a host tool, like a compiler: rules_dsdl locates it through the DSDLC environment
 # variable, falling back to PATH. Both lines are needed and they are not redundant -- the repository
 # rule that finds it runs in the repo phase, the genrule that runs it is an action.

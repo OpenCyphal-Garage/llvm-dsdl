@@ -184,7 +184,7 @@
       "configurePreset": "ci",
       "filter": {
         "exclude": {
-          "label": "bench"
+          "label": "bench|showroom-recipes"
         }
       }
     },
