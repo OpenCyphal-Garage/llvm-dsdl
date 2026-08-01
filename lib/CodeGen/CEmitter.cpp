@@ -449,7 +449,13 @@ void emitSectionTypedef(std::ostringstream&    out,
 
     if (deprecatedAttribute)
     {
-        emitLine(out, 0, "} __attribute__((deprecated)) " + typeName + ";");
+        // After the typedef name, not between the closing brace and the name. The two positions are
+        // not equivalent: GCC reads the earlier one as deprecating the anonymous struct *type* and
+        // warns once, at the definition -- which the generated file then suppresses with its own
+        // `#pragma GCC diagnostic ignored`, so user code naming the typedef is told nothing at all.
+        // Placed after the name it deprecates the typedef, and the diagnostic lands where it is
+        // useful: on the code that uses it. Clang warns either way, so this only shows up on GCC.
+        emitLine(out, 0, "} " + typeName + " __attribute__((deprecated));");
     }
     else
     {

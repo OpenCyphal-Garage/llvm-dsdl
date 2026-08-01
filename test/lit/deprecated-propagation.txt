@@ -54,7 +54,11 @@
 # C_DEP: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # C_DEP: _IS_DEPRECATED_ true
 # C_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# C_DEP: } __attribute__((deprecated)) dep__Retired__Request;
+# The attribute goes after the typedef name. Before it, GCC reads it as deprecating the anonymous
+# struct type rather than the typedef: it warns once at the definition -- which the generated file
+# then suppresses with its own pragma -- and says nothing at all where the type is used. Clang warns
+# either way, so the wrong placement only shows up on GCC.
+# C_DEP: } dep__Retired__Request __attribute__((deprecated));
 # C_DEP: #pragma GCC diagnostic pop
 # C_DEP_NEG-NOT: dep.Retired.Request.1.0 is marked
 
