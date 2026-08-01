@@ -116,16 +116,13 @@ attaches to whatever precedes it instead, or is absorbed into the type's own doc
 field is the first one.
 
 `@deprecated` rides along with it. Every backend appends a `Deprecated: …` notice to the type's
-documentation and emits an `IS_DEPRECATED` constant, so the marking is visible to a developer who
-never opens the DSDL. Go treats the notice as a real deprecation — its toolchain keys on a
-`Deprecated: ` doc paragraph — and TypeScript additionally gets a `/** @deprecated */` JSDoc block,
-which is what `tsc` and editors read.
+documentation and emits an `IS_DEPRECATED` constant. Go treats the notice as a real deprecation, and
+TypeScript additionally gets a `/** @deprecated */` JSDoc block.
 
 C, C++, and Rust get compile-time enforcement on top of that, by default: `__attribute__((deprecated))`,
 `[[deprecated]]`, and `#[deprecated]`. Only code that names a deprecated type is diagnosed — each
 generated file suppresses the diagnostic across its own body, so including the headers stays clean
-under `-Werror`. `dsdlc --no-deprecation-attributes` drops the attributes for a `-Werror` build that
-depends on a deprecated definition with no migration target yet. See
+under `-Werror`. `dsdlc --no-deprecation-attributes` drops the attributes. See
 `health/258.LegacyBatteryPoll.1.0.dsdl`.
 
 ## Port identifiers

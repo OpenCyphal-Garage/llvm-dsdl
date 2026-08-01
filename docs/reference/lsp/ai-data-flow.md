@@ -4,8 +4,7 @@ What data enters the `dsdld` AI surface, what happens to it, what leaves, and wh
 the *data-flow* companion to `ai-operation.md` (which covers modes, configuration, and
 playbooks); read this one to answer "does my DSDL source leave my machine?".
 
-Every claim below is traced to code, with the governing constant or call site named so it can be
-re-verified rather than trusted.
+Every claim below names the governing constant or call site.
 
 ## The short answer
 
@@ -18,11 +17,6 @@ suggestions return to the editor over the same JSON-RPC connection the editor op
 
 **And by default nothing runs at all:** `ServerConfig::aiMode` defaults to `AiMode::Off`, and
 `AiPolicyGate::isEnabled` is false for `Off`, so the surface is inert until an operator turns it on.
-
-> If a networked provider is ever added, this document's central claim changes. The invariant to
-> preserve is the seam: `AiProvider` is the *only* consumer of packed context, so a remote provider
-> would be the single place where content could egress — and the point at which this page must be
-> rewritten and the operator guide's threat model revisited.
 
 ## Entry points
 
@@ -68,8 +62,8 @@ materialization is gated by `AiPolicyGate::canApplyConfirmedEdits`, which is tru
 
 `dsdld/ai/toolUse` is restricted to a four-entry allow-list (`AiPolicyGate::isToolAllowed`):
 `analysis.stats`, `workspace.symbols`, `document.symbols`, `document.diagnostics`. All four are
-**read-only introspection** of state the server already computed. There is no file-write, no shell, no
-network tool — the allow-list is a closed set, not a filter over an open one.
+**read-only introspection** of state the server already computed. There is no file-write, no shell, and
+no network tool.
 
 ## What is retained
 
@@ -80,8 +74,7 @@ doubly bounded (`include/llvmdsdl/LSP/AI.h`):
 - `MaxRecords = 256` — a ring; older records are dropped.
 - `MaxDetailBytes = 4096` — per-record detail cap, applied **after** redaction.
 
-Together these bound audit memory at roughly 1 MiB regardless of request size, so a large request cannot
-amplify into unbounded retention.
+Together these bound audit memory at roughly 1 MiB regardless of request size.
 
 ### Redaction
 
@@ -95,8 +88,7 @@ amplify into unbounded retention.
 This is pattern-based masking of *known* shapes, not a proof of absence — a secret in an unrecognised
 form embedded in DSDL source could still reach an audit record. Treat the audit log as sensitive.
 
-Note the ordering: redaction runs **first**, then the 4096-byte cap — so truncation cannot slice a
-secret in half and leave the first part unmasked.
+Redaction runs **before** the 4096-byte cap, so truncation cannot leave half a secret unmasked.
 
 ## Summary for an operator
 

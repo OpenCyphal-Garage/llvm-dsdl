@@ -33,10 +33,6 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 
 ## Guarantees
 
-Four of the five pages in this group are generated from the test suite rather than written by hand,
-so a claim on them is a claim the build can lose. See [the guarantee pages are
-generated](#the-guarantee-pages-are-generated) below.
-
 - [Cross-Language Parity](guarantees/parity-matrix.md) — which backends are covered for which behaviors
 - [Malformed Input](guarantees/malformed-input.md) — what each backend does with input it should reject
 - [Determinism](guarantees/determinism.md) — what is byte-reproducible, and across which axes
@@ -46,11 +42,6 @@ generated](#the-guarantee-pages-are-generated) below.
 
 `parity-matrix`, `malformed-input`, and `determinism`, along with the [Consistency
 Lint](../development/convergence-scorecard.md) under Development, are written by the report
-generators under `tools/convergence/` and rebuilt whenever the site is published. Editing them by
-hand accomplishes nothing — the next build overwrites the file.
+generators under `tools/convergence/` and rebuilt whenever the site is published.
 
-Each page carries a **gating mode** banner. *Structural* means coverage was inferred from registered
-test names; *behavioral* means a cell counts as covered only if a matching test actually executed and
-passed. The published pages are structural: the docs build compiles the compiler but does not run the
-test suite. The behavioral run is a release gate in CI, where the generators consume the suite's JUnit
-results and fail the build on a regression. Read the banner rather than assuming.
+Each page carries a **gating mode** banner.

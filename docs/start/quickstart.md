@@ -37,8 +37,7 @@ dsdlc --target-language obj path/to/root_namespace \
 ## See the output before you write anything
 
 The [Showroom](../showroom/index.md) is a namespace of plausible vendor-specific drone datatypes
-generated into every supported language and profile, so you can read what the compiler produces for
-definitions shaped like yours before committing to them. Build the whole tree with:
+generated into every supported language and profile. Build the whole tree with:
 
 ```bash
 cmake --build <build-dir> --target showroom

@@ -6,8 +6,8 @@
   "build_system": "go modules",
   "idiom": "A",
   "dep_strategy": "none",
-  "summary": "Go's own answer, with no third-party build tooling: a `//go:generate` directive beside the code that consumes the output, and a `replace` directive pointing the module path at the generated tree. dsdlc writes `generated/go.mod`, so the output is a module and needs no packaging.",
-  "notes": "The `require` line names a version that is never fetched -- `replace` resolves the module from disk instead -- which is how you depend on an unpublished module without a registry, a vendor directory, or a network.\n\n`go generate` does not type-check, so the directive runs happily on a clean checkout where `generated/` does not exist and the import cannot yet resolve. That is what makes generate-then-build work as a single ordered pass rather than needing a bootstrap.",
+  "summary": "Go tooling only, with no third-party build system: a `//go:generate` directive beside the code that consumes the output, and a `replace` directive pointing the module path at the generated tree. dsdlc writes `generated/go.mod`, so the output is a module and needs no packaging.",
+  "notes": "The `require` line names a version that is never fetched; `replace` resolves the module from disk instead, so the dependency needs no registry, vendor directory, or network.\n\n`go generate` does not type-check, so the directive runs on a clean checkout where `generated/` does not exist and the import cannot yet resolve.",
   "generated_dir": "generated",
   "requires": [
     {"command": "go", "reason": "runs go generate, compiles, and links"}

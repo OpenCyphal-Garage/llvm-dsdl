@@ -6,8 +6,8 @@
   "build_system": "pnpm",
   "idiom": "B",
   "dep_strategy": "none",
-  "summary": "Identical to the npm cell in every file -- same `package.json`, same `tsconfig.json` -- so that the only difference on show is the package manager. pnpm's content-addressed store and strict `node_modules` layout change nothing about how generated DSDL is consumed.",
-  "notes": "That the two cells are byte-identical apart from the commands is the point of the pair. Generated TypeScript is ordinary TypeScript source; nothing about it interacts with how your dependencies are laid out on disk, so a package manager with a strict, non-flat `node_modules` needs no special handling.\n\npnpm is not in the toolshed image, but `corepack` is, and `corepack enable pnpm` is the whole of the provisioning -- which is why this cell needs no change to the image. See the npm cell for why the generated tree is compiled as source rather than installed as a package.",
+  "summary": "Identical to the npm cell in every file -- same `package.json`, same `tsconfig.json` -- so the only difference is the package manager. pnpm's content-addressed store and strict `node_modules` layout change nothing about how generated DSDL is consumed.",
+  "notes": "Generated TypeScript is ordinary TypeScript source; nothing about it interacts with how your dependencies are laid out on disk, so a package manager with a strict, non-flat `node_modules` needs no special handling.\n\npnpm is not in the toolshed image, but `corepack` is, and `corepack enable pnpm` is the whole of the provisioning. See the npm cell for why the generated tree is compiled as source rather than installed as a package.",
   "generated_dir": "generated",
   "requires": [
     {"command": "pnpm", "reason": "installs the TypeScript compiler and runs the scripts"},

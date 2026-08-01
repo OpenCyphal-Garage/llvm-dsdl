@@ -77,9 +77,8 @@ recipes are better than that one and should be preferred as models.
 ## Running a cell yourself
 
 Every cell directory is independently runnable. Copy the cell you want plus `dsdl/` and `src/`
-alongside it, and run the commands on its page -- there is nothing else to fetch. That is not a claim
-made in prose: the CI runner stages exactly that copy for every cell on every run, so a cell that
-reached back into this repository would fail immediately.
+alongside it, and run the commands on its page. The CI runner stages exactly that copy for every cell
+on every run.
 
 To run them from a checkout:
 
