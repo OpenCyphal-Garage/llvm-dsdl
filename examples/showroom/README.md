@@ -64,7 +64,7 @@ any section whose body opens with `<!-- showroom-docs: skip -->` -- as this one 
 addressed to someone reading the repository rather than the site. Edit the README; `index.md` is
 overwritten on every run.
 
-## What is in it
+## Contents
 
 Twenty-four definitions across six sub-namespaces, chosen so that between them they exercise the
 language and the three LEAST SUPPORTED TRANSPORTs a real vehicle spans.

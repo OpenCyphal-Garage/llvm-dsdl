@@ -115,7 +115,7 @@ def render_recipe_page(recipe: Recipe) -> str:
         lines += ["## Notes", "", recipe.notes, ""]
 
     lines += [
-        "## What you need",
+        "## Prerequisites",
         "",
     ]
     if recipe.requires:

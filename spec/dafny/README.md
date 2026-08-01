@@ -41,7 +41,7 @@ pinned Nunavut lane as *corroboration*.
    a mismatch is an investigation *adjudicated by the specification* — it is as likely to
    be a Nunavut defect as one of ours, and neither side wins by default.
 
-## What is proven
+## Proven properties
 
 | Property | How | Strength |
 |---|---|---|

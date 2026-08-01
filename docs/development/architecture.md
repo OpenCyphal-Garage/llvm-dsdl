@@ -36,7 +36,7 @@ a particular language.
 3. `dsdl-legalize-endianness` — validates and stamps target endianness; performs no byte reordering
 4. optional optimization pipeline
 
-### What the boundary buys
+### Boundary guarantees
 
 - Raw or unlowered IR reaching a backend is caught by a contract version and producer-identity guard.
   That guard detects *unlowered state*, not field-level semantic-compatibility drift.

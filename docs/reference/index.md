@@ -2,7 +2,7 @@
 
 Everything the tools promise, arranged for lookup rather than for reading through.
 
-| Group | What you look up here |
+| Group | Contents |
 |---|---|
 | [Commands](commands/dsdlc.md) | Switch names, accepted values, and what each tool does with them. |
 | [Code Generation](codegen/backends.md) | What each target language emits, and the ordering contract the emitters hold to. |

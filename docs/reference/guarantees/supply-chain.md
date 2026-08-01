@@ -12,7 +12,7 @@ Every build emits a [CycloneDX 1.5](https://cyclonedx.org/) SBOM describing the 
 - **Installed to:** `<prefix>/<datadir>/llvm-dsdl/llvm-dsdl-sbom.cdx.json` (component `bin`)
 - **Regenerate on demand:** `cmake --build <build> --target sbom`
 
-### What it records
+### Contents
 
 | Component | Scope | Why |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ The lock is enforced **at configure time** by the build system and **again** by 
 - **Cross-stdlib determinism lane:** `tools/determinism/cross_stdlib_corpus_hash.py` compares the two
   hosts' recorded LLVM majors. CI passes `--require-c`, which makes a major skew a **hard failure**.
 
-### What this means for you
+### Consequences
 
 - Build against the locked major to reproduce released artifacts byte-for-byte.
 - The SBOM records the LLVM/MLIR version *actually linked*.

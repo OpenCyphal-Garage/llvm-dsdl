@@ -8,7 +8,7 @@ Compiler tooling for OpenCyphal DSDL, built on MLIR and LLVM.
 - `dsdl-opt` for dialect/pass pipeline work
 - `dsdld` for language-server workflows
 
-## Where to go
+## Contents
 
 | Section | Read it when | Starts at |
 |---|---|---|

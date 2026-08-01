@@ -1,7 +1,7 @@
 # Build Recipes
 
 The [showroom](README.md) shows you what dsdlc produces from the `lanyard` namespace. This is the
-other half: **what do I paste into my build to get it?**
+other half: the build wiring that turns that output into a compiled library.
 
 Each *recipe* is one (language, build system) pair, complete and self-contained, and every one
 builds the same twenty-four definitions you can browse on the [overview](README.md). Browsing a type
@@ -12,7 +12,7 @@ a value, deserialises it, and checks the result. CI runs all of them, so a recip
 recipe that worked the last time anyone looked -- which is the one thing the browsing half
 deliberately does not promise, since it generates and stops.
 
-## The one fact that makes this easy
+## Self-contained output
 
 **Generated output is self-contained.** The language runtime is embedded in `dsdlc` and written into
 your output directory alongside the generated types. There is no runtime package to add to your
@@ -153,7 +153,7 @@ python3 examples/showroom/run_recipe.py --dsdlc /path/to/dsdlc
 Add recipe names to run a subset, `--list` to see what is registered, and `--verbose` to watch the
 commands.
 
-## What you need installed
+## Prerequisites
 
 Each recipe page lists the tools that recipe needs, and `run_recipe.py` skips a recipe whose tools
 are absent rather than failing it. No recipe installs anything into your system: the Python recipes
@@ -189,7 +189,7 @@ the `--require` list.
 language, shared by every recipe in that row; the schema lives in `dsdl/`, shared by all of them.
 
 So the difference between the poetry recipe and the hatchling recipe is *only* the build files --
-which is exactly the comparison you came here to make. `run_recipe.py --check-invariant` enforces
+which is the comparison the recipes exist to support. `run_recipe.py --check-invariant` enforces
 it, and CI runs that check.
 
 ## What the recipes build

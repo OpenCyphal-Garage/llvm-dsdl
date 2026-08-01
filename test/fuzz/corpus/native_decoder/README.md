@@ -9,7 +9,7 @@ decoder** (`byte % 7` → Heartbeat, Health, Integer8, Frame, ExecuteCommand
 Request, ExecuteCommand Response, port.List) and the remainder is the untrusted
 payload fed to that type's `deserialize_`.
 
-## What to put here
+## Contents
 
 - **Regression reproducers.** When the fuzz lane finds a crash it writes a
   `crash-*` / `leak-*` / `timeout-*` reproducer under the build's `artifacts/`

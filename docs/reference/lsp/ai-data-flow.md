@@ -6,7 +6,7 @@ playbooks); read this one to answer "does my DSDL source leave my machine?".
 
 Every claim below names the governing constant or call site.
 
-## The short answer
+## Summary
 
 **Nothing leaves the process.** The only implementation of the `AiProvider` interface is
 `OfflineAiProvider` (`lib/LSP/AI.cpp`), which runs in-process and computes suggestions locally; the
@@ -31,7 +31,7 @@ Only four LSP methods reach the AI surface, each behind a policy gate:
 
 Nothing else in the server consults `aiProvider_`.
 
-## What enters (and how much)
+## Inputs and bounds
 
 On a code-action request the server reads the document from its **in-memory overlay**
 (`documents_.lookup(uri)` — the editor's live buffer, not the file on disk) and hands it to
@@ -49,7 +49,7 @@ So the maximum document content that can reach the provider on any single reques
 source**, plus symbol names and diagnostic text. The full buffer is read to *locate* the selection, but
 is not forwarded.
 
-## What can come back, and what it can do
+## Outputs and their effects
 
 The provider returns `AiCodeActionSuggestion` values (`id`, `title`, `kind`, `explanation`,
 `diagnosticMessage`, `hasEdit`, `requiresConfirmation`). These become code actions in the editor.
@@ -65,7 +65,7 @@ materialization is gated by `AiPolicyGate::canApplyConfirmedEdits`, which is tru
 **read-only introspection** of state the server already computed. There is no file-write, no shell, and
 no network tool.
 
-## What is retained
+## Retention
 
 `AiAuditLogger` keeps records of policy/tool events **in memory only** — there is no filesystem or
 network persistence in the AI surface, so the log is lost on restart and never lands on disk. It is

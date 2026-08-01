@@ -3,7 +3,7 @@
 `dsdld` emits structured, level-gated records so an operator can reconstruct what the server was doing
 after the fact — "which request was in flight when the editor stopped responding?"
 
-## Where records go
+## Destination
 
 **stderr, one JSON object per line.** stdout carries the JSON-RPC frames and is never interleaved with
 log text; the logger serialises writes, so lines stay intact even though records originate from both the
@@ -53,7 +53,7 @@ Every record carries `event` and `level`; the rest is event-specific.
 | `set_trace` | info | Verbosity changed at runtime. |
 | `configuration_changed` | debug | `workspace/didChangeConfiguration` was applied. |
 
-## What is deliberately absent
+## Deliberate omissions
 
 Records carry **no document text and no secrets** — method names, latencies, and error codes only. The
 AI surface's separate audit log applies its own redaction (see `ai-operation.md`); this channel

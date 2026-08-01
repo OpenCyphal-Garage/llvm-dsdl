@@ -3,7 +3,7 @@
 **Status:** open question about DSDL specification interpretation. Not a known bug — a
 request for clarification that affects float serialization conformance across all backends.
 
-## TL;DR
+## Summary
 
 For the **saturated** cast mode (the default), the DSDL specification says that when the
 value being cast is infinity or not-a-number, "the original value will be preserved." We

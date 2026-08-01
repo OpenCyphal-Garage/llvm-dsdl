@@ -21,7 +21,7 @@ cross-statement ordering decision, recursively. Per-backend `UnionSectionSpellin
 backend cannot reorder these steps; it can only exercise a declared right
 (see [Accepted differences](#accepted-differences)).
 
-## Abstract order vs spelling — the load-bearing distinction
+## Abstract order vs spelling
 
 The emit-order verifier checks **abstract op order**, not surface text. Two backends agree if they perform the same
 ordered sequence of abstract ops, regardless of how each op is spelled.

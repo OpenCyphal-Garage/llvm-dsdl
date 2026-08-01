@@ -3,7 +3,7 @@
 This is a developer-facing guide for building, testing, and contributing to
 `llvm-dsdl`.
 
-## 1. What This Document Covers
+## 1. Scope
 
 Use this guide to:
 

@@ -21,7 +21,7 @@ endif
 # types compiled into the binary. Between them, one namespace becomes three independent rules with
 # three independent lifetimes, and none of them needs a stamp or a hand-written file list.
 #
-# Why bother: the support header and the standard types change only when the compiler does, while
+# The support header and the standard types change only when the compiler does, while
 # your own definitions change all day. Splitting them means editing a definition rebuilds one
 # archive, not all of it -- and the standard types can be built once into a library that several
 # components share, which is the usual reason to want this.

@@ -11,7 +11,7 @@ dsdlc --target-language mlir path/to/ns > input.mlir
 dsdl-opt input.mlir -pass-pipeline='builtin.module(lower-dsdl-exec,dsdl-annotate-aliasability,dsdl-legalize-endianness)'
 ```
 
-## Why use it
+## Uses
 
 - Debug pass behaviour in isolation
 - Validate contract attributes across pipeline boundaries
