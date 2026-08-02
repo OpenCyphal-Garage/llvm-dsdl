@@ -110,6 +110,22 @@ The glibc prefix has been copied into `toolshed:ts26.4.3` and used to build all 
 there — GCC 15.2 linking GCC 11-built archives, with `mlir-tblgen` reporting 22.1.8 rather than
 the toolshed's own 22.1.2. That is the arrangement CI would use.
 
+### The pin change is not observable
+
+The suite was run in that composed image: **197 tests, all passing**, including 82 `differential`,
+94 `fixtures`, 13 `convergence`, 4 `determinism`, 3 `emit-order` and the cross-language Rust, Go,
+Python, C++ and TypeScript lanes. The lit suite ran rather than skipping.
+
+This is the result that matters. Moving from the toolshed's 22.1.2 to 22.1.8 crosses a patch
+boundary, and the C backend routes through MLIR/EmitC whose printed output can vary across MLIR
+versions — so the generated corpus was the thing most likely to shift. It did not, and neither
+RTTI, static archives, nor building with GCC 11 and linking with GCC 15 perturbed anything the
+suite measures.
+
+💡 The two `bench` tests fail under `ctest -j 8` in a virtualised container and pass run alone.
+They assert wall-clock thresholds (`BENCH_ENABLE_THRESHOLDS` defaults ON), so they measure the
+host as much as the code. Not a toolchain signal.
+
 Stripping the archives is not worth doing: 570.9 MB to 564.4 MB, about 1%. RTTI is the only
 setting here that adds rather than removes, and it costs ~31 MB of the prefix.
 
