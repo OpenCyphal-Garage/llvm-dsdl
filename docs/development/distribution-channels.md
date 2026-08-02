@@ -17,13 +17,22 @@ the LLVM build.
 
 ## 1. The self-built LLVM toolchain
 
-Four constraints trace back to *whose* LLVM 22 we build against:
+Five constraints trace back to *whose* LLVM 22 we build against:
 
 - The glibc floor is apt.llvm.org's choice of oldest suite, not ours.
 - The macOS build follows Homebrew's lifecycle.
 - Windows has no prebuilt LLVM with MLIR at all.
 - The vendored `libLLVM` and its dependency tail exist only because we consume someone else's
   build of it.
+- **RTTI.** LLVM defaults `LLVM_ENABLE_RTTI` to `OFF`; apt.llvm.org and Homebrew both ship it
+  `ON`. `llvmdsdl` derives from `mlir::Dialect` and `mlir::Pass`, so it has always required an
+  RTTI-enabled LLVM without declaring it. Against an `-fno-rtti` LLVM the build compiles and
+  then fails at link with `undefined reference to typeinfo for mlir::Pass`. This one is
+  invisible until you build the toolchain yourself.
+
+The patch level is someone else's choice too: the CI toolshed carries LLVM 22.1.2, while the
+macOS lane validates against 22.1.8. The major-version lock tolerates that; owning the build
+closes it.
 
 Building LLVM/MLIR 22 ourselves once per target, caching it as a GHCR image or release artifact
 keyed by `llvm-rev + triple + stdlib`, and restoring it in the build job dissolves all four. It
@@ -84,12 +93,25 @@ four tools actually needed total under 9 MB.
 
 | | |
 |---|---|
-| Build | ~15 min from a cold clone |
-| Install prefix | 800 MB (617 MB `lib`, 149 MB `include`, 34 MB `bin`) |
-| Image | 1.5 GB |
+| Build | ~17 min from a cold clone |
+| Install prefix | 831 MB (646 MB `lib`, 149 MB `include`, 34 MB `bin`) |
 | Component archives | 103 LLVM, 385 MLIR, 0 target backends |
 
-Stripping the archives is not worth doing: 570.9 MB to 564.4 MB, about 1%.
+Stripping the archives is not worth doing: 570.9 MB to 564.4 MB, about 1%. RTTI is the only
+setting here that adds rather than removes, and it costs ~31 MB of the prefix.
+
+Linking `llvm-dsdl` against it, `-static -static-libstdc++ -static-libgcc`, yields `static-pie`
+binaries that run with no loader dependency at all:
+
+| | unstripped | stripped |
+|---|---|---|
+| `dsdlc` | 26.0 MB | 17.2 MB |
+| `dsdl-opt` | 23.6 MB | 14.9 MB |
+| `dsdld` | 9.4 MB | 6.1 MB |
+
+59 MB unstripped for the whole tool set, against today's ~12 MB of tools plus a ~150 MB vendored
+`libLLVM` — 218 MB in the macOS bundle. The tools ship unstripped by policy (§4), so the
+unstripped column is the one that matters.
 
 [packaging/toolchain/verify_toolchain.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/verify_toolchain.py)
 asserts each of these properties against a built prefix, so a Dockerfile regression fails there
@@ -104,8 +126,10 @@ needing a real signature from six to one; it does not remove the requirement. Th
 notarisation, or a channel that does not set the quarantine attribute (§3 above).
 
 **Plugin loading.** [lib/LSP/Lint.cpp](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/LSP/Lint.cpp) loads lint rules with
-`dlopen`/`dlsym`. musl's static libc provides a `dlopen` that always fails, and static glibc's
-is unsupported. A fully static `dsdld` cannot load lint plugins. See D6 below.
+`dlopen`/`dlsym`, and a fully static `dsdld` cannot. It links and runs; the failure is confined
+to `loadPluginLibrary`, where musl's static `dlopen` returns null and sets `dlerror()` to
+"Dynamic loading not supported". `loadPluginLibrary` already propagates `dlerror()` into its
+`errorMessage`, so the user gets that string rather than a silent failure. See D6 below.
 
 ## 2. Cross-compilation targets
 
@@ -231,14 +255,21 @@ code as surely as vendoring the shared object did.
 | D1 | Who owns the tap and apt repo | `OpenCyphal-Garage`, matching `upstream` |
 | D2 | Is Intel macOS supported | No. Neither `bin` nor `dev` |
 | D3 | What `llvm-dsdl-dev` targets | macOS arm64 and Linux only; no Windows, no Intel macOS |
-| D4 | Glibc floor | Dissolved for `bin` by static musl. **Open for `dev`** — see below |
+| D4 | Glibc floor | Resolved: two toolchain flavours — musl for `bin`, jammy glibc 2.35 for `dev` and CI |
 | D5 | The LLVM major lock vs upstream homebrew-core | Resolved: stay in our own tap |
-| D6 | Lint plugins vs a static `dsdld` | Undecided — feature-gate with a loud diagnostic, ship `dsdld` dynamically, or move plugins out-of-process |
+| D6 | Lint plugins vs a static `dsdld` | Undecided, but not blocking — the runtime error is already accurate. Feature-gate it, ship `dsdld` dynamically, or move plugins out-of-process |
 | D7 | Windows on ARM | Undecided; gated on verification, not on the build |
 | D8 | macOS deployment-target floor | Undecided — ours to set once we own the build, same shape as D4 |
 
-**D4 splits by component.** A musl + libc++ static build serves `bin`, but the `dev`
-component's static libraries carry that C++ ABI, and a consumer compiling with glibc and
-libstdc++ cannot link them. On macOS arm64 this is harmless, as libc++ is the platform default.
-On Linux it means `bin` and `dev` want different toolchain configurations — musl for reach,
-glibc and libstdc++ to match what consumers actually compile with.
+**D4 resolves into two flavours, not one artifact.** A toolchain prefix is 488 static archives
+built against one libc; it is not portable across them, which is why the cache key carries the
+triple and stdlib. So there are two:
+
+- **musl (Alpine)** — the `bin` component. No glibc floor at all.
+- **glibc (Ubuntu 22.04)** — `llvm-dsdl-dev`, whose archives must link against what consumers
+  actually compile with, *and* the CI toolshed. Building on jammy sets the floor at glibc 2.35,
+  which both satisfies the toolshed (2.43) and preserves today's reach for `dev`.
+
+The second flavour is what lets CI test the LLVM that ships. Today the toolshed builds against
+its own 22.1.2 while the release validates 22.1.8; one toolchain, restored into both, removes
+the divergence.

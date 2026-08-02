@@ -35,6 +35,14 @@ WORKDIR /work
 RUN git clone --depth 1 --branch "${LLVM_REF}" \
         https://github.com/llvm/llvm-project.git llvm-project
 
+# LLVM_ENABLE_RTTI=ON is required, and is the one setting here that is not a
+# saving. LLVM defaults it OFF; apt.llvm.org and Homebrew both turn it ON, so
+# the project has always linked an RTTI-enabled LLVM without ever declaring the
+# dependency. llvmdsdl defines mlir::dsdl::DSDLDialect and several passes, and
+# deriving from mlir::Dialect or mlir::Pass emits typeinfo references that an
+# -fno-rtti LLVM does not contain. Building it OFF fails at link with
+# "undefined reference to typeinfo for mlir::Pass", not at compile.
+#
 # LLVM_TARGETS_TO_BUILD is empty because dsdlc emits source text, not machine
 # code -- no target backend is reachable from the MLIR libraries we link. Target
 # backends are the bulk of an LLVM build, so this is most of the cost removed.
@@ -58,6 +66,7 @@ RUN cmake -G Ninja -S llvm-project/llvm -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/llvm-dsdl-toolchain \
         -DLLVM_ENABLE_PROJECTS=mlir \
+        -DLLVM_ENABLE_RTTI=ON \
         -DLLVM_TARGETS_TO_BUILD= \
         -DLLVM_BUILD_LLVM_DYLIB=OFF \
         -DLLVM_LINK_LLVM_DYLIB=OFF \
