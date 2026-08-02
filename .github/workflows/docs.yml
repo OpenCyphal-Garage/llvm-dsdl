@@ -44,6 +44,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Configure Pages
+        # Skipped under act (which sets ACT=true), here and on the two steps below: these three talk
+        # to the GitHub Pages and artifact APIs, which no local runner has, and none of them affect
+        # what is built -- mkdocs takes its site_url from mkdocs.yml, not from this action's output.
+        # Guarding them is what lets `act push -W .github/workflows/docs.yml` answer the only
+        # question worth asking locally: does the site build. See CONTRIBUTING.md.
+        if: ${{ !env.ACT }}
         uses: actions/configure-pages@v6
 
       - name: Configure
@@ -80,6 +86,7 @@ jobs:
         run: python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
       - name: Upload Pages artifact
+        if: ${{ !env.ACT }}
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
@@ -93,5 +100,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
+        # Guarded on the step rather than the job: a job-level `if` cannot read the env context, so
+        # `!env.ACT` there would be a workflow syntax error on GitHub. This way the whole workflow
+        # runs under act with deploy reduced to a no-op.
+        if: ${{ !env.ACT }}
         id: deployment
         uses: actions/deploy-pages@v5
