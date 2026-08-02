@@ -1,0 +1,96 @@
+# The glibc flavour of the LLVM/MLIR toolchain llvm-dsdl links against.
+#
+# Serves two consumers the musl flavour cannot:
+#
+#   * llvm-dsdl-dev. Its static libraries have to link against what consumers
+#     actually compile with, which is glibc and libstdc++, not musl.
+#   * The CI toolshed. Today CI builds against the toolshed's own apt.llvm.org
+#     LLVM 22.1.2 while the release validates 22.1.8; restoring this prefix
+#     into the toolshed makes CI test the LLVM that ships.
+#
+# Ubuntu 22.04 rather than the toolshed's 26.04. glibc is backward compatible,
+# so archives built against 2.35 link in the toolshed's 2.43 -- while the
+# reverse would not -- and 2.35 preserves the reach llvm-dsdl-dev has today.
+# One build therefore covers both consumers. This mirrors the reasoning in
+# Dockerfile.ubuntu-release, which reaches back to jammy for the same reason.
+#
+# Unlike Dockerfile.ubuntu-release this adds no apt.llvm.org source: the point
+# is to stop consuming someone else's libLLVM, and jammy's own GCC is a
+# perfectly good compiler for building one. Kitware is still needed because
+# jammy ships CMake 3.22 and the project floor is 3.24 -- this image is also
+# usable for building llvm-dsdl itself.
+#
+# The CMake configuration is shared with the musl flavour by
+# packaging/toolchain/build_llvm.py.
+#
+# Build:
+#   docker build -f packaging/docker/Dockerfile.llvm-toolchain-glibc \
+#     --build-arg LLVM_REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')" \
+#     -t llvm-dsdl-toolchain:glibc .
+
+ARG UBUNTU_CODENAME=jammy
+
+FROM ubuntu:${UBUNTU_CODENAME} AS build
+
+ARG LLVM_REF
+ARG BUILD_JOBS=0
+ARG UBUNTU_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN test -n "${LLVM_REF}" || (echo "LLVM_REF is required; see packaging/toolchain/llvm.pin" >&2; exit 1)
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        ca-certificates gnupg wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
+      | gpg --dearmor -o /usr/share/keyrings/kitware.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ ${UBUNTU_CODENAME} main" \
+      > /etc/apt/sources.list.d/kitware.list
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+RUN git clone --depth 1 --branch "${LLVM_REF}" \
+        https://github.com/llvm/llvm-project.git llvm-project
+
+COPY packaging/toolchain/build_llvm.py /work/build_llvm.py
+RUN python3 /work/build_llvm.py \
+        --source /work/llvm-project \
+        --llvm-ref "${LLVM_REF}" \
+        --jobs "${BUILD_JOBS}"
+
+FROM ubuntu:${UBUNTU_CODENAME}
+
+ARG LLVM_REF
+ARG UBUNTU_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+LABEL org.opencontainers.image.title="llvm-dsdl LLVM/MLIR toolchain (glibc)"
+LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, no target backends, glibc 2.35"
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        ca-certificates gnupg wget \
+    && wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
+      | gpg --dearmor -o /usr/share/keyrings/kitware.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ ${UBUNTU_CODENAME} main" \
+      > /etc/apt/sources.list.d/kitware.list \
+    && apt-get update -qq && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# See the musl flavour: LLVM never installs lit, and without it the lit suite
+# reports green having run nothing. Jammy predates PEP 668, so plain pip works.
+RUN pip3 install --no-cache-dir lit
+
+COPY --from=build /opt/llvm-dsdl-toolchain /opt/llvm-dsdl-toolchain
+COPY packaging/toolchain/verify_toolchain.py /opt/llvm-dsdl-toolchain/verify_toolchain.py
+
+ENV LLVM_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/llvm \
+    MLIR_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/mlir \
+    CMAKE_PREFIX_PATH=/opt/llvm-dsdl-toolchain \
+    PATH=/opt/llvm-dsdl-toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /src

@@ -1,103 +1,54 @@
-# The LLVM/MLIR toolchain llvm-dsdl links against, built rather than consumed.
+# The musl flavour of the LLVM/MLIR toolchain llvm-dsdl links against.
 #
-# Why we build it: a distribution's LLVM fixes decisions that are ours to make --
-# the glibc floor, the C++ standard library, whether a shared libLLVM exists at
-# all. Static linking against apt.llvm.org or Homebrew is not reachable by build
-# flag, because their MLIR exports name a target declared SHARED. See §1 of
-# docs/development/distribution-channels.md.
+# Why we build it at all: a distribution's LLVM fixes decisions that are ours
+# to make -- the glibc floor, the C++ standard library, RTTI, whether a shared
+# libLLVM exists. Static linking against apt.llvm.org or Homebrew is not
+# reachable by build flag, because their MLIR exports name a target declared
+# SHARED. See section 1 of docs/development/distribution-channels.md.
+#
+# This flavour serves the `bin` component: a static musl binary has no glibc
+# floor, so one .deb per architecture installs across Debian and Ubuntu alike.
+# The glibc flavour, for llvm-dsdl-dev and the CI toolshed, is
+# Dockerfile.llvm-toolchain-glibc. The CMake configuration is shared between
+# them by packaging/toolchain/build_llvm.py; a flag that drifts between the two
+# would produce toolchains that are not the same toolchain.
 #
 # Alpine rather than a musl sysroot on Ubuntu: musl is native here, so the two
 # architectures that matter build on native runners with no cross-compilation.
-# Cross-compilation is reserved for armv7 and riscv64, which have no runners.
 #
 # Build:
 #   docker build -f packaging/docker/Dockerfile.llvm-toolchain \
 #     --build-arg LLVM_REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')" \
-#     -t llvm-dsdl-toolchain:local .
+#     -t llvm-dsdl-toolchain:musl .
 
 ARG ALPINE_VERSION=3.24
 
 FROM alpine:${ALPINE_VERSION} AS build
 
-# LLVM_REF is the git tag from packaging/toolchain/llvm.pin. It is passed in
-# rather than read here so the caller and the cache key cannot disagree.
 ARG LLVM_REF
-ARG BUILD_JOBS
+ARG BUILD_JOBS=0
 
 RUN test -n "${LLVM_REF}" || (echo "LLVM_REF is required; see packaging/toolchain/llvm.pin" >&2; exit 1)
 
-RUN apk add --no-cache \
-        build-base cmake ninja git python3 linux-headers
+RUN apk add --no-cache build-base cmake ninja git python3 linux-headers
 
 WORKDIR /work
 
-# Shallow clone at the tag: the full history is ~4 GB and we never need it.
+# Shallow clone at the tag: the full history is several GB and is never needed.
 RUN git clone --depth 1 --branch "${LLVM_REF}" \
         https://github.com/llvm/llvm-project.git llvm-project
 
-# LLVM_ENABLE_RTTI=ON is required, and is the one setting here that is not a
-# saving. LLVM defaults it OFF; apt.llvm.org and Homebrew both turn it ON, so
-# the project has always linked an RTTI-enabled LLVM without ever declaring the
-# dependency. llvmdsdl defines mlir::dsdl::DSDLDialect and several passes, and
-# deriving from mlir::Dialect or mlir::Pass emits typeinfo references that an
-# -fno-rtti LLVM does not contain. Building it OFF fails at link with
-# "undefined reference to typeinfo for mlir::Pass", not at compile.
-#
-# LLVM_TARGETS_TO_BUILD is empty because dsdlc emits source text, not machine
-# code -- no target backend is reachable from the MLIR libraries we link. Target
-# backends are the bulk of an LLVM build, so this is most of the cost removed.
-#
-# The ENABLE_* switches turn off optional features whose only effect here is to
-# drag shared libraries into the link: z3, libedit, libxml2, zlib, zstd and
-# libffi together account for the whole derived Depends list of the current
-# .deb, bar libc6 and libstdc++6.
-#
-# There is deliberately no LLVM_ENABLE_TERMINFO: LLVM 22 does not define it, and
-# passing it earns a "Manually-specified variables were not used" warning rather
-# than an effect. Terminfo support was removed upstream.
-#
-# LLVM_BUILD_TOOLS=OFF drops llc, opt, lli, mlir-opt and ~100 others. Nothing
-# here uses them: dsdlc and dsdl-opt are our own binaries, and the lit suite
-# substitutes only those two plus FileCheck and not. Left on, they cost 1.5 GB
-# -- with no shared libLLVM every one of them statically links the world, so
-# mlir-opt alone is 200 MB. The four tools we do need total under 9 MB and come
-# from LLVM_INSTALL_UTILS plus tablegen, which is built regardless.
-RUN cmake -G Ninja -S llvm-project/llvm -B build \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/opt/llvm-dsdl-toolchain \
-        -DLLVM_ENABLE_PROJECTS=mlir \
-        -DLLVM_ENABLE_RTTI=ON \
-        -DLLVM_TARGETS_TO_BUILD= \
-        -DLLVM_BUILD_LLVM_DYLIB=OFF \
-        -DLLVM_LINK_LLVM_DYLIB=OFF \
-        -DLLVM_ENABLE_Z3_SOLVER=OFF \
-        -DLLVM_ENABLE_LIBEDIT=OFF \
-        -DLLVM_ENABLE_LIBXML2=OFF \
-        -DLLVM_ENABLE_ZLIB=OFF \
-        -DLLVM_ENABLE_ZSTD=OFF \
-        -DLLVM_ENABLE_FFI=OFF \
-        -DLLVM_ENABLE_PLUGINS=OFF \
-        -DLLVM_ENABLE_ASSERTIONS=OFF \
-        -DLLVM_INCLUDE_TESTS=OFF \
-        -DLLVM_INCLUDE_BENCHMARKS=OFF \
-        -DLLVM_INCLUDE_EXAMPLES=OFF \
-        -DLLVM_BUILD_TOOLS=OFF \
-        -DLLVM_INSTALL_UTILS=ON \
-        -DMLIR_ENABLE_EXECUTION_ENGINE=OFF \
-        -DMLIR_INCLUDE_TESTS=OFF
+COPY packaging/toolchain/build_llvm.py /work/build_llvm.py
+RUN python3 /work/build_llvm.py \
+        --source /work/llvm-project \
+        --llvm-ref "${LLVM_REF}" \
+        --jobs "${BUILD_JOBS}"
 
-RUN cmake --build build ${BUILD_JOBS:+-j ${BUILD_JOBS}} && cmake --install build
-
-# Record what this is, so an image found in a registry can be identified without
-# re-deriving it from the tag.
-RUN printf '%s\n' "${LLVM_REF}" > /opt/llvm-dsdl-toolchain/LLVM_REF
-
-# The final image carries the install prefix and a compiler, and none of the
-# ~30 GB of build tree.
+# The final image carries the install prefix and a compiler, not the build tree.
 FROM alpine:${ALPINE_VERSION}
 
 ARG LLVM_REF
-LABEL org.opencontainers.image.title="llvm-dsdl LLVM/MLIR toolchain"
+LABEL org.opencontainers.image.title="llvm-dsdl LLVM/MLIR toolchain (musl)"
 LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, no target backends, musl"
 
 RUN apk add --no-cache build-base cmake ninja git python3 py3-pip
@@ -106,11 +57,12 @@ RUN apk add --no-cache build-base cmake ninja git python3 py3-pip
 # LLVM_INSTALL_UTILS) but never installs lit itself, and test/lit/CMakeLists.txt
 # reacts to a missing lit with a WARNING and an early return -- the suite would
 # report green having run nothing. Alpine's Python is externally managed, hence
-# --break-system-packages; this is a single-purpose image, so there is no
-# environment to protect.
+# --break-system-packages; this is a single-purpose image with no environment
+# to protect.
 RUN pip install --no-cache-dir --break-system-packages lit
 
 COPY --from=build /opt/llvm-dsdl-toolchain /opt/llvm-dsdl-toolchain
+COPY packaging/toolchain/verify_toolchain.py /opt/llvm-dsdl-toolchain/verify_toolchain.py
 
 ENV LLVM_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/llvm \
     MLIR_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/mlir \
