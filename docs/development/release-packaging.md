@@ -52,8 +52,8 @@ undefined symbols or a quietly ODR-broken binary.
 
 ### macOS: `macos-15`, Apple silicon
 
-Homebrew LLVM at build time, vendored into the artifact. Intel macOS is not built; see the
-[backlog](distribution-channels.md).
+Homebrew LLVM at build time, vendored into the artifact. Intel macOS is not built and is not
+planned — D2 of the [backlog](distribution-channels.md).
 
 ---
 
@@ -147,7 +147,7 @@ relocatable — extract anywhere, add `bin/` to `PATH`.
 
 ### Gatekeeper
 
-The binaries are ad-hoc signed rather than notarized, and `spctl -a -t exec` rejects them. That
+The binaries are ad-hoc signed rather than notarised, and `spctl -a -t exec` rejects them. That
 matters only for files carrying `com.apple.quarantine`, which depends entirely on how the archive
 is opened:
 
@@ -159,9 +159,16 @@ is opened:
 | `brew install` | no — brew strips it | runs |
 
 `tar` does not propagate quarantine; Archive Utility does. So the tarball needs no Developer ID
-and no notarization, **provided the install instructions say `tar -xzf`** — which the release
-notes do. Notarization is the usual answer for shipping macOS binaries and would cost a paid
+and no notarisation, **provided the install instructions say `tar -xzf`** — which the release
+notes do. Notarisation is the usual answer for shipping macOS binaries and would cost a paid
 certificate, `notarytool`, and secrets; it buys only the Finder row.
+
+Eliminating the bundled dylibs is not a substitute. A quarantined, ad-hoc signed executable
+linking nothing but `libSystem` is still killed on execution: Gatekeeper judges the signature,
+not the dependency graph. A self-contained binary would reduce the files needing a real
+signature from six to one, and nothing more. The Homebrew tap in §3 of the
+[backlog](distribution-channels.md) shrinks what notarisation buys further, since `brew install`
+never sets the attribute at all.
 
 ---
 
@@ -231,8 +238,8 @@ recording because the idea will resurface.
 or Mach-O code, libc headers, and glibc version stubs. It does not supply `libLLVM` for the target
 or the MLIR archives we link.
 
-1. **No target-built LLVM/MLIR.** You would have to cross-build LLVM first — which is the cached
-   toolchain in the [backlog](distribution-channels.md), at which point native is simpler
+1. **No target-built LLVM/MLIR.** You would have to cross-build LLVM first — which is §1 of the
+   [backlog](distribution-channels.md), at which point native is simpler
    — or scrape prebuilts into ad-hoc sysroots.
 2. **C++ ABI mismatch if you scrape.** apt.llvm.org builds against libstdc++, Homebrew against
    libc++, and zig bundles its own libc++ with no libstdc++ at all. MLIR exports a great deal of
@@ -249,6 +256,6 @@ The intuition it comes from is sound: zig's real strength is decoupling the glib
 build host. But with vendoring, that floor is set by the prebuilt `libLLVM` we ship rather than by
 our own objects, so the cure for it is owning our LLVM toolchain.
 
-Worth revisiting if the cached toolchain lands *and* someone wants to collapse the build matrix
-further: blockers 1 and 2 disappear, 3 is mechanical, and only 4 remains — capping the win at
-"fewer build runners, same number of test runners".
+Worth revisiting if the cached toolchain lands: blockers 1 and 2 disappear, 3 is mechanical, and
+only 4 remains. §2 of the [backlog](distribution-channels.md) works that through — the target
+matrix it reaches, and how much of blocker 4 emulation can absorb.
