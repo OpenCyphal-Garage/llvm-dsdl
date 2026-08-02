@@ -1,0 +1,8 @@
+# The LLVM/MLIR revision llvm-dsdl links against.
+#
+# This is the cache key for the toolchain image, and it is a semantic input to
+# the generated code: EmitC output varies across MLIR majors, and this project
+# pins byte-reproducibility to one. See docs/reference/guarantees/supply-chain.md.
+#
+# Changing this line rebuilds the toolchain. Nothing else does.
+llvmorg-22.1.8

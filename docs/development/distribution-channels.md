@@ -58,14 +58,42 @@ cannot cross that boundary without owning the build.
 `dsdlc` lowers DSDL to EmitC and emits source text. It generates no machine code, and the
 project references no target backend — no `LLVM_TARGETS_TO_BUILD`, `TargetMachine`, or
 `InitializeNative*`. The toolchain builds with `LLVM_TARGETS_TO_BUILD=""`, which removes the
-bulk of an LLVM build.
+bulk of an LLVM build: 4,861 ninja edges against the 30,000-plus of a full one.
 
 The shipped dependency tail (§3) is likewise optional feature selection rather than anything we
-require. `LLVM_ENABLE_Z3_SOLVER`, `LLVM_ENABLE_TERMINFO`, `LLVM_ENABLE_LIBEDIT`,
-`LLVM_ENABLE_LIBXML2`, `LLVM_ENABLE_ZLIB`, `LLVM_ENABLE_ZSTD`, `LLVM_ENABLE_FFI` and
-`LLVM_ENABLE_PLUGINS` set to `OFF` retire `libbsd0`, `libedit2`, `libffi8`, `libicu70`,
-`libmd0`, `libxml2`, `libz3-4` and `libzstd1` — the whole derived `Depends` list but for
-`libc6` and `libstdc++6`, which static linking (§2 above) retires instead.
+require. `LLVM_ENABLE_Z3_SOLVER`, `LLVM_ENABLE_LIBEDIT`, `LLVM_ENABLE_LIBXML2`,
+`LLVM_ENABLE_ZLIB`, `LLVM_ENABLE_ZSTD`, `LLVM_ENABLE_FFI` and `LLVM_ENABLE_PLUGINS` set to
+`OFF` retire `libbsd0`, `libedit2`, `libffi8`, `libicu70`, `libmd0`, `libxml2`, `libz3-4` and
+`libzstd1` — the whole derived `Depends` list but for `libc6` and `libstdc++6`, which static
+linking (§2 above) retires instead. Measured on the built toolchain, `mlir-tblgen` links musl
+libc, `libstdc++` and `libgcc_s`, and nothing else.
+
+There is no `LLVM_ENABLE_TERMINFO`. LLVM 22 does not define it — passing it earns a
+"Manually-specified variables were not used" warning rather than an effect.
+
+`LLVM_BUILD_TOOLS=OFF` matters more than it looks. `llc`, `opt`, `lli`, `mlir-opt` and about a
+hundred others are dead weight here — the lit suite substitutes only our own `dsdlc` and
+`dsdl-opt`, plus `FileCheck` and `not`. Left on they cost 1.5 GB, because without a shared
+`libLLVM` every one of them statically links the world and `mlir-opt` alone reaches 200 MB. The
+four tools actually needed total under 9 MB.
+
+### Measured
+
+[packaging/docker/Dockerfile.llvm-toolchain](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/docker/Dockerfile.llvm-toolchain),
+`aarch64-linux-musl`, 14 cores:
+
+| | |
+|---|---|
+| Build | ~15 min from a cold clone |
+| Install prefix | 800 MB (617 MB `lib`, 149 MB `include`, 34 MB `bin`) |
+| Image | 1.5 GB |
+| Component archives | 103 LLVM, 385 MLIR, 0 target backends |
+
+Stripping the archives is not worth doing: 570.9 MB to 564.4 MB, about 1%.
+
+[packaging/toolchain/verify_toolchain.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/verify_toolchain.py)
+asserts each of these properties against a built prefix, so a Dockerfile regression fails there
+rather than surfacing as a mysterious dependency in a shipped package.
 
 ### What it does not fix
 
