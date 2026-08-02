@@ -182,8 +182,13 @@ option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
 # coverage and cannot hold under instrumentation anyway -- a coverage build is
 # several times slower by construction, so including them would fail the lane for
 # doing exactly what it was asked to do.
+#
+# showroom-recipes for a related reason: they measure whether the *published build
+# recipes* still work, and spend their time inside make, cargo, npm, go and bazel.
+# The instrumented binaries here are dsdlc, dsdl-opt and the unit tests, so a recipe
+# adds minutes and network flakiness to the lane and not one line of covered C++.
 set(LLVMDSDL_COVERAGE_CTEST_ARGS
-    "--output-on-failure -LE bench"
+    "--output-on-failure -LE bench|showroom-recipes"
     CACHE STRING
     "Additional arguments forwarded to ctest by coverage-run (space-separated).")
 
@@ -1046,17 +1051,28 @@ foreach(generated IN ITEMS sbom deb-changelog man-pages)
   endif()
 endforeach()
 
+# Everything `--component bin` will ask for, as one target, so that no caller has to keep a list of
+# it. Anything that installs the bin component must build this first -- and that is more than one
+# caller: `install-bin` below, and the showroom recipe fixture, which installs into a private prefix
+# of its own and so cannot go through `install-bin`. Both used to name targets by hand and both were
+# wrong in the same way, because a lane that builds a subset (the coverage lane builds dsdlc,
+# dsdl-opt and the unit tests, and no dsdld) then fails inside cmake_install.cmake on a path nobody
+# asked for.
+add_custom_target(llvmdsdl-bin-component
+  COMMENT "Building everything the `bin` install component ships")
+add_dependencies(llvmdsdl-bin-component ${LLVMDSDL_INSTALL_BIN_DEPENDS})
+
 add_custom_target(install-bin
   COMMAND
     ${CMAKE_COMMAND}
       --install ${LLVMDSDL_BINARY_DIR}
       ${LLVMDSDL_INSTALL_CONFIG_ARGS}
       --component ${LLVMDSDL_INSTALL_COMPONENT_BIN}
-  DEPENDS ${LLVMDSDL_INSTALL_BIN_DEPENDS}
   USES_TERMINAL
   VERBATIM
   COMMENT "Installing llvm-dsdl binaries only"
 )
+add_dependencies(install-bin llvmdsdl-bin-component)
 
 # The `dev` component ships the same changelog alongside the libraries and headers.
 set(LLVMDSDL_INSTALL_DEV_DEPENDS ${LLVMDSDL_INSTALLABLE_LIBRARIES})

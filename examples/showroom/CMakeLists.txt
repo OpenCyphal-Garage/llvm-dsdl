@@ -218,6 +218,25 @@ set(LLVMDSDL_RECIPES_WORK "${CMAKE_CURRENT_BINARY_DIR}/recipe-work")
 # config for a user breaks this fixture first.
 set(LLVMDSDL_RECIPES_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/prefix")
 
+# Build the component before installing it, rather than trusting that whoever ran ctest happened to
+# build it first. A lane that builds a subset of the tools -- the coverage lane builds dsdlc,
+# dsdl-opt and the unit tests, and no dsdld -- would otherwise reach the install below and fail deep
+# inside cmake_install.cmake, naming a binary the test never mentioned and nobody asked for. The
+# aggregate target is defined next to the install rules it mirrors, so the two cannot drift apart.
+add_test(
+  NAME llvmdsdl-showroom-recipe-build
+  COMMAND "${CMAKE_COMMAND}" --build "${LLVMDSDL_BINARY_DIR}"
+          --config $<CONFIG>
+          --target llvmdsdl-bin-component)
+set_tests_properties(llvmdsdl-showroom-recipe-build PROPERTIES
+  FIXTURES_SETUP showroom-recipe-prefix
+  # The build tree is a single-writer resource: two concurrent generator invocations in one directory
+  # are a lock error, not a queue. Nothing else in the suite builds, so the lock is uncontended in
+  # practice and costs nothing -- it is here so that stays true if something else ever does.
+  RESOURCE_LOCK llvmdsdl-build-tree
+  TIMEOUT 1800
+  LABELS "showroom-recipes")
+
 add_test(
   NAME llvmdsdl-showroom-recipe-install
   COMMAND "${CMAKE_COMMAND}" --install "${LLVMDSDL_BINARY_DIR}"
@@ -226,6 +245,9 @@ add_test(
           --prefix "${LLVMDSDL_RECIPES_PREFIX}")
 set_tests_properties(llvmdsdl-showroom-recipe-install PROPERTIES
   FIXTURES_SETUP showroom-recipe-prefix
+  # Both are setup tests for one fixture, and ctest does not order those against each other; without
+  # this the install can run first and fail exactly the way it did before the build step existed.
+  DEPENDS llvmdsdl-showroom-recipe-build
   LABELS "showroom-recipes")
 
 foreach(_manifest IN LISTS LLVMDSDL_RECIPE_MANIFESTS)
