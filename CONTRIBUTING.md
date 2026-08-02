@@ -469,10 +469,19 @@ built, since `mkdocs` takes `site_url` from `mkdocs.yml`. Everything that can ac
 runs: the CMake configure, the `docs-generate` build, the pinned pip install, `mkdocs build
 --strict`, and the rendered-mermaid check.
 
-It is a genuine from-scratch run, not a reuse of your build tree. `act` honours `.gitignore` when it
-copies the repository into the container, so `build/` and `.venv-docs/` are left behind — about 90 MB
-goes in, and `dsdlc` is compiled inside the container from nothing. That is also why it cannot be
-made faster by building first.
+It is a genuine from-scratch *build*, not a reuse of your build tree. `act` honours `.gitignore` when
+it copies the repository into the container, so `build/` and `.venv-docs/` are left behind — about
+90 MB goes in, and `dsdlc` is compiled inside the container from nothing. That is also why it cannot
+be made faster by building first.
+
+**Know what it cannot catch.** `act` copies your *working tree*; it does not clone. Anything that
+differs between your checkout and a fresh one is invisible to it, and submodules are the trap that
+has already been sprung once: your `submodules/public_regulated_data_types` is populated, so the 58
+`llvmdsdl-uavcan-*` tests register and the guarantee matrices come out complete. The Docs workflow
+used to check out without submodules, where none of that is true — it failed on GitHub with a parity
+score of 12 against a minimum of 100 while `act` reported success. Both now check out submodules, so
+they agree again; if you change a `checkout` step, re-read this paragraph before trusting a green
+local run.
 
 The repository's [`.actrc`](./.actrc) already pins `--container-architecture` and `--pull=false`, so
 the toolshed image has to be present locally; `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once

@@ -38,10 +38,19 @@ jobs:
       LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
       MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
     steps:
-      - name: Checkout
-        # No submodules: every reference to submodules/public_regulated_data_types is EXISTS-guarded,
-        # and the showroom resolves its uavcan dependencies from dsdlc's embedded catalog.
+      - name: Checkout (with submodules)
+        # Submodules are required, despite every reference to submodules/public_regulated_data_types
+        # being EXISTS-guarded. The guard is exactly the problem: without the corpus, the 58
+        # `llvmdsdl-uavcan-*` tests are never registered, and this job generates the guarantee
+        # matrices in STRUCTURAL mode -- coverage inferred from registered ctest names. Every
+        # cpp/rust/go cell in the parity matrix is corpus-backed, so a submodule-less checkout does
+        # not merely fail the gate (score 12 against a minimum of 100); it would publish a parity
+        # page claiming those three backends have no array, union, delimited or service coverage.
+        # The showroom itself does resolve its uavcan dependencies from dsdlc's embedded catalog --
+        # that part of the old comment was right, it just was not the whole dependency.
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Configure Pages
         # Skipped under act (which sets ACT=true), here and on the two steps below: these three talk
