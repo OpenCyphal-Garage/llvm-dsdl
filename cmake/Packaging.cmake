@@ -154,6 +154,14 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 # developer's machine, and a guess here would be worse than an honest baseline.
 # The clean-container install in the release verify lane is what proves it right.
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
+
+# State the Debian architecture rather than letting CPack ask dpkg. CPack's
+# default is `dpkg --print-architecture`, which reports the architecture of the
+# machine's *dpkg*, not of what we built: Alpine's dpkg answers
+# "musl-linux-arm64", and a package carrying that in Architecture: installs
+# nowhere. LLVMDSDL_PACKAGE_ARCH is already derived from the target above and is
+# the same value the tarball triple uses, so the two cannot disagree.
+set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${LLVMDSDL_PACKAGE_ARCH}")
 set(LLVMDSDL_DEB_DEPENDS "" CACHE STRING
     "Debian Depends: for the llvm-dsdl package. Empty means derive it from the built \
 binaries at package time, which is what you want; set it only to pin a list deliberately.")

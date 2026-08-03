@@ -30,10 +30,34 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Always present, and not always reported as a resolvable "=>" entry by ldd.
+# Applied only when something actually links a dynamic libc: ldd does not always
+# report it as a resolvable "=>" entry, so a dynamically linked binary needs it
+# added by hand. A statically linked binary genuinely has no libc dependency, and
+# asserting one there would contradict the point of linking statically.
 BASELINE = ("libc6",)
 
 _LDD_LINE = re.compile(r"^\s*\S+\s*=>\s*(?P<path>/\S+)")
+
+
+def is_dynamic(binary: Path) -> bool:
+    """Whether @p binary declares a dynamic loader.
+
+    Read from the ELF program headers rather than inferred from ldd's exit
+    status, because ldd fails identically for a statically linked binary and
+    for one it cannot process at all -- a foreign architecture, most likely.
+    Those must not be conflated: the first contributes no dependencies because
+    it genuinely has none, and the second contributes none because we failed to
+    look, which would silently produce a package claiming to need nothing.
+    """
+    try:
+        proc = subprocess.run(
+            ["readelf", "-lW", str(binary)], capture_output=True, text=True, timeout=120)
+    except FileNotFoundError:
+        raise SystemExit("readelf not found; this must run on the build host")
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"cannot read ELF program headers of {binary}: {proc.stderr.strip()}")
+    return "INTERP" in proc.stdout
 
 
 def linked_libraries(binary: Path) -> list[Path]:
@@ -44,8 +68,12 @@ def linked_libraries(binary: Path) -> list[Path]:
     except FileNotFoundError:
         raise SystemExit("ldd not found; this must run on the build host")
     if proc.returncode != 0:
-        # Not a dynamic executable, or unresolvable -- nothing to contribute.
-        return []
+        # The caller only reaches here for a binary the ELF headers say is
+        # dynamic, so a failure now means ldd could not resolve it -- which is
+        # exactly the situation where guessing is worse than stopping.
+        raise SystemExit(
+            f"ldd failed on {binary}, which declares a dynamic loader: "
+            f"{proc.stderr.strip() or proc.stdout.strip()}")
     out: list[Path] = []
     for line in proc.stdout.splitlines():
         match = _LDD_LINE.match(line)
@@ -67,8 +95,17 @@ def owning_package(library: Path) -> str | None:
 
 def derive(binaries: list[Path], vendored: list[str]) -> list[str]:
     """Return sorted package names the given binaries need at runtime."""
-    packages: set[str] = set(BASELINE)
+    packages: set[str] = set()
+    any_dynamic = False
     for binary in binaries:
+        # An analysis target that is not there at all is a build or wiring
+        # error, not a binary with no dependencies. Saying so here is what keeps
+        # an empty result meaningful: it can then only mean "statically linked".
+        if not binary.is_file():
+            raise SystemExit(f"analysis target does not exist: {binary}")
+        if not is_dynamic(binary):
+            continue
+        any_dynamic = True
         for library in linked_libraries(binary):
             # Anything we ship ourselves must not become a dependency: there is
             # no package providing it, and depending on it would be circular.
@@ -77,6 +114,8 @@ def derive(binaries: list[Path], vendored: list[str]) -> list[str]:
             pkg = owning_package(library)
             if pkg:
                 packages.add(pkg)
+    if any_dynamic:
+        packages.update(BASELINE)
     return sorted(packages)
 
 

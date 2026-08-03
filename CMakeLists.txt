@@ -178,6 +178,47 @@ option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
        "Remove repository .venv when running distclean"
        OFF)
 
+# Fully static tools.
+#
+# Intended for the musl toolchain, where it produces static-pie executables with
+# no loader dependency at all -- which is what makes the .deb carry no Depends
+# rather than the two it carries when linked against glibc.
+#
+# Deliberately not the default: against glibc this links but is a trap, because
+# NSS and dlopen need the shared libc at runtime. dsdlc and dsdl-opt use neither,
+# but dsdld loads lint plugins with dlopen, and musl's static dlopen always fails
+# with "Dynamic loading not supported". That is a real functional loss, reported
+# accurately rather than silently -- see D6 in
+# docs/development/distribution-channels.md.
+option(LLVMDSDL_STATIC_BINARIES
+       "Link the tools fully statically. Linux only; intended for the musl toolchain."
+       OFF)
+
+if(LLVMDSDL_STATIC_BINARIES)
+  if(APPLE)
+    # Apple does not ship a static libSystem and does not support linking one;
+    # there is no supported static crt0. The macOS equivalent of this flag is
+    # LLVMDSDL_VENDOR_LLVM, which bundles instead.
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_BINARIES is not available on macOS: Apple does not support "
+      "statically linking libSystem. Use LLVMDSDL_VENDOR_LLVM for a self-contained "
+      "macOS bundle instead.")
+  endif()
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "LLVMDSDL_STATIC_BINARIES is implemented for Linux only.")
+  endif()
+  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+    # The accelerator is a MODULE library that CPython dlopens. These options
+    # apply to every target in the directory, and a statically linked loadable
+    # module is a contradiction.
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_BINARIES and LLVMDSDL_ENABLE_PYTHON_ACCELERATOR are mutually "
+      "exclusive: the accelerator is a loadable module and cannot be linked static.")
+  endif()
+  add_link_options(-static -static-libstdc++ -static-libgcc)
+  message(STATUS "Linking tools fully statically")
+endif()
+
 # -LE bench: the benchmarks assert wall-clock thresholds, which say nothing about
 # coverage and cannot hold under instrumentation anyway -- a coverage build is
 # several times slower by construction, so including them would fail the lane for
