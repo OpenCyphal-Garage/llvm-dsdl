@@ -195,10 +195,27 @@ jemalloc if the difference is material.
 
 ### macOS is not a cross-compilation target
 
-Apple does not support statically linking `libSystem`, so "fully static" is unreachable on
-Darwin by construction; the ceiling is static except `libSystem`. Cross-compiling additionally
-requires Apple's SDK, which is licensed for use on Apple hardware. Signing and notarisation can
-be performed from Linux, so those are not the obstacle. The native runner stays.
+Cross-compiling requires Apple's SDK, which is licensed for use on Apple hardware. Signing and
+notarisation can be performed from Linux, so those are not the obstacle. The native runner stays.
+
+That is a statement about *where* macOS is built, not about how much of it is static. Apple does
+not support statically linking `libSystem`, but everything above it links statically as it does
+elsewhere. Built against a Darwin toolchain, the tools link exactly:
+
+```
+/usr/lib/libSystem.B.dylib
+/usr/lib/libc++.1.dylib
+```
+
+Both ship with every macOS install and neither is redistributable, so there is nothing to
+vendor. The tarball carries no dylibs, needs no install-name rewriting, and drops from 218 MB to
+**14 MB**. `BundleSelfContainedTools.cmake` and `LLVMDSDL_VENDOR_LLVM` are unused on macOS as a
+result; they remain only for a build against a distribution's LLVM.
+
+The Darwin toolchain cannot be a container image — it builds natively, in ~9 minutes, cached on
+the pin. Two further consequences: Gatekeeper now has one Mach-O to sign per tool rather than
+six files per bundle (notarisation is still what the Finder path needs, §5), and D6 does not
+arise here at all, because `dlopen` works normally against a dynamic `libSystem`.
 
 ### Verification splits in two
 
