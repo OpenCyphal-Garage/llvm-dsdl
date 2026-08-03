@@ -105,6 +105,18 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Build the LLVM toolchain image
+        # Built here rather than pulled, so the release does not depend on a
+        # registry that does not exist yet. Once the toolchain is published this
+        # step becomes a pull and the ~12 minutes go away; nothing else changes,
+        # because the release image takes the toolchain as a build argument.
+        run: |
+          docker build \
+            -f packaging/docker/Dockerfile.llvm-toolchain-glibc \
+            --build-arg LLVM_REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')" \
+            -t llvmdsdl-toolchain:glibc-${{ matrix.arch }} \
+            .
+
       - name: Build the release image
         # Built from the committed Dockerfile rather than replicated as workflow
         # steps, so the release environment is the same one reproducible locally.
@@ -113,14 +125,17 @@ jobs:
         run: |
           docker build \
             -f packaging/docker/Dockerfile.ubuntu-release \
+            --build-arg TOOLCHAIN_IMAGE=llvmdsdl-toolchain:glibc-${{ matrix.arch }} \
             -t llvmdsdl-release:jammy-${{ matrix.arch }} \
-            packaging/docker/
+            .
 
       - name: Configure, build, and package
-        # Vendoring is what lets the package install against stock Ubuntu: no
-        # Ubuntu release carries LLVM 22, so without it the .deb would install
-        # cleanly and then fail on a missing shared object. The Depends list is
-        # derived from the built binaries at package time, not hand-maintained.
+        # Vendoring is off because there is nothing left to vendor: the toolchain
+        # image carries a static LLVM, so the tools embed it rather than loading
+        # it. That is what lets the package install against stock Ubuntu, which
+        # carries no LLVM 22 of its own. The Depends list is still derived from
+        # the built binaries at package time rather than hand-maintained -- it
+        # now derives libc6 and libstdc++6 and nothing else.
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}":/src:ro \
@@ -129,7 +144,7 @@ jobs:
               cmake -S /src -B /build -G Ninja \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DLLVM_DIR="$LLVM_DIR" -DMLIR_DIR="$MLIR_DIR" \
-                -DLLVMDSDL_VENDOR_LLVM=ON \
+                -DLLVMDSDL_VENDOR_LLVM=OFF \
                 -DCMAKE_INSTALL_PREFIX=/usr
               cmake --build /build
               cd /build && cpack -G DEB
