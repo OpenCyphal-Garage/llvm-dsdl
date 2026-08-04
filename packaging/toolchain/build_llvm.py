@@ -110,10 +110,31 @@ def main() -> int:
     run(["cmake", "-G", "Ninja", "-S", str(llvm_dir), "-B", args.build,
          f"-DCMAKE_INSTALL_PREFIX={args.prefix}", *CMAKE_FLAGS])
 
-    build_cmd = ["cmake", "--build", args.build]
-    if args.jobs:
-        build_cmd += ["-j", str(args.jobs)]
-    run(build_cmd)
+    jobs_args = ["-j", str(args.jobs)] if args.jobs else []
+
+    # Generated headers first, to close a race rather than keep winning it.
+    #
+    # mlir/lib/ExecutionEngine/CMakeLists.txt declares MLIRExecutionEngineUtils
+    # with `DEPENDS intrinsics_gen`, but its only source, OptUtils.cpp, reaches
+    # llvm/Analysis/TargetLibraryInfo.inc through PassBuilder.h. That header is
+    # produced by the analysis_gen target, which is not declared, so nothing
+    # orders the two. (MLIR_ENABLE_EXECUTION_ENGINE=OFF does not help: it gates
+    # the JIT engine, not these utilities, which are built regardless.)
+    #
+    # A normal LLVM build hides this -- with target backends enabled there is so
+    # much other work that analysis_gen always finishes first. LLVM_TARGETS_TO_BUILD
+    # being empty removes that cushion, and MLIR then starts early enough to lose
+    # on a machine with few cores: it built on a 14-core developer machine every
+    # time and failed on a 4-vCPU CI runner with
+    #
+    #   fatal error: llvm/Analysis/TargetLibraryInfo.inc: No such file or directory
+    #
+    # Building the tablegen targets as their own pass costs seconds and makes the
+    # outcome independent of how many cores happen to be available.
+    run(["cmake", "--build", args.build, "--target",
+         "intrinsics_gen", "analysis_gen", *jobs_args])
+
+    run(["cmake", "--build", args.build, *jobs_args])
     run(["cmake", "--install", args.build])
 
     # Record what this is, so a prefix found in a cache or an image can be
