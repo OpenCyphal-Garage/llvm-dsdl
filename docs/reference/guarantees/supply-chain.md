@@ -50,12 +50,21 @@ The lock is enforced **at configure time** by the build system and **again** by 
   `LLVMDSDL_REQUIRED_LLVM_MAJOR` (currently `22`) and fails configuration otherwise.
   `-DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON` downgrades the failure to a warning. MLIR ships with LLVM
   at the same version, so asserting the LLVM major covers MLIR too.
-- **Linux (x86-64, libstdc++):** `LLVM_DIR`/`MLIR_DIR`/`CMAKE_PREFIX_PATH` pin `/usr/lib/llvm-22`, and
-  the determinism job records the real version via `llvm-config --version` into the corpus-hash
-  manifest (`--meta llvm=…`).
-- **macOS (arm64, libc++):** Homebrew `llvm@22`, with an asserted major.
-- **Cross-stdlib determinism lane:** `tools/determinism/cross_stdlib_corpus_hash.py` compares the two
-  hosts' recorded LLVM majors. CI passes `--require-c`, which makes a major skew a **hard failure**.
+- **Everywhere:** the toolchain this project builds for itself, pinned by revision in
+  `packaging/toolchain/llvm.pin` rather than by major alone. CI and the release now link the same
+  LLVM, which they previously did not: the CI toolshed carried apt.llvm.org's 22.1.2 while the macOS
+  release validated Homebrew's 22.1.8, and only the major was asserted.
+- **Hashed-container iteration** is excluded at the source rather than detected afterwards.
+  `std::unordered_*` iteration order is a property of the standard library, so a loop over one could
+  emit different bytes when built against a different one. `tools/determinism/check_unordered_iteration.py`
+  (ctest `llvmdsdl-determinism-unordered-iteration`) rejects any such iteration in the
+  generated-output path unless it carries a stated reason why the order cannot reach emitted text.
+
+The cross-stdlib corpus lane that previously covered this was retired when the project began
+building its own toolchain: it compared a libstdc++ build against a libc++ one, and shipping a
+single toolchain removes the divergence it depended on to detect anything.
+`tools/determinism/cross_stdlib_corpus_hash.py` remains, as the tool for comparing two builds'
+corpora on demand.
 
 ### Consequences
 

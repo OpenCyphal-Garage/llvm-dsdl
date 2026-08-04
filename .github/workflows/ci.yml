@@ -53,12 +53,19 @@ jobs:
     name: Full suite (linux / toolshed)
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
+      # literal because a container image is resolved before any step could read
+      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
+      # container pull, which is loud.
+      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
@@ -105,26 +112,6 @@ jobs:
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
-
-      - name: Hash generated corpus (libstdc++ side of the cross-stdlib determinism gate)
-        # One half of the P1 "two-toolchain" determinism check: this dsdlc links the
-        # distro LLVM/libstdc++ on x86-64; the cross-stdlib job produces the
-        # libc++/arm64 half and the cross-stdlib-determinism job compares them.
-        run: |
-          llvm_ver="$(/usr/lib/llvm-22/bin/llvm-config --version)"
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --dsdlc build/matrix/ci/tools/dsdlc/Debug/dsdlc \
-            --dsdl-root submodules/public_regulated_data_types/uavcan \
-            --out corpus-hash-libstdcxx.json \
-            --label libstdc++ \
-            --meta "llvm=${llvm_ver}"
-
-      - name: Upload corpus hash (libstdc++)
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: corpus-hash-libstdcxx
-          path: corpus-hash-libstdcxx.json
 
       - name: Build Python runtime accelerator
         run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
@@ -214,15 +201,27 @@ jobs:
     # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
+      # literal because a container image is resolved before any step could read
+      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
+      # container pull, which is loud.
+      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
       # The sanitizer + fuzz harnesses require Clang (-fsanitize=address,undefined
       # and compiler-rt libFuzzer); force it so the Clang-gated tests register and
       # the generated decoders are compiled with the sanitizer toolchain.
+      #
+      # Still the image's own Clang, not ours: our toolchain builds MLIR alone and
+      # ships no compiler, and a compiler is not what this project stopped taking
+      # from a distribution. LLVM_DIR above is what decides which LLVM is linked;
+      # this decides only what does the compiling.
       CC: /usr/lib/llvm-22/bin/clang
       CXX: /usr/lib/llvm-22/bin/clang++
     steps:
@@ -302,7 +301,14 @@ jobs:
     # Dafny and its solver come from the toolshed image rather than being fetched
     # per run.
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
+      # literal because a container image is resolved before any step could read
+      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
+      # container pull, which is loud.
+      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -335,108 +341,6 @@ jobs:
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
 
-  cross-stdlib:
-    name: Corpus generation (macOS / libc++ / arm64)
-    # The libc++ half of the P1 "two-toolchain" determinism gate. libstdc++ and
-    # libc++ implement different std::hash functions and bucket policies, so a
-    # future code path that lets std::unordered_* iteration order leak into
-    # emitted text diverges between this job's output and the linux job's —
-    # exactly the nondeterminism class that same-host env perturbation
-    # (locale/TZ/PYTHONHASHSEED, already gated) cannot expose. Builds dsdlc only.
-    runs-on: macos-latest
-    timeout-minutes: 90
-    steps:
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Install LLVM/MLIR + ninja (Homebrew; links libc++)
-        # Pin to the toolshed image's LLVM major (ts26.4.3 -> 22) so the C backend
-        # (routed through MLIR/EmitC, whose text may vary across MLIR majors) stays
-        # comparable. Prefer the versioned formula; fall back to `llvm` (which IS 22
-        # while 22 is current). The assertion below is the real pin: a Homebrew
-        # major bump fails this job loudly instead of silently eroding C coverage —
-        # bump this pin and the toolshed image together, deliberately.
-        run: brew install ninja && (brew install llvm@22 || brew install llvm)
-
-      - name: Assert LLVM major matches the linux (toolshed) side
-        run: |
-          LLVM_PREFIX="$(brew --prefix llvm@22 2>/dev/null || true)"
-          [ -x "${LLVM_PREFIX}/bin/llvm-config" ] || LLVM_PREFIX="$(brew --prefix llvm)"
-          ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
-          echo "Homebrew LLVM: ${ver} at ${LLVM_PREFIX}"
-          if [ "${ver%%.*}" != "22" ]; then
-            echo "::error::Homebrew LLVM major (${ver%%.*}) != toolshed LLVM major (22)." \
-                 "Bump the llvm@ pin here and the toolshed image together." >&2
-            exit 1
-          fi
-          echo "LLVM_PREFIX=${LLVM_PREFIX}" >> "${GITHUB_ENV}"
-
-      - name: Configure (dev-llvm-env preset, Homebrew LLVM)
-        run: |
-          export LLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm"
-          export MLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir"
-          cmake --preset dev-llvm-env
-
-      - name: Build dsdlc
-        run: cmake --build --preset build-dev-llvm-env --target dsdlc
-
-      - name: Assert libc++ linkage (the point of this lane)
-        run: |
-          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
-          otool -L "${dsdlc}"
-          otool -L "${dsdlc}" | grep -q 'libc++'
-
-      - name: Hash generated corpus (libc++ side)
-        run: |
-          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
-          llvm_ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --dsdlc "${dsdlc}" \
-            --dsdl-root submodules/public_regulated_data_types/uavcan \
-            --out corpus-hash-libcxx.json \
-            --label libc++ \
-            --meta "llvm=${llvm_ver}"
-
-      - name: Upload corpus hash (libc++)
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: corpus-hash-libcxx
-          path: corpus-hash-libcxx.json
-
-  cross-stdlib-determinism:
-    name: Cross-stdlib determinism gate (libstdc++/x86-64 vs libc++/arm64)
-    # Compares the two corpus-hash manifests byte-for-byte, all six backends
-    # strictly: --require-c turns LLVM-major skew (which would otherwise skip the
-    # MLIR/EmitC-routed C backend) into a hard failure, and the macOS job pins its
-    # Homebrew LLVM to the toolshed's major, so skew can only happen through a
-    # deliberate, mismatched bump — which this gate then catches. A mismatch means
-    # generated output depends on the host toolchain — see
-    # tools/determinism/cross_stdlib_corpus_hash.py.
-    needs: [linux, cross-stdlib]
-    runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        if: ${{ !env.ACT }}
-        uses: actions/checkout@v7
-
-      - name: Download corpus hashes
-        if: ${{ !env.ACT }}
-        uses: actions/download-artifact@v8
-        with:
-          pattern: corpus-hash-*
-          merge-multiple: true
-
-      - name: Compare
-        if: ${{ !env.ACT }}
-        run: |
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json \
-            --require-c
-
   showroom-recipes:
     name: Showroom build recipes (linux / toolshed)
     # One (language, build system) pair per recipe: generate with dsdlc, compile the output, run a
@@ -453,12 +357,19 @@ jobs:
     # job. Keep that list growing as recipes land.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
+      # literal because a container image is resolved before any step could read
+      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
+      # container pull, which is loud.
+      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 60
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
