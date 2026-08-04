@@ -1,0 +1,157 @@
+name: Toolchain
+
+# Builds and publishes the LLVM/MLIR toolchain llvm-dsdl links against.
+#
+# This runs when the pin moves, not per release. Building it inline in a release
+# job costs roughly 40 minutes on a 4-vCPU runner -- enough to exceed the release
+# timeout on amd64 -- whereas pulling the published image costs a minute or two.
+#
+# Four images, because a toolchain prefix is ~490 static archives built against
+# one libc and does not cross that boundary:
+#
+#   musl   -- the `bin` component. No glibc floor; the .deb carries no Depends.
+#   glibc  -- llvm-dsdl-dev, whose archives must link against what consumers
+#             actually compile with, and the CI toolshed.
+#
+# Each on both architectures, on native runners. Emulation costs a measured 3.8x
+# and there is no reason to pay it when GitHub provides both natively.
+#
+# macOS is deliberately absent: a Darwin toolchain cannot be a container image.
+# The macOS release leg builds it natively and caches the prefix instead.
+
+on:
+  push:
+    paths:
+      - packaging/toolchain/llvm.pin
+      - packaging/toolchain/build_llvm.py
+      - packaging/toolchain/verify_toolchain.py
+      - packaging/docker/Dockerfile.llvm-toolchain
+      - packaging/docker/Dockerfile.llvm-toolchain-glibc
+      - .github/workflows/toolchain.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: toolchain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.flavour }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    # Generous, and deliberately so: this is the job that is *allowed* to take
+    # 40 minutes, precisely so no other job has to.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavour: musl
+            dockerfile: packaging/docker/Dockerfile.llvm-toolchain
+            arch: amd64
+            runner: ubuntu-latest
+          - flavour: musl
+            dockerfile: packaging/docker/Dockerfile.llvm-toolchain
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - flavour: glibc
+            dockerfile: packaging/docker/Dockerfile.llvm-toolchain-glibc
+            arch: amd64
+            runner: ubuntu-latest
+          - flavour: glibc
+            dockerfile: packaging/docker/Dockerfile.llvm-toolchain-glibc
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve the pin and image name
+        # GHCR rejects an uppercase path, and this owner has one.
+        id: names
+        run: |
+          set -euo pipefail
+          ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
+          test -n "$ref"
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "llvm_ref=${ref}"
+            echo "image=ghcr.io/${owner}/llvm-dsdl-toolchain"
+            echo "tag=${{ matrix.flavour }}-${{ matrix.arch }}-${ref}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: |
+          docker build \
+            -f "${{ matrix.dockerfile }}" \
+            --build-arg LLVM_REF="${{ steps.names.outputs.llvm_ref }}" \
+            -t "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
+            .
+
+      - name: Verify before publishing
+        # A toolchain that merely builds is not the goal. These assertions are
+        # the properties it is built *for* -- static-only, no target backends,
+        # the tools the build and lit suite need, no optional-feature libraries
+        # on the link line. Publishing an image that fails them would put the
+        # defect downstream of every consumer.
+        run: |
+          docker run --rm "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
+            python3 /opt/llvm-dsdl-toolchain/verify_toolchain.py \
+              --expect-ref "${{ steps.names.outputs.llvm_ref }}"
+
+      - name: Push
+        run: docker push "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}"
+
+  manifest:
+    name: Multi-arch tags
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        flavour: [musl, glibc]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve the pin and image name
+        id: names
+        run: |
+          set -euo pipefail
+          ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "llvm_ref=${ref}"
+            echo "image=ghcr.io/${owner}/llvm-dsdl-toolchain"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the architecture-independent tag
+        # So consumers name a flavour and a pin, and the registry serves the
+        # right architecture. Without this every caller would have to know its
+        # own arch and spell it into the tag.
+        run: |
+          set -euo pipefail
+          image="${{ steps.names.outputs.image }}"
+          ref="${{ steps.names.outputs.llvm_ref }}"
+          docker buildx imagetools create \
+            --tag "${image}:${{ matrix.flavour }}-${ref}" \
+            "${image}:${{ matrix.flavour }}-amd64-${ref}" \
+            "${image}:${{ matrix.flavour }}-arm64-${ref}"
+          docker buildx imagetools inspect "${image}:${{ matrix.flavour }}-${ref}"
