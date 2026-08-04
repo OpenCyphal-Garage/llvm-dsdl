@@ -2,16 +2,25 @@
 # Part of the OpenCyphal project, under the MIT licence
 # SPDX-License-Identifier: MIT
 """
-Cross-toolchain generated-output determinism check (the P1 "two-toolchain" lane).
+Differential generated-output determinism check.
 
 Generates the full corpus with dsdlc for every text backend and records a canonical
-per-file SHA-256 manifest. Two manifests produced by dsdlc binaries built against
-DIFFERENT C++ standard libraries (CI: Linux/libstdc++ x86-64 vs macOS/libc++ arm64)
-are then compared byte-for-byte. Because libstdc++ and libc++ implement different
-std::hash functions and bucket policies, any future code path that lets
-std::unordered_* ITERATION order leak into emitted text produces differing manifests
-— the failure mode that same-host environment perturbation (locale/TZ/PYTHONHASHSEED,
-already gated) cannot expose.
+per-file SHA-256 manifest. Two manifests produced by two different dsdlc binaries are
+then compared byte-for-byte: identical input, identical output, or the difference is
+a property of the build rather than of the data.
+
+CI compares x86-64 against arm64, both built from the project's own toolchain. That
+covers what actually ships -- two architectures of the same release -- and catches
+anything that lets word size, alignment, or floating-point formatting reach emitted
+text, which same-host environment perturbation (locale/TZ/PYTHONHASHSEED, already
+gated) cannot expose.
+
+It previously compared libstdc++ against libc++ to catch std::unordered_* iteration
+order leaking into output. That lane was retired when the project began building one
+toolchain, since it depended on the two halves using different standard libraries;
+check_unordered_iteration.py now excludes that class at the source instead. The tool
+remains general -- any two builds will do, which is also how it is used by hand to
+prove a refactor changed no output.
 
 Modes:
   generate:  --dsdlc PATH --dsdl-root DIR --out MANIFEST [--label NAME] [--meta k=v ...]

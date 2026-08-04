@@ -13,10 +13,11 @@ notice.
 
 This project publishes byte-reproducibility of generated code as a guarantee, so
 that class of divergence has to be structurally excluded rather than tested for
-after the fact. The cross-stdlib corpus gate (cross_stdlib_corpus_hash.py) can
-only catch it once it has already happened, and only if the two CI halves keep
-using different standard libraries -- which stops being true the moment the
-project ships one toolchain of its own.
+after the fact. A differential corpus comparison (corpus_determinism.py) can only
+catch it once it has already happened, and only if the two builds being compared
+differ in their standard library -- which the cross-architecture gate that
+replaced the old cross-stdlib one deliberately does not, since both halves come
+from the same toolchain.
 
 Iterating a hashed container is not automatically wrong. It is fine when the
 result cannot inherit the order: the loop feeds an ordered container, the output

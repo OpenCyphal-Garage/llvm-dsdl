@@ -370,7 +370,7 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   LLVM, libc++, arm64 — dsdlc-only build via the `dev-llvm-env` preset, with an `otool` assertion
   that the binary really links libc++) each generate the full UAVCAN corpus for all six backends
   and record a canonical per-file SHA-256 manifest
-  (`tools/determinism/cross_stdlib_corpus_hash.py`); the `cross-stdlib-determinism` join job
+  (`tools/determinism/corpus_determinism.py`); the `cross-stdlib-determinism` join job
   compares them byte-for-byte and fails with per-file detail. libstdc++ and libc++ implement
   different `std::hash`/bucket policies (and the hosts differ in arch and OS), so any future
   `unordered_*` iteration leak into emitted text diverges the manifests. The five string backends

@@ -228,7 +228,7 @@ The checks in §7 conflate two questions that scale differently:
 
 A fully static CLI binary is the ideal `qemu-user` case: no dynamic loader, no sysroot. Running
 corpus generation under emulation and comparing the corpus hash against the host's — the gate
-that `tools/determinism/cross_stdlib_corpus_hash.py` provides — turns "it launched" into "it produced
+that `tools/determinism/corpus_determinism.py` provides — turns "it launched" into "it produced
 exactly the right bytes" for every target, on one machine.
 
 ## 3. Homebrew

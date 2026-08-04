@@ -3,15 +3,19 @@ name: CI
 # Full, unabridged test + report run for the core tools (dsdlc, dsdl-opt, dsdld)
 # across every supported host platform and every generated-output language.
 #
-# The container jobs run INSIDE the project's own toolshed image
-# (ghcr.io/opencyphal/toolshed:ts26.4.3 — the same image .devcontainer uses). That
-# image is the single source of truth for the build environment: LLVM/MLIR 22,
-# clang, cmake, ninja, the generated-output language toolchains, and Dafny with
-# its solver all come from it. Nothing is installed per run; the setup action
-# asserts the toolchains are present and fails loudly if one is missing, because
-# the integration suite registers a language's tests only when its toolchain is
-# found at configure time — so a silently incomplete image sheds whole lanes
-# while still reporting green.
+# The container jobs run INSIDE the toolshed image with this project's own
+# LLVM/MLIR prefix layered on, built and published by the Toolchain workflow.
+# The toolshed (ghcr.io/opencyphal/toolshed — the same image .devcontainer uses)
+# supplies clang, cmake, ninja, the generated-output language toolchains, and
+# Dafny with its solver; LLVM/MLIR comes from packaging/toolchain/llvm.pin
+# instead, so CI links the same LLVM the release ships rather than whichever one
+# the image happened to carry.
+#
+# Nothing is installed per run; the setup action asserts the toolchains are
+# present and fails loudly if one is missing, because the integration suite
+# registers a language's tests only when its toolchain is found at configure
+# time — so a silently incomplete image sheds whole lanes while still reporting
+# green.
 
 on:
   push:
@@ -340,6 +344,97 @@ jobs:
         # `dafny verify` exits non-zero on any failed proof obligation, so a broken model
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
+
+  corpus:
+    name: Corpus hash (${{ matrix.arch }})
+    # One half of the cross-architecture determinism gate. Identical source and
+    # identical toolchain, differing only in the architecture the compiler runs
+    # on, so a difference in the emitted corpus can only come from the build.
+    #
+    # This replaces the retired cross-stdlib lane, and covers something the
+    # project actually ships: two architectures of the same release. Word size,
+    # alignment and floating-point formatting reaching emitted text are what it
+    # would catch, none of which same-host perturbation (locale/TZ/hash seed,
+    # gated elsewhere) can expose.
+    #
+    # The plain toolchain image, not the composed CI one: this builds dsdlc and
+    # nothing else, so the language runtimes would be 12 GB of dead weight.
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:glibc-llvmorg-22.1.8
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Build dsdlc
+        # LLVM_DIR/MLIR_DIR come from the image.
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target dsdlc
+
+      - name: Hash generated corpus
+        # The version comes from the prefix rather than llvm-config, which
+        # LLVM_BUILD_TOOLS=OFF does not install. Stripped of the tag prefix so
+        # the comparator's major extraction still sees a version number.
+        run: |
+          set -euo pipefail
+          ref="$(cat /opt/llvm-dsdl-toolchain/LLVM_REF)"
+          python3 tools/determinism/corpus_determinism.py \
+            --dsdlc build/tools/dsdlc/dsdlc \
+            --dsdl-root submodules/public_regulated_data_types/uavcan \
+            --out "corpus-hash-${{ matrix.arch }}.json" \
+            --label "${{ matrix.arch }}" \
+            --meta "llvm=${ref#llvmorg-}"
+
+      - name: Upload corpus hash
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: corpus-hash-${{ matrix.arch }}
+          path: corpus-hash-${{ matrix.arch }}.json
+
+  cross-arch-determinism:
+    name: Cross-architecture determinism gate (amd64 vs arm64)
+    # Compares the two manifests byte-for-byte, all six backends strictly.
+    # --require-c turns an LLVM version difference into a hard failure rather
+    # than silently skipping the MLIR/EmitC-routed C backend; both halves take
+    # their LLVM from the same pinned image, so a difference would mean the
+    # images themselves had diverged.
+    needs: corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        if: ${{ !env.ACT }}
+        uses: actions/checkout@v7
+
+      - name: Download corpus hashes
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: corpus-hash-*
+          merge-multiple: true
+
+      - name: Compare
+        if: ${{ !env.ACT }}
+        run: |
+          python3 tools/determinism/corpus_determinism.py \
+            --compare corpus-hash-amd64.json corpus-hash-arm64.json \
+            --require-c
 
   showroom-recipes:
     name: Showroom build recipes (linux / toolshed)

@@ -60,11 +60,17 @@ The lock is enforced **at configure time** by the build system and **again** by 
   (ctest `llvmdsdl-determinism-unordered-iteration`) rejects any such iteration in the
   generated-output path unless it carries a stated reason why the order cannot reach emitted text.
 
-The cross-stdlib corpus lane that previously covered this was retired when the project began
-building its own toolchain: it compared a libstdc++ build against a libc++ one, and shipping a
-single toolchain removes the divergence it depended on to detect anything.
-`tools/determinism/cross_stdlib_corpus_hash.py` remains, as the tool for comparing two builds'
-corpora on demand.
+- **Cross-architecture determinism gate:** the `corpus` jobs generate the full UAVCAN corpus for all
+  six backends on x86-64 and on arm64, from the same source and the same toolchain, and
+  `cross-arch-determinism` compares the manifests byte-for-byte with `--require-c`. Identical input
+  and identical toolchain means a difference could only come from the architecture — word size,
+  alignment, floating-point formatting reaching emitted text.
+
+This replaced a cross-stdlib lane comparing libstdc++ against libc++, which was retired when the
+project began building its own toolchain: it depended on the two halves using different standard
+libraries, and shipping one toolchain removes that. The architecture pair covers what is actually
+released instead. `tools/determinism/corpus_determinism.py` serves both, and is equally the tool for
+comparing any two builds' corpora by hand.
 
 ### Consequences
 
