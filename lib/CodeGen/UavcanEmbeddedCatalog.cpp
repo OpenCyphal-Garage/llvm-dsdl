@@ -968,6 +968,7 @@ llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&     
                                     static_cast<std::uint32_t>(std::max<std::int64_t>(0, minorAttr.getInt()))));
     }
 
+    // determinism-ok: sorted on the next line, before anything reads it.
     std::vector<std::string> orderedKeys(selectedTypeKeys.begin(), selectedTypeKeys.end());
     std::sort(orderedKeys.begin(), orderedKeys.end());
 

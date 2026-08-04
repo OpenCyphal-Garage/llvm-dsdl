@@ -14,6 +14,7 @@
 #ifndef LLVMDSDL_CODEGEN_UAVCAN_EMBEDDED_CATALOG_H
 #define LLVMDSDL_CODEGEN_UAVCAN_EMBEDDED_CATALOG_H
 
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -47,8 +48,17 @@ struct UavcanEmbeddedCatalog final
     /// @brief Parsed MLIR module containing all embedded `dsdl.schema` ops.
     mlir::OwningOpRef<mlir::ModuleOp> module;
 
-    /// @brief Embedded type keys (`full_name:major:minor`).
-    std::unordered_set<std::string> typeKeys;
+    /// @brief Embedded type keys (`full_name:major:minor`), ordered.
+    ///
+    /// Ordered rather than hashed because this set is iterated -- by
+    /// suggestionsForSelector and by selector expansion -- and an unordered
+    /// container's iteration order is a property of the standard library
+    /// implementation, not of the data. Emitted text must not be able to
+    /// inherit it. The callers currently funnel every such iteration through an
+    /// ordered container of their own, so this changes no output; it removes
+    /// the obligation to keep doing so. 189 entries, one lookup against three
+    /// iterations, so the hashed container was not buying anything either.
+    std::set<std::string> typeKeys;
 
     /// @brief Embedded schema ops keyed by canonical type key.
     std::unordered_map<std::string, mlir::Operation*> schemaByKey;

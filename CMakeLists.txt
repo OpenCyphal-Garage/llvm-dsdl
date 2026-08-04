@@ -1402,6 +1402,25 @@ endif()
 enable_testing()
 add_subdirectory(test)
 
+# Hashed-container iteration in the generated-output path.
+#
+# A std::unordered_* iteration order is a property of the standard library, not
+# of the data, so a loop over one can emit different bytes when built against a
+# different stdlib while being perfectly deterministic for any single binary.
+# The cross-stdlib corpus gate detects that after the fact, and only for as long
+# as the two CI halves keep using different standard libraries -- which owning
+# one toolchain ends. This excludes the class at the source instead, and costs
+# no build: it reads the sources, so it runs without dsdlc.
+if(LLVMDSDL_PYTHON3_EXE)
+  add_test(
+    NAME llvmdsdl-determinism-unordered-iteration
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/determinism/check_unordered_iteration.py"
+            --root "${LLVMDSDL_SOURCE_DIR}")
+  set_tests_properties(llvmdsdl-determinism-unordered-iteration PROPERTIES
+    LABELS "determinism;contract")
+endif()
+
 # Below enable_testing() rather than beside the other examples: the showroom registers ctests for its
 # build recipes, and add_test() in a directory processed before enable_testing() is not reliably
 # picked up. It also joins docs-llms to the documentation chain from there, for the same ordering
