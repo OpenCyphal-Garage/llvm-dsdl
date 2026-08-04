@@ -86,7 +86,6 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir lit
 
 COPY --from=build /opt/llvm-dsdl-toolchain /opt/llvm-dsdl-toolchain
-COPY packaging/toolchain/verify_toolchain.py /opt/llvm-dsdl-toolchain/verify_toolchain.py
 
 ENV LLVM_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/llvm \
     MLIR_DIR=/opt/llvm-dsdl-toolchain/lib/cmake/mlir \

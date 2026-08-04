@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import shutil
 import re
 import subprocess
 import sys
@@ -82,9 +83,18 @@ def main() -> int:
 
     # lit is a Python package; LLVM never installs it, and a missing lit makes
     # test/lit/CMakeLists.txt warn and return -- a green run that tested nothing.
+    #
+    # Accept either form, because that file does: it looks for an llvm-lit or
+    # lit executable first and falls back to `python3 -m lit.main`. Asserting
+    # only importability rejects a working toolchain -- the CI base image ships
+    # /usr/local/bin/lit without making it importable by the system interpreter,
+    # and an import-only check called that a failure.
+    executable = shutil.which("llvm-lit") or shutil.which("lit")
     r = subprocess.run([sys.executable, "-c", "import lit; print(lit.__version__)"],
                        capture_output=True, text=True)
-    check(r.returncode == 0, "lit importable", r.stdout.strip() or r.stderr.strip()[:60])
+    detail = executable if executable else (
+        f"module {r.stdout.strip()}" if r.returncode == 0 else r.stderr.strip()[:60])
+    check(bool(executable) or r.returncode == 0, "lit available (executable or module)", detail)
 
     print("\n== runtime dependencies of the installed tools ==")
     tblgen = p / "bin" / "mlir-tblgen"

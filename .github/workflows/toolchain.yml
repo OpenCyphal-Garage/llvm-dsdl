@@ -24,7 +24,6 @@ on:
     paths:
       - packaging/toolchain/llvm.pin
       - packaging/toolchain/build_llvm.py
-      - packaging/toolchain/verify_toolchain.py
       - packaging/docker/Dockerfile.llvm-toolchain
       - packaging/docker/Dockerfile.llvm-toolchain-glibc
       - .github/workflows/toolchain.yml
@@ -105,8 +104,9 @@ jobs:
         # on the link line. Publishing an image that fails them would put the
         # defect downstream of every consumer.
         run: |
-          docker run --rm "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
-            python3 /opt/llvm-dsdl-toolchain/verify_toolchain.py \
+          docker run --rm -v "${PWD}/packaging/toolchain:/v:ro" \
+            "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
+            python3 /v/verify_toolchain.py \
               --expect-ref "${{ steps.names.outputs.llvm_ref }}"
 
       - name: Push
@@ -156,8 +156,9 @@ jobs:
 
       - name: Verify before publishing
         run: |
-          docker run --rm --platform linux/amd64 "${{ steps.names.outputs.tag }}" \
-            python3 /opt/llvm-dsdl-toolchain/verify_toolchain.py \
+          docker run --rm --platform linux/amd64 -v "${PWD}/packaging/toolchain:/v:ro" \
+            "${{ steps.names.outputs.tag }}" \
+            python3 /v/verify_toolchain.py \
               --expect-ref "${{ steps.names.outputs.llvm_ref }}"
 
       - name: Push
