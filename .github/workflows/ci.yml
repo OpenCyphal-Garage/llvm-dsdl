@@ -3,13 +3,19 @@ name: CI
 # Full, unabridged test + report run for the core tools (dsdlc, dsdl-opt, dsdld)
 # across every supported host platform and every generated-output language.
 #
-# The container jobs run INSIDE the toolshed image with this project's own
-# LLVM/MLIR prefix layered on, built and published by the Toolchain workflow.
-# The toolshed (ghcr.io/opencyphal/toolshed — the same image .devcontainer uses)
+# The container jobs run INSIDE the project's own toolshed image
+# (ghcr.io/opencyphal/toolshed — the same image .devcontainer uses), which
 # supplies clang, cmake, ninja, the generated-output language toolchains, and
-# Dafny with its solver; LLVM/MLIR comes from packaging/toolchain/llvm.pin
-# instead, so CI links the same LLVM the release ships rather than whichever one
-# the image happened to carry.
+# Dafny with its solver.
+#
+# LLVM/MLIR does NOT come from that image. Every job that links it first
+# restores the prefix pinned by packaging/toolchain/llvm.pin, so CI links the
+# same LLVM the release ships rather than whichever one the image happened to
+# carry. A tarball rather than an image baking the two together: a job's
+# container is resolved before any step could compose one, and republishing a
+# 13 GB image whenever the pin moved bought nothing — the prefix is 141 MB and
+# the toolshed is pulled either way. The Dafny job restores nothing; it proves a
+# model and never touches LLVM.
 #
 # Nothing is installed per run; the setup action asserts the toolchains are
 # present and fails loudly if one is missing, because the integration suite
@@ -57,14 +63,7 @@ jobs:
     name: Full suite (linux / toolshed)
     runs-on: ubuntu-26.04
     container:
-      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
-      # literal because a container image is resolved before any step could read
-      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
-      # container pull, which is loud.
-      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 120
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -75,6 +74,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Prepare toolchains
         uses: ./.github/actions/setup-language-toolchains
@@ -205,14 +207,7 @@ jobs:
     # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
     runs-on: ubuntu-26.04
     container:
-      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
-      # literal because a container image is resolved before any step could read
-      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
-      # container pull, which is loud.
-      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 120
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -233,6 +228,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Prepare toolchains
         # Go is needed for the C/Go sanitized parity variant; the MLIR dev libs
@@ -305,14 +303,7 @@ jobs:
     # Dafny and its solver come from the toolshed image rather than being fetched
     # per run.
     container:
-      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
-      # literal because a container image is resolved before any step could read
-      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
-      # container pull, which is loud.
-      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -357,14 +348,13 @@ jobs:
     # would catch, none of which same-host perturbation (locale/TZ/hash seed,
     # gated elsewhere) can expose.
     #
-    # The plain toolchain image, not the composed CI one: this builds dsdlc and
-    # nothing else, so the language runtimes would be 12 GB of dead weight.
+    # The same image and the same restored prefix as every other job: this
+    # builds dsdlc and nothing else, but using a different environment for it
+    # would weaken the comparison, since the point is that only the architecture
+    # differs between the two halves.
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:glibc-llvmorg-22.1.8
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -379,6 +369,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Build dsdlc
         # LLVM_DIR/MLIR_DIR come from the image.
@@ -452,14 +447,7 @@ jobs:
     # job. Keep that list growing as recipes land.
     runs-on: ubuntu-26.04
     container:
-      # toolshed + our LLVM prefix, built by the Toolchain workflow. The tag is
-      # literal because a container image is resolved before any step could read
-      # packaging/toolchain/{toolshed,llvm}.pin; if they disagree this fails at
-      # container pull, which is loud.
-      image: ghcr.io/opencyphal-garage/llvm-dsdl-ci:ts26.4.3-llvmorg-22.1.8
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 60
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -470,6 +458,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Check the recipe invariant (build wiring only)
         # Needs no toolchain and no compiler, so it runs first and fails fast: a recipe that grew its

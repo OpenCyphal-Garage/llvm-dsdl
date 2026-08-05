@@ -112,27 +112,27 @@ jobs:
       - name: Push
         run: docker push "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}"
 
-  ci-image:
-    name: CI image (toolshed + toolchain)
+  prefix:
+    name: Publish the toolchain prefix
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
+    permissions:
+      contents: write        # attach the tarballs to the toolchain release
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Resolve pins
+      - name: Resolve the pin
         id: names
         run: |
           set -euo pipefail
           ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
-          base="$(grep -v '^#' packaging/toolchain/toolshed.pin | tr -d '[:space:]')"
           owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           {
             echo "llvm_ref=${ref}"
-            echo "base=${base}"
-            echo "tag=ghcr.io/${owner}/llvm-dsdl-ci:${base##*:}-${ref}"
-            echo "prefix=ghcr.io/${owner}/llvm-dsdl-toolchain:glibc-amd64-${ref}"
+            echo "image=ghcr.io/${owner}/llvm-dsdl-toolchain"
           } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
@@ -142,27 +142,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compose
-        # The toolshed carries the language runtimes the suite needs and no LLVM
-        # we want; the toolchain prefix carries the LLVM and no runtimes. CI
-        # needs both, and this is the only place that fact is expressed.
-        #
-        # amd64 only: every ci.yml job runs on an x86-64 runner.
+      - name: Extract both architectures
+        # `docker create` + `docker cp` rather than `docker run tar`: nothing is
+        # executed, so the arm64 prefix can be extracted on an x86-64 runner
+        # without emulation.
         run: |
           set -euo pipefail
-          printf 'FROM %s AS tc\nFROM %s\nCOPY --from=tc /opt/llvm-dsdl-toolchain /opt/llvm-dsdl-toolchain\n' \
-            "${{ steps.names.outputs.prefix }}" "${{ steps.names.outputs.base }}" > Dockerfile.ci
-          docker build --platform linux/amd64 -f Dockerfile.ci -t "${{ steps.names.outputs.tag }}" .
+          for arch in amd64 arm64; do
+            img="${{ steps.names.outputs.image }}:glibc-${arch}-${{ steps.names.outputs.llvm_ref }}"
+            docker pull --platform "linux/${arch}" "$img"
+            cid="$(docker create --platform "linux/${arch}" "$img")"
+            docker cp "${cid}:/opt/llvm-dsdl-toolchain" "./llvm-dsdl-toolchain"
+            docker rm -v "$cid" > /dev/null
+            tar -czf "llvm-dsdl-toolchain-glibc-${arch}.tar.gz" llvm-dsdl-toolchain
+            rm -rf llvm-dsdl-toolchain
+            ls -la "llvm-dsdl-toolchain-glibc-${arch}.tar.gz"
+          done
 
-      - name: Verify before publishing
+      - name: Publish
+        # A prerelease so it never displaces a product release as "Latest", and
+        # a tag naming the pin so the asset URL is derivable from llvm.pin alone
+        # -- which is what lets the restore action build the URL without being
+        # told where to look.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker run --rm --platform linux/amd64 -v "${PWD}/packaging/toolchain:/v:ro" \
-            "${{ steps.names.outputs.tag }}" \
-            python3 /v/verify_toolchain.py \
-              --expect-ref "${{ steps.names.outputs.llvm_ref }}"
-
-      - name: Push
-        run: docker push "${{ steps.names.outputs.tag }}"
+          set -euo pipefail
+          tag="toolchain-${{ steps.names.outputs.llvm_ref }}"
+          if ! gh release view "$tag" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            gh release create "$tag" --repo "${GITHUB_REPOSITORY}" --prerelease \
+              --title "LLVM/MLIR toolchain ${{ steps.names.outputs.llvm_ref }}" \
+              --notes "Static LLVM/MLIR prefix built by .github/workflows/toolchain.yml. Consumed by CI via .github/actions/restore-llvm-toolchain. Not a product release."
+          fi
+          gh release upload "$tag" --repo "${GITHUB_REPOSITORY}" --clobber \
+            llvm-dsdl-toolchain-glibc-amd64.tar.gz \
+            llvm-dsdl-toolchain-glibc-arm64.tar.gz
 
   manifest:
     name: Multi-arch tags
