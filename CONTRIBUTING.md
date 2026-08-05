@@ -539,7 +539,77 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
-## 14. Troubleshooting Quick Notes
+## 14. Cutting a Release
+
+Three things carry the version and must agree: `VERSION`, the top entry of
+`packaging/deb/changelog`, and the git tag. All three are checked before
+anything is built.
+
+### 14.1 Preconditions
+
+The toolchain images must already exist for the current
+`packaging/toolchain/llvm.pin`. The release pulls them; it does not build them
+inline, because doing so costs about forty minutes per architecture and once
+exceeded the job timeout. A missing image fails the job with
+`No published toolchain for pin <ref>`.
+
+So if you are also moving the pin, push that first and let the Toolchain
+workflow finish. If the pin is unchanged, there is nothing to do here.
+
+### 14.2 Prepare the version
+
+Set `VERSION` to `X.Y.Z`. It is the single source of truth: CPack takes the
+package version from it, and the tools compile it into `--version`.
+
+Add a new **top** entry to `packaging/deb/changelog`:
+
+```
+llvm-dsdl (X.Y.Z) unstable; urgency=medium
+
+  * What changed.
+
+ -- Your Name <you@example.com>  Tue, 05 Aug 2026 12:00:00 +0000
+```
+
+The trailer line is not decoration. It is where the man pages take their date,
+so that rebuilding a release produces byte-identical pages rather than pages
+stamped with whenever the rebuild happened. Configure fails if it cannot parse a
+date from it. `dch --newversion X.Y.Z` writes both the entry and the trailer
+correctly, if you have devscripts.
+
+Merge to `main`.
+
+### 14.3 Dry run
+
+```bash
+gh workflow run Release --repo OpenCyphal-Garage/llvm-dsdl --ref main -f dry_run=true
+```
+
+This builds and verifies everything and publishes nothing: both `.deb`
+architectures, the macOS tarball, the pristine-container install check, and the
+macOS linkage assertion. Worth doing before tagging, because a pushed tag that
+fails is more annoying to unwind than a workflow run that does.
+
+### 14.4 Tag
+
+```bash
+git tag vX.Y.Z && git push upstream vX.Y.Z
+```
+
+The tag triggers the release with `publish=true`. What you get is a **draft**
+release with the packages, checksums and a provenance attestation attached.
+Nothing is public until you publish it from the releases page.
+
+### 14.5 What is enforced, and where
+
+| Check | Where | Failure mode it prevents |
+|---|---|---|
+| Tag matches `VERSION` | `release.yml` `stage` | Binaries that misreport their own version |
+| Changelog top entry matches `VERSION` | `release.yml` `stage`, and CMake at configure time | A Debian package whose changelog disagrees with its control file is malformed |
+| Changelog trailer parses as a date | CMake at configure time | Man pages stamped with the build date, so no two builds agree |
+| Toolchain image exists for the pin | `release.yml` `build` | A silent forty-minute inline rebuild, or a release built against the wrong LLVM |
+
+## 15. Troubleshooting Quick Notes
 
 ### CMake cannot find LLVM/MLIR
 
@@ -562,7 +632,7 @@ In the PR description, include:
 - verify Python/Rust/Go/Node toolchains installed for impacted lanes
 - use smoke presets first to validate core build health
 
-## 15. Useful References
+## 16. Useful References
 
 - [`README.md`](./README.md)
 - [`DESIGN.md`](./DESIGN.md)
