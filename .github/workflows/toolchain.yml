@@ -89,15 +89,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Decide whether anything needs rebuilding
+        # The tag names the pin, but build_llvm.py can change without the pin
+        # changing -- the analysis_gen fix was exactly that -- so "does the tag
+        # exist" is not a safe skip condition: it would have kept a broken image
+        # and reported success. The image instead carries a hash of everything
+        # that determines its content, and this compares it.
+        #
+        # Without this, editing a publishing job in this file rebuilds four
+        # images that come out byte-identical, at about seventy minutes each.
+        # The trigger is a path filter and cannot tell the two kinds of edit
+        # apart; this can.
+        #
+        # Any failure to read the published label means rebuild. Unknown is not
+        # the same as unchanged, and the cheap mistake is the one that rebuilds.
+        id: guard
+        run: |
+          set -euo pipefail
+          want="$(cat packaging/toolchain/llvm.pin \
+                      packaging/toolchain/build_llvm.py \
+                      "${{ matrix.dockerfile }}" | sha256sum | cut -c1-16)"
+          echo "inputs=${want}" >> "$GITHUB_OUTPUT"
+          have="$(docker buildx imagetools inspect \
+                    "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
+                    --format '{{ if .Image.Config.Labels }}{{ index .Image.Config.Labels "org.opencyphal.llvm-dsdl.inputs" }}{{ end }}' \
+                  2>/dev/null || true)"
+          if [ "$have" = "$want" ]; then
+            echo "published image already built from inputs ${want}; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuilding -- published=${have:-<none>} wanted=${want}"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build
+        if: steps.guard.outputs.skip != 'true'
         run: |
           docker build \
             -f "${{ matrix.dockerfile }}" \
             --build-arg LLVM_REF="${{ steps.names.outputs.llvm_ref }}" \
+            --label "org.opencyphal.llvm-dsdl.inputs=${{ steps.guard.outputs.inputs }}" \
             -t "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \
             .
 
       - name: Verify before publishing
+        if: steps.guard.outputs.skip != 'true'
         # A toolchain that merely builds is not the goal. These assertions are
         # the properties it is built *for* -- static-only, no target backends,
         # the tools the build and lit suite need, no optional-feature libraries
@@ -110,6 +146,7 @@ jobs:
               --expect-ref "${{ steps.names.outputs.llvm_ref }}"
 
       - name: Push
+        if: steps.guard.outputs.skip != 'true'
         run: docker push "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}"
 
   prefix:
