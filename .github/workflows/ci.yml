@@ -364,6 +364,10 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             runner: ubuntu-24.04-arm
+    env:
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
@@ -376,9 +380,14 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: Build dsdlc
-        # LLVM_DIR/MLIR_DIR come from the image.
+        # LLVM_DIR/MLIR_DIR name the restored prefix explicitly, exactly as the
+        # other jobs do. Leaving it to a search would let a distro LLVM in the
+        # image satisfy find_package instead, which is the one thing this lane
+        # cannot tolerate: the two halves must differ in architecture and in
+        # nothing else, and an implicit LLVM is free to differ per runner.
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
           cmake --build build --target dsdlc
 
       - name: Hash generated corpus

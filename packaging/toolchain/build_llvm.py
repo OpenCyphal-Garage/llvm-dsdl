@@ -13,7 +13,6 @@ Verify the result with verify_toolchain.py, which asserts these settings held.
 from __future__ import annotations
 
 import argparse
-import os
 import pathlib
 import shutil
 import subprocess
