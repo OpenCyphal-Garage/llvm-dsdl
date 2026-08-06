@@ -574,8 +574,13 @@ jobs:
     #
     # `labeled` is in the trigger list because otherwise applying the label does
     # nothing until the next push, which is the whole point of applying it.
+    #
+    # Pull requests only. This workflow also runs on push-to-main, dispatch and
+    # a weekly cron, and none of those should pay for a packaging build. The
+    # event is checked first so the label lookup is never reached on an event
+    # that has no pull request to read labels from.
     if: >-
-      github.event_name != 'pull_request' ||
+      github.event_name == 'pull_request' &&
       contains(github.event.pull_request.labels.*.name, 'release-ci')
     # Calls the same workflow a tag does rather than restating it, so the .deb
     # legs, the pristine-container install, the macOS tarball and its linkage
