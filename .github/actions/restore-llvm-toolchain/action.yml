@@ -1,0 +1,49 @@
+name: Restore the LLVM toolchain
+description: >
+  Unpack the pinned LLVM/MLIR prefix into /opt/llvm-dsdl-toolchain.
+
+  A tarball rather than a container image, because a job's container is resolved
+  before any step could compose one, and the alternative -- publishing the
+  toolshed with the prefix baked in -- meant republishing a 13 GB image every
+  time the pin moved. The prefix is 141 MB compressed, and the toolshed is
+  pulled either way, so this costs no extra bandwidth and removes the coupling
+  between ci.yml and the toolshed's version.
+
+inputs:
+  arch:
+    description: Architecture of the prefix to restore (amd64 or arm64).
+    required: false
+    default: amd64
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the LLVM toolchain prefix
+      shell: bash
+      # The asset is public, so no token is needed. Asserting the unpacked
+      # LLVM_REF matches the pin is what keeps a stale or wrong tarball from
+      # being linked silently -- the failure would otherwise surface much later
+      # as generated output that differs from the release.
+      #
+      # LLVM_TOOLCHAIN_PREFIX is exported so steps that need the prefix itself
+      # -- reading LLVM_REF, say -- take it from the action that placed it
+      # instead of repeating the literal. Job-level `env:` blocks still spell
+      # LLVM_DIR/MLIR_DIR out in full because a job's env is evaluated before
+      # any step runs and so cannot see this.
+      run: |
+        set -euo pipefail
+        prefix=/opt/llvm-dsdl-toolchain
+        ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
+        url="https://github.com/${GITHUB_REPOSITORY}/releases/download/toolchain-${ref}/llvm-dsdl-toolchain-glibc-${{ inputs.arch }}.tar.gz"
+        echo "restoring ${ref} (${{ inputs.arch }}) from ${url}"
+        curl -fsSL --retry 3 --retry-delay 5 "$url" -o /tmp/llvm-dsdl-toolchain.tar.gz
+        mkdir -p "$(dirname "${prefix}")"
+        tar -C "$(dirname "${prefix}")" -xzf /tmp/llvm-dsdl-toolchain.tar.gz
+        rm -f /tmp/llvm-dsdl-toolchain.tar.gz
+        got="$(cat "${prefix}/LLVM_REF")"
+        if [ "$got" != "$ref" ]; then
+          echo "::error::restored toolchain is ${got}, expected ${ref}"
+          exit 1
+        fi
+        echo "LLVM_TOOLCHAIN_PREFIX=${prefix}" >> "${GITHUB_ENV}"
+        echo "restored ${got}"

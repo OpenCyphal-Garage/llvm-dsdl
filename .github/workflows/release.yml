@@ -9,10 +9,10 @@ name: Release
 # repository to fall back on, and nothing else in this pipeline would notice.
 #
 # Built inside packaging/docker/Dockerfile.ubuntu-release, an Ubuntu 22.04 image
-# with LLVM 22 from apt.llvm.org. 22.04 is the oldest release that has LLVM 22,
-# which puts the glibc floor at 2.35 so one package covers 22.04, 24.04 and
-# 26.04. The CI toolshed image is deliberately NOT reused: it is Ubuntu 26.04,
-# and a package built there installs on nothing older.
+# carrying the LLVM/MLIR toolchain this project builds for itself. 22.04 puts the
+# glibc floor at 2.35, so one package covers 22.04, 24.04 and 26.04. The CI
+# toolshed image is deliberately NOT reused: it is Ubuntu 26.04, and a package
+# built there installs on nothing older.
 #
 # arm64 and amd64, each on its own native runner -- no emulation in CI. The two
 # legs are independent (fail-fast off): one architecture's package is installable
@@ -89,6 +89,9 @@ jobs:
     needs: stage
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read        # pull the published toolchain image
     strategy:
       # Independent legs: one architecture failing should not deny the other its
       # artifact, since they are separately installable packages.
@@ -105,6 +108,34 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the LLVM toolchain
+        # Pulled, never built here. Building it costs ~40 minutes on a 4-vCPU
+        # runner, which exceeded this job's timeout on amd64; the Toolchain
+        # workflow builds it when the pin moves and this pulls the result.
+        #
+        # A missing image is a hard failure on purpose. Falling back to an inline
+        # build would turn "the pin moved and nobody published it" into a job
+        # that mysteriously takes an hour, which is how the timeout happened in
+        # the first place.
+        id: toolchain
+        run: |
+          set -euo pipefail
+          ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/llvm-dsdl-toolchain:glibc-${ref}"
+          if ! docker pull "$image"; then
+            echo "::error::No published toolchain for pin ${ref}. Run the Toolchain workflow first." >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
       - name: Build the release image
         # Built from the committed Dockerfile rather than replicated as workflow
         # steps, so the release environment is the same one reproducible locally.
@@ -113,14 +144,17 @@ jobs:
         run: |
           docker build \
             -f packaging/docker/Dockerfile.ubuntu-release \
+            --build-arg TOOLCHAIN_IMAGE="${{ steps.toolchain.outputs.image }}" \
             -t llvmdsdl-release:jammy-${{ matrix.arch }} \
-            packaging/docker/
+            .
 
       - name: Configure, build, and package
-        # Vendoring is what lets the package install against stock Ubuntu: no
-        # Ubuntu release carries LLVM 22, so without it the .deb would install
-        # cleanly and then fail on a missing shared object. The Depends list is
-        # derived from the built binaries at package time, not hand-maintained.
+        # Vendoring off: the toolchain image carries a static LLVM, so the tools
+        # embed it rather than loading it, and there is no shared library to ship
+        # alongside them. That is what lets the package install against stock
+        # Ubuntu, which carries no LLVM 22 of its own. The Depends list is derived
+        # from the built binaries at package time rather than hand-maintained, and
+        # comes to libc6 and libstdc++6.
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}":/src:ro \
@@ -129,7 +163,7 @@ jobs:
               cmake -S /src -B /build -G Ninja \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DLLVM_DIR="$LLVM_DIR" -DMLIR_DIR="$MLIR_DIR" \
-                -DLLVMDSDL_VENDOR_LLVM=ON \
+                -DLLVMDSDL_VENDOR_LLVM=OFF \
                 -DCMAKE_INSTALL_PREFIX=/usr
               cmake --build /build
               cd /build && cpack -G DEB
@@ -179,26 +213,52 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install LLVM 22
-        # Homebrew's current `llvm` is the locked major; the configure-time
-        # major check fails loudly if that ever stops being true, so this does
-        # not silently build against the wrong one.
+      - name: Install build tools
+        run: brew install ninja
+
+      - name: Restore the LLVM toolchain
+        # The Linux legs get this free from Docker layer caching. macOS has no
+        # image, so the prefix is cached directly. Keyed on the pin and on the
+        # script that owns the build flags, because either changing means the
+        # cached prefix would not be the toolchain those inputs describe.
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/llvm-dsdl-toolchain
+          key: llvm-toolchain-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('packaging/toolchain/llvm.pin', 'packaging/toolchain/build_llvm.py') }}
+
+      - name: Build the LLVM toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        # Built rather than taken from Homebrew, for the reasons in section 1 of
+        # docs/development/distribution-channels.md. Roughly 9 minutes natively,
+        # and only when the pin moves.
         run: |
           set -euo pipefail
-          brew install llvm ninja
-          echo "LLVM_PREFIX=$(brew --prefix llvm)" >> "$GITHUB_ENV"
+          REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
+          git clone --depth 1 --branch "$REF" \
+            https://github.com/llvm/llvm-project.git "${RUNNER_TEMP}/llvm-project"
+          python3 packaging/toolchain/build_llvm.py \
+            --source "${RUNNER_TEMP}/llvm-project" \
+            --build "${RUNNER_TEMP}/llvm-build" \
+            --prefix "${HOME}/llvm-dsdl-toolchain" \
+            --llvm-ref "$REF" \
+            --with-libcxx
 
       - name: Configure, build, and package
-        # LLVMDSDL_VENDOR_LLVM on macOS installs the self-contained bundle rather
-        # than the raw targets: without it the tarball's binaries reference
-        # /opt/homebrew and run only on a machine that already has Homebrew LLVM.
+        # Vendoring is off because there is nothing to vendor, and libc++ is
+        # linked from the toolchain rather than the system, so the tools link
+        # /usr/lib/libSystem.B.dylib and nothing else. Apple does not support
+        # statically linking libSystem; everything above it is static here.
+        # The tarball is relocatable without install-name rewriting and has no
+        # lib/ directory of dylibs at all.
         run: |
           set -euo pipefail
           cmake -S . -B out -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DLLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm" \
-            -DMLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir" \
-            -DLLVMDSDL_VENDOR_LLVM=ON
+            -DLLVM_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/llvm" \
+            -DMLIR_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/mlir" \
+            -DLLVMDSDL_VENDOR_LLVM=OFF \
+            -DLLVMDSDL_STATIC_LIBCXX=ON
           cmake --build out
           cd out && cpack -G TGZ
 

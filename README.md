@@ -199,8 +199,8 @@ Run `dsdlc --help` for the full option set.
 
 ## `dsdld` Quick Start
 
-`dsdld` is an LSP server over stdio. It currently does not expose a CLI flag
-surface; the editor/client drives configuration through LSP settings.
+`dsdld` is an LSP server over stdio. The editor or client drives configuration
+through LSP settings.
 
 Run it directly:
 

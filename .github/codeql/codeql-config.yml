@@ -1,0 +1,15 @@
+name: llvm-dsdl CodeQL
+
+# Paths that are inputs or outputs rather than source.
+#
+# The compiler emits C, C++, Go, Rust, Python and TypeScript into build trees;
+# analysing that is analysing dsdlc's output rather than dsdlc, and every
+# finding would recur once per generated type. The submodules are upstream
+# corpora and vendored C. The scanned surface is the compiler itself and the
+# Python that builds and checks it.
+paths-ignore:
+  - build/**
+  - submodules/**
+  - docs/showroom/**
+  - "**/node_modules/**"
+  - "**/target/**"

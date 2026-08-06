@@ -33,7 +33,7 @@ commit is recorded as `unknown` and submodule entries are omitted.
 
 ## LLVM version lock
 
-**Policy: the LLVM/MLIR major version is locked (currently 22).**
+**Policy: the LLVM/MLIR major version is locked to 22.**
 
 ### Why
 
@@ -47,19 +47,33 @@ rather than a build detail.
 The lock is enforced **at configure time** by the build system and **again** by CI.
 
 - **Build system:** after `find_package(LLVM/MLIR)`, CMake asserts `LLVM_VERSION_MAJOR` equals
-  `LLVMDSDL_REQUIRED_LLVM_MAJOR` (currently `22`) and fails configuration otherwise.
+  `LLVMDSDL_REQUIRED_LLVM_MAJOR` (`22`) and fails configuration otherwise.
   `-DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON` downgrades the failure to a warning. MLIR ships with LLVM
   at the same version, so asserting the LLVM major covers MLIR too.
-- **Linux (x86-64, libstdc++):** `LLVM_DIR`/`MLIR_DIR`/`CMAKE_PREFIX_PATH` pin `/usr/lib/llvm-22`, and
-  the determinism job records the real version via `llvm-config --version` into the corpus-hash
-  manifest (`--meta llvm=…`).
-- **macOS (arm64, libc++):** Homebrew `llvm@22`, with an asserted major.
-- **Cross-stdlib determinism lane:** `tools/determinism/cross_stdlib_corpus_hash.py` compares the two
-  hosts' recorded LLVM majors. CI passes `--require-c`, which makes a major skew a **hard failure**.
+- **Everywhere:** CI and the release link the toolchain this project builds for itself, pinned by
+  revision in `packaging/toolchain/llvm.pin` rather than by major alone. Every lane therefore links
+  one exact LLVM, not merely one major of it.
+- **Hashed-container iteration** is excluded at the source rather than detected afterwards.
+  `std::unordered_*` iteration order is a property of the standard library, so a loop over one could
+  emit different bytes when built against a different one. `tools/determinism/check_unordered_iteration.py`
+  (ctest `llvmdsdl-determinism-unordered-iteration`) rejects any such iteration in the
+  generated-output path unless it carries a stated reason why the order cannot reach emitted text.
+
+- **Cross-architecture determinism gate:** the `corpus` jobs generate the full UAVCAN corpus for all
+  six backends on x86-64 and on arm64, from the same source and the same toolchain, and
+  `cross-arch-determinism` compares the manifests byte-for-byte with `--require-c`. Identical input
+  and identical toolchain means a difference could only come from the architecture — word size,
+  alignment, floating-point formatting reaching emitted text.
+
+Comparing two *standard libraries* instead — libstdc++ against libc++ — is the obvious-looking
+alternative and does not work here: a project shipping one toolchain has no such divergence to
+measure. The architecture pair covers what is actually released.
+`tools/determinism/corpus_determinism.py` serves the gate, and is equally the tool for
+comparing any two builds' corpora by hand.
 
 ### Consequences
 
 - Build against the locked major to reproduce released artifacts byte-for-byte.
 - The SBOM records the LLVM/MLIR version *actually linked*.
-- To raise the lock: bump `LLVMDSDL_REQUIRED_LLVM_MAJOR` and the CI pins together (both hosts must move
-  at once, or `--require-c` fails), then re-baseline the determinism corpus hashes.
+- To raise the lock: bump `LLVMDSDL_REQUIRED_LLVM_MAJOR` and `packaging/toolchain/llvm.pin` together,
+  let the Toolchain workflow republish, then re-baseline the determinism corpus hashes.

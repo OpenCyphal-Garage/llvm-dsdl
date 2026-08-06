@@ -112,7 +112,7 @@ Namespace forms are a prefix match on the key's `full_name`, anchored at a dot b
 
 ### Explicit-target marking
 
-`isExplicitTarget` is currently computed purely by path comparison at
+`isExplicitTarget` is computed purely by path comparison at
 [`main.cpp:1234`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/dsdlc/main.cpp).
 Embedded definitions carry synthetic `<embedded-uavcan>:` paths and can never match, so they need a
 parallel key-based marking pass over the merged semantic module. Without it `collectExplicitKeys`
@@ -165,7 +165,7 @@ As implemented, `DepfilePlanner` takes a `toolchainStampPath` and records it for
 closure reaches an embedded definition. Outputs mixing local and embedded sources list their real
 inputs plus the binary; outputs that never touch the catalog are untouched, so a compiler upgrade
 does not rebuild work that owes the catalog nothing. `main.cpp` resolves the path with
-`llvm::sys::fs::getMainExecutable` rather than trusting `argv[0]`, and now builds the planner from
+`llvm::sys::fs::getMainExecutable` rather than trusting `argv[0]`, and builds the planner from
 the closure over the *merged* module so embedded definitions are present as nodes.
 
 This makes the dependency graph honest — a toolchain upgrade is a real input change — at the cost
@@ -201,7 +201,7 @@ filesystem-truthful. The binary lands in the depfile instead.
 | --- | --- |
 | `main.cpp` `addTargetToken` | Partitions target tokens: `+` prefix → `builtinTargets`, else `positionalTargets`. Shared by the normal loop and the post-`--` drain, which is what keeps the sigil significant after `--`. |
 | `main.cpp` `validateLanguageGatedOptions` | Gates `+` on language and on `--no-embedded-uavcan`, alongside the existing per-language option gates. |
-| `main.cpp` empty-target short-circuit | Now also requires `builtinTargets` to be empty, or `+uavcan` alone would exit 0 silently. |
+| `main.cpp` empty-target short-circuit | Requires `builtinTargets` to be empty as well, or `+uavcan` alone would exit 0 silently. |
 | `main.cpp` after catalog load | Expands each selector and fails with a did-you-mean on zero matches, before analysis. |
 | `main.cpp` `explicitKeys` | Unions the expanded builtin keys into the explicit set. |
 | `UavcanEmbeddedCatalog.{h,cpp}` | `expandEmbeddedCatalogSelector` → `EmbeddedSelectorExpansion{typeKeys, suggestions}`. |
@@ -249,4 +249,4 @@ toolchain stamp.
    revision are both known at build time. Cheap, and it makes "which standard types does this
    binary carry" answerable without generating anything. Probably yes, separately.
 3. **Is `+` right for future non-`uavcan` builtins?** The sigil is namespace-generic by
-   construction, so a second embedded catalog needs no new syntax. Nothing to decide now.
+   construction, so a second embedded catalog needs no new syntax. Nothing to decide.

@@ -4,14 +4,24 @@ name: CI
 # across every supported host platform and every generated-output language.
 #
 # The container jobs run INSIDE the project's own toolshed image
-# (ghcr.io/opencyphal/toolshed:ts26.4.3 — the same image .devcontainer uses). That
-# image is the single source of truth for the build environment: LLVM/MLIR 22,
-# clang, cmake, ninja, the generated-output language toolchains, and Dafny with
-# its solver all come from it. Nothing is installed per run; the setup action
-# asserts the toolchains are present and fails loudly if one is missing, because
-# the integration suite registers a language's tests only when its toolchain is
-# found at configure time — so a silently incomplete image sheds whole lanes
-# while still reporting green.
+# (ghcr.io/opencyphal/toolshed — the same image .devcontainer uses), which
+# supplies clang, cmake, ninja, the generated-output language toolchains, and
+# Dafny with its solver.
+#
+# LLVM/MLIR does NOT come from that image. Every job that links it first
+# restores the prefix pinned by packaging/toolchain/llvm.pin, so CI links the
+# same LLVM the release ships rather than whichever one the image happened to
+# carry. A tarball rather than an image baking the two together: a job's
+# container is resolved before any step could compose one, and republishing a
+# 13 GB image whenever the pin moved bought nothing — the prefix is 141 MB and
+# the toolshed is pulled either way. The Dafny job restores nothing; it proves a
+# model and never touches LLVM.
+#
+# Nothing is installed per run; the setup action asserts the toolchains are
+# present and fails loudly if one is missing, because the integration suite
+# registers a language's tests only when its toolchain is found at configure
+# time — so a silently incomplete image sheds whole lanes while still reporting
+# green.
 
 on:
   push:
@@ -56,14 +66,17 @@ jobs:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Prepare toolchains
         uses: ./.github/actions/setup-language-toolchains
@@ -105,26 +118,6 @@ jobs:
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
-
-      - name: Hash generated corpus (libstdc++ side of the cross-stdlib determinism gate)
-        # One half of the P1 "two-toolchain" determinism check: this dsdlc links the
-        # distro LLVM/libstdc++ on x86-64; the cross-stdlib job produces the
-        # libc++/arm64 half and the cross-stdlib-determinism job compares them.
-        run: |
-          llvm_ver="$(/usr/lib/llvm-22/bin/llvm-config --version)"
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --dsdlc build/matrix/ci/tools/dsdlc/Debug/dsdlc \
-            --dsdl-root submodules/public_regulated_data_types/uavcan \
-            --out corpus-hash-libstdcxx.json \
-            --label libstdc++ \
-            --meta "llvm=${llvm_ver}"
-
-      - name: Upload corpus hash (libstdc++)
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: corpus-hash-libstdcxx
-          path: corpus-hash-libstdcxx.json
 
       - name: Build Python runtime accelerator
         run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
@@ -217,12 +210,17 @@ jobs:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 120
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
       # The sanitizer + fuzz harnesses require Clang (-fsanitize=address,undefined
       # and compiler-rt libFuzzer); force it so the Clang-gated tests register and
       # the generated decoders are compiled with the sanitizer toolchain.
+      #
+      # Still the image's own Clang, not ours: our toolchain builds MLIR alone and
+      # ships no compiler, and a compiler is not what this project stopped taking
+      # from a distribution. LLVM_DIR above is what decides which LLVM is linked;
+      # this decides only what does the compiling.
       CC: /usr/lib/llvm-22/bin/clang
       CXX: /usr/lib/llvm-22/bin/clang++
     steps:
@@ -230,6 +228,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Prepare toolchains
         # Go is needed for the C/Go sanitized parity variant; the MLIR dev libs
@@ -335,88 +336,92 @@ jobs:
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
 
-  cross-stdlib:
-    name: Corpus generation (macOS / libc++ / arm64)
-    # The libc++ half of the P1 "two-toolchain" determinism gate. libstdc++ and
-    # libc++ implement different std::hash functions and bucket policies, so a
-    # future code path that lets std::unordered_* iteration order leak into
-    # emitted text diverges between this job's output and the linux job's —
-    # exactly the nondeterminism class that same-host env perturbation
-    # (locale/TZ/PYTHONHASHSEED, already gated) cannot expose. Builds dsdlc only.
-    runs-on: macos-latest
+  corpus:
+    name: Corpus hash (${{ matrix.arch }})
+    # One half of the cross-architecture determinism gate. Identical source and
+    # identical toolchain, differing only in the architecture the compiler runs
+    # on, so a difference in the emitted corpus can only come from the build.
+    #
+    # This replaces the retired cross-stdlib lane, and covers something the
+    # project actually ships: two architectures of the same release. Word size,
+    # alignment and floating-point formatting reaching emitted text are what it
+    # would catch, none of which same-host perturbation (locale/TZ/hash seed,
+    # gated elsewhere) can expose.
+    #
+    # The same image and the same restored prefix as every other job: this
+    # builds dsdlc and nothing else, but using a different environment for it
+    # would weaken the comparison, since the point is that only the architecture
+    # differs between the two halves.
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - name: Install LLVM/MLIR + ninja (Homebrew; links libc++)
-        # Pin to the toolshed image's LLVM major (ts26.4.3 -> 22) so the C backend
-        # (routed through MLIR/EmitC, whose text may vary across MLIR majors) stays
-        # comparable. Prefer the versioned formula; fall back to `llvm` (which IS 22
-        # while 22 is current). The assertion below is the real pin: a Homebrew
-        # major bump fails this job loudly instead of silently eroding C coverage —
-        # bump this pin and the toolshed image together, deliberately.
-        run: brew install ninja && (brew install llvm@22 || brew install llvm)
-
-      - name: Assert LLVM major matches the linux (toolshed) side
-        run: |
-          LLVM_PREFIX="$(brew --prefix llvm@22 2>/dev/null || true)"
-          [ -x "${LLVM_PREFIX}/bin/llvm-config" ] || LLVM_PREFIX="$(brew --prefix llvm)"
-          ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
-          echo "Homebrew LLVM: ${ver} at ${LLVM_PREFIX}"
-          if [ "${ver%%.*}" != "22" ]; then
-            echo "::error::Homebrew LLVM major (${ver%%.*}) != toolshed LLVM major (22)." \
-                 "Bump the llvm@ pin here and the toolshed image together." >&2
-            exit 1
-          fi
-          echo "LLVM_PREFIX=${LLVM_PREFIX}" >> "${GITHUB_ENV}"
-
-      - name: Configure (dev-llvm-env preset, Homebrew LLVM)
-        run: |
-          export LLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm"
-          export MLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir"
-          cmake --preset dev-llvm-env
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Build dsdlc
-        run: cmake --build --preset build-dev-llvm-env --target dsdlc
-
-      - name: Assert libc++ linkage (the point of this lane)
+        # LLVM_DIR/MLIR_DIR name the restored prefix explicitly, exactly as the
+        # other jobs do. Leaving it to a search would let a distro LLVM in the
+        # image satisfy find_package instead, which is the one thing this lane
+        # cannot tolerate: the two halves must differ in architecture and in
+        # nothing else, and an implicit LLVM is free to differ per runner.
         run: |
-          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
-          otool -L "${dsdlc}"
-          otool -L "${dsdlc}" | grep -q 'libc++'
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+          cmake --build build --target dsdlc
 
-      - name: Hash generated corpus (libc++ side)
+      - name: Hash generated corpus
+        # The version comes from the prefix rather than llvm-config, which
+        # LLVM_BUILD_TOOLS=OFF does not install. The prefix is named by the
+        # restore action rather than repeated here, so the path is stated once.
+        # Stripped of the tag prefix so the comparator's major extraction still
+        # sees a version number.
         run: |
-          dsdlc="$(find build/matrix/dev-llvm-env/tools/dsdlc -name dsdlc -type f -perm +111 | head -1)"
-          llvm_ver="$("${LLVM_PREFIX}/bin/llvm-config" --version)"
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --dsdlc "${dsdlc}" \
+          set -euo pipefail
+          ref="$(cat "${LLVM_TOOLCHAIN_PREFIX}/LLVM_REF")"
+          python3 tools/determinism/corpus_determinism.py \
+            --dsdlc build/tools/dsdlc/dsdlc \
             --dsdl-root submodules/public_regulated_data_types/uavcan \
-            --out corpus-hash-libcxx.json \
-            --label libc++ \
-            --meta "llvm=${llvm_ver}"
+            --out "corpus-hash-${{ matrix.arch }}.json" \
+            --label "${{ matrix.arch }}" \
+            --meta "llvm=${ref#llvmorg-}"
 
-      - name: Upload corpus hash (libc++)
+      - name: Upload corpus hash
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v7
         with:
-          name: corpus-hash-libcxx
-          path: corpus-hash-libcxx.json
+          name: corpus-hash-${{ matrix.arch }}
+          path: corpus-hash-${{ matrix.arch }}.json
 
-  cross-stdlib-determinism:
-    name: Cross-stdlib determinism gate (libstdc++/x86-64 vs libc++/arm64)
-    # Compares the two corpus-hash manifests byte-for-byte, all six backends
-    # strictly: --require-c turns LLVM-major skew (which would otherwise skip the
-    # MLIR/EmitC-routed C backend) into a hard failure, and the macOS job pins its
-    # Homebrew LLVM to the toolshed's major, so skew can only happen through a
-    # deliberate, mismatched bump — which this gate then catches. A mismatch means
-    # generated output depends on the host toolchain — see
-    # tools/determinism/cross_stdlib_corpus_hash.py.
-    needs: [linux, cross-stdlib]
-    runs-on: ubuntu-26.04
+  cross-arch-determinism:
+    name: Cross-architecture determinism gate (amd64 vs arm64)
+    # Compares the two manifests byte-for-byte, all six backends strictly.
+    # --require-c turns an LLVM version difference into a hard failure rather
+    # than silently skipping the MLIR/EmitC-routed C backend; both halves take
+    # their LLVM from the same pinned image, so a difference would mean the
+    # images themselves had diverged.
+    needs: corpus
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -433,8 +438,8 @@ jobs:
       - name: Compare
         if: ${{ !env.ACT }}
         run: |
-          python3 tools/determinism/cross_stdlib_corpus_hash.py \
-            --compare corpus-hash-libstdcxx.json corpus-hash-libcxx.json \
+          python3 tools/determinism/corpus_determinism.py \
+            --compare corpus-hash-amd64.json corpus-hash-arm64.json \
             --require-c
 
   showroom-recipes:
@@ -456,14 +461,17 @@ jobs:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
     timeout-minutes: 60
     env:
-      LLVM_DIR: /usr/lib/llvm-22/lib/cmake/llvm
-      MLIR_DIR: /usr/lib/llvm-22/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /usr/lib/llvm-22
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
 
       - name: Check the recipe invariant (build wiring only)
         # Needs no toolchain and no compiler, so it runs first and fails fast: a recipe that grew its

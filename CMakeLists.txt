@@ -178,6 +178,92 @@ option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
        "Remove repository .venv when running distclean"
        OFF)
 
+# Fully static tools.
+#
+# Intended for the musl toolchain, where it produces static-pie executables with
+# no loader dependency at all -- which is what makes the .deb carry no Depends
+# rather than the two it carries when linked against glibc.
+#
+# Deliberately not the default: against glibc this links but is a trap, because
+# NSS and dlopen need the shared libc at runtime. dsdlc and dsdl-opt use neither,
+# but dsdld loads lint plugins with dlopen, and musl's static dlopen always fails
+# with "Dynamic loading not supported". That is a real functional loss, reported
+# accurately rather than silently -- see D6 in
+# docs/development/distribution-channels.md.
+option(LLVMDSDL_STATIC_BINARIES
+       "Link the tools fully statically. Linux only; intended for the musl toolchain."
+       OFF)
+
+if(LLVMDSDL_STATIC_BINARIES)
+  if(APPLE)
+    # Apple does not ship a static libSystem and does not support linking one;
+    # there is no supported static crt0. The macOS equivalent of this flag is
+    # LLVMDSDL_VENDOR_LLVM, which bundles instead.
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_BINARIES is not available on macOS: Apple does not support "
+      "statically linking libSystem. Use LLVMDSDL_VENDOR_LLVM for a self-contained "
+      "macOS bundle instead.")
+  endif()
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "LLVMDSDL_STATIC_BINARIES is implemented for Linux only.")
+  endif()
+  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+    # The accelerator is a MODULE library that CPython dlopens. These options
+    # apply to every target in the directory, and a statically linked loadable
+    # module is a contradiction.
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_BINARIES and LLVMDSDL_ENABLE_PYTHON_ACCELERATOR are mutually "
+      "exclusive: the accelerator is a loadable module and cannot be linked static.")
+  endif()
+  add_link_options(-static -static-libstdc++ -static-libgcc)
+  message(STATUS "Linking tools fully statically")
+endif()
+
+# Static libc++, from the toolchain prefix. macOS only.
+#
+# Requires a toolchain built with `build_llvm.py --with-libcxx`; Apple ships
+# libc++ as a dylib only, so there is otherwise nothing to link. With it the
+# tools link /usr/lib/libSystem.B.dylib and nothing else.
+#
+# Linux does not need it: LLVMDSDL_STATIC_BINARIES covers the C++ runtime via
+# -static-libstdc++.
+option(LLVMDSDL_STATIC_LIBCXX
+       "Link libc++ statically from the LLVM toolchain prefix (macOS)."
+       OFF)
+
+if(LLVMDSDL_STATIC_LIBCXX)
+  if(NOT APPLE)
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_LIBCXX is for macOS. On Linux use LLVMDSDL_STATIC_BINARIES, "
+      "which links the C++ runtime statically through -static-libstdc++.")
+  endif()
+
+  # The archives sit beside the LLVM ones because build_llvm.py installs the
+  # runtimes into the same prefix.
+  get_filename_component(_llvmdsdl_tc_prefix "${LLVM_LIBRARY_DIRS}" DIRECTORY)
+  set(_llvmdsdl_libcxx_a "${LLVM_LIBRARY_DIRS}/libc++.a")
+  set(_llvmdsdl_libcxxabi_a "${LLVM_LIBRARY_DIRS}/libc++abi.a")
+  set(_llvmdsdl_libcxx_inc "${_llvmdsdl_tc_prefix}/include/c++/v1")
+
+  foreach(_needed "${_llvmdsdl_libcxx_a}" "${_llvmdsdl_libcxxabi_a}" "${_llvmdsdl_libcxx_inc}")
+    if(NOT EXISTS "${_needed}")
+      message(FATAL_ERROR
+        "LLVMDSDL_STATIC_LIBCXX is ON but ${_needed} is missing. The toolchain was "
+        "built without a static libc++; rebuild it with "
+        "packaging/toolchain/build_llvm.py --with-libcxx.")
+    endif()
+  endforeach()
+
+  # -nostdinc++ so libc++'s own headers win, and are able to #include_next the
+  # SDK's C headers; -isystem alone leaves the default C++ include path ahead of
+  # them and the build fails on errno.
+  add_compile_options(
+    "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-isystem;${_llvmdsdl_libcxx_inc}>")
+  add_link_options(-nostdlib++ "${_llvmdsdl_libcxx_a}" "${_llvmdsdl_libcxxabi_a}")
+  message(STATUS "Linking libc++ statically from ${_llvmdsdl_tc_prefix}")
+endif()
+
 # -LE bench: the benchmarks assert wall-clock thresholds, which say nothing about
 # coverage and cannot hold under instrumentation anyway -- a coverage build is
 # several times slower by construction, so including them would fail the lane for
@@ -1360,6 +1446,25 @@ endif()
 
 enable_testing()
 add_subdirectory(test)
+
+# Hashed-container iteration in the generated-output path.
+#
+# A std::unordered_* iteration order is a property of the standard library, not
+# of the data, so a loop over one can emit different bytes when built against a
+# different stdlib while being perfectly deterministic for any single binary.
+# The cross-stdlib corpus gate detects that after the fact, and only for as long
+# as the two CI halves keep using different standard libraries -- which owning
+# one toolchain ends. This excludes the class at the source instead, and costs
+# no build: it reads the sources, so it runs without dsdlc.
+if(LLVMDSDL_PYTHON3_EXE)
+  add_test(
+    NAME llvmdsdl-determinism-unordered-iteration
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/determinism/check_unordered_iteration.py"
+            --root "${LLVMDSDL_SOURCE_DIR}")
+  set_tests_properties(llvmdsdl-determinism-unordered-iteration PROPERTIES
+    LABELS "determinism;contract")
+endif()
 
 # Below enable_testing() rather than beside the other examples: the showroom registers ctests for its
 # build recipes, and add_test() in a directory processed before enable_testing() is not reliably

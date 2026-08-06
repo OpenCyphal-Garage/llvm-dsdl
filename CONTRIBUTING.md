@@ -477,11 +477,11 @@ be made faster by building first.
 **Know what it cannot catch.** `act` copies your *working tree*; it does not clone. Anything that
 differs between your checkout and a fresh one is invisible to it, and submodules are the trap that
 has already been sprung once: your `submodules/public_regulated_data_types` is populated, so the 58
-`llvmdsdl-uavcan-*` tests register and the guarantee matrices come out complete. The Docs workflow
-used to check out without submodules, where none of that is true — it failed on GitHub with a parity
-score of 12 against a minimum of 100 while `act` reported success. Both now check out submodules, so
-they agree again; if you change a `checkout` step, re-read this paragraph before trusting a green
-local run.
+`llvmdsdl-uavcan-*` tests register and the guarantee matrices come out complete. A workflow that
+checks out without submodules has none of that, and the failure is not subtle — a parity score of
+12 against a minimum of 100, while `act` reports success on the same commit. Every workflow
+therefore checks out with `submodules: recursive`; if you touch a `checkout` step, re-read this
+paragraph before trusting a green local run.
 
 The repository's [`.actrc`](./.actrc) already pins `--container-architecture` and `--pull=false`, so
 the toolshed image has to be present locally; `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once
@@ -539,7 +539,85 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
-## 14. Troubleshooting Quick Notes
+## 14. Cutting a Release
+
+Three things carry the version and must agree: `VERSION`, the top entry of
+`packaging/deb/changelog`, and the git tag. All three are checked before
+anything is built.
+
+### 14.1 Preconditions
+
+This project builds the LLVM it links against rather than taking a
+distribution's. `packaging/toolchain/llvm.pin` names the revision; the Toolchain
+workflow builds it and publishes the result under names derived from that line.
+The release pulls what Toolchain published — it never builds LLVM itself,
+because that takes about forty minutes per architecture and once exceeded the
+job's timeout. A missing artifact fails the job with
+`No published toolchain for pin <ref>` rather than quietly rebuilding.
+
+So:
+
+- **Pin unchanged** — the artifacts already exist. Nothing to do.
+- **Pin also being moved in this release** — push that change first and let the
+  Toolchain workflow finish, then tag.
+
+[`docs/development/release-packaging.md`](./docs/development/release-packaging.md) §2 describes
+what the pin produces and which job consumes each form.
+
+### 14.2 Prepare the version
+
+Set `VERSION` to `X.Y.Z`. It is the single source of truth: CPack takes the
+package version from it, and the tools compile it into `--version`.
+
+Add a new **top** entry to `packaging/deb/changelog`:
+
+```
+llvm-dsdl (X.Y.Z) unstable; urgency=medium
+
+  * What changed.
+
+ -- Your Name <you@example.com>  Tue, 05 Aug 2026 12:00:00 +0000
+```
+
+The trailer line is not decoration. It is where the man pages take their date,
+so that rebuilding a release produces byte-identical pages rather than pages
+stamped with whenever the rebuild happened. Configure fails if it cannot parse a
+date from it. `dch --newversion X.Y.Z` writes both the entry and the trailer
+correctly, if you have devscripts.
+
+Merge to `main`.
+
+### 14.3 Dry run
+
+```bash
+gh workflow run Release --repo OpenCyphal-Garage/llvm-dsdl --ref main -f dry_run=true
+```
+
+This builds and verifies everything and publishes nothing: both `.deb`
+architectures, the macOS tarball, the pristine-container install check, and the
+macOS linkage assertion. Worth doing before tagging, because a pushed tag that
+fails is more annoying to unwind than a workflow run that does.
+
+### 14.4 Tag
+
+```bash
+git tag vX.Y.Z && git push upstream vX.Y.Z
+```
+
+The tag triggers the release with `publish=true`. What you get is a **draft**
+release with the packages, checksums and a provenance attestation attached.
+Nothing is public until you publish it from the releases page.
+
+### 14.5 What is enforced, and where
+
+| Check | Where | Failure mode it prevents |
+|---|---|---|
+| Tag matches `VERSION` | `release.yml` `stage` | Binaries that misreport their own version |
+| Changelog top entry matches `VERSION` | `release.yml` `stage`, and CMake at configure time | A Debian package whose changelog disagrees with its control file is malformed |
+| Changelog trailer parses as a date | CMake at configure time | Man pages stamped with the build date, so no two builds agree |
+| Toolchain image exists for the pin | `release.yml` `build` | A silent forty-minute inline rebuild, or a release built against the wrong LLVM |
+
+## 15. Troubleshooting Quick Notes
 
 ### CMake cannot find LLVM/MLIR
 
@@ -562,7 +640,7 @@ In the PR description, include:
 - verify Python/Rust/Go/Node toolchains installed for impacted lanes
 - use smoke presets first to validate core build health
 
-## 15. Useful References
+## 16. Useful References
 
 - [`README.md`](./README.md)
 - [`DESIGN.md`](./DESIGN.md)

@@ -1083,6 +1083,9 @@ std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::Semanti
     std::unordered_set<std::string> closure;
     std::queue<std::string>         queue;
 
+    // determinism-ok: seeds a breadth-first closure. Visit order varies, the
+    // resulting set does not, and what is emitted comes from the sorted
+    // selectedTypeKeys below rather than from this traversal.
     for (const auto& key : explicitKeys)
     {
         if (byKey.contains(key) && closure.insert(key).second)
@@ -1480,6 +1483,8 @@ int main(int argc, char** argv)
     // marked by path, since embedded definitions have none. Note that a local definition sharing a
     // key shadows the embedded one here, because `mergedSemantic` prefers local.
     auto explicitKeys = collectExplicitKeys(localSemantic);
+    // determinism-ok: the destination is itself a set, so the order these
+    // arrive in cannot survive the insertion.
     explicitKeys.insert(builtinExplicitKeys.begin(), builtinExplicitKeys.end());
     if (explicitKeys.empty() && !supportIsSelfSufficient)
     {
@@ -1589,6 +1594,7 @@ int main(int argc, char** argv)
         }
     }
 
+    // determinism-ok: sorted on the next line, before anything reads it.
     std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());
     std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
 

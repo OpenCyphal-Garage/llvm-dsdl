@@ -96,7 +96,7 @@ Audit retrieval endpoint:
 
 1. `dsdld/debug/aiAuditLog`
 
-Redaction currently masks common secret patterns including:
+Redaction masks common secret patterns including:
 
 1. `password`
 2. `token`

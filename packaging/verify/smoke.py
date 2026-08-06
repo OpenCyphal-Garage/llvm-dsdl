@@ -19,7 +19,11 @@ missing ``libz3.so.4`` that the dependency list did not mention.
 Checks, in order of what they would catch:
 
 1. The package installs against stock Ubuntu -- i.e. every Depends resolves.
-2. All three tools run -- i.e. the vendored libLLVM is found via RPATH.
+2. All three tools run, and no LLVM is resolved from outside the package. A
+   statically linked build satisfies this by having no libLLVM at all; a
+   vendored one satisfies it through RPATH into the private libdir. Either is
+   fine -- what fails is resolving a *system* LLVM, which a pristine machine
+   would not have.
 3. Nothing is left unresolved in the dynamic linkage.
 4. Generated C compiles with a stock compiler -- the whole emit path, from an
    installed binary, on a machine that has never seen the source tree.
@@ -69,10 +73,13 @@ echo "@@LLVMDSDL@@ linkage"
 for tool in dsdlc dsdl-opt dsdld; do
   ldd "$(command -v "$tool")" 2>/dev/null | grep -i "not found" | sed "s/^/missing=/"
 done
-ldd "$(command -v dsdlc)" 2>/dev/null | grep -oE '/[^ ]*llvm-dsdl/libLLVM[^ ]*' | sed 's/^/vendored=/'
+ldd "$(command -v dsdlc)" 2>/dev/null | grep -i 'libllvm' | sed 's/^[[:space:]]*/llvm=/'
 
 echo "@@LLVMDSDL@@ codegen"
-apt-get install -y -qq gcc >/dev/null 2>&1
+# libc6-dev explicitly: on jammy the gcc package pulls it in, but on 26.04 it
+# does not, and without it the generated C fails on a missing stdint.h -- which
+# reads as a codegen failure when it is a missing header.
+apt-get install -y -qq gcc libc6-dev >/dev/null 2>&1
 mkdir -p /tmp/ns/demo
 printf 'uint16 id\nuint8[4] data\n@sealed\n' > /tmp/ns/demo/Widget.1.0.dsdl
 cd /tmp
@@ -135,10 +142,18 @@ def evaluate(sections: dict[str, list[str]], expected_version: str | None) -> li
     missing = [ln.partition("=")[2] for ln in linkage if ln.startswith("missing=")]
     if missing:
         failures.append(f"unresolved shared objects: {', '.join(missing)}")
-    if not any(ln.startswith("vendored=") for ln in linkage):
+    # No libLLVM at all is the strongest outcome and the one a static build
+    # produces. What must never happen is resolving one from outside the
+    # package: that would work on the build machine and fail on a pristine one,
+    # which is the failure this whole script exists to catch.
+    external_llvm = [
+        ln.partition("=")[2] for ln in linkage
+        if ln.startswith("llvm=") and "/llvm-dsdl/" not in ln
+    ]
+    if external_llvm:
         failures.append(
-            "dsdlc does not resolve libLLVM from the package's private libdir; "
-            "the vendored copy or its RPATH is not doing its job")
+            "dsdlc resolves libLLVM from outside the package: "
+            + "; ".join(external_llvm))
 
     codegen = sections.get("codegen", [])
     for key, message in (
@@ -214,9 +229,13 @@ def main(argv: list[str]) -> int:
     print(f"smoke-tested {args.deb.name} on {args.image}")
     for line in sections.get("versions", []):
         print(f"  {line}")
-    for line in sections.get("linkage", []):
-        if line.startswith("vendored="):
-            print(f"  libLLVM <- {line.partition('=')[2]}")
+    llvm_lines = [ln.partition("=")[2] for ln in sections.get("linkage", [])
+                  if ln.startswith("llvm=")]
+    if llvm_lines:
+        for line in llvm_lines:
+            print(f"  libLLVM <- {line}")
+    else:
+        print("  libLLVM <- none (statically linked)")
 
     if failures:
         print("\nFAILED:")

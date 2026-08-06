@@ -1,0 +1,38 @@
+# The LLVM/MLIR revision this project builds and links against.
+#
+# One git tag from llvm/llvm-project, and nothing else. No other file in the
+# repository names an LLVM revision; every artifact and every consumer derives
+# its name from this line.
+#
+# What reads it:
+#
+#   .github/workflows/toolchain.yml
+#       Builds LLVM/MLIR at this tag and publishes the installed prefix twice:
+#       as container images tagged <flavour>-<arch>-<this line>, and as tarballs
+#       attached to a GitHub prerelease tagged toolchain-<this line>.
+#
+#   .github/workflows/release.yml
+#       Pulls the image whose tag carries this line, and copies the prefix out
+#       of it into the release build image.
+#
+#   .github/actions/restore-llvm-toolchain
+#       Downloads the tarball from the release whose tag carries this line, and
+#       unpacks it into the CI container.
+#
+# Changing this line changes what is built and what everything is named.
+#
+# It is not the only thing that triggers a rebuild: the toolchain is rebuilt
+# whenever its build configuration changes, which is this line plus the CMake
+# flags in build_llvm.py and the Dockerfiles. A change to any of those produces
+# a different toolchain under the same name, so the Toolchain workflow compares
+# a hash of all three against what it published rather than trusting the tag.
+#
+# Nothing silently falls back to a toolchain built from some other revision:
+# each consumer derives the name it needs from this file and fails loudly if
+# that artifact has not been published yet.
+#
+# The revision is a semantic input to the generated code rather than a build
+# detail. The C backend is routed through MLIR/EmitC, whose printed output can
+# vary across MLIR versions, so which LLVM is linked is part of what the
+# compiler emits. See docs/reference/guarantees/supply-chain.md.
+llvmorg-22.1.8

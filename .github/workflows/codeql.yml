@@ -1,0 +1,87 @@
+name: CodeQL
+
+# Static analysis of the compiler itself, which is the one class of check the
+# rest of CI does not perform. The sanitizer and fuzzing lanes are dynamic: they
+# find defects on paths that execute. CodeQL reasons about paths that do not.
+#
+# The surface worth pointing it at is specific. dsdld reads LSP over stdio,
+# opens files by client-supplied path, and dlopens lint plugins. The frontend
+# parses untrusted DSDL text, which has already produced an abort and a stack
+# overflow. The Python tooling runs in CI holding a token.
+#
+# Advanced setup rather than GitHub's default: autobuild cannot build this,
+# because the build needs LLVM_DIR pointing at a restored toolchain prefix.
+#
+# Scheduled and on main rather than per pull request. The build alone is around
+# ten minutes and CodeQL's tracing roughly doubles it, against a suite that
+# already runs to two hours. Gate on it later if it proves quiet.
+
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: "codeql-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  analyse:
+    name: Analyse (${{ matrix.language }})
+    runs-on: ubuntu-26.04
+    # The toolshed supplies the compiler generation this project needs: it is
+    # C++23, and ubuntu-latest ships a GCC too old for it. LLVM comes from the
+    # pin, as everywhere else.
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            build: true
+          - language: python
+            build: false
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        if: matrix.build
+        uses: ./.github/actions/restore-llvm-toolchain
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build the tools
+        # The three tools, not the default target. CodeQL analyses what the
+        # build compiles, and the tools reach every library between them, so
+        # this is the shipped surface without the test executables -- whose
+        # findings would be about the harness rather than the product.
+        if: matrix.build
+        env:
+          LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+          MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+          CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+          cmake --build build --target dsdlc dsdl-opt dsdld
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

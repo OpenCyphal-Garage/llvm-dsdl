@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # Actions only. The C++ dependency is LLVM, pinned by revision in
+  # packaging/toolchain/llvm.pin and rebuilt deliberately by the Toolchain
+  # workflow -- an automated bump there would republish four images and change
+  # the bytes dsdlc emits, which is a decision rather than a chore. The Python,
+  # Rust, Go and Node packages in this tree belong to test fixtures and
+  # generated-code harnesses; their versions are part of what those tests pin.
+  #
+  # Actions are the opposite: pinned by tag, updated by GitHub, and the place a
+  # supply-chain advisory would actually land.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]

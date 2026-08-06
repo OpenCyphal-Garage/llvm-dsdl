@@ -16,11 +16,17 @@ would reference, so a tarball that only works on the build machine passes every
 behavioural test.
 
 So the load-bearing check here is **linkage**, not behaviour: every non-system
-library reference must resolve inside the bundle. A binary still pointing at
+library reference must resolve inside the tarball. A binary still pointing at
 /opt/homebrew would run perfectly here and fail on a user's machine, and only
 this check tells the two apart.
 
-Behaviour is checked too, since a bundle that links correctly and still cannot
+Against the self-built toolchain there are no such references at all: the tools
+link /usr/lib/libSystem.B.dylib and /usr/lib/libc++.1.dylib and nothing else, and
+the tarball ships no dylibs. The check still applies -- it is what would catch a
+build that silently went back to Homebrew -- but it now passes by there being
+nothing to relocate rather than by relocation having worked.
+
+Behaviour is checked too, since a tarball that links correctly and still cannot
 emit code is no use either.
 """
 
@@ -175,8 +181,9 @@ def main(argv: list[str]) -> int:
                 refs = [r for r in linked_paths(exe) if not r.startswith(SYSTEM_PREFIXES)]
                 leaked = len(leaked_references(exe))
                 # Counted separately: "non-system" alone would report a leaking
-                # binary and a sound one identically.
-                print(f"  {tool}: {len(refs) - leaked} bundle-relative, {leaked} external")
+                # binary and a sound one identically. Both zero is the expected
+                # result against a static toolchain -- nothing to relocate.
+                print(f"  {tool}: {len(refs) - leaked} relocated, {leaked} external")
 
         if failures:
             print("\nFAILED:")

@@ -207,7 +207,7 @@ the class of structural fact the marker-regex "convergence" score cannot see.
 | D1 | TS/Python mask the union tag as its own statement; Rust/Go fold it into the write argument | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Both kept. Serves as the verifier's insensitivity case: it must report *equal* |
 | D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Structural, accepted** — type-system-subsumed, not missing | Declared interface point `FieldStepSpelling::spellFixedArrayLenCheck` (a documented no-op in Go/C++); `LEN_CHECK` is backend-optional in the comparator skeleton |
 | D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits no `ELEM_LOOP` / per-element scalar ops for that case | **Genuine C++ optimization** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces an honest `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned, exercised by the `BoolArray` fixture) |
-| D4 | **TS/Python union deserialize** once emitted `READ_TAG → ADVANCE → MASK_TAG → VALIDATE_TAG → STORE_TAG` against the canonical `READ → MASK → STORE → VALIDATE → ADVANCE` | **Was a genuine order difference, safe** — read-before-mask-before-validate all held; only `STORE`/`ADVANCE` bookkeeping positions differed | **Closed by construction**: all five backends render the union prologue through `renderUnionSection`, so the raw prologue traces are identical. The comparator's bookkeeping tolerance is retained for robustness but is no longer exercised by unions |
+| D4 | *(none)* | — | All five backends render the union prologue through `renderUnionSection`, so their raw prologue traces are identical by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
 | D5 | *(further genuine reorderings)* | **None.** All 5 backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
 
 ## Enforcement
@@ -227,10 +227,9 @@ never "six". Driving EmitC from the step IR is a separate, unscoped epic.
 
 ## History
 
-This document began as the Phase 0 oracle for the P2 emit-order deduplication work, which
-sequenced the emit-order verifier before the shared render template and completed on
-2026-07-12. That work is closed and its execution plan has been retired; this document
-outlives it as the standing specification. The plan's own record of how it landed —
-per-phase status, the byte-identity proofs, the LOC-delta accounting — is preserved in the
+This document is the standing specification of the emit order. It began as the Phase 0
+oracle for the P2 emit-order deduplication work, which sequenced the emit-order verifier
+before the shared render template and completed on 2026-07-12. That effort's own record —
+per-phase status, the byte-identity proofs, the LOC-delta accounting — is kept in the
 G1 section of [the project report](../../development/roadmap.md) and in git
 history (`docs/plans/P2_emit_order_dedup.md`, removed 2026-07-31).

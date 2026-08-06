@@ -10,7 +10,7 @@ The project deliberately combines three ideas:
 - LLVM/MLIR as compiler infrastructure for normalized IR and pass-managed transformations.
 - Multi-language emitters that share lowered wire-semantics rather than re-implementing rules backend-by-backend.
 
-This repo currently ships three user-facing tools:
+This repo ships three user-facing tools:
 
 - [`dsdlc`](tools/dsdlc/main.cpp): compile/codegen driver.
 - [`dsdl-opt`](tools/dsdl-opt/main.cpp): pass-driver over the custom dialect.
@@ -20,7 +20,7 @@ Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, 
 
 ## 2. Realized Architecture
 
-The current architecture is not just a proposal; it is what the build and tests execute now. Frontend parsing and semantic analysis are shared once, lowered to a DSDL-specific MLIR representation, then consumed by backend codegen paths. The C path goes deepest through EmitC conversion; other language backends consume shared lowered contracts/facts and render native or scripted source.
+The architecture described here is what the build and tests execute. Frontend parsing and semantic analysis are shared once, lowered to a DSDL-specific MLIR representation, then consumed by backend codegen paths. The C path goes deepest through EmitC conversion; other language backends consume shared lowered contracts/facts and render native or scripted source.
 
 ```mermaid
 flowchart LR
@@ -89,7 +89,7 @@ Relevant dialect files:
 - [`lib/IR/DSDLOps.cpp`](lib/IR/DSDLOps.cpp)
 - [`lib/IR/DSDLDialect.cpp`](lib/IR/DSDLDialect.cpp)
 
-Core ops currently in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`.
+Core ops in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`.
 
 ### 3.4 Semantic-to-MLIR Lowering ([`include/llvmdsdl/Lowering`](./include/llvmdsdl/Lowering), [`lib/Lowering`](./lib/Lowering))
 
@@ -103,7 +103,7 @@ This stage is the bridge where DSDL-specific semantic facts become compiler IR f
 
 ### 3.5 MLIR Transforms ([`include/llvmdsdl/Transforms`](./include/llvmdsdl/Transforms), [`lib/Transforms`](./lib/Transforms))
 
-Transforms are where normalization and contract hardening happen. The pass set currently includes:
+Transforms are where normalization and contract hardening happen. The pass set includes:
 
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
@@ -141,7 +141,7 @@ This structure is the core of the “shared semantics, multiple syntaxes” stra
 
 ### 4.1 C backend (`emitC`)
 
-The C backend is currently the most MLIR-native path. For each selected definition, it runs lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
+The C backend is the most MLIR-native path. For each selected definition, it runs lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
 
 Key file:
 
@@ -319,7 +319,7 @@ The architecture is intentionally hard-cut and single-path: shared lowering cont
 Current tradeoffs:
 
 - C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
-- The `obj` lane is currently staged through generated C and toolchain compilation; direct LLVM object emission is planned as the next step.
+- The `obj` lane is staged through generated C and toolchain compilation; direct LLVM object emission is tracked in the roadmap.
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
 - Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.

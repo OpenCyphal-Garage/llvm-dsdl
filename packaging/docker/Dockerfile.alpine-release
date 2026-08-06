@@ -1,0 +1,32 @@
+# Build environment for the fully static Ubuntu/Debian .deb.
+#
+# The glibc release image (Dockerfile.ubuntu-release) produces a package that
+# depends on libc6 and libstdc++6. This one produces a package that depends on
+# nothing: musl links statically without the traps glibc has, so the tools are
+# static-pie executables with no loader dependency, and the .deb installs on any
+# Debian derivative regardless of its glibc.
+#
+# Alpine builds the binaries; dpkg-dev packages them. dpkg-dev is an Alpine
+# package, so CPack's DEB generator runs here directly and no second image is
+# needed to produce the .deb. lintian is not packaged for Alpine, so the
+# lintian-clean check stays where it already lives -- against a real package, in
+# the Ubuntu-based verification lane.
+#
+# dsdld loses lint-plugin loading in this configuration: musl's static dlopen
+# always fails. See D6 in docs/development/distribution-channels.md.
+#
+# Build:
+#   docker build -f packaging/docker/Dockerfile.alpine-release \
+#     --build-arg TOOLCHAIN_IMAGE=llvm-dsdl-toolchain:musl \
+#     -t llvmdsdl-release:alpine .
+
+ARG TOOLCHAIN_IMAGE=ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:musl
+
+FROM ${TOOLCHAIN_IMAGE}
+
+# The toolchain image already carries build-base, cmake, ninja, git, python3 and
+# lit. dpkg-dev is what CPack's DEB generator needs; file and gzip are used by
+# the packaging rules for the changelog and the man pages.
+RUN apk add --no-cache dpkg dpkg-dev file gzip
+
+WORKDIR /src

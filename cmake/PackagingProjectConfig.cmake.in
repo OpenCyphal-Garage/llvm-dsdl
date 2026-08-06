@@ -63,7 +63,14 @@ execute_process(
   RESULT_VARIABLE _llvmdsdl_derive_result
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-if(NOT _llvmdsdl_derive_result EQUAL 0 OR _llvmdsdl_derived_depends STREQUAL "")
+# Exit status only. An empty result was once impossible -- every binary linked
+# libc -- so emptiness was a reliable proxy for "the script did not work". With
+# LLVMDSDL_STATIC_BINARIES it is a legitimate answer: a static-pie executable
+# depends on nothing, and a package that says so is correct. derive_depends.py
+# now fails loudly on every way of not knowing (a missing target, an unreadable
+# ELF, an ldd that cannot resolve a dynamic binary), so the exit status carries
+# the distinction that emptiness used to stand in for.
+if(NOT _llvmdsdl_derive_result EQUAL 0)
   message(FATAL_ERROR
     "Failed to derive Debian Depends from the built binaries.\n"
     "${_llvmdsdl_derive_stderr}\n"

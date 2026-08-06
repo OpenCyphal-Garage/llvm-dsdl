@@ -364,13 +364,13 @@ Good preset/workflow discipline and depfile support. But: the **545 KB embedded 
   environment (catching only concurrency/address nondeterminism); they now run the two generations
   under deliberately different `LC_ALL`, `TZ`, and `PYTHONHASHSEED`, so byte-identical output proves
   environment-independence and would catch any future locale/TZ/hash-order dependence. All gates
-  pass under perturbation. ✅ **Two-toolchain lane done (2026-07-12).** The distro LLVM in CI is
+  pass under perturbation. ✅ **Two-toolchain lane done (2026-07-12); retired 2026-08-03** when the project began building its own toolchain — the lane depended on the two halves using *different* standard libraries, which shipping one toolchain ends. The class it detected is now excluded at the source by `tools/determinism/check_unordered_iteration.py`. The account below is kept as the record of what it did and why. The distro LLVM in CI is
   libstdc++-built, so a same-host `-stdlib=libc++` build cannot link it; the lane crosses *hosts*
   instead: the existing linux job (libstdc++, x86-64) and a new `cross-stdlib` macOS job (Homebrew
   LLVM, libc++, arm64 — dsdlc-only build via the `dev-llvm-env` preset, with an `otool` assertion
   that the binary really links libc++) each generate the full UAVCAN corpus for all six backends
   and record a canonical per-file SHA-256 manifest
-  (`tools/determinism/cross_stdlib_corpus_hash.py`); the `cross-stdlib-determinism` join job
+  (`tools/determinism/corpus_determinism.py`); the `cross-stdlib-determinism` join job
   compares them byte-for-byte and fails with per-file detail. libstdc++ and libc++ implement
   different `std::hash`/bucket policies (and the hosts differ in arch and OS), so any future
   `unordered_*` iteration leak into emitted text diverges the manifests. The five string backends
