@@ -15,12 +15,14 @@ anything that lets word size, alignment, or floating-point formatting reach emit
 text, which same-host environment perturbation (locale/TZ/PYTHONHASHSEED, already
 gated) cannot expose.
 
-It previously compared libstdc++ against libc++ to catch std::unordered_* iteration
-order leaking into output. That lane was retired when the project began building one
-toolchain, since it depended on the two halves using different standard libraries;
-check_unordered_iteration.py now excludes that class at the source instead. The tool
-remains general -- any two builds will do, which is also how it is used by hand to
-prove a refactor changed no output.
+Comparing two standard libraries instead -- libstdc++ against libc++ -- catches
+std::unordered_* iteration order leaking into output, and is the obvious-looking
+alternative. It does not fit a project that ships one toolchain: there is no such
+divergence left to measure, and check_unordered_iteration.py excludes that class at
+the source anyway.
+
+The tool itself is general -- any two builds will do, which is also how it is used by
+hand to prove a refactor changed no output.
 
 Modes:
   generate:  --dsdlc PATH --dsdl-root DIR --out MANIFEST [--label NAME] [--meta k=v ...]

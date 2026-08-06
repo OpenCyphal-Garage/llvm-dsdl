@@ -44,9 +44,9 @@ RUN wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc \
     && echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ ${UBUNTU_CODENAME} main" \
       > /etc/apt/sources.list.d/kitware.list
 
-# clang and lld only. Deliberately no llvm-${LLVM_MAJOR}-dev,
-# libmlir-${LLVM_MAJOR}-dev or mlir-${LLVM_MAJOR}-tools: those are the packages
-# whose choices this project no longer wants to inherit.
+# clang and lld only. The LLVM libraries come from the toolchain image above,
+# so llvm-${LLVM_MAJOR}-dev and its siblings would only supply a second, and
+# differently configured, LLVM to link against by accident.
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         clang-${LLVM_MAJOR} \
         lld-${LLVM_MAJOR} \

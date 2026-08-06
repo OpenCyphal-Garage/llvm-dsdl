@@ -9,10 +9,10 @@ name: Release
 # repository to fall back on, and nothing else in this pipeline would notice.
 #
 # Built inside packaging/docker/Dockerfile.ubuntu-release, an Ubuntu 22.04 image
-# with LLVM 22 from apt.llvm.org. 22.04 is the oldest release that has LLVM 22,
-# which puts the glibc floor at 2.35 so one package covers 22.04, 24.04 and
-# 26.04. The CI toolshed image is deliberately NOT reused: it is Ubuntu 26.04,
-# and a package built there installs on nothing older.
+# carrying the LLVM/MLIR toolchain this project builds for itself. 22.04 puts the
+# glibc floor at 2.35, so one package covers 22.04, 24.04 and 26.04. The CI
+# toolshed image is deliberately NOT reused: it is Ubuntu 26.04, and a package
+# built there installs on nothing older.
 #
 # arm64 and amd64, each on its own native runner -- no emulation in CI. The two
 # legs are independent (fail-fast off): one architecture's package is installable
@@ -149,12 +149,12 @@ jobs:
             .
 
       - name: Configure, build, and package
-        # Vendoring is off because there is nothing left to vendor: the toolchain
-        # image carries a static LLVM, so the tools embed it rather than loading
-        # it. That is what lets the package install against stock Ubuntu, which
-        # carries no LLVM 22 of its own. The Depends list is still derived from
-        # the built binaries at package time rather than hand-maintained -- it
-        # now derives libc6 and libstdc++6 and nothing else.
+        # Vendoring off: the toolchain image carries a static LLVM, so the tools
+        # embed it rather than loading it, and there is no shared library to ship
+        # alongside them. That is what lets the package install against stock
+        # Ubuntu, which carries no LLVM 22 of its own. The Depends list is derived
+        # from the built binaries at package time rather than hand-maintained, and
+        # comes to libc6 and libstdc++6.
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}":/src:ro \
@@ -220,7 +220,7 @@ jobs:
         # The Linux legs get this free from Docker layer caching. macOS has no
         # image, so the prefix is cached directly. Keyed on the pin and on the
         # script that owns the build flags, because either changing means the
-        # cached prefix is no longer the toolchain those inputs describe.
+        # cached prefix would not be the toolchain those inputs describe.
         id: toolchain-cache
         uses: actions/cache@v4
         with:

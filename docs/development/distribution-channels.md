@@ -34,13 +34,33 @@ The patch level is someone else's choice too: the CI toolshed carries LLVM 22.1.
 macOS lane validates against 22.1.8. The major-version lock tolerates that; owning the build
 closes it.
 
-Building LLVM/MLIR 22 ourselves once per target, caching it as a GHCR image or release artifact
-keyed by `llvm-rev + triple + stdlib`, and restoring it in the build job dissolves all four. It
-runs when the pin changes, not per release.
+Building LLVM/MLIR ourselves dissolves all five.
 
-This is not a prerequisite for anything shipping today. The four-stage workflow factoring (§6)
-exists so the toolchain source is an implementation detail of the build job: it can swap in
-later without touching the package, verify, or publish stages.
+### What the pin produces, and who consumes it
+
+`packaging/toolchain/llvm.pin` holds one LLVM git tag and nothing else. Every artifact built
+from it is *named after* it, so no consumer is ever told where to look: each reads the file and
+derives the name.
+
+The Toolchain workflow builds LLVM/MLIR at that tag and publishes the same prefix — the
+installed `/opt/llvm-dsdl-toolchain` tree — in two forms:
+
+| Form | Name | Consumed by |
+|---|---|---|
+| Container image | `ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:<flavour>-<arch>-<pin>` | The release build, which copies the prefix out of it into a jammy image |
+| Tarball | `llvm-dsdl-toolchain-glibc-<arch>.tar.gz`, attached to the prerelease tagged `toolchain-<pin>` | CI, which unpacks it into the container it is already running in |
+
+Two forms because the two consumers cannot use one. A release build composes its own image, so
+it can `COPY --from` another image. A CI job's container is chosen before any step runs, so it
+cannot compose anything and can only download.
+
+There are four images: two flavours (musl, glibc) × two architectures. A prefix is ~490 static
+archives built against one C library and does not cross that boundary — D4 below.
+
+Building one takes roughly forty minutes on a CI runner, so it happens when the pin changes,
+not per release and not per CI run. Every consumer fails loudly when the artifact for the
+current pin is missing, and none falls back to building it inline: that fallback is precisely
+how the release leg first exceeded its timeout.
 
 ### Static linking is not reachable against a distribution's LLVM
 
@@ -186,8 +206,8 @@ executables and a `.deb` with **no `Depends` field at all**, which installs and 
 compilable code on Debian bullseye (glibc 2.31, below the floor the old package required),
 bookworm, Ubuntu 22.04 and 26.04. `derive_depends.py` (§3) has nothing left to derive.
 
-The static package is larger — 38.7 MB against 21.4 MB — because libstdc++ and musl are now
-inside it rather than resolved from the system.
+The static package is larger — 38.7 MB against 21.4 MB — because libstdc++ and musl live inside
+it rather than being resolved from the system.
 
 💡 musl's allocator is markedly slower than glibc's under allocation-heavy C++, which describes
 MLIR exactly. Measure `dsdlc` against the corpus before committing, and link mimalloc or
@@ -213,9 +233,9 @@ vendor. The tarball carries no dylibs, needs no install-name rewriting, and drop
 result; they remain only for a build against a distribution's LLVM.
 
 The Darwin toolchain cannot be a container image — it builds natively, in ~9 minutes, cached on
-the pin. Two further consequences: Gatekeeper now has one Mach-O to sign per tool rather than
-six files per bundle (notarisation is still what the Finder path needs, §5), and D6 does not
-arise here at all, because `dlopen` works normally against a dynamic `libSystem`.
+the pin. Two further consequences: Gatekeeper has one Mach-O to sign per tool rather than a
+bundle of six files (notarisation is what the Finder path needs, §5), and D6 does not arise
+here at all, because `dlopen` works normally against a dynamic `libSystem`.
 
 ### Verification splits in two
 
@@ -315,8 +335,8 @@ code as surely as vendoring the shared object did.
 | D8 | macOS deployment-target floor | Undecided — ours to set once we own the build, same shape as D4 |
 
 **D4 resolves into two flavours, not one artifact.** A toolchain prefix is 488 static archives
-built against one libc; it is not portable across them, which is why the cache key carries the
-triple and stdlib. So there are two:
+built against one libc; it is not portable across them, which is why the published name carries
+the flavour and architecture rather than the pin alone. So there are two:
 
 - **musl (Alpine)** — the `bin` component. No glibc floor at all.
 - **glibc (Ubuntu 22.04)** — `llvm-dsdl-dev`, whose archives must link against what consumers

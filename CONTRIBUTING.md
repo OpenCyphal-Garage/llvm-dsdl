@@ -477,11 +477,11 @@ be made faster by building first.
 **Know what it cannot catch.** `act` copies your *working tree*; it does not clone. Anything that
 differs between your checkout and a fresh one is invisible to it, and submodules are the trap that
 has already been sprung once: your `submodules/public_regulated_data_types` is populated, so the 58
-`llvmdsdl-uavcan-*` tests register and the guarantee matrices come out complete. The Docs workflow
-used to check out without submodules, where none of that is true — it failed on GitHub with a parity
-score of 12 against a minimum of 100 while `act` reported success. Both now check out submodules, so
-they agree again; if you change a `checkout` step, re-read this paragraph before trusting a green
-local run.
+`llvmdsdl-uavcan-*` tests register and the guarantee matrices come out complete. A workflow that
+checks out without submodules has none of that, and the failure is not subtle — a parity score of
+12 against a minimum of 100, while `act` reports success on the same commit. Every workflow
+therefore checks out with `submodules: recursive`; if you touch a `checkout` step, re-read this
+paragraph before trusting a green local run.
 
 The repository's [`.actrc`](./.actrc) already pins `--container-architecture` and `--pull=false`, so
 the toolshed image has to be present locally; `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once
@@ -547,14 +547,22 @@ anything is built.
 
 ### 14.1 Preconditions
 
-The toolchain images must already exist for the current
-`packaging/toolchain/llvm.pin`. The release pulls them; it does not build them
-inline, because doing so costs about forty minutes per architecture and once
-exceeded the job timeout. A missing image fails the job with
-`No published toolchain for pin <ref>`.
+This project builds the LLVM it links against rather than taking a
+distribution's. `packaging/toolchain/llvm.pin` names the revision; the Toolchain
+workflow builds it and publishes the result under names derived from that line.
+The release pulls what Toolchain published — it never builds LLVM itself,
+because that takes about forty minutes per architecture and once exceeded the
+job's timeout. A missing artifact fails the job with
+`No published toolchain for pin <ref>` rather than quietly rebuilding.
 
-So if you are also moving the pin, push that first and let the Toolchain
-workflow finish. If the pin is unchanged, there is nothing to do here.
+So:
+
+- **Pin unchanged** — the artifacts already exist. Nothing to do.
+- **Pin also being moved in this release** — push that change first and let the
+  Toolchain workflow finish, then tag.
+
+[`docs/development/distribution-channels.md`](./docs/development/distribution-channels.md) §1
+describes what is published and which job consumes each form.
 
 ### 14.2 Prepare the version
 
