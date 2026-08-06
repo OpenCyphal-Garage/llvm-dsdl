@@ -27,13 +27,26 @@ on:
         description: "Build and verify, but do not create a release"
         type: boolean
         default: true
+  # Called by CI on every pull request. The packages are the only artifact this
+  # project ships, and nothing else builds one: the CI suite is Linux-only and
+  # runs no packaging step at all. Gating pull requests on the same jobs that
+  # cut the release is what makes a green PR mean "releasable" rather than
+  # "compiles", and it is why cutting a release needs no manual pre-flight.
+  workflow_call:
+    inputs:
+      dry_run:
+        description: "Build and verify, but do not create a release"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: "release-${{ github.ref }}"
-  cancel-in-progress: false
+  group: "release-${{ github.workflow }}-${{ github.ref }}"
+  # A superseded pull request run has nothing worth finishing. A tag run does:
+  # cancelling one mid-publish would leave a partly-populated draft release.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   stage:

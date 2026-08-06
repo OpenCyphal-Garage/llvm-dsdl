@@ -539,6 +539,24 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
+### 13.1 The `release-ci` label
+
+CI compiles and tests on Linux. It builds no package, so a green PR says the
+code works, not that it ships. The `release-ci` label adds the release build to
+the run — both `.deb` architectures, the pristine-container install, the macOS
+tarball and its linkage assertion — as a dry run that publishes nothing.
+
+Reviewers ask for the label when a PR touches:
+
+- `packaging/`, including the toolchain pin and the release Dockerfiles
+- `VERSION` or `packaging/deb/changelog`
+- install rules, component assignment, or anything CPack reads
+- `.github/workflows/release.yml`
+- linkage: vendoring, static libc++, or what the tools link against
+
+GitHub cannot make a label a merge requirement, so this is the reviewer's to
+enforce. Applying it starts a run immediately; it costs about six minutes.
+
 ## 14. Cutting a Release
 
 Three things carry the version and must agree: `VERSION`, the top entry of

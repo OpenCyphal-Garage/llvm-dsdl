@@ -27,6 +27,11 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    # `labeled` so that applying `release-ci` starts a run then and there. A
+    # re-run replays the original event payload, which does not carry the new
+    # label, so without this the release lane would wait for the next push.
+    # Naming any type replaces the default set, so the other three are restated.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"
@@ -554,3 +559,31 @@ jobs:
         # Cheap, needs no compiler, and proves the generator still runs against the recipes as they
         # actually are -- a recipe.json the renderer chokes on should fail here, not at publish time.
         run: python3 tools/showroom/recipes_index.py
+
+  release-artifacts:
+    name: Release artifacts
+    # Opt-in, on the `release-ci` label. The packages are the only thing this
+    # project ships and no other job here builds one -- every other lane is
+    # Linux-only and runs no packaging step -- so a pull request that touches
+    # packaging, the toolchain pin, install rules or the version needs this to
+    # mean anything. Most pull requests do not, and paying six minutes of .deb
+    # and macOS builds for a lint fix buys nothing.
+    #
+    # GitHub cannot require a label, so requiring it is the reviewer's job. The
+    # pull request checklist in CONTRIBUTING.md §13 names when to ask for it.
+    #
+    # `labeled` is in the trigger list because otherwise applying the label does
+    # nothing until the next push, which is the whole point of applying it.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'release-ci')
+    # Calls the release workflow rather than restating it, so the .deb legs, the
+    # pristine-container install, the macOS tarball and its linkage assertion
+    # cannot drift from what a tag actually runs. dry_run keeps `publish`
+    # skipped: this builds and verifies, and creates nothing.
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: read
+      packages: read        # pull the published toolchain image
+    with:
+      dry_run: true
