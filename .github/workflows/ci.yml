@@ -392,11 +392,13 @@ jobs:
 
       - name: Hash generated corpus
         # The version comes from the prefix rather than llvm-config, which
-        # LLVM_BUILD_TOOLS=OFF does not install. Stripped of the tag prefix so
-        # the comparator's major extraction still sees a version number.
+        # LLVM_BUILD_TOOLS=OFF does not install. The prefix is named by the
+        # restore action rather than repeated here, so the path is stated once.
+        # Stripped of the tag prefix so the comparator's major extraction still
+        # sees a version number.
         run: |
           set -euo pipefail
-          ref="$(cat /opt/llvm-dsdl-toolchain/LLVM_REF)"
+          ref="$(cat "${LLVM_TOOLCHAIN_PREFIX}/LLVM_REF")"
           python3 tools/determinism/corpus_determinism.py \
             --dsdlc build/tools/dsdlc/dsdlc \
             --dsdl-root submodules/public_regulated_data_types/uavcan \
