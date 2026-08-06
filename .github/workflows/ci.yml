@@ -577,13 +577,12 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'release-ci')
-    # Calls the release workflow rather than restating it, so the .deb legs, the
-    # pristine-container install, the macOS tarball and its linkage assertion
-    # cannot drift from what a tag actually runs. dry_run keeps `publish`
-    # skipped: this builds and verifies, and creates nothing.
-    uses: ./.github/workflows/release.yml
+    # Calls the same workflow a tag does rather than restating it, so the .deb
+    # legs, the pristine-container install, the macOS tarball and its linkage
+    # assertion cannot drift from what a release actually runs. Publishing is
+    # not part of it -- that lives in release.yml, which owns the write token --
+    # so this lane builds and verifies and creates nothing.
+    uses: ./.github/workflows/release-build.yml
     permissions:
       contents: read
       packages: read        # pull the published toolchain image
-    with:
-      dry_run: true

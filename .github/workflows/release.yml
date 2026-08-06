@@ -1,22 +1,14 @@
 name: Release
 
-# Builds the downloadable Ubuntu .deb and attaches it to a GitHub Release.
+# Attaches the release artifacts to a draft GitHub Release.
 #
-# There is no apt repository yet (see docs/development/distribution-channels.md §3), so
-# the package is a file people fetch and install with `apt install ./…deb`
-# against stock Ubuntu. That is what makes the verify job load-bearing rather
-# than ceremonial: a package that only works where it was built has no
-# repository to fall back on, and nothing else in this pipeline would notice.
+# The building and verifying lives in release-build.yml, which CI also calls on
+# a `release-ci` pull request. This workflow is the half that needs a write
+# token: it runs that shared lane first, then publishes what it produced.
 #
-# Built inside packaging/docker/Dockerfile.ubuntu-release, an Ubuntu 22.04 image
-# carrying the LLVM/MLIR toolchain this project builds for itself. 22.04 puts the
-# glibc floor at 2.35, so one package covers 22.04, 24.04 and 26.04. The CI
-# toolshed image is deliberately NOT reused: it is Ubuntu 26.04, and a package
-# built there installs on nothing older.
-#
-# arm64 and amd64, each on its own native runner -- no emulation in CI. The two
-# legs are independent (fail-fast off): one architecture's package is installable
-# without the other, so a failure in one should not withhold the other.
+# The split is not cosmetic. A called workflow's job permissions are checked
+# against the caller's grant at parse time, so keeping `publish` here is what
+# lets CI call the same build jobs with a read-only token.
 
 on:
   push:
@@ -27,284 +19,31 @@ on:
         description: "Build and verify, but do not create a release"
         type: boolean
         default: true
-  # Called by CI on every pull request. The packages are the only artifact this
-  # project ships, and nothing else builds one: the CI suite is Linux-only and
-  # runs no packaging step at all. Gating pull requests on the same jobs that
-  # cut the release is what makes a green PR mean "releasable" rather than
-  # "compiles", and it is why cutting a release needs no manual pre-flight.
-  workflow_call:
-    inputs:
-      dry_run:
-        description: "Build and verify, but do not create a release"
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: "release-${{ github.workflow }}-${{ github.ref }}"
-  # A superseded pull request run has nothing worth finishing. A tag run does:
-  # cancelling one mid-publish would leave a partly-populated draft release.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: "release-${{ github.ref }}"
+  # Never cancel: interrupting a run mid-publish would leave a partly-populated
+  # draft release behind.
+  cancel-in-progress: false
 
 jobs:
-  stage:
-    name: Resolve version
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.resolve.outputs.version }}
-      publish: ${{ steps.resolve.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Resolve and cross-check the version
-        id: resolve
-        # The VERSION file is the single source of truth: CPack takes the package
-        # version from it, and the tools compile it into --version. A tag that
-        # disagrees would ship binaries that misreport themselves, so it fails
-        # here rather than after the artifacts exist.
-        run: |
-          set -euo pipefail
-          version="$(tr -d '[:space:]' < VERSION)"
-          echo "VERSION file: ${version}"
-
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag="${GITHUB_REF_NAME#v}"
-            if [ "${tag}" != "${version}" ]; then
-              echo "::error::tag v${tag} does not match VERSION ${version}"
-              exit 1
-            fi
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            # A manual run publishes only when explicitly asked to.
-            if [ "${{ inputs.dry_run }}" = "false" ]; then
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-            fi
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Check the changelog describes this version
-        # A Debian package whose changelog disagrees with its control file is
-        # malformed; CMake enforces the match at configure time, but catching it
-        # here costs nothing and reports it before a long build.
-        run: |
-          set -euo pipefail
-          head -1 packaging/deb/changelog | grep -qF "(${{ steps.resolve.outputs.version }})" || {
-            echo "::error::packaging/deb/changelog top entry is not for ${{ steps.resolve.outputs.version }}"
-            exit 1
-          }
-
-  build:
-    name: Build .deb (${{ matrix.arch }})
-    needs: stage
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+  verify:
+    name: Build and verify
+    uses: ./.github/workflows/release-build.yml
     permissions:
       contents: read
       packages: read        # pull the published toolchain image
-    strategy:
-      # Independent legs: one architecture failing should not deny the other its
-      # artifact, since they are separately installable packages.
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: ubuntu-22.04-arm
-          - arch: amd64
-            runner: ubuntu-22.04
-    steps:
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull the LLVM toolchain
-        # Pulled, never built here. Building it costs ~40 minutes on a 4-vCPU
-        # runner, which exceeded this job's timeout on amd64; the Toolchain
-        # workflow builds it when the pin moves and this pulls the result.
-        #
-        # A missing image is a hard failure on purpose. Falling back to an inline
-        # build would turn "the pin moved and nobody published it" into a job
-        # that mysteriously takes an hour, which is how the timeout happened in
-        # the first place.
-        id: toolchain
-        run: |
-          set -euo pipefail
-          ref="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
-          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          image="ghcr.io/${owner}/llvm-dsdl-toolchain:glibc-${ref}"
-          if ! docker pull "$image"; then
-            echo "::error::No published toolchain for pin ${ref}. Run the Toolchain workflow first." >&2
-            exit 1
-          fi
-          echo "image=${image}" >> "$GITHUB_OUTPUT"
-
-      - name: Build the release image
-        # Built from the committed Dockerfile rather than replicated as workflow
-        # steps, so the release environment is the same one reproducible locally.
-        # Each runner is native for its own architecture, so no emulation here --
-        # only a developer cross-checking the other leg locally needs --platform.
-        run: |
-          docker build \
-            -f packaging/docker/Dockerfile.ubuntu-release \
-            --build-arg TOOLCHAIN_IMAGE="${{ steps.toolchain.outputs.image }}" \
-            -t llvmdsdl-release:jammy-${{ matrix.arch }} \
-            .
-
-      - name: Configure, build, and package
-        # Vendoring off: the toolchain image carries a static LLVM, so the tools
-        # embed it rather than loading it, and there is no shared library to ship
-        # alongside them. That is what lets the package install against stock
-        # Ubuntu, which carries no LLVM 22 of its own. The Depends list is derived
-        # from the built binaries at package time rather than hand-maintained, and
-        # comes to libc6 and libstdc++6.
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}":/src:ro \
-            -v "${GITHUB_WORKSPACE}/out":/build \
-            llvmdsdl-release:jammy-${{ matrix.arch }} bash -euo pipefail -c '
-              cmake -S /src -B /build -G Ninja \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-                -DLLVM_DIR="$LLVM_DIR" -DMLIR_DIR="$MLIR_DIR" \
-                -DLLVMDSDL_VENDOR_LLVM=OFF \
-                -DCMAKE_INSTALL_PREFIX=/usr
-              cmake --build /build
-              cd /build && cpack -G DEB
-            '
-
-      - name: Collect packages
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp out/*.deb dist/
-          cd dist
-          # `--` so a file whose name began with a dash could not be read as options.
-          sha256sum -- *.deb > SHA256SUMS
-          ls -la
-
-      - name: Verify on a pristine Ubuntu system
-        # A different image from the build one, on purpose: this proves the
-        # package carries what it needs rather than inheriting it from the
-        # machine that produced it.
-        run: |
-          python3 packaging/verify/smoke.py \
-            --deb "dist/llvm-dsdl_${{ needs.stage.outputs.version }}_${{ matrix.arch }}.deb" \
-            --expect-version "${{ needs.stage.outputs.version }}" \
-            --image ubuntu:jammy
-
-      - name: Upload packages
-        uses: actions/upload-artifact@v7
-        with:
-          name: deb-${{ matrix.arch }}
-          path: dist/
-          if-no-files-found: error
-
-  macos:
-    name: Build tarball (macOS ${{ matrix.arch }})
-    needs: stage
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-15
-    steps:
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Install build tools
-        run: brew install ninja
-
-      - name: Restore the LLVM toolchain
-        # The Linux legs get this free from Docker layer caching. macOS has no
-        # image, so the prefix is cached directly. Keyed on the pin and on the
-        # script that owns the build flags, because either changing means the
-        # cached prefix would not be the toolchain those inputs describe.
-        id: toolchain-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/llvm-dsdl-toolchain
-          key: llvm-toolchain-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('packaging/toolchain/llvm.pin', 'packaging/toolchain/build_llvm.py') }}
-
-      - name: Build the LLVM toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        # Built rather than taken from Homebrew, for the reasons in section 1 of
-        # docs/development/distribution-channels.md. Roughly 9 minutes natively,
-        # and only when the pin moves.
-        run: |
-          set -euo pipefail
-          REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
-          git clone --depth 1 --branch "$REF" \
-            https://github.com/llvm/llvm-project.git "${RUNNER_TEMP}/llvm-project"
-          python3 packaging/toolchain/build_llvm.py \
-            --source "${RUNNER_TEMP}/llvm-project" \
-            --build "${RUNNER_TEMP}/llvm-build" \
-            --prefix "${HOME}/llvm-dsdl-toolchain" \
-            --llvm-ref "$REF" \
-            --with-libcxx
-
-      - name: Configure, build, and package
-        # Vendoring is off because there is nothing to vendor, and libc++ is
-        # linked from the toolchain rather than the system, so the tools link
-        # /usr/lib/libSystem.B.dylib and nothing else. Apple does not support
-        # statically linking libSystem; everything above it is static here.
-        # The tarball is relocatable without install-name rewriting and has no
-        # lib/ directory of dylibs at all.
-        run: |
-          set -euo pipefail
-          cmake -S . -B out -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DLLVM_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/llvm" \
-            -DMLIR_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/mlir" \
-            -DLLVMDSDL_VENDOR_LLVM=OFF \
-            -DLLVMDSDL_STATIC_LIBCXX=ON
-          cmake --build out
-          cd out && cpack -G TGZ
-
-      - name: Collect tarball
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp out/*.tar.gz dist/
-          cd dist
-          shasum -a 256 -- *.tar.gz > SHA256SUMS
-          ls -la
-
-      - name: Verify the tarball is self-contained
-        # There is no pristine container to install into, and this runner is the
-        # worst possible judge -- it has Homebrew LLVM at exactly the paths a
-        # non-relocated binary would reference. So the check asserts linkage,
-        # not just behaviour.
-        run: |
-          python3 packaging/verify/smoke_macos.py \
-            --tarball "dist/llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz" \
-            --expect-version "${{ needs.stage.outputs.version }}"
-
-      - name: Upload tarball
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-${{ matrix.arch }}
-          path: dist/
-          if-no-files-found: error
 
   publish:
     name: Publish release
-    needs: [stage, build, macos]
-    if: needs.stage.outputs.publish == 'true'
+    needs: verify
+    # A tag always publishes. A manual run publishes only when asked to.
+    if: >-
+      github.ref_type == 'tag' ||
+      (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
     runs-on: ubuntu-latest
     permissions:
       contents: write        # create the release
@@ -347,8 +86,8 @@ jobs:
       - name: Create the release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.stage.outputs.version) }}
-          name: llvm-dsdl ${{ needs.stage.outputs.version }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}
+          name: llvm-dsdl ${{ needs.verify.outputs.version }}
           draft: true
           files: |
             dist/*.deb
@@ -360,8 +99,8 @@ jobs:
             Pick the package matching your architecture (`dpkg --print-architecture`):
 
             ```
-            sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_amd64.deb
-            sudo apt install ./llvm-dsdl_${{ needs.stage.outputs.version }}_arm64.deb
+            sudo apt install ./llvm-dsdl_${{ needs.verify.outputs.version }}_amd64.deb
+            sudo apt install ./llvm-dsdl_${{ needs.verify.outputs.version }}_arm64.deb
             ```
 
             `llvm-dsdl-dev` is also attached, for linking against the frontend,
@@ -372,8 +111,8 @@ jobs:
             Extract with `tar`, not by double-clicking:
 
             ```
-            tar -xzf llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-arm64.tar.gz
-            ./llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-arm64/bin/dsdlc --version
+            tar -xzf llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64.tar.gz
+            ./llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64/bin/dsdlc --version
             ```
 
             The binaries are ad-hoc signed rather than notarized. Extracting with
