@@ -109,7 +109,7 @@ jobs:
           submodules: recursive
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -222,7 +222,7 @@ jobs:
         # script that owns the build flags, because either changing means the
         # cached prefix would not be the toolchain those inputs describe.
         id: toolchain-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/llvm-dsdl-toolchain
           key: llvm-toolchain-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('packaging/toolchain/llvm.pin', 'packaging/toolchain/build_llvm.py') }}
