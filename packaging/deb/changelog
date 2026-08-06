@@ -1,3 +1,17 @@
+llvm-dsdl (0.2.0) unstable; urgency=medium
+
+  * Build and statically link LLVM/MLIR at the revision pinned in
+    packaging/toolchain/llvm.pin instead of a distribution's, so the compiler
+    emits the same code wherever it is installed.
+  * dsdlc: add --generate-support to select support code independently of the
+    code derived from definitions.
+  * dsdlc: add the + selector for types carried in the embedded UAVCAN catalog.
+  * Add the showroom example and its build-system integration recipes.
+  * Restructure the documentation and publish the manual as a site.
+  * Add CodeQL analysis, Dependabot, and a security disclosure policy.
+
+ -- OpenCyphal Maintainers <maintainers@opencyphal.org>  Thu, 06 Aug 2026 05:00:01 +0000
+
 llvm-dsdl (0.1.0) unstable; urgency=medium
 
   * Demo release.
