@@ -114,15 +114,30 @@ def run(cmd: list[str]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--source", required=True, help="llvm-project checkout")
+    ap.add_argument("--source", help="llvm-project checkout")
     ap.add_argument("--build", default="/work/build")
     ap.add_argument("--prefix", default="/opt/llvm-dsdl-toolchain")
-    ap.add_argument("--llvm-ref", required=True, help="tag recorded into the prefix")
+    ap.add_argument("--llvm-ref", help="tag recorded into the prefix")
     ap.add_argument("--jobs", type=int, default=0, help="0 lets ninja decide")
     ap.add_argument("--with-libcxx", action="store_true",
                     help="Also build a hermetic static libc++ into the prefix. macOS only: "
                          "it is what lets the tools link nothing but libSystem.")
+    ap.add_argument("--print-config", action="store_true",
+                    help="Print the effective CMake flags and exit. The Toolchain workflow "
+                         "hashes this to decide whether an image needs rebuilding, so that "
+                         "editing a comment here -- or adding a flag only another platform "
+                         "uses -- does not invalidate images it cannot affect.")
     args = ap.parse_args()
+
+    if args.print_config:
+        for flag in CMAKE_FLAGS + (LIBCXX_FLAGS if args.with_libcxx else []):
+            print(flag)
+        return 0
+
+    for required, name in ((args.source, "--source"), (args.llvm_ref, "--llvm-ref")):
+        if not required:
+            print(f"error: {name} is required", file=sys.stderr)
+            return 1
 
     llvm_dir = pathlib.Path(args.source) / "llvm"
     if not (llvm_dir / "CMakeLists.txt").is_file():

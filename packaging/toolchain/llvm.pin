@@ -19,7 +19,14 @@
 #       Downloads the tarball from the release whose tag carries this line, and
 #       unpacks it into the CI container.
 #
-# Changing this line is what causes a rebuild, and the only thing that does.
+# Changing this line changes what is built and what everything is named.
+#
+# It is not the only thing that triggers a rebuild: the toolchain is rebuilt
+# whenever its build configuration changes, which is this line plus the CMake
+# flags in build_llvm.py and the Dockerfiles. A change to any of those produces
+# a different toolchain under the same name, so the Toolchain workflow compares
+# a hash of all three against what it published rather than trusting the tag.
+#
 # Nothing silently falls back to a toolchain built from some other revision:
 # each consumer derives the name it needs from this file and fails loudly if
 # that artifact has not been published yet.

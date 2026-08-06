@@ -2,7 +2,8 @@ name: Toolchain
 
 # Builds and publishes the LLVM/MLIR toolchain llvm-dsdl links against.
 #
-# This runs when the pin moves, not per release. Building it inline in a release
+# This runs when the toolchain's build configuration changes -- the pin, the
+# CMake flags, or a Dockerfile -- not per release. Building it inline in a release
 # job costs roughly 40 minutes on a 4-vCPU runner -- enough to exceed the release
 # timeout on amd64 -- whereas pulling the published image costs a minute or two.
 #
@@ -90,11 +91,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Decide whether anything needs rebuilding
-        # The tag names the pin, but build_llvm.py can change without the pin
-        # changing -- the analysis_gen fix was exactly that -- so "does the tag
-        # exist" is not a safe skip condition: it would have kept a broken image
-        # and reported success. The image instead carries a hash of everything
-        # that determines its content, and this compares it.
+        # The tag names the pin, but the build configuration can change without
+        # the pin changing -- the analysis_gen fix was exactly that -- so "does
+        # the tag exist" is not a safe skip condition: it would have kept a
+        # broken image and reported success. The image instead carries a hash of
+        # what determines its content, and this compares it.
+        #
+        # That hash covers build_llvm.py's *effective flags*, not the file. An
+        # earlier version hashed the file and so rebuilt all four images for an
+        # edited comment, and for a flag only macOS passes.
         #
         # Without this, editing a publishing job in this file rebuilds four
         # images that come out byte-identical, at about seventy minutes each.
@@ -106,9 +111,9 @@ jobs:
         id: guard
         run: |
           set -euo pipefail
-          want="$(cat packaging/toolchain/llvm.pin \
-                      packaging/toolchain/build_llvm.py \
-                      "${{ matrix.dockerfile }}" | sha256sum | cut -c1-16)"
+          want="$( { cat packaging/toolchain/llvm.pin "${{ matrix.dockerfile }}"
+                     python3 packaging/toolchain/build_llvm.py --print-config
+                   } | sha256sum | cut -c1-16)"
           echo "inputs=${want}" >> "$GITHUB_OUTPUT"
           have="$(docker buildx imagetools inspect \
                     "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \

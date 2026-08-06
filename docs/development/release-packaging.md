@@ -35,7 +35,8 @@ The tools link an LLVM/MLIR this project builds for itself, pinned by revision i
 [packaging/toolchain/llvm.pin](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/llvm.pin)
 and published by
 [.github/workflows/toolchain.yml](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/.github/workflows/toolchain.yml).
-It builds when that line changes, not per release.
+It rebuilds when its build configuration changes -- that line, the CMake flags in
+`build_llvm.py`, or a Dockerfile -- not per release.
 
 Owning the build is what settles five things a distribution otherwise settles on our behalf: the
 glibc floor, the C++ standard library, RTTI, whether a shared `libLLVM` exists, and the exact
