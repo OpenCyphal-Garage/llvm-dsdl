@@ -561,8 +561,8 @@ So:
 - **Pin also being moved in this release** — push that change first and let the
   Toolchain workflow finish, then tag.
 
-[`docs/development/distribution-channels.md`](./docs/development/distribution-channels.md) §1
-describes what is published and which job consumes each form.
+[`docs/development/release-packaging.md`](./docs/development/release-packaging.md) §2 describes
+what the pin produces and which job consumes each form.
 
 ### 14.2 Prepare the version
 

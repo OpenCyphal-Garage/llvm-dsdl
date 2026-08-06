@@ -1,272 +1,81 @@
 # Distribution channels (backlog)
 
-Distribution channels that do not exist yet, and the decisions still open about them.
+Packages, channels and targets that do not ship yet, and the decisions still open about them.
 
-The pipeline that **does** ship today — what the `.deb` and macOS tarball contain, the build
-environments, LLVM vendoring, Debian and macOS packaging, the release workflow, verification,
-and why cross-compiling is closed — is documented as built in
-[docs/development/release-packaging.md](release-packaging.md). A bare section reference
-below (§2, §3, §5, §6, §7, §8) points *there*; a reference to a section of this document says
-"above".
-
-Everything here depends on §1 below. The toolchain is ordered first because the Homebrew,
-Windows, and 32-bit ARM channels are not independent items — each is a consequence of owning
-the LLVM build.
+What **does** ship — the toolchain, the `.deb` for amd64 and arm64, the macOS tarball, the
+release workflow and its verification — is documented as built in
+[release-packaging.md](release-packaging.md). A bare section reference below (§5, §7, §8) points
+*there*; a reference to a section of this document says "above".
 
 ---
 
-## 1. The self-built LLVM toolchain
+## 1. Fully static packages
 
-Five constraints trace back to *whose* LLVM 22 we build against:
+The shipped `.deb` links glibc and `libstdc++` dynamically and declares `libc6, libstdc++6`. A
+package that declares nothing at all is reachable and proven: `LLVMDSDL_STATIC_BINARIES=ON`
+against the musl toolchain, built in
+[packaging/docker/Dockerfile.alpine-release](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/docker/Dockerfile.alpine-release),
+yields `static-pie` executables and a `.deb` with **no `Depends` field**. It installs and
+generates compilable code on Debian bullseye (glibc 2.31, below the floor the shipped package
+requires), bookworm, Ubuntu 22.04 and 26.04.
 
-- The glibc floor is apt.llvm.org's choice of oldest suite, not ours.
-- The macOS build follows Homebrew's lifecycle.
-- Windows has no prebuilt LLVM with MLIR at all.
-- The vendored `libLLVM` and its dependency tail exist only because we consume someone else's
-  build of it.
-- **RTTI.** LLVM defaults `LLVM_ENABLE_RTTI` to `OFF`; apt.llvm.org and Homebrew both ship it
-  `ON`. `llvmdsdl` derives from `mlir::Dialect` and `mlir::Pass`, so it has always required an
-  RTTI-enabled LLVM without declaring it. Against an `-fno-rtti` LLVM the build compiles and
-  then fails at link with `undefined reference to typeinfo for mlir::Pass`. This one is
-  invisible until you build the toolchain yourself.
+Alpine carries `dpkg-dev`, so CPack's DEB generator runs there directly and no second image is
+needed. `lintian` has no Alpine package, so that check stays in the Ubuntu verification lane.
 
-The patch level is someone else's choice too: the CI toolshed carries LLVM 22.1.2, while the
-macOS lane validates against 22.1.8. The major-version lock tolerates that; owning the build
-closes it.
+Two costs decide whether the release switches to it:
 
-Building LLVM/MLIR ourselves dissolves all five.
+- **Size.** 38.7 MB against 21.4 MB. `libstdc++` and musl live inside the package rather than
+  being resolved from the system.
+- **D6.** A static `dsdld` cannot load lint plugins. `LLVMDSDL_STATIC_BINARIES` is opt-in, so
+  nothing is lost while the release does not use it.
 
-### What the pin produces, and who consumes it
+💡 musl's allocator is markedly slower than glibc's under allocation-heavy C++, which describes
+MLIR exactly. Measure `dsdlc` against the corpus before switching, and link mimalloc or jemalloc
+if the difference is material.
 
-`packaging/toolchain/llvm.pin` holds one LLVM git tag and nothing else. Every artifact built
-from it is *named after* it, so no consumer is ever told where to look: each reads the file and
-derives the name.
+## 2. Architectures without a runner
 
-The Toolchain workflow builds LLVM/MLIR at that tag and publishes the same prefix — the
-installed `/opt/llvm-dsdl-toolchain` tree — in two forms:
-
-| Form | Name | Consumed by |
-|---|---|---|
-| Container image | `ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:<flavour>-<arch>-<pin>` | The release build, which copies the prefix out of it into a jammy image |
-| Tarball | `llvm-dsdl-toolchain-glibc-<arch>.tar.gz`, attached to the prerelease tagged `toolchain-<pin>` | CI, which unpacks it into the container it is already running in |
-
-Two forms because the two consumers cannot use one. A release build composes its own image, so
-it can `COPY --from` another image. A CI job's container is chosen before any step runs, so it
-cannot compose anything and can only download.
-
-There are four images: two flavours (musl, glibc) × two architectures. A prefix is ~490 static
-archives built against one C library and does not cross that boundary — D4 below.
-
-Building one takes roughly forty minutes on a CI runner, so it happens when the pin changes,
-not per release and not per CI run. Every consumer fails loudly when the artifact for the
-current pin is missing, and none falls back to building it inline: that fallback is precisely
-how the release leg first exceeded its timeout.
-
-### Static linking is not reachable against a distribution's LLVM
-
-Measured against the Homebrew `llvm` 22 keg:
-
-| Fact | Location |
-|---|---|
-| `add_library(LLVM SHARED IMPORTED)` | `lib/cmake/llvm/LLVMExports.cmake:1742` |
-| 450 references to that target | `lib/cmake/mlir/MLIRTargets.cmake` |
-| `set(LLVM_LINK_LLVM_DYLIB ON)` | `lib/cmake/llvm/LLVMConfig.cmake:30` |
-| `set(LLVM_WITH_Z3 1)` | `lib/cmake/llvm/LLVMConfig.cmake:316` |
-| `llvm-config --link-static --system-libs` → `-lm /opt/homebrew/lib/libz3.dylib -lz -lzstd -lxml2` | — |
-
-Component archives are present; a monolithic `libLLVM.a` is not. `-DLLVM_LINK_LLVM_DYLIB=OFF`
-does not dislodge the dylib, because MLIR's exported targets name a target that is *declared*
-shared. Even the fully static path hard-codes `libz3.dylib` by absolute path.
-
-The same reasoning closes the mirror-image option of building against libc++ on Linux
-(§2 of release-packaging.md): a distribution's `libLLVM` fixes the standard library, and we
-cannot cross that boundary without owning the build.
-
-### The build is smaller than it appears
-
-`dsdlc` lowers DSDL to EmitC and emits source text. It generates no machine code, and the
-project references no target backend — no `LLVM_TARGETS_TO_BUILD`, `TargetMachine`, or
-`InitializeNative*`. The toolchain builds with `LLVM_TARGETS_TO_BUILD=""`, which removes the
-bulk of an LLVM build: 4,861 ninja edges against the 30,000-plus of a full one.
-
-The shipped dependency tail (§3) is likewise optional feature selection rather than anything we
-require. `LLVM_ENABLE_Z3_SOLVER`, `LLVM_ENABLE_LIBEDIT`, `LLVM_ENABLE_LIBXML2`,
-`LLVM_ENABLE_ZLIB`, `LLVM_ENABLE_ZSTD`, `LLVM_ENABLE_FFI` and `LLVM_ENABLE_PLUGINS` set to
-`OFF` retire `libbsd0`, `libedit2`, `libffi8`, `libicu70`, `libmd0`, `libxml2`, `libz3-4` and
-`libzstd1` — the whole derived `Depends` list but for `libc6` and `libstdc++6`, which static
-linking (§2 above) retires instead. Measured on the built toolchain, `mlir-tblgen` links musl
-libc, `libstdc++` and `libgcc_s`, and nothing else.
-
-There is no `LLVM_ENABLE_TERMINFO`. LLVM 22 does not define it — passing it earns a
-"Manually-specified variables were not used" warning rather than an effect.
-
-`LLVM_BUILD_TOOLS=OFF` matters more than it looks. `llc`, `opt`, `lli`, `mlir-opt` and about a
-hundred others are dead weight here — the lit suite substitutes only our own `dsdlc` and
-`dsdl-opt`, plus `FileCheck` and `not`. Left on they cost 1.5 GB, because without a shared
-`libLLVM` every one of them statically links the world and `mlir-opt` alone reaches 200 MB. The
-four tools actually needed total under 9 MB.
-
-### Measured
-
-Two flavours, one configuration:
-[build_llvm.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/build_llvm.py)
-owns every CMake flag, and the Dockerfiles supply only a base image and a compiler. Independently
-maintained flag lists would eventually stop describing the same toolchain, and the divergence
-would surface as different generated bytes — the one property this project pins.
-
-14 cores. The x86-64 figure is emulated on an aarch64 host, which costs a measured 3.8×; a
-native runner would not pay it.
-
-| | musl (Alpine 3.24) | glibc (Ubuntu 22.04) |
-|---|---|---|
-| Build, aarch64 | ~17 min | ~11.5 min |
-| Build, x86-64 | — | ~29 min (emulated) |
-| Install prefix | 831 MB | 805 MB |
-| Compiler | GCC 15.2 | GCC 11 |
-| Floor | none | `GLIBC_2.34` |
-
-Both: 103 LLVM archives, 385 MLIR archives, 0 target backends, and nothing linked beyond the C
-and C++ runtimes.
-
-The glibc prefix has been copied into `toolshed:ts26.4.3` and used to build all three tools
-there — GCC 15.2 linking GCC 11-built archives, with `mlir-tblgen` reporting 22.1.8 rather than
-the toolshed's own 22.1.2. That is the arrangement CI would use.
-
-### The pin change is not observable
-
-The suite was run in that composed image: **197 tests, all passing**, including 82 `differential`,
-94 `fixtures`, 13 `convergence`, 4 `determinism`, 3 `emit-order` and the cross-language Rust, Go,
-Python, C++ and TypeScript lanes. The lit suite ran rather than skipping.
-
-This is the result that matters. Moving from the toolshed's 22.1.2 to 22.1.8 crosses a patch
-boundary, and the C backend routes through MLIR/EmitC whose printed output can vary across MLIR
-versions — so the generated corpus was the thing most likely to shift. It did not, and neither
-RTTI, static archives, nor building with GCC 11 and linking with GCC 15 perturbed anything the
-suite measures.
-
-💡 The two `bench` tests fail under `ctest -j 8` in a virtualised container and pass run alone.
-They assert wall-clock thresholds (`BENCH_ENABLE_THRESHOLDS` defaults ON), so they measure the
-host as much as the code. Not a toolchain signal.
-
-Stripping the archives is not worth doing: 570.9 MB to 564.4 MB, about 1%. RTTI is the only
-setting here that adds rather than removes, and it costs ~31 MB of the prefix.
-
-Linking `llvm-dsdl` against it, `-static -static-libstdc++ -static-libgcc`, yields `static-pie`
-binaries that run with no loader dependency at all:
-
-| | unstripped | stripped |
-|---|---|---|
-| `dsdlc` | 26.0 MB | 17.2 MB |
-| `dsdl-opt` | 23.6 MB | 14.9 MB |
-| `dsdld` | 9.4 MB | 6.1 MB |
-
-59 MB unstripped for the whole tool set, against today's ~12 MB of tools plus a ~150 MB vendored
-`libLLVM` — 218 MB in the macOS bundle. The tools ship unstripped by policy (§4), so the
-unstripped column is the one that matters.
-
-[packaging/toolchain/verify_toolchain.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/verify_toolchain.py)
-asserts each of these properties against a built prefix, so a Dockerfile regression fails there
-rather than surfacing as a mysterious dependency in a shipped package.
-
-### What it does not fix
-
-**Gatekeeper.** A quarantined, ad-hoc signed executable linking nothing but `libSystem` is
-still killed on execution, and `spctl -a -t exec` still rejects it. Gatekeeper judges the
-signature, not the dependency graph. Eliminating dylibs reduces the number of Mach-O files
-needing a real signature from six to one; it does not remove the requirement. The remedies are
-notarisation, or a channel that does not set the quarantine attribute (§3 above).
-
-**Plugin loading.** [lib/LSP/Lint.cpp](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/LSP/Lint.cpp) loads lint rules with
-`dlopen`/`dlsym`, and a fully static `dsdld` cannot. It links and runs; the failure is confined
-to `loadPluginLibrary`, where musl's static `dlopen` returns null and sets `dlerror()` to
-"Dynamic loading not supported". `loadPluginLibrary` already propagates `dlerror()` into its
-`errorMessage`, so the user gets that string rather than a silent failure. See D6 below.
-
-## 2. Cross-compilation targets
-
-Two of the four blockers recorded in §8 dissolve with §1 above: there is a target-built
-LLVM/MLIR, and we own the C++ ABI on both sides. TableGen (blocker 3) is mechanical — build a
-host-native `mlir-tblgen` and point the cross build at it. **Verification still requires
-execution** (blocker 4), and that is the binding constraint on the matrix.
+Owning the toolchain settles the dependency side of cross-compilation (§8): there is a
+target-built LLVM/MLIR, the C++ ABI is ours on both sides, and TableGen is a host-native
+`mlir-tblgen` pointed at the cross build. What remains is that verification requires execution,
+and that is the binding constraint on the matrix.
 
 | Target | Fully static | Verification |
 |---|:--:|---|
-| `x86_64-linux-musl` | ✅ | native |
-| `aarch64-linux-musl` | ✅ | native arm64 runner |
 | `armv7-linux-musleabihf` | ✅ | qemu-user |
 | `riscv64-linux-musl` | ✅ | qemu-user |
 | `x86_64-pc-windows-gnu` | ✅ except OS DLLs | `windows-latest` runner; wine as a pre-check |
 | `aarch64-pc-windows-gnu` | ✅ | unresolved — see D7 |
-| `*-windows-msvc` | ✅ | not pursued; the MSVC SDK carries the same licensing problem as the macOS SDK |
-| `*-apple-darwin` | ❌ | not cross-compiled — see below |
-
-A static musl binary has no glibc floor, which retires D4 rather than deciding it. Built and
-verified: `LLVMDSDL_STATIC_BINARIES=ON` against the musl toolchain yields `static-pie`
-executables and a `.deb` with **no `Depends` field at all**, which installs and generates
-compilable code on Debian bullseye (glibc 2.31, below the floor the old package required),
-bookworm, Ubuntu 22.04 and 26.04. `derive_depends.py` (§3) has nothing left to derive.
-
-The static package is larger — 38.7 MB against 21.4 MB — because libstdc++ and musl live inside
-it rather than being resolved from the system.
-
-💡 musl's allocator is markedly slower than glibc's under allocation-heavy C++, which describes
-MLIR exactly. Measure `dsdlc` against the corpus before committing, and link mimalloc or
-jemalloc if the difference is material.
-
-### macOS is not a cross-compilation target
-
-Cross-compiling requires Apple's SDK, which is licensed for use on Apple hardware. Signing and
-notarisation can be performed from Linux, so those are not the obstacle. The native runner stays.
-
-That is a statement about *where* macOS is built, not about how much of it is static. Apple does
-not support statically linking `libSystem`, but everything above it links statically as it does
-elsewhere. Built against a Darwin toolchain, the tools link exactly:
-
-```
-/usr/lib/libSystem.B.dylib
-/usr/lib/libc++.1.dylib
-```
-
-Both ship with every macOS install and neither is redistributable, so there is nothing to
-vendor. The tarball carries no dylibs, needs no install-name rewriting, and drops from 218 MB to
-**14 MB**. `BundleSelfContainedTools.cmake` and `LLVMDSDL_VENDOR_LLVM` are unused on macOS as a
-result; they remain only for a build against a distribution's LLVM.
-
-The Darwin toolchain cannot be a container image — it builds natively, in ~9 minutes, cached on
-the pin. Two further consequences: Gatekeeper has one Mach-O to sign per tool rather than a
-bundle of six files (notarisation is what the Finder path needs, §5), and D6 does not arise
-here at all, because `dlopen` works normally against a dynamic `libSystem`.
+| `*-windows-msvc` | ✅ | the MSVC SDK carries the same licensing problem as the macOS SDK |
 
 ### Verification splits in two
 
 The checks in §7 conflate two questions that scale differently:
 
-- **Is the generated output correct** — that the emitted C compiles, that a non-C backend
-  emits. The output is portable text, so this is architecture-independent and runs once, on the
-  host.
+- **Is the generated output correct** — that the emitted C compiles, that a non-C backend emits.
+  The output is portable text, so this is architecture-independent and runs once, on the host.
 - **Does the binary run on the target** — this genuinely needs the target.
 
 A fully static CLI binary is the ideal `qemu-user` case: no dynamic loader, no sysroot. Running
-corpus generation under emulation and comparing the corpus hash against the host's — the gate
-that `tools/determinism/corpus_determinism.py` provides — turns "it launched" into "it produced
-exactly the right bytes" for every target, on one machine.
+corpus generation under emulation and comparing the hash against the host's — the comparison
+[corpus_determinism.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/determinism/corpus_determinism.py)
+already performs across amd64 and arm64 — turns "it launched" into "it produced exactly the right
+bytes" for every target, on one machine.
 
 ## 3. Homebrew
 
 A tap (`OpenCyphal-Garage/homebrew-llvm-dsdl`) needing a PAT held as a secret here, carrying a
-**binary formula**: `url` points at the release tarball from §5, and `install` copies `bin/`
-into the prefix. With §1 above there is no `depends_on "llvm"` of any kind, so Homebrew never
-builds LLVM, never installs a 1.7 GB keg alongside a ~12 MB compiler, and never rebuilds us
-when `llvm` bumps.
+**binary formula**: `url` points at the release tarball from §5, and `install` copies `bin/` into
+the prefix. There is no `depends_on "llvm"` of any kind, so Homebrew never builds LLVM, never
+installs a 1.7 GB keg alongside a ~14 MB compiler, and never rebuilds us when `llvm` bumps.
 
-Bottles are not needed. They cache *source* builds, and there is no source build. This also
-retires the `arm64_sequoia` keying problem, in which a bottle built on `macos-15` silently
-leaves a Sonoma user compiling from source.
+Bottles cache *source* builds, and there is no source build, so none are needed. That also avoids
+the `arm64_sequoia` keying problem, in which a bottle built on `macos-15` silently leaves a
+Sonoma user compiling from source.
 
-Homebrew fetches over curl, which does not set `com.apple.quarantine` (§5). Gatekeeper
-therefore never engages on this path, and `brew install` works without notarisation. That makes
-the tap the recommended macOS channel, and demotes notarisation to covering only the direct
-download of the tarball.
+Homebrew fetches over curl, which does not set `com.apple.quarantine` (§5). Gatekeeper therefore
+never engages on this path, and `brew install` works without notarisation. That makes the tap the
+recommended macOS channel, and confines notarisation to the direct tarball download.
 
 Run `brew style` and `brew audit --strict --online` in the package job.
 
@@ -275,15 +84,14 @@ Run `brew style` and `brew audit --strict --online` in the package job.
 Foreclosed by the binary formula in §3 above. homebrew-core builds every formula from source in
 its own CI and does not accept formulae that install prebuilt binaries.
 
-The LLVM major lock is **not** what closes this, and the previous reasoning here was wrong.
-Under static linking the dependency would be `depends_on "llvm@22" => :build` — build-time
-only, so no runtime keg and no rebuild cascade when `llvm` bumps. The residual would have been
-a policy matter: homebrew-core discourages new formulae pinned to versioned LLVM, and prunes
-old `llvm@N` eventually.
+The LLVM major lock does not close this, which is worth stating because it looks like it should:
+under static linking the dependency is `depends_on "llvm@22" => :build` — build-time only, so no
+runtime keg and no rebuild cascade when `llvm` bumps. The residual is a policy matter, since
+homebrew-core discourages new formulae pinned to versioned LLVM and prunes old `llvm@N`.
 
 What the tap costs is discoverability — `brew install llvm-dsdl` requires `brew tap` first.
-Weighed against a notability bar this project does not yet clear, and against deleting the
-entire source-build path, the tap wins. D5 resolves accordingly.
+Weighed against a notability bar this project does not yet clear, and against carrying a
+source-build path, the tap wins. D5 resolves accordingly.
 
 ## 5. apt repository
 
@@ -300,23 +108,19 @@ the start — the alternative is teaching users `[trusted=yes]`. Publishing must
 download the existing index, add the new pool entries, regenerate. Regenerating from only the
 current release silently deletes every prior version.
 
-Once packages are dependency-free (§2 above), the repository is for upgrades and discovery
-rather than dependency resolution. Nothing about the repo changes the packaging. The DEP-5
-`copyright` stanza covering LLVM stays required either way — static linking redistributes that
-code as surely as vendoring the shared object did.
+With a two-package dependency list, the repository is for upgrades and discovery rather than
+dependency resolution. Nothing about it changes the packaging.
 
 ## 6. Other platforms
 
-- **Windows.** Unblocked by §1 and §2 above. WinGet accepts a plain zip with
-  `NestedInstallerType: portable`, and Scoop is nearly free on top of the same zip. Standard
-  `windows-latest` runners are free on a public repository, so verification hardware is not a
-  constraint.
-- **32-bit ARM.** Reachable as `armv7-linux-musleabihf`. This covers Raspberry Pi OS 32-bit;
-  true Raspbian targets ARMv6+VFP2, which is a further triple rather than a further problem.
+- **Windows.** WinGet accepts a plain zip with `NestedInstallerType: portable`, and Scoop is
+  nearly free on top of the same zip. Standard `windows-latest` runners are free on a public
+  repository, so verification hardware is not a constraint; §2 above is.
+- **32-bit ARM.** `armv7-linux-musleabihf` covers Raspberry Pi OS 32-bit. True Raspbian targets
+  ARMv6+VFP2, which is a further triple rather than a further problem.
 - **Intel macOS.** Not supported. See D2 below.
-- **RPM.** CPack's RPM generator plus a Fedora COPR project — the cheapest format to add, and
-  cheaper still once the package carries no dependencies.
-- **snap.** Snaps bundle everything, which is the problem a static binary has already solved.
+- **RPM.** CPack's RPM generator plus a Fedora COPR project — the cheapest format to add.
+- **snap.** Snaps bundle everything, which is the problem §1 above solves more directly.
   Reconsider only if confinement or the Snap Store's reach is wanted for its own sake.
 
 ---
@@ -328,21 +132,8 @@ code as surely as vendoring the shared object did.
 | D1 | Who owns the tap and apt repo | `OpenCyphal-Garage`, matching `upstream` |
 | D2 | Is Intel macOS supported | No. Neither `bin` nor `dev` |
 | D3 | What `llvm-dsdl-dev` targets | macOS arm64 and Linux only; no Windows, no Intel macOS |
-| D4 | Glibc floor | Resolved: two toolchain flavours — musl for `bin`, jammy glibc 2.35 for `dev` and CI |
+| D4 | Glibc floor | Resolved: two toolchain flavours — glibc 2.35 for the release, `dev` and CI; musl for §1 above |
 | D5 | The LLVM major lock vs upstream homebrew-core | Resolved: stay in our own tap |
-| D6 | Lint plugins vs a static `dsdld` | Undecided, but not blocking — the runtime error is already accurate. Feature-gate it, ship `dsdld` dynamically, or move plugins out-of-process. `LLVMDSDL_STATIC_BINARIES` is opt-in, so nothing is lost until it is switched on for a release |
-| D7 | Windows on ARM | Undecided; gated on verification, not on the build |
-| D8 | macOS deployment-target floor | Undecided — ours to set once we own the build, same shape as D4 |
-
-**D4 resolves into two flavours, not one artifact.** A toolchain prefix is 488 static archives
-built against one libc; it is not portable across them, which is why the published name carries
-the flavour and architecture rather than the pin alone. So there are two:
-
-- **musl (Alpine)** — the `bin` component. No glibc floor at all.
-- **glibc (Ubuntu 22.04)** — `llvm-dsdl-dev`, whose archives must link against what consumers
-  actually compile with, *and* the CI toolshed. Building on jammy sets the floor at glibc 2.35,
-  which both satisfies the toolshed (2.43) and preserves today's reach for `dev`.
-
-The second flavour is what lets CI test the LLVM that ships. Today the toolshed builds against
-its own 22.1.2 while the release validates 22.1.8; one toolchain, restored into both, removes
-the divergence.
+| D6 | Lint plugins vs a static `dsdld` | Open, and the gate on §1 above. Feature-gate it, ship `dsdld` dynamically, or move plugins out-of-process. The runtime error is already accurate: musl's static `dlopen` sets `dlerror()` to "Dynamic loading not supported", which `loadPluginLibrary` propagates |
+| D7 | Windows on ARM | Open; gated on verification, not on the build |
+| D8 | macOS deployment-target floor | Open — ours to set, same shape as D4 |
