@@ -51,13 +51,17 @@ Be Precise and Concise When Writing Documentation
 
 ## Do not pontificate.
 
+### Example 1
+
 > ❌ The obj backend never emits these attributes: it compiles the C or C++ it generates as part of its own pipeline, and warnings there would be about code the user never sees.
 
 > ✅ The obj backend never emits these attributes.
 
+### Example 2
+
 > ❌ The trailer line is not decoration. It is where the man pages take their date from.
 
-You didn't need to to declare the negative. Doing so is self-congratulatory.
+Avoid negative framing. State the fact directly.
 
 > ✅ The trailer line is where the man pages take their date from.
 
