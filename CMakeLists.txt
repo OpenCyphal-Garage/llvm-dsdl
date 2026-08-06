@@ -219,6 +219,51 @@ if(LLVMDSDL_STATIC_BINARIES)
   message(STATUS "Linking tools fully statically")
 endif()
 
+# Static libc++, from the toolchain prefix. macOS only.
+#
+# Requires a toolchain built with `build_llvm.py --with-libcxx`; Apple ships
+# libc++ as a dylib only, so there is otherwise nothing to link. With it the
+# tools link /usr/lib/libSystem.B.dylib and nothing else.
+#
+# Linux does not need it: LLVMDSDL_STATIC_BINARIES covers the C++ runtime via
+# -static-libstdc++.
+option(LLVMDSDL_STATIC_LIBCXX
+       "Link libc++ statically from the LLVM toolchain prefix (macOS)."
+       OFF)
+
+if(LLVMDSDL_STATIC_LIBCXX)
+  if(NOT APPLE)
+    message(FATAL_ERROR
+      "LLVMDSDL_STATIC_LIBCXX is for macOS. On Linux use LLVMDSDL_STATIC_BINARIES, "
+      "which links the C++ runtime statically through -static-libstdc++.")
+  endif()
+
+  # The archives sit beside the LLVM ones because build_llvm.py installs the
+  # runtimes into the same prefix.
+  get_filename_component(_llvmdsdl_tc_prefix "${LLVM_LIBRARY_DIRS}" DIRECTORY)
+  set(_llvmdsdl_libcxx_a "${LLVM_LIBRARY_DIRS}/libc++.a")
+  set(_llvmdsdl_libcxxabi_a "${LLVM_LIBRARY_DIRS}/libc++abi.a")
+  set(_llvmdsdl_libcxx_inc "${_llvmdsdl_tc_prefix}/include/c++/v1")
+
+  foreach(_needed "${_llvmdsdl_libcxx_a}" "${_llvmdsdl_libcxxabi_a}" "${_llvmdsdl_libcxx_inc}")
+    if(NOT EXISTS "${_needed}")
+      message(FATAL_ERROR
+        "LLVMDSDL_STATIC_LIBCXX is ON but ${_needed} is missing. The toolchain was "
+        "built without a static libc++; rebuild it with "
+        "packaging/toolchain/build_llvm.py --with-libcxx.")
+    endif()
+  endforeach()
+
+  # -nostdinc++ so libc++'s own headers win, and are able to #include_next the
+  # SDK's C headers; -isystem alone leaves the default C++ include path ahead of
+  # them and the build fails on errno.
+  add_compile_options(
+    "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-isystem;${_llvmdsdl_libcxx_inc}>")
+  add_link_options(-nostdlib++ "${_llvmdsdl_libcxx_a}" "${_llvmdsdl_libcxxabi_a}")
+  message(STATUS "Linking libc++ statically from ${_llvmdsdl_tc_prefix}")
+endif()
+
 # -LE bench: the benchmarks assert wall-clock thresholds, which say nothing about
 # coverage and cannot hold under instrumentation anyway -- a coverage build is
 # several times slower by construction, so including them would fail the lane for

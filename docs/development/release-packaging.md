@@ -218,17 +218,23 @@ cross-build would have to generate the pages host-side.
 ## 5. macOS packaging
 
 The tarball is `bin/`, the `dev` component, licences and a manifest. It is relocatable — extract
-anywhere, add `bin/` to `PATH` — and it is **14 MB**, carrying no dylibs. The three tools link
-exactly two libraries:
+anywhere, add `bin/` to `PATH` — and carries no dylibs. The three tools link exactly one library:
 
 ```
 /usr/lib/libSystem.B.dylib
-/usr/lib/libc++.1.dylib
 ```
 
-Both ship with every macOS install and neither is redistributable, so there is nothing to bundle
-and no install name to rewrite. Apple does not support statically linking `libSystem`; everything
-above it links statically as it does elsewhere.
+`libSystem` cannot be linked statically on macOS. Everything above it can, including libc++, which
+takes two settings:
+
+- `build_llvm.py --with-libcxx` — builds a static libc++ into the toolchain prefix. Apple ships
+  libc++ as a dylib only, so there is otherwise nothing to link.
+- `LLVMDSDL_STATIC_LIBCXX=ON` — links it.
+
+⚠️ Do not drop the `LIBCXX_HERMETIC_STATIC_LIBRARY` flags in `build_llvm.py`. Without them the
+build succeeds and `otool -L` still shows `libSystem` alone, but the tools crash at runtime:
+`libSystem` already provides libc++abi, and a non-hermetic libc++ adds a second copy. Check this by
+running a tool, not by reading `otool`.
 
 ### Gatekeeper
 
@@ -247,11 +253,6 @@ is opened:
 and no notarisation, **provided the install instructions say `tar -xzf`** — which the release
 notes do. Notarisation is the usual answer for shipping macOS binaries and would cost a paid
 certificate, `notarytool`, and secrets; it buys only the Finder row.
-
-Shipping fewer dylibs is not a substitute for it. A quarantined, ad-hoc signed executable linking
-nothing but `libSystem` is killed on execution: Gatekeeper judges the signature, not the
-dependency graph. What the single binary buys is one Mach-O to sign per tool rather than a bundle
-of six files.
 
 ---
 

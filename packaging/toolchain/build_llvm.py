@@ -84,6 +84,29 @@ CMAKE_FLAGS = [
 ]
 
 
+# macOS only, via --with-libcxx. Apple ships libc++ as a dylib only, so without
+# building one there is nothing to link statically and the tools keep a second
+# dynamic dependency.
+#
+# Do not drop the HERMETIC flags. Without them the build succeeds and otool -L
+# still shows libSystem alone, but the tools crash at runtime: libSystem already
+# provides libc++abi, and a non-hermetic libc++ adds a second copy. Check by
+# running a tool, not by reading otool.
+#
+# LIBCXXABI_USE_LLVM_UNWINDER=OFF: the unwinder is in libSystem too.
+LIBCXX_FLAGS = [
+    "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi",
+    "-DLIBCXXABI_USE_LLVM_UNWINDER=OFF",
+    "-DLIBCXX_ENABLE_SHARED=OFF",
+    "-DLIBCXXABI_ENABLE_SHARED=OFF",
+    "-DLIBCXX_ENABLE_STATIC=ON",
+    "-DLIBCXXABI_ENABLE_STATIC=ON",
+    "-DLIBCXX_HERMETIC_STATIC_LIBRARY=ON",
+    "-DLIBCXXABI_HERMETIC_STATIC_LIBRARY=ON",
+    "-DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=ON",
+]
+
+
 def run(cmd: list[str]) -> None:
     print("+ " + " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
@@ -96,6 +119,9 @@ def main() -> int:
     ap.add_argument("--prefix", default="/opt/llvm-dsdl-toolchain")
     ap.add_argument("--llvm-ref", required=True, help="tag recorded into the prefix")
     ap.add_argument("--jobs", type=int, default=0, help="0 lets ninja decide")
+    ap.add_argument("--with-libcxx", action="store_true",
+                    help="Also build a hermetic static libc++ into the prefix. macOS only: "
+                         "it is what lets the tools link nothing but libSystem.")
     args = ap.parse_args()
 
     llvm_dir = pathlib.Path(args.source) / "llvm"
@@ -136,6 +162,25 @@ def main() -> int:
 
     run(["cmake", "--build", args.build, *jobs_args])
     run(["cmake", "--install", args.build])
+
+    if args.with_libcxx:
+        # A separate invocation rather than folded into the one above: LLVM and
+        # the runtimes bootstrap in opposite directions, and two proven steps
+        # are worth more here than one clever one. Same prefix, so consumers see
+        # libc++.a beside the LLVM archives.
+        runtimes = pathlib.Path(args.source) / "runtimes"
+        if not (runtimes / "CMakeLists.txt").is_file():
+            print(f"error: {runtimes} is not a runtimes source tree", file=sys.stderr)
+            return 1
+        rt_build = args.build + "-runtimes"
+        run(["cmake", "-G", "Ninja", "-S", str(runtimes), "-B", rt_build,
+             "-DCMAKE_BUILD_TYPE=Release",
+             f"-DCMAKE_INSTALL_PREFIX={args.prefix}", *LIBCXX_FLAGS])
+        rt_cmd = ["cmake", "--build", rt_build]
+        if args.jobs:
+            rt_cmd += ["-j", str(args.jobs)]
+        run(rt_cmd)
+        run(["cmake", "--install", rt_build])
 
     # Record what this is, so a prefix found in a cache or an image can be
     # identified without re-deriving it from a tag.

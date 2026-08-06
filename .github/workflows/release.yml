@@ -241,21 +241,24 @@ jobs:
             --source "${RUNNER_TEMP}/llvm-project" \
             --build "${RUNNER_TEMP}/llvm-build" \
             --prefix "${HOME}/llvm-dsdl-toolchain" \
-            --llvm-ref "$REF"
+            --llvm-ref "$REF" \
+            --with-libcxx
 
       - name: Configure, build, and package
-        # Vendoring is off because there is nothing to vendor. Against a static
-        # LLVM the tools link /usr/lib/libSystem.B.dylib and /usr/lib/libc++.1.dylib
-        # and nothing else -- both present on every macOS install -- so the
-        # tarball is relocatable without install-name rewriting, and there is no
-        # lib/ directory in it at all.
+        # Vendoring is off because there is nothing to vendor, and libc++ is
+        # linked from the toolchain rather than the system, so the tools link
+        # /usr/lib/libSystem.B.dylib and nothing else. Apple does not support
+        # statically linking libSystem; everything above it is static here.
+        # The tarball is relocatable without install-name rewriting and has no
+        # lib/ directory of dylibs at all.
         run: |
           set -euo pipefail
           cmake -S . -B out -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DLLVM_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/llvm" \
             -DMLIR_DIR="${HOME}/llvm-dsdl-toolchain/lib/cmake/mlir" \
-            -DLLVMDSDL_VENDOR_LLVM=OFF
+            -DLLVMDSDL_VENDOR_LLVM=OFF \
+            -DLLVMDSDL_STATIC_LIBCXX=ON
           cmake --build out
           cd out && cpack -G TGZ
 
