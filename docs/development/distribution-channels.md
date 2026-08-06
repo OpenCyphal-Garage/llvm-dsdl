@@ -84,7 +84,7 @@ Run `brew style` and `brew audit --strict --online` in the package job.
 Foreclosed by the binary formula in §3 above. homebrew-core builds every formula from source in
 its own CI and does not accept formulae that install prebuilt binaries.
 
-The LLVM major lock does not close this, which is worth stating because it looks like it should:
+The LLVM major lock does not close this, though it looks like it should:
 under static linking the dependency is `depends_on "llvm@22" => :build` — build-time only, so no
 runtime keg and no rebuild cascade when `llvm` bumps. The residual is a policy matter, since
 homebrew-core discourages new formulae pinned to versioned LLVM and prunes old `llvm@N`.

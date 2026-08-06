@@ -55,6 +55,12 @@ Be Precise and Concise When Writing Documentation
 
 > ✅ The obj backend never emits these attributes.
 
+> ❌ The trailer line is not decoration. It is where the man pages take their date from.
+
+You didn't need to to declare the negative. Doing so is self-congratulatory.
+
+> ✅ The trailer line is where the man pages take their date from.
+
 ## Do not prevaricate.
 
 > ❌ There are ways this is implemented and these ways include several which are dangerous and should be used with caution.

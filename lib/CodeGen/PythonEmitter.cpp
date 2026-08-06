@@ -1624,9 +1624,9 @@ std::string renderPyProjectToml(llvm::StringRef packageName, llvm::StringRef roo
 /// @brief Renders the body of one generated `__init__.py`.
 ///
 /// @details
-/// The docstring is not decoration. Several Python build backends read a package's docstring and
-/// `__version__` as its metadata, and flit refuses outright to package a module without a docstring
-/// -- so a package that omits them is one a user cannot build with the backend of their choice.
+/// Several Python build backends read a package's docstring and `__version__` as its metadata, and
+/// flit refuses outright to package a module without a docstring -- so a package that omits them is
+/// one a user cannot build with the backend of their choice.
 /// The leading generated-by comment stays where it is: a comment is not a statement, so the
 /// docstring is still the module's first statement and still its `__doc__`.
 ///

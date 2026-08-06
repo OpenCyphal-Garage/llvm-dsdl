@@ -14,10 +14,10 @@
 # "SKIPPED <n>" and exits non-zero on the first genuine mismatch.
 #
 # Python is double-typed, so a small number of vectors are legitimately not
-# comparable at the raw-primitive level and are SKIPPED with a printed reason
-# (never silently): float16 pack of an out-of-range value raises OverflowError
-# here because saturation is applied one layer up (write_float), whereas the C
-# magic-float primitive returns +/-inf.
+# comparable at the raw-primitive level and are SKIPPED with a printed reason:
+# float16 pack of an out-of-range value raises OverflowError here because
+# saturation is applied one layer up (write_float), whereas the C magic-float
+# primitive returns +/-inf.
 #
 # ===----------------------------------------------------------------------===//
 

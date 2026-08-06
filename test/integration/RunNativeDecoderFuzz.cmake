@@ -4,8 +4,7 @@ cmake_minimum_required(VERSION 3.24)
 # the real UAVCAN corpus, compiled under ASan + UBSan. See NativeDecoderFuzz.c
 # for the harness and the rationale. On a toolchain whose Clang lacks compiler-rt
 # libFuzzer (-fsanitize=fuzzer), this degrades — loudly — to an ASan/UBSan
-# *replay* over the seed + committed regression corpus, so the lane still runs
-# and never silently no-ops.
+# *replay* over the seed + committed regression corpus, so the lane still runs.
 
 foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER SOURCE_ROOT)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")

@@ -16,9 +16,8 @@ It exists so you can answer three questions in order, without inventing a schema
    Multi-Config, Bazel, cargo, go modules, npm, pnpm, and five Python build backends. See
    **[Build Recipes](RECIPES.md)**.
 
-The two halves make opposite bets on purpose. Browsing generates and stops -- it must never fail for
-a reason unrelated to what it is showing. The recipes compile and run, because a recipe that did not
-build would prove nothing.
+The two halves make opposite bets. Browsing generates and stops -- it must never fail for a reason
+unrelated to what it is showing. The recipes compile and run.
 
 ## Generate it
 
@@ -86,7 +85,7 @@ by using DSDL assert statements.
 | CAN FD | 63 payload bytes, one frame | `nav.GlobalPosition.1.0`, `link.RcInput.1.0`, `payload.GimbalStatus.1.0` |
 | Cyphal/UDP | a datagram, kilobytes | `nav.MissionPlan.1.0`, `payload.CameraFrameMetadata.1.0` |
 
-`EscStatus.1.0` and `MissionPlan.1.0` are the two ends of that range on purpose: same compiler, same
+`EscStatus.1.0` and `MissionPlan.1.0` are the two ends of that range: same compiler, same
 language, one sized for a 7-byte frame and the other for a 24 KiB datagram.
 
 ### Versioning

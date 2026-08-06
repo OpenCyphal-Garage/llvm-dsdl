@@ -1,9 +1,9 @@
 # Canonical emit order
 
 The reference **abstract** serialize/deserialize step order that every string backend
-(Rust, Go, C++, TypeScript, Python) follows. This is a live contract, not a historical
-plan: the shared render template produces this order by construction, and the emit-order
-verifier (`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order-verifier`)
+(Rust, Go, C++, TypeScript, Python) follows. This is a live contract: the shared render
+template produces this order by construction, and the emit-order verifier
+(`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order-verifier`)
 independently pins it on every build.
 
 This prose is the human-readable projection of the machine-checked model in
@@ -186,7 +186,7 @@ so a wrong bit width or option index fails even when op names agree.
 
 Two structural elements beyond the wire ops: `BULK_COPY` (payload = total bits) is the honest trace
 of the C++ fixed-bool-array fast path — the D3 declared equivalence
-`BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` is applied by the comparator, never silently.
+`BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` is applied by the comparator.
 `SECTION <canonical.name> <serialize|deserialize>` header events segment the trace per
 (type, direction) so divergences localize and cannot cancel across type boundaries.
 
@@ -199,8 +199,8 @@ shared template rather than a restatement of it.
 
 Cross-backend differences fall into three classes: invisible by design (spelling), a declared
 right exercised through a named interface point, or genuine abstract-order divergence. Only
-the third is a defect. All are explicitly modeled — never silently ignored. This is exactly
-the class of structural fact the marker-regex "convergence" score cannot see.
+the third is a defect. All three are explicitly modeled. The marker-regex "convergence"
+score cannot see structural facts of this kind.
 
 | # | Backend(s) | Kind | Resolution |
 |---|---|---|---|

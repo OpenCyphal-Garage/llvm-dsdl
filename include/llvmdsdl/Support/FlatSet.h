@@ -18,21 +18,19 @@
 /// boundary is an ABI hazard. So the container is provided here instead, and
 /// used on every platform: the code that ships is the code that gets tested.
 ///
-/// This is deliberately not a general-purpose container. It implements the
-/// subset `BitLengthSet` uses and nothing more, so there is less to get wrong.
-/// Like `std::flat_set` it keeps elements sorted and unique in contiguous
-/// storage, so iteration order matches both `std::flat_set` and `std::set` --
-/// which is what keeps generated output byte-reproducible.
+/// It implements the subset `BitLengthSet` uses and nothing more, so there is
+/// less to get wrong. Like `std::flat_set` it keeps elements sorted and unique
+/// in contiguous storage, so iteration order matches both `std::flat_set` and
+/// `std::set` -- which is what keeps generated output byte-reproducible.
 ///
 /// Performance matters here: `BitLengthSet` is CPU-intensive, and its Minkowski
 /// sum inserts into a capped set inside a doubly-nested loop. Measured against
 /// libc++'s `std::flat_set` on that pattern and on the union path, both land
-/// within noise of parity (0.98x-1.08x). Neither is an accident of measurement:
-/// `std::flat_set` is itself a sorted vector, so single-element insert is linear
-/// in both, and the range insert below merges rather than re-sorting for the same
-/// reason the standard specifies it that way. An earlier version of that method
-/// re-sorted the whole container and was 7x slower on a 16k-element union --
-/// worth remembering before "simplifying" it back.
+/// within noise of parity (0.98x-1.08x). `std::flat_set` is itself a sorted
+/// vector, so single-element insert is linear in both, and the range insert
+/// below merges rather than re-sorting for the same reason the standard
+/// specifies it that way. An earlier version of that method re-sorted the whole
+/// container and was 7x slower on a 16k-element union.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_SUPPORT_FLATSET_H

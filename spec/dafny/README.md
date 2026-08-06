@@ -107,7 +107,7 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   the predicate, then stitch with the concat lemma.
 - Ordering differences that are **accepted** (e.g. Rust's optional fixed-array `LEN_CHECK`,
   absent in Go/C++ because their fixed arrays are compile-time-sized — the D2/D3 entries in the
-  prose spec) are modeled by making the op optional in the predicate, never silently ignored.
+  prose spec) are modeled by making the op optional in the predicate.
 
 ## Files
 

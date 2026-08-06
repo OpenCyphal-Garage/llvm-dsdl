@@ -189,8 +189,8 @@ endif()
 #
 # The other half of the showroom, and it makes the opposite bet from the half above: these compile
 # and run. Browsing must never fail for a reason unrelated to what it is showing, so it generates and
-# stops; a recipe that did not build would prove nothing, so every recipe builds and executes a
-# round-trip program. Same namespace, same documentation, two policies -- deliberately.
+# stops; every recipe builds and executes a round-trip program. Same namespace, same documentation,
+# two policies.
 #
 # CMake's only job here is registration. It does not know how any individual recipe builds, and it
 # must not: a recipe is meant to be copied out of this repository and run on its own, so the moment

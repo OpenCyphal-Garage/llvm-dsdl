@@ -121,9 +121,9 @@ struct EmbeddedSelectorExpansion final
 /// Namespace matching is anchored at a dot boundary, so `uavcan.n` selects nothing rather than
 /// silently standing in for `uavcan.node`.
 ///
-/// A selector matching nothing is never silently empty: the result carries `suggestions` so the
-/// caller can turn a typo into a diagnostic. A well-formed type name with an unavailable version
-/// suggests the versions the catalog does carry.
+/// When a selector matches nothing the result carries `suggestions`, so the caller can turn a typo
+/// into a diagnostic. A well-formed type name with an unavailable version suggests the versions the
+/// catalog does carry.
 EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCatalog& catalog, llvm::StringRef selector);
 
 /// @brief Appends embedded schemas for selected keys into destination module.
