@@ -249,10 +249,9 @@ public:
     /// @param[in] divisor Modulo divisor; values `< 1` yield `{0}` (silent sentinel).
     /// @return `{ v mod d : v in S }`, complete for any set size.
     /// @note Computed by symbolic per-node residue propagation (each intermediate residue set is
-    ///       a subset of Z/divisor), so it does NOT depend on `expand()` and never silently
-    ///       omits residues. The only non-exact case is a defensive internal modulus cap that a
-    ///       realistic (power-of-two-alignment) query never reaches; see the class-level
-    ///       "Exactness model".
+    ///       a subset of Z/divisor), so it does NOT depend on `expand()` and remains complete.
+    ///       The only non-exact case is a defensive internal modulus cap that a realistic
+    ///       (power-of-two-alignment) query never reaches; see the class-level "Exactness model".
     /// @note Intended for alignment reasoning (e.g. "can this offset be misaligned?"),
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
     [[nodiscard]] FlatSet<std::int64_t> modulo(std::int64_t divisor) const;

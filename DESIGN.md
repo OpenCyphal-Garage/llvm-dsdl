@@ -310,8 +310,6 @@ What this gives the project today:
 - A concrete C emission path via [EmitC](https://mlir.llvm.org/docs/Dialects/EmitC/).
 - Shared lowered-facts extraction for non-C backends, improving cross-language consistency.
 
-In short, MLIR is already operational infrastructure in this repo, not unused scaffolding.
-
 ## 10. Deliberate Tradeoffs and Current Boundaries
 
 The architecture is intentionally hard-cut and single-path: shared lowering contracts are canonical, and compatibility shims/dual semantic paths are not part of the design surface.

@@ -15,8 +15,8 @@ serialization code for several languages, and into compiled object code. It is b
 LLVM: DSDL is parsed into a dedicated MLIR dialect, lowered through passes, and emitted by per-language
 backends.
 
-It is not a runtime, a transport implementation, or a Cyphal node library. It produces the types that
-such a library moves.
+It produces the types that a Cyphal node library moves, and is not itself a runtime, a transport
+implementation, or a node library.
 
 ## Tools
 

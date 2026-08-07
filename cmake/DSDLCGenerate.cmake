@@ -10,7 +10,7 @@
 # Installed alongside llvm-dsdlConfig.cmake and included by it. This is supported API: a downstream
 # project calls find_package(llvm-dsdl) and then this function, and both are versioned with the tool.
 #
-# WHY THIS IS NOT JUST add_custom_command
+# WHERE THE OUTPUT LIST COMES FROM
 #
 # The hard part of generating code in CMake is telling the build what will appear before it appears.
 # The usual answers are all bad: globbing after the fact misses the first build, listing outputs by

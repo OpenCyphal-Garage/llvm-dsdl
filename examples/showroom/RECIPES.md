@@ -25,7 +25,7 @@ For Rust, Go, TypeScript, and Python, `dsdlc` goes further and writes a native m
 
 ## Two idioms
 
-Every recipe is one of two shapes. Which one you get is decided by your build system, not by taste.
+Every recipe is one of two shapes. Which one you get is decided by your build system.
 
 **Idiom A -- the generated tree *is* the package.** Your build depends on it by path: a cargo path
 dependency, a `go.mod` `replace` directive, `pip install -e`. The manifest `dsdlc` wrote is the one

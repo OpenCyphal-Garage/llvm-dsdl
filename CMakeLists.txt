@@ -484,7 +484,7 @@ set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
 # are gitignored and produced at publish time -- see the Docs workflow.
 #
 # The JSON stays in the build tree. It is the machine-readable form the gates and the CI artifact
-# collector consume, and it is not documentation.
+# collector consume.
 set(LLVMDSDL_DOCS_GUARANTEES_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/guarantees")
 set(LLVMDSDL_DOCS_DEVELOPMENT_DIR "${LLVMDSDL_SOURCE_DIR}/docs/development")
 

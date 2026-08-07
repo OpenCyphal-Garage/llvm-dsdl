@@ -27,6 +27,17 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    # `labeled` so that applying `release-ci` starts a run then and there. A
+    # re-run replays the original event payload, which does not carry the new
+    # label, so without this the release lane would wait for the next push.
+    # Naming any type replaces the default set, so the other three are restated.
+    #
+    # A label event says nothing about the code, so every lane below it is
+    # guarded with `github.event.action != 'labeled'` and only the release lane
+    # actually runs. Without that guard any label at all -- `bug`, `docs`,
+    # anything -- replayed the whole suite, the two-hour lane included, over a
+    # commit that had already passed it.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"
@@ -37,12 +48,21 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: "ci-${{ github.workflow }}-${{ github.ref }}"
+  # Label runs and code runs are different work on the same ref: a label run
+  # exists only to start the release lane, a code run proves the commit. One
+  # shared group made them cancel each other -- opening a labelled pull request
+  # fired `opened` then `labeled` and left the first run dead seconds in, which
+  # reads as a failure on the pull request and is why this exists. Splitting the
+  # group lets each supersede only its own kind, so a second push still cancels
+  # a stale build and a label no longer kills one.
+  group: "ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'code' }}"
   cancel-in-progress: true
 
 jobs:
   repo-hygiene:
     name: Repository hygiene (identity + committed paths)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     # Deliberately not in the toolshed container and deliberately first: this needs nothing but
     # python3 and a checkout, finishes in seconds, and tells a contributor that a URL or a home
     # directory is wrong long before the full suite has finished pulling its image.
@@ -61,6 +81,8 @@ jobs:
 
   linux:
     name: Full suite (linux / toolshed)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     runs-on: ubuntu-26.04
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
@@ -200,6 +222,8 @@ jobs:
 
   sanitizers:
     name: Native decoder sanitizers + fuzzing (linux / toolshed)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     # ASan/UBSan over the generated C/C++/Go decoders plus a coverage-guided
     # libFuzzer lane over the native deserializers on the real UAVCAN corpus.
     # Linux-only: threading the ASan runtime into a Go external link is only
@@ -292,6 +316,8 @@ jobs:
 
   formal-model:
     name: Formal model check (Dafny)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     # spec/dafny/CyphalSerdes.dfy is the normative oracle for the emit-order verifier:
     # it PROVES (unbounded, by induction) that serialize/deserialize round-trip and that
     # the read path is bounds-safe by construction, and defines the accepted op orderings
@@ -338,6 +364,8 @@ jobs:
 
   corpus:
     name: Corpus hash (${{ matrix.arch }})
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     # One half of the cross-architecture determinism gate. Identical source and
     # identical toolchain, differing only in the architecture the compiler runs
     # on, so a difference in the emitted corpus can only come from the build.
@@ -415,6 +443,9 @@ jobs:
 
   cross-arch-determinism:
     name: Cross-architecture determinism gate (amd64 vs arm64)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger. Stated
+    # rather than left to `needs: corpus` so a future reader does not read its absence as intent.
+    if: github.event.action != 'labeled'
     # Compares the two manifests byte-for-byte, all six backends strictly.
     # --require-c turns an LLVM version difference into a hard failure rather
     # than silently skipping the MLIR/EmitC-routed C backend; both halves take
@@ -444,6 +475,8 @@ jobs:
 
   showroom-recipes:
     name: Showroom build recipes (linux / toolshed)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
     # One (language, build system) pair per recipe: generate with dsdlc, compile the output, run a
     # round-trip program. This lane is not about codegen correctness -- test/lit and the integration
     # suite own that -- it is about whether the recipes published in the manual still work.
@@ -554,3 +587,41 @@ jobs:
         # Cheap, needs no compiler, and proves the generator still runs against the recipes as they
         # actually are -- a recipe.json the renderer chokes on should fail here, not at publish time.
         run: python3 tools/showroom/recipes_index.py
+
+  release-artifacts:
+    name: Release artifacts
+    # Opt-in, on the `release-ci` label. The packages are the only thing this
+    # project ships and no other job here builds one -- every other lane is
+    # Linux-only and runs no packaging step -- so a pull request that touches
+    # packaging, the toolchain pin, install rules or the version needs this to
+    # mean anything. Most pull requests do not, and paying six minutes of .deb
+    # and macOS builds for a lint fix buys nothing.
+    #
+    # GitHub cannot require a label, so requiring it is the reviewer's job. The
+    # pull request checklist in CONTRIBUTING.md §13 names when to ask for it.
+    #
+    # `labeled` is in the trigger list because otherwise applying the label does
+    # nothing until the next push, which is the whole point of applying it.
+    #
+    # Pull requests only. This workflow also runs on push-to-main, dispatch and
+    # a weekly cron, and none of those should pay for a packaging build. The
+    # event is checked first so the label lookup is never reached on an event
+    # that has no pull request to read labels from.
+    #
+    # The label event is narrowed to the label that means something here. The
+    # first clause alone rebuilt the packages every time any label was added to
+    # a pull request that already carried `release-ci`, which is six minutes of
+    # .deb and macOS builds bought by typing `docs`.
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'release-ci') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'release-ci')
+    # Calls the same workflow a tag does rather than restating it, so the .deb
+    # legs, the pristine-container install, the macOS tarball and its linkage
+    # assertion cannot drift from what a release actually runs. Publishing is
+    # not part of it -- that lives in release.yml, which owns the write token --
+    # so this lane builds and verifies and creates nothing.
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: read
+      packages: read        # pull the published toolchain image

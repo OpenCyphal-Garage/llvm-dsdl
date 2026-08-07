@@ -170,7 +170,7 @@ cmake --build --preset build-dev-homebrew --config Debug
 cmake --build --preset build-dev-homebrew --config Release
 ```
 
-Consequence worth remembering: since the `test-*` presets run `Debug`, a bare
+Since the `test-*` presets run `Debug`, a bare
 `cmake --build --preset build-dev-homebrew` does **not** build what
 `ctest --preset test-dev-homebrew-*` will try to run. When driving the dev
 presets by hand, either build `Debug` explicitly before running a test preset,
@@ -185,7 +185,7 @@ ctest --preset test-dev-homebrew-smoke
 ctest --preset test-ci-smoke
 ```
 
-Full suite (preset-defined full lane). Note that `test-ci-full` excludes
+Full suite (preset-defined full lane). `test-ci-full` excludes
 `bench`-labeled tests; the dev full lanes do not filter at all:
 
 ```bash
@@ -539,6 +539,24 @@ In the PR description, include:
 - any non-default options toggled
 - risk areas and follow-up work (if any)
 
+### 13.1 The `release-ci` label
+
+CI compiles and tests on Linux. It builds no package, so a green PR says the
+code works, not that it ships. The `release-ci` label adds the release build to
+the run — both `.deb` architectures, the pristine-container install, the macOS
+tarball and its linkage assertion — as a dry run that publishes nothing.
+
+Reviewers ask for the label when a PR touches:
+
+- `packaging/`, including the toolchain pin and the release Dockerfiles
+- `VERSION` or `packaging/deb/changelog`
+- install rules, component assignment, or anything CPack reads
+- `.github/workflows/release.yml`
+- linkage: vendoring, static libc++, or what the tools link against
+
+GitHub cannot make a label a merge requirement, so this is the reviewer's to
+enforce. Applying it starts a run immediately; it costs about six minutes.
+
 ## 14. Cutting a Release
 
 Three things carry the version and must agree: `VERSION`, the top entry of
@@ -579,11 +597,11 @@ llvm-dsdl (X.Y.Z) unstable; urgency=medium
  -- Your Name <you@example.com>  Tue, 05 Aug 2026 12:00:00 +0000
 ```
 
-The trailer line is not decoration. It is where the man pages take their date,
-so that rebuilding a release produces byte-identical pages rather than pages
-stamped with whenever the rebuild happened. Configure fails if it cannot parse a
-date from it. `dch --newversion X.Y.Z` writes both the entry and the trailer
-correctly, if you have devscripts.
+The trailer line is where the man pages take their date, so that rebuilding a
+release produces byte-identical pages rather than pages stamped with whenever
+the rebuild happened. Configure fails if it cannot parse a date from it.
+`dch --newversion X.Y.Z` writes both the entry and the trailer correctly, if
+you have devscripts.
 
 Merge to `main`.
 

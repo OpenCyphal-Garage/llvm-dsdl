@@ -32,7 +32,7 @@ It checks two things:
      of (op, payload) pairs -- payloads included, so a wrong bit width, option index, or
      prefix width is a failure even when the op names agree.
 
-Accepted differences (explicitly modeled, never silently ignored):
+Accepted differences (explicitly modeled):
   D2: LEN_CHECK (fixed-array exact-length guard) is backend-optional -- Go/C++ fixed
       arrays are compile-time sized so the guard is type-system-subsumed. Dropped from
       the skeleton.
