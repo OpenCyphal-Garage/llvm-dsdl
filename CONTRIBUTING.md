@@ -638,6 +638,53 @@ what the pin produces and which job consumes each form.
 
 ### 14.2 Prepare the version
 
+[`tools/prepare_release.py`](./tools/prepare_release.py) does this step and
+checks it against upstream:
+
+```bash
+python3 tools/prepare_release.py minor
+```
+
+It takes one of `major`, `minor`, `patch`, or `current` (use `VERSION` as-is),
+bumps `VERSION`, prepends a changelog entry drafted from the commit subjects
+since the last tag, and stages both files. `--dry-run` prints what it would do;
+`--version` prints the project version rather than the script's.
+
+Two checks run before anything is written.
+
+**The working tree must be clean.** `git commit` commits the whole index, not
+just what the script added, so an unrelated staged change would be swept into a
+commit named after the release. A tracked change, staged or unstaged, aborts the
+run; untracked files are reported but do not block, since nothing untracked can
+reach the commit.
+
+**No existing tag may be at or ahead of the new version.** Of the three places
+the version lives, the tag is the one whose collision costs an unwind rather
+than an edit, and it is otherwise not caught until after the tag is pushed. The
+script asks GitHub for the tags that already exist. `--offline` skips the
+question for a machine that cannot reach GitHub — it does not make the collision
+safe.
+
+The git flags differ in how much they switch off:
+
+| Flag | Clean-tree check | Stages | Commits |
+|---|:--:|:--:|:--:|
+| *(default)* | yes | yes | no |
+| `--commit` | yes | yes | yes |
+| `--no-stage` | yes | no | no |
+| `--no-git` | **no** | no | no |
+
+`--no-git` issues no git commands at all, which is what disables the check;
+`--no-stage` only declines to stage. `--commit` combines with neither. Under
+`--dry-run` a dirty tree is a warning rather than an abort, and the rest of the
+plan still prints — a dry run writes nothing, so there is nothing to protect.
+
+The entry it drafts reads like a list of commit subjects, because that is what
+it is. Edit it into prose before merging.
+
+The rest of this section is what the script does, and what to do by hand
+without it.
+
 Set `VERSION` to `X.Y.Z`. It is the single source of truth: CPack takes the
 package version from it, and the tools compile it into `--version`.
 
