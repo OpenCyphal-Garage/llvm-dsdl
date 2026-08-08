@@ -111,8 +111,15 @@ def fmt(version: tuple[int, int, int]) -> str:
 
 def identity() -> tuple[str, str]:
     """Owner and repository, from project-identity.json."""
-    data = json.loads(IDENTITY_FILE.read_text(encoding="utf-8"))
-    return data["owner"], data["repo"]
+    try:
+        data = json.loads(IDENTITY_FILE.read_text(encoding="utf-8"))
+        return data["owner"], data["repo"]
+    except OSError as exc:
+        raise Failure(f"missing {IDENTITY_FILE.relative_to(ROOT)}") from exc
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise Failure(
+            f"invalid {IDENTITY_FILE.relative_to(ROOT)}: expected JSON with 'owner' and 'repo'"
+        ) from exc
 
 
 def upstream_tags() -> list[tuple[int, int, int]]:
