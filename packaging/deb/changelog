@@ -1,3 +1,11 @@
+llvm-dsdl (0.2.1) unstable; urgency=medium
+
+  * Adding a release automation script
+  * Making docs publish on release only
+  * Docs fixups
+
+ -- Scott Dixon <scottd.thirtytwo@gmail.com>  Sat, 08 Aug 2026 12:28:56 -0700
+
 llvm-dsdl (0.2.0) unstable; urgency=medium
 
   * Build and statically link LLVM/MLIR at the revision pinned in
