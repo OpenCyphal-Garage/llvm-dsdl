@@ -241,7 +241,7 @@ running a tool, not by reading `otool`.
 
 The binaries are ad-hoc signed rather than notarised, and `spctl -a -t exec` rejects them. That
 matters only for files carrying `com.apple.quarantine`, which depends on **how the archive was
-fetched** — not, as this section claimed until 2026-08-08, on how it was opened:
+fetched**, not on how it was opened:
 
 | Path | Quarantine on extracted files | Result |
 |---|:--:|---|
