@@ -1,10 +1,18 @@
 name: Release
 
-# Attaches the release artifacts to a draft GitHub Release.
+# Builds the release artifacts and publishes them as a GitHub Release.
 #
 # The building and verifying lives in release-build.yml, which CI also calls on
 # a `release-ci` pull request. This workflow is the half that needs a write
 # token: it runs that shared lane first, then publishes what it produced.
+#
+# It publishes outright rather than leaving a draft. A draft is invisible to
+# everyone but collaborators and downloads nothing, so the artifacts are not
+# released until somebody remembers to press a button -- and v0.1.0 proves
+# nobody does. Its run was green, all six artifacts were attached, and it sat
+# unpublished for six weeks. The tag is the decision; the gates that could still
+# refuse it (the VERSION cross-check and the changelog check in
+# release-build.yml) run before anything is built.
 #
 # The split is not cosmetic. A called workflow's job permissions are checked
 # against the caller's grant at parse time, so keeping `publish` here is what
@@ -88,7 +96,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}
           name: llvm-dsdl ${{ needs.verify.outputs.version }}
-          draft: true
+          draft: false
           files: |
             dist/*.deb
             dist/*.tar.gz
@@ -128,7 +136,4 @@ jobs:
             carries it. Everything else comes from the platform.
 
             Verify downloads against `SHA256SUMS`, or check build provenance with
-            `gh attestation verify <file> --repo ${{ github.repository }}`.
-
-            Verify the download against `SHA256SUMS`, or check build provenance with
             `gh attestation verify <file> --repo ${{ github.repository }}`.
