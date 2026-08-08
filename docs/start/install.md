@@ -12,6 +12,25 @@ Download binaries from:
 
 Put `dsdlc`/`dsdl-opt`/`dsdld` on your `PATH`.
 
+### macOS: fetch with `curl`, not with a browser
+
+The macOS binaries are ad-hoc signed rather than notarised, so Gatekeeper refuses to run them if
+they carry `com.apple.quarantine`. A browser attaches that attribute to the downloaded archive and
+`tar` copies it onto every extracted file — extracting from a shell does not avoid it, and the
+first run fails with "Apple could not verify ... is free of malware". Downloading with `curl` never
+attaches it:
+
+```bash
+curl -fLO <asset-url-from-the-releases-page>
+tar -xzf llvm-dsdl-<version>-darwin-arm64.tar.gz
+```
+
+If you already downloaded through a browser, clear the attribute on the extracted directory:
+
+```bash
+xattr -d -r com.apple.quarantine llvm-dsdl-<version>-darwin-arm64
+```
+
 ## Option 2: Build from source
 
 ```bash

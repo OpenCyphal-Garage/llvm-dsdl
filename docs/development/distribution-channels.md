@@ -77,6 +77,14 @@ Homebrew fetches over curl, which does not set `com.apple.quarantine` (§5). Gat
 never engages on this path, and `brew install` works without notarisation. That makes the tap the
 recommended macOS channel, and confines notarisation to the direct tarball download.
 
+That last clause carries more weight than it did when this was written. §5 used to hold that `tar`
+does not propagate quarantine, so only a Finder double-click was affected; that is false — a
+browser-downloaded archive extracted with `tar -xzf` yields quarantined binaries and a Gatekeeper
+block. So the unnotarised tarball is broken for every reader who clicks the release page rather
+than reaching for `curl`, which is most of them on a first visit. The tap does not merely improve
+on that path, it is the only macOS channel that works without the reader knowing about `xattr`,
+and that raises the priority of both this section and notarisation itself.
+
 Run `brew style` and `brew audit --strict --online` in the package job.
 
 ## 4. Upstream homebrew-core

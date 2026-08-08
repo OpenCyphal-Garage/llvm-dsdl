@@ -108,18 +108,28 @@ jobs:
 
             ## macOS (Apple silicon)
 
-            Extract with `tar`, not by double-clicking:
+            Download with `curl` rather than through a browser, then extract:
 
             ```
+            curl -fLO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}/llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64.tar.gz
             tar -xzf llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64.tar.gz
             ./llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64/bin/dsdlc --version
             ```
 
-            The binaries are ad-hoc signed rather than notarized. Extracting with
-            `tar` keeps them runnable; opening the archive in Finder marks them
-            with macOS's quarantine attribute and Gatekeeper will refuse to run
-            them. Move the extracted directory wherever you like — it is
-            relocatable — and add its `bin/` to your `PATH`.
+            The binaries are ad-hoc signed rather than notarized, so macOS refuses
+            to run them if they carry the quarantine attribute. A browser attaches
+            that attribute to the downloaded archive, and `tar` copies it onto
+            every extracted file — so if you downloaded through a browser, or have
+            already seen "Apple could not verify ... is free of malware", clear it
+            after extracting:
+
+            ```
+            xattr -d -r com.apple.quarantine llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64
+            ```
+
+            Fetching with `curl` avoids the attribute in the first place, which is
+            why it is the first step above. Move the extracted directory wherever
+            you like — it is relocatable — and add its `bin/` to your `PATH`.
 
             ## Both platforms
 
@@ -128,7 +138,4 @@ jobs:
             carries it. Everything else comes from the platform.
 
             Verify downloads against `SHA256SUMS`, or check build provenance with
-            `gh attestation verify <file> --repo ${{ github.repository }}`.
-
-            Verify the download against `SHA256SUMS`, or check build provenance with
             `gh attestation verify <file> --repo ${{ github.repository }}`.

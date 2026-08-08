@@ -96,7 +96,21 @@ not_in_nav: |
 theme:
   name: mkdocs
   locale: en
+  # The reader chooses, and the choice sticks in localStorage; `color_mode` is only what a first
+  # visit gets. The theme swaps the highlight.js stylesheet along with the page, so code blocks
+  # follow the mode without help -- `hljs_style_dark` is left at its default of github-dark.
+  # Set `color_mode: auto` instead to follow the reader's system preference on that first visit.
+  color_mode: light
+  user_color_mode_toggle: true
   highlightjs: true
+  # Every language that appears in a fenced block anywhere under docs/, the generated showroom
+  # pages included. Most of these are in the highlight.js "common" bundle the theme already loads,
+  # so naming them is belt-and-braces against that bundle changing; `cmake` is the one that
+  # genuinely is not in it, and without it the CMake recipes render as unstyled text.
+  #
+  # These are file names on the CDN (`languages/<name>.min.js`), not fence aliases. The fences say
+  # ```console, ```toml and ```text; the packs that back them are `shell`, `ini` and `plaintext`,
+  # and the alias spellings 404.
   hljs_languages:
     - c
     - cpp
@@ -104,7 +118,14 @@ theme:
     - go
     - typescript
     - python
+    - cmake
+    - makefile
+    - bash
+    - shell
+    - json
     - yaml
+    - ini
+    - plaintext
 
 markdown_extensions:
   - admonition
@@ -140,6 +161,9 @@ markdown_extensions:
 
 plugins:
   - search
+
+extra_css:
+  - assets/stylesheets/extra.css
 
 extra_javascript:
   - https://unpkg.com/mermaid@10/dist/mermaid.min.js

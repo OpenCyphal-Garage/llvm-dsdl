@@ -914,8 +914,12 @@ install(
 #
 # In the BIN component with the CMake package, for the same reason: this is about running the
 # compiler from a build, not about linking against its libraries.
+#
+# Under packaging/ rather than a top-level bazel/, and named for the module rather than for the
+# build system: this project has no Bazel build of its own, and a `bazel/` in the root of a
+# CMake project reads as though it does. The source path mirrors the install destination.
 install(
-  DIRECTORY ${LLVMDSDL_SOURCE_DIR}/bazel/rules_dsdl
+  DIRECTORY ${LLVMDSDL_SOURCE_DIR}/packaging/rules_dsdl
   DESTINATION ${CMAKE_INSTALL_DATADIR}
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
 

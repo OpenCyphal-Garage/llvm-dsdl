@@ -162,8 +162,13 @@ def main(argv: list[str]) -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         dest = Path(tmp)
-        # Extracted with tarfile rather than Finder: quarantine propagation
-        # differs between them, and `tar` is what the install instructions say.
+        # Note that this says nothing about Gatekeeper. The tarball reaching this
+        # verifier was built in this job and never downloaded, so it carries no
+        # com.apple.quarantine for anything to propagate -- and `tar` does
+        # propagate it, onto every extracted file, when the archive has one (see
+        # the Gatekeeper section of docs/development/release-packaging.md). No
+        # extraction method available here reproduces that, so the quarantine
+        # path is verified by hand against a real browser download, not in CI.
         with tarfile.open(args.tarball) as tf:
             tf.extractall(dest, filter="data")
 

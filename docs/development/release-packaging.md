@@ -240,20 +240,52 @@ running a tool, not by reading `otool`.
 ### Gatekeeper
 
 The binaries are ad-hoc signed rather than notarised, and `spctl -a -t exec` rejects them. That
-matters only for files carrying `com.apple.quarantine`, which depends entirely on how the archive
-is opened:
+matters only for files carrying `com.apple.quarantine`, which depends on **how the archive was
+fetched** — not, as this section claimed until 2026-08-08, on how it was opened:
 
 | Path | Quarantine on extracted files | Result |
 |---|:--:|---|
-| `curl` + `tar -xzf` | no | runs |
-| Browser download + `tar -xzf` | no | runs |
+| `curl` / `gh release download` + `tar -xzf` | no | runs |
+| Browser download + `tar -xzf` | **yes** | **blocked** |
 | Browser download + Finder double-click | yes | **blocked** |
 | `brew install` | no — brew fetches over curl | runs |
 
-`tar` does not propagate quarantine; Archive Utility does. So the tarball needs no Developer ID
-and no notarisation, **provided the install instructions say `tar -xzf`** — which the release
-notes do. Notarisation is the usual answer for shipping macOS binaries and would cost a paid
-certificate, `notarytool`, and secrets; it buys only the Finder row.
+**`tar` does propagate quarantine.** The attribute is attached to the downloaded archive by the
+browser, and extracting it — with `tar -xzf`, from a shell, no Finder involved — copies it onto
+every extracted file. Measured on macOS 26.5.2 (bsdtar 3.5.3 / libarchive 3.7.4) against a
+Chrome-downloaded `llvm-dsdl-0.2.0-darwin-arm64.tar.gz`: all 120 extracted files came out carrying
+the archive's own quarantine UUID, and `bin/dsdlc --version` was killed by Gatekeeper with "Apple
+could not verify ... is free of malware". Do not re-derive this claim from first principles or
+from a synthetic archive stamped with `xattr -w` — a hand-written quarantine value is not
+registered in the LaunchServices quarantine database and does **not** reproduce the propagation.
+Test with a real browser download or not at all.
+
+What actually decides the outcome is whether the archive was quarantined in the first place, so
+the fetch is what the install instructions have to get right:
+
+```bash
+curl -fLO https://github.com/OpenCyphal-Garage/llvm-dsdl/releases/download/v0.2.0/llvm-dsdl-0.2.0-darwin-arm64.tar.gz
+```
+
+A reader who already downloaded through a browser clears the attribute after extracting, which
+restores the ad-hoc binaries to runnable — verified on the same archive above:
+
+```bash
+xattr -d -r com.apple.quarantine llvm-dsdl-0.2.0-darwin-arm64
+```
+
+So the tarball still needs no Developer ID and no notarisation, but the reason is narrower than it
+was: the two clean paths are `curl` and `brew`, and every browser path now needs the `xattr` step.
+Notarisation is the usual answer for shipping macOS binaries and would cost a paid certificate,
+`notarytool`, and secrets; what it buys is no longer just the Finder row but the whole browser
+column, which is the path most first-time readers take. That makes it a stronger candidate than
+this section previously implied — see D5 in
+[distribution-channels.md](distribution-channels.md).
+
+⚠️ [smoke_macos.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/verify/smoke_macos.py) cannot catch a regression here, and no CI job can as
+things stand: the verifier extracts a freshly built, never-downloaded tarball, so no quarantine
+attribute exists anywhere in the pipeline to propagate. This row of the table is checked by hand or
+not at all.
 
 ---
 
