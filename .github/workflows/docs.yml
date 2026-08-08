@@ -13,11 +13,35 @@ name: Docs
 # There is deliberately no `paths:` filter. Once the showroom is generated rather than committed, the
 # site depends on the backends as much as on docs/, so any change to main can change what is
 # published, and a filter that tried to enumerate that would be wrong the first time a file moved.
+#
+# BUILDING AND PUBLISHING ARE SEPARATE HERE
+#
+# Every push to main builds the site and publishes nothing. What is served on GitHub Pages is the
+# last release, so a reader following the manual is reading instructions for a version they can
+# actually download -- main routinely documents tools and flags that no released binary has.
+#
+# Publishing happens on `release: published`, which is the moment a maintainer publishes the draft
+# that release.yml left behind, and the checkout for that event is the tag rather than main. So the
+# site is built from the released source, not from whatever main happens to be at the time.
+#
+# Prereleases are deliberately not excluded: every release this project has cut so far is one, and
+# `!github.event.release.prerelease` would mean the site never updates. Add it if that changes.
+#
+# The main-push build is therefore a pure check, and it is the one that has to stay green -- it is
+# what stops a release-day publish from being the first time anyone discovered the site does not
+# build.
 
 on:
   push:
     branches: ["main"]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Deploy to GitHub Pages (patches the published site between releases)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,8 +49,17 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "docs"
-  cancel-in-progress: true
+  # Two groups rather than one. Superseding a build-only run is free; superseding a publishing one
+  # is not -- a release deploy cancelled halfway leaves Pages serving the previous version with no
+  # sign that anything failed, and the release event cannot be replayed by pushing again, so
+  # recovering it needs a manual dispatch.
+  #
+  # A single shared group would do exactly that: `cancel-in-progress` is evaluated for the arriving
+  # run, so an ordinary push to main landing during a release publish would cancel the publish.
+  # Splitting the group is what actually keeps them out of each other's way; the flag below then
+  # only decides whether pushes supersede each other, which they should.
+  group: docs-${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'build' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   build:
@@ -95,13 +128,17 @@ jobs:
         run: python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
       - name: Upload Pages artifact
-        if: ${{ !env.ACT }}
+        # Only on runs that will deploy. The condition is repeated on the deploy job below rather
+        # than shared, because a job-level `if` cannot read a workflow `env`, which is the same
+        # limitation the deploy step's own comment records.
+        if: ${{ !env.ACT && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    # A push to main never reaches here: it builds, and that is the whole point of the split.
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: build
     runs-on: ubuntu-latest
     environment:
