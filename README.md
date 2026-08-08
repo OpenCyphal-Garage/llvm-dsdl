@@ -2,7 +2,9 @@
 
 ![llvm-dsdl logo](./llvm-dsdl.png)
 
-[![Release](https://img.shields.io/github/v/release/OpenCyphal-Garage/llvm-dsdl?display_name=tag)](https://github.com/OpenCyphal-Garage/llvm-dsdl/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/OpenCyphal-Garage/llvm-dsdl/ci.yml?branch=main&label=CI)](https://github.com/OpenCyphal-Garage/llvm-dsdl/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-user%20manual-blue)](https://opencyphal-garage.github.io/llvm-dsdl/)
+[![Release](https://img.shields.io/github/v/release/OpenCyphal-Garage/llvm-dsdl?display_name=tag&include_prereleases)](https://github.com/OpenCyphal-Garage/llvm-dsdl/releases)
 
 `llvm-dsdl` provides command-line tooling for Cyphal DSDL:
 
@@ -241,43 +243,3 @@ Import resolution failures:
 
 - verify editor points to the correct `dsdld` binary path
 - verify workspace `roots`/`lookupDirs` settings
-
-## Developer docs
-
-For build internals, workflows, tests, and contribution standards, use:
-
-- [CONTRIBUTING.md](./CONTRIBUTING.md)
-- Runtime semantic-wrapper exception allowlist: [`runtime/semantic_wrapper_allowlist.json`](./runtime/semantic_wrapper_allowlist.json)
-- Runtime semantic-wrapper generator: [`tools/runtime/generate_runtime_semantic_wrappers.py`](./tools/runtime/generate_runtime_semantic_wrappers.py)
-
-## User manual (MkDocs)
-
-This repository ships a MkDocs documentation site under [`docs/`](./docs), organised into four
-sections: **Get Started** (first run), **Reference** (what the tools promise), **Development**
-(changing this repository), and **For Agents** (the machine-readable index at
-[`/llms.txt`](https://opencyphal-garage.github.io/llvm-dsdl/llms.txt)).
-
-Several pages are generated rather than written — the showroom, the guarantee matrices, and the
-agent index. Produce them before previewing, or `--strict` will fail on the nav entries with nothing
-behind them:
-
-```bash
-cmake --build <build-dir> --target docs-generate
-```
-
-Local preview:
-
-```bash
-python -m pip install -r docs/requirements.txt
-mkdocs serve
-```
-
-Build the static site:
-
-```bash
-mkdocs build --strict
-```
-
-GitHub Pages deployment is handled by:
-
-- [`.github/workflows/docs.yml`](./.github/workflows/docs.yml)

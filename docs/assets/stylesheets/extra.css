@@ -1,0 +1,18 @@
+/* Local overrides for the bundled `mkdocs` theme. Loaded through `extra_css` in mkdocs.yml, which
+   emits it after the theme's own stylesheets, so plain specificity is enough and nothing here needs
+   `!important`. */
+
+/* Drop the graph-paper tile the theme paints behind every page.
+ *
+ * The theme puts it on a fixed, full-viewport layer (`body::before` in its base.css) rather than on
+ * `body` itself, for scroll performance. Overriding the whole `background` shorthand rather than
+ * just `background-image`, because the theme's own rule is a shorthand too: it resets the
+ * `background-color: var(--bs-body-bg)` on the line above it back to transparent, so clearing only
+ * the image would leave the layer see-through and let the fix depend on whatever paints behind it.
+ *
+ * `--bs-body-bg` is Bootstrap's page colour and is re-evaluated when the colour-mode toggle sets
+ * `data-bs-theme` on <html>, so this stays right in both light and dark.
+ */
+body::before {
+  background: var(--bs-body-bg);
+}

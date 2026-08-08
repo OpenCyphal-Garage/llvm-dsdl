@@ -24,6 +24,9 @@ ctest --test-dir build/matrix/ci -C RelWithDebInfo -R llvmdsdl-obj-backend-smoke
 
 ## Docs site CI
 
-A dedicated GitHub Pages workflow builds this manual with MkDocs Material and deploys on `main`.
+A dedicated GitHub Pages workflow builds this manual with MkDocs on every push to `main`, and
+deploys it only when a release is published. The served site therefore tracks the last release
+rather than the tip of `main`, so its instructions match a version readers can actually download.
+Maintainers can publish a patch between releases with a manual dispatch.
 
-See `.github/workflows/docs.yml`.
+See `.github/workflows/docs.yml`, and CONTRIBUTING.md section 11.7 for the publishing procedure.

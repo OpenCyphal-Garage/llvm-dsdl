@@ -462,12 +462,14 @@ end to end. [`act`](https://github.com/nektos/act) runs it:
 act push -W .github/workflows/docs.yml
 ```
 
-It takes about half a minute and needs no arguments, no Pages setup and no secrets. The three steps
-that talk to GitHub — `configure-pages`, `upload-pages-artifact`, and the deploy job's only step —
-are guarded with `if: ${{ !env.ACT }}` and skip, which costs nothing: none of them affect what is
-built, since `mkdocs` takes `site_url` from `mkdocs.yml`. Everything that can actually fail still
-runs: the CMake configure, the `docs-generate` build, the pinned pip install, `mkdocs build
---strict`, and the rendered-mermaid check.
+It takes about half a minute and needs no arguments, no Pages setup and no secrets. The steps that
+talk to GitHub — `configure-pages`, `upload-pages-artifact`, and the deploy job's only step — are
+guarded with `if: ${{ !env.ACT }}` and skip, which costs nothing: none of them affect what is built,
+since `mkdocs` takes `site_url` from `mkdocs.yml`. Under `act push` the upload and the whole deploy
+job are also outside their own event conditions (section 11.7), so a push simulation exercises
+exactly the build. Everything that can actually fail still runs: the CMake configure, the
+`docs-generate` build, the pinned pip install, `mkdocs build --strict`, and the rendered-mermaid
+check.
 
 It is a genuine from-scratch *build*, not a reuse of your build tree. `act` honours `.gitignore` when
 it copies the repository into the container, so `build/` and `.venv-docs/` are left behind — about
@@ -486,6 +488,58 @@ paragraph before trusting a green local run.
 The repository's [`.actrc`](./.actrc) already pins `--container-architecture` and `--pull=false`, so
 the toolshed image has to be present locally; `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once
 if it is not.
+
+### 11.7 How the site gets published
+
+**What is served on GitHub Pages is the last release, not main.** A reader following the manual is
+reading instructions for a version they can download; main routinely documents flags and behaviour
+that no released binary has.
+
+Building and publishing are separate events in
+[`docs.yml`](.github/workflows/docs.yml):
+
+| Event | Builds | Publishes | Built from |
+|---|:--:|:--:|---|
+| Push to `main` | yes | **no** | `main` |
+| Release published | yes | yes | the release tag |
+| `workflow_dispatch` | yes | only with `publish=true` | the ref you select |
+
+The main-push build is a pure check, and it is the one that has to stay green: it is what stops
+release day from being the first time anyone found out the site does not build. Prereleases are not
+excluded — every release so far has been one — so publishing a prerelease does update the site.
+
+#### Publishing a patch between releases
+
+The manual path exists because a released doc page can be wrong, and waiting for the next release to
+fix it is not always acceptable:
+
+```bash
+gh workflow run Docs --repo OpenCyphal-Garage/llvm-dsdl --ref <ref> -f publish=true
+```
+
+Watch it with `gh run watch`, or check the Actions tab; it takes the same half-minute-plus-build as
+any other Docs run.
+
+`--ref` decides what goes live, and it is the whole decision. **Selecting `main` publishes
+unreleased documentation** — exactly what the split above exists to prevent — so do that only if you
+have decided the site should lead the release, and know that the next release will overwrite it
+anyway. The normal patch flow keeps the published site matching the released tools:
+
+```bash
+git switch --detach vX.Y.Z
+git switch -c docs-patch-vX.Y.Z
+git cherry-pick <commit-with-the-fix>     # or write the fix here
+git push upstream docs-patch-vX.Y.Z
+gh workflow run Docs --repo OpenCyphal-Garage/llvm-dsdl --ref docs-patch-vX.Y.Z -f publish=true
+```
+
+Two things to remember afterwards. The published site now differs from `vX.Y.Z` — the tag is not
+moved, and moving it would invalidate the release attestation — so the branch is the only record of
+what is live; keep it until the next release supersedes it. And the fix has to land on `main`
+separately, or the next release republishes the broken page.
+
+Dispatching with `publish=false` (the default) just builds the selected ref, which is a cheap way to
+check that a tag or branch still produces a site before you publish it.
 
 ## 12. Development Expectations
 
@@ -584,6 +638,53 @@ what the pin produces and which job consumes each form.
 
 ### 14.2 Prepare the version
 
+[`tools/prepare_release.py`](./tools/prepare_release.py) does this step and
+checks it against upstream:
+
+```bash
+python3 tools/prepare_release.py minor
+```
+
+It takes one of `major`, `minor`, `patch`, or `current` (use `VERSION` as-is),
+bumps `VERSION`, prepends a changelog entry drafted from the commit subjects
+since the last tag, and stages both files. `--dry-run` prints what it would do;
+`--version` prints the project version rather than the script's.
+
+Two checks run before anything is written.
+
+**The working tree must be clean.** `git commit` commits the whole index, not
+just what the script added, so an unrelated staged change would be swept into a
+commit named after the release. A tracked change, staged or unstaged, aborts the
+run; untracked files are reported but do not block, since nothing untracked can
+reach the commit.
+
+**No existing tag may be at or ahead of the new version.** Of the three places
+the version lives, the tag is the one whose collision costs an unwind rather
+than an edit, and it is otherwise not caught until after the tag is pushed. The
+script asks GitHub for the tags that already exist. `--offline` skips the
+question for a machine that cannot reach GitHub — it does not make the collision
+safe.
+
+The git flags differ in how much they switch off:
+
+| Flag | Clean-tree check | Stages | Commits |
+|---|:--:|:--:|:--:|
+| *(default)* | yes | yes | no |
+| `--commit` | yes | yes | yes |
+| `--no-stage` | yes | no | no |
+| `--no-git` | **no** | no | no |
+
+`--no-git` issues no git commands at all, which is what disables the check;
+`--no-stage` only declines to stage. `--commit` combines with neither. Under
+`--dry-run` a dirty tree is a warning rather than an abort, and the rest of the
+plan still prints — a dry run writes nothing, so there is nothing to protect.
+
+The entry it drafts reads like a list of commit subjects, because that is what
+it is. Edit it into prose before merging.
+
+The rest of this section is what the script does, and what to do by hand
+without it.
+
 Set `VERSION` to `X.Y.Z`. It is the single source of truth: CPack takes the
 package version from it, and the tools compile it into `--version`.
 
@@ -625,6 +726,12 @@ git tag vX.Y.Z && git push upstream vX.Y.Z
 The tag triggers the release with `publish=true`. What you get is a **draft**
 release with the packages, checksums and a provenance attestation attached.
 Nothing is public until you publish it from the releases page.
+
+Publishing that draft does one more thing: it fires the Docs workflow's
+`release: published` trigger, which rebuilds the site from the tag and deploys
+it to GitHub Pages. So the documentation goes live with the binaries it
+describes, and not before — see section 11.7, including how to patch the
+published site without cutting a new release.
 
 ### 14.5 What is enforced, and where
 
