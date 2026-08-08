@@ -116,7 +116,7 @@ jobs:
             ./llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64/bin/dsdlc --version
             ```
 
-            The binaries are ad-hoc signed rather than notarized, so macOS refuses
+            The binaries are ad-hoc signed rather than notarised, so macOS refuses
             to run them if they carry the quarantine attribute. A browser attaches
             that attribute to the downloaded archive, and `tar` copies it onto
             every extracted file — so if you downloaded through a browser, or have
