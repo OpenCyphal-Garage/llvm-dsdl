@@ -25,9 +25,10 @@ name: Release build
 # toolshed image is deliberately NOT reused: it is Ubuntu 26.04, and a package
 # built there installs on nothing older.
 #
-# arm64 and amd64, each on its own native runner -- no emulation in CI. The two
-# legs are independent (fail-fast off): one architecture's package is installable
-# without the other, so a failure in one should not withhold the other.
+# arm64 and amd64 on both platforms, each on its own native runner -- no
+# emulation in CI. All four legs are independent (fail-fast off): one
+# architecture's package is installable without the other, so a failure in one
+# should not withhold the other.
 
 on:
   workflow_call:
@@ -206,6 +207,25 @@ jobs:
         include:
           - arch: arm64
             runner: macos-15
+            # Every Apple silicon Mac runs macOS 15, so the floor this runner
+            # imposes costs nothing here. See the amd64 leg for why it is
+            # asserted rather than assumed.
+            max_minos: "15.0"
+          - arch: amd64
+            runner: macos-15-intel
+            # The last x86_64 image GitHub will offer: macos-13 retired in
+            # December 2025, and this one is scheduled to follow in August 2027
+            # with no successor. When it goes, so does this leg -- the decision
+            # to ship Intel at all is D2 of docs/development/distribution-channels.md,
+            # and it carries that end date.
+            #
+            # A macOS 15 floor is deliberate rather than merely tolerated. It
+            # covers MacBook Pro and mini from 2018, iMac from 2019, Air from
+            # 2020 -- which is the hardware still worth shipping x86_64 for in
+            # 2026. Reaching further back would mean building the LLVM toolchain
+            # against an older deployment target too, since its static archives
+            # would otherwise carry the higher floor into the link.
+            max_minos: "15.0"
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
@@ -229,8 +249,12 @@ jobs:
       - name: Build the LLVM toolchain
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         # Built rather than taken from Homebrew, for the reasons in section 1 of
-        # docs/development/distribution-channels.md. Roughly 9 minutes natively,
-        # and only when the pin moves.
+        # docs/development/distribution-channels.md. Roughly 9 minutes on Apple
+        # silicon and ~30 on the 4-core Intel runner, and only when the pin
+        # moves -- but the two prefixes are ~800 MB each against a 10 GB
+        # repository cache cap, so an eviction makes that the cost of an
+        # ordinary run rather than a rare one. If this job starts timing out,
+        # that is the first thing to check.
         run: |
           set -euo pipefail
           REF="$(grep -v '^#' packaging/toolchain/llvm.pin | tr -d '[:space:]')"
@@ -275,10 +299,21 @@ jobs:
         # worst possible judge -- it has Homebrew LLVM at exactly the paths a
         # non-relocated binary would reference. So the check asserts linkage,
         # not just behaviour.
+        #
+        # --expect-arch and --max-minos exist because there are two legs. With
+        # one, neither could fail: whatever the single runner produced was by
+        # definition what shipped. With two, a leg building the wrong
+        # architecture under the other's name is a real outcome, and the
+        # deployment floor is set by nothing in this repository -- it is
+        # whatever the runner boots. Moving to macos-26-intel would narrow the
+        # supported hardware silently, so the floor is asserted here rather
+        # than discovered by a user on a 2018 machine.
         run: |
           python3 packaging/verify/smoke_macos.py \
             --tarball "dist/llvm-dsdl-${{ needs.stage.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz" \
-            --expect-version "${{ needs.stage.outputs.version }}"
+            --expect-version "${{ needs.stage.outputs.version }}" \
+            --expect-arch "${{ matrix.arch }}" \
+            --max-minos "${{ matrix.max_minos }}"
 
       - name: Upload tarball
         uses: actions/upload-artifact@v7

@@ -126,7 +126,19 @@ dependency resolution. Nothing about it changes the packaging.
   repository, so verification hardware is not a constraint; §2 above is.
 - **32-bit ARM.** `armv7-linux-musleabihf` covers Raspberry Pi OS 32-bit. True Raspbian targets
   ARMv6+VFP2, which is a further triple rather than a further problem.
-- **Intel macOS.** Not supported. See D2 below.
+- **Intel macOS.** Shipped, with an end date. `macos-15-intel` is the last x86_64 image GitHub
+  Actions will offer — `macos-13` retired in December 2025 and this one follows in **August 2027**,
+  with no successor and no emulated substitute worth having. Until then the leg is a second entry
+  in the same matrix, since everything downstream of it was already keyed on the architecture.
+
+  The floor is macOS 15, which covers MacBook Pro and mini from 2018, iMac from 2019, and Air from
+  2020. That is not a target anything sets: the minos derivation in the top-level `CMakeLists.txt`
+  keys off finding a `libLLVM.dylib`, which a static toolchain does not produce, so the floor is
+  whatever the build runner boots. Reaching further back would mean building the LLVM toolchain
+  against an older deployment target as well — its static archives otherwise carry the higher floor
+  into the link — which is why the floor is *asserted* by `smoke_macos.py --max-minos` rather than
+  set. A runner image bump narrows the supported hardware, and that check is what makes it say so.
+  Resolves D2 and, with it, D8.
 - **RPM.** CPack's RPM generator plus a Fedora COPR project — the cheapest format to add.
 - **snap.** Snaps bundle everything, which is the problem §1 above solves more directly.
   Reconsider only if confinement or the Snap Store's reach is wanted for its own sake.
@@ -138,10 +150,10 @@ dependency resolution. Nothing about it changes the packaging.
 | # | Decision | Current answer |
 |---|---|---|
 | D1 | Who owns the tap and apt repo | `OpenCyphal-Garage`, matching `upstream` |
-| D2 | Is Intel macOS supported | No. Neither `bin` nor `dev` |
-| D3 | What `llvm-dsdl-dev` targets | macOS arm64 and Linux only; no Windows, no Intel macOS |
+| D2 | Is Intel macOS supported | Resolved: yes, `bin` and `dev`, until GitHub retires `macos-15-intel` in **August 2027**. See below |
+| D3 | What `llvm-dsdl-dev` targets | macOS on both architectures and Linux; no Windows |
 | D4 | Glibc floor | Resolved: two toolchain flavours — glibc 2.35 for the release, `dev` and CI; musl for §1 above |
 | D5 | The LLVM major lock vs upstream homebrew-core | Resolved: stay in our own tap |
 | D6 | Lint plugins vs a static `dsdld` | Open, and the gate on §1 above. Feature-gate it, ship `dsdld` dynamically, or move plugins out-of-process. The runtime error is already accurate: musl's static `dlopen` sets `dlerror()` to "Dynamic loading not supported", which `loadPluginLibrary` propagates |
 | D7 | Windows on ARM | Open; gated on verification, not on the build |
-| D8 | macOS deployment-target floor | Open — ours to set, same shape as D4 |
+| D8 | macOS deployment-target floor | Resolved with D2: macOS 15, taken from the runner rather than set, and asserted so a runner bump cannot raise it quietly |

@@ -617,8 +617,8 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release-ci') &&
       (github.event.action != 'labeled' || github.event.label.name == 'release-ci')
     # Calls the same workflow a tag does rather than restating it, so the .deb
-    # legs, the pristine-container install, the macOS tarball and its linkage
-    # assertion cannot drift from what a release actually runs. Publishing is
+    # legs, the pristine-container install, the macOS tarballs and their linkage
+    # assertions cannot drift from what a release actually runs. Publishing is
     # not part of it -- that lives in release.yml, which owns the write token --
     # so this lane builds and verifies and creates nothing.
     uses: ./.github/workflows/release-build.yml

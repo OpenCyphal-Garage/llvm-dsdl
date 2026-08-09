@@ -28,6 +28,19 @@ nothing to relocate rather than by relocation having worked.
 
 Behaviour is checked too, since a tarball that links correctly and still cannot
 emit code is no use either.
+
+Two further checks exist only because the release builds more than one macOS
+architecture. Neither could fail when there was one: whatever the single runner
+produced was by definition what shipped.
+
+- **Architecture.** The tarball's name comes from the build, so a leg producing
+  the other architecture under its own name is not caught by anything upstream.
+- **Deployment floor.** Nothing in this repository sets one. The minos
+  derivation in the top-level CMakeLists keys off finding a `libLLVM.dylib`,
+  which a static toolchain does not produce, so the floor is whatever the runner
+  boots. That is fine, and chosen -- but it means a runner image bump would
+  narrow the supported hardware with no diff to review, which is exactly the
+  kind of change that should fail loudly here instead.
 """
 
 from __future__ import annotations
@@ -47,7 +60,13 @@ TOOLS = ("dsdlc", "dsdl-opt", "dsdld")
 # and every macOS machine has them. Anything else absolute is a leak.
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/")
 
+# The project's packaging vocabulary, which is what names the tarball and what
+# --expect-arch is given. lipo speaks the Mach-O spelling; cmake/Packaging.cmake
+# performs the same normalisation on the other side of the build.
+ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
+
 _OTOOL_LINE = re.compile(r"^\s+(?P<path>\S+)\s+\(compatibility")
+_MINOS = re.compile(r"^\s*minos\s+(?P<version>[0-9]+(?:\.[0-9]+)*)\s*$", re.MULTILINE)
 
 
 def linked_paths(binary: Path) -> list[str]:
@@ -75,10 +94,41 @@ def leaked_references(binary: Path) -> list[str]:
     return leaks
 
 
-def evaluate(root: Path, expected_version: str | None) -> list[str]:
+def version_tuple(version: str) -> tuple[int, ...]:
+    """Compare as numbers. "9.0" sorts above "15.0" as a string, and would pass."""
+    return tuple(int(part) for part in version.split("."))
+
+
+def binary_arches(binary: Path) -> list[str]:
+    """The architectures present, in the project's packaging vocabulary."""
+    proc = subprocess.run(
+        ["lipo", "-archs", str(binary)], capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        raise SystemExit(f"lipo -archs failed for {binary}: {proc.stderr.strip()}")
+    # An unrecognised slice is reported as lipo spelled it rather than dropped:
+    # the point of the check is to notice the unexpected, so swallowing it here
+    # would defeat it.
+    return [ARCH_ALIASES.get(a, a) for a in proc.stdout.split()]
+
+
+def deployment_floor(binary: Path) -> tuple[int, ...] | None:
+    """The LC_BUILD_VERSION minos, or None if the binary declares none."""
+    proc = subprocess.run(
+        ["otool", "-l", str(binary)], capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        raise SystemExit(f"otool -l failed for {binary}: {proc.stderr.strip()}")
+    match = _MINOS.search(proc.stdout)
+    return version_tuple(match.group("version")) if match else None
+
+
+def evaluate(root: Path, expected_version: str | None,
+             expected_arch: str | None, max_minos: str | None) -> list[str]:
     """Return failure messages; empty means the tarball is sound."""
     failures: list[str] = []
     bindir = root / "bin"
+
+    ceiling = version_tuple(max_minos) if max_minos else None
+    want_arch = ARCH_ALIASES.get(expected_arch, expected_arch) if expected_arch else None
 
     if not bindir.is_dir():
         return [f"no bin/ directory in the tarball (found: {[p.name for p in root.iterdir()]})"]
@@ -94,6 +144,26 @@ def evaluate(root: Path, expected_version: str | None) -> list[str]:
             failures.append(
                 f"{tool} references paths outside the bundle: {', '.join(leaks)} "
                 "-- it would fail on a machine without them")
+
+        if want_arch:
+            arches = binary_arches(exe)
+            if arches != [want_arch]:
+                failures.append(
+                    f"{tool} is {'+'.join(arches)}, expected {want_arch} alone "
+                    "-- this tarball is named for an architecture it does not contain")
+
+        if ceiling:
+            floor = deployment_floor(exe)
+            if floor is None:
+                failures.append(
+                    f"{tool} declares no minimum macOS version, so the hardware it "
+                    "supports cannot be established")
+            elif floor > ceiling:
+                shipped = ".".join(str(p) for p in floor)
+                failures.append(
+                    f"{tool} requires macOS {shipped}, above the {max_minos} this release "
+                    "claims to support -- a runner image bump will do this, and it drops "
+                    "hardware. Either lower the floor or raise --max-minos deliberately")
 
         proc = subprocess.run(
             [str(exe), "--version"], capture_output=True, text=True, timeout=120)
@@ -150,15 +220,29 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tarball", type=Path, required=True, help="Release tarball to verify.")
     parser.add_argument("--expect-version", help="Assert the tools report this version.")
+    parser.add_argument("--expect-arch", choices=sorted(set(ARCH_ALIASES)),
+                        help="Assert the binaries contain this architecture and no other.")
+    parser.add_argument("--max-minos", metavar="VERSION",
+                        help="Assert the binaries run on macOS VERSION, and fail if they "
+                             "require anything newer. The floor comes from the build "
+                             "machine rather than from any setting, so this is what "
+                             "notices a runner image bump narrowing the supported hardware.")
     args = parser.parse_args(argv)
 
     if not args.tarball.is_file():
         raise SystemExit(f"tarball not found: {args.tarball}")
+    if args.max_minos:
+        try:
+            version_tuple(args.max_minos)
+        except ValueError:
+            raise SystemExit(
+                f"--max-minos must be a dotted version, got {args.max_minos!r}") from None
     if sys.platform != "darwin":
         print("SKIPPED: this verifier uses otool and must run on macOS")
         return 77
-    if not shutil.which("otool"):
-        raise SystemExit("otool not found; Xcode command line tools are required")
+    for tool in ("otool", "lipo"):
+        if not shutil.which(tool):
+            raise SystemExit(f"{tool} not found; Xcode command line tools are required")
 
     with tempfile.TemporaryDirectory() as tmp:
         dest = Path(tmp)
@@ -175,7 +259,7 @@ def main(argv: list[str]) -> int:
         roots = [p for p in dest.iterdir() if p.is_dir()]
         root = roots[0] if len(roots) == 1 else dest
 
-        failures = evaluate(root, args.expect_version)
+        failures = evaluate(root, args.expect_version, args.expect_arch, args.max_minos)
         if not failures:
             failures = check_codegen(root)
 
@@ -185,10 +269,17 @@ def main(argv: list[str]) -> int:
             if exe.is_file():
                 refs = [r for r in linked_paths(exe) if not r.startswith(SYSTEM_PREFIXES)]
                 leaked = len(leaked_references(exe))
+                floor = deployment_floor(exe)
                 # Counted separately: "non-system" alone would report a leaking
                 # binary and a sound one identically. Both zero is the expected
                 # result against a static toolchain -- nothing to relocate.
-                print(f"  {tool}: {len(refs) - leaked} relocated, {leaked} external")
+                #
+                # The architecture and floor are printed whether or not they were
+                # asserted: a release log that records what shipped is worth more
+                # than one recording only that a check passed.
+                print(f"  {tool}: {'+'.join(binary_arches(exe))}, "
+                      f"macOS {'.'.join(str(p) for p in floor) if floor else '?'}+, "
+                      f"{len(refs) - leaked} relocated, {leaked} external")
 
         if failures:
             print("\nFAILED:")

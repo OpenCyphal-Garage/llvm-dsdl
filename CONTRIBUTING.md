@@ -597,8 +597,8 @@ In the PR description, include:
 
 CI compiles and tests on Linux. It builds no package, so a green PR says the
 code works, not that it ships. The `release-ci` label adds the release build to
-the run — both `.deb` architectures, the pristine-container install, the macOS
-tarball and its linkage assertion — as a dry run that publishes nothing.
+the run — both `.deb` architectures, the pristine-container install, both macOS
+tarballs and their linkage assertions — as a dry run that publishes nothing.
 
 Reviewers ask for the label when a PR touches:
 
@@ -713,8 +713,8 @@ gh workflow run Release --repo OpenCyphal-Garage/llvm-dsdl --ref main -f dry_run
 ```
 
 This builds and verifies everything and publishes nothing: both `.deb`
-architectures, the macOS tarball, the pristine-container install check, and the
-macOS linkage assertion. Worth doing before tagging, because a pushed tag that
+architectures, both macOS tarballs, the pristine-container install check, and
+the macOS linkage assertions. Worth doing before tagging, because a pushed tag that
 fails is more annoying to unwind than a workflow run that does.
 
 ### 14.4 Tag

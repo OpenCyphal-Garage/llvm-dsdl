@@ -12,7 +12,10 @@ Download binaries from:
 
 Put `dsdlc`/`dsdl-opt`/`dsdld` on your `PATH`.
 
-### macOS: fetch with `curl`, not with a browser
+### macOS: pick your architecture, and fetch with `curl`, not with a browser
+
+There are two macOS tarballs. `uname -m` says which one you want — `arm64` for Apple silicon,
+`x86_64` for Intel, which takes the `darwin-amd64` asset. Both require macOS 15 or newer.
 
 The macOS binaries are ad-hoc signed rather than notarised, so Gatekeeper refuses to run them if
 they carry `com.apple.quarantine`. A browser attaches that attribute to the downloaded archive and
@@ -22,13 +25,13 @@ attaches it:
 
 ```bash
 curl -fLO <asset-url-from-the-releases-page>
-tar -xzf llvm-dsdl-<version>-darwin-arm64.tar.gz
+tar -xzf llvm-dsdl-<version>-darwin-<arch>.tar.gz
 ```
 
 If you already downloaded through a browser, clear the attribute on the extracted directory:
 
 ```bash
-xattr -d -r com.apple.quarantine llvm-dsdl-<version>-darwin-arm64
+xattr -d -r com.apple.quarantine llvm-dsdl-<version>-darwin-<arch>
 ```
 
 ## Option 2: Build from source
