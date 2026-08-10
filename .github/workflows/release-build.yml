@@ -200,7 +200,7 @@ jobs:
     name: Build tarball (macOS ${{ matrix.arch }})
     needs: stage
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
