@@ -6,8 +6,8 @@ repository, other architectures) are backlog and live in
 [distribution-channels.md](distribution-channels.md).
 
 **Today:** a tag pushes packages to a draft GitHub release — `.deb` for Ubuntu on amd64 and
-arm64, and a tarball for macOS on Apple silicon. Each embeds the LLVM it needs, so nothing has to
-be added to the user's machine first.
+arm64, and a tarball for macOS on each of Apple silicon and Intel. Each embeds the LLVM it needs,
+so nothing has to be added to the user's machine first.
 
 ---
 
@@ -108,8 +108,8 @@ The glibc flavour is built on 22.04 rather than the CI image's 26.04 because gli
 compatible: archives built against 2.35 link in 2.43, and the reverse does not hold. One build
 therefore serves both the release and CI.
 
-macOS is absent from that table because a Darwin toolchain cannot be a container image. The macOS
-leg builds it natively in ~9 minutes and caches the prefix on the pin.
+macOS is absent from that table because a Darwin toolchain cannot be a container image. Each macOS
+leg builds its own natively and caches the prefix on the pin.
 
 ### Consumption
 
@@ -146,10 +146,16 @@ for CMake ≥ 3.24 (jammy has 3.22). Which compiler does the compiling is indepe
 is linked; `LLVM_DIR` decides the latter and names the toolchain prefix explicitly, so
 `clang-22`'s own runtime LLVM under `/usr/lib/llvm-22` never enters the build.
 
-### macOS: `macos-15`, Apple silicon
+### macOS: `macos-15` (Apple silicon) and `macos-15-intel`
 
-The Darwin toolchain, built natively in the job and cached on the pin. Intel macOS is not built
-and is not planned — D2 of the [backlog](distribution-channels.md).
+The Darwin toolchain, built natively in each job and cached on the pin — ~9 minutes on Apple
+silicon, ~30 on the 4-core Intel runner. Two prefixes at ~800 MB each share a 10 GB repository
+cache, so an eviction turns a cold toolchain build into the cost of an ordinary run; that is the
+first thing to look at if the 90-minute job timeout starts biting.
+
+Intel ships until GitHub retires `macos-15-intel` in **August 2027**, which is the last x86_64
+image Actions will offer. D2 of the [backlog](distribution-channels.md) records the reasoning and
+the macOS 15 floor that comes with it.
 
 ### Dependencies are derived, never written by hand
 
@@ -297,7 +303,7 @@ by `workflow_dispatch` (which defaults to a dry run that builds and verifies wit
 
 ```
 tag v* ──▶ stage ──▶ build   (ubuntu-22.04-arm, ubuntu-22.04) ──▶ publish
-             │       macos   (macos-15)                            │
+             │       macos   (macos-15, macos-15-intel)            │
         version/tag      each: build → package → verify        draft release,
         consistency                                            checksums, attestation
 ```
@@ -322,7 +328,7 @@ with no repository behind a downloaded file, nothing else would notice.
 | Check | What it proves | Where |
 |---|---|---|
 | [smoke.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/verify/smoke.py) | The `.deb` installs on **pristine** Ubuntu, all three tools run, no LLVM resolves from outside the package, generated C compiles with stock `cc`, a non-C backend emits | release workflow |
-| [smoke_macos.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/verify/smoke_macos.py) | Every non-system reference in every binary resolves inside the tarball, tools run, generated C compiles | release workflow |
+| [smoke_macos.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/verify/smoke_macos.py) | Every non-system reference in every binary resolves inside the tarball, tools run, generated C compiles, and the binaries carry the architecture the tarball is named for at no higher a macOS floor than the release claims | release workflow |
 | [verify_toolchain.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/verify_toolchain.py) | The toolchain is static-only, backend-free, and carries the tools the build and lit suite need | toolchain workflow, before publishing |
 | [corpus_determinism.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/determinism/corpus_determinism.py) | `dsdlc` built on amd64 and arm64 emits byte-identical output for all six backends | CI (`cross-arch-determinism`) |
 | [check_deb_config.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/verify/check_deb_config.py) | Control fields, component split, version pin, lintian verdict — against real packages built in a container | ctest (`llvmdsdl-packaging-deb-config`) |

@@ -106,14 +106,18 @@ jobs:
             `llvm-dsdl-dev` is also attached, for linking against the frontend,
             MLIR dialect, and emitter libraries.
 
-            ## macOS (Apple silicon)
+            ## macOS 15 or newer, Apple silicon or Intel
 
-            Download with `curl` rather than through a browser, then extract:
+            Pick the tarball matching your architecture — `uname -m` reports
+            `arm64` on Apple silicon and `x86_64` on Intel, which takes the
+            `darwin-amd64` asset. Download with `curl` rather than through a
+            browser, then extract:
 
             ```
-            curl -fLO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}/llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64.tar.gz
-            tar -xzf llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64.tar.gz
-            ./llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64/bin/dsdlc --version
+            arch=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)
+            curl -fLO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}/llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-$arch.tar.gz
+            tar -xzf llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-$arch.tar.gz
+            ./llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-$arch/bin/dsdlc --version
             ```
 
             The binaries are ad-hoc signed rather than notarised, so macOS refuses
@@ -124,7 +128,7 @@ jobs:
             after extracting:
 
             ```
-            xattr -d -r com.apple.quarantine llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-arm64
+            xattr -d -r com.apple.quarantine llvm-dsdl-${{ needs.verify.outputs.version }}-darwin-$arch
             ```
 
             Fetching with `curl` avoids the attribute in the first place, which is
