@@ -1,3 +1,9 @@
+llvm-dsdl (0.2.2) unstable; urgency=medium
+
+  * Build and ship macOS on Intel (#10)
+
+ -- Scott Dixon <scottd.thirtytwo@gmail.com>  Sun, 09 Aug 2026 20:00:20 -0700
+
 llvm-dsdl (0.2.1) unstable; urgency=medium
 
   * Adding a release automation script
