@@ -202,23 +202,6 @@ std::uint32_t expressionSpanLengthFromSource(const std::string&    sourceText,
     return static_cast<std::uint32_t>(end - start);
 }
 
-// Expansion ceiling for materializing `_offset_` as a concrete value set. A type whose set of
-// possible offsets exceeds this is expanded incompletely; `exact` reports that so the caller can
-// warn rather than silently evaluate assertions against a truncated set (BLS-D2).
-constexpr std::size_t kOffsetExpansionLimit = 4096;
-
-Value::Set bitLengthSetToValueSet(const BitLengthSet& bls, bool& exact)
-{
-    const auto expansion = bls.expandChecked(kOffsetExpansionLimit);
-    exact                = expansion.exact;
-    Value::Set out;
-    for (const auto v : expansion.values)
-    {
-        out.insert(Rational(v, 1));
-    }
-    return out;
-}
-
 class AnalyzerImpl final
 {
 public:
@@ -901,30 +884,18 @@ private:
             return (BitLengthSet(tagBits) + payloadSet).padToAlignment(8);
         };
 
-        bool offsetInexactWarned = false;
-        auto updateOffsetEnv     = [&](const SourceLocation& location) {
-            bool exact = true;
+        // `_offset_` is bound symbolically: the evaluator answers `.min`/`.max`/`% k` and similar
+        // queries exactly at any cardinality, and hard-fails an expression it cannot evaluate
+        // exactly — a truncated offset set can no longer exist, so the former BLS-D2 truncation
+        // warning is gone with it.
+        auto updateOffsetEnv = [&]() {
             if (section.isUnion)
             {
-                env["_offset_"] = Value{bitLengthSetToValueSet(computeUnionOffsetFromSeenFields(), exact)};
+                env["_offset_"] = Value{computeUnionOffsetFromSeenFields()};
             }
             else
             {
-                env["_offset_"] = Value{bitLengthSetToValueSet(structureOffset, exact)};
-            }
-            // The offset value set was truncated: assertions over `_offset_` would be evaluated
-            // against an incomplete set and could be unsound. Surface it once per section rather
-            // than silently proceeding (BLS-D2). A warning, not an error, because pydsdl evaluates
-            // such offsets exactly — we only lack the capacity, we do not reject the definition.
-            if (!exact && !offsetInexactWarned)
-            {
-                diagnostics_.warning(location,
-                                     "the set of possible values of '_offset_' exceeds the analyzer's expansion limit "
-                                         "of " +
-                                         std::to_string(kOffsetExpansionLimit) +
-                                         "; assertions referencing '_offset_' may be evaluated against an incomplete "
-                                             "set and could be unsound");
-                offsetInexactWarned = true;
+                env["_offset_"] = Value{structureOffset};
             }
         };
 
@@ -956,7 +927,7 @@ private:
             // Materialize _offset_ lazily only when the current statement can reference it.
             if (stmtNeedsOffset(stmt))
             {
-                updateOffsetEnv(statementLocation(stmt));
+                updateOffsetEnv();
             }
 
             if (std::holds_alternative<DirectiveAST>(stmt))

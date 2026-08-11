@@ -387,10 +387,20 @@ bool runAnalyzerTests()
         }
     }
 
-    // BLS-D2: when the set of possible `_offset_` values exceeds the analyzer's expansion limit,
-    // the analyzer must warn rather than silently evaluate assertions over a truncated offset set.
+    // Exactness contract for `_offset_` (supersedes the BLS-D2 truncation warning): the analyzer
+    // binds `_offset_` symbolically, `.min`/`.max`/`% k` and singleton comparisons are exact at
+    // any cardinality, and an expression that cannot be evaluated exactly is a hard error — an
+    // assertion is never evaluated against a truncated offset set, so no `_offset_` warning may
+    // exist at all anymore.
     {
-        const auto hasOffsetWarning = [](const std::string& source) -> bool {
+        struct OffsetOutcome final
+        {
+            bool        succeeded{false};
+            bool        anyOffsetWarning{false};
+            std::string errors;
+        };
+        const auto analyzeOffsets = [](const std::string& source) -> OffsetOutcome {
+            OffsetOutcome              outcome;
             llvmdsdl::DiagnosticEngine parse;
             llvmdsdl::Lexer            lexer("uavcan.test.OffsetLimit.1.0.dsdl", source);
             auto                       tokens = lexer.lex();
@@ -399,7 +409,7 @@ bool runAnalyzerTests()
             if (!parsed)
             {
                 llvm::consumeError(parsed.takeError());
-                return false;
+                return outcome;
             }
             llvmdsdl::DiscoveredDefinition discovered;
             discovered.filePath            = "uavcan/test/OffsetLimit.1.0.dsdl";
@@ -418,29 +428,103 @@ bool runAnalyzerTests()
             {
                 llvm::consumeError(semantic.takeError());
             }
+            outcome.succeeded = true;
             for (const llvmdsdl::Diagnostic& d : sem.diagnostics())
             {
                 if (d.level == llvmdsdl::DiagnosticLevel::Warning && d.message.find("_offset_") != std::string::npos)
                 {
-                    return true;
+                    outcome.anyOffsetWarning = true;
+                }
+                if (d.level == llvmdsdl::DiagnosticLevel::Error)
+                {
+                    outcome.succeeded = false;
+                    outcome.errors += d.message + "\n";
                 }
             }
-            return false;
+            return outcome;
         };
 
-        // ~5001 distinct offsets after the variable-length array exceed the 4096 expansion limit.
-        const std::string wide = "uint8[<=5000] payload\n@assert _offset_.max >= 0\n@sealed\n";
-        if (!hasOffsetWarning(wide))
+        // A wide offset set (5001 candidates — beyond the old 4096 truncation ceiling) must
+        // evaluate exactly: length prefix is 16 bits, so max/min/count/residues are all known.
+        const std::string wide = "uint8[<=5000] payload\n"
+                                 "@assert _offset_.min == 16\n"
+                                 "@assert _offset_.max == 16 + 5000 * 8\n"
+                                 "@assert _offset_.count == 5001\n"
+                                 "@assert _offset_ % 8 == {0}\n"
+                                 "@sealed\n";
         {
-            std::cerr << "expected an _offset_ truncation warning for a wide offset set (BLS-D2)\n";
-            return false;
+            const auto outcome = analyzeOffsets(wide);
+            if (!outcome.succeeded || outcome.anyOffsetWarning)
+            {
+                std::cerr << "wide offset set must evaluate exactly with no warning; errors: " << outcome.errors
+                          << "\n";
+                return false;
+            }
         }
-        // A small type's offset set fits the limit, so no warning must be produced.
-        const std::string small = "uint8 a\nuint16 b\n@assert _offset_.max >= 0\n@sealed\n";
-        if (hasOffsetWarning(small))
+
+        // The answer the old truncated expansion used to report for `.max` (the 4096th smallest
+        // value) must now fail the assertion — pinning the truncated-set wrong-answer bug shut.
+        const std::string stale = "uint8[<=5000] payload\n@assert _offset_.max == 16 + 4095 * 8\n@sealed\n";
         {
-            std::cerr << "did not expect an _offset_ warning for a small offset set (BLS-D2)\n";
-            return false;
+            const auto outcome = analyzeOffsets(stale);
+            if (outcome.succeeded || outcome.errors.find("assertion failed") == std::string::npos)
+            {
+                std::cerr << "the formerly-truncated .max answer must now fail its assertion\n";
+                return false;
+            }
+        }
+
+        // Beyond the exact-materialization capacity (16384): symbolic queries stay exact...
+        const std::string huge = "uint8[<=20000] payload\n"
+                                 "@assert _offset_.min == 16\n"
+                                 "@assert _offset_.max == 16 + 20000 * 8\n"
+                                 "@assert _offset_ % 8 == {0}\n"
+                                 "@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(huge);
+            if (!outcome.succeeded || outcome.anyOffsetWarning)
+            {
+                std::cerr << "symbolic offset queries must stay exact beyond the materialization "
+                             "capacity; errors: "
+                          << outcome.errors << "\n";
+                return false;
+            }
+        }
+
+        // ...a singleton comparison is disproved exactly without materializing...
+        const std::string unequal = "uint8[<=20000] payload\n@assert _offset_ == {0}\n@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(unequal);
+            if (outcome.succeeded || outcome.errors.find("assertion failed") == std::string::npos)
+            {
+                std::cerr << "singleton offset comparison must be disproved exactly, not deferred "
+                             "to materialization\n";
+                return false;
+            }
+        }
+
+        // ...and a query that genuinely requires the full contents is a hard error, never an
+        // approximate answer (and never a mere warning).
+        const std::string uncountable = "uint8[<=20000] payload\n@assert _offset_.count == 20001\n@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(uncountable);
+            if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)
+            {
+                std::cerr << "an offset query beyond exact capacity must hard-fail; errors: " << outcome.errors
+                          << "\n";
+                return false;
+            }
+        }
+
+        // A small type's offset set evaluates concretely; still no warning channel.
+        const std::string small = "uint8 a\nuint16 b\n@assert _offset_.max >= 0\n@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(small);
+            if (!outcome.succeeded || outcome.anyOffsetWarning)
+            {
+                std::cerr << "small offset set must analyze cleanly with no warning\n";
+                return false;
+            }
         }
     }
 

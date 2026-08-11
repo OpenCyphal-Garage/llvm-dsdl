@@ -23,6 +23,7 @@
 
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Support/Rational.h"
 
 namespace llvmdsdl
@@ -39,7 +40,14 @@ struct Value final
     using Set = std::set<Rational>;
 
     /// @brief Value payload variant.
-    std::variant<bool, Rational, std::string, Set, TypeExprAST> data;
+    ///
+    /// The `BitLengthSet` alternative holds a symbolic set of non-negative integers (the analyzer
+    /// binds `_offset_` this way). To the DSDL author it is indistinguishable from a `Set`; the
+    /// evaluator answers `.min`/`.max`/`% k` and similar queries from the exact symbolic form at
+    /// any cardinality, and an expression that genuinely requires the concrete elements either
+    /// materializes them exactly or fails with a diagnostic — it is never evaluated against a
+    /// truncated set.
+    std::variant<bool, Rational, std::string, Set, TypeExprAST, BitLengthSet> data;
 
     /// @brief Returns a stable textual type name for the active variant.
     /// @return Value type name string.

@@ -20,6 +20,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -29,6 +30,95 @@ namespace llvmdsdl
 {
 namespace
 {
+
+/// Materialization ceiling for symbolic set values (`_offset_`). This is a pure resource guard
+/// against pathological definitions (compile-time DoS), NOT a correctness knob: an expression
+/// whose exact value set cannot be materialized within this many elements FAILS with a
+/// diagnostic instead of being evaluated against a truncated set. Queries answered symbolically
+/// (`.min`, `.max`, `% k`, singleton comparisons) never consult this limit and are exact at any
+/// cardinality.
+constexpr std::size_t kExactMaterializationLimit = 16384;
+
+Value::Set toRationalSet(const FlatSet<std::int64_t>& values)
+{
+    Value::Set out;
+    for (const auto v : values)
+    {
+        out.insert(Rational(v, 1));
+    }
+    return out;
+}
+
+/// Materializes the exact value set denoted by a symbolic set, or fails with a hard error.
+/// Never returns a truncated set: inexactness here is a diagnosed evaluation failure, so
+/// approximate values cannot leak into expression results.
+std::optional<Value::Set> materializeExact(const BitLengthSet&   bls,
+                                           DiagnosticEngine&     diagnostics,
+                                           const SourceLocation& location)
+{
+    const auto expansion = bls.expandChecked(kExactMaterializationLimit);
+    if (!expansion.exact)
+    {
+        diagnostics.error(location,
+                          "this expression requires the full contents of '_offset_', which cannot be materialized "
+                          "exactly within the evaluator's capacity of " +
+                              std::to_string(kExactMaterializationLimit) +
+                              " values; rewrite using '_offset_.min', '_offset_.max', or '_offset_ % <divisor>', "
+                              "which are computed exactly for any set size");
+        return std::nullopt;
+    }
+    return toRationalSet(expansion.values);
+}
+
+/// Decides `S == literal` exactly, where S is symbolic. Returns true with the verdict in
+/// `equal`, or false after diagnosing a genuinely undecidable comparison (never guesses):
+///   - `min()`/`max()` are exact at any cardinality, so a bounds mismatch disproves equality
+///     without materializing anything;
+///   - a materialization that completes is compared exactly;
+///   - a truncated materialization is still a sound subset of S, so any element outside the
+///     literal — or more elements than the literal holds — also disproves equality exactly.
+bool decideSetEquality(const BitLengthSet&   bls,
+                       const Value::Set&     literal,
+                       bool&                 equal,
+                       DiagnosticEngine&     diagnostics,
+                       const SourceLocation& location)
+{
+    if (literal.empty())
+    {
+        equal = false;  // S is never empty (invariant I1).
+        return true;
+    }
+    if (*literal.begin() != Rational(bls.min(), 1) || *literal.rbegin() != Rational(bls.max(), 1))
+    {
+        equal = false;
+        return true;
+    }
+    const auto expansion = bls.expandChecked(kExactMaterializationLimit);
+    const auto values    = toRationalSet(expansion.values);
+    if (expansion.exact)
+    {
+        equal = (values == literal);
+        return true;
+    }
+    if (values.size() > literal.size())
+    {
+        equal = false;
+        return true;
+    }
+    for (const auto& v : values)
+    {
+        if (!literal.contains(v))
+        {
+            equal = false;
+            return true;
+        }
+    }
+    diagnostics.error(location,
+                      "cannot decide this '_offset_' set comparison exactly within the evaluator's capacity of " +
+                          std::to_string(kExactMaterializationLimit) +
+                          " values; compare '_offset_.min'/'_offset_.max' or '_offset_ % <divisor>' instead");
+    return false;
+}
 
 bool asBool(const Value& v, bool& out)
 {
@@ -282,6 +372,32 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             return std::nullopt;
         }
 
+        if (auto bls = std::get_if<BitLengthSet>(&lhs->data))
+        {
+            // Symbolic set: min/max are exact at any cardinality and never enumerate the set.
+            if (rhsId->name == "min")
+            {
+                return Value{Rational(bls->min(), 1)};
+            }
+            if (rhsId->name == "max")
+            {
+                return Value{Rational(bls->max(), 1)};
+            }
+            if (rhsId->name == "count")
+            {
+                if (bls->fixed())
+                {
+                    return Value{Rational(1, 1)};
+                }
+                auto set = materializeExact(*bls, diagnostics, location);
+                if (!set)
+                {
+                    return std::nullopt;
+                }
+                return Value{Rational(static_cast<std::int64_t>(set->size()), 1)};
+            }
+        }
+
         if (auto set = std::get_if<Value::Set>(&lhs->data))
         {
             if (rhsId->name == "count")
@@ -326,6 +442,77 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
     if (!lhs || !rhs)
     {
         return std::nullopt;
+    }
+
+    // Symbolic set operands (`_offset_`): answer exactly from the symbolic form where possible;
+    // whatever remains materializes its exact value set below or fails — an expression is never
+    // evaluated against a truncated set.
+    if (std::holds_alternative<BitLengthSet>(lhs->data) || std::holds_alternative<BitLengthSet>(rhs->data))
+    {
+        // `_offset_ % k`: exact symbolic residues at any cardinality. Offsets are non-negative,
+        // so remainder by a negative divisor equals remainder by its magnitude (elementwise `%`
+        // truncates toward zero); divisors beyond int64 fall through to materialization.
+        if (b.op == BinaryOp::Mod)
+        {
+            const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
+            const auto* r    = std::get_if<Rational>(&rhs->data);
+            if (lbls != nullptr && r != nullptr && r->isInteger())
+            {
+                const __int128 d         = r->asWideInteger().value();
+                const __int128 magnitude = (d < 0) ? -d : d;
+                if (d == 0)
+                {
+                    diagnostics.error(location, "invalid elementwise set operation");
+                    return std::nullopt;
+                }
+                if (magnitude <= std::numeric_limits<std::int64_t>::max())
+                {
+                    return Value{toRationalSet(lbls->modulo(static_cast<std::int64_t>(magnitude)))};
+                }
+            }
+        }
+
+        // Equality against a concrete set: decidable exactly at any cardinality in all but
+        // genuinely pathological cases (see decideSetEquality).
+        if (b.op == BinaryOp::Eq || b.op == BinaryOp::Ne)
+        {
+            const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
+            const auto* rbls = std::get_if<BitLengthSet>(&rhs->data);
+            const auto* lset = std::get_if<Value::Set>(&lhs->data);
+            const auto* rset = std::get_if<Value::Set>(&rhs->data);
+            const auto* bls  = (lbls != nullptr) ? lbls : rbls;
+            const auto* set  = (lbls != nullptr) ? rset : lset;
+            if (bls != nullptr && set != nullptr)
+            {
+                bool equal = false;
+                if (!decideSetEquality(*bls, *set, equal, diagnostics, location))
+                {
+                    return std::nullopt;
+                }
+                return Value{(b.op == BinaryOp::Eq) ? equal : !equal};
+            }
+        }
+
+        // Everything else: materialize the exact set (or fail) and dispatch through the
+        // ordinary concrete-set paths below.
+        if (auto lbls = std::get_if<BitLengthSet>(&lhs->data))
+        {
+            auto set = materializeExact(*lbls, diagnostics, location);
+            if (!set)
+            {
+                return std::nullopt;
+            }
+            lhs->data = std::move(*set);
+        }
+        if (auto rbls = std::get_if<BitLengthSet>(&rhs->data))
+        {
+            auto set = materializeExact(*rbls, diagnostics, location);
+            if (!set)
+            {
+                return std::nullopt;
+            }
+            rhs->data = std::move(*set);
+        }
     }
 
     if (auto l = std::get_if<Rational>(&lhs->data))
@@ -581,6 +768,12 @@ std::string Value::typeName() const
     {
         return "set<rational>";
     }
+    if (std::holds_alternative<BitLengthSet>(data))
+    {
+        // The symbolic representation is an implementation detail; to the DSDL author
+        // `_offset_` is a set of rationals.
+        return "set<rational>";
+    }
     return "metaserializable";
 }
 
@@ -617,6 +810,31 @@ std::string Value::str() const
     else if (auto p = std::get_if<TypeExprAST>(&data))
     {
         out << p->str();
+    }
+    else if (auto p = std::get_if<BitLengthSet>(&data))
+    {
+        // Concrete rendering when the exact set materializes; otherwise the symbolic expression
+        // — never a silently truncated set.
+        const auto expansion = p->expandChecked(kExactMaterializationLimit);
+        if (expansion.exact)
+        {
+            out << '{';
+            bool first = true;
+            for (const auto v : expansion.values)
+            {
+                if (!first)
+                {
+                    out << ", ";
+                }
+                out << v;
+                first = false;
+            }
+            out << '}';
+        }
+        else
+        {
+            out << p->str();
+        }
     }
     return out.str();
 }
