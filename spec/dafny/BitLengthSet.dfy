@@ -20,6 +20,13 @@
 //                          layout classification and buffer sizing depend on them
 //                          unconditionally.
 //   FixedCharacterization: fixed() == (min == max) decides |S| == 1 exactly.
+//   Algebraic laws       : the header's law table as theorems over Sem ALONE — Minkowski
+//                          commutativity/associativity/identity, + distributes over |,
+//                          repeat additivity (RepeatSplit — the correctness backbone of
+//                          RunSet::repeated()), pad idempotence/identity/multiples/soundness,
+//                          and the repeatRange union characterization. These constrain the
+//                          DENOTATION independently of any evaluator, so a mis-transcribed
+//                          Sem fails even if an evaluator were mis-transcribed to match.
 //
 // WHY WF MATTERS (the model has teeth): RepeatRange's minimum is 0 and its maximum is
 // kMax * max(inner) ONLY on the non-negative domain. Deleting the `0 <= v` conjunct from WF
@@ -38,7 +45,10 @@
 //   - change MinEval(RepeatRange) to min(...) -> MinExact fails (0 is the k = 0 term)
 //   - change MaxEval(Union) to `min`          -> MaxExact fails
 //   - drop `vs != {}` from WF(Leaf)           -> SemNonEmpty fails; SetMin precondition fails
-//   - weaken RoundUp to round DOWN            -> MinExact fails at Pad (result not in S)
+//   - weaken RoundUp to round DOWN            -> RoundUpProps and PadSetSound fail — caught
+//                                                even though Sem, the evaluators, AND the
+//                                                idempotence/multiples laws all share the
+//                                                mutated definition (the co-mutation case)
 //
 // Verified with: dafny verify spec/dafny/BitLengthSet.dfy   (Dafny 4.11, CI-enforced)
 
@@ -46,6 +56,32 @@ module BitLengthSetModel {
 
   // ==========================================================================
   // Expression DAG — mirrors BitLengthSet::Node::Kind.
+  //
+  // TRACEABILITY (the requirement each constructor implements). Authority: the OpenCyphal
+  // Specification v1.0, ch. 3 (DSDL), "Serialized representations"; pydsdl's BitLengthSet is
+  // the peer implementation of the same algebra. The C++ site listed for each constructor is
+  // where the analyzer builds that node, so the map from language rule to algebra is auditable
+  // end to end:
+  //
+  //   Leaf        — a scalar/void field's possible widths (a fixed-width primitive is a
+  //                 singleton). Built throughout Analyzer.cpp layout resolution.
+  //   Add         — CONCATENATION: fields of a structure serialize in declaration order, so
+  //                 lengths add (Minkowski sum over the possibilities).
+  //                 Analyzer.cpp analyzeSection: `structureOffset + layout.bls`.
+  //   Union       — TAGGED-UNION ALTERNATIVES: exactly one alternative serializes, so the
+  //                 payload length set is the union over alternatives (the tag itself is a
+  //                 separate Add). Analyzer.cpp computeUnionOffsetFromSeenFields:
+  //                 `(BitLengthSet(tagBits) + payloadSet).padToAlignment(8)`.
+  //   Pad         — ALIGNMENT PADDING: composite boundaries round up to the alignment (byte
+  //                 alignment in practice). Analyzer.cpp: `padToAlignment(layout.alignment)`
+  //                 between fields, `.padToAlignment(8)` at section ends.
+  //   Repeat      — FIXED-LENGTH ARRAYS: exactly `k` elements serialize back to back.
+  //                 Analyzer.cpp: `scalarLayout.bls.repeat(capacity)`.
+  //   RepeatRange — VARIABLE-LENGTH ARRAY PAYLOAD: any count in [0, capacity] of elements
+  //                 (the implicit length prefix is accounted separately by the caller, as an
+  //                 Add — mirroring the C++ header's note). Analyzer.cpp:
+  //                 `bls + scalarLayout.bls.repeatRange(capacity)`; also delimited-composite
+  //                 payloads: `BitLengthSet(8).repeatRange(extent / 8)`.
   // ==========================================================================
 
   datatype Expr =
@@ -546,6 +582,270 @@ module BitLengthSetModel {
       // The non-negative domain is what licenses "the maximum is the k = kMax term".
       assert 0 <= MaxEval(inner);
       RepeatRangeUpper(Sem(inner), kMax, MaxEval(inner));
+  }
+
+  // ==========================================================================
+  // Algebraic laws — the C++ header's "Algebraic laws" section as theorems over Sem ALONE.
+  //
+  // These are Sem-shape cross-checks (hardening rung 1): they constrain the denotation
+  // independently of any evaluator, so a mis-transcribed Sem — one that no longer denotes
+  // Minkowski sums, genuine set union, or least-multiple padding — fails here even if some
+  // evaluator were mis-transcribed to match. RepeatSplit is also the load-bearing lemma
+  // behind the C++ RunSet repeat strategies: k-fold sums compose additively, which licenses
+  // both linear iteration and doubling (stage 4 proves the dense-fixpoint jump on top of it).
+  // ==========================================================================
+
+  lemma MSumComm(a: set<int>, b: set<int>)
+    ensures MSum(a, b) == MSum(b, a)
+  {
+    forall v | v in MSum(a, b) ensures v in MSum(b, a) {
+      var x, y :| x in a && y in b && v == x + y;
+      assert v == y + x;
+    }
+    forall v | v in MSum(b, a) ensures v in MSum(a, b) {
+      var x, y :| x in b && y in a && v == x + y;
+      assert v == y + x;
+    }
+  }
+
+  lemma MSumAssoc(a: set<int>, b: set<int>, c: set<int>)
+    ensures MSum(MSum(a, b), c) == MSum(a, MSum(b, c))
+  {
+    forall v | v in MSum(MSum(a, b), c) ensures v in MSum(a, MSum(b, c)) {
+      var xy, z :| xy in MSum(a, b) && z in c && v == xy + z;
+      var x, y :| x in a && y in b && xy == x + y;
+      assert y + z in MSum(b, c);
+      assert v == x + (y + z);
+    }
+    forall v | v in MSum(a, MSum(b, c)) ensures v in MSum(MSum(a, b), c) {
+      var x, yz :| x in a && yz in MSum(b, c) && v == x + yz;
+      var y, z :| y in b && z in c && yz == y + z;
+      assert x + y in MSum(a, b);
+      assert v == (x + y) + z;
+    }
+  }
+
+  lemma MSumIdentity(a: set<int>)
+    ensures MSum(a, {0}) == a && MSum({0}, a) == a
+  {
+    forall v | v in MSum(a, {0}) ensures v in a {
+      var x, y :| x in a && y in {0} && v == x + y;
+    }
+    forall v | v in a ensures v in MSum(a, {0}) {
+      assert 0 in {0} && v == v + 0;
+    }
+    MSumComm(a, {0});
+  }
+
+  lemma MSumDistribUnion(a: set<int>, b: set<int>, c: set<int>)
+    ensures MSum(a, b + c) == MSum(a, b) + MSum(a, c)
+  {
+    forall v | v in MSum(a, b + c) ensures v in MSum(a, b) + MSum(a, c) {
+      var x, y :| x in a && y in b + c && v == x + y;
+    }
+    forall v | v in MSum(a, b) + MSum(a, c) ensures v in MSum(a, b + c) {
+      if v in MSum(a, b) {
+        var x, y :| x in a && y in b && v == x + y;
+        assert y in b + c;
+      } else {
+        var x, y :| x in a && y in c && v == x + y;
+        assert y in b + c;
+      }
+    }
+  }
+
+  // k-fold sums compose additively: repeat(i + j) == repeat(i) + repeat(j). This is the
+  // additivity that justifies evaluating huge repeat counts incrementally (or by doubling)
+  // instead of by definition — the correctness backbone of RunSet::repeated().
+  lemma RepeatSplit(s: set<int>, i: nat, j: nat)
+    ensures RepeatSem(s, i + j) == MSum(RepeatSem(s, i), RepeatSem(s, j))
+    decreases j
+  {
+    if j == 0 {
+      MSumIdentity(RepeatSem(s, i));
+    } else {
+      calc {
+        RepeatSem(s, i + j);
+      ==
+        MSum(RepeatSem(s, i + j - 1), s);
+      ==  { RepeatSplit(s, i, j - 1); }
+        MSum(MSum(RepeatSem(s, i), RepeatSem(s, j - 1)), s);
+      ==  { MSumAssoc(RepeatSem(s, i), RepeatSem(s, j - 1), s); }
+        MSum(RepeatSem(s, i), MSum(RepeatSem(s, j - 1), s));
+      ==
+        MSum(RepeatSem(s, i), RepeatSem(s, j));
+      }
+    }
+  }
+
+  lemma RepeatOne(s: set<int>)
+    ensures RepeatSem(s, 1) == s
+  {
+    MSumIdentity(s);
+  }
+
+  // Every padded element is a multiple of the alignment, padding an already-padded set is the
+  // identity, and alignment 1 is the identity map — the header's padToAlignment @post trio.
+  lemma PadSetMultiples(s: set<int>, a: int)
+    requires 1 <= a
+    ensures forall v <- PadSet(s, a) :: v % a == 0
+  {
+    forall v | v in PadSet(s, a) ensures v % a == 0 {
+      var u :| u in s && v == RoundUp(u, a);
+      RoundUpProps(u, a);
+    }
+  }
+
+  lemma PadSetIdempotent(s: set<int>, a: int)
+    requires 1 <= a
+    ensures PadSet(PadSet(s, a), a) == PadSet(s, a)
+  {
+    PadSetMultiples(s, a);
+    forall v | v in PadSet(PadSet(s, a), a) ensures v in PadSet(s, a) {
+      var u :| u in PadSet(s, a) && v == RoundUp(u, a);
+      assert v == u;  // u is a multiple of a, so RoundUp is the identity on it
+    }
+    forall v | v in PadSet(s, a) ensures v in PadSet(PadSet(s, a), a) {
+      assert RoundUp(v, a) == v;
+    }
+  }
+
+  // Padding rounds UP: every padded value descends from an input at most `a - 1` below it.
+  // This is the law that pins the direction — idempotence and the multiples property are both
+  // satisfied by a round-DOWN mutant, so without this a consistent mis-transcription of Sem
+  // and evaluator together could verify. (The shared RoundUp definition makes such a
+  // co-mutation a single edit; this lemma and RoundUpProps both break on it.)
+  lemma PadSetSound(s: set<int>, a: int)
+    requires 1 <= a
+    ensures forall v <- PadSet(s, a) :: exists u :: u in s && u <= v < u + a
+  {
+    forall v | v in PadSet(s, a) ensures exists u :: u in s && u <= v < u + a {
+      var u :| u in s && v == RoundUp(u, a);
+      RoundUpProps(u, a);
+    }
+  }
+
+  lemma PadSetIdentityAtOne(s: set<int>)
+    ensures PadSet(s, 1) == s
+  {
+    forall v | v in PadSet(s, 1) ensures v in s {
+      var u :| u in s && v == RoundUp(u, 1);
+    }
+    forall v | v in s ensures v in PadSet(s, 1) {
+      assert RoundUp(v, 1) == v;
+    }
+  }
+
+  // The recursive RepeatRangeSem equals the header's phrasing: "union of repeat(j) for j in
+  // [0, kMax]" — pinning the two formulations to each other.
+  lemma RepeatRangeCharacterization(s: set<int>, kMax: nat, v: int)
+    ensures v in RepeatRangeSem(s, kMax) <==> exists j: nat :: j <= kMax && v in RepeatSem(s, j)
+    decreases kMax
+  {
+    if kMax == 0 {
+      if v in RepeatRangeSem(s, 0) {
+        assert 0 <= kMax && v in RepeatSem(s, 0);  // witness j := 0
+      }
+    } else {
+      RepeatRangeCharacterization(s, kMax - 1, v);
+      if v in RepeatRangeSem(s, kMax) && v in RepeatSem(s, kMax) {
+        assert kMax <= kMax && v in RepeatSem(s, kMax);  // witness j := kMax
+      }
+      if exists j: nat :: j <= kMax && v in RepeatSem(s, j) {
+        var j: nat :| j <= kMax && v in RepeatSem(s, j);
+        if j < kMax {
+          assert j <= kMax - 1 && v in RepeatSem(s, j);  // re-witness for the IH bound
+        }
+      }
+    }
+  }
+
+  // ==========================================================================
+  // The header's laws verbatim, at the expression level — corollaries of the operator
+  // lemmas, stated in the same shape a reader of BitLengthSet.h expects.
+  // ==========================================================================
+
+  lemma LawAddCommutes(a: Expr, b: Expr)
+    requires WF(a) && WF(b)
+    ensures Sem(Add(a, b)) == Sem(Add(b, a))
+  {
+    MSumComm(Sem(a), Sem(b));
+  }
+
+  lemma LawAddAssociates(a: Expr, b: Expr, c: Expr)
+    requires WF(a) && WF(b) && WF(c)
+    ensures Sem(Add(Add(a, b), c)) == Sem(Add(a, Add(b, c)))
+  {
+    MSumAssoc(Sem(a), Sem(b), Sem(c));
+  }
+
+  lemma LawAddIdentity(e: Expr)
+    requires WF(e)
+    ensures Sem(Add(e, Leaf({0}))) == Sem(e)
+  {
+    MSumIdentity(Sem(e));
+  }
+
+  lemma LawUnionIdempotent(e: Expr)
+    requires WF(e)
+    ensures Sem(Union(e, e)) == Sem(e)
+  {
+  }
+
+  lemma LawAddDistributesOverUnion(a: Expr, b: Expr, c: Expr)
+    requires WF(a) && WF(b) && WF(c)
+    ensures WF(Add(a, Union(b, c))) && WF(Union(Add(a, b), Add(a, c)))
+    ensures Sem(Add(a, Union(b, c))) == Sem(Union(Add(a, b), Add(a, c)))
+  {
+    MSumDistribUnion(Sem(a), Sem(b), Sem(c));
+  }
+
+  lemma LawRepeatZero(e: Expr)
+    requires WF(e)
+    ensures Sem(Repeat(e, 0)) == {0}
+  {
+  }
+
+  lemma LawRepeatOne(e: Expr)
+    requires WF(e)
+    ensures Sem(Repeat(e, 1)) == Sem(e)
+  {
+    RepeatOne(Sem(e));
+  }
+
+  lemma LawRepeatAdditive(e: Expr, i: nat, j: nat)
+    requires WF(e)
+    ensures WF(Add(Repeat(e, i), Repeat(e, j)))
+    ensures Sem(Repeat(e, i + j)) == Sem(Add(Repeat(e, i), Repeat(e, j)))
+  {
+    RepeatSplit(Sem(e), i, j);
+  }
+
+  lemma LawPadIdempotent(e: Expr, a: int)
+    requires WF(e) && 1 <= a
+    ensures Sem(Pad(Pad(e, a), a)) == Sem(Pad(e, a))
+  {
+    PadSetIdempotent(Sem(e), a);
+  }
+
+  lemma LawPadIdentityAtOne(e: Expr)
+    requires WF(e)
+    ensures Sem(Pad(e, 1)) == Sem(e)
+  {
+    PadSetIdentityAtOne(Sem(e));
+  }
+
+  lemma LawRepeatRangeZero(e: Expr)
+    requires WF(e)
+    ensures Sem(RepeatRange(e, 0)) == {0}
+  {
+  }
+
+  lemma LawRepeatRangeContainsZero(e: Expr, kMax: nat)
+    requires WF(e)
+    ensures 0 in Sem(RepeatRange(e, kMax))
+  {
+    RepeatRangeHasZero(Sem(e), kMax);
   }
 
   // ==========================================================================

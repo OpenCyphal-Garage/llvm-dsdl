@@ -123,7 +123,12 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   `FixedCharacterization` (`min == max` decides `|S| == 1`). The `WF` predicate records what
   the C++ constructors establish by clamping; the RepeatRange cases prove it load-bearing —
   dropping non-negativity breaks the proofs, which is defect BLS-D5/D15 as a failed proof
-  instead of a field bug. Stage 1 of a staged plan (file header): later stages model the
+  instead of a field bug. The algebra's law table is proven over `Sem` alone (Minkowski
+  commutativity/associativity/identity, `+` distributes over `|`, repeat additivity, pad
+  idempotence/multiples/soundness) — Sem-shape cross-checks that hold independently of every
+  evaluator — and each `Expr` constructor carries a traceability note mapping the
+  Specification concept it implements to the `Analyzer.cpp` site that builds it. Stage 1+
+  of a staged plan (file header): later stages model the
   RunSet kernel (CRT run intersection, the dense-fixpoint jump, repeat-range phase families)
   and the exact-or-refuse residue evaluator, ending with a verified executable oracle for the
   differential batteries.
