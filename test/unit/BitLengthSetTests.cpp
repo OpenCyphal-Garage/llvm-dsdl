@@ -764,6 +764,17 @@ void testRunSet(TestContext& t)
             t.expect(rs->contains(probe) == (c.ref.count(probe) != 0),
                      "runSet membership(" + std::to_string(probe) + ") for " + c.name);
         }
+        // moduloChecked: exact for divisors below AND above the symbolic-residue cap (the
+        // latter exercises the per-run residue path that replaced the silent degrade).
+        for (const std::int64_t d : {2LL, 7LL, 8LL, 64LL, 100003LL})
+        {
+            const auto res = c.bls.moduloChecked(d);
+            t.expect(res.has_value(), "moduloChecked(" + std::to_string(d) + ") answers for " + c.name);
+            if (res)
+            {
+                t.expectSetEq(*res, refModulo(c.ref, d), "moduloChecked(" + std::to_string(d) + ") exact for " + c.name);
+            }
+        }
     }
 
     // Huge structured sets evaluate in closed form: the uint8[<=9000] offset shape, and a
@@ -781,6 +792,26 @@ void testRunSet(TestContext& t)
         const auto huge = BitLengthSet(8).repeatRange(1000000000).runSet();
         t.expect(huge.has_value() && huge->count().value_or(0) == 1000000001LL && huge->max() == 8000000000LL,
                  "billion-element repeatRange in closed form");
+    }
+
+    // moduloChecked beyond the symbolic-residue cap on a beyond-enumeration set: exact residues
+    // in closed form (offsets {16 + 8k : k <= 20000} mod 100000 walk the stride-8 coset — 12500
+    // distinct residues); a divisor so large that the residue set equals the whole 70001-element
+    // set REFUSES instead of returning the silently truncated set the old degrade produced.
+    {
+        const BitLengthSet wide = BitLengthSet(16) + BitLengthSet(8).repeatRange(20000);
+        const auto         res  = wide.moduloChecked(100000);
+        t.expect(res.has_value(), "moduloChecked(100000) answers beyond the residue cap");
+        if (res)
+        {
+            t.expect(res->size() == 12500 && *res->begin() == 0 && *res->rbegin() == 99992,
+                     "moduloChecked(100000) closed-form residues of a 20001-element set");
+        }
+        const BitLengthSet huge = BitLengthSet(16) + BitLengthSet(8).repeatRange(70000);
+        t.expect(!huge.moduloChecked(1000000007).has_value(),
+                 "moduloChecked refuses when the exact residue set exceeds the output budget");
+        t.expect(huge.moduloChecked(8).has_value() && huge.moduloChecked(8)->size() == 1,
+                 "small-divisor residues stay exact on the same huge set");
     }
 
     // operator== is now exact past the expand() limit: two structurally different constructions

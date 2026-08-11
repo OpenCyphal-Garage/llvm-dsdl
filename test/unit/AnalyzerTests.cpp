@@ -484,6 +484,9 @@ bool runAnalyzerTests()
                                  "@assert _offset_.count == 20001\n"
                                  "@assert _offset_ >= {16, 24, 160016}\n"
                                  "@assert !(_offset_ >= {17})\n"
+                                 "@assert (_offset_ % 100000).count == 12500\n"
+                                 "@assert (_offset_ % 100000).min == 0\n"
+                                 "@assert (_offset_ % 100000).max == 99992\n"
                                  "@sealed\n";
         {
             const auto outcome = analyzeOffsets(huge);
@@ -519,6 +522,21 @@ bool runAnalyzerTests()
             {
                 std::cerr << "an elementwise offset transform beyond exact capacity must hard-fail; errors: "
                           << outcome.errors << "\n";
+                return false;
+            }
+        }
+
+        // A modulo whose exact residue set is itself beyond every budget (huge divisor on a
+        // 70001-element set: the residues ARE the set) must hard-fail — this is the path the
+        // old modulo() degrade would have answered with a silently truncated set.
+        const std::string hugeMod =
+            "uint8[<=70000] payload\n@assert (_offset_ % 1000000007).count == 70001\n@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(hugeMod);
+            if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)
+            {
+                std::cerr << "a beyond-budget modulo must hard-fail, never truncate; errors: " << outcome.errors
+                          << "\n";
                 return false;
             }
         }

@@ -130,9 +130,14 @@ namespace llvmdsdl
 ///   - `modulo(d)` returns the EXACT residue set of S for any set size. It is computed by
 ///     symbolic per-node residue propagation (each intermediate set is a subset of Z/d, so it
 ///     never truncates), NOT by expanding S. The sole exception is a defensive internal cap on
-///     the working modulus (only ever widened by padding with an alignment coprime to `d`,
-///     which does not occur for the power-of-two alignments used in practice): beyond that cap
-///     the result degrades to the `expand()`-based approximation and may be incomplete.
+///     the working modulus: beyond it, exact per-run residues (`runSet()`) and exact expansion
+///     are tried, and only when every exact strategy refuses does `modulo()` degrade to the
+///     `expand()`-based approximation, which may be incomplete. Callers that must never see an
+///     incomplete set use `moduloChecked(d)`, which returns the same exact results and
+///     `nullopt` instead of the degrade — that is the surface the expression evaluator uses.
+///   - `runSet()` evaluates S exactly into arithmetic-progression runs, making cardinality,
+///     membership, subset, and equality queries exact at ANY set size; it may refuse
+///     (`nullopt`) on adversarial structure, never approximate.
 ///
 /// ## Complexity and robustness caveats (as implemented)
 ///
@@ -257,6 +262,22 @@ public:
     /// @note Intended for alignment reasoning (e.g. "can this offset be misaligned?"),
     ///       mirroring pydsdl's `BitLengthSet.__mod__`.
     [[nodiscard]] FlatSet<std::int64_t> modulo(std::int64_t divisor) const;
+
+    /// @brief Like `modulo()`, but EXACT-OR-REFUSE for every divisor: never returns an
+    ///        incomplete residue set.
+    ///
+    /// `modulo()`'s symbolic residue path is complete only while the working modulus stays
+    /// within its internal cap; beyond it `modulo()` degrades to a (possibly truncated)
+    /// expansion — acceptable for its legacy callers, unacceptable where exactness is the
+    /// contract. This variant tries, in order: the symbolic residue path (divisor within cap),
+    /// exact per-run residues via `runSet()` (any divisor, any cardinality, output-budgeted),
+    /// and residues of an exact expansion; if none can answer completely it returns `nullopt`.
+    /// Callers evaluating language-level expressions (e.g. `_offset_ % k`) MUST use this and
+    /// treat `nullopt` as "cannot evaluate exactly", never fall back to `modulo()`.
+    ///
+    /// @param[in] divisor Modulo divisor; values `< 1` yield the `{0}` sentinel (as `modulo()`).
+    /// @return The complete residue set, or `std::nullopt`.
+    [[nodiscard]] std::optional<FlatSet<std::int64_t>> moduloChecked(std::int64_t divisor) const;
 
     /// @brief An expansion together with a completeness signal.
     struct Expansion final

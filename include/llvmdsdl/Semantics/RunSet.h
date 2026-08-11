@@ -119,6 +119,15 @@ public:
 
     /// @brief Exact semantic equality (cardinality + containment); representation-independent.
     [[nodiscard]] bool equals(const RunSet& other) const;
+
+    /// @brief Exact residue set `{ v mod divisor : v in S }` for any divisor, any cardinality.
+    ///
+    /// Per run, the residues of `start + i*stride (mod d)` cycle with period
+    /// `d / gcd(stride, d)`, so each run contributes `min(count, period)` residues computed
+    /// incrementally (no overflow, no enumeration of S). `nullopt` when the residue set itself
+    /// would exceed the output budget (a huge divisor makes residues as numerous as the set) or
+    /// `divisor < 1` — never an incomplete set.
+    [[nodiscard]] std::optional<FlatSet<std::int64_t>> residues(std::int64_t divisor) const;
     /// @}
 
     /// @name Exact constructions (nullopt = budget or int64 range exceeded, never approximate)

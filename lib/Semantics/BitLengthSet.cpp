@@ -1090,16 +1090,13 @@ FlatSet<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
     {
         return {0};
     }
-    // Primary path: exact per-node symbolic residues in a dense bitmask (bounded by `divisor`,
-    // never truncated), so the result is complete for every set, however large.
-    ResidueSet mask(divisor);
-    if (root_->residues(divisor, mask))
+    if (auto checked = moduloChecked(divisor))
     {
-        return residueSetToFlatSet(mask);
+        return std::move(*checked);
     }
-    // Fallback (not reached for realistic, alignment-driven divisors): symbolic evaluation
-    // required a modulus exceeding kResidueModulusCap. Degrade to the expand()-based
-    // approximation, which may be incomplete for very large sets. See kResidueModulusCap.
+    // Legacy degrade (not reached for realistic, alignment-driven divisors, and NEVER used by
+    // exactness-contract callers — they use moduloChecked() and treat refusal as failure):
+    // every exact strategy refused, so approximate from a (possibly truncated) expansion.
     FlatSet<std::int64_t> out;
     const auto                  expanded = expand();
     for (const auto v : expanded)
@@ -1107,6 +1104,47 @@ FlatSet<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
         out.insert(v % divisor);
     }
     return out;
+}
+
+std::optional<FlatSet<std::int64_t>> BitLengthSet::moduloChecked(std::int64_t divisor) const
+{
+    if (divisor <= 0)
+    {
+        return FlatSet<std::int64_t>{0};  // same sentinel as modulo()
+    }
+    // Symbolic residue path — exact at any cardinality. Guarded by the cap BEFORE the bitmask
+    // is constructed: the mask allocates divisor bits, so an unguarded huge divisor would be a
+    // compile-time allocation attack, not just a wasted computation.
+    if (divisor <= kResidueModulusCap)
+    {
+        ResidueSet mask(divisor);
+        if (root_->residues(divisor, mask))
+        {
+            return residueSetToFlatSet(mask);
+        }
+        // lcm-widening pushed the working modulus over the cap: fall through to the run path.
+    }
+    // Exact per-run residues — any divisor, any cardinality, bounded only by the size of the
+    // residue set itself.
+    if (const auto rs = runSet())
+    {
+        if (auto res = rs->residues(divisor))
+        {
+            return res;
+        }
+    }
+    // Residues of an exact expansion (covers structures the run evaluation refuses).
+    const auto expansion = expandChecked();
+    if (expansion.exact)
+    {
+        FlatSet<std::int64_t> out;
+        for (const auto v : expansion.values)
+        {
+            out.insert(v % divisor);
+        }
+        return out;
+    }
+    return std::nullopt;
 }
 
 std::optional<RunSet> BitLengthSet::runSet() const
