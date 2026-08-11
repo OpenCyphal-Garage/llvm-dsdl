@@ -52,22 +52,54 @@ Value::Set toRationalSet(const FlatSet<std::int64_t>& values)
 /// Materializes the exact value set denoted by a symbolic set, or fails with a hard error.
 /// Never returns a truncated set: inexactness here is a diagnosed evaluation failure, so
 /// approximate values cannot leak into expression results.
+///
+/// The RunSet path is tried first: it has no intermediate-truncation cliff, so it succeeds
+/// whenever the FINAL set fits the ceiling even if intermediate subexpressions were huge.
+/// `expandChecked` remains as the fallback for structures RunSet refuses.
 std::optional<Value::Set> materializeExact(const BitLengthSet&   bls,
                                            DiagnosticEngine&     diagnostics,
                                            const SourceLocation& location)
 {
-    const auto expansion = bls.expandChecked(kExactMaterializationLimit);
-    if (!expansion.exact)
+    if (const auto rs = bls.runSet())
     {
-        diagnostics.error(location,
-                          "this expression requires the full contents of '_offset_', which cannot be materialized "
-                          "exactly within the evaluator's capacity of " +
-                              std::to_string(kExactMaterializationLimit) +
-                              " values; rewrite using '_offset_.min', '_offset_.max', or '_offset_ % <divisor>', "
-                              "which are computed exactly for any set size");
+        if (const auto values = rs->materialize(kExactMaterializationLimit))
+        {
+            return toRationalSet(*values);
+        }
+        // The exact set is known but exceeds the output ceiling: refuse below (the output of an
+        // elementwise operation is proportional to cardinality, so the bound is inherent).
+    }
+    else
+    {
+        const auto expansion = bls.expandChecked(kExactMaterializationLimit);
+        if (expansion.exact)
+        {
+            return toRationalSet(expansion.values);
+        }
+    }
+    diagnostics.error(location,
+                      "this expression requires the full contents of '_offset_', which cannot be materialized "
+                      "exactly within the evaluator's capacity of " +
+                          std::to_string(kExactMaterializationLimit) +
+                          " values; rewrite using '_offset_.min', '_offset_.max', '_offset_.count', "
+                          "'_offset_ % <divisor>', or a set comparison, which are computed exactly for any set size");
+    return std::nullopt;
+}
+
+/// Converts a set-literal element to the int64 domain of a symbolic set; nullopt when the
+/// element cannot possibly be a member (non-integer, or outside int64).
+std::optional<std::int64_t> literalElementAsInt(const Rational& r)
+{
+    if (!r.isInteger())
+    {
         return std::nullopt;
     }
-    return toRationalSet(expansion.values);
+    const auto wide = r.asWideInteger();
+    if (!wide || *wide < std::numeric_limits<std::int64_t>::min() || *wide > std::numeric_limits<std::int64_t>::max())
+    {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(*wide);
 }
 
 /// Decides `S == literal` exactly, where S is symbolic. Returns true with the verdict in
@@ -92,6 +124,25 @@ bool decideSetEquality(const BitLengthSet&   bls,
     {
         equal = false;
         return true;
+    }
+    // Exact path, any cardinality: S == literal iff |S| == |literal| and every literal element
+    // is a member of S — both closed-form on the RunSet.
+    if (const auto rs = bls.runSet())
+    {
+        const auto n = rs->count();
+        if (n)
+        {
+            if (static_cast<std::size_t>(*n) != literal.size())
+            {
+                equal = false;
+                return true;
+            }
+            equal = std::all_of(literal.begin(), literal.end(), [&](const Rational& r) {
+                const auto v = literalElementAsInt(r);
+                return v && rs->contains(*v);
+            });
+            return true;
+        }
     }
     const auto expansion = bls.expandChecked(kExactMaterializationLimit);
     const auto values    = toRationalSet(expansion.values);
@@ -389,6 +440,14 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                 {
                     return Value{Rational(1, 1)};
                 }
+                // Exact cardinality at ANY size via the run representation — no enumeration.
+                if (const auto rs = bls->runSet())
+                {
+                    if (const auto n = rs->count())
+                    {
+                        return Value{Rational(*n, 1)};
+                    }
+                }
                 auto set = materializeExact(*bls, diagnostics, location);
                 if (!set)
                 {
@@ -490,6 +549,60 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                     return std::nullopt;
                 }
                 return Value{(b.op == BinaryOp::Eq) ? equal : !equal};
+            }
+        }
+
+        // Ordered comparisons against a concrete set are subset relations (mirroring the
+        // concrete Set-Set semantics below): decidable exactly at any cardinality via the run
+        // representation — membership of each literal element is closed-form, and the symbolic
+        // set can only be a subset of a small literal if it is itself small.
+        if (b.op == BinaryOp::Le || b.op == BinaryOp::Lt || b.op == BinaryOp::Ge || b.op == BinaryOp::Gt)
+        {
+            const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
+            const auto* rbls = std::get_if<BitLengthSet>(&rhs->data);
+            const auto* lset = std::get_if<Value::Set>(&lhs->data);
+            const auto* rset = std::get_if<Value::Set>(&rhs->data);
+            const auto* bls  = (lbls != nullptr) ? lbls : rbls;
+            const auto* set  = (lbls != nullptr) ? rset : lset;
+            if (bls != nullptr && set != nullptr)
+            {
+                if (const auto rs = bls->runSet())
+                {
+                    if (const auto n = rs->count())
+                    {
+                        // S subset-of literal: impossible when |S| exceeds the literal;
+                        // otherwise S is small enough to materialize and check directly.
+                        bool sInLit = false;
+                        if (static_cast<std::size_t>(*n) <= set->size())
+                        {
+                            if (const auto values = rs->materialize(set->size()))
+                            {
+                                sInLit = std::all_of(values->begin(), values->end(), [&](std::int64_t v) {
+                                    return set->contains(Rational(v, 1));
+                                });
+                            }
+                        }
+                        // literal subset-of S: closed-form membership per element.
+                        const bool litInS = std::all_of(set->begin(), set->end(), [&](const Rational& r) {
+                            const auto v = literalElementAsInt(r);
+                            return v && rs->contains(*v);
+                        });
+                        const bool subsetLR   = (lbls != nullptr) ? sInLit : litInS;  // lhs subset rhs
+                        const bool supersetLR = (lbls != nullptr) ? litInS : sInLit;  // rhs subset lhs
+                        const bool sameCard   = static_cast<std::size_t>(*n) == set->size();
+                        switch (b.op)
+                        {
+                        case BinaryOp::Le:
+                            return Value{subsetLR};
+                        case BinaryOp::Lt:
+                            return Value{subsetLR && !sameCard};
+                        case BinaryOp::Ge:
+                            return Value{supersetLR};
+                        default:
+                            return Value{supersetLR && !sameCard};
+                        }
+                    }
+                }
             }
         }
 

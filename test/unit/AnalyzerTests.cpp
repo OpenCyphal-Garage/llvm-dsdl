@@ -474,11 +474,16 @@ bool runAnalyzerTests()
             }
         }
 
-        // Beyond the exact-materialization capacity (16384): symbolic queries stay exact...
+        // Beyond the exact-materialization capacity (16384): symbolic queries stay exact —
+        // including .count and set comparisons, which the run representation answers in closed
+        // form at any cardinality (20001 possible offsets here)...
         const std::string huge = "uint8[<=20000] payload\n"
                                  "@assert _offset_.min == 16\n"
                                  "@assert _offset_.max == 16 + 20000 * 8\n"
                                  "@assert _offset_ % 8 == {0}\n"
+                                 "@assert _offset_.count == 20001\n"
+                                 "@assert _offset_ >= {16, 24, 160016}\n"
+                                 "@assert !(_offset_ >= {17})\n"
                                  "@sealed\n";
         {
             const auto outcome = analyzeOffsets(huge);
@@ -503,15 +508,17 @@ bool runAnalyzerTests()
             }
         }
 
-        // ...and a query that genuinely requires the full contents is a hard error, never an
-        // approximate answer (and never a mere warning).
-        const std::string uncountable = "uint8[<=20000] payload\n@assert _offset_.count == 20001\n@sealed\n";
+        // ...and an operation that genuinely requires materializing the full contents (an
+        // elementwise transform of a beyond-capacity set) is a hard error, never an approximate
+        // answer (and never a mere warning).
+        const std::string unmaterializable =
+            "uint8[<=20000] payload\n@assert (_offset_ * 2).max == 2 * (16 + 20000 * 8)\n@sealed\n";
         {
-            const auto outcome = analyzeOffsets(uncountable);
+            const auto outcome = analyzeOffsets(unmaterializable);
             if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)
             {
-                std::cerr << "an offset query beyond exact capacity must hard-fail; errors: " << outcome.errors
-                          << "\n";
+                std::cerr << "an elementwise offset transform beyond exact capacity must hard-fail; errors: "
+                          << outcome.errors << "\n";
                 return false;
             }
         }

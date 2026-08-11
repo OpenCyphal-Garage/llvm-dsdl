@@ -16,11 +16,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <cstddef>
 
 #include "llvmdsdl/Support/FlatSet.h"
+#include "llvmdsdl/Semantics/RunSet.h"
 
 namespace llvmdsdl
 {
@@ -277,6 +279,20 @@ public:
     ///         completeness signal is reported; use `expandChecked()` when that matters.
     /// @warning Expansion cost is NOT bounded by `limit` alone; see class-level complexity caveats.
     [[nodiscard]] FlatSet<std::int64_t> expand(std::size_t limit = 16384) const;
+
+    /// @brief Evaluates the denoted set EXACTLY into an arithmetic-progression-run
+    ///        representation, independent of cardinality.
+    ///
+    /// The RunSet answers cardinality, membership, subset, and equality queries in closed form:
+    /// the billion-element offset set of a large variable array is a single run. This is the
+    /// exactness workhorse behind `_offset_` evaluation: unlike `expand()`, whose exactness is
+    /// capped by `limit`, a returned RunSet ALWAYS denotes precisely S.
+    ///
+    /// @return The exact RunSet, or `std::nullopt` when a complexity budget or an int64 range
+    ///         check tripped (adversarial structure; realistic layouts always succeed). Callers
+    ///         must treat `nullopt` as "cannot evaluate" and fall back to `expandChecked()` —
+    ///         never as license to approximate.
+    [[nodiscard]] std::optional<RunSet> runSet() const;
 
     /// @brief Like `expand()`, but also reports whether the result is complete (`== S`).
     /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.

@@ -689,6 +689,114 @@ void testDsdlCompositionPatterns(TestContext& t)
 
 }  // namespace
 
+// Spec (RunSet exactness contract): whenever runSet() returns a value it denotes EXACTLY S —
+// verified differentially against the reference model over a composed-operation battery — and
+// its count/membership/subset/equality closed forms agree with enumeration. Also: operator== is
+// exact beyond the expand() limit (formerly conservative there), and huge structured sets
+// evaluate in closed form without enumeration.
+void testRunSet(TestContext& t)
+{
+    using llvmdsdl::RunSet;
+
+    // Differential battery: parallel (symbolic, reference) composition, then compare the
+    // materialized RunSet against the reference model for every case.
+    struct Case final
+    {
+        BitLengthSet bls;
+        ValueSet     ref;
+        std::string  name;
+    };
+    std::vector<Case> cases;
+    const auto        add = [&](BitLengthSet b, ValueSet r, std::string name) {
+        cases.push_back(Case{std::move(b), std::move(r), std::move(name)});
+    };
+
+    const std::vector<ValueSet> bases = {
+        {0}, {8}, {0, 8}, {1, 3}, {0, 1, 7, 8, 9}, {5, 8, 9, 11, 12, 43}, {8, 24}, {3, 9}};
+    for (const auto& base : bases)
+    {
+        const BitLengthSet b((ValueSet(base)));
+        add(b, base, "base " + setToString(base));
+        for (const std::int64_t k : {0, 1, 2, 3, 5})
+        {
+            add(b.repeat(k), refRepeat(base, k), "repeat(" + std::to_string(k) + ") of " + setToString(base));
+            add(b.repeatRange(k), refRepeatRange(base, k), "repeatRange(" + std::to_string(k) + ") of " + setToString(base));
+        }
+        for (const std::int64_t a : {2, 3, 8})
+        {
+            add(b.padToAlignment(a), refPad(base, a), "pad(" + std::to_string(a) + ") of " + setToString(base));
+        }
+        for (const auto& other : bases)
+        {
+            const BitLengthSet o((ValueSet(other)));
+            ValueSet           u = base;
+            u.insert(other.begin(), other.end());
+            add(b + o, refAdd(base, other), "add " + setToString(base) + "+" + setToString(other));
+            add(b | o, u, "union " + setToString(base) + "|" + setToString(other));
+        }
+        // Composed DSDL shapes: prefix + repeatRange, padded.
+        add((BitLengthSet(16) + b.repeatRange(4)).padToAlignment(8),
+            refPad(refAdd({16}, refRepeatRange(base, 4)), 8),
+            "composed vla of " + setToString(base));
+    }
+
+    for (const auto& c : cases)
+    {
+        const auto rs = c.bls.runSet();
+        t.expect(rs.has_value(), "runSet() available for " + c.name);
+        if (!rs)
+        {
+            continue;
+        }
+        t.expect(rs->valid(), "runSet invariants hold for " + c.name);
+        const auto values = rs->materialize(1U << 20U);
+        t.expect(values.has_value(), "runSet materializes for " + c.name);
+        if (!values)
+        {
+            continue;
+        }
+        t.expectSetEq(*values, c.ref, "runSet exact values for " + c.name);
+        const auto n = rs->count();
+        t.expect(n && static_cast<std::size_t>(*n) == c.ref.size(), "runSet count exact for " + c.name);
+        t.expect(rs->min() == *c.ref.begin() && rs->max() == *c.ref.rbegin(), "runSet bounds for " + c.name);
+        for (const std::int64_t probe : {0LL, 1LL, 7LL, 8LL, 16LL, 23LL, 100LL})
+        {
+            t.expect(rs->contains(probe) == (c.ref.count(probe) != 0),
+                     "runSet membership(" + std::to_string(probe) + ") for " + c.name);
+        }
+    }
+
+    // Huge structured sets evaluate in closed form: the uint8[<=9000] offset shape, and a
+    // billion-element run — both far beyond any enumeration ceiling.
+    {
+        const BitLengthSet offset = BitLengthSet(16) + BitLengthSet(8).repeatRange(9000);
+        const auto         rs     = offset.runSet();
+        t.expect(rs.has_value(), "vla offset shape has a RunSet");
+        if (rs)
+        {
+            t.expect(rs->count().value_or(0) == 9001, "vla offset count exact (9001)");
+            t.expect(rs->min() == 16 && rs->max() == 16 + 9000 * 8, "vla offset bounds");
+            t.expect(rs->contains(16) && rs->contains(24) && !rs->contains(17), "vla offset membership");
+        }
+        const auto huge = BitLengthSet(8).repeatRange(1000000000).runSet();
+        t.expect(huge.has_value() && huge->count().value_or(0) == 1000000001LL && huge->max() == 8000000000LL,
+                 "billion-element repeatRange in closed form");
+    }
+
+    // operator== is now exact past the expand() limit: two structurally different constructions
+    // of the same 50001-element set compare equal (formerly conservatively unequal), and a
+    // genuinely different set compares unequal.
+    {
+        const BitLengthSet a = BitLengthSet(8).repeatRange(50000);
+        const BitLengthSet b = (BitLengthSet(0) | BitLengthSet(8)).repeat(50000);
+        t.expect(a == b, "operator== exact on equal 50001-element sets (mixed constructions)");
+        const BitLengthSet c = a + BitLengthSet(4);
+        t.expect(a != c, "operator!= on shifted 50001-element set");
+        const BitLengthSet d = BitLengthSet(8).repeatRange(50001);
+        t.expect(a != d, "operator!= on off-by-one-count huge sets");
+    }
+}
+
 bool runBitLengthSetTests()
 {
     TestContext t;
@@ -710,6 +818,7 @@ bool runBitLengthSetTests()
     testStr(t);
     testPersistence(t);
     testDsdlCompositionPatterns(t);
+    testRunSet(t);
 
     if (t.failures > 0)
     {

@@ -28,6 +28,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -1108,6 +1109,70 @@ FlatSet<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
     return out;
 }
 
+std::optional<RunSet> BitLengthSet::runSet() const
+{
+    // Same iterative, memoized post-order shape as min()/expandChecked(): each distinct node is
+    // evaluated once from its children's RunSets. A nullopt anywhere (complexity budget or int64
+    // range check inside a RunSet operation) poisons the result — exact or nothing.
+    const auto                                                     order = Node::collectPostOrder(root_.get());
+    std::unordered_map<const Node*, std::optional<RunSet>>         memo;
+    memo.reserve(order.size() * 2);
+    for (const Node* const n : order)
+    {
+        std::optional<RunSet> v;
+        switch (n->kind)
+        {
+        case Node::Kind::Leaf:
+            v = RunSet::fromValues(n->values);
+            break;
+        case Node::Kind::Add: {
+            const auto& l = memo.at(n->lhs.get());
+            const auto& r = memo.at(n->rhs.get());
+            if (l && r)
+            {
+                v = RunSet::sum(*l, *r);
+            }
+            break;
+        }
+        case Node::Kind::Union: {
+            const auto& l = memo.at(n->lhs.get());
+            const auto& r = memo.at(n->rhs.get());
+            if (l && r)
+            {
+                v = RunSet::unite(*l, *r);
+            }
+            break;
+        }
+        case Node::Kind::Pad: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->paddedTo(std::max<std::int64_t>(1, n->param));
+            }
+            break;
+        }
+        case Node::Kind::Repeat: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->repeated(std::max<std::int64_t>(0, n->param));
+            }
+            break;
+        }
+        case Node::Kind::RepeatRange: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->repeatRange(std::max<std::int64_t>(0, n->param));
+            }
+            break;
+        }
+        }
+        memo.emplace(n, std::move(v));
+    }
+    return std::move(memo.at(root_.get()));
+}
+
 FlatSet<std::int64_t> BitLengthSet::expand(std::size_t limit) const
 {
     return expandChecked(limit).values;
@@ -1144,13 +1209,24 @@ BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs)
 
 bool operator==(const BitLengthSet& lhs, const BitLengthSet& rhs)
 {
-    // Cheap necessary conditions first; then require both to expand exactly to the same values.
-    // `exact` on both sides is what makes this sound (no false positive): two sets that agree only
-    // on their smallest `limit` elements but differ beyond it are not declared equal. See header.
+    // Cheap necessary conditions first.
     if (lhs.min() != rhs.min() || lhs.max() != rhs.max())
     {
         return false;
     }
+    // Primary path: exact semantic comparison of the RunSet evaluations — complete for any
+    // cardinality (a billion-element pair of sets compares in closed form).
+    {
+        const auto l = lhs.runSet();
+        const auto r = rhs.runSet();
+        if (l && r)
+        {
+            return l->equals(*r);
+        }
+    }
+    // Fallback (RunSet evaluation refused — adversarial structure only): require both sides to
+    // expand exactly to the same values. `exact` on both sides keeps this sound (no false
+    // positive); sets too large to compare exactly are conservatively unequal. See header.
     const auto l = lhs.expandChecked();
     const auto r = rhs.expandChecked();
     return l.exact && r.exact && l.values == r.values;
