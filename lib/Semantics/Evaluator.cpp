@@ -508,11 +508,10 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
     // evaluated against a truncated set.
     if (std::holds_alternative<BitLengthSet>(lhs->data) || std::holds_alternative<BitLengthSet>(rhs->data))
     {
-        // `_offset_ % k`: exact residues at any cardinality via moduloChecked(). Offsets are
-        // non-negative, so remainder by a negative divisor equals remainder by its magnitude
-        // (elementwise `%` truncates toward zero). A refusal — like a divisor beyond int64 —
-        // falls THROUGH to generic materialization, which is itself exact-or-error; modulo()'s
-        // legacy truncated degrade is never consulted here.
+        // `_offset_ % k`: exact residues at any cardinality via modulo() (exact-or-refuse).
+        // Offsets are non-negative, so remainder by a negative divisor equals remainder by its
+        // magnitude (elementwise `%` truncates toward zero). A refusal — like a divisor beyond
+        // int64 — falls THROUGH to generic materialization, which is itself exact-or-error.
         if (b.op == BinaryOp::Mod)
         {
             const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
@@ -528,7 +527,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                 }
                 if (magnitude <= std::numeric_limits<std::int64_t>::max())
                 {
-                    if (auto residues = lbls->moduloChecked(static_cast<std::int64_t>(magnitude)))
+                    if (auto residues = lbls->modulo(static_cast<std::int64_t>(magnitude)))
                     {
                         return Value{toRationalSet(*residues)};
                     }

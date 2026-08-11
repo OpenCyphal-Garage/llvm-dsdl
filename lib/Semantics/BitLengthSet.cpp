@@ -1042,15 +1042,20 @@ bool BitLengthSet::fixed() const
     return min() == max();
 }
 
-bool BitLengthSet::is_aligned_at(std::int64_t alignment) const
+std::optional<bool> BitLengthSet::is_aligned_at(std::int64_t alignment) const
 {
     if (alignment < 1)
     {
         return true;  // trivially aligned
     }
-    // Exact, since modulo() is exact: aligned iff every possible length reduces to residue 0.
+    // Decidable iff modulo() answers; aligned iff every possible length reduces to residue 0.
+    // A refusal propagates as nullopt — "cannot evaluate" is never converted into a guess.
     const auto residues = modulo(alignment);
-    return residues.size() == 1 && *residues.begin() == 0;
+    if (!residues)
+    {
+        return std::nullopt;
+    }
+    return residues->size() == 1 && *residues->begin() == 0;
 }
 
 BitLengthSet BitLengthSet::padToAlignment(std::int64_t alignment) const
@@ -1083,34 +1088,12 @@ BitLengthSet BitLengthSet::repeatRange(std::int64_t countMax) const
     return BitLengthSet(node);
 }
 
-FlatSet<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
+std::optional<FlatSet<std::int64_t>> BitLengthSet::modulo(std::int64_t divisor) const
 {
     // Contract: a non-positive divisor yields the sentinel {0} instead of dividing by zero.
     if (divisor <= 0)
     {
-        return {0};
-    }
-    if (auto checked = moduloChecked(divisor))
-    {
-        return std::move(*checked);
-    }
-    // Legacy degrade (not reached for realistic, alignment-driven divisors, and NEVER used by
-    // exactness-contract callers — they use moduloChecked() and treat refusal as failure):
-    // every exact strategy refused, so approximate from a (possibly truncated) expansion.
-    FlatSet<std::int64_t> out;
-    const auto                  expanded = expand();
-    for (const auto v : expanded)
-    {
-        out.insert(v % divisor);
-    }
-    return out;
-}
-
-std::optional<FlatSet<std::int64_t>> BitLengthSet::moduloChecked(std::int64_t divisor) const
-{
-    if (divisor <= 0)
-    {
-        return FlatSet<std::int64_t>{0};  // same sentinel as modulo()
+        return FlatSet<std::int64_t>{0};
     }
     // Symbolic residue path — exact at any cardinality. Guarded by the cap BEFORE the bitmask
     // is constructed: the mask allocates divisor bits, so an unguarded huge divisor would be a

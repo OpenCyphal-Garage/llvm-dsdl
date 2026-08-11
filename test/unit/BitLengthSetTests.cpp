@@ -172,6 +172,34 @@ struct TestContext final
         expectSetEqImpl(actual, expected, what);
     }
 
+    // Optional-aware overloads for exact-or-refuse surfaces (modulo()): a refusal is a test
+    // failure with its own message — never silently treated as an empty set.
+    template <typename Actual, typename Expected>
+    void expectSetEq(const std::optional<Actual>& actual, const Expected& expected, const std::string& what)
+    {
+        if (!actual)
+        {
+            ++failures;
+            std::cerr << "BitLengthSet spec FAIL: " << what << " (exact evaluation refused)\n";
+            return;
+        }
+        expectSetEqImpl(*actual, expected, what);
+    }
+
+    template <typename Actual>
+    void expectSetEq(const std::optional<Actual>&         actual,
+                     std::initializer_list<std::int64_t>  expected,
+                     const std::string&                   what)
+    {
+        if (!actual)
+        {
+            ++failures;
+            std::cerr << "BitLengthSet spec FAIL: " << what << " (exact evaluation refused)\n";
+            return;
+        }
+        expectSetEqImpl(*actual, expected, what);
+    }
+
     template <typename Actual, typename Expected>
     void expectSetEqImpl(const Actual& actual, const Expected& expected, const std::string& what)
     {
@@ -543,15 +571,24 @@ void testValueDomainSafety(TestContext& t)
 // is_aligned_at (exact, built on modulo) and value-set operator==/operator!=.
 void testAlignmentAndEquality(TestContext& t)
 {
-    // is_aligned_at: byte-aligned struct vs. a bit-misaligned one.
+    // is_aligned_at: tri-state — Some(true)/Some(false) are exact verdicts, nullopt is refusal.
+    // The comparisons are deliberately against optional values: a bare boolean context would
+    // test has_value(), silently passing on a false verdict.
+    const std::optional<bool> yes{true};
+    const std::optional<bool> no{false};
     const BitLengthSet byteAligned = BitLengthSet(8) + BitLengthSet(16) + BitLengthSet(ValueSet{0, 8, 16});
-    t.expect(byteAligned.is_aligned_at(8), "all-multiple-of-8 set is byte-aligned");
-    t.expect(byteAligned.is_aligned_at(4) && byteAligned.is_aligned_at(1), "byte-aligned implies 4- and 1-aligned");
-    t.expect(!BitLengthSet(ValueSet{8, 12}).is_aligned_at(8), "a set with a non-multiple is not byte-aligned");
-    t.expect(BitLengthSet(0).is_aligned_at(8), "the zero-length set is aligned at any boundary");
-    t.expect(BitLengthSet(ValueSet{8, 12}).is_aligned_at(0), "alignment < 1 is trivially aligned");
+    t.expect(byteAligned.is_aligned_at(8) == yes, "all-multiple-of-8 set is byte-aligned");
+    t.expect(byteAligned.is_aligned_at(4) == yes && byteAligned.is_aligned_at(1) == yes,
+             "byte-aligned implies 4- and 1-aligned");
+    t.expect(BitLengthSet(ValueSet{8, 12}).is_aligned_at(8) == no, "a set with a non-multiple is not byte-aligned");
+    t.expect(BitLengthSet(0).is_aligned_at(8) == yes, "the zero-length set is aligned at any boundary");
+    t.expect(BitLengthSet(ValueSet{8, 12}).is_aligned_at(0) == yes, "alignment < 1 is trivially aligned");
     // Exact even past the expansion limit (built on symbolic modulo, not expand).
-    t.expect(BitLengthSet(8).repeatRange(20000).is_aligned_at(8), "huge byte-multiple set is byte-aligned (exact)");
+    t.expect(BitLengthSet(8).repeatRange(20000).is_aligned_at(8) == yes,
+             "huge byte-multiple set is byte-aligned (exact)");
+    // Refusal propagates as nullopt — "cannot evaluate" is never converted into a guess.
+    t.expect(!(BitLengthSet(16) + BitLengthSet(8).repeatRange(70000)).is_aligned_at(1000000007).has_value(),
+             "undecidable alignment query refuses instead of guessing");
 
     // operator== / operator!=: provable value-set equality.
     t.expect(BitLengthSet(ValueSet{8, 16, 24}) == BitLengthSet(8).repeatRange(0) + BitLengthSet(ValueSet{8, 16, 24}),
@@ -684,7 +721,7 @@ void testDsdlCompositionPatterns(TestContext& t)
     const BitLengthSet composed = (BitLengthSet(32) + BitLengthSet(8).repeatRange(3)).padToAlignment(8);
     t.expect(composed.min() == 32 && composed.max() == 56, "composed set bounds (original regression)");
     const auto mod = composed.modulo(16);
-    t.expect(mod.count(0) == 1 && mod.count(8) == 1, "composed modulo(16) (original regression)");
+    t.expect(mod.has_value() && mod->count(0) == 1 && mod->count(8) == 1, "composed modulo(16) (original regression)");
 }
 
 }  // namespace
@@ -764,15 +801,15 @@ void testRunSet(TestContext& t)
             t.expect(rs->contains(probe) == (c.ref.count(probe) != 0),
                      "runSet membership(" + std::to_string(probe) + ") for " + c.name);
         }
-        // moduloChecked: exact for divisors below AND above the symbolic-residue cap (the
+        // modulo: exact for divisors below AND above the symbolic-residue cap (the
         // latter exercises the per-run residue path that replaced the silent degrade).
         for (const std::int64_t d : {2LL, 7LL, 8LL, 64LL, 100003LL})
         {
-            const auto res = c.bls.moduloChecked(d);
-            t.expect(res.has_value(), "moduloChecked(" + std::to_string(d) + ") answers for " + c.name);
+            const auto res = c.bls.modulo(d);
+            t.expect(res.has_value(), "modulo(" + std::to_string(d) + ") answers for " + c.name);
             if (res)
             {
-                t.expectSetEq(*res, refModulo(c.ref, d), "moduloChecked(" + std::to_string(d) + ") exact for " + c.name);
+                t.expectSetEq(*res, refModulo(c.ref, d), "modulo(" + std::to_string(d) + ") exact for " + c.name);
             }
         }
     }
@@ -794,23 +831,23 @@ void testRunSet(TestContext& t)
                  "billion-element repeatRange in closed form");
     }
 
-    // moduloChecked beyond the symbolic-residue cap on a beyond-enumeration set: exact residues
+    // modulo beyond the symbolic-residue cap on a beyond-enumeration set: exact residues
     // in closed form (offsets {16 + 8k : k <= 20000} mod 100000 walk the stride-8 coset — 12500
     // distinct residues); a divisor so large that the residue set equals the whole 70001-element
     // set REFUSES instead of returning the silently truncated set the old degrade produced.
     {
         const BitLengthSet wide = BitLengthSet(16) + BitLengthSet(8).repeatRange(20000);
-        const auto         res  = wide.moduloChecked(100000);
-        t.expect(res.has_value(), "moduloChecked(100000) answers beyond the residue cap");
+        const auto         res  = wide.modulo(100000);
+        t.expect(res.has_value(), "modulo(100000) answers beyond the residue cap");
         if (res)
         {
             t.expect(res->size() == 12500 && *res->begin() == 0 && *res->rbegin() == 99992,
-                     "moduloChecked(100000) closed-form residues of a 20001-element set");
+                     "modulo(100000) closed-form residues of a 20001-element set");
         }
         const BitLengthSet huge = BitLengthSet(16) + BitLengthSet(8).repeatRange(70000);
-        t.expect(!huge.moduloChecked(1000000007).has_value(),
-                 "moduloChecked refuses when the exact residue set exceeds the output budget");
-        t.expect(huge.moduloChecked(8).has_value() && huge.moduloChecked(8)->size() == 1,
+        t.expect(!huge.modulo(1000000007).has_value(),
+                 "modulo refuses when the exact residue set exceeds the output budget");
+        t.expect(huge.modulo(8).has_value() && huge.modulo(8)->size() == 1,
                  "small-divisor residues stay exact on the same huge set");
     }
 
