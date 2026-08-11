@@ -115,3 +115,15 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   predicates, and the round-trip, canonical-acceptance, tolerant-decode
   (truncation/zero-extension), version-skew (`Evolves`/`Upgrade`/`Downgrade`), and
   trace-ordering proofs.
+- `BitLengthSet.dfy` — formal model of the bit-length-set expression algebra
+  (`include/llvmdsdl/Semantics/BitLengthSet.h`): the expression DAG's denotational semantics
+  (`Sem`, transcribing the header's semantics table) and machine-checked exactness proofs for
+  the interval evaluators — `MinExact`/`MaxExact` (the per-node `min()`/`max()` derivations
+  return true bounding elements of S, total and exact at any cardinality) and
+  `FixedCharacterization` (`min == max` decides `|S| == 1`). The `WF` predicate records what
+  the C++ constructors establish by clamping; the RepeatRange cases prove it load-bearing —
+  dropping non-negativity breaks the proofs, which is defect BLS-D5/D15 as a failed proof
+  instead of a field bug. Stage 1 of a staged plan (file header): later stages model the
+  RunSet kernel (CRT run intersection, the dense-fixpoint jump, repeat-range phase families)
+  and the exact-or-refuse residue evaluator, ending with a verified executable oracle for the
+  differential batteries.

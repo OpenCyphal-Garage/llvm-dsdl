@@ -362,6 +362,11 @@ jobs:
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
 
+      - name: Verify BitLengthSet model
+        # The bit-length-set algebra model: denotational semantics + interval-evaluator
+        # exactness proofs (stage 1 of the staged plan in the file header).
+        run: dafny verify spec/dafny/BitLengthSet.dfy
+
   corpus:
     name: Corpus hash (${{ matrix.arch }})
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
