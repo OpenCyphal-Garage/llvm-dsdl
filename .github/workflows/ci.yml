@@ -367,6 +367,12 @@ jobs:
         # exactness proofs (stage 1 of the staged plan in the file header).
         run: dafny verify spec/dafny/BitLengthSet.dfy
 
+      - name: Verify BitLengthSet bridge
+        # The length-semantics bridge theorem: the algebra expression the analyzer builds for
+        # each type denotes EXACTLY the achievable serialized bit lengths of conforming values
+        # — Sem stops being an axiom and becomes a theorem about serialization.
+        run: dafny verify spec/dafny/BitLengthBridge.dfy
+
   corpus:
     name: Corpus hash (${{ matrix.arch }})
     # A label change proves nothing about the code; see the `labeled` note on the trigger.

@@ -132,3 +132,16 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   RunSet kernel (CRT run intersection, the dense-fixpoint jump, repeat-range phase families)
   and the exact-or-refuse residue evaluator, ending with a verified executable oracle for the
   differential batteries.
+- `BitLengthBridge.dfy` — the length-semantics bridge (hardening rung 4): `BridgeTheorem`
+  proves, for every type in the grammar the analyzer compiles, that the algebra expression the
+  analyzer builds (`BlsOf`, transcribing the Analyzer.cpp construction sites) denotes EXACTLY
+  the set of serialized bit lengths achievable by conforming values (`BitLen` — five lines of
+  arithmetic, one per Specification serialization rule). This closes the circularity the
+  earlier stages could not: `Sem` stops being an axiom transcribed from our own header and
+  becomes a theorem about serialization; what remains to trust is the one-line-per-rule length
+  semantics, auditable directly against the Specification. Both proof directions construct
+  explicit witnesses — Minkowski sums are licensed by the independence of field/element
+  choices, and every algebra value is realized by an actual conforming value. Delimited
+  composites enter as their forward-compat envelope (header + any payload up to the extent,
+  the DeCompat tolerance domain), matching the analyzer deliberately. Mutation-checked:
+  dropping the array length prefix or confusing fixed/variable repetition breaks the theorem.
