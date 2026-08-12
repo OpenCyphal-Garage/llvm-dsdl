@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <limits>
 #include <numeric>
 #include <utility>
 
@@ -217,28 +218,28 @@ RunSet RunSet::fromValues(const FlatSet<std::int64_t>& values)
         out.runs_.push_back(Run{0, 1, 1});  // I1 coercion, mirroring BitLengthSet
         return out;
     }
-    // Greedy maximal runs over the sorted input: extend while the gap stays constant.
+    // Greedy maximal runs over the sorted input: extend while the gap stays constant. The gap
+    // is computed in 128-bit: two extreme int64 inputs can be further apart than int64 can
+    // represent, and such a pair must simply stay two singleton runs (the representability
+    // invariant) rather than form a run whose stride silently overflowed. Runs of count >= 2
+    // always satisfy the invariant because their last() IS one of the input values.
     auto it = values.begin();
     Run  cur{*it, 1, 1};
     ++it;
     for (; it != values.end(); ++it)
     {
-        const std::int64_t gap = *it - cur.last();
-        if (cur.count == 1)
+        const __int128 gap = static_cast<__int128>(*it) - cur.last();
+        if (cur.count == 1 && gap <= std::numeric_limits<std::int64_t>::max())
         {
-            cur.stride = gap;
+            cur.stride = static_cast<std::int64_t>(gap);
             cur.count  = 2;
         }
-        else if (gap == cur.stride)
+        else if (cur.count > 1 && gap == cur.stride)
         {
             ++cur.count;
         }
         else
         {
-            if (cur.count == 1)
-            {
-                cur.stride = 1;
-            }
             out.runs_.push_back(cur);
             cur = Run{*it, 1, 1};
         }
@@ -308,7 +309,10 @@ bool RunSet::isSubsetOf(const RunSet& other) const
             }
             if (isect)
             {
-                covered += isect->count;
+                if (!checkedAdd(covered, isect->count, covered))
+                {
+                    return false;  // cannot verify without overflowing => not provably subset
+                }
             }
         }
         if (covered != r.count)
@@ -479,7 +483,8 @@ std::optional<RunSet> RunSet::unite(const RunSet& a, const RunSet& b)
     // Small-set shortcut: enumerate, merge, re-decompose. Exact and cheap for ragged sets.
     const auto ca = a.count();
     const auto cb = b.count();
-    if (ca && cb && *ca + *cb <= kEnumUnionLimit)
+    std::int64_t combined = 0;
+    if (ca && cb && checkedAdd(*ca, *cb, combined) && combined <= kEnumUnionLimit)
     {
         const auto ma = a.materialize(static_cast<std::size_t>(kEnumUnionLimit));
         const auto mb = b.materialize(static_cast<std::size_t>(kEnumUnionLimit));
@@ -844,12 +849,13 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
     {
         const std::int64_t c = min();
         std::int64_t       span = 0;
-        if (!checkedMul(countMax, c, span))
+        std::int64_t       runCount = 0;
+        if (!checkedMul(countMax, c, span) || !checkedAdd(countMax, 1, runCount))
         {
             return std::nullopt;
         }
         RunSet out;
-        out.runs_.push_back(c == 0 ? Run{0, 1, 1} : Run{0, c, countMax + 1});
+        out.runs_.push_back(c == 0 ? Run{0, 1, 1} : Run{0, c, runCount});
         return out;
     }
 
@@ -996,8 +1002,8 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
     {
         return std::nullopt;
     }
-    constexpr std::size_t     kResidueBudget = 65536;
-    std::vector<std::int64_t> values;
+    constexpr std::size_t kResidueBudget = 65536;
+    FlatSet<std::int64_t> unique;
     for (const auto& r : runs_)
     {
         // Residues of start + i*stride (mod d) repeat with period d / gcd(stride mod d, d):
@@ -1006,24 +1012,33 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         const std::int64_t step   = ((r.stride % divisor) + divisor) % divisor;
         const std::int64_t period = divisor / std::gcd(step, divisor);  // gcd(0, d) == d
         const std::int64_t k      = std::min(r.count, period);
-        if (values.size() + static_cast<std::size_t>(k) > kResidueBudget)
+        // The budget applies to the UNIQUE residue set (the documented contract). Within one
+        // run the walked residues are pairwise distinct (the walk stops at the cycle length),
+        // so a single run with k beyond the budget already proves the result exceeds it; the
+        // cross-run duplicates are removed by the FlatSet before the budget is re-checked.
+        if (static_cast<std::size_t>(k) > kResidueBudget)
         {
-            return std::nullopt;  // exact residue set larger than the output budget: refuse
+            return std::nullopt;  // this run alone contributes more distinct residues than the budget
         }
+        std::vector<std::int64_t> batch;
+        batch.reserve(static_cast<std::size_t>(k));
         std::int64_t cur = ((r.start % divisor) + divisor) % divisor;
         for (std::int64_t i = 0; i < k; ++i)
         {
-            values.push_back(cur);
+            batch.push_back(cur);
             cur += step;
             if (cur >= divisor)
             {
                 cur -= divisor;
             }
         }
+        unique.insert(batch.begin(), batch.end());  // FlatSet range-insert sorts, merges, dedups
+        if (unique.size() > kResidueBudget)
+        {
+            return std::nullopt;  // exact UNIQUE residue set larger than the output budget
+        }
     }
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
-    return FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end());
+    return unique;
 }
 
 std::optional<FlatSet<std::int64_t>> RunSet::materialize(std::size_t limit) const
@@ -1056,6 +1071,13 @@ bool RunSet::valid() const
     {
         const Run& r = runs_[i];
         if (r.count < 1 || r.stride < 1 || (r.count == 1 && r.stride != 1))
+        {
+            return false;
+        }
+        // Representability: last() and the span must fit int64 (audited in 128-bit).
+        const __int128 span = static_cast<__int128>(r.count - 1) * r.stride;
+        if (span > std::numeric_limits<std::int64_t>::max() ||
+            static_cast<__int128>(r.start) + span > std::numeric_limits<std::int64_t>::max())
         {
             return false;
         }

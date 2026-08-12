@@ -851,6 +851,38 @@ void testRunSet(TestContext& t)
                  "small-divisor residues stay exact on the same huge set");
     }
 
+    // PR-review hardening (Copilot findings on the RunSet kernel):
+    {
+        // Residue budget applies to the UNIQUE result: two disjoint dense runs whose residue
+        // images coincide used to blow the pre-dedup budget (80000 raw walks) even though the
+        // unique residue set (40000) is comfortably within it.
+        const BitLengthSet twoRuns =
+            BitLengthSet(1).repeatRange(39999) | (BitLengthSet(50000) + BitLengthSet(1).repeatRange(39999));
+        const auto res = twoRuns.modulo(50000);
+        t.expect(res.has_value(), "residue budget is charged on the unique result, not raw walks");
+        if (res)
+        {
+            t.expect(res->size() == 40000 && *res->begin() == 0 && *res->rbegin() == 39999,
+                     "cross-run duplicate residues dedup exactly");
+        }
+
+        // Run representability: extreme-gap inputs must stay singleton runs (a merged run's
+        // stride would overflow int64), never a silently corrupt run.
+        llvmdsdl::FlatSet<std::int64_t> extremes;
+        const std::vector<std::int64_t> ev{std::numeric_limits<std::int64_t>::min(),
+                                           std::numeric_limits<std::int64_t>::max()};
+        extremes.insert(ev.begin(), ev.end());
+        const auto extremeRuns = llvmdsdl::RunSet::fromValues(extremes);
+        t.expect(extremeRuns.valid() && extremeRuns.count().value_or(0) == 2 &&
+                     extremeRuns.contains(std::numeric_limits<std::int64_t>::min()) &&
+                     extremeRuns.contains(std::numeric_limits<std::int64_t>::max()),
+                 "extreme-gap values decompose into representable singleton runs");
+
+        // repeatRange at the count ceiling refuses instead of wrapping the run count.
+        t.expect(!llvmdsdl::RunSet(8).repeatRange(std::numeric_limits<std::int64_t>::max()).has_value(),
+                 "repeatRange at INT64_MAX refuses instead of overflowing the run count");
+    }
+
     // operator== is now exact past the expand() limit: two structurally different constructions
     // of the same 50001-element set compare equal (formerly conservatively unequal), and a
     // genuinely different set compares unequal.

@@ -29,7 +29,11 @@ namespace llvmdsdl
 ///   - `count >= 1`;
 ///   - `stride >= 1`;
 ///   - `count == 1` implies `stride == 1` (a singleton's stride is meaningless; normalizing it
-///     makes structural comparisons in tests deterministic).
+///     makes structural comparisons in tests deterministic);
+///   - REPRESENTABILITY: every element — in particular `last()` — fits `int64`, and so does
+///     the span `(count - 1) * stride`. Construction maintains this by checked arithmetic
+///     (an operation that would create an unrepresentable run REFUSES instead), which is what
+///     makes the unchecked arithmetic in `last()` safe.
 struct Run final
 {
     std::int64_t start{0};
@@ -37,6 +41,8 @@ struct Run final
     std::int64_t count{1};
 
     /// @brief The largest element, `start + (count - 1) * stride`.
+    /// @note Relies on the representability invariant above; `RunSet::valid()` audits it in
+    ///       128-bit arithmetic.
     [[nodiscard]] std::int64_t last() const
     {
         return start + (count - 1) * stride;
