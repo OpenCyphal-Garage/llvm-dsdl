@@ -881,6 +881,34 @@ void testRunSet(TestContext& t)
         // repeatRange at the count ceiling refuses instead of wrapping the run count.
         t.expect(!llvmdsdl::RunSet(8).repeatRange(std::numeric_limits<std::int64_t>::max()).has_value(),
                  "repeatRange at INT64_MAX refuses instead of overflowing the run count");
+
+        // A run legally ending at INT64_MAX, pushed through the STRUCTURAL unite path (the
+        // set is too large for the enumeration shortcut): the overlap subtraction's tail probe
+        // and coalesce's adjacency probes compute last() + stride, which overflows at the
+        // ceiling — checked arithmetic must read that as "no tail" / "not adjacent", never UB.
+        {
+            const std::int64_t        maxV = std::numeric_limits<std::int64_t>::max();
+            std::vector<std::int64_t> nearMax;
+            nearMax.reserve(200001);
+            for (std::int64_t k = 200000; k >= 0; --k)
+            {
+                nearMax.push_back(maxV - 8 * k);
+            }
+            llvmdsdl::FlatSet<std::int64_t> nearMaxSet;
+            nearMaxSet.insert(nearMax.begin(), nearMax.end());
+            const auto big = llvmdsdl::RunSet::fromValues(nearMaxSet);
+            llvmdsdl::FlatSet<std::int64_t> pairSet;
+            const std::vector<std::int64_t> pv{maxV - 4, maxV};
+            pairSet.insert(pv.begin(), pv.end());
+            const auto merged = llvmdsdl::RunSet::unite(big, llvmdsdl::RunSet::fromValues(pairSet));
+            t.expect(merged.has_value(), "structural unite at the int64 ceiling succeeds");
+            if (merged)
+            {
+                t.expect(merged->valid() && merged->count().value_or(0) == 200002 &&
+                             merged->contains(maxV) && merged->contains(maxV - 4) && merged->max() == maxV,
+                         "overlap subtraction and coalescing at INT64_MAX stay exact and representable");
+            }
+        }
     }
 
     // operator== is now exact past the expand() limit: two structurally different constructions

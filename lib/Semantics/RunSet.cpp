@@ -172,8 +172,13 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
         // clip each class at the last cut element.
         for (std::int64_t j = 1; j < q; ++j)
         {
-            const std::int64_t classStart = cut.start + j * r.stride;
-            if (classStart > r.last())
+            // Checked: an overflowing classStart is logically "past r.last()" (bounded by
+            // cut.start + cut.stride under the sub-progression precondition, but proven by
+            // arithmetic here rather than by argument).
+            std::int64_t classOffset = 0;
+            std::int64_t classStart  = 0;
+            if (!checkedMul(j, r.stride, classOffset) || !checkedAdd(cut.start, classOffset, classStart) ||
+                classStart > r.last())
             {
                 break;
             }
@@ -190,9 +195,11 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
         }
     }
 
-    // Tail: elements of r strictly after the last cut element.
-    const std::int64_t afterCut = cut.last() + r.stride;
-    if (afterCut <= r.last())
+    // Tail: elements of r strictly after the last cut element. Checked: r.last() can be
+    // INT64_MAX (a legal element), in which case cut.last() + r.stride overflows and the
+    // correct reading is simply "no tail".
+    std::int64_t afterCut = 0;
+    if (checkedAdd(cut.last(), r.stride, afterCut) && afterCut <= r.last())
     {
         const std::int64_t n = (r.last() - afterCut) / r.stride + 1;
         if (!emit(Run{afterCut, r.stride, n}))
@@ -438,23 +445,32 @@ void RunSet::coalesce()
         // Same greedy rules as fromValues, generalized to runs: merge only structurally
         // contiguous same-stride (or singleton) neighbours. Purely compaction; the denoted
         // set is unchanged, and failing to merge is always safe.
-        if (cur.count == 1 && next.count == 1 && next.start > cur.start)
+        // All probes are checked: a run may legally end at INT64_MAX, where last() + stride
+        // overflows (reads as "not adjacent"), and a singleton pair whose gap exceeds int64
+        // must stay two runs (the representability invariant) rather than merge.
+        std::int64_t gap = 0;
+        if (cur.count == 1 && next.count == 1 && next.start > cur.start &&
+            cur.start != std::numeric_limits<std::int64_t>::min() && checkedAdd(next.start, -cur.start, gap))
         {
-            cur.stride = next.start - cur.start;
+            cur.stride = gap;
             cur.count  = 2;
             continue;
         }
-        if (cur.count >= 2 && next.count == 1 && next.start == cur.last() + cur.stride)
+        std::int64_t adjacent = 0;
+        if (cur.count >= 2 && next.count == 1 && checkedAdd(cur.last(), cur.stride, adjacent) &&
+            next.start == adjacent)
         {
             ++cur.count;
             continue;
         }
-        if (cur.count == 1 && next.count >= 2 && next.start == cur.start + next.stride)
+        if (cur.count == 1 && next.count >= 2 && checkedAdd(cur.start, next.stride, adjacent) &&
+            next.start == adjacent)
         {
             cur = Run{cur.start, next.stride, next.count + 1};
             continue;
         }
-        if (cur.count >= 2 && next.count >= 2 && next.stride == cur.stride && next.start == cur.last() + cur.stride)
+        if (cur.count >= 2 && next.count >= 2 && next.stride == cur.stride &&
+            checkedAdd(cur.last(), cur.stride, adjacent) && next.start == adjacent)
         {
             cur.count += next.count;
             continue;
