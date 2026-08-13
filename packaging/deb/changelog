@@ -1,3 +1,11 @@
+llvm-dsdl (0.2.3) unstable; urgency=medium
+
+  * Bump github/codeql-action from 3 to 4 in the actions group
+  * Bump pymdown-extensions in /docs in the pip group across 1 directory
+  * Exact runset (#15)
+
+ -- Scott Dixon <scottd.thirtytwo@gmail.com>  Thu, 13 Aug 2026 07:44:53 -0700
+
 llvm-dsdl (0.2.2) unstable; urgency=medium
 
   * Build and ship macOS on Intel (#10)
