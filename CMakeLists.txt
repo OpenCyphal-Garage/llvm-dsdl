@@ -1511,6 +1511,46 @@ if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
     COMMENT "Removing coverage artifacts from ${LLVMDSDL_COVERAGE_DIR}"
   )
 
+  # Everything the instrumented suite executes, discovered rather than remembered.
+  #
+  # This lane does not build ALL -- it builds only what ctest needs, so the report is
+  # not paying to instrument code no test runs. A hand-written list of those targets is
+  # the wrong way to express that: it goes stale the moment a test binary is added, and
+  # the failure it produces is a "No such file or directory" from the ctest run, twenty
+  # minutes in, naming a target nobody thought to add here. Walking tools/ and test/ for
+  # executables ties the list to the build system instead, so a new test binary is picked
+  # up by being defined. Only these two trees: examples/ builds nodes against libcyphal
+  # that no ctest invokes.
+  function(llvmdsdl_collect_executables dir out_var)
+    set(collected "")
+    get_property(dir_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(candidate IN LISTS dir_targets)
+      get_target_property(candidate_type ${candidate} TYPE)
+      if(candidate_type STREQUAL "EXECUTABLE")
+        list(APPEND collected ${candidate})
+      endif()
+    endforeach()
+    get_property(subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    foreach(subdir IN LISTS subdirs)
+      llvmdsdl_collect_executables("${subdir}" subdir_targets)
+      list(APPEND collected ${subdir_targets})
+    endforeach()
+    set(${out_var} "${collected}" PARENT_SCOPE)
+  endfunction()
+
+  llvmdsdl_collect_executables("${LLVMDSDL_SOURCE_DIR}/tools" LLVMDSDL_COVERAGE_TOOL_EXES)
+  llvmdsdl_collect_executables("${LLVMDSDL_SOURCE_DIR}/test" LLVMDSDL_COVERAGE_TEST_EXES)
+
+  # The one name CI builds before the (serialized) report run, so the workflow keeps no
+  # target list of its own either.
+  add_custom_target(coverage-prerequisites)
+  add_dependencies(coverage-prerequisites
+                   ${LLVMDSDL_COVERAGE_TOOL_EXES}
+                   ${LLVMDSDL_COVERAGE_TEST_EXES})
+  if(TARGET build-python-runtime-accelerator)
+    add_dependencies(coverage-prerequisites build-python-runtime-accelerator)
+  endif()
+
   add_custom_target(coverage-run
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COVERAGE_DIR}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COVERAGE_PROFILES_DIR}"
@@ -1521,7 +1561,7 @@ if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
         ${LLVMDSDL_COVERAGE_CTEST_ARGS_LIST}
         ${LLVMDSDL_COVERAGE_CTEST_CONFIG_ARGS}
     WORKING_DIRECTORY ${LLVMDSDL_BINARY_DIR}
-    DEPENDS llvmdsdl-unit-tests dsdlc dsdl-opt
+    DEPENDS coverage-prerequisites
     USES_TERMINAL
     VERBATIM
     COMMENT "Running tests with LLVM source coverage instrumentation"
