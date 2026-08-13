@@ -9,6 +9,7 @@
 
 add_library(llvmdsdlSemantics
   BitLengthSet.cpp
+  RunSet.cpp
   Evaluator.cpp
   Analyzer.cpp
 )

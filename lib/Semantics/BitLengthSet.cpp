@@ -22,12 +22,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/IntegerMath.h"
 
 #include <algorithm>
 #include <bit>
 #include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -39,59 +41,6 @@ namespace llvmdsdl
 
 namespace
 {
-
-/// @brief Saturating signed addition for the non-negative bit-length domain.
-///
-/// On overflow the result clamps to `INT64_MAX` instead of wrapping, so a pathological definition
-/// (huge `@extent`, array capacity, or deep nesting) yields a defined, saturated length rather
-/// than signed-overflow undefined behaviour. Operands are non-negative bit lengths (the
-/// constructors clamp negatives to 0), so overflow is always toward `INT64_MAX`.
-/// Realistic bit lengths are far below the ceiling, so this never triggers in practice.
-inline std::int64_t satAdd(const std::int64_t a, const std::int64_t b)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    std::int64_t r = 0;
-    if (__builtin_add_overflow(a, b, &r))
-    {
-        return std::numeric_limits<std::int64_t>::max();
-    }
-    return r;
-#else
-    const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
-    if (a > 0 && b > 0 && a > kMax - b)
-    {
-        return kMax;
-    }
-    return a + b;
-#endif
-}
-
-/// @brief Saturating signed multiplication for the non-negative bit-length domain (see `satAdd`).
-inline std::int64_t satMul(const std::int64_t a, const std::int64_t b)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    std::int64_t r = 0;
-    if (__builtin_mul_overflow(a, b, &r))
-    {
-        return std::numeric_limits<std::int64_t>::max();
-    }
-    return r;
-#else
-    const std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
-    if (a != 0 && b > kMax / a)
-    {
-        return kMax;
-    }
-    return a * b;
-#endif
-}
-
-/// @brief Rounds `v >= 0` up to the next multiple of `a >= 1`, saturating on overflow (see `satAdd`).
-inline std::int64_t satRoundUp(const std::int64_t v, const std::int64_t a)
-{
-    const std::int64_t rem = v % a;
-    return rem == 0 ? v : satAdd(v, a - rem);
-}
 
 /// @brief Hard ceiling on any modulus used during symbolic residue evaluation (`modulo()`).
 ///
@@ -225,24 +174,6 @@ ResidueSet minkowskiSumMod(const ResidueSet& a, const ResidueSet& b)
     return out;
 }
 
-/// @brief Computes `lcm(a, b)` for positive `a`, `b`, guarding against overflow and the cap.
-/// @return False (leaving `result` unspecified) when the lcm would exceed `kResidueModulusCap`.
-bool cappedLcm(const std::int64_t a, const std::int64_t b, std::int64_t& result)
-{
-    const std::int64_t g = std::gcd(a, b);
-    if (g <= 0)
-    {
-        return false;
-    }
-    const std::int64_t step = a / g;    // a / gcd(a, b)
-    if (step > kResidueModulusCap / b)  // step * b would exceed the cap (both positive)
-    {
-        return false;
-    }
-    result = step * b;
-    return true;
-}
-
 /// @brief Residues of the `count`-fold Minkowski self-sum of `r` modulo `m` (A_count).
 ///
 /// The sequence A_0 = {0}, A_k = A_{k-1} (+) r (mod m) is a deterministic walk over subsets of
@@ -339,7 +270,7 @@ struct BitLengthSet::Node final
         RepeatRange,
     } kind{Kind::Leaf};
 
-    FlatSet<std::int64_t> values;
+    FlatSet<std::int64_t>       values;
     std::shared_ptr<const Node> lhs;
     std::shared_ptr<const Node> rhs;
     std::int64_t                param{0};
@@ -443,16 +374,16 @@ struct BitLengthSet::Node final
                 v = n->values.empty() ? 0 : *n->values.begin();
                 break;
             case Kind::Add:
-                v = satAdd(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
+                v = saturatingAddNonNegative(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
                 break;
             case Kind::Union:
                 v = std::min(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
                 break;
             case Kind::Pad:
-                v = satRoundUp(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
+                v = saturatingRoundUpToMultipleNonNegative(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
                 break;
             case Kind::Repeat:
-                v = satMul(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
+                v = saturatingMultiplyNonNegative(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
                 break;
             case Kind::RepeatRange:
                 v = 0;
@@ -468,35 +399,99 @@ struct BitLengthSet::Node final
     /// Mirrors `min()`: Leaf takes the largest stored value; Add sums the maxima; Union takes
     /// the larger maximum; Pad rounds the child maximum up (monotone); Repeat and RepeatRange
     /// both yield param * max(lhs) — for RepeatRange this is the k = param term, the maximum
-    /// only on the non-negative value domain. Iterative and memoized.
+    /// only on the non-negative value domain. Reads the shared `summary()` walk.
     [[nodiscard]] std::int64_t max() const
     {
-        const auto                                    order = collectPostOrder(this);
-        std::unordered_map<const Node*, std::int64_t> memo;
+        return summary().maximum;
+    }
+
+    /// @brief True iff evaluating this expression can invoke the documented INT64_MAX clamp.
+    ///
+    /// The maximum of every non-negative child set is achievable. An Add, Pad, or Repeat can
+    /// therefore saturate iff its child already can or applying the operation to the exact child
+    /// maximum exceeds int64. Repeat(0) and RepeatRange(0) do not evaluate an element sum and
+    /// denote {0}, so saturation below them is unreachable from the resulting expression.
+    /// Reads the shared `summary()` walk.
+    [[nodiscard]] bool saturationReachable() const
+    {
+        return summary().saturates;
+    }
+
+    struct Summary final
+    {
+        std::int64_t maximum{0};
+        bool         saturates{false};
+    };
+
+    /// @brief One shared post-order walk computing `{maximum, saturates}` per node.
+    ///
+    /// `max()` reads `.maximum` and `saturationReachable()` reads `.saturates` so the two
+    /// recurrences cannot drift apart: `residues()` is sound only if `saturates` fires whenever
+    /// the saturating evaluators can clamp, i.e. exactly when this maximum recurrence overflows
+    /// a checked operation (checked-then-clamp IS the saturating helpers' implementation).
+    [[nodiscard]] Summary summary() const
+    {
+        const auto                               order = collectPostOrder(this);
+        std::unordered_map<const Node*, Summary> memo;
         memo.reserve(order.size() * 2);
         for (const Node* const n : order)
         {
-            std::int64_t v = 0;
+            Summary value;
             switch (n->kind)
             {
             case Kind::Leaf:
-                v = n->values.empty() ? 0 : *n->values.rbegin();
+                value.maximum = n->values.empty() ? 0 : *n->values.rbegin();
                 break;
-            case Kind::Add:
-                v = satAdd(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
-                break;
-            case Kind::Union:
-                v = std::max(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
-                break;
-            case Kind::Pad:
-                v = satRoundUp(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
-                break;
-            case Kind::Repeat:
-            case Kind::RepeatRange:
-                v = satMul(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
+            case Kind::Union: {
+                const auto& l   = memo.at(n->lhs.get());
+                const auto& r   = memo.at(n->rhs.get());
+                value.maximum   = std::max(l.maximum, r.maximum);
+                value.saturates = l.saturates || r.saturates;
                 break;
             }
-            memo.emplace(n, v);
+            case Kind::Add: {
+                const auto& l = memo.at(n->lhs.get());
+                const auto& r = memo.at(n->rhs.get());
+                if (!checkedAdd(l.maximum, r.maximum, value.maximum))
+                {
+                    value.maximum   = std::numeric_limits<std::int64_t>::max();
+                    value.saturates = true;
+                }
+                value.saturates = value.saturates || l.saturates || r.saturates;
+                break;
+            }
+            case Kind::Pad: {
+                const auto&        child = memo.at(n->lhs.get());
+                const std::int64_t a     = std::max<std::int64_t>(1, n->param);
+                const std::int64_t rem   = child.maximum % a;
+                value.maximum            = child.maximum;
+                if (rem != 0 && !checkedAdd(child.maximum, a - rem, value.maximum))
+                {
+                    value.maximum   = std::numeric_limits<std::int64_t>::max();
+                    value.saturates = true;
+                }
+                value.saturates = value.saturates || child.saturates;
+                break;
+            }
+            case Kind::Repeat:
+            case Kind::RepeatRange: {
+                const std::int64_t count = std::max<std::int64_t>(0, n->param);
+                if (count == 0)
+                {
+                    value = Summary{};
+                    break;
+                }
+                const auto& child = memo.at(n->lhs.get());
+                if (!checkedMultiply(child.maximum, count, value.maximum))
+                {
+                    value.maximum   = std::numeric_limits<std::int64_t>::max();
+                    value.saturates = true;
+                }
+                value.saturates = value.saturates || child.saturates;
+                break;
+            }
+            }
+            memo.emplace(n, value);
         }
         return memo.at(this);
     }
@@ -543,16 +538,16 @@ struct BitLengthSet::Node final
             // The source is already sorted and unique (it is a FlatSet), so keep the smallest
             // `limit` via the sorted_unique constructor — no re-sort.
             FlatSet<std::int64_t> out(sorted_unique,
-                                            n->values.begin(),
-                                            std::next(n->values.begin(), static_cast<std::ptrdiff_t>(limit)));
+                                      n->values.begin(),
+                                      std::next(n->values.begin(), static_cast<std::ptrdiff_t>(limit)));
             return {std::move(out), false};
         }
         case Kind::Add: {
-            const auto&                 l    = memo.at(n->lhs.get());
-            const auto&                 r    = memo.at(n->rhs.get());
-            const std::int64_t          rmin = *r.values.begin();  // r is sorted and non-empty (I1)
+            const auto&           l    = memo.at(n->lhs.get());
+            const auto&           r    = memo.at(n->rhs.get());
+            const std::int64_t    rmin = *r.values.begin();  // r is sorted and non-empty (I1)
             FlatSet<std::int64_t> out;
-            bool                        overflow = false;
+            bool                  overflow = false;
             // `l.values`/`r.values` are sorted ascending. Once `out` holds the smallest `limit`
             // sums its max only shrinks, so we can prune whole rows/tails whose sums already exceed
             // it — bounding the common (truncating) case to O(limit) instead of |l|*|r|.
@@ -560,14 +555,14 @@ struct BitLengthSet::Node final
             // quadratic in |l|*|r|, capped at ~(limit/2)^2, since the full sumset must be visited.
             for (const auto lv : l.values)
             {
-                if (out.size() >= limit && satAdd(lv, rmin) > *out.rbegin())
+                if (out.size() >= limit && saturatingAddNonNegative(lv, rmin) > *out.rbegin())
                 {
                     overflow = true;  // this lv's smallest sum is past the window; so is every later lv
                     break;
                 }
                 for (const auto rv : r.values)
                 {
-                    const auto s = satAdd(lv, rv);
+                    const auto s = saturatingAddNonNegative(lv, rv);
                     if (out.size() >= limit && s > *out.rbegin())
                     {
                         overflow = true;  // a real sum beyond the kept window -> proper subset
@@ -584,8 +579,8 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Union: {
-            const auto&                 l   = memo.at(n->lhs.get());
-            const auto&                 r   = memo.at(n->rhs.get());
+            const auto&           l   = memo.at(n->lhs.get());
+            const auto&           r   = memo.at(n->rhs.get());
             FlatSet<std::int64_t> out = l.values;
             out.insert(r.values.begin(), r.values.end());
             bool overflow = false;
@@ -597,12 +592,13 @@ struct BitLengthSet::Node final
             return {std::move(out), l.exact && r.exact && !overflow};
         }
         case Kind::Pad: {
-            const auto&                 l = memo.at(n->lhs.get());
-            const auto                  a = std::max<std::int64_t>(1, n->param);
+            const auto&           l = memo.at(n->lhs.get());
+            const auto            a = std::max<std::int64_t>(1, n->param);
             FlatSet<std::int64_t> out;
             for (const auto v : l.values)
             {
-                out.insert(satRoundUp(v, a));  // padding is non-expansive: |out| <= |l.values|
+                out.insert(
+                    saturatingRoundUpToMultipleNonNegative(v, a));  // padding is non-expansive: |out| <= |l.values|
             }
             return {std::move(out), l.exact};
         }
@@ -626,12 +622,12 @@ struct BitLengthSet::Node final
             for (std::int64_t i = 0; i < n->param; ++i)
             {
                 FlatSet<std::int64_t> next;
-                bool                        overflow = false;
+                bool                  overflow = false;
                 for (const auto a : acc)
                 {
                     for (const auto b : shifted)
                     {
-                        next.insert(satAdd(a, b));
+                        next.insert(saturatingAddNonNegative(a, b));
                         if (next.size() > limit)
                         {
                             next.erase(std::prev(next.end()));
@@ -653,11 +649,11 @@ struct BitLengthSet::Node final
                 }
             }
             // Undo the shift: the exactly-param sumset of the original set is `param*base + A'_param`.
-            const std::int64_t          shift = satMul(n->param, base);
+            const std::int64_t    shift = saturatingMultiplyNonNegative(n->param, base);
             FlatSet<std::int64_t> out;
             for (const auto x : acc)
             {
-                out.insert(satAdd(shift, x));
+                out.insert(saturatingAddNonNegative(shift, x));
             }
             return {std::move(out), exact};
         }
@@ -667,35 +663,35 @@ struct BitLengthSet::Node final
             {
                 return {{0}, true};
             }
-            const auto&                 item  = memo.at(n->lhs.get());
-            bool                        exact = item.exact;
-            const std::int64_t          base  = *item.values.begin();  // min; item.values is non-empty (I1)
+            const auto&           item  = memo.at(n->lhs.get());
+            bool                  exact = item.exact;
+            const std::int64_t    base  = *item.values.begin();  // min; item.values is non-empty (I1)
             FlatSet<std::int64_t> shifted;
             for (const auto v : item.values)
             {
                 shifted.insert(v - base);
             }
-            FlatSet<std::int64_t> out{0};                                // the k = 0 term
-            auto                        acc = FlatSet<std::int64_t>{0};  // A'_0
+            FlatSet<std::int64_t> out{0};                          // the k = 0 term
+            auto                  acc = FlatSet<std::int64_t>{0};  // A'_0
             for (std::int64_t i = 1; i <= maxCount; ++i)
             {
                 // Term k = i starts at `i*base`; once that passes the kept window, and every later
                 // term starts even higher, none can enter the smallest-`limit` result.
                 // Those later terms are non-empty elements of S that we are dropping, so the result
                 // is a proper subset — mark it inexact before bailing.
-                const std::int64_t shift = satMul(i, base);  // term k = i is `shift + A'_i`
+                const std::int64_t shift = saturatingMultiplyNonNegative(i, base);  // term k = i is `shift + A'_i`
                 if (base > 0 && out.size() >= limit && shift > *out.rbegin())
                 {
                     exact = false;
                     break;
                 }
                 FlatSet<std::int64_t> next;
-                bool                        overflow = false;
+                bool                  overflow = false;
                 for (const auto a : acc)
                 {
                     for (const auto b : shifted)
                     {
-                        next.insert(satAdd(a, b));
+                        next.insert(saturatingAddNonNegative(a, b));
                         if (next.size() > limit)
                         {
                             next.erase(std::prev(next.end()));
@@ -710,7 +706,7 @@ struct BitLengthSet::Node final
                 }
                 for (const auto x : next)  // A_i (original) = i*base + A'_i
                 {
-                    out.insert(satAdd(shift, x));
+                    out.insert(saturatingAddNonNegative(shift, x));
                     if (out.size() > limit)
                     {
                         out.erase(std::prev(out.end()));
@@ -748,10 +744,10 @@ struct BitLengthSet::Node final
 
     /// @brief Exact residue mask `{ v mod modulus : v in S }`, computed symbolically.
     ///
-    /// Works entirely in the `ResidueSet` bitmask domain and never enumerates S: every
-    /// intermediate result is a subset of Z/modulus (at most `modulus` bits), so it is exact and
-    /// cheap even when S is astronomically large — this is what makes `modulo()` complete for any
-    /// set size. On success the root's residues are unioned into `out`.
+    /// Works entirely in the `ResidueSet` bitmask domain and never enumerates S. For expressions
+    /// that cannot saturate, every intermediate result is a subset of Z/modulus (at most
+    /// `modulus` bits), so it is exact and cheap even when S is astronomically large. On success
+    /// the root's residues are unioned into `out`.
     ///
     /// Per-kind derivation (modulus `m >= 1`):
     ///   - Leaf: reduce each stored value mod `m`.
@@ -762,8 +758,8 @@ struct BitLengthSet::Node final
     ///     the widened modulus `m' = lcm(a, m)` and each representative is padded then reduced.
     ///   - Repeat / RepeatRange: cycle-detecting sumset iteration over Z/m (see the helpers).
     ///
-    /// @return False when a required modulus exceeds `kResidueModulusCap` (the caller then falls
-    ///         back to the `expand()`-based approximation); on false, `out` is left unchanged.
+    /// @return False when saturation is reachable or a required modulus exceeds
+    ///         `kResidueModulusCap`; on false, `out` is left unchanged.
     ///
     /// Iterative and memoized over `(node, modulus)` contexts (a `Pad` evaluates its child at the
     /// widened modulus `lcm(a, modulus)`, so one node can appear at several moduli): this visits a
@@ -771,6 +767,14 @@ struct BitLengthSet::Node final
     /// root's residues are unioned into `out` on success.
     [[nodiscard]] bool residues(std::int64_t modulus, ResidueSet& out) const
     {
+        // Ordinary modular homomorphisms describe unbounded addition. Saturating addition does
+        // not preserve residues, so a reachable clamp makes this strategy inapplicable. The
+        // public entry point will try exact RunSet and expansion strategies instead.
+        if (saturationReachable())
+        {
+            return false;
+        }
+
         using Ctx = std::pair<const Node*, std::int64_t>;  // (node, working modulus)
 
         // Discovery: collect (node, modulus) contexts in post-order, deduplicated. Bail if any
@@ -810,7 +814,7 @@ struct BitLengthSet::Node final
                 break;
             case Kind::Pad: {
                 std::int64_t widened = 0;
-                if (!cappedLcm(std::max<std::int64_t>(1, node->param), mod, widened))
+                if (!lcmAtMost(std::max<std::int64_t>(1, node->param), mod, kResidueModulusCap, widened))
                 {
                     return false;
                 }
@@ -836,7 +840,7 @@ struct BitLengthSet::Node final
             case Kind::Leaf:
                 for (const auto v : node->values)
                 {
-                    rs.add(((v % mod) + mod) % mod);  // normalize sign into [0, mod)
+                    rs.add(euclideanModulo(v, mod));
                 }
                 if (node->values.empty())
                 {
@@ -853,7 +857,7 @@ struct BitLengthSet::Node final
             case Kind::Pad: {
                 const auto   a       = std::max<std::int64_t>(1, node->param);
                 std::int64_t widened = 0;
-                (void) cappedLcm(a, mod, widened);  // succeeded during discovery
+                (void) lcmAtMost(a, mod, kResidueModulusCap, widened);  // succeeded during discovery
                 memo.at({node->lhs.get(), widened}).forEach([&](const std::int64_t r) {
                     const auto rem    = r % a;
                     const auto padded = (rem == 0) ? r : r + (a - rem);
@@ -1011,17 +1015,22 @@ const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
 
 BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     : root_(std::move(other.root_))
+    , runSetCache_(std::move(other.runSetCache_))
 {
-    // Leave the source denoting {0} rather than null, so any later use is well-defined.
+    // Leave the source denoting {0} rather than null, so any later use is well-defined. The
+    // cache must not outlive the root it was computed for.
     other.root_ = zeroLeaf();
+    other.runSetCache_.reset();
 }
 
 BitLengthSet& BitLengthSet::operator=(BitLengthSet&& other) noexcept
 {
     if (this != &other)
     {
-        root_       = std::move(other.root_);
-        other.root_ = zeroLeaf();
+        root_        = std::move(other.root_);
+        runSetCache_ = std::move(other.runSetCache_);
+        other.root_  = zeroLeaf();
+        other.runSetCache_.reset();
     }
     return *this;
 }
@@ -1041,15 +1050,20 @@ bool BitLengthSet::fixed() const
     return min() == max();
 }
 
-bool BitLengthSet::is_aligned_at(std::int64_t alignment) const
+std::optional<bool> BitLengthSet::is_aligned_at(std::int64_t alignment) const
 {
     if (alignment < 1)
     {
         return true;  // trivially aligned
     }
-    // Exact, since modulo() is exact: aligned iff every possible length reduces to residue 0.
+    // Decidable iff modulo() answers; aligned iff every possible length reduces to residue 0.
+    // A refusal propagates as nullopt — "cannot evaluate" is never converted into a guess.
     const auto residues = modulo(alignment);
-    return residues.size() == 1 && *residues.begin() == 0;
+    if (!residues)
+    {
+        return std::nullopt;
+    }
+    return residues->size() == 1 && *residues->begin() == 0;
 }
 
 BitLengthSet BitLengthSet::padToAlignment(std::int64_t alignment) const
@@ -1082,30 +1096,175 @@ BitLengthSet BitLengthSet::repeatRange(std::int64_t countMax) const
     return BitLengthSet(node);
 }
 
-FlatSet<std::int64_t> BitLengthSet::modulo(std::int64_t divisor) const
+std::optional<FlatSet<std::int64_t>> BitLengthSet::modulo(std::int64_t divisor) const
 {
     // Contract: a non-positive divisor yields the sentinel {0} instead of dividing by zero.
     if (divisor <= 0)
     {
-        return {0};
+        return FlatSet<std::int64_t>{0};
     }
-    // Primary path: exact per-node symbolic residues in a dense bitmask (bounded by `divisor`,
-    // never truncated), so the result is complete for every set, however large.
-    ResidueSet mask(divisor);
-    if (root_->residues(divisor, mask))
+    if (divisor == 1)
     {
-        return residueSetToFlatSet(mask);
+        return FlatSet<std::int64_t>{0};
     }
-    // Fallback (not reached for realistic, alignment-driven divisors): symbolic evaluation
-    // required a modulus exceeding kResidueModulusCap. Degrade to the expand()-based
-    // approximation, which may be incomplete for very large sets. See kResidueModulusCap.
-    FlatSet<std::int64_t> out;
-    const auto                  expanded = expand();
-    for (const auto v : expanded)
+    // Symbolic residue path — exact at any cardinality when saturation is unreachable. Guarded
+    // by the cap BEFORE the bitmask is constructed: the mask allocates divisor bits, so an
+    // unguarded huge divisor would be a compile-time allocation attack, not just wasted work.
+    if (divisor <= kResidueModulusCap)
     {
-        out.insert(v % divisor);
+        ResidueSet mask(divisor);
+        if (root_->residues(divisor, mask))
+        {
+            return residueSetToFlatSet(mask);
+        }
+        // lcm-widening pushed the working modulus over the cap: fall through to the run path.
     }
-    return out;
+    // Exact per-run residues — any divisor, any cardinality, bounded only by the size of the
+    // residue set itself.
+    if (const auto rs = runSet())
+    {
+        if (auto res = rs->residues(divisor))
+        {
+            return res;
+        }
+    }
+    // Residues of an exact expansion (covers structures the run evaluation refuses).
+    const auto expansion = expandChecked();
+    if (expansion.exact)
+    {
+        FlatSet<std::int64_t> out;
+        for (const auto v : expansion.values)
+        {
+            out.insert(v % divisor);
+        }
+        return out;
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> BitLengthSet::equalsExact(const BitLengthSet& other) const
+{
+    if (root_.get() == other.root_.get())
+    {
+        return true;
+    }
+    if (min() != other.min() || max() != other.max())
+    {
+        return false;
+    }
+    const auto lhsRuns = runSet();
+    const auto rhsRuns = other.runSet();
+    if (lhsRuns && rhsRuns)
+    {
+        return lhsRuns->equals(*rhsRuns);
+    }
+    const auto lhsExpansion = expandChecked();
+    const auto rhsExpansion = other.expandChecked();
+    if (lhsExpansion.exact && rhsExpansion.exact)
+    {
+        return lhsExpansion.values == rhsExpansion.values;
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> BitLengthSet::isSubsetOfExact(const BitLengthSet& other) const
+{
+    if (root_.get() == other.root_.get())
+    {
+        return true;
+    }
+    if (min() < other.min() || max() > other.max())
+    {
+        return false;
+    }
+    const auto lhsRuns = runSet();
+    const auto rhsRuns = other.runSet();
+    if (lhsRuns && rhsRuns)
+    {
+        return lhsRuns->isSubsetOf(*rhsRuns);
+    }
+    const auto lhsExpansion = expandChecked();
+    const auto rhsExpansion = other.expandChecked();
+    if (lhsExpansion.exact && rhsExpansion.exact)
+    {
+        return std::includes(rhsExpansion.values.begin(),
+                             rhsExpansion.values.end(),
+                             lhsExpansion.values.begin(),
+                             lhsExpansion.values.end());
+    }
+    return std::nullopt;
+}
+
+std::optional<RunSet> BitLengthSet::runSet() const
+{
+    // Cached per object (the node DAG is immutable, so the result is valid for the lifetime of
+    // root_): evaluator fallback chains re-query the same set several times per statement, and
+    // the refusing evaluation — the most expensive outcome — would otherwise be re-run in full.
+    if (runSetCache_)
+    {
+        return *runSetCache_;
+    }
+    // Same iterative, memoized post-order shape as min()/expandChecked(): each distinct node is
+    // evaluated once from its children's RunSets. A nullopt anywhere (complexity budget or int64
+    // range check inside a RunSet operation) poisons the result — exact or nothing.
+    const auto                                             order = Node::collectPostOrder(root_.get());
+    std::unordered_map<const Node*, std::optional<RunSet>> memo;
+    memo.reserve(order.size() * 2);
+    for (const Node* const n : order)
+    {
+        std::optional<RunSet> v;
+        switch (n->kind)
+        {
+        case Node::Kind::Leaf:
+            v = RunSet::fromValues(n->values);
+            break;
+        case Node::Kind::Add: {
+            const auto& l = memo.at(n->lhs.get());
+            const auto& r = memo.at(n->rhs.get());
+            if (l && r)
+            {
+                v = RunSet::sum(*l, *r);
+            }
+            break;
+        }
+        case Node::Kind::Union: {
+            const auto& l = memo.at(n->lhs.get());
+            const auto& r = memo.at(n->rhs.get());
+            if (l && r)
+            {
+                v = RunSet::unite(*l, *r);
+            }
+            break;
+        }
+        case Node::Kind::Pad: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->paddedTo(std::max<std::int64_t>(1, n->param));
+            }
+            break;
+        }
+        case Node::Kind::Repeat: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->repeated(std::max<std::int64_t>(0, n->param));
+            }
+            break;
+        }
+        case Node::Kind::RepeatRange: {
+            const auto& l = memo.at(n->lhs.get());
+            if (l)
+            {
+                v = l->repeatRange(std::max<std::int64_t>(0, n->param));
+            }
+            break;
+        }
+        }
+        memo.emplace(n, std::move(v));
+    }
+    runSetCache_ = std::make_shared<const std::optional<RunSet>>(std::move(memo.at(root_.get())));
+    return *runSetCache_;
 }
 
 FlatSet<std::int64_t> BitLengthSet::expand(std::size_t limit) const
@@ -1140,25 +1299,6 @@ BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs)
     node->lhs  = lhs.root_;
     node->rhs  = rhs.root_;
     return BitLengthSet(node);
-}
-
-bool operator==(const BitLengthSet& lhs, const BitLengthSet& rhs)
-{
-    // Cheap necessary conditions first; then require both to expand exactly to the same values.
-    // `exact` on both sides is what makes this sound (no false positive): two sets that agree only
-    // on their smallest `limit` elements but differ beyond it are not declared equal. See header.
-    if (lhs.min() != rhs.min() || lhs.max() != rhs.max())
-    {
-        return false;
-    }
-    const auto l = lhs.expandChecked();
-    const auto r = rhs.expandChecked();
-    return l.exact && r.exact && l.values == r.values;
-}
-
-bool operator!=(const BitLengthSet& lhs, const BitLengthSet& rhs)
-{
-    return !(lhs == rhs);
 }
 
 }  // namespace llvmdsdl

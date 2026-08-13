@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <set>
@@ -173,6 +174,87 @@ bool runEvaluatorTests()
         if (!hasErrorContaining(diag, "failed to evaluate expression"))
         {
             std::cerr << "expected fallback evaluation failure diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        // Symbolic/concrete subset relations use closed-form cardinality and membership. This
+        // set is larger than the evaluator's ordinary exact materialisation capacity.
+        constexpr std::int64_t     countMax = 70000;
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        llvmdsdl::Value::Set       exactOffsets;
+        for (std::int64_t i = 0; i <= countMax; ++i)
+        {
+            exactOffsets.emplace(i * 8, 1);
+        }
+        env.insert_or_assign("_offset_", llvmdsdl::Value{llvmdsdl::BitLengthSet(8).repeatRange(countMax)});
+        env.insert_or_assign("exact_offsets", llvmdsdl::Value{std::move(exactOffsets)});
+
+        const auto subset = evaluateAssertExpression("_offset_ <= exact_offsets", diag, env, nullptr);
+        if (!expectBool(subset, true) || diag.hasErrors())
+        {
+            std::cerr << "symbolic set subset of a large concrete set was not decided exactly\n";
+            return false;
+        }
+
+        const auto superset = evaluateAssertExpression("exact_offsets >= _offset_", diag, env, nullptr);
+        if (!expectBool(superset, true) || diag.hasErrors())
+        {
+            std::cerr << "large concrete set superset relation was not decided exactly\n";
+            return false;
+        }
+    }
+
+    {
+        // A negative divisor whose magnitude is outside positive int64 bypasses the symbolic
+        // residue path and is evaluated exactly after materialising the small offset set.
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        env.insert_or_assign("offsets", llvmdsdl::Value{llvmdsdl::BitLengthSet(std::set<std::int64_t>{0, 8, 16})});
+        env.insert_or_assign("divisor", llvmdsdl::Value{llvmdsdl::Rational(INT64_MIN, 1)});
+        const auto residues = evaluateAssertExpression("offsets % divisor", diag, env, nullptr);
+        if (!expectSet(residues, {llvmdsdl::Rational(0, 1), llvmdsdl::Rational(8, 1), llvmdsdl::Rational(16, 1)}) ||
+            diag.hasErrors())
+        {
+            std::cerr << "wide negative symbolic modulo divisor was not evaluated exactly\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        const auto                 values = std::set<std::int64_t>{2, 5, 12};
+        env.insert_or_assign("lhs", llvmdsdl::Value{llvmdsdl::BitLengthSet(values).repeat(4097)});
+        env.insert_or_assign("rhs", llvmdsdl::Value{llvmdsdl::BitLengthSet(values).repeat(4097)});
+
+        auto selfEqual = evaluateAssertExpression("lhs == lhs", diag, env, nullptr);
+        if (!expectBool(selfEqual, true))
+        {
+            std::cerr << "symbolic self-equality beyond operation budgets was not decided exactly\n";
+            return false;
+        }
+
+        auto undecidable = evaluateAssertExpression("lhs == rhs", diag, env, nullptr);
+        if (undecidable || !hasErrorContaining(diag, "cannot decide this '_offset_' set comparison exactly"))
+        {
+            std::cerr << "undecidable symbolic equality did not produce an exactness diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        const auto                 maximum = std::numeric_limits<std::int64_t>::max();
+        env.insert_or_assign("saturated",
+                             llvmdsdl::Value{llvmdsdl::BitLengthSet(maximum) + llvmdsdl::BitLengthSet(maximum - 1)});
+        auto residues = evaluateAssertExpression("saturated % 8", diag, env, nullptr);
+        if (!expectSet(residues, {llvmdsdl::Rational(7, 1)}) || diag.hasErrors())
+        {
+            std::cerr << "saturated symbolic modulo did not use an exact fallback\n";
             return false;
         }
     }
@@ -462,6 +544,54 @@ bool runEvaluatorTests()
     {
         llvmdsdl::DiagnosticEngine diag;
         llvmdsdl::ValueEnv         env;
+        env.insert_or_assign("_offset_", llvmdsdl::Value{llvmdsdl::BitLengthSet(8).repeatRange(20000)});
+        env.insert_or_assign("narrow_offset", llvmdsdl::Value{llvmdsdl::BitLengthSet(8).repeatRange(10000)});
+
+        auto equal = evaluateAssertExpression("_offset_ == _offset_", diag, env, nullptr);
+        if (!expectBool(equal, true))
+        {
+            std::cerr << "symbolic set equality materialized instead of using RunSet equality\n";
+            return false;
+        }
+
+        auto notEqual = evaluateAssertExpression("_offset_ != _offset_", diag, env, nullptr);
+        if (!expectBool(notEqual, false))
+        {
+            std::cerr << "symbolic set inequality produced unexpected result\n";
+            return false;
+        }
+
+        auto subset = evaluateAssertExpression("narrow_offset <= _offset_", diag, env, nullptr);
+        if (!expectBool(subset, true))
+        {
+            std::cerr << "symbolic set subset relation produced unexpected result\n";
+            return false;
+        }
+
+        auto strictSubset = evaluateAssertExpression("narrow_offset < _offset_", diag, env, nullptr);
+        if (!expectBool(strictSubset, true))
+        {
+            std::cerr << "symbolic set strict subset relation produced unexpected result\n";
+            return false;
+        }
+
+        auto notSubset = evaluateAssertExpression("_offset_ <= narrow_offset", diag, env, nullptr);
+        if (!expectBool(notSubset, false))
+        {
+            std::cerr << "symbolic set negative subset relation produced unexpected result\n";
+            return false;
+        }
+
+        if (diag.hasErrors())
+        {
+            std::cerr << "symbolic set comparisons diagnosed a materialization failure\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
 
         auto unaryTypeError = evaluateAssertExpression("-true", diag, env, nullptr);
         if (unaryTypeError || !hasErrorContaining(diag, "unary +/- requires rational operand"))
@@ -575,7 +705,7 @@ bool runEvaluatorTests()
             return false;
         }
         // A full-width uint64 value is representable: exact via asWideInteger, absent via asInteger.
-        const __int128          uint64Max = (static_cast<__int128>(1) << 64) - 1;
+        const __int128           uint64Max = (static_cast<__int128>(1) << 64) - 1;
         const llvmdsdl::Rational umax(uint64Max, 1);
         if (umax.overflowed() || umax.asInteger().has_value() || umax.asWideInteger().value() != uint64Max)
         {
@@ -583,7 +713,7 @@ bool runEvaluatorTests()
             return false;
         }
         // A real 128-bit overflow still poisons (bounds the DoS surface for constant expressions).
-        const __int128          huge  = static_cast<__int128>(1) << 96;
+        const __int128           huge  = static_cast<__int128>(1) << 96;
         const llvmdsdl::Rational spill = llvmdsdl::Rational(huge, 1) * llvmdsdl::Rational(huge, 1);
         if (!spill.overflowed())
         {

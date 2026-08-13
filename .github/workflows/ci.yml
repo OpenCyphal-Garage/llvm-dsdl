@@ -273,13 +273,14 @@ jobs:
           fi
           cmake --preset ci-asan \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_ENABLE_SANITIZERS="undefined" \
             -DLLVMDSDL_NATIVE_DECODER_FUZZ_RUNS="${FUZZ_RUNS}"
 
-      - name: Build dsdlc (sanitizer toolchain)
-        # The sanitizer/fuzz tests are CMake scripts that only drive dsdlc; they
-        # compile the generated decoders themselves under sanitizers, so only
-        # dsdlc needs building here.
-        run: cmake --build build/matrix/ci-asan --config Debug --target dsdlc
+      - name: Build sanitizer targets
+        # dsdlc and the focused BLS target use UBSan. The generated decoder harnesses use
+        # ASan+UBSan from the ci-asan preset. Instrumenting dsdlc with ASan is incompatible with
+        # the prebuilt LLVM allocator's intentional ASan poisoning.
+        run: cmake --build build/matrix/ci-asan --config Debug --target dsdlc llvmdsdl-bls-exactness-tests
 
       - name: Run sanitizer + native-decoder fuzz lane
         run: |
@@ -361,6 +362,17 @@ jobs:
         # `dafny verify` exits non-zero on any failed proof obligation, so a broken model
         # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
+
+      - name: Verify BitLengthSet model
+        # The bit-length-set algebra model: denotational semantics + interval-evaluator
+        # exactness proofs (stage 1 of the staged plan in the file header).
+        run: dafny verify spec/dafny/BitLengthSet.dfy
+
+      - name: Verify BitLengthSet bridge
+        # The length-semantics bridge theorem: the algebra expression the analyzer builds for
+        # each type denotes EXACTLY the achievable serialized bit lengths of conforming values
+        # — Sem stops being an axiom and becomes a theorem about serialization.
+        run: dafny verify spec/dafny/BitLengthBridge.dfy
 
   corpus:
     name: Corpus hash (${{ matrix.arch }})

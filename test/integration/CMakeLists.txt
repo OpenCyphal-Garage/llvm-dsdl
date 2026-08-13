@@ -3323,6 +3323,68 @@ else()
   endif()
 endif()
 
+# --- BitLengthSet algebra differential vs pydsdl -----------------------------
+# Replays a deterministic corpus of composed bit-length-set expressions through pydsdl's
+# BitLengthSet (the peer implementation of the DSDL length algebra) and diffs min/max/fixed,
+# residues, and — where bounded — full value sets. External corroboration for the algebra's
+# denotational semantics (spec/dafny/BitLengthSet.dfy models it; this checks the model's
+# ground truth against an artifact this project does not author). Requires only Python3 and a
+# pydsdl checkout, not nunavut, so it registers on its own prerequisite list.
+add_executable(llvmdsdl-bls-differential-tool BlsDifferentialTool.cpp)
+target_link_libraries(llvmdsdl-bls-differential-tool PRIVATE llvmdsdlSemantics)
+
+add_executable(llvmdsdl-bls-int64-differential-tool BlsInt64DifferentialTool.cpp)
+target_link_libraries(llvmdsdl-bls-int64-differential-tool PRIVATE llvmdsdlSemantics)
+if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME llvmdsdl-bls-int64-differential
+    COMMAND
+      ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/bls_int64_differential.py
+        $<TARGET_FILE:llvmdsdl-bls-int64-differential-tool>
+  )
+  set_tests_properties(
+    llvmdsdl-bls-int64-differential
+    PROPERTIES
+      LABELS "integration;differential;release-blocking"
+  )
+endif()
+
+set(_bls_diff_missing "")
+if(NOT Python3_Interpreter_FOUND)
+  list(APPEND _bls_diff_missing "Python3 interpreter")
+endif()
+if(NOT EXISTS "${LLVMDSDL_PYDSDL_REPO}/pydsdl")
+  list(APPEND _bls_diff_missing "pydsdl source tree (${LLVMDSDL_PYDSDL_REPO}/pydsdl)")
+endif()
+
+if(_bls_diff_missing STREQUAL "")
+  add_test(
+    NAME llvmdsdl-bls-pydsdl-differential
+    COMMAND
+      ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/bls_pydsdl_differential.py
+        $<TARGET_FILE:llvmdsdl-bls-differential-tool>
+        ${LLVMDSDL_PYDSDL_REPO}
+  )
+  set_tests_properties(
+    llvmdsdl-bls-pydsdl-differential
+    PROPERTIES
+      LABELS "integration;differential;pydsdl"
+  )
+else()
+  string(REPLACE ";" ", " _bls_diff_missing_str "${_bls_diff_missing}")
+  if(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY)
+    message(FATAL_ERROR
+      "The BitLengthSet/pydsdl differential is required "
+      "(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON) but prerequisites are missing: "
+      "${_bls_diff_missing_str}.")
+  else()
+    message(STATUS
+      "Skipping BitLengthSet/pydsdl differential; missing: ${_bls_diff_missing_str}.")
+  endif()
+endif()
+
 # --- Native-decoder libFuzzer lane (ASan/UBSan over generated C decoders) ----
 # Registered only when explicitly enabled (the ci-asan preset) and the compiler
 # is Clang, since the harness requires -fsanitize=address,undefined and, for

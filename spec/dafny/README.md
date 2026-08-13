@@ -115,3 +115,32 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   predicates, and the round-trip, canonical-acceptance, tolerant-decode
   (truncation/zero-extension), version-skew (`Evolves`/`Upgrade`/`Downgrade`), and
   trace-ordering proofs.
+- `BitLengthSet.dfy` — formal model of the bit-length-set expression algebra
+  (`include/llvmdsdl/Semantics/BitLengthSet.h`): the expression DAG's denotational semantics
+  (`Sem`, transcribing the header's semantics table) and machine-checked exactness proofs for
+  the interval evaluators — `MinExact`/`MaxExact` (the per-node `min()`/`max()` derivations
+  return true bounding elements of S, total and exact at any cardinality) and
+  `FixedCharacterization` (`min == max` decides `|S| == 1`). The `WF` predicate records what
+  the C++ constructors establish by clamping; the RepeatRange cases prove it load-bearing —
+  dropping non-negativity breaks the proofs, which is defect BLS-D5/D15 as a failed proof
+  instead of a field bug. The algebra's law table is proven over `Sem` alone (Minkowski
+  commutativity/associativity/identity, `+` distributes over `|`, repeat additivity, pad
+  idempotence/multiples/soundness) — Sem-shape cross-checks that hold independently of every
+  evaluator — and each `Expr` constructor carries a traceability note mapping the
+  Specification concept it implements to the `Analyzer.cpp` site that builds it. `FitsInt64`
+  states the non-saturation precondition required by ordinary modular homomorphisms. The
+  RunSet/residue kernels and saturated int64 semantics are checked by the exhaustive C++ gate,
+  the arbitrary-precision Python differential, and UBSan.
+- `BitLengthBridge.dfy` — the length-semantics bridge (hardening rung 4): `BridgeTheorem`
+  proves, for every type in the grammar the analyzer compiles, that the algebra expression the
+  analyzer builds (`BlsOf`, transcribing the Analyzer.cpp construction sites) denotes EXACTLY
+  the set of serialized bit lengths achievable by conforming values (`BitLen` — five lines of
+  arithmetic, one per Specification serialization rule). This closes the circularity the
+  earlier stages could not: `Sem` stops being an axiom transcribed from our own header and
+  becomes a theorem about serialization; what remains to trust is the one-line-per-rule length
+  semantics, auditable directly against the Specification. Both proof directions construct
+  explicit witnesses — Minkowski sums are licensed by the independence of field/element
+  choices, and every algebra value is realized by an actual conforming value. Delimited
+  composites enter as their forward-compat envelope (header + any payload up to the extent,
+  the DeCompat tolerance domain), matching the analyzer deliberately. Mutation-checked:
+  dropping the array length prefix or confusing fixed/variable repetition breaks the theorem.

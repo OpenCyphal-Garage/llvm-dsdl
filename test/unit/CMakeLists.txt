@@ -4,6 +4,7 @@ add_executable(llvmdsdl-unit-tests
   ParserTests.cpp
   ConformanceTests.cpp
   BitLengthSetTests.cpp
+  IntegerMathTests.cpp
   FlatSetTests.cpp
   EvaluatorTests.cpp
   DepfileRenderTests.cpp
@@ -67,6 +68,15 @@ target_include_directories(llvmdsdl-unit-tests
 )
 
 add_test(NAME llvmdsdl-unit-tests COMMAND llvmdsdl-unit-tests)
+
+add_executable(llvmdsdl-bls-exactness-tests BlsExactnessTests.cpp)
+target_link_libraries(llvmdsdl-bls-exactness-tests PRIVATE llvmdsdlSemantics)
+add_test(NAME llvmdsdl-bls-exactness-tests COMMAND llvmdsdl-bls-exactness-tests)
+set_tests_properties(
+  llvmdsdl-bls-exactness-tests
+  PROPERTIES
+    LABELS "unit;sanitizer;release-blocking"
+)
 
 find_program(PYTHON_EXECUTABLE python3 QUIET)
 if(PYTHON_EXECUTABLE)

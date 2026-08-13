@@ -49,10 +49,14 @@ jobs:
             -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON \
             -DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON
 
-      - name: Build tools + accelerator (RelWithDebInfo)
+      - name: Build tools, test binaries + accelerator (RelWithDebInfo)
+        # coverage-prerequisites is every executable under tools/ and test/ plus the
+        # accelerator, collected by the build system (see LLVMDSDL_ENABLE_LLVM_COVERAGE in
+        # the top-level CMakeLists) so this step cannot go stale when a test binary lands.
+        # It is a build step of its own only for parallelism: the report run below is -j1.
         run: |
           cmake --build build/coverage --config RelWithDebInfo \
-            --target dsdlc dsdl-opt llvmdsdl-unit-tests build-python-runtime-accelerator
+            --target coverage-prerequisites
 
       - name: Run instrumented suite + generate coverage report
         run: cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j1
