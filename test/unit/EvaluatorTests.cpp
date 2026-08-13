@@ -208,6 +208,22 @@ bool runEvaluatorTests()
     }
 
     {
+        // A negative divisor whose magnitude is outside positive int64 bypasses the symbolic
+        // residue path and is evaluated exactly after materialising the small offset set.
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        env.insert_or_assign("offsets", llvmdsdl::Value{llvmdsdl::BitLengthSet(std::set<std::int64_t>{0, 8, 16})});
+        env.insert_or_assign("divisor", llvmdsdl::Value{llvmdsdl::Rational(INT64_MIN, 1)});
+        const auto residues = evaluateAssertExpression("offsets % divisor", diag, env, nullptr);
+        if (!expectSet(residues, {llvmdsdl::Rational(0, 1), llvmdsdl::Rational(8, 1), llvmdsdl::Rational(16, 1)}) ||
+            diag.hasErrors())
+        {
+            std::cerr << "wide negative symbolic modulo divisor was not evaluated exactly\n";
+            return false;
+        }
+    }
+
+    {
         llvmdsdl::DiagnosticEngine diag;
         llvmdsdl::ValueEnv         env;
         const auto                 values = std::set<std::int64_t>{2, 5, 12};

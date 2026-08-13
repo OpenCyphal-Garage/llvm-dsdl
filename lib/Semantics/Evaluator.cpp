@@ -39,6 +39,15 @@ namespace
 /// cardinality.
 constexpr std::size_t kExactMaterializationLimit = 16384;
 
+/// Absolute magnitude in the unsigned domain, including the most-negative signed value.
+constexpr unsigned __int128 unsignedMagnitude(const __int128 value)
+{
+    return value < 0 ? static_cast<unsigned __int128>(-(value + 1)) + 1U : static_cast<unsigned __int128>(value);
+}
+
+constexpr __int128 kWideMinimum = -(__int128{1} << 126U) - (__int128{1} << 126U);
+static_assert(unsignedMagnitude(kWideMinimum) == (static_cast<unsigned __int128>(1) << 127U));
+
 Value::Set toRationalSet(const FlatSet<std::int64_t>& values)
 {
     Value::Set out;
@@ -518,14 +527,14 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             const auto* r    = std::get_if<Rational>(&rhs->data);
             if (lbls != nullptr && r != nullptr && r->isInteger())
             {
-                const __int128 d         = r->asWideInteger().value();
-                const __int128 magnitude = (d < 0) ? -d : d;
+                const __int128          d         = r->asWideInteger().value();
+                const unsigned __int128 magnitude = unsignedMagnitude(d);
                 if (d == 0)
                 {
                     diagnostics.error(location, "invalid elementwise set operation");
                     return std::nullopt;
                 }
-                if (magnitude <= std::numeric_limits<std::int64_t>::max())
+                if (magnitude <= static_cast<unsigned __int128>(std::numeric_limits<std::int64_t>::max()))
                 {
                     if (auto residues = lbls->modulo(static_cast<std::int64_t>(magnitude)))
                     {

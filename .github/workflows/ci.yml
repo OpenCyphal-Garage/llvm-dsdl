@@ -273,12 +273,13 @@ jobs:
           fi
           cmake --preset ci-asan \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
-            -DLLVMDSDL_ENABLE_SANITIZERS="address,undefined" \
+            -DLLVMDSDL_ENABLE_SANITIZERS="undefined" \
             -DLLVMDSDL_NATIVE_DECODER_FUZZ_RUNS="${FUZZ_RUNS}"
 
       - name: Build sanitizer targets
-        # dsdlc drives the generated-decoder harnesses. The focused BLS target
-        # exercises host integer arithmetic under the same sanitizers.
+        # dsdlc and the focused BLS target use UBSan. The generated decoder harnesses use
+        # ASan+UBSan from the ci-asan preset. Instrumenting dsdlc with ASan is incompatible with
+        # the prebuilt LLVM allocator's intentional ASan poisoning.
         run: cmake --build build/matrix/ci-asan --config Debug --target dsdlc llvmdsdl-bls-exactness-tests
 
       - name: Run sanitizer + native-decoder fuzz lane
