@@ -718,18 +718,32 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                     result = subsetLR;
                     break;
                 case BinaryOp::Lt:
-                    if (subsetLR.has_value() && (!*subsetLR || sameCard.has_value()))
+                    if (subsetLR.has_value())
                     {
-                        result = *subsetLR && !*sameCard;
+                        if (!*subsetLR)
+                        {
+                            result = false;  // not a subset => not a strict subset
+                        }
+                        else if (sameCard.has_value())
+                        {
+                            result = !*sameCard;
+                        }
                     }
                     break;
                 case BinaryOp::Ge:
                     result = supersetLR;
                     break;
                 default:
-                    if (supersetLR.has_value() && (!*supersetLR || sameCard.has_value()))
+                    if (supersetLR.has_value())
                     {
-                        result = *supersetLR && !*sameCard;
+                        if (!*supersetLR)
+                        {
+                            result = false;  // not a superset => not a strict superset
+                        }
+                        else if (sameCard.has_value())
+                        {
+                            result = !*sameCard;
+                        }
                     }
                     break;
                 }
