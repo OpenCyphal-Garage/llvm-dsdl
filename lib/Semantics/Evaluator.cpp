@@ -141,7 +141,9 @@ bool decideSetEquality(const BitLengthSet&   bls,
         const auto n = rs->count();
         if (n)
         {
-            if (static_cast<std::size_t>(*n) != literal.size())
+            // Widen instead of narrowing: a size_t cast would truncate the int64 cardinality on
+            // ILP32 hosts and could equate a huge set with a small literal.
+            if (static_cast<std::uintmax_t>(*n) != static_cast<std::uintmax_t>(literal.size()))
             {
                 equal = false;
                 return true;
@@ -619,12 +621,19 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             const auto* set  = (lbls != nullptr) ? rset : lset;
             if (bls != nullptr && set != nullptr)
             {
+                // Tri-state deciders so ordered comparisons decide wherever equality does (Eq is
+                // mutual subset): definite verdicts survive a run-representation refusal via the
+                // same refusal-tolerant ladder as decideSetEquality. nullopt = undecided; the
+                // undecided cases fall through to exact materialization below.
+                std::optional<bool> litInS;    // every literal element is a member of S
+                std::optional<bool> sInLit;    // S is a subset of the literal
+                std::optional<bool> sameCard;  // |S| == |literal|
                 if (const auto rs = bls->runSet())
                 {
                     if (const auto n = rs->count())
                     {
                         std::size_t literalMembersInSymbolic = 0;
-                        bool        litInS                   = true;
+                        bool        allLiteralInS            = true;
                         for (const Rational& r : *set)
                         {
                             const auto v      = literalElementAsInt(r);
@@ -633,28 +642,122 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                             {
                                 ++literalMembersInSymbolic;
                             }
-                            litInS = litInS && member;
+                            allLiteralInS = allLiteralInS && member;
                         }
                         const std::uintmax_t symbolicCardinality = static_cast<std::uintmax_t>(*n);
                         const std::uintmax_t literalCardinality  = static_cast<std::uintmax_t>(set->size());
-                        const bool           sInLit =
-                            symbolicCardinality <= literalCardinality &&
-                            static_cast<std::uintmax_t>(literalMembersInSymbolic) == symbolicCardinality;
-                        const bool subsetLR   = (lbls != nullptr) ? sInLit : litInS;  // lhs subset rhs
-                        const bool supersetLR = (lbls != nullptr) ? litInS : sInLit;  // rhs subset lhs
-                        const bool sameCard   = symbolicCardinality == literalCardinality;
-                        switch (b.op)
+                        litInS                                   = allLiteralInS;
+                        sInLit   = symbolicCardinality <= literalCardinality &&
+                                   static_cast<std::uintmax_t>(literalMembersInSymbolic) == symbolicCardinality;
+                        sameCard = symbolicCardinality == literalCardinality;
+                    }
+                }
+                if (!litInS.has_value())
+                {
+                    // Bounds are exact at any cardinality, and a truncated expansion is a sound
+                    // subset of S, so definite verdicts remain possible after a refusal.
+                    const auto expansion = bls->expandChecked(kExactMaterializationLimit);
+                    const auto values    = toRationalSet(expansion.values);
+                    if (expansion.exact)
+                    {
+                        litInS   = std::all_of(set->begin(), set->end(), [&](const Rational& r) {
+                            return values.contains(r);
+                        });
+                        sInLit   = std::all_of(values.begin(), values.end(), [&](const Rational& v) {
+                            return set->contains(v);
+                        });
+                        sameCard = values.size() == set->size();
+                    }
+                    else
+                    {
+                        const Rational minR(bls->min(), 1);
+                        const Rational maxR(bls->max(), 1);
+                        // S ⊆ L must include S's extrema; a sound-subset element outside L, or
+                        // more sound-subset elements than L holds, also disproves S ⊆ L.
+                        if (!set->contains(minR) || !set->contains(maxR) || values.size() > set->size() ||
+                            std::any_of(values.begin(), values.end(), [&](const Rational& v) {
+                                return !set->contains(v);
+                            }))
                         {
-                        case BinaryOp::Le:
-                            return Value{subsetLR};
-                        case BinaryOp::Lt:
-                            return Value{subsetLR && !sameCard};
-                        case BinaryOp::Ge:
-                            return Value{supersetLR};
-                        default:
-                            return Value{supersetLR && !sameCard};
+                            sInLit = false;
+                        }
+                        // A literal element outside S's exact bounds is definitely not a member;
+                        // one equal to an extremum or present in the sound subset definitely is.
+                        bool allIn   = true;
+                        bool decided = true;
+                        for (const Rational& r : *set)
+                        {
+                            if (r == minR || r == maxR || values.contains(r))
+                            {
+                                continue;
+                            }
+                            const auto v = literalElementAsInt(r);
+                            if (!v || *v < bls->min() || *v > bls->max())
+                            {
+                                allIn = false;
+                                continue;
+                            }
+                            decided = false;
+                        }
+                        if (!allIn)
+                        {
+                            litInS = false;
+                        }
+                        else if (decided)
+                        {
+                            litInS = true;
                         }
                     }
+                }
+                const auto          subsetLR   = (lbls != nullptr) ? sInLit : litInS;  // lhs subset rhs
+                const auto          supersetLR = (lbls != nullptr) ? litInS : sInLit;  // rhs subset lhs
+                std::optional<bool> result;
+                switch (b.op)
+                {
+                case BinaryOp::Le:
+                    result = subsetLR;
+                    break;
+                case BinaryOp::Lt:
+                    if (subsetLR.has_value() && (!*subsetLR || sameCard.has_value()))
+                    {
+                        result = *subsetLR && !*sameCard;
+                    }
+                    break;
+                case BinaryOp::Ge:
+                    result = supersetLR;
+                    break;
+                default:
+                    if (supersetLR.has_value() && (!*supersetLR || sameCard.has_value()))
+                    {
+                        result = *supersetLR && !*sameCard;
+                    }
+                    break;
+                }
+                if (result.has_value())
+                {
+                    return Value{*result};
+                }
+            }
+        }
+
+        // `_offset_ + c` (either order): elementwise addition of a non-negative integer scalar
+        // is the algebra's own Add node, so the result stays symbolic and exact at any
+        // cardinality instead of forcing materialization.
+        if (b.op == BinaryOp::Add)
+        {
+            const auto* sbls   = std::get_if<BitLengthSet>(&lhs->data);
+            const auto* scalar = std::get_if<Rational>(&rhs->data);
+            if (sbls == nullptr)
+            {
+                sbls   = std::get_if<BitLengthSet>(&rhs->data);
+                scalar = std::get_if<Rational>(&lhs->data);
+            }
+            if (sbls != nullptr && scalar != nullptr && scalar->isInteger())
+            {
+                const auto wide = scalar->asWideInteger();
+                if (wide && *wide >= 0 && *wide <= std::numeric_limits<std::int64_t>::max())
+                {
+                    return Value{*sbls + BitLengthSet(static_cast<std::int64_t>(*wide))};
                 }
             }
         }
@@ -980,13 +1083,26 @@ std::string Value::str() const
     else if (auto p = std::get_if<BitLengthSet>(&data))
     {
         // Concrete rendering when the exact set materializes; otherwise the symbolic expression
-        // — never a silently truncated set.
-        const auto expansion = p->expandChecked(kExactMaterializationLimit);
-        if (expansion.exact)
+        // — never a silently truncated set. Mirrors materializeExact's ladder: the RunSet path
+        // first (no intermediate-truncation cliff), expandChecked as the fallback.
+        std::optional<FlatSet<std::int64_t>> values;
+        if (const auto rs = p->runSet())
+        {
+            values = rs->materialize(kExactMaterializationLimit);
+        }
+        else
+        {
+            auto expansion = p->expandChecked(kExactMaterializationLimit);
+            if (expansion.exact)
+            {
+                values = std::move(expansion.values);
+            }
+        }
+        if (values)
         {
             out << '{';
             bool first = true;
-            for (const auto v : expansion.values)
+            for (const auto v : *values)
             {
                 if (!first)
                 {

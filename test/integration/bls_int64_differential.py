@@ -15,6 +15,12 @@ def parse_set(text: str) -> set[int]:
     return set(map(int, body.split(","))) if body else set()
 
 
+def parse_set_or_refused(text: str) -> set[int] | None:
+    # The tool refuses instead of truncating (exact-or-refuse); a refusal is a
+    # permitted outcome, not a mismatch.
+    return None if text == "REFUSED" else parse_set(text)
+
+
 def saturated_add(lhs: int, rhs: int) -> int:
     return min(MAXIMUM, lhs + rhs)
 
@@ -85,12 +91,17 @@ def main() -> int:
             "min": (int(actual["min"]), min(expected)),
             "max": (int(actual["max"]), max(expected)),
             "fixed": (int(actual["fixed"]), int(len(expected) == 1)),
-            "values": (parse_set(actual["values"]), expected),
+            "values": (parse_set_or_refused(actual["values"]), expected),
         }
         for divisor in (3, 5, 8, 16):
-            checks[f"mod{divisor}"] = (parse_set(actual[f"mod{divisor}"]), {value % divisor for value in expected})
+            checks[f"mod{divisor}"] = (
+                parse_set_or_refused(actual[f"mod{divisor}"]),
+                {value % divisor for value in expected},
+            )
 
         for name, (got, wanted) in checks.items():
+            if got is None:
+                continue
             comparisons += 1
             if got != wanted:
                 failures += 1

@@ -17,8 +17,11 @@
 // `BitLen` — five lines of arithmetic, one per serialization rule, each auditable directly
 // against the OpenCyphal Specification's serialization chapter:
 //   scalar/void   -> its width
-//   struct        -> fold of (round the offset up to the field's alignment, add the field)
-//   tagged union  -> tag width + the chosen alternative
+//   struct        -> fold of (round the offset up to the field's alignment, add the field),
+//                    rounded up to a byte boundary (Analyzer.cpp:1209,
+//                    `section.offsetAtEnd = structureOffset.padToAlignment(8)`)
+//   tagged union  -> tag width + the chosen alternative, rounded up to a byte boundary
+//                    (Analyzer.cpp:884, `(BitLengthSet(tagBits) + payloadSet).padToAlignment(8)`)
 //   fixed array   -> sum of exactly n elements
 //   variable array-> length-prefix width + sum of 0..capacity elements
 //
@@ -52,6 +55,10 @@
 //                                                       not all of them)
 //   - drop Pad from the struct fold                  -> fails for align > 1 (alignment bits
 //                                                       are real)
+//   - drop the trailing byte-Pad from Struct/UnionT  -> fails whenever the pre-pad length is
+//                                                       not a multiple of 8 (the analyzer pads
+//                                                       every section end and every union to a
+//                                                       byte boundary: Analyzer.cpp:1209 / :884)
 //
 // Verified with: dafny verify spec/dafny/BitLengthBridge.dfy   (Dafny 4.11, CI-enforced)
 
@@ -136,7 +143,10 @@ module BitLengthBridge {
   // length semantics of DSDL serialization, one rule per constructor. Struct
   // offsets are relative to the struct's own start (composites begin
   // byte-aligned, so field alignment is start-relative — the same convention
-  // as the analyzer's structureOffset accumulation).
+  // as the analyzer's structureOffset accumulation). Struct and union lengths
+  // are rounded up to a byte boundary: a serialized composite always occupies
+  // a whole number of bytes (the trailing pad the analyzer applies at
+  // Analyzer.cpp:1209 and Analyzer.cpp:884).
   // ==========================================================================
 
   ghost function TailLen(aligns: seq<int>, typs: seq<Typ>, vs: seq<Val>, i: nat, off: int): int
@@ -161,8 +171,8 @@ module BitLengthBridge {
   {
     match t
     case Scalar(w) => w
-    case Struct(aligns, typs) => TailLen(aligns, typs, v.vs, 0, 0)
-    case UnionT(tb, alts) => tb + BitLen(alts[v.tag], v.inner)
+    case Struct(aligns, typs) => RoundUp(TailLen(aligns, typs, v.vs, 0, 0), 8)
+    case UnionT(tb, alts) => RoundUp(tb + BitLen(alts[v.tag], v.inner), 8)
     case FixedArray(e, _) => SeqLenFrom(e, v.es, 0)
     case VarArray(p, e, _) => p + SeqLenFrom(e, v.es, 0)
   }
@@ -218,15 +228,18 @@ module BitLengthBridge {
     if i == |alts| - 1 then BlsOf(alts[i]) else Union(BlsOf(alts[i]), BlsOfAltsFrom(alts, i + 1))
   }
 
+  // Struct and union both end with the trailing byte-pad the analyzer applies:
+  //   struct -> Analyzer.cpp:1209 `section.offsetAtEnd = structureOffset.padToAlignment(8)`
+  //   union  -> Analyzer.cpp:884  `(BitLengthSet(tagBits) + payloadSet).padToAlignment(8)`
   ghost function BlsOf(t: Typ): Expr
     decreases t, 0, 0
   {
     match t
     case Scalar(w) => Leaf({w})
-    case Struct(aligns, typs) => BlsOfFieldsFrom(aligns, typs, 0, Leaf({0}))
+    case Struct(aligns, typs) => Pad(BlsOfFieldsFrom(aligns, typs, 0, Leaf({0})), 8)
     case UnionT(tb, alts) =>
       if |alts| == 0 then Leaf({0})  // unreachable under TWF; keeps the function total
-      else Add(Leaf({tb}), BlsOfAltsFrom(alts, 0))
+      else Pad(Add(Leaf({tb}), BlsOfAltsFrom(alts, 0)), 8)
     case FixedArray(e, n) => Repeat(BlsOf(e), n)
     case VarArray(p, e, cap) => Add(Leaf({p}), RepeatRange(BlsOf(e), cap))
   }
@@ -285,7 +298,7 @@ module BitLengthBridge {
 
   // Fixed count: L is a sum of exactly n independent element lengths iff L is
   // in the n-fold Minkowski power of the element set.
-  lemma ArrayBridge(e: Typ, n: nat, L: int)
+  lemma {:isolate_assertions} ArrayBridge(e: Typ, n: nat, L: int)
     requires TWF(e)
     ensures WF(BlsOf(e))
     ensures (exists es :: |es| == n && ConformsSeq(e, es) && SeqLenFrom(e, es, 0) == L)
@@ -311,6 +324,7 @@ module BitLengthBridge {
         assert L == head + tailLen;
         BridgeTheorem(e, head);
         assert Conforms(e, v0) && BitLen(e, v0) == head;
+        assert exists w :: Conforms(e, w) && BitLen(e, w) == head;
         assert head in Sem(BlsOf(e));
         ArrayBridge(e, n - 1, tailLen);
         assert |rest| == n - 1 && ConformsSeq(e, rest) && SeqLenFrom(e, rest, 0) == tailLen;
@@ -468,20 +482,30 @@ module BitLengthBridge {
         }
       }
     case Struct(aligns, typs) =>
-      FieldsBridge(aligns, typs, 0, Leaf({0}), L);
+      // BlsOf(t) == Pad(fold, 8): bridge the fold at the PRE-PAD length L0, then carry
+      // membership through PadSet (BitLen applies the same RoundUp(_, 8)).
+      var fold := BlsOfFieldsFrom(aligns, typs, 0, Leaf({0}));
       if exists v :: Conforms(t, v) && BitLen(t, v) == L {
         var v :| Conforms(t, v) && BitLen(t, v) == L;
+        var L0 := TailLen(aligns, typs, v.vs, 0, 0);
+        FieldsBridge(aligns, typs, 0, Leaf({0}), L0);
         assert 0 in Sem(Leaf({0}));
-        assert ConformsSuffix(typs, v.vs, 0) && TailLen(aligns, typs, v.vs, 0, 0) == L;
+        assert ConformsSuffix(typs, v.vs, 0) && TailLen(aligns, typs, v.vs, 0, 0) == L0;
         assert exists off, vs :: off in Sem(Leaf({0})) && ConformsSuffix(typs, vs, 0)
-                              && TailLen(aligns, typs, vs, 0, off) == L;
+                              && TailLen(aligns, typs, vs, 0, off) == L0;
+        assert L0 in Sem(fold);
+        assert L == RoundUp(L0, 8);
+        assert L in PadSet(Sem(fold), 8);
         assert L in Sem(BlsOf(t));
       }
       if L in Sem(BlsOf(t)) {
+        assert L in PadSet(Sem(fold), 8);
+        var L0 :| L0 in Sem(fold) && L == RoundUp(L0, 8);
+        FieldsBridge(aligns, typs, 0, Leaf({0}), L0);
         var off, vs :| off in Sem(Leaf({0})) && ConformsSuffix(typs, vs, 0)
-                    && TailLen(aligns, typs, vs, 0, off) == L;
+                    && TailLen(aligns, typs, vs, 0, off) == L0;
         assert off == 0;
-        assert Conforms(t, VStruct(vs)) && BitLen(t, VStruct(vs)) == L;
+        assert Conforms(t, VStruct(vs)) && BitLen(t, VStruct(vs)) == RoundUp(L0, 8) == L;
         assert exists v :: Conforms(t, v) && BitLen(t, v) == L;
       }
     case UnionT(tb, alts) =>
@@ -490,29 +514,38 @@ module BitLengthBridge {
       {
         WFBls(alts[j]);
       }
-      AltsBridge(alts, 0, L - tb);
+      // BlsOf(t) == Pad(Add(tag, alts), 8): bridge tag + alternative at the PRE-PAD length
+      // L0, then carry membership through PadSet (BitLen applies the same RoundUp(_, 8)).
+      var core := Add(Leaf({tb}), BlsOfAltsFrom(alts, 0));
       if exists v :: Conforms(t, v) && BitLen(t, v) == L {
         var v :| Conforms(t, v) && BitLen(t, v) == L;
-        BridgeTheorem(alts[v.tag], L - tb);
-        assert L - tb == BitLen(alts[v.tag], v.inner);
-        assert Conforms(alts[v.tag], v.inner) && BitLen(alts[v.tag], v.inner) == L - tb;
-        assert exists w :: Conforms(alts[v.tag], w) && BitLen(alts[v.tag], w) == L - tb;
-        assert L - tb in Sem(BlsOf(alts[v.tag]));
-        assert 0 <= v.tag < |alts| && WF(BlsOf(alts[v.tag])) && L - tb in Sem(BlsOf(alts[v.tag]));
-        assert exists j :: 0 <= j < |alts| && WF(BlsOf(alts[j])) && L - tb in Sem(BlsOf(alts[j]));
-        assert L - tb in Sem(BlsOfAltsFrom(alts, 0));
+        var y := BitLen(alts[v.tag], v.inner);
+        AltsBridge(alts, 0, y);
+        BridgeTheorem(alts[v.tag], y);
+        assert Conforms(alts[v.tag], v.inner) && BitLen(alts[v.tag], v.inner) == y;
+        assert exists w :: Conforms(alts[v.tag], w) && BitLen(alts[v.tag], w) == y;
+        assert y in Sem(BlsOf(alts[v.tag]));
+        assert 0 <= v.tag < |alts| && WF(BlsOf(alts[v.tag])) && y in Sem(BlsOf(alts[v.tag]));
+        assert exists j :: 0 <= j < |alts| && WF(BlsOf(alts[j])) && y in Sem(BlsOf(alts[j]));
+        assert y in Sem(BlsOfAltsFrom(alts, 0));
         assert tb in Sem(Leaf({tb}));
-        assert L == tb + (L - tb);
+        assert tb + y in Sem(core);
+        assert L == RoundUp(tb + y, 8);
+        assert L in PadSet(Sem(core), 8);
         assert L in Sem(BlsOf(t));
       }
       if L in Sem(BlsOf(t)) {
-        var x, y :| x in Sem(Leaf({tb})) && y in Sem(BlsOfAltsFrom(alts, 0)) && L == x + y;
+        assert L in PadSet(Sem(core), 8);
+        var L0 :| L0 in Sem(core) && L == RoundUp(L0, 8);
+        var x, y :| x in Sem(Leaf({tb})) && y in Sem(BlsOfAltsFrom(alts, 0)) && L0 == x + y;
         assert x == tb;
-        assert y == L - tb;
+        assert y == L0 - tb;
+        AltsBridge(alts, 0, y);
         var j :| 0 <= j < |alts| && WF(BlsOf(alts[j])) && y in Sem(BlsOf(alts[j]));
         BridgeTheorem(alts[j], y);
         var inner :| Conforms(alts[j], inner) && BitLen(alts[j], inner) == y;
-        assert Conforms(t, VUnion(j, inner)) && BitLen(t, VUnion(j, inner)) == tb + y == L;
+        assert Conforms(t, VUnion(j, inner))
+            && BitLen(t, VUnion(j, inner)) == RoundUp(tb + y, 8) == L;
         assert exists v :: Conforms(t, v) && BitLen(t, v) == L;
       }
     case FixedArray(e, n) =>

@@ -882,10 +882,13 @@ void testRunSet(TestContext& t)
     {
         // Residue budget applies to the UNIQUE result: two disjoint dense runs whose residue
         // images coincide used to blow the pre-dedup budget (80000 raw walks) even though the
-        // unique residue set (40000) is comfortably within it.
+        // unique residue set (40000) is comfortably within it. The divisor must exceed the
+        // symbolic-residue cap (65536) so the query actually routes through RunSet::residues —
+        // the code this regression pins; a smaller divisor is answered symbolically and never
+        // reaches it.
         const BitLengthSet twoRuns =
-            BitLengthSet(1).repeatRange(39999) | (BitLengthSet(50000) + BitLengthSet(1).repeatRange(39999));
-        const auto res = twoRuns.modulo(50000);
+            BitLengthSet(1).repeatRange(39999) | (BitLengthSet(100000) + BitLengthSet(1).repeatRange(39999));
+        const auto res = twoRuns.modulo(100000);
         t.expect(res.has_value(), "residue budget is charged on the unique result, not raw walks");
         if (res)
         {

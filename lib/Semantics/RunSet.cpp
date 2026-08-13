@@ -433,6 +433,13 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
 
         for (std::size_t i = 0; i < runs_.size(); ++i)
         {
+            // Metered per examined run: the scan is O(|runs_|) per piece, so an unmetered walk
+            // would make total work quadratic in the budget instead of bounded by it.
+            if (budget == 0)
+            {
+                return false;
+            }
+            --budget;
             const Run& existing = runs_[i];
             if (piece.last() < existing.start || piece.start > existing.last())
             {
@@ -609,46 +616,55 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                 (static_cast<__int128>(a.max()) - a.min() <= static_cast<__int128>(b.max()) - b.min()) ? a : b;
             const RunSet&         large       = (&small == &a) ? b : a;
             const std::int64_t    spanSmall   = small.max() - small.min() + 1;
-            const auto            mSmall      = small.materialize(static_cast<std::size_t>(kSumSpanLimit));
-            const auto            mLarge      = large.materialize(static_cast<std::size_t>(kSumSpanLimit));
             constexpr std::size_t kWordOpsCap = 1U << 26U;
             const std::size_t     smallWords  = (static_cast<std::size_t>(spanSmall) + 63U) / 64U;
-            if (mSmall && mLarge && mLarge->size() * (smallWords + 1) <= kWordOpsCap)
+            // Gate BEFORE materializing: the exact counts (runs are pairwise disjoint, so count
+            // equals materialized size) and the run-derived span decide the same predicate in
+            // O(#runs), so failing inputs skip the potentially multi-MiB materialization.
+            const auto& cSmall = (&small == &a) ? ca : cb;
+            const auto& cLarge = (&small == &a) ? cb : ca;
+            if (cSmall && cLarge && *cSmall <= kSumSpanLimit && *cLarge <= kSumSpanLimit &&
+                static_cast<std::uintmax_t>(*cLarge) * (smallWords + 1) <= kWordOpsCap)
             {
-                std::vector<std::uint64_t> smallBits(smallWords, 0);
-                for (const auto v : *mSmall)
+                const auto mSmall = small.materialize(static_cast<std::size_t>(kSumSpanLimit));
+                const auto mLarge = large.materialize(static_cast<std::size_t>(kSumSpanLimit));
+                if (mSmall && mLarge)
                 {
-                    const auto rel = static_cast<std::size_t>(v - small.min());
-                    smallBits[rel / 64U] |= (std::uint64_t{1} << (rel % 64U));
-                }
-                const std::size_t          resultWords = (static_cast<std::size_t>(span) + 63U) / 64U;
-                std::vector<std::uint64_t> result(resultWords + 1, 0);  // +1: shifted-OR spill slot
-                for (const auto x : *mLarge)
-                {
-                    const auto offset = static_cast<std::size_t>((x + small.min()) - static_cast<std::int64_t>(lo));
-                    const std::size_t wordShift = offset / 64U;
-                    const unsigned    bitShift  = static_cast<unsigned>(offset % 64U);
-                    for (std::size_t w = 0; w < smallWords; ++w)
+                    std::vector<std::uint64_t> smallBits(smallWords, 0);
+                    for (const auto v : *mSmall)
                     {
-                        result[wordShift + w] |= smallBits[w] << bitShift;
-                        if (bitShift != 0)
+                        const auto rel = static_cast<std::size_t>(v - small.min());
+                        smallBits[rel / 64U] |= (std::uint64_t{1} << (rel % 64U));
+                    }
+                    const std::size_t          resultWords = (static_cast<std::size_t>(span) + 63U) / 64U;
+                    std::vector<std::uint64_t> result(resultWords + 1, 0);  // +1: shifted-OR spill slot
+                    for (const auto x : *mLarge)
+                    {
+                        const auto offset = static_cast<std::size_t>((x + small.min()) - static_cast<std::int64_t>(lo));
+                        const std::size_t wordShift = offset / 64U;
+                        const unsigned    bitShift  = static_cast<unsigned>(offset % 64U);
+                        for (std::size_t w = 0; w < smallWords; ++w)
                         {
-                            result[wordShift + w + 1] |= smallBits[w] >> (64U - bitShift);
+                            result[wordShift + w] |= smallBits[w] << bitShift;
+                            if (bitShift != 0)
+                            {
+                                result[wordShift + w + 1] |= smallBits[w] >> (64U - bitShift);
+                            }
                         }
                     }
-                }
-                std::vector<std::int64_t> values;
-                for (std::size_t w = 0; w < result.size(); ++w)
-                {
-                    std::uint64_t bits = result[w];
-                    while (bits != 0)
+                    std::vector<std::int64_t> values;
+                    for (std::size_t w = 0; w < result.size(); ++w)
                     {
-                        const auto bit = static_cast<std::size_t>(std::countr_zero(bits));
-                        bits &= bits - 1;
-                        values.push_back(static_cast<std::int64_t>(lo) + static_cast<std::int64_t>(w * 64U + bit));
+                        std::uint64_t bits = result[w];
+                        while (bits != 0)
+                        {
+                            const auto bit = static_cast<std::size_t>(std::countr_zero(bits));
+                            bits &= bits - 1;
+                            values.push_back(static_cast<std::int64_t>(lo) + static_cast<std::int64_t>(w * 64U + bit));
+                        }
                     }
+                    return fromValues(FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end()));
                 }
-                return fromValues(FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end()));
             }
         }
     }
@@ -1208,7 +1224,11 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         return std::nullopt;
     }
     constexpr std::size_t kResidueBudget = 65536;
-    FlatSet<std::int64_t> unique;
+    // Separate WORK meter: the unique-result budget below bounds the output, not the walk, so a
+    // many-run set could otherwise walk |runs| x kResidueBudget iterations before refusing.
+    constexpr std::uintmax_t kResidueWalkBudget = std::uintmax_t{1} << 22U;
+    std::uintmax_t           walked             = 0;
+    FlatSet<std::int64_t>    unique;
     for (const auto& r : runs_)
     {
         // Residues of start + i*stride (mod d) repeat with period d / gcd(stride mod d, d):
@@ -1221,9 +1241,16 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         // run the walked residues are pairwise distinct (the walk stops at the cycle length),
         // so a single run with k beyond the budget already proves the result exceeds it; the
         // cross-run duplicates are removed by the FlatSet before the budget is re-checked.
-        if (static_cast<std::size_t>(k) > kResidueBudget)
+        // Widen (never narrow) for the comparison: a size_t cast would truncate on ILP32 hosts
+        // and bypass the guard.
+        if (static_cast<std::uintmax_t>(k) > kResidueBudget)
         {
             return std::nullopt;  // this run alone contributes more distinct residues than the budget
+        }
+        walked += static_cast<std::uintmax_t>(k);
+        if (walked > kResidueWalkBudget)
+        {
+            return std::nullopt;  // cumulative walk across runs exceeds the work meter
         }
         std::vector<std::int64_t> batch;
         batch.reserve(static_cast<std::size_t>(k));
@@ -1246,7 +1273,9 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
 std::optional<FlatSet<std::int64_t>> RunSet::materialize(std::size_t limit) const
 {
     const auto total = count();
-    if (!total || static_cast<std::size_t>(*total) > limit)
+    // Widen (never narrow) for the comparison: a size_t cast would truncate on ILP32 hosts and
+    // bypass the allocation guard this check exists to enforce.
+    if (!total || static_cast<std::uintmax_t>(*total) > limit)
     {
         return std::nullopt;
     }

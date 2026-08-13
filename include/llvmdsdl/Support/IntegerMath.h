@@ -14,6 +14,8 @@
 #ifndef LLVMDSDL_SUPPORT_INTEGERMATH_H
 #define LLVMDSDL_SUPPORT_INTEGERMATH_H
 
+#include "llvm/Support/MathExtras.h"
+
 #include <cstdint>
 #include <limits>
 #include <numeric>
@@ -21,36 +23,18 @@
 namespace llvmdsdl
 {
 
-/// @brief Checked int64 addition.
+/// @brief Checked int64 addition. Returns true on SUCCESS — the inverse of
+/// llvm::AddOverflow's convention, which returns true on overflow.
 [[nodiscard]] inline bool checkedAdd(const std::int64_t a, const std::int64_t b, std::int64_t& out)
 {
-#if defined(__GNUC__) || defined(__clang__)
-    return !__builtin_add_overflow(a, b, &out);
-#else
-    if ((b > 0 && a > std::numeric_limits<std::int64_t>::max() - b) ||
-        (b < 0 && a < std::numeric_limits<std::int64_t>::min() - b))
-    {
-        return false;
-    }
-    out = a + b;
-    return true;
-#endif
+    return !llvm::AddOverflow(a, b, out);
 }
 
-/// @brief Checked int64 multiplication.
+/// @brief Checked int64 multiplication. Returns true on SUCCESS — the inverse of
+/// llvm::MulOverflow's convention, which returns true on overflow.
 [[nodiscard]] inline bool checkedMultiply(const std::int64_t a, const std::int64_t b, std::int64_t& out)
 {
-#if defined(__GNUC__) || defined(__clang__)
-    return !__builtin_mul_overflow(a, b, &out);
-#else
-    const __int128 product = static_cast<__int128>(a) * b;
-    if (product < std::numeric_limits<std::int64_t>::min() || product > std::numeric_limits<std::int64_t>::max())
-    {
-        return false;
-    }
-    out = static_cast<std::int64_t>(product);
-    return true;
-#endif
+    return !llvm::MulOverflow(a, b, out);
 }
 
 /// @brief Saturating int64 addition for non-negative inputs.
@@ -92,7 +76,7 @@ namespace llvmdsdl
     {
         return false;
     }
-    const std::int64_t g = std::gcd(a, b);
+    const std::int64_t g    = std::gcd(a, b);
     const std::int64_t step = a / g;
     if (step > limit / b)
     {

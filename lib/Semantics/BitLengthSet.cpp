@@ -399,37 +399,10 @@ struct BitLengthSet::Node final
     /// Mirrors `min()`: Leaf takes the largest stored value; Add sums the maxima; Union takes
     /// the larger maximum; Pad rounds the child maximum up (monotone); Repeat and RepeatRange
     /// both yield param * max(lhs) — for RepeatRange this is the k = param term, the maximum
-    /// only on the non-negative value domain. Iterative and memoized.
+    /// only on the non-negative value domain. Reads the shared `summary()` walk.
     [[nodiscard]] std::int64_t max() const
     {
-        const auto                                    order = collectPostOrder(this);
-        std::unordered_map<const Node*, std::int64_t> memo;
-        memo.reserve(order.size() * 2);
-        for (const Node* const n : order)
-        {
-            std::int64_t v = 0;
-            switch (n->kind)
-            {
-            case Kind::Leaf:
-                v = n->values.empty() ? 0 : *n->values.rbegin();
-                break;
-            case Kind::Add:
-                v = saturatingAddNonNegative(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
-                break;
-            case Kind::Union:
-                v = std::max(memo.at(n->lhs.get()), memo.at(n->rhs.get()));
-                break;
-            case Kind::Pad:
-                v = saturatingRoundUpToMultipleNonNegative(memo.at(n->lhs.get()), std::max<std::int64_t>(1, n->param));
-                break;
-            case Kind::Repeat:
-            case Kind::RepeatRange:
-                v = saturatingMultiplyNonNegative(memo.at(n->lhs.get()), std::max<std::int64_t>(0, n->param));
-                break;
-            }
-            memo.emplace(n, v);
-        }
-        return memo.at(this);
+        return summary().maximum;
     }
 
     /// @brief True iff evaluating this expression can invoke the documented INT64_MAX clamp.
@@ -438,14 +411,26 @@ struct BitLengthSet::Node final
     /// therefore saturate iff its child already can or applying the operation to the exact child
     /// maximum exceeds int64. Repeat(0) and RepeatRange(0) do not evaluate an element sum and
     /// denote {0}, so saturation below them is unreachable from the resulting expression.
+    /// Reads the shared `summary()` walk.
     [[nodiscard]] bool saturationReachable() const
     {
-        struct Summary final
-        {
-            std::int64_t maximum{0};
-            bool         saturates{false};
-        };
+        return summary().saturates;
+    }
 
+    struct Summary final
+    {
+        std::int64_t maximum{0};
+        bool         saturates{false};
+    };
+
+    /// @brief One shared post-order walk computing `{maximum, saturates}` per node.
+    ///
+    /// `max()` reads `.maximum` and `saturationReachable()` reads `.saturates` so the two
+    /// recurrences cannot drift apart: `residues()` is sound only if `saturates` fires whenever
+    /// the saturating evaluators can clamp, i.e. exactly when this maximum recurrence overflows
+    /// a checked operation (checked-then-clamp IS the saturating helpers' implementation).
+    [[nodiscard]] Summary summary() const
+    {
         const auto                               order = collectPostOrder(this);
         std::unordered_map<const Node*, Summary> memo;
         memo.reserve(order.size() * 2);
@@ -508,7 +493,7 @@ struct BitLengthSet::Node final
             }
             memo.emplace(n, value);
         }
-        return memo.at(this).saturates;
+        return memo.at(this);
     }
 
     /// @brief Materializes S bottom-up with a completeness flag, capping intermediates at `limit`.
@@ -1030,17 +1015,22 @@ const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
 
 BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     : root_(std::move(other.root_))
+    , runSetCache_(std::move(other.runSetCache_))
 {
-    // Leave the source denoting {0} rather than null, so any later use is well-defined.
+    // Leave the source denoting {0} rather than null, so any later use is well-defined. The
+    // cache must not outlive the root it was computed for.
     other.root_ = zeroLeaf();
+    other.runSetCache_.reset();
 }
 
 BitLengthSet& BitLengthSet::operator=(BitLengthSet&& other) noexcept
 {
     if (this != &other)
     {
-        root_       = std::move(other.root_);
-        other.root_ = zeroLeaf();
+        root_        = std::move(other.root_);
+        runSetCache_ = std::move(other.runSetCache_);
+        other.root_  = zeroLeaf();
+        other.runSetCache_.reset();
     }
     return *this;
 }
@@ -1207,6 +1197,13 @@ std::optional<bool> BitLengthSet::isSubsetOfExact(const BitLengthSet& other) con
 
 std::optional<RunSet> BitLengthSet::runSet() const
 {
+    // Cached per object (the node DAG is immutable, so the result is valid for the lifetime of
+    // root_): evaluator fallback chains re-query the same set several times per statement, and
+    // the refusing evaluation — the most expensive outcome — would otherwise be re-run in full.
+    if (runSetCache_)
+    {
+        return *runSetCache_;
+    }
     // Same iterative, memoized post-order shape as min()/expandChecked(): each distinct node is
     // evaluated once from its children's RunSets. A nullopt anywhere (complexity budget or int64
     // range check inside a RunSet operation) poisons the result — exact or nothing.
@@ -1266,7 +1263,8 @@ std::optional<RunSet> BitLengthSet::runSet() const
         }
         memo.emplace(n, std::move(v));
     }
-    return std::move(memo.at(root_.get()));
+    runSetCache_ = std::make_shared<const std::optional<RunSet>>(std::move(memo.at(root_.get())));
+    return *runSetCache_;
 }
 
 FlatSet<std::int64_t> BitLengthSet::expand(std::size_t limit) const

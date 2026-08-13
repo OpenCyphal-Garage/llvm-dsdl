@@ -167,8 +167,8 @@ bool runAnalyzerTests()
     llvmdsdl::Lexer            extentDigitsLexer("uavcan.test.BadExtentDigits.1.0.dsdl", extentMultipleDigitsText);
     auto                       extentDigitsTokens = extentDigitsLexer.lex();
     llvmdsdl::Parser           extentDigitsParser("uavcan.test.BadExtentDigits.1.0.dsdl",
-                                        std::move(extentDigitsTokens),
-                                        extentDigitsParseDiag);
+                                                  std::move(extentDigitsTokens),
+                                                  extentDigitsParseDiag);
     auto                       extentDigitsDef = extentDigitsParser.parseDefinition();
     if (!extentDigitsDef)
     {
@@ -511,6 +511,20 @@ bool runAnalyzerTests()
             }
         }
 
+        // ...elementwise addition of a non-negative scalar stays symbolic (it is the algebra's
+        // own Add node), so it is exact beyond the materialization capacity instead of failing
+        // (the 16-bit array-length prefix puts the minimum offset at 16; +8 gives 24)...
+        const std::string shifted = "uint8[<=20000] payload\n@assert (_offset_ + 8).min == 24\n@sealed\n";
+        {
+            const auto outcome = analyzeOffsets(shifted);
+            if (!outcome.succeeded)
+            {
+                std::cerr << "scalar addition to a beyond-capacity offset set must stay symbolic; errors: "
+                          << outcome.errors << "\n";
+                return false;
+            }
+        }
+
         // ...and an operation that genuinely requires materializing the full contents (an
         // elementwise transform of a beyond-capacity set) is a hard error, never an approximate
         // answer (and never a mere warning).
@@ -529,8 +543,7 @@ bool runAnalyzerTests()
         // A modulo whose exact residue set is itself beyond every budget (huge divisor on a
         // 70001-element set: the residues ARE the set) must hard-fail — this is the path the
         // old modulo() degrade would have answered with a silently truncated set.
-        const std::string hugeMod =
-            "uint8[<=70000] payload\n@assert (_offset_ % 1000000007).count == 70001\n@sealed\n";
+        const std::string hugeMod = "uint8[<=70000] payload\n@assert (_offset_ % 1000000007).count == 70001\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(hugeMod);
             if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)

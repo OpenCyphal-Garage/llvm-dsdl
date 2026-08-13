@@ -373,6 +373,11 @@ private:
     /// @brief Root of the persistent symbolic expression tree. Never null: constructed objects hold
     ///        a real node, and moves reset the source to `zeroLeaf()`.
     std::shared_ptr<const Node> root_;
+
+    /// @brief Lazily computed `runSet()` result. Valid for the lifetime of `root_` (the node DAG
+    ///        is immutable), shared by copies, and reset when a move replaces `root_`. Purely a
+    ///        cache: never observable through the public API except as saved work.
+    mutable std::shared_ptr<const std::optional<RunSet>> runSetCache_;
 };
 
 }  // namespace llvmdsdl

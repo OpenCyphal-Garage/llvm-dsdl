@@ -77,10 +77,15 @@ struct Tests final
         }
         if (!actual)
         {
-            return;
+            return;  // refusal is contract-permitted; batteries pin a non-vacuity floor below
         }
+        ++verifiedExactResults;
         expectRun(actual, *expected, description);
     }
+
+    /// Count of expectRunOrRefusal calls that verified an exact result rather than tolerating a
+    /// refusal, so a battery can assert it did not pass vacuously against blanket refusals.
+    std::size_t verifiedExactResults{0};
 };
 
 std::string renderValues(const Values& values)
@@ -314,8 +319,9 @@ void testSignedRunSets(Tests& tests)
 
 void testSignedBoundaries(Tests& tests)
 {
-    const std::int64_t minimum = std::numeric_limits<std::int64_t>::min();
-    const std::int64_t maximum = std::numeric_limits<std::int64_t>::max();
+    const std::size_t  verifiedBefore = tests.verifiedExactResults;
+    const std::int64_t minimum        = std::numeric_limits<std::int64_t>::min();
+    const std::int64_t maximum        = std::numeric_limits<std::int64_t>::max();
     const std::vector<std::int64_t>
         domain{minimum, minimum + 1, minimum + 7, -9, -1, 0, 1, 9, maximum - 7, maximum - 1, maximum};
 
@@ -427,6 +433,15 @@ void testSignedBoundaries(Tests& tests)
                                      "boundary sum " + renderValues(sets[i]) + " and " + renderValues(sets[j]));
         }
     }
+
+    // Non-vacuity floor: the battery exists to pin exact boundary behaviour, so the representable
+    // cases must actually have produced results — a kernel regression that starts refusing them
+    // would otherwise satisfy every expectRunOrRefusal above vacuously. 6625 exact results were
+    // observed at the time of writing; the floor leaves ~10% slack for legitimate budget
+    // tightening while still catching a kernel whose boundary cases collapse into refusals.
+    tests.expect(tests.verifiedExactResults - verifiedBefore >= 6000,
+                 "signed-boundary battery verified its representable cases (" +
+                     std::to_string(tests.verifiedExactResults - verifiedBefore) + " exact results)");
 }
 
 }  // namespace
@@ -439,7 +454,7 @@ int main()
     testSignedBoundaries(tests);
     if (tests.failures == 0)
     {
-        std::cout << "BLS exactness tests passed\n";
+        std::cout << "BLS exactness tests passed (" << tests.verifiedExactResults << " exact)\n";
         return 0;
     }
     std::cerr << tests.failures << " BLS exactness test(s) failed\n";
