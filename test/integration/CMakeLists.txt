@@ -3333,6 +3333,23 @@ endif()
 add_executable(llvmdsdl-bls-differential-tool BlsDifferentialTool.cpp)
 target_link_libraries(llvmdsdl-bls-differential-tool PRIVATE llvmdsdlSemantics)
 
+add_executable(llvmdsdl-bls-int64-differential-tool BlsInt64DifferentialTool.cpp)
+target_link_libraries(llvmdsdl-bls-int64-differential-tool PRIVATE llvmdsdlSemantics)
+if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME llvmdsdl-bls-int64-differential
+    COMMAND
+      ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/bls_int64_differential.py
+        $<TARGET_FILE:llvmdsdl-bls-int64-differential-tool>
+  )
+  set_tests_properties(
+    llvmdsdl-bls-int64-differential
+    PROPERTIES
+      LABELS "integration;differential;release-blocking"
+  )
+endif()
+
 set(_bls_diff_missing "")
 if(NOT Python3_Interpreter_FOUND)
   list(APPEND _bls_diff_missing "Python3 interpreter")

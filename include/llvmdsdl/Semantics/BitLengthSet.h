@@ -85,10 +85,9 @@ namespace llvmdsdl
 ///
 ///   - I1 (non-empty): S is never empty. The default constructor and the coercion of an empty
 ///     input set both yield {0}. Consequently `min()` and `max()` are always defined.
-///   - I2 (ordered bounds): `min() <= max()` is guaranteed unconditionally, and on the
-///     non-negative value domain both are true elements of S (the symbolic bounds are exact). In
-///     the saturation regime (unreached by real inputs) a bound may read `INT64_MAX` without being
-///     a true element of S.
+///   - I2 (ordered bounds): `min() <= max()` is guaranteed unconditionally, and both are true
+///     elements of S (the symbolic bounds are exact), including when saturation produces
+///     `INT64_MAX`.
 ///   - I3 (immutability / persistence): objects are immutable values. Every operation returns
 ///     a new object and never observes or mutates its operands afterwards. Copies are O(1)
 ///     and share structure safely.
@@ -98,7 +97,7 @@ namespace llvmdsdl
 ///
 /// ## Algebraic laws (value-set semantics)
 ///
-/// Where `==` compares denoted sets (e.g. via exact `expand()`):
+/// Where equality means `equalsExact()` returns `true`:
 ///
 ///   - `+` is commutative and associative; `BitLengthSet(0)` (or `BitLengthSet()`) is its
 ///     identity: `a + BitLengthSet(0) == a`.
@@ -131,13 +130,16 @@ namespace llvmdsdl
 ///   - `modulo(d)` is EXACT-OR-REFUSE for any divisor and any set size: it returns the
 ///     complete residue set of S, or `nullopt` when no exact strategy can produce it (there is
 ///     no approximation mode). Strategies, in order: symbolic per-node residue propagation
-///     (each intermediate set is a subset of Z/d, so it never truncates; bounded by an internal
-///     working-modulus cap), exact per-run residues via `runSet()` (any divisor, budgeted only
-///     by the size of the RESULT), and residues of an exact expansion. Alignment-style queries
-///     (small power-of-two divisors) always succeed via the first strategy.
+///     when no operation can saturate (each intermediate set is then a subset of Z/d, bounded by
+///     an internal working-modulus cap), exact per-run residues via `runSet()` (any divisor,
+///     budgeted only by the size of the RESULT), and residues of an exact expansion. Saturation
+///     prevents ordinary modular homomorphisms from applying, so such expressions use the latter
+///     two strategies or refuse.
 ///   - `runSet()` evaluates S exactly into arithmetic-progression runs, making cardinality,
 ///     membership, subset, and equality queries exact at ANY set size; it may refuse
 ///     (`nullopt`) on adversarial structure, never approximate.
+///   - `equalsExact()` and `isSubsetOfExact()` return an exact boolean or `nullopt`. They never
+///     convert an operation-budget refusal into `false`.
 ///
 /// ## Complexity and robustness caveats (as implemented)
 ///
@@ -221,7 +223,8 @@ public:
     /// @param[in] alignment Alignment in bits; values `< 1` are treated as 1 (always aligned).
     /// @return `true`/`false` iff decidable exactly — `modulo(alignment) == {0}` — and
     ///         `std::nullopt` when `modulo()` refuses (adversarial structure with a huge
-    ///         alignment; realistic power-of-two alignments always decide). The tri-state is
+    ///         alignment or saturation; realistic non-saturating power-of-two alignments decide).
+    ///         The tri-state is
     ///         deliberate: this class never converts "cannot evaluate" into a boolean guess.
     /// @note Mirrors pydsdl's `BitLengthSet.is_aligned_at`; the byte case is `is_aligned_at(8)`.
     [[nodiscard]] std::optional<bool> is_aligned_at(std::int64_t alignment) const;
@@ -259,9 +262,9 @@ public:
     /// EXACT-OR-REFUSE: the returned set is always the COMPLETE residue set `{ v mod d : v in
     /// S }`; when no exact strategy can produce it the result is `std::nullopt`, never an
     /// approximation. Strategies, in order: symbolic per-node residue propagation (exact at any
-    /// cardinality; bounded by an internal working-modulus cap), exact per-run residues via
-    /// `runSet()` (any divisor; budgeted only by the size of the result), and residues of an
-    /// exact expansion. Alignment-style queries (small power-of-two divisors) always succeed.
+    /// cardinality when saturation is impossible; bounded by an internal working-modulus cap),
+    /// exact per-run residues via `runSet()` (any divisor; budgeted only by the size of the
+    /// result), and residues of an exact expansion.
     /// Callers must treat `nullopt` as "cannot evaluate exactly" and surface it (the expression
     /// evaluator turns it into a hard diagnostic) — there is deliberately no total variant that
     /// would substitute a plausible-but-possibly-incomplete answer.
@@ -270,6 +273,18 @@ public:
     /// @return The complete residue set, or `std::nullopt`.
     /// @note Mirrors pydsdl's `BitLengthSet.__mod__` for the cases it answers.
     [[nodiscard]] std::optional<FlatSet<std::int64_t>> modulo(std::int64_t divisor) const;
+
+    /// @brief Decides semantic value-set equality exactly, or refuses.
+    /// @param[in] other Set to compare with this set.
+    /// @return `true` iff both sets denote the same values, `false` iff they provably differ, or
+    ///         `std::nullopt` when neither the symbolic RunSet nor exact expansion can decide.
+    [[nodiscard]] std::optional<bool> equalsExact(const BitLengthSet& other) const;
+
+    /// @brief Decides exact set containment, or refuses.
+    /// @param[in] other Candidate superset.
+    /// @return `true` iff every value in this set is in `other`, `false` iff not, or
+    ///         `std::nullopt` when neither exact strategy can decide.
+    [[nodiscard]] std::optional<bool> isSubsetOfExact(const BitLengthSet& other) const;
 
     /// @brief An expansion together with a completeness signal.
     struct Expansion final
@@ -342,16 +357,6 @@ public:
     /// either alternative (e.g. tagged-union options). Commutative, associative, idempotent
     /// in value-set semantics. O(1): allocates one node, shares operand structure.
     friend BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs);
-
-    /// @brief Value-set equality of two symbolic sets (mirrors pydsdl's `BitLengthSet.__eq__`).
-    ///
-    /// True iff the two objects PROVABLY denote the same set: their `min()`/`max()` agree and both
-    /// expand exactly (at the default limit) to the same values. This is definitive for every set
-    /// that fits the expansion limit — the realistic case. For a set too large to expand exactly it
-    /// is conservative: it may return `false` for two sets that are in fact equal (a false
-    /// negative), but never `true` for two that differ (no false positive).
-    friend bool operator==(const BitLengthSet& lhs, const BitLengthSet& rhs);
-    friend bool operator!=(const BitLengthSet& lhs, const BitLengthSet& rhs);
 
 private:
     /// @brief Internal persistent expression node.

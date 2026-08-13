@@ -82,7 +82,7 @@ std::optional<Value::Set> materializeExact(const BitLengthSet&   bls,
                       "exactly within the evaluator's capacity of " +
                           std::to_string(kExactMaterializationLimit) +
                           " values; rewrite using '_offset_.min', '_offset_.max', '_offset_.count', "
-                          "'_offset_ % <divisor>', or a set comparison, which are computed exactly for any set size");
+                          "'_offset_ % <divisor>', or a set comparison, which use exact-or-refuse symbolic evaluation");
     return std::nullopt;
 }
 
@@ -535,12 +535,26 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        // Equality against a concrete set: decidable exactly at any cardinality in all but
-        // genuinely pathological cases (see decideSetEquality).
+        // Equality between two symbolic sets uses the shared exact-or-refuse relation.
         if (b.op == BinaryOp::Eq || b.op == BinaryOp::Ne)
         {
             const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
             const auto* rbls = std::get_if<BitLengthSet>(&rhs->data);
+            if (lbls != nullptr && rbls != nullptr)
+            {
+                const auto equal = lbls->equalsExact(*rbls);
+                if (!equal)
+                {
+                    diagnostics.error(location,
+                                      "cannot decide this '_offset_' set comparison exactly within the evaluator's "
+                                      "symbolic operation budget");
+                    return std::nullopt;
+                }
+                return Value{(b.op == BinaryOp::Eq) ? *equal : !*equal};
+            }
+
+            // Equality against a concrete set: decidable exactly at any cardinality in all but
+            // genuinely pathological cases (see decideSetEquality).
             const auto* lset = std::get_if<Value::Set>(&lhs->data);
             const auto* rset = std::get_if<Value::Set>(&rhs->data);
             const auto* bls  = (lbls != nullptr) ? lbls : rbls;
@@ -556,14 +570,40 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        // Ordered comparisons against a concrete set are subset relations (mirroring the
-        // concrete Set-Set semantics below): decidable exactly at any cardinality via the run
-        // representation — membership of each literal element is closed-form, and the symbolic
-        // set can only be a subset of a small literal if it is itself small.
+        // Ordered comparisons are subset relations (mirroring the concrete Set-Set semantics
+        // below). Symbolic-symbolic cases use the shared exact-or-refuse relation.
         if (b.op == BinaryOp::Le || b.op == BinaryOp::Lt || b.op == BinaryOp::Ge || b.op == BinaryOp::Gt)
         {
             const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
             const auto* rbls = std::get_if<BitLengthSet>(&rhs->data);
+            if (lbls != nullptr && rbls != nullptr)
+            {
+                const auto subset   = lbls->isSubsetOfExact(*rbls);
+                const auto superset = rbls->isSubsetOfExact(*lbls);
+                if (!subset || !superset)
+                {
+                    diagnostics.error(location,
+                                      "cannot decide this '_offset_' set comparison exactly within the evaluator's "
+                                      "symbolic operation budget");
+                    return std::nullopt;
+                }
+                const bool equivalent = *subset && *superset;
+                switch (b.op)
+                {
+                case BinaryOp::Le:
+                    return Value{*subset};
+                case BinaryOp::Lt:
+                    return Value{*subset && !equivalent};
+                case BinaryOp::Ge:
+                    return Value{*superset};
+                default:
+                    return Value{*superset && !equivalent};
+                }
+            }
+
+            // Symbolic-vs-concrete is still exact. Closed-form membership and cardinality decide
+            // both subset directions without materialising the symbolic set: S is a subset of L
+            // iff exactly |S| distinct elements of L belong to S.
             const auto* lset = std::get_if<Value::Set>(&lhs->data);
             const auto* rset = std::get_if<Value::Set>(&rhs->data);
             const auto* bls  = (lbls != nullptr) ? lbls : rbls;
@@ -574,26 +614,26 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                 {
                     if (const auto n = rs->count())
                     {
-                        // S subset-of literal: impossible when |S| exceeds the literal;
-                        // otherwise S is small enough to materialize and check directly.
-                        bool sInLit = false;
-                        if (static_cast<std::size_t>(*n) <= set->size())
+                        std::size_t literalMembersInSymbolic = 0;
+                        bool        litInS                   = true;
+                        for (const Rational& r : *set)
                         {
-                            if (const auto values = rs->materialize(set->size()))
+                            const auto v      = literalElementAsInt(r);
+                            const bool member = v && rs->contains(*v);
+                            if (member)
                             {
-                                sInLit = std::all_of(values->begin(), values->end(), [&](std::int64_t v) {
-                                    return set->contains(Rational(v, 1));
-                                });
+                                ++literalMembersInSymbolic;
                             }
+                            litInS = litInS && member;
                         }
-                        // literal subset-of S: closed-form membership per element.
-                        const bool litInS = std::all_of(set->begin(), set->end(), [&](const Rational& r) {
-                            const auto v = literalElementAsInt(r);
-                            return v && rs->contains(*v);
-                        });
+                        const std::uintmax_t symbolicCardinality = static_cast<std::uintmax_t>(*n);
+                        const std::uintmax_t literalCardinality  = static_cast<std::uintmax_t>(set->size());
+                        const bool           sInLit =
+                            symbolicCardinality <= literalCardinality &&
+                            static_cast<std::uintmax_t>(literalMembersInSymbolic) == symbolicCardinality;
                         const bool subsetLR   = (lbls != nullptr) ? sInLit : litInS;  // lhs subset rhs
                         const bool supersetLR = (lbls != nullptr) ? litInS : sInLit;  // rhs subset lhs
-                        const bool sameCard   = static_cast<std::size_t>(*n) == set->size();
+                        const bool sameCard   = symbolicCardinality == literalCardinality;
                         switch (b.op)
                         {
                         case BinaryOp::Le:

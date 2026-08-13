@@ -127,11 +127,10 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   commutativity/associativity/identity, `+` distributes over `|`, repeat additivity, pad
   idempotence/multiples/soundness) — Sem-shape cross-checks that hold independently of every
   evaluator — and each `Expr` constructor carries a traceability note mapping the
-  Specification concept it implements to the `Analyzer.cpp` site that builds it. Stage 1+
-  of a staged plan (file header): later stages model the
-  RunSet kernel (CRT run intersection, the dense-fixpoint jump, repeat-range phase families)
-  and the exact-or-refuse residue evaluator, ending with a verified executable oracle for the
-  differential batteries.
+  Specification concept it implements to the `Analyzer.cpp` site that builds it. `FitsInt64`
+  states the non-saturation precondition required by ordinary modular homomorphisms. The
+  RunSet/residue kernels and saturated int64 semantics are checked by the exhaustive C++ gate,
+  the arbitrary-precision Python differential, and UBSan.
 - `BitLengthBridge.dfy` — the length-semantics bridge (hardening rung 4): `BridgeTheorem`
   proves, for every type in the grammar the analyzer compiles, that the algebra expression the
   analyzer builds (`BlsOf`, transcribing the Analyzer.cpp construction sites) denotes EXACTLY

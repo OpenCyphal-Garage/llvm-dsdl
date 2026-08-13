@@ -18,10 +18,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/RunSet.h"
+#include "llvmdsdl/Support/IntegerMath.h"
 
 #include <algorithm>
 #include <bit>
-#include <cstdlib>
 #include <limits>
 #include <numeric>
 #include <utility>
@@ -31,15 +31,45 @@ namespace llvmdsdl
 namespace
 {
 
-/// Checked int64 arithmetic: false on overflow, never wraps and never saturates.
-bool checkedAdd(std::int64_t a, std::int64_t b, std::int64_t& out)
+/// Constructs a normalized representable run. This is the single validation point for runs
+/// synthesized by arithmetic operations; callers refuse when it returns nullopt.
+std::optional<Run> makeRun(std::int64_t start, std::int64_t stride, std::int64_t count)
 {
-    return !__builtin_add_overflow(a, b, &out);
+    if (count < 1 || stride < 1)
+    {
+        return std::nullopt;
+    }
+    if (count == 1)
+    {
+        return Run{start, 1, 1};
+    }
+    const __int128 span = static_cast<__int128>(count - 1) * stride;
+    if (span > std::numeric_limits<std::int64_t>::max() ||
+        static_cast<__int128>(start) + span > std::numeric_limits<std::int64_t>::max())
+    {
+        return std::nullopt;
+    }
+    return Run{start, stride, count};
 }
 
-bool checkedMul(std::int64_t a, std::int64_t b, std::int64_t& out)
+/// Constructs the run from `start` through `last`, inclusive.
+std::optional<Run> makeRunThrough(std::int64_t start, std::int64_t stride, std::int64_t last)
 {
-    return !__builtin_mul_overflow(a, b, &out);
+    if (stride < 1 || last < start)
+    {
+        return std::nullopt;
+    }
+    const __int128 distance = static_cast<__int128>(last) - start;
+    if (distance % stride != 0)
+    {
+        return std::nullopt;
+    }
+    const __int128 count = distance / stride + 1;
+    if (count > std::numeric_limits<std::int64_t>::max())
+    {
+        return std::nullopt;
+    }
+    return makeRun(start, stride, static_cast<std::int64_t>(count));
 }
 
 /// Extended gcd: returns g = gcd(a, b) and Bezout x with a*x === g (mod b). Inputs positive.
@@ -104,7 +134,7 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
         {
             return std::nullopt;
         }
-        return Run{static_cast<std::int64_t>(x0), 1, 1};
+        return makeRun(static_cast<std::int64_t>(x0), 1, 1);
     }
     const std::int64_t lcm = static_cast<std::int64_t>(lcm128);
 
@@ -125,9 +155,14 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
     const __int128 n = (static_cast<__int128>(hi) - x0) / lcm + 1;
     if (n == 1)
     {
-        return Run{static_cast<std::int64_t>(x0), 1, 1};
+        return makeRun(static_cast<std::int64_t>(x0), 1, 1);
     }
-    return Run{static_cast<std::int64_t>(x0), lcm, static_cast<std::int64_t>(n)};
+    const auto run = makeRun(static_cast<std::int64_t>(x0), lcm, static_cast<std::int64_t>(n));
+    if (!run)
+    {
+        overflowed = true;
+    }
+    return run;
 }
 
 /// Exact set difference `r \ cut` where `cut` is a sub-progression of `r` (cut.stride is a
@@ -143,11 +178,12 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
             return false;
         }
         --budget;
-        if (piece.count == 1)
+        const auto checked = makeRun(piece.start, piece.stride, piece.count);
+        if (!checked)
         {
-            piece.stride = 1;
+            return false;
         }
-        out.push_back(piece);
+        out.push_back(*checked);
         return true;
     };
 
@@ -177,7 +213,7 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
             // arithmetic here rather than by argument).
             std::int64_t classOffset = 0;
             std::int64_t classStart  = 0;
-            if (!checkedMul(j, r.stride, classOffset) || !checkedAdd(cut.start, classOffset, classStart) ||
+            if (!checkedMultiply(j, r.stride, classOffset) || !checkedAdd(cut.start, classOffset, classStart) ||
                 classStart > r.last())
             {
                 break;
@@ -228,8 +264,9 @@ RunSet RunSet::fromValues(const FlatSet<std::int64_t>& values)
     // Greedy maximal runs over the sorted input: extend while the gap stays constant. The gap
     // is computed in 128-bit: two extreme int64 inputs can be further apart than int64 can
     // represent, and such a pair must simply stay two singleton runs (the representability
-    // invariant) rather than form a run whose stride silently overflowed. Runs of count >= 2
-    // always satisfy the invariant because their last() IS one of the input values.
+    // invariant) rather than form a run whose stride silently overflowed. Each extension also
+    // validates the complete run span; a larger evenly spaced sequence may require multiple
+    // representable runs.
     auto it = values.begin();
     Run  cur{*it, 1, 1};
     ++it;
@@ -243,7 +280,18 @@ RunSet RunSet::fromValues(const FlatSet<std::int64_t>& values)
         }
         else if (cur.count > 1 && gap == cur.stride)
         {
-            ++cur.count;
+            std::int64_t nextCount = 0;
+            const auto   extended =
+                checkedAdd(cur.count, 1, nextCount) ? makeRun(cur.start, cur.stride, nextCount) : std::optional<Run>{};
+            if (extended)
+            {
+                cur = *extended;
+            }
+            else
+            {
+                out.runs_.push_back(cur);
+                cur = Run{*it, 1, 1};
+            }
         }
         else
         {
@@ -334,11 +382,11 @@ bool RunSet::equals(const RunSet& other) const
 {
     const auto ca = count();
     const auto cb = other.count();
-    if (!ca || !cb || *ca != *cb)
+    if (ca && cb && *ca != *cb)
     {
         return false;
     }
-    return isSubsetOf(other);
+    return isSubsetOf(other) && other.isSubsetOf(*this);
 }
 
 std::optional<RunSet> RunSet::shifted(std::int64_t delta) const
@@ -352,7 +400,7 @@ std::optional<RunSet> RunSet::shifted(std::int64_t delta) const
             return std::nullopt;
         }
         std::int64_t lastCheck = 0;
-        if (!checkedMul(r.count - 1, r.stride, lastCheck) || !checkedAdd(r.start, lastCheck, lastCheck))
+        if (!checkedMultiply(r.count - 1, r.stride, lastCheck) || !checkedAdd(r.start, lastCheck, lastCheck))
         {
             return std::nullopt;
         }
@@ -363,10 +411,12 @@ std::optional<RunSet> RunSet::shifted(std::int64_t delta) const
 
 bool RunSet::insertRun(Run run, std::size_t& budget)
 {
-    if (run.count == 1)
+    const auto checked = makeRun(run.start, run.stride, run.count);
+    if (!checked)
     {
-        run.stride = 1;
+        return false;
     }
+    run = *checked;
     // Work queue of pieces still to place: overlap resolution may split a piece into fragments
     // that must each be re-tested against the existing runs.
     std::vector<Run> pending{run};
@@ -377,7 +427,7 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
             return false;
         }
         --budget;
-        Run  piece   = pending.back();
+        Run  piece    = pending.back();
         bool consumed = false;
         pending.pop_back();
 
@@ -420,10 +470,9 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
             continue;
         }
         // No overlap with any existing run: insert preserving start order.
-        const auto pos = std::lower_bound(runs_.begin(),
-                                          runs_.end(),
-                                          piece.start,
-                                          [](const Run& r, std::int64_t s) { return r.start < s; });
+        const auto pos = std::lower_bound(runs_.begin(), runs_.end(), piece.start, [](const Run& r, std::int64_t s) {
+            return r.start < s;
+        });
         runs_.insert(pos, piece);
     }
     return true;
@@ -456,24 +505,35 @@ void RunSet::coalesce()
             cur.count  = 2;
             continue;
         }
-        std::int64_t adjacent = 0;
+        std::int64_t adjacent    = 0;
+        std::int64_t mergedCount = 0;
         if (cur.count >= 2 && next.count == 1 && checkedAdd(cur.last(), cur.stride, adjacent) &&
-            next.start == adjacent)
+            next.start == adjacent && checkedAdd(cur.count, 1, mergedCount))
         {
-            ++cur.count;
-            continue;
+            if (const auto run = makeRun(cur.start, cur.stride, mergedCount))
+            {
+                cur = *run;
+                continue;
+            }
         }
         if (cur.count == 1 && next.count >= 2 && checkedAdd(cur.start, next.stride, adjacent) &&
-            next.start == adjacent)
+            next.start == adjacent && checkedAdd(next.count, 1, mergedCount))
         {
-            cur = Run{cur.start, next.stride, next.count + 1};
-            continue;
+            if (const auto run = makeRun(cur.start, next.stride, mergedCount))
+            {
+                cur = *run;
+                continue;
+            }
         }
         if (cur.count >= 2 && next.count >= 2 && next.stride == cur.stride &&
-            checkedAdd(cur.last(), cur.stride, adjacent) && next.start == adjacent)
+            checkedAdd(cur.last(), cur.stride, adjacent) && next.start == adjacent &&
+            checkedAdd(cur.count, next.count, mergedCount))
         {
-            cur.count += next.count;
-            continue;
+            if (const auto run = makeRun(cur.start, cur.stride, mergedCount))
+            {
+                cur = *run;
+                continue;
+            }
         }
         merged.push_back(next);
     }
@@ -489,7 +549,7 @@ namespace
 /// equivalent, it merely chooses the representation-friendly path. Large sets skip it and use
 /// the structural path, whose closed forms are what make huge STRUCTURED sets tractable.
 constexpr std::int64_t kEnumUnionLimit = 131072;
-constexpr std::int64_t kEnumSumLimit   = 65536;   // bound on |A| * |B| for pairwise enumeration
+constexpr std::int64_t kEnumSumLimit   = 65536;    // bound on |A| * |B| for pairwise enumeration
 constexpr std::int64_t kSumSpanLimit   = 1 << 20;  // bound on result span for the bitmap path
 
 }  // namespace
@@ -497,8 +557,8 @@ constexpr std::int64_t kSumSpanLimit   = 1 << 20;  // bound on result span for t
 std::optional<RunSet> RunSet::unite(const RunSet& a, const RunSet& b)
 {
     // Small-set shortcut: enumerate, merge, re-decompose. Exact and cheap for ragged sets.
-    const auto ca = a.count();
-    const auto cb = b.count();
+    const auto   ca       = a.count();
+    const auto   cb       = b.count();
     std::int64_t combined = 0;
     if (ca && cb && checkedAdd(*ca, *cb, combined) && combined <= kEnumUnionLimit)
     {
@@ -545,13 +605,12 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
             // handles the nearly-dense mid-size sets (the structural path's weak spot) in
             // microseconds. A word-op cap bounds the adversarial corner; on cap it falls through
             // to the remaining strategies rather than failing.
-            const RunSet& small = (static_cast<__int128>(a.max()) - a.min() <= static_cast<__int128>(b.max()) - b.min())
-                                      ? a
-                                      : b;
-            const RunSet&      large     = (&small == &a) ? b : a;
-            const std::int64_t spanSmall = small.max() - small.min() + 1;
-            const auto         mSmall    = small.materialize(static_cast<std::size_t>(kSumSpanLimit));
-            const auto         mLarge    = large.materialize(static_cast<std::size_t>(kSumSpanLimit));
+            const RunSet& small =
+                (static_cast<__int128>(a.max()) - a.min() <= static_cast<__int128>(b.max()) - b.min()) ? a : b;
+            const RunSet&         large       = (&small == &a) ? b : a;
+            const std::int64_t    spanSmall   = small.max() - small.min() + 1;
+            const auto            mSmall      = small.materialize(static_cast<std::size_t>(kSumSpanLimit));
+            const auto            mLarge      = large.materialize(static_cast<std::size_t>(kSumSpanLimit));
             constexpr std::size_t kWordOpsCap = 1U << 26U;
             const std::size_t     smallWords  = (static_cast<std::size_t>(spanSmall) + 63U) / 64U;
             if (mSmall && mLarge && mLarge->size() * (smallWords + 1) <= kWordOpsCap)
@@ -586,8 +645,7 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                     {
                         const auto bit = static_cast<std::size_t>(std::countr_zero(bits));
                         bits &= bits - 1;
-                        values.push_back(static_cast<std::int64_t>(lo) +
-                                         static_cast<std::int64_t>(w * 64U + bit));
+                        values.push_back(static_cast<std::int64_t>(lo) + static_cast<std::int64_t>(w * 64U + bit));
                     }
                 }
                 return fromValues(FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end()));
@@ -629,7 +687,15 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
         {
             // Pairwise run sumset, exact by cases.
             std::vector<Run> pieces;
-            std::int64_t     s = 0;
+            const auto       pushPiece = [&pieces](std::int64_t start, std::int64_t stride, std::int64_t count) {
+                const auto run = makeRun(start, stride, count);
+                if (run)
+                {
+                    pieces.push_back(*run);
+                }
+                return run.has_value();
+            };
+            std::int64_t s = 0;
             if (!checkedAdd(ra.start, rb.start, s))
             {
                 return std::nullopt;
@@ -641,20 +707,39 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
             }
             if (ra.count == 1 && rb.count == 1)
             {
-                pieces.push_back(Run{s, 1, 1});
+                if (!pushPiece(s, 1, 1))
+                {
+                    return std::nullopt;
+                }
             }
             else if (ra.count == 1)
             {
-                pieces.push_back(Run{s, rb.stride, rb.count});
+                if (!pushPiece(s, rb.stride, rb.count))
+                {
+                    return std::nullopt;
+                }
             }
             else if (rb.count == 1)
             {
-                pieces.push_back(Run{s, ra.stride, ra.count});
+                if (!pushPiece(s, ra.stride, ra.count))
+                {
+                    return std::nullopt;
+                }
             }
             else if (ra.stride == rb.stride)
             {
                 // Same stride: the sumset is one run of count na + nb - 1.
-                pieces.push_back(Run{s, ra.stride, ra.count + rb.count - 1});
+                std::int64_t joinedCount = 0;
+                if (!checkedAdd(ra.count, rb.count, joinedCount) || !checkedAdd(joinedCount, -1, joinedCount))
+                {
+                    return std::nullopt;
+                }
+                const auto piece = makeRun(s, ra.stride, joinedCount);
+                if (!piece)
+                {
+                    return std::nullopt;
+                }
+                pieces.push_back(*piece);
             }
             else
             {
@@ -668,11 +753,14 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                 for (std::int64_t i = 0; i < small.count; ++i)
                 {
                     std::int64_t shift = 0;
-                    if (!checkedMul(i, small.stride, shift) || !checkedAdd(s, shift, shift))
+                    if (!checkedMultiply(i, small.stride, shift) || !checkedAdd(s, shift, shift))
                     {
                         return std::nullopt;
                     }
-                    pieces.push_back(Run{shift, big.stride, big.count});
+                    if (!pushPiece(shift, big.stride, big.count))
+                    {
+                        return std::nullopt;
+                    }
                 }
             }
             (void) lastSum;  // computed purely as an overflow probe on the extremes
@@ -680,7 +768,7 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
             {
                 if (first)
                 {
-                    out.runs_.push_back(piece.count == 1 ? Run{piece.start, 1, 1} : piece);
+                    out.runs_.push_back(piece);
                     first = false;
                 }
                 else if (!out.insertRun(piece, budget))
@@ -722,6 +810,14 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
     for (const auto& r : runs_)
     {
         std::vector<Run> pieces;
+        const auto       pushPiece = [&pieces](std::int64_t start, std::int64_t stride, std::int64_t count) {
+            const auto run = makeRun(start, stride, count);
+            if (run)
+            {
+                pieces.push_back(*run);
+            }
+            return run.has_value();
+        };
         if (r.stride % alignment == 0)
         {
             // Alignment divides the stride: padding shifts the whole run uniformly.
@@ -730,14 +826,17 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
             {
                 return std::nullopt;
             }
-            pieces.push_back(Run{s, r.stride, r.count});
+            if (!pushPiece(s, r.stride, r.count))
+            {
+                return std::nullopt;
+            }
         }
         else
         {
             // Decompose by phase: elements congruent mod lcm(stride, alignment) pad uniformly.
-            std::int64_t g = std::gcd(r.stride, alignment);
+            std::int64_t g      = std::gcd(r.stride, alignment);
             std::int64_t period = 0;
-            if (!checkedMul(r.stride / g, alignment, period))
+            if (!checkedMultiply(r.stride / g, alignment, period))
             {
                 return std::nullopt;
             }
@@ -749,7 +848,7 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
             for (std::int64_t j = 0; j < classes; ++j)
             {
                 std::int64_t classStart = 0;
-                if (!checkedMul(j, r.stride, classStart) || !checkedAdd(r.start, classStart, classStart))
+                if (!checkedMultiply(j, r.stride, classStart) || !checkedAdd(r.start, classStart, classStart))
                 {
                     return std::nullopt;
                 }
@@ -763,7 +862,10 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
                 {
                     return std::nullopt;
                 }
-                pieces.push_back(n == 1 ? Run{s, 1, 1} : Run{s, period, n});
+                if (!pushPiece(s, period, n))
+                {
+                    return std::nullopt;
+                }
             }
         }
         for (const auto& piece : pieces)
@@ -799,10 +901,10 @@ std::optional<RunSet> RunSet::repeated(std::int64_t count) const
     // single stride-g run certifies that every element of S is congruent mod g (each shifted
     // copy of the previous dense run lands on the same residue), so every later sum shifts the
     // run by min and extends it by max, and the remaining iterations collapse to arithmetic.
-    const std::int64_t m = min();
-    const std::int64_t M = max();
+    const std::int64_t     m              = min();
+    const std::int64_t     M              = max();
     constexpr std::int64_t kMaxIterations = 4096;
-    RunSet       term = *this;
+    RunSet                 term           = *this;
     for (std::int64_t j = 2; j <= count; ++j)
     {
         const bool prevSingle = (term.runs_.size() == 1);
@@ -815,8 +917,11 @@ std::optional<RunSet> RunSet::repeated(std::int64_t count) const
         term = std::move(*next);
         if (prevSingle && term.runs_.size() == 1)
         {
-            const Run& cur = term.runs_.front();
-            if (cur.stride == prev.stride && cur.start == prev.start + m && cur.last() == prev.last() + M)
+            const Run&   cur           = term.runs_.front();
+            std::int64_t expectedStart = 0;
+            std::int64_t expectedLast  = 0;
+            if (cur.stride == prev.stride && checkedAdd(prev.start, m, expectedStart) &&
+                checkedAdd(prev.last(), M, expectedLast) && cur.start == expectedStart && cur.last() == expectedLast)
             {
                 const std::int64_t remaining = count - j;
                 if (remaining == 0)
@@ -827,14 +932,18 @@ std::optional<RunSet> RunSet::repeated(std::int64_t count) const
                 std::int64_t endShift   = 0;
                 std::int64_t start      = 0;
                 std::int64_t end        = 0;
-                if (!checkedMul(remaining, m, startShift) || !checkedAdd(cur.start, startShift, start) ||
-                    !checkedMul(remaining, M, endShift) || !checkedAdd(cur.last(), endShift, end))
+                if (!checkedMultiply(remaining, m, startShift) || !checkedAdd(cur.start, startShift, start) ||
+                    !checkedMultiply(remaining, M, endShift) || !checkedAdd(cur.last(), endShift, end))
                 {
                     return std::nullopt;
                 }
-                RunSet out;
-                const std::int64_t n = (end - start) / cur.stride + 1;
-                out.runs_.push_back(n == 1 ? Run{start, 1, 1} : Run{start, cur.stride, n});
+                RunSet     out;
+                const auto run = makeRunThrough(start, cur.stride, end);
+                if (!run)
+                {
+                    return std::nullopt;
+                }
+                out.runs_.push_back(*run);
                 return out;
             }
         }
@@ -852,31 +961,84 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
     {
         return RunSet(0);
     }
-    // 0 in S: k-fold sums are monotone (T_{k-1} + 0 subset of T_k), so the union is repeat(n).
-    if (contains(0))
-    {
-        // ...provided 0 is the minimum; bit-length sets are non-negative so it always is, but
-        // stay correct on the general domain: monotonicity needs 0 in S, which is what we have.
-        return repeated(countMax);
-    }
     // Singleton {c}: the union is {0, c, 2c, ..., n*c} directly.
     const auto totalCount = count();
     if (totalCount && *totalCount == 1)
     {
         const std::int64_t c = min();
-        std::int64_t       span = 0;
-        std::int64_t       runCount = 0;
-        if (!checkedMul(countMax, c, span) || !checkedAdd(countMax, 1, runCount))
+        if (c == 0)
+        {
+            return RunSet(0);
+        }
+        std::int64_t runCount = 0;
+        if (!checkedAdd(countMax, 1, runCount))
+        {
+            return std::nullopt;
+        }
+        const __int128 span = static_cast<__int128>(countMax) * c;
+        if (span < std::numeric_limits<std::int64_t>::min() || span > std::numeric_limits<std::int64_t>::max())
+        {
+            return std::nullopt;
+        }
+        const __int128 stride = c < 0 ? -static_cast<__int128>(c) : c;
+        if (stride > std::numeric_limits<std::int64_t>::max())
+        {
+            if (countMax == 1)
+            {
+                return fromValues(FlatSet<std::int64_t>{static_cast<std::int64_t>(span), 0});
+            }
+            return std::nullopt;
+        }
+        const std::int64_t start = c < 0 ? static_cast<std::int64_t>(span) : 0;
+        const auto         run   = makeRun(start, static_cast<std::int64_t>(stride), runCount);
+        if (!run)
         {
             return std::nullopt;
         }
         RunSet out;
-        out.runs_.push_back(c == 0 ? Run{0, 1, 1} : Run{0, c, runCount});
+        out.runs_.push_back(*run);
         return out;
     }
 
     const std::int64_t m = min();
     const std::int64_t M = max();
+    if (m < 0)
+    {
+        // The closed-form tail below relies on non-negative extrema. Signed sets use bounded
+        // direct iteration; exhausting the bound is a refusal, never a partial union.
+        constexpr std::int64_t kMaxSignedIterations = 4096;
+        std::optional<RunSet>  acc                  = RunSet(0);
+        RunSet                 term                 = *this;
+        for (std::int64_t k = 1; k <= countMax; ++k)
+        {
+            acc = unite(*acc, term);
+            if (!acc)
+            {
+                return std::nullopt;
+            }
+            if (k == countMax)
+            {
+                return acc;
+            }
+            if (k >= kMaxSignedIterations)
+            {
+                return std::nullopt;
+            }
+            auto next = sum(term, *this);
+            if (!next)
+            {
+                return std::nullopt;
+            }
+            term = std::move(*next);
+        }
+    }
+
+    // 0 in S: k-fold sums are monotone (T_{k-1} + 0 subset of T_k), so the union is repeat(n).
+    if (contains(0))
+    {
+        return repeated(countMax);
+    }
+
     // gcd of the element differences: the eventual dense stride of the k-fold sums.
     std::int64_t g = 0;
     for (const auto& r : runs_)
@@ -885,7 +1047,12 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
         {
             g = std::gcd(g, r.stride);
         }
-        g = std::gcd(g, std::abs(r.start - m));
+        const __int128 startGap = static_cast<__int128>(r.start) - m;
+        if (startGap < 0 || startGap > std::numeric_limits<std::int64_t>::max())
+        {
+            return std::nullopt;
+        }
+        g = std::gcd(g, static_cast<std::int64_t>(startGap));
     }
     if (g == 0)
     {
@@ -895,9 +1062,9 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
     // Iterate the k-fold sums, accumulating the union, until either k reaches countMax (small
     // ranges: exact by direct iteration) or T_k becomes a dense single run [k*m, k*M] stride g
     // (large ranges: the tail collapses to closed-form phase families below).
-    std::optional<RunSet> acc = RunSet(0);
-    RunSet                term = *this;  // T_1
-    std::int64_t          k    = 1;
+    std::optional<RunSet>  acc            = RunSet(0);
+    RunSet                 term           = *this;  // T_1
+    std::int64_t           k              = 1;
     constexpr std::int64_t kMaxIterations = 4096;
     for (;; ++k)
     {
@@ -913,7 +1080,7 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
         // Dense single-run detection: T_k == [k*m, k*M] step g exactly.
         std::int64_t km = 0;
         std::int64_t kM = 0;
-        if (!checkedMul(k, m, km) || !checkedMul(k, M, kM))
+        if (!checkedMultiply(k, m, km) || !checkedMultiply(k, M, kM))
         {
             return std::nullopt;
         }
@@ -943,22 +1110,27 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
     // phase (j*m) mod g; within one family (j stepping by P = g / gcd(g, m)) successive runs
     // chain into a single run once (j+P)*m <= j*M + g, which is monotone in j. Emit pre-chain
     // runs individually and each chained family as one run.
-    const std::int64_t mModG  = ((m % g) + g) % g;
+    const std::int64_t mModG  = euclideanModulo(m, g);
     const std::int64_t P      = (mModG == 0) ? 1 : (g / std::gcd(g, mModG));
     std::size_t        budget = kOpBudget;
     std::int64_t       j      = k + 1;
-    for (; j <= countMax; ++j)
+    for (;;)
     {
+        if (j > countMax)
+        {
+            break;
+        }
         // Emit T_j individually until every family at or beyond j chains.
-        std::int64_t jm = 0;
-        std::int64_t jM = 0;
+        std::int64_t jm                  = 0;
+        std::int64_t jM                  = 0;
         std::int64_t nextSameFamilyStart = 0;
-        if (!checkedMul(j, m, jm) || !checkedMul(j, M, jM))
+        if (!checkedMultiply(j, m, jm) || !checkedMultiply(j, M, jM))
         {
             return std::nullopt;
         }
-        bool chains = false;
-        if (checkedMul(j + P, m, nextSameFamilyStart))
+        bool         chains         = false;
+        std::int64_t nextSameFamily = 0;
+        if (checkedAdd(j, P, nextSameFamily) && checkedMultiply(nextSameFamily, m, nextSameFamilyStart))
         {
             std::int64_t reach = 0;
             if (checkedAdd(jM, g, reach))
@@ -974,30 +1146,47 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
         {
             return std::nullopt;
         }
-        const std::int64_t n = (jM - jm) / g + 1;
-        RunSet             dense;
-        dense.runs_.push_back(n == 1 ? Run{jm, 1, 1} : Run{jm, g, n});
+        const auto run = makeRunThrough(jm, g, jM);
+        if (!run)
+        {
+            return std::nullopt;
+        }
+        RunSet dense;
+        dense.runs_.push_back(*run);
         acc = unite(*acc, dense);
         if (!acc)
         {
             return std::nullopt;
         }
+        if (j == countMax)
+        {
+            return acc;
+        }
+        ++j;
     }
     // Chained families: for each residue class of j in [j, countMax] modulo P, the union of its
     // dense runs is one run from the first j's start to the last j's end, stride g.
-    for (std::int64_t f = 0; f < P && j + f <= countMax; ++f)
+    for (std::int64_t f = 0; f < P; ++f)
     {
-        const std::int64_t j0   = j + f;
+        std::int64_t j0 = 0;
+        if (!checkedAdd(j, f, j0) || j0 > countMax)
+        {
+            break;
+        }
         const std::int64_t jEnd = j0 + ((countMax - j0) / P) * P;
         std::int64_t       lo   = 0;
         std::int64_t       hi   = 0;
-        if (!checkedMul(j0, m, lo) || !checkedMul(jEnd, M, hi))
+        if (!checkedMultiply(j0, m, lo) || !checkedMultiply(jEnd, M, hi))
         {
             return std::nullopt;
         }
-        const std::int64_t n = (hi - lo) / g + 1;
-        RunSet             family;
-        family.runs_.push_back(n == 1 ? Run{lo, 1, 1} : Run{lo, g, n});
+        const auto run = makeRunThrough(lo, g, hi);
+        if (!run)
+        {
+            return std::nullopt;
+        }
+        RunSet family;
+        family.runs_.push_back(*run);
         acc = unite(*acc, family);
         if (!acc)
         {
@@ -1025,7 +1214,7 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         // Residues of start + i*stride (mod d) repeat with period d / gcd(stride mod d, d):
         // after that many steps the walk returns to its starting residue (it traverses the
         // coset of the subgroup generated by stride). Beyond the period no new residues appear.
-        const std::int64_t step   = ((r.stride % divisor) + divisor) % divisor;
+        const std::int64_t step   = r.stride % divisor;
         const std::int64_t period = divisor / std::gcd(step, divisor);  // gcd(0, d) == d
         const std::int64_t k      = std::min(r.count, period);
         // The budget applies to the UNIQUE residue set (the documented contract). Within one
@@ -1038,15 +1227,12 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         }
         std::vector<std::int64_t> batch;
         batch.reserve(static_cast<std::size_t>(k));
-        std::int64_t cur = ((r.start % divisor) + divisor) % divisor;
+        std::int64_t cur = euclideanModulo(r.start, divisor);
         for (std::int64_t i = 0; i < k; ++i)
         {
             batch.push_back(cur);
-            cur += step;
-            if (cur >= divisor)
-            {
-                cur -= divisor;
-            }
+            const __int128 next = static_cast<__int128>(cur) + step;
+            cur                 = static_cast<std::int64_t>(next >= divisor ? next - divisor : next);
         }
         unique.insert(batch.begin(), batch.end());  // FlatSet range-insert sorts, merges, dedups
         if (unique.size() > kResidueBudget)

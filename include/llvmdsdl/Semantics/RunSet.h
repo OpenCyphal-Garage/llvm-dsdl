@@ -81,7 +81,8 @@ struct Run final
 ///
 /// The representation is NOT canonical: `{0,4,8,12}` may be held as one stride-4 run or as two
 /// interleaved stride-8 runs depending on construction order. Consequently equality is decided
-/// SEMANTICALLY (`equals()`: cardinality + mutual containment), never by comparing run lists.
+/// SEMANTICALLY by mutual containment, never by comparing run lists. Cardinality is only an
+/// optional fast mismatch because a valid RunSet can contain more than `INT64_MAX` elements.
 ///
 /// ## Complexity budget
 ///
@@ -123,7 +124,7 @@ public:
     ///        intersections. Relies on `other`'s disjointness invariant to count by summation.
     [[nodiscard]] bool isSubsetOf(const RunSet& other) const;
 
-    /// @brief Exact semantic equality (cardinality + containment); representation-independent.
+    /// @brief Exact semantic equality by mutual containment; representation-independent.
     [[nodiscard]] bool equals(const RunSet& other) const;
 
     /// @brief Exact residue set `{ v mod divisor : v in S }` for any divisor, any cardinality.

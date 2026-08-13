@@ -2,12 +2,11 @@
 //
 // Formal model of the BitLengthSet expression algebra and its evaluators.
 //
-// SCOPE (stage 1 of the staged plan): the expression DAG's denotational semantics and the
-// interval evaluators. `Sem` is the normative meaning of a BitLengthSet expression — the
-// direct transcription of the "Denotationally, ..." table in
-// include/llvmdsdl/Semantics/BitLengthSet.h — and every evaluator theorem is stated against
-// it. Later stages add the RunSet kernel (CRT run intersection, the dense-fixpoint jump in
-// repeat, the repeat-range phase families) and the residue evaluator.
+// SCOPE: the expression DAG's mathematical denotation and interval evaluators before int64
+// saturation. `FitsInt64` is the explicit precondition under which ordinary modular
+// homomorphisms describe the C++ denotation. The C++ evaluator computes the same condition
+// structurally before using symbolic residues; saturated boundary behaviour is checked against
+// the arbitrary-precision oracle in test/integration/bls_int64_differential.py.
 //
 // WHAT IS PROVEN (unbounded — for all well-formed expressions, by structural induction):
 //   SemNonEmpty          : I1 — the denoted set is never empty.
@@ -34,10 +33,10 @@
 // (negative values made min()/fixed() unsound) resurfacing as a failed proof instead of a
 // field bug. See NEGATIVE CONTROLS below.
 //
-// ASSURANCE SCOPE: this proves the abstract algorithm, not the emitted C++. The link to
-// lib/Semantics/BitLengthSet.cpp is transcription discipline plus the differential batteries
-// (test/unit/BitLengthSetTests.cpp reference model, the RunSet fuzz harness); the staged plan
-// ends with a verified executable oracle compiled from this model.
+// ASSURANCE SCOPE: this proves the abstract mathematical algebra, not the C++ implementation.
+// The link to lib/Semantics/BitLengthSet.cpp is transcription discipline plus the differential
+// batteries. Saturation and the RunSet/residue kernels are checked by independent executable
+// oracles and sanitizers.
 //
 // NEGATIVE CONTROLS (each mutation must break the named proof; checked manually when the
 // model changes):
@@ -151,9 +150,20 @@ module BitLengthSetModel {
     case RepeatRange(inner, kMax) => RepeatRangeSem(Sem(inner), kMax)
   }
 
+  const MaxInt64: int := 9223372036854775807
+
+  // Ordinary addition, padding, and repetition modulo d are valid for the C++ denotation only
+  // when every reachable mathematical value fits int64. The C++ saturationReachable() analysis
+  // computes this condition bottom-up from exact achievable maxima.
+  ghost predicate FitsInt64(e: Expr)
+    requires WF(e)
+  {
+    forall value <- Sem(e) :: value <= MaxInt64
+  }
+
   // ==========================================================================
   // Arithmetic support: multiplication positivity and Euclidean div/mod facts.
-  // Small, reusable kit — stage 5's residue evaluator leans on the same lemmas.
+  // Small, reusable arithmetic kit.
   // ==========================================================================
 
   lemma MulNonNeg(x: int, y: int)
@@ -592,7 +602,7 @@ module BitLengthSetModel {
   // Minkowski sums, genuine set union, or least-multiple padding — fails here even if some
   // evaluator were mis-transcribed to match. RepeatSplit is also the load-bearing lemma
   // behind the C++ RunSet repeat strategies: k-fold sums compose additively, which licenses
-  // both linear iteration and doubling (stage 4 proves the dense-fixpoint jump on top of it).
+  // both linear iteration and doubling.
   // ==========================================================================
 
   lemma MSumComm(a: set<int>, b: set<int>)

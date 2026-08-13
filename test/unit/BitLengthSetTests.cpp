@@ -187,9 +187,9 @@ struct TestContext final
     }
 
     template <typename Actual>
-    void expectSetEq(const std::optional<Actual>&         actual,
-                     std::initializer_list<std::int64_t>  expected,
-                     const std::string&                   what)
+    void expectSetEq(const std::optional<Actual>&        actual,
+                     std::initializer_list<std::int64_t> expected,
+                     const std::string&                  what)
     {
         if (!actual)
         {
@@ -566,9 +566,24 @@ void testValueDomainSafety(TestContext& t)
     // Saturated expansion is still a well-formed, non-empty set of non-negative values.
     const auto sat = (huge + BitLengthSet(ValueSet{0, 10})).expand();
     t.expect(!sat.empty() && *sat.begin() >= 0, "saturated expansion is non-empty and non-negative");
+
+    // Residue propagation over ordinary addition is invalid once the int64 clamp is reachable.
+    // These cases must use an exact fallback, never the unbounded-arithmetic homomorphism.
+    t.expectSetEq((BitLengthSet(kMax) + BitLengthSet(kMax - 1)).modulo(8),
+                  {7},
+                  "saturating addition has the residue of INT64_MAX");
+    t.expectSetEq(BitLengthSet(kMax).padToAlignment(8).modulo(8),
+                  {7},
+                  "saturating padding has the residue of INT64_MAX");
+    t.expectSetEq(BitLengthSet(kMax).repeat(2).modulo(8), {7}, "saturating repeat has the residue of INT64_MAX");
+    t.expectSetEq(BitLengthSet(kMax).repeatRange(2).modulo(8),
+                  {0, 7},
+                  "saturating repeatRange retains only exact residues");
+    t.expect(BitLengthSet(kMax).padToAlignment(8).is_aligned_at(8) == std::optional<bool>{false},
+             "saturated padding is not reported as aligned");
 }
 
-// is_aligned_at (exact, built on modulo) and value-set operator==/operator!=.
+// is_aligned_at and semantic relations are exact-or-refuse.
 void testAlignmentAndEquality(TestContext& t)
 {
     // is_aligned_at: tri-state — Some(true)/Some(false) are exact verdicts, nullopt is refusal.
@@ -576,7 +591,7 @@ void testAlignmentAndEquality(TestContext& t)
     // test has_value(), silently passing on a false verdict.
     const std::optional<bool> yes{true};
     const std::optional<bool> no{false};
-    const BitLengthSet byteAligned = BitLengthSet(8) + BitLengthSet(16) + BitLengthSet(ValueSet{0, 8, 16});
+    const BitLengthSet        byteAligned = BitLengthSet(8) + BitLengthSet(16) + BitLengthSet(ValueSet{0, 8, 16});
     t.expect(byteAligned.is_aligned_at(8) == yes, "all-multiple-of-8 set is byte-aligned");
     t.expect(byteAligned.is_aligned_at(4) == yes && byteAligned.is_aligned_at(1) == yes,
              "byte-aligned implies 4- and 1-aligned");
@@ -590,15 +605,26 @@ void testAlignmentAndEquality(TestContext& t)
     t.expect(!(BitLengthSet(16) + BitLengthSet(8).repeatRange(70000)).is_aligned_at(1000000007).has_value(),
              "undecidable alignment query refuses instead of guessing");
 
-    // operator== / operator!=: provable value-set equality.
-    t.expect(BitLengthSet(ValueSet{8, 16, 24}) == BitLengthSet(8).repeatRange(0) + BitLengthSet(ValueSet{8, 16, 24}),
+    const std::optional<bool> equal{true};
+    const std::optional<bool> unequal{false};
+    t.expect(BitLengthSet(ValueSet{8, 16, 24})
+                     .equalsExact(BitLengthSet(8).repeatRange(0) + BitLengthSet(ValueSet{8, 16, 24})) == equal,
              "identity + a set equals the set");
-    t.expect(BitLengthSet(8) + BitLengthSet(16) == BitLengthSet(16) + BitLengthSet(8), "operator+ commutes (==)");
-    t.expect((BitLengthSet(8) | BitLengthSet(8)) == BitLengthSet(8), "union with self equals self (==)");
-    t.expect(BitLengthSet(8) != BitLengthSet(16), "distinct singletons are unequal");
-    t.expect(BitLengthSet(ValueSet{8, 16}) != BitLengthSet(8), "different sets are unequal");
-    t.expect(BitLengthSet() == BitLengthSet(0), "default ctor equals {0}");
-    t.expect(!(BitLengthSet(8) == BitLengthSet(16)), "operator== is false for distinct sets");
+    t.expect((BitLengthSet(8) + BitLengthSet(16)).equalsExact(BitLengthSet(16) + BitLengthSet(8)) == equal,
+             "operator+ commutes");
+    t.expect((BitLengthSet(8) | BitLengthSet(8)).equalsExact(BitLengthSet(8)) == equal, "union with self equals self");
+    t.expect(BitLengthSet(8).equalsExact(BitLengthSet(16)) == unequal, "distinct singletons are unequal");
+    t.expect(BitLengthSet(ValueSet{8, 16}).equalsExact(BitLengthSet(8)) == unequal, "different sets are unequal");
+    t.expect(BitLengthSet().equalsExact(BitLengthSet(0)) == equal, "default ctor equals {0}");
+
+    const BitLengthSet undecidable = BitLengthSet(ValueSet{2, 5, 12}).repeat(4097);
+    const BitLengthSet sameValues  = BitLengthSet(ValueSet{2, 5, 12}).repeat(4097);
+    t.expect(undecidable.equalsExact(undecidable) == equal,
+             "self-equality is exact beyond all materialization budgets");
+    t.expect(undecidable.isSubsetOfExact(undecidable) == equal,
+             "self-subset is exact beyond all materialization budgets");
+    t.expect(!undecidable.equalsExact(sameValues).has_value(),
+             "independently-built equality refuses when no exact strategy decides it");
 }
 
 // Evaluation is memoized (shared DAGs are not re-walked exponentially) and iterative
@@ -728,9 +754,8 @@ void testDsdlCompositionPatterns(TestContext& t)
 
 // Spec (RunSet exactness contract): whenever runSet() returns a value it denotes EXACTLY S —
 // verified differentially against the reference model over a composed-operation battery — and
-// its count/membership/subset/equality closed forms agree with enumeration. Also: operator== is
-// exact beyond the expand() limit (formerly conservative there), and huge structured sets
-// evaluate in closed form without enumeration.
+// its count/membership/subset/equality closed forms agree with enumeration. Exact relations work
+// beyond the expand() limit, and huge structured sets evaluate in closed form without enumeration.
 void testRunSet(TestContext& t)
 {
     using llvmdsdl::RunSet;
@@ -748,8 +773,8 @@ void testRunSet(TestContext& t)
         cases.push_back(Case{std::move(b), std::move(r), std::move(name)});
     };
 
-    const std::vector<ValueSet> bases = {
-        {0}, {8}, {0, 8}, {1, 3}, {0, 1, 7, 8, 9}, {5, 8, 9, 11, 12, 43}, {8, 24}, {3, 9}};
+    const std::vector<ValueSet> bases =
+        {{0}, {8}, {0, 8}, {1, 3}, {0, 1, 7, 8, 9}, {5, 8, 9, 11, 12, 43}, {8, 24}, {3, 9}};
     for (const auto& base : bases)
     {
         const BitLengthSet b((ValueSet(base)));
@@ -757,7 +782,9 @@ void testRunSet(TestContext& t)
         for (const std::int64_t k : {0, 1, 2, 3, 5})
         {
             add(b.repeat(k), refRepeat(base, k), "repeat(" + std::to_string(k) + ") of " + setToString(base));
-            add(b.repeatRange(k), refRepeatRange(base, k), "repeatRange(" + std::to_string(k) + ") of " + setToString(base));
+            add(b.repeatRange(k),
+                refRepeatRange(base, k),
+                "repeatRange(" + std::to_string(k) + ") of " + setToString(base));
         }
         for (const std::int64_t a : {2, 3, 8})
         {
@@ -882,6 +909,48 @@ void testRunSet(TestContext& t)
         t.expect(!llvmdsdl::RunSet(8).repeatRange(std::numeric_limits<std::int64_t>::max()).has_value(),
                  "repeatRange at INT64_MAX refuses instead of overflowing the run count");
 
+        const auto negativeSingleton = llvmdsdl::RunSet(-3).repeatRange(3);
+        t.expect(negativeSingleton.has_value() && negativeSingleton->valid(),
+                 "negative singleton repeatRange returns a valid exact run");
+        if (negativeSingleton)
+        {
+            t.expectSetEq(negativeSingleton->materialize(16),
+                          {-9, -6, -3, 0},
+                          "negative singleton repeatRange is sorted and exact");
+        }
+
+        llvmdsdl::FlatSet<std::int64_t> signedExtremeValues;
+        signedExtremeValues.insert(std::numeric_limits<std::int64_t>::min());
+        signedExtremeValues.insert(1);
+        const auto signedExtreme = llvmdsdl::RunSet::fromValues(signedExtremeValues).repeatRange(2);
+        t.expect(!signedExtreme || signedExtreme->valid(),
+                 "signed extreme repeatRange either returns a valid exact set or refuses");
+
+        {
+            const std::int64_t              maxV = std::numeric_limits<std::int64_t>::max();
+            llvmdsdl::FlatSet<std::int64_t> spaced;
+            const std::vector<std::int64_t> sv{0, maxV - 1};
+            spaced.insert(sv.begin(), sv.end());
+            const auto residues = llvmdsdl::RunSet::fromValues(spaced).residues(maxV);
+            t.expectSetEq(residues, {0, maxV - 1}, "residues near INT64_MAX avoid signed overflow");
+
+            const auto full = llvmdsdl::RunSet(1).repeatRange(maxV - 1);
+            t.expect(full.has_value(), "repeatRange up to INT64_MAX - 1 is representable");
+            if (full)
+            {
+                const auto withMax = llvmdsdl::RunSet::unite(*full, llvmdsdl::RunSet(maxV));
+                t.expect(withMax.has_value(), "coalescing full int64 span with adjacent singleton succeeds");
+                if (withMax)
+                {
+                    t.expect(withMax->valid() && withMax->contains(0) && withMax->contains(maxV - 1) &&
+                                 withMax->contains(maxV) && !withMax->count().has_value(),
+                             "coalescing declines an unrepresentable merged run count");
+                    t.expect(withMax->equals(*withMax),
+                             "RunSet equality remains exact when total cardinality exceeds int64");
+                }
+            }
+        }
+
         // A run legally ending at INT64_MAX, pushed through the STRUCTURAL unite path (the
         // set is too large for the enumeration shortcut): the overlap subtraction's tail probe
         // and coalesce's adjacency probes compute last() + stride, which overflows at the
@@ -896,7 +965,7 @@ void testRunSet(TestContext& t)
             }
             llvmdsdl::FlatSet<std::int64_t> nearMaxSet;
             nearMaxSet.insert(nearMax.begin(), nearMax.end());
-            const auto big = llvmdsdl::RunSet::fromValues(nearMaxSet);
+            const auto                      big = llvmdsdl::RunSet::fromValues(nearMaxSet);
             llvmdsdl::FlatSet<std::int64_t> pairSet;
             const std::vector<std::int64_t> pv{maxV - 4, maxV};
             pairSet.insert(pv.begin(), pv.end());
@@ -904,24 +973,23 @@ void testRunSet(TestContext& t)
             t.expect(merged.has_value(), "structural unite at the int64 ceiling succeeds");
             if (merged)
             {
-                t.expect(merged->valid() && merged->count().value_or(0) == 200002 &&
-                             merged->contains(maxV) && merged->contains(maxV - 4) && merged->max() == maxV,
+                t.expect(merged->valid() && merged->count().value_or(0) == 200002 && merged->contains(maxV) &&
+                             merged->contains(maxV - 4) && merged->max() == maxV,
                          "overlap subtraction and coalescing at INT64_MAX stay exact and representable");
             }
         }
     }
 
-    // operator== is now exact past the expand() limit: two structurally different constructions
-    // of the same 50001-element set compare equal (formerly conservatively unequal), and a
-    // genuinely different set compares unequal.
+    // Exact relations work past the expansion limit on structured sets.
     {
         const BitLengthSet a = BitLengthSet(8).repeatRange(50000);
         const BitLengthSet b = (BitLengthSet(0) | BitLengthSet(8)).repeat(50000);
-        t.expect(a == b, "operator== exact on equal 50001-element sets (mixed constructions)");
+        t.expect(a.equalsExact(b) == std::optional<bool>{true},
+                 "equalsExact decides equal 50001-element sets (mixed constructions)");
         const BitLengthSet c = a + BitLengthSet(4);
-        t.expect(a != c, "operator!= on shifted 50001-element set");
+        t.expect(a.equalsExact(c) == std::optional<bool>{false}, "equalsExact rejects shifted 50001-element set");
         const BitLengthSet d = BitLengthSet(8).repeatRange(50001);
-        t.expect(a != d, "operator!= on off-by-one-count huge sets");
+        t.expect(a.equalsExact(d) == std::optional<bool>{false}, "equalsExact rejects off-by-one-count huge set");
     }
 }
 
