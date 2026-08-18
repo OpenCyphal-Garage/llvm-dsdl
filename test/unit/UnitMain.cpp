@@ -40,6 +40,7 @@ bool runHelperBindingRenderTests();
 bool runHelperBindingNamingTests();
 bool runRuntimeHelperBindingsTests();
 bool runNamingPolicyTests();
+bool runNamingGoldenTests();
 bool runRuntimeLoweredPlanTests();
 bool runRuntimeLoweredOrderingTests();
 bool runHelperSymbolResolverTests();
@@ -101,6 +102,7 @@ int main()
     ok      = runHelperBindingNamingTests() && ok;
     ok      = runRuntimeHelperBindingsTests() && ok;
     ok      = runNamingPolicyTests() && ok;
+    ok      = runNamingGoldenTests() && ok;
     ok      = runRuntimeLoweredPlanTests() && ok;
     ok      = runRuntimeLoweredOrderingTests() && ok;
     ok      = runHelperSymbolResolverTests() && ok;

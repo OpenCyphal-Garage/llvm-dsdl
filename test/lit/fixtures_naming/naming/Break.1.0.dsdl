@@ -1,0 +1,4 @@
+# A type whose own name is a keyword in every target: exercises the type-name and file-stem
+# escapes rather than the field escape.
+uint8 value
+@sealed
