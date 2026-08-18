@@ -9,7 +9,7 @@ shows a case where it does not agree, and a whole type is silently lost.
 This note specifies a single stropping engine: one pipeline, one table per language, and collision
 detection that consumes the engine rather than approximating it.
 
-Status: proposed, with §7 settled. Phase 0 (§5) has landed; nothing else has.
+Status: proposed, with §7 settled. Phases 0, 1 and 2 (§5) have landed; nothing else has.
 
 ---
 
@@ -102,7 +102,8 @@ different door — which is the argument for §4.5 rather than for another patch
 
 **3.2 Policy is stated in three places.** The keyword tables and the escape live in
 `NamingPolicy.cpp`; `CEmitter.cpp:75` and `CppEmitter.cpp:76` each carry a private
-`sanitizeMacroToken`; `Discovery.cpp` carries the fold. Only `GoEmitter.cpp` reserves the names its
+`sanitizeMacroToken` (phase 2 found a third in `CppObjectAbiEmitter.cpp` and two more inline in the
+header-guard builders); `Discovery.cpp` carries the fold. Only `GoEmitter.cpp` reserves the names its
 own generated code claims (`Serialize`, `Deserialize`); the other five backends have the same
 hazard and no guard.
 
@@ -297,8 +298,8 @@ Each phase is independently shippable and leaves the tree green.
 | Phase | Work | Observable change |
 |---|---|---|
 | 0 | Freeze current output as a golden map over an adversarial DSDL corpus — **done** | none |
-| 1 | Add roles, scopes, and the policy struct; port existing behavior verbatim | none — golden map unchanged |
-| 2 | Route all six emitters through `NamingScope`; delete both `sanitizeMacroToken` copies | none |
+| 1 | Add roles, scopes, and the policy struct; port existing behavior verbatim — **done** | none — golden map byte-identical |
+| 2 | Route all six emitters through `NamingScope`; delete the `sanitizeMacroToken` copies — **done** | none — generated output byte-identical |
 | 3 | Discovery consumes the engine | §3.1 becomes an error instead of a lost type |
 | 4 | Reserved patterns, `predeclared`, `runtimeOwned` per language | some identifiers gain a `_`; golden map updated once, deliberately |
 | 5 | Manifest `names` section, remark, LSP hover, Python packaging note (§7.2) | additive |
@@ -313,8 +314,53 @@ Phase 0 landed as two freezes at the two layers a refactor can move independentl
 |---|---|---|
 | `test/unit/golden/naming-map.txt` | the shared helpers, exhaustively over an adversarial name corpus, plus a `MISSED` inventory of collisions nothing currently guards | `LLVMDSDL_UPDATE_NAMING_GOLDEN=1 <build>/test/unit/llvmdsdl-unit-tests` |
 | `test/lit/naming-stropping.txt` over `test/lit/fixtures_naming/` | what the six emitters actually write, which is the layer phase 2 rewires | edit the expectations by hand |
+| `test/unit/golden/naming-roles.txt` | the role table, the per-role projections, and scope repair (added in phase 1) | same command as the map |
 
 `grep MISSED test/unit/golden/naming-map.txt` is the phase 3 worklist.
+
+Phase 1 added the engine without moving a single generated identifier. `NamingPolicy.cpp` now holds
+one pipeline — case projection, escape, strop, upper — and the four case-explicit helpers the
+emitters still call are three-line wrappers around it, so there is one implementation rather than
+four. Two things make the port checkable rather than asserted:
+
+- `test/unit/golden/naming-map.txt` is byte-identical to what phase 0 froze.
+- `test/unit/golden/naming-roles.txt` records the role table, and `NamingPolicyTests.cpp` asserts
+  every cell of it against the call site it was taken from — Go fields against `toExportedIdent`,
+  C constants against `sanitizeMacroToken`, C file stems against the raw short name, and so on.
+  The table cannot drift from the emitters while phase 2 is pending.
+
+That table is also where the §4.4 `escape`/`strop` columns first earn their keep: they are `no` for
+exactly two cells — C/C++ macro tokens (escaped, never stropped) and C/C++ header stems (neither).
+Those two `no`s are the phase 4 worklist stated as data.
+
+Phase 2 moved all six emitters onto the engine — about ninety call sites — and every one of the 82
+files the fixture generates came out byte-for-byte identical, checked after each emitter in turn
+rather than once at the end. What went away:
+
+- all three `sanitizeMacroToken` copies — §3.2 counted two, but `CppObjectAbiEmitter.cpp` carried a
+  third — plus the two inline header-guard loops that were a fourth and fifth spelling of the
+  same transform, all replaced by the `MacroName` role;
+- `toExportedIdent` in the Go emitter, whose force-upper-case of the first character could never
+  fire — the Pascal projection's first character is always an upper-cased alphanumeric or the `_`
+  inserted for a leading digit;
+- `CodegenIdentifierAllocator` and `codegenUpperSnakeAllocator`, superseded by `NamingScope`;
+- every call to a case-explicit projection outside `NamingPolicy.cpp`. Emitters now name a role, not
+  a case, so the policy lives in one table instead of at ninety call sites.
+
+Four calls to `codegenSanitizeIdentifier` remain in the emitters, and they are deliberate: the
+TypeScript module alias comes from `--ts-module`, and the Python serializer symbols are assembled
+from already-projected parts. Those are tokens the generator was handed or built, not DSDL names
+being named, so giving them a role would hand them a case projection they must not have. Each is
+commented in place.
+
+The §4.1 rule that no emitter calls a projection directly is now enforceable by `grep` for
+`codegenTo*CaseIdentifier` outside `NamingPolicy.cpp`, which returns nothing.
+
+One divergence surfaced and is pinned rather than smoothed over: on the empty name the pipeline
+substitutes `_` while the emitter-private macro and stem paths return the empty string. The empty
+name cannot come from DSDL, so nothing reachable changes — but phase 2 deletes those call sites, and
+when it does the pipeline's answer wins. `runEmptyNameDivergenceTest` exists so that reads as
+intended rather than as a regression.
 
 ---
 

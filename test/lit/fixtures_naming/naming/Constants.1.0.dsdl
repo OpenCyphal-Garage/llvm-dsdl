@@ -1,0 +1,8 @@
+# Constant names exercise a projection the fields do not: C and C++ build preprocessor tokens by
+# upper-casing the raw name, while the other four fold to UPPER_SNAKE_CASE first. `fooBar` and
+# `FOO_BAR` therefore collide in four backends and not in the other two.
+uint8 value
+uint8 FOO_BAR = 1
+uint8 fooBar = 2
+uint8 break = 3
+@sealed

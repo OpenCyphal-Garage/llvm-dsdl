@@ -73,26 +73,6 @@ class DiagnosticEngine;
 namespace
 {
 
-std::string sanitizeMacroToken(std::string token)
-{
-    for (char& c : token)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    if (!token.empty() && std::isdigit(static_cast<unsigned char>(token.front())))
-    {
-        token.insert(token.begin(), '_');
-    }
-    return token;
-}
-
 std::string headerFileName(const DiscoveredDefinition& info)
 {
     return llvm::formatv("{0}_{1}_{2}.hpp", info.shortName, info.majorVersion, info.minorVersion).str();
@@ -102,18 +82,7 @@ std::string headerGuard(const DiscoveredDefinition& info)
 {
     std::string g = "LLVMDSDL_CPP_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
                     std::to_string(info.minorVersion) + "_HPP";
-    for (char& c : g)
-    {
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    return g;
+    return codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::MacroName, g);
 }
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
@@ -158,7 +127,7 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
         {
             out += "::";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component);
     }
     return out;
 }
@@ -171,7 +140,8 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
     }
     for (const auto& component : components)
     {
-        out << "namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component) << " {\n";
+        out << "namespace "
+            << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) << " {\n";
     }
     out << "\n";
 }
@@ -185,7 +155,8 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
     out << "\n";
     for (auto it = components.rbegin(); it != components.rend(); ++it)
     {
-        out << "} // namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, *it) << "\n";
+        out << "} // namespace "
+            << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, *it) << "\n";
     }
 }
 
@@ -208,8 +179,12 @@ public:
         return emitDeprecationAttributes_;
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
@@ -231,8 +206,9 @@ public:
 
     std::string cppTypeName(const DiscoveredDefinition& info) const
     {
-        std::string out = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, info.shortName);
-        const auto  it  = versionCountByFullName_.find(info.fullName);
+        std::string out =
+            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, info.shortName);
+        const auto it = versionCountByFullName_.find(info.fullName);
         if (it != versionCountByFullName_.end() && it->second > 1U)
         {
             out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
@@ -252,7 +228,7 @@ public:
             return cppTypeName(*def);
         }
 
-        std::string out = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, ref.shortName);
+        std::string out = codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, ref.shortName);
         out += "_" + std::to_string(ref.majorVersion) + "_" + std::to_string(ref.minorVersion);
         return out;
     }
@@ -412,7 +388,9 @@ public:
                         const auto* const field = fieldStep.field;
                         emitSerializeValue(out,
                                            field->resolvedType,
-                                           "obj->" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
+                                           "obj->" + codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                                                              IdentifierRole::FieldName,
+                                                                              field->name),
                                            1,
                                            fieldStep.arrayLengthPrefixBits,
                                            fieldStep.fieldFacts);
@@ -515,8 +493,9 @@ public:
                         const auto* const field = fieldStep.field;
                         emitDeserializeValue(out,
                                              field->resolvedType,
-                                             "out_obj->" +
-                                                 codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
+                                             "out_obj->" + codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                                                                    IdentifierRole::FieldName,
+                                                                                    field->name),
                                              1,
                                              fieldStep.arrayLengthPrefixBits,
                                              fieldStep.fieldFacts);
@@ -759,9 +738,8 @@ private:
             owner_.trace(EmitTraceOp::StoreTag);
             emitLine(out_,
                      indent_,
-                     objRef_ + "->_tag_ = static_cast<" +
-                         unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + ">(" + tagHelper + "(" + rawTag +
-                         "));");
+                     objRef_ + "->_tag_ = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) +
+                         ">(" + tagHelper + "(" + rawTag + "));");
         }
 
         void spellDeserializeValidateTag() override
@@ -799,7 +777,10 @@ private:
                          "->_tag_ == " + std::to_string(optionIndex) + "U) {");
         }
 
-        void spellEndCase() override { emitLine(out_, indent_, "}"); }
+        void spellEndCase() override
+        {
+            emitLine(out_, indent_, "}");
+        }
 
         void spellBadTagDefault() override
         {
@@ -841,8 +822,9 @@ private:
         {
             const auto& field = *step.field;
             cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
-                                                const auto member =
-                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+                                                const auto member = codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                                                                             IdentifierRole::FieldName,
+                                                                                             field.name);
                                                 emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
                                                 emitSerializeValue(out,
                                                                    field.resolvedType,
@@ -871,8 +853,9 @@ private:
         {
             const auto& field = *step.field;
             cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
-                                                const auto member =
-                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+                                                const auto member = codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                                                                             IdentifierRole::FieldName,
+                                                                                             field.name);
                                                 emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
                                                 emitDeserializeValue(out,
                                                                      field.resolvedType,
@@ -927,8 +910,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarBool, 1);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " + expr + ");");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " +
+                             expr + ");");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -945,9 +928,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
-                             std::to_string(step.bits) + "U);");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
+                             valueExpr + ", " + std::to_string(step.bits) + "U);");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -964,9 +946,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
-                             std::to_string(step.bits) + "U);");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
+                             valueExpr + ", " + std::to_string(step.bits) + "U);");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -1031,8 +1012,8 @@ private:
                              "(buffer, capacity_bytes, offset_bits, " + std::to_string(step.bits) + "U));");
                 emitLine(out_,
                          indent_,
-                         expr + " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) +
-                             ">(" + helper + "(" + raw + "));");
+                         expr + " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + ">(" +
+                             helper + "(" + raw + "));");
                 owner_.trace(EmitTraceOp::Advance, step.bits);
                 emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
                 break;
@@ -1106,8 +1087,7 @@ private:
                                        const HelperBindingDirection direction) override
         {
             // D3: fixed bool arrays are bit-copied wholesale instead of looping.
-            if (step.kind != FieldStepKind::FixedArray ||
-                step.children.front().kind != FieldStepKind::ScalarBool)
+            if (step.kind != FieldStepKind::FixedArray || step.children.front().kind != FieldStepKind::ScalarBool)
             {
                 return false;
             }
@@ -1147,8 +1127,8 @@ private:
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             emitLine(out_,
                      indent_,
-                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
-                         expr + ".size()));");
+                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" + expr +
+                         ".size()));");
             emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
             emitLine(out_, indent_ + 1, "return " + validateRc + ";");
             emitLine(out_, indent_, "}");
@@ -1244,9 +1224,8 @@ private:
         std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
             const auto index = owner_.nextName("index");
-            const auto bound = step.kind == FieldStepKind::VariableArray
-                                   ? (expr + ".size()")
-                                   : std::to_string(step.capacity) + "U";
+            const auto bound =
+                step.kind == FieldStepKind::VariableArray ? (expr + ".size()") : std::to_string(step.capacity) + "U";
             owner_.trace(EmitTraceOp::ElemLoop);
             emitLine(out_,
                      indent_,
@@ -1293,8 +1272,7 @@ private:
                 return;
             }
 
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
             auto       sizeVar    = owner_.nextName("size_bytes");
             auto       errVar     = owner_.nextName("err");
@@ -1306,8 +1284,7 @@ private:
 
             emitLine(out_,
                      indent_,
-                     "std::size_t " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) +
-                         "U;");
+                     "std::size_t " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) + "U;");
             if (!step.type.compositeSealed)
             {
                 const auto remaining = owner_.nextName("remaining");
@@ -1320,8 +1297,8 @@ private:
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
-                             sizeVar + "), static_cast<std::int64_t>(" + remaining + "));");
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
+                             "), static_cast<std::int64_t>(" + remaining + "));");
                 emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + validateRc + ";");
                 emitLine(out_, indent_, "}");
@@ -1360,8 +1337,7 @@ private:
                 return;
             }
 
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
             auto       sizeVar    = owner_.nextName("size_bytes");
             auto       errVar     = owner_.nextName("err");
@@ -1386,8 +1362,8 @@ private:
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
-                             sizeVar + "), static_cast<std::int64_t>(" + remVar + "));");
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
+                             "), static_cast<std::int64_t>(" + remVar + "));");
                 emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + validateRc + ";");
                 emitLine(out_, indent_, "}");
@@ -1492,7 +1468,8 @@ void emitArrayMetadata(std::ostringstream& out, const std::string& typeName, con
         {
             continue;
         }
-        const auto fieldName = sanitizeMacroToken(field.name);
+        const auto fieldName =
+            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::MacroName, field.name);
         emitLine(out,
                  1,
                  "static constexpr std::size_t " + fieldName +
@@ -1530,15 +1507,15 @@ void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName
     out << "\n";
 }
 
-void emitSectionStruct(std::ostringstream&    out,
-                       const std::string&     typeName,
-                       const std::string&     fullName,
-                       std::uint32_t          majorVersion,
-                       std::uint32_t          minorVersion,
-                       const SemanticSection& section,
-                       const EmitterContext&  ctx,
-                       const CppFlavor        flavor,
-                       const AttachedDoc&     typeDoc,
+void emitSectionStruct(std::ostringstream&              out,
+                       const std::string&               typeName,
+                       const std::string&               fullName,
+                       std::uint32_t                    majorVersion,
+                       std::uint32_t                    minorVersion,
+                       const SemanticSection&           section,
+                       const EmitterContext&            ctx,
+                       const CppFlavor                  flavor,
+                       const AttachedDoc&               typeDoc,
                        const LoweredSectionFacts* const sectionFacts)
 {
     emitAttachedDocCpp(out, 0, typeDoc);
@@ -1559,7 +1536,7 @@ void emitSectionStruct(std::ostringstream&    out,
             continue;
         }
 
-        const auto member   = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+        const auto member = codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
         const auto baseType = cppTypeFromFieldType(field.resolvedType, ctx);
         emitAttachedDocCpp(out, 1, field.doc);
 
@@ -1666,14 +1643,16 @@ void emitSectionStruct(std::ostringstream&    out,
         }
         for (const auto& member : compositeFixedArrayMembers)
         {
-            const auto i = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, member + "_index");
+            const auto i =
+                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
             emitLine(out, 2, "}");
         }
         for (const auto& member : compositeVariableArrayMembers)
         {
-            const auto i = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, member + "_index");
+            const auto i =
+                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
             emitLine(out, 2, "}");
@@ -1703,9 +1682,10 @@ void emitSectionStruct(std::ostringstream&    out,
              1,
              "static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                             ? sectionFacts->zohAliasReason
+                                             : "not-proven";
     emitLine(out,
              1,
              std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
@@ -1728,7 +1708,9 @@ void emitSectionStruct(std::ostringstream&    out,
         emitAttachedDocCpp(out, 1, c.doc);
         emitLine(out,
                  1,
-                 "static constexpr auto " + sanitizeMacroToken(c.name) + " = " + valueToCppExpr(c.type, c.value) + ";");
+                 "static constexpr auto " +
+                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, c.name) +
+                     " = " + valueToCppExpr(c.type, c.value) + ";");
     }
 
     emitArrayMetadata(out, typeName, section);
@@ -1770,7 +1752,9 @@ void emitSectionStruct(std::ostringstream&    out,
              1,
              "LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
              "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
-    emitLine(out, 2, "return " + typeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    emitLine(out,
+             2,
+             "return " + typeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
@@ -1815,7 +1799,9 @@ void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
                  "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                  "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
     emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
+    emitLine(out,
+             1,
+             "if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
     emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     emitLine(out, 1, "}");
     emitLine(out, 1, "*out_view_bytes = nullptr;");
@@ -1891,11 +1877,15 @@ void emitSection(std::ostringstream&              out,
                       section,
                       ctx,
                       flavor,
-                      docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion),
+                      docWithDeprecationNotice(typeDoc,
+                                               section.deprecated,
+                                               def.info.fullName,
+                                               def.info.majorVersion,
+                                               def.info.minorVersion),
                       sectionFacts);
 
-    const auto canonicalSectionName = fullName + "." + std::to_string(def.info.majorVersion) + "." +
-                                      std::to_string(def.info.minorVersion);
+    const auto canonicalSectionName =
+        fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
     FunctionBodyEmitter bodyEmitter(ctx, flavor);
     ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
     bodyEmitter.emitSerializeFunction(out, typeName, section, sectionFacts);
@@ -1910,8 +1900,7 @@ llvm::Expected<std::string> loadCRuntimeHeader()
     {
         return std::string(*data);
     }
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "embedded runtime source missing: dsdl_runtime.h");
+    return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: dsdl_runtime.h");
 }
 
 llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
@@ -2022,7 +2011,8 @@ std::string renderHeader(const SemanticDefinition& def,
                  "constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestType + "::ZOH_ALIAS_ELIGIBLE;");
         emitLine(out,
                  0,
-                 "constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType + "::ZOH_ALIAS_REASON;");
+                 "constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType +
+                     "::ZOH_ALIAS_REASON;");
         out << "\n";
 
         emitLine(out,

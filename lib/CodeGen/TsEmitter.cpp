@@ -95,8 +95,12 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     ///
@@ -152,8 +156,7 @@ public:
     {
         if (const auto* def = find(ref))
         {
-            if (const auto alias = importAliases_.find(importAliasKey(def->info));
-                alias != importAliases_.end())
+            if (const auto alias = importAliases_.find(importAliasKey(def->info)); alias != importAliases_.end())
             {
                 return alias->second;
             }
@@ -170,8 +173,7 @@ public:
     /// @brief Identity of a definition for alias bookkeeping: unique across namespaces and versions.
     static std::string importAliasKey(const DiscoveredDefinition& info)
     {
-        return info.fullName + ":" + std::to_string(info.majorVersion) + "." +
-               std::to_string(info.minorVersion);
+        return info.fullName + ":" + std::to_string(info.majorVersion) + "." + std::to_string(info.minorVersion);
     }
 
     /// @brief Installs the alias table for the file about to be emitted, replacing any previous one.
@@ -278,6 +280,8 @@ std::string moduleAliasFromPath(const std::string& modulePath)
             alias.push_back('_');
         }
     }
+    // Not a role: the alias comes from --ts-module, so it is a token this generator was handed
+    // rather than a DSDL name, and must not pick up a role's case projection.
     return codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, alias.empty() ? "module" : alias);
 }
 
@@ -289,20 +293,24 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    const auto constIdents  = codegenUpperSnakeAllocator(CodegenNamingLanguage::TypeScript, constNames);
-    const auto prefixupper  = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, prefix);
+    NamingScope constScope(CodegenNamingLanguage::TypeScript);
+    for (const auto& name : constNames)
+    {
+        (void) constScope.declare(IdentifierRole::ConstantName, name);
+    }
+    const auto prefixupper =
+        codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(out, 0, constant.doc);
-        const auto constName = prefixupper + "_" + constIdents.get(constant.name);
+        const auto constName = prefixupper + "_" + constScope.get(IdentifierRole::ConstantName, constant.name);
         emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.type, constant.value) + ";");
     }
 }
 
 std::string tsFieldIdentBase(const llvm::StringRef name)
 {
-    return codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
-                                     codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, name));
+    return codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, name);
 }
 
 /// @brief Collision-free property names for one section's fields.
@@ -310,7 +318,7 @@ std::string tsFieldIdentBase(const llvm::StringRef name)
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
 /// object type would declare the same property twice and the (de)serializer would read/write the
 /// wrong one. Built from `section.fields` (declaration order) so every emission site agrees.
-CodegenIdentifierAllocator makeTsFieldIdents(const SemanticSection& section)
+NamingScope makeTsFieldIdents(const SemanticSection& section)
 {
     std::vector<std::string> names;
     for (const auto& field : section.fields)
@@ -320,7 +328,12 @@ CodegenIdentifierAllocator makeTsFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    return CodegenIdentifierAllocator(names, [](llvm::StringRef name) { return tsFieldIdentBase(name); });
+    NamingScope scope(CodegenNamingLanguage::TypeScript);
+    for (const auto& name : names)
+    {
+        (void) scope.declare(IdentifierRole::FieldName, name);
+    }
+    return scope;
 }
 
 void emitDeprecationJsDocTs(std::ostringstream& out,
@@ -364,7 +377,7 @@ void emitStructSectionType(std::ostringstream&    out,
     emitAttachedDocTs(out, 0, typeDoc);
     emitDeprecationJsDocTs(out, deprecated, fullName, majorVersion, minorVersion);
     emitLine(out, 0, "export interface " + typeName + " {");
-    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
+    const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -372,7 +385,7 @@ void emitStructSectionType(std::ostringstream&    out,
             continue;
         }
         emitAttachedDocTs(out, 1, field.doc);
-        const auto fieldName = fieldIdents.get(field.name);
+        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
         emitLine(out, 1, fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
     }
     emitLine(out, 0, "}");
@@ -407,12 +420,12 @@ void emitUnionSectionType(std::ostringstream&    out,
     emitAttachedDocTs(out, 0, typeDoc);
     emitDeprecationJsDocTs(out, section.deprecated, fullName, majorVersion, minorVersion);
     emitLine(out, 0, "export type " + typeName + " =");
-    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
+    const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (std::size_t i = 0; i < options.size(); ++i)
     {
         const auto* field = options[i];
         emitAttachedDocTs(out, 0, field->doc);
-        const auto fieldName = fieldIdents.get(field->name);
+        const auto         fieldName = fieldIdents.get(IdentifierRole::FieldName, field->name);
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
                 << tsFieldType(field->resolvedType, ctx) << "; }";
@@ -686,9 +699,7 @@ public:
         {
             ctx_.trace(EmitTraceOp::ValidateTag);
             emitLine(out_, 1, "if (!" + helperNames_.unionTagValidate + "(tag)) {");
-            emitLine(out_,
-                     2,
-                     "throw new Error(\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "\" + tag);");
+            emitLine(out_, 2, "throw new Error(\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "\" + tag);");
             emitLine(out_, 1, "}");
         }
     }
@@ -724,8 +735,7 @@ public:
             emitLine(out_, 1, "if (!" + helperNames_.unionTagValidate + "(tag)) {");
             emitLine(out_,
                      2,
-                     "throw new Error(\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() +
-                         "\" + tag);");
+                     "throw new Error(\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "\" + tag);");
             emitLine(out_, 1, "}");
         }
     }
@@ -762,15 +772,19 @@ public:
     {
         ctx_.trace(EmitTraceOp::DefaultBadTag);
         emitLine(out_, 1, "default:");
-        emitLine(out_,
-                 2,
-                 "throw new Error(\"" + badTagDiagnosticPrefix_ + "\" + tag);");
+        emitLine(out_, 2, "throw new Error(\"" + badTagDiagnosticPrefix_ + "\" + tag);");
     }
 
-    void spellEndDispatch() override { emitLine(out_, 1, "}"); }
+    void spellEndDispatch() override
+    {
+        emitLine(out_, 1, "}");
+    }
 
     /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
-    void setBadTagDiagnosticPrefix(std::string prefix) { badTagDiagnosticPrefix_ = std::move(prefix); }
+    void setBadTagDiagnosticPrefix(std::string prefix)
+    {
+        badTagDiagnosticPrefix_ = std::move(prefix);
+    }
 
 private:
     std::ostringstream&              out_;
@@ -806,7 +820,10 @@ public:
     }
 
     /// @brief Sets the render direction (padding and store style branch on it).
-    void setDirection(const HelperBindingDirection direction) { direction_ = direction; }
+    void setDirection(const HelperBindingDirection direction)
+    {
+        direction_ = direction;
+    }
 
     void spellPad(const FieldEmitStep& step) override
     {
@@ -871,8 +888,7 @@ public:
             ctx_.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
             emitLine(out_,
                      indent_,
-                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating +
-                         ");");
+                     "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + scalarExpr + ", " + saturating + ");");
             break;
         }
         default:
@@ -955,9 +971,7 @@ public:
         const auto  fieldArr = field.fieldName + "Array";
         emitLine(out_, indent_, "const " + fieldArr + " = " + expr + ";");
         ctx_.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-        emitLine(out_,
-                 indent_,
-                 "if (!Array.isArray(" + fieldArr + ") || " + fieldArr + ".length !== " + cap + ") {");
+        emitLine(out_, indent_, "if (!Array.isArray(" + fieldArr + ") || " + fieldArr + ".length !== " + cap + ") {");
         emitLine(out_,
                  indent_ + 1,
                  "throw new Error(\"" +
@@ -988,8 +1002,7 @@ public:
             emitLine(out_,
                      indent_ + 1,
                      "throw new Error(\"" +
-                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) +
-                         "\");");
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) + "\");");
             emitLine(out_, indent_, "}");
         }
         else
@@ -998,8 +1011,7 @@ public:
             emitLine(out_,
                      indent_ + 1,
                      "throw new Error(\"" +
-                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) +
-                         "\");");
+                         codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, unionContext_) + "\");");
             emitLine(out_, indent_, "}");
         }
         std::string prefixExpr = fieldArr + ".length";
@@ -1028,8 +1040,7 @@ public:
         ctx_.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
         emitLine(out_,
                  indent_,
-                 "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + prefixBits +
-                     "));");
+                 "const " + rawLen + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + prefixBits + "));");
         ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
         emitLine(out_, indent_, "offsetBits += " + prefixBits + ";");
         const auto normalizedLen = field.fieldName + "Length";
@@ -1080,8 +1091,8 @@ public:
         (void) expr;
         const auto& field    = operation_.body.field;
         const auto  fieldArr = field.fieldName + "Array";
-        const auto  bound    = step.kind == FieldStepKind::VariableArray ? fieldArr + ".length"
-                                                                         : std::to_string(field.arrayCapacity);
+        const auto  bound =
+            step.kind == FieldStepKind::VariableArray ? fieldArr + ".length" : std::to_string(field.arrayCapacity);
         ctx_.trace(EmitTraceOp::ElemLoop);
         emitLine(out_, indent_, "for (let i = 0; i < " + bound + "; ++i) {");
         ++indent_;
@@ -1206,8 +1217,8 @@ void emitTsUnionSerializeCaseBody(std::ostringstream&               out,
     emitLine(out, 2, "if (optionValue === undefined) {");
     emitLine(out,
              3,
-             "throw new Error(\"" +
-                 codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\");");
+             "throw new Error(\"" + codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) +
+                 "\");");
     emitLine(out, 2, "}");
     emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option", ctx);
     assert(scriptedField.serializeSteps.has_value());
@@ -1231,13 +1242,8 @@ void emitTsUnionDeserializeCaseBody(std::ostringstream&               out,
     assert(scriptedField.deserializeSteps.has_value());
     TsFieldSpelling spelling(out, ctx, scriptedField, 2, /*unionContext=*/true);
     spelling.setDirection(HelperBindingDirection::Deserialize);
-    renderFieldSteps(*scriptedField.deserializeSteps,
-                     "optionValue",
-                     HelperBindingDirection::Deserialize,
-                     spelling);
-    emitLine(out,
-             2,
-             "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
+    renderFieldSteps(*scriptedField.deserializeSteps, "optionValue", HelperBindingDirection::Deserialize, spelling);
+    emitLine(out, 2, "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
 }
 
 /// @brief Canonical (backend-independent) DSDL section label for emit-order trace segments.
@@ -1274,12 +1280,12 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
     {
         return operationPlan.takeError();
     }
-    const CodegenIdentifierAllocator fieldIdents = makeTsFieldIdents(section);
+    const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
-        field.fieldName          = fieldIdents.get(semanticName);
+        field.fieldName          = fieldIdents.get(IdentifierRole::FieldName, semanticName);
     }
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
@@ -1337,10 +1343,10 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
             cases.reserve(operationPlan->fields.size());
             for (const auto& scriptedField : operationPlan->fields)
             {
-                cases.push_back(UnionCaseRender{scriptedField.body.field.unionOptionIndex,
-                                                [&out, &ctx, &scriptedField]() {
-                                                    emitTsUnionSerializeCaseBody(out, ctx, scriptedField);
-                                                }});
+                cases.push_back(
+                    UnionCaseRender{scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
+                                        emitTsUnionSerializeCaseBody(out, ctx, scriptedField);
+                                    }});
             }
             renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
         }
@@ -1496,9 +1502,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             {
                 if (const auto* referenced = ctx.find(ref))
                 {
-                    auto& bucket = byShortName[ctx.typeName(referenced->info)];
-                    const auto key = EmitterContext::importAliasKey(referenced->info);
-                    const bool seen = std::any_of(bucket.begin(), bucket.end(), [&](const auto* other) {
+                    auto&      bucket = byShortName[ctx.typeName(referenced->info)];
+                    const auto key    = EmitterContext::importAliasKey(referenced->info);
+                    const bool seen   = std::any_of(bucket.begin(), bucket.end(), [&](const auto* other) {
                         return EmitterContext::importAliasKey(*other) == key;
                     });
                     if (!seen)
@@ -1541,7 +1547,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     std::map<std::string, std::set<std::pair<std::string, std::string>>> importsByModule;
-    const auto                                   addSectionImports = [&](const SemanticSection& section) {
+    const auto addSectionImports = [&](const SemanticSection& section) {
         const auto dependencies = collectCompositeDependencies(section, def.info);
         const auto imports      = projectCompositeImports(
             dependencies,
@@ -1552,8 +1558,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             std::string original = importSpec.typeName;
             for (const auto& ref : dependencies)
             {
-                if (const auto* referenced = ctx.find(ref); referenced != nullptr &&
-                    ctx.typeName(ref) == importSpec.typeName)
+                if (const auto* referenced = ctx.find(ref);
+                    referenced != nullptr && ctx.typeName(ref) == importSpec.typeName)
                 {
                     original = ctx.typeName(referenced->info);
                     break;
@@ -1569,7 +1575,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     std::map<std::string, std::set<std::pair<std::string, std::string>>> runtimeImportsByModule;
-    const auto                                   addRuntimeImportsForPlan = [&](const RuntimeSectionPlan* const plan) {
+    const auto addRuntimeImportsForPlan = [&](const RuntimeSectionPlan* const plan) {
         if (plan == nullptr)
         {
             return;
@@ -1585,14 +1591,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             {
                 continue;
             }
-            const auto modulePath = relativeImportPath(ownerPath, targetPath);
-            const auto localName  = compositeTypeName(field, ctx);
-            const auto* referenced = ctx.find(*field.compositeType);
-            const auto originalName = (referenced != nullptr) ? ctx.typeName(referenced->info) : localName;
+            const auto  modulePath   = relativeImportPath(ownerPath, targetPath);
+            const auto  localName    = compositeTypeName(field, ctx);
+            const auto* referenced   = ctx.find(*field.compositeType);
+            const auto  originalName = (referenced != nullptr) ? ctx.typeName(referenced->info) : localName;
             runtimeImportsByModule[modulePath].emplace(tsRuntimeSerializeFn(originalName),
-                                                      tsRuntimeSerializeFn(localName));
+                                                       tsRuntimeSerializeFn(localName));
             runtimeImportsByModule[modulePath].emplace(tsRuntimeDeserializeFn(originalName),
-                                                      tsRuntimeDeserializeFn(localName));
+                                                       tsRuntimeDeserializeFn(localName));
         }
     };
     addRuntimeImportsForPlan(&(*requestRuntimePlan));
@@ -1634,24 +1640,28 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
              "export const DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "true" : "false") + ";");
     emitLine(out, 0, "export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
     emitLine(out, 0, "export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
-    const bool requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
+    const bool        requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
     const std::string requestZohReason =
         (requestSectionFacts != nullptr && !requestSectionFacts->zohAliasReason.empty())
             ? requestSectionFacts->zohAliasReason
             : "not-proven";
-    emitLine(out, 0, "export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " +
-                         std::string(requestZohEligible ? "true" : "false") + ";");
+    emitLine(out,
+             0,
+             "export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "true" : "false") +
+                 ";");
     emitLine(out, 0, "export const DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\";");
     if (responseRuntimePlan != nullptr)
     {
         const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
-        const bool        responseZohEligible  = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
+        const bool responseZohEligible = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
         const std::string responseZohReason =
             (responseSectionFacts != nullptr && !responseSectionFacts->zohAliasReason.empty())
                 ? responseSectionFacts->zohAliasReason
                 : "not-proven";
-        emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " +
-                             std::string(responseZohEligible ? "true" : "false") + ";");
+        emitLine(out,
+                 0,
+                 "export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " +
+                     std::string(responseZohEligible ? "true" : "false") + ";");
         emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_REASON = \"" + responseZohReason + "\";");
     }
     else
@@ -1663,7 +1673,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        emitSectionType(out, baseType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        emitSectionType(out,
+                        baseType,
+                        def.request,
+                        def.doc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         emitLine(out, 0, "");
@@ -1683,7 +1700,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto reqType  = baseType + "_Request";
     const auto respType = baseType + "_Response";
 
-    emitSectionType(out, reqType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+    emitSectionType(out,
+                    reqType,
+                    def.request,
+                    def.doc,
+                    ctx,
+                    def.info.fullName,
+                    def.info.majorVersion,
+                    def.info.minorVersion);
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
@@ -1701,7 +1725,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        emitSectionType(out, respType, *def.response, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        emitSectionType(out,
+                        respType,
+                        *def.response,
+                        def.doc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");

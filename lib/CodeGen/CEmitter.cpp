@@ -72,26 +72,6 @@ namespace llvmdsdl
 namespace
 {
 
-std::string sanitizeMacroToken(std::string token)
-{
-    for (char& c : token)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    if (!token.empty() && std::isdigit(static_cast<unsigned char>(token.front())))
-    {
-        token.insert(token.begin(), '_');
-    }
-    return token;
-}
-
 std::string headerFileName(const DiscoveredDefinition& info)
 {
     return llvm::formatv("{0}_{1}_{2}.h", info.shortName, info.majorVersion, info.minorVersion).str();
@@ -150,13 +130,15 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
         {
             out += "__";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.namespaceComponents[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        IdentifierRole::NamespaceName,
+                                        info.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.shortName);
+    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
     return out;
 }
 
@@ -164,18 +146,7 @@ std::string headerGuard(const DiscoveredDefinition& info)
 {
     std::string g = "LLVMDSDL_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
                     std::to_string(info.minorVersion) + "_H";
-    for (char& c : g)
-    {
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    return g;
+    return codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::MacroName, g);
 }
 
 std::string valueToCExpr(const TypeExprAST& type, const Value& value)
@@ -352,7 +323,8 @@ void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const
         {
             continue;
         }
-        const auto fieldName = sanitizeMacroToken(field.name);
+        const auto fieldName =
+            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::MacroName, field.name);
         emitLine(out,
                  0,
                  "#define " + typeName + "_" + fieldName + "_ARRAY_CAPACITY_ " +
@@ -384,7 +356,7 @@ void emitSectionTypedef(std::ostringstream&    out,
             continue;
         }
 
-        const auto cMember  = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
+        const auto cMember  = codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
         const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
@@ -485,7 +457,9 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
         emitAttachedDocC(out, 0, c.doc);
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + sanitizeMacroToken(c.name) + " (" + valueToCExpr(c.type, c.value) + ")");
+                 "#define " + typeName + "_" +
+                     codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::ConstantName, c.name) + " (" +
+                     valueToCExpr(c.type, c.value) + ")");
     }
     if (!section.constants.empty())
     {
@@ -493,12 +467,12 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     }
 }
 
-void emitSectionMetadata(std::ostringstream&    out,
-                         const std::string&     typeName,
-                         const std::string&     fullName,
-                         std::uint32_t          majorVersion,
-                         std::uint32_t          minorVersion,
-                         const SemanticSection& section,
+void emitSectionMetadata(std::ostringstream&              out,
+                         const std::string&               typeName,
+                         const std::string&               fullName,
+                         std::uint32_t                    majorVersion,
+                         std::uint32_t                    minorVersion,
+                         const SemanticSection&           section,
                          const LoweredSectionFacts* const sectionFacts)
 {
     CHeaderTypeMetadata metadata;
@@ -512,32 +486,40 @@ void emitSectionMetadata(std::ostringstream&    out,
     {
         emitLine(out, 0, line);
     }
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason = zohAliasEligible
-                                           ? std::string("eligible")
-                                           : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                                  ? sectionFacts->zohAliasReason
-                                                  : std::string("not-proven"));
-    emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason =
+        zohAliasEligible
+            ? std::string("eligible")
+            : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason
+                                                                                  : std::string("not-proven"));
+    emitLine(out,
+             0,
+             "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
     emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
     emitLine(out, 0, "#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     out << "\n";
 }
 
-void emitSection(std::ostringstream&       out,
-                 const EmitterContext&     ctx,
-                 const SemanticDefinition& def,
-                 const std::string&        typeName,
-                 const std::string&        fullName,
-                 const std::string&        sectionName,
-                 const SemanticSection&    section,
-                 const AttachedDoc&        typeDoc,
+void emitSection(std::ostringstream&              out,
+                 const EmitterContext&            ctx,
+                 const SemanticDefinition&        def,
+                 const std::string&               typeName,
+                 const std::string&               fullName,
+                 const std::string&               sectionName,
+                 const SemanticSection&           section,
+                 const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
     emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
     emitSectionConstants(out, typeName, section);
     emitArrayMacros(out, typeName, section);
-    emitAttachedDocC(out, 0, docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+    emitAttachedDocC(out,
+                     0,
+                     docWithDeprecationNotice(typeDoc,
+                                              section.deprecated,
+                                              def.info.fullName,
+                                              def.info.majorVersion,
+                                              def.info.minorVersion));
     emitSectionTypedef(out, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
 
     const auto irStem = sectionIRFunctionStem(def, sectionName);
@@ -644,8 +626,7 @@ llvm::Expected<std::string> loadRuntimeHeader()
     {
         return std::string(*data);
     }
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "embedded runtime source missing: dsdl_runtime.h");
+    return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: dsdl_runtime.h");
 }
 
 std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)

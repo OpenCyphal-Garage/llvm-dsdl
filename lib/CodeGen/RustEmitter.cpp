@@ -123,8 +123,12 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
@@ -146,7 +150,7 @@ public:
 
     std::string rustModuleName(const DiscoveredDefinition& info) const
     {
-        return codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Rust, info.shortName) + "_" +
+        return codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FileStem, info.shortName) + "_" +
                std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
     }
 
@@ -159,15 +163,17 @@ public:
             {
                 out += "_";
             }
-            out += codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, info.namespaceComponents[i]);
+            out += codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                            IdentifierRole::NamespaceName,
+                                            info.namespaceComponents[i]);
         }
         if (!out.empty())
         {
             out += "_";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, info.shortName);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, info.shortName);
         out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
-        return codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, out);
+        return codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, out);
     }
 
     std::string rustTypeName(const SemanticTypeRef& ref) const
@@ -191,7 +197,7 @@ public:
         out << "crate";
         for (const auto& ns : ref.namespaceComponents)
         {
-            out << "::" << codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, ns);
+            out << "::" << codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::NamespaceName, ns);
         }
 
         if (const auto* def = find(ref))
@@ -357,8 +363,9 @@ public:
                                                 callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
                                                     const auto* const field = fieldStep.field;
                                                     const auto        fieldRef =
-                                                        "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
-                                                                                            field->name);
+                                                        "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                                           IdentifierRole::FieldName,
+                                                                                           field->name);
                                                     emitSerializeAny(out,
                                                                      field->resolvedType,
                                                                      fieldRef,
@@ -436,8 +443,9 @@ public:
                                                 callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
                                                     const auto* const field = fieldStep.field;
                                                     const auto        fieldRef =
-                                                        "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
-                                                                                            field->name);
+                                                        "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                                           IdentifierRole::FieldName,
+                                                                                           field->name);
                                                     emitDeserializeAny(out,
                                                                        field->resolvedType,
                                                                        fieldRef,
@@ -675,7 +683,10 @@ private:
             emitLine(out_, indent_ + 1, std::to_string(optionIndex) + " => {");
         }
 
-        void spellEndCase() override { emitLine(out_, indent_ + 1, "}"); }
+        void spellEndCase() override
+        {
+            emitLine(out_, indent_ + 1, "}");
+        }
 
         void spellBadTagDefault() override
         {
@@ -685,7 +696,10 @@ private:
                      "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
         }
 
-        void spellEndDispatch() override { emitLine(out_, indent_, "}"); }
+        void spellEndDispatch() override
+        {
+            emitLine(out_, indent_, "}");
+        }
 
     private:
         FunctionBodyEmitter&            owner_;
@@ -702,8 +716,8 @@ private:
                             const LoweredSectionFacts* const     sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
@@ -714,8 +728,9 @@ private:
                                     emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
                                     emitSerializeAny(out,
                                                      field.resolvedType,
-                                                     "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
-                                                                                         field.name),
+                                                     "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                                        IdentifierRole::FieldName,
+                                                                                        field.name),
                                                      indent + 2,
                                                      step.arrayLengthPrefixBits,
                                                      step.fieldFacts);
@@ -731,8 +746,8 @@ private:
                               const LoweredSectionFacts* const     sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
@@ -743,8 +758,9 @@ private:
                                     emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
                                     emitDeserializeAny(out,
                                                        field.resolvedType,
-                                                       "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust,
-                                                                                           field.name),
+                                                       "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                                          IdentifierRole::FieldName,
+                                                                                          field.name),
                                                        indent + 2,
                                                        step.arrayLengthPrefixBits,
                                                        step.fieldFacts,
@@ -1026,9 +1042,8 @@ private:
         std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
             const auto index = owner_.nextName("index");
-            const auto count = step.kind == FieldStepKind::VariableArray
-                                   ? (expr + ".len()")
-                                   : std::to_string(step.capacity) + "usize";
+            const auto count =
+                step.kind == FieldStepKind::VariableArray ? (expr + ".len()") : std::to_string(step.capacity) + "usize";
 
             owner_.trace(EmitTraceOp::ElemLoop);
             emitLine(out_, indent_, "for " + index + " in 0.." + count + " {");
@@ -1072,8 +1087,7 @@ private:
 
         void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto sizeVar = owner_.nextName("size_bytes");
             const auto errVar  = owner_.nextName("err");
 
@@ -1084,8 +1098,7 @@ private:
 
             emitLine(out_,
                      indent_,
-                     "let mut " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) +
-                         "usize;");
+                     "let mut " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) + "usize;");
             if (!step.type.compositeSealed)
             {
                 emitLine(out_,
@@ -1124,8 +1137,7 @@ private:
 
         void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
         {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto sizeVar = owner_.nextName("size_bytes");
 
             if (!step.type.compositeSealed)
@@ -1296,7 +1308,8 @@ void emitSectionType(std::ostringstream&              out,
             continue;
         }
         const std::string baseName =
-            "__LLVMDSDL_POOL_CLASS_" + codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Rust, field.name);
+            "__LLVMDSDL_POOL_CLASS_" +
+            codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, field.name);
         std::string constName = baseName;
         for (std::uint32_t suffix = 1U; !usedPoolConstNames.insert(constName).second; ++suffix)
         {
@@ -1306,10 +1319,13 @@ void emitSectionType(std::ostringstream&              out,
         poolClassConstants.emplace_back(constName, nextPoolClassId++);
     }
 
-    emitAttachedDocRust(
-        out,
-        0,
-        docWithDeprecationNotice(typeDoc, section.deprecated, definitionFullName, majorVersion, minorVersion));
+    emitAttachedDocRust(out,
+                        0,
+                        docWithDeprecationNotice(typeDoc,
+                                                 section.deprecated,
+                                                 definitionFullName,
+                                                 majorVersion,
+                                                 minorVersion));
     if (section.deprecated && options.emitDeprecationAttributes)
     {
         emitLine(out, 0, "#[deprecated]");
@@ -1328,8 +1344,8 @@ void emitSectionType(std::ostringstream&              out,
         emitAttachedDocRust(out, 1, field.doc);
         emitLine(out,
                  1,
-                 "pub " + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) + ": " +
-                     rustFieldType(field.resolvedType, ctx) + ",");
+                 "pub " + codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) +
+                     ": " + rustFieldType(field.resolvedType, ctx) + ",");
     }
 
     if (section.isUnion)
@@ -1364,7 +1380,7 @@ void emitSectionType(std::ostringstream&              out,
             }
             emitLine(out,
                      3,
-                     codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) +
+                     codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) +
                          ": crate::dsdl_runtime::DsdlVec::with_contract("
                          "crate::dsdl_runtime::VarArrayMemoryContract::new("
                          "Self::__LLVMDSDL_MEMORY_MODE, "
@@ -1374,7 +1390,7 @@ void emitSectionType(std::ostringstream&              out,
         }
         emitLine(out,
                  3,
-                 codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) + ": " +
+                 codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) + ": " +
                      defaultExpr(field.resolvedType, ctx) + ",");
     }
     if (section.isUnion)
@@ -1401,12 +1417,11 @@ void emitSectionType(std::ostringstream&              out,
              1,
              "pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
-    emitLine(out,
-             1,
-             std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                             ? sectionFacts->zohAliasReason
+                                             : "not-proven";
+    emitLine(out, 1, std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
     emitLine(out, 1, "pub const ZOH_ALIAS_REASON: &'static str = \"" + zohAliasReason + "\";");
     emitLine(out,
              1,
@@ -1443,14 +1458,18 @@ void emitSectionType(std::ostringstream&              out,
     {
         constNames.push_back(c.name);
     }
-    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Rust, constNames);
+    NamingScope constScope(CodegenNamingLanguage::Rust);
+    for (const auto& name : constNames)
+    {
+        (void) constScope.declare(IdentifierRole::ConstantName, name);
+    }
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(out, 1, c.doc);
         emitLine(out,
                  1,
-                 "pub const " + constIdents.get(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
-                     rustConstValue(c.type, c.value) + ";");
+                 "pub const " + constScope.get(IdentifierRole::ConstantName, c.name) + ": " +
+                     rustConstType(c.type, c.value) + " = " + rustConstValue(c.type, c.value) + ";");
     }
     out << "\n";
 
@@ -1777,7 +1796,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         ns.reserve(def.info.namespaceComponents.size());
         for (const auto& c : def.info.namespaceComponents)
         {
-            ns.push_back(codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, c));
+            ns.push_back(codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::NamespaceName, c));
         }
 
         std::string dirRel;

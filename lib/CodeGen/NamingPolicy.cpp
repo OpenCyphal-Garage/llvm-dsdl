@@ -17,6 +17,7 @@
 
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 
+#include <cassert>
 #include <cctype>
 #include <string>
 #include <cstddef>
@@ -27,50 +28,6 @@
 
 namespace llvmdsdl
 {
-CodegenIdentifierAllocator::CodegenIdentifierAllocator(
-    llvm::ArrayRef<std::string>                       sourceNames,
-    llvm::function_ref<std::string(llvm::StringRef)> transform,
-    llvm::ArrayRef<llvm::StringRef>                   reserved)
-{
-    // `used` holds every identifier already handed out, so a disambiguating suffix cannot itself
-    // collide with another field's base identifier (e.g. sources `foo_bar`, `fooBar`, `foo_bar_2`).
-    // Pre-seed it with names that are already taken in the target scope (generated method names) so a
-    // field projecting onto one of them is escaped rather than shadowing it.
-    llvm::StringSet<> used;
-    for (const auto& name : reserved)
-    {
-        used.insert(name);
-    }
-    for (const auto& source : sourceNames)
-    {
-        const std::string base      = transform(source);
-        std::string       candidate = base;
-        unsigned          suffix    = 2;
-        while (!used.insert(candidate).second)
-        {
-            candidate = base + "_" + std::to_string(suffix);
-            ++suffix;
-        }
-        assigned_[source] = candidate;
-    }
-}
-
-std::string CodegenIdentifierAllocator::get(llvm::StringRef sourceName) const
-{
-    const auto it = assigned_.find(sourceName);
-    if (it == assigned_.end())
-    {
-        return sourceName.str();
-    }
-    return it->second;
-}
-
-CodegenIdentifierAllocator codegenUpperSnakeAllocator(const CodegenNamingLanguage language,
-                                                      llvm::ArrayRef<std::string> names)
-{
-    return CodegenIdentifierAllocator(
-        names, [language](llvm::StringRef name) { return codegenToUpperSnakeCaseIdentifier(language, name); });
-}
 }  // namespace llvmdsdl
 
 namespace llvmdsdl
@@ -274,68 +231,237 @@ std::string normalizePascalCase(llvm::StringRef name)
 
 }  // namespace
 
+namespace
+{
+
+/// @brief The role policy table: how each language names each kind of identifier today.
+///
+/// Read this as a description of the current tree, not a design. Every cell was taken from the call
+/// site that produces that name, and the `escape`/`strop` columns record where a backend skips a
+/// stage: C and C++ name headers after the raw DSDL short name (CEmitter.cpp `headerFileName`) and
+/// build macro tokens without a keyword check (CEmitter.cpp `sanitizeMacroToken`). Those gaps are
+/// the phase 4 worklist in docs/development/identifier-stropping.md, not accidents of this table.
+///
+/// FunctionName and LocalName have no call site that feeds them a DSDL-derived name today: the
+/// generated helpers and locals are built from mangled type names and generator-internal spellings.
+/// They carry the same policy as FieldName so phase 2 has somewhere to land.
+const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const IdentifierRole role)
+{
+    static constexpr RolePolicy kPreserve{CaseStyle::Preserve, true, true, false};
+    static constexpr RolePolicy kSnake{CaseStyle::Snake, true, true, false};
+    static constexpr RolePolicy kPascal{CaseStyle::Pascal, true, true, false};
+    static constexpr RolePolicy kUpperSnake{CaseStyle::Snake, true, true, true};
+
+    // C and C++ macro tokens: escaped and upper-cased, never stropped.
+    static constexpr RolePolicy kMacroToken{CaseStyle::Preserve, true, false, true};
+    // C and C++ header stems: the DSDL short name, untouched.
+    static constexpr RolePolicy kVerbatim{CaseStyle::Preserve, false, false, false};
+
+    const bool cLike    = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+    const bool rustLike = language == CodegenNamingLanguage::Rust;
+    const bool goLike   = language == CodegenNamingLanguage::Go;
+
+    switch (role)
+    {
+    case IdentifierRole::TypeName:
+        return (cLike || rustLike) ? kPreserve : kPascal;
+    case IdentifierRole::FieldName:
+    case IdentifierRole::FunctionName:
+    case IdentifierRole::LocalName:
+        if (cLike || rustLike)
+        {
+            return kPreserve;
+        }
+        return goLike ? kPascal : kSnake;
+    case IdentifierRole::ConstantName:
+    case IdentifierRole::MacroName:
+        return cLike ? kMacroToken : kUpperSnake;
+    case IdentifierRole::NamespaceName:
+        return (cLike || rustLike) ? kPreserve : kSnake;
+    case IdentifierRole::FileStem:
+        return cLike ? kVerbatim : kSnake;
+    }
+    return kPreserve;
+}
+
+/// @brief Runs the shared naming pipeline.
+///
+/// Stage order is load-bearing and matches what the case-explicit helpers did before this existed:
+/// the keyword check runs on the cased but not yet upper-cased form, so a Go constant named `break`
+/// becomes `break_` and only then `BREAK_`.
+std::string runPipeline(const CodegenNamingLanguage language, const RolePolicy& policy, const llvm::StringRef name)
+{
+    std::string out;
+    switch (policy.caseStyle)
+    {
+    case CaseStyle::Preserve:
+        out = name.str();
+        break;
+    case CaseStyle::Snake:
+        out = normalizeSnakeCase(name);
+        break;
+    case CaseStyle::Pascal:
+        out = normalizePascalCase(name);
+        break;
+    }
+
+    if (out.empty())
+    {
+        out = (policy.caseStyle == CaseStyle::Pascal) ? "X" : "_";
+    }
+
+    if (policy.escape)
+    {
+        for (char& c : out)
+        {
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+            {
+                c = '_';
+            }
+        }
+        if (std::isdigit(static_cast<unsigned char>(out.front())))
+        {
+            out.insert(out.begin(), '_');
+        }
+    }
+
+    if (policy.strop && keywordSet(language).contains(out))
+    {
+        out += "_";
+        // One iteration suffices because no keyword in any table ends in `_`. The table invariant
+        // test in NamingGoldenTests.cpp is what keeps that true as the tables grow.
+        assert(!keywordSet(language).contains(out));
+    }
+
+    if (policy.upper)
+    {
+        for (char& c : out)
+        {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+LanguageNamingPolicy::LanguageNamingPolicy(const CodegenNamingLanguage language)
+    : language_(language)
+{
+}
+
+const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
+{
+    return rolePolicy(language_, role);
+}
+
+bool LanguageNamingPolicy::isKeyword(const llvm::StringRef name) const
+{
+    return keywordSet(language_).contains(name);
+}
+
+const LanguageNamingPolicy& codegenNamingPolicy(const CodegenNamingLanguage language)
+{
+    static const LanguageNamingPolicy kC(CodegenNamingLanguage::C);
+    static const LanguageNamingPolicy kCpp(CodegenNamingLanguage::Cpp);
+    static const LanguageNamingPolicy kRust(CodegenNamingLanguage::Rust);
+    static const LanguageNamingPolicy kGo(CodegenNamingLanguage::Go);
+    static const LanguageNamingPolicy kTs(CodegenNamingLanguage::TypeScript);
+    static const LanguageNamingPolicy kPy(CodegenNamingLanguage::Python);
+
+    switch (language)
+    {
+    case CodegenNamingLanguage::C:
+        return kC;
+    case CodegenNamingLanguage::Cpp:
+        return kCpp;
+    case CodegenNamingLanguage::Rust:
+        return kRust;
+    case CodegenNamingLanguage::Go:
+        return kGo;
+    case CodegenNamingLanguage::TypeScript:
+        return kTs;
+    case CodegenNamingLanguage::Python:
+        return kPy;
+    }
+    return kTs;
+}
+
+std::string codegenProjectIdentifier(const CodegenNamingLanguage language,
+                                     const IdentifierRole        role,
+                                     const llvm::StringRef       name)
+{
+    return runPipeline(language, rolePolicy(language, role), name);
+}
+
 bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
     return keywordSet(language).contains(name);
 }
 
-std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, llvm::StringRef name)
+std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    std::string out = name.str();
-    if (out.empty())
-    {
-        return "_";
-    }
-    for (char& c : out)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    if (codegenIsKeyword(language, out))
-    {
-        out += "_";
-    }
-    return out;
+    return runPipeline(language, RolePolicy{CaseStyle::Preserve, true, true, false}, name);
 }
 
 std::string codegenToSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    auto out = normalizeSnakeCase(name);
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    return codegenSanitizeIdentifier(language, out);
+    return runPipeline(language, RolePolicy{CaseStyle::Snake, true, true, false}, name);
 }
 
 std::string codegenToPascalCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    auto out = normalizePascalCase(name);
-    if (out.empty())
-    {
-        out = "X";
-    }
-    return codegenSanitizeIdentifier(language, out);
+    return runPipeline(language, RolePolicy{CaseStyle::Pascal, true, true, false}, name);
 }
 
 std::string codegenToUpperSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    auto out = codegenToSnakeCaseIdentifier(language, name);
-    for (char& c : out)
+    return runPipeline(language, RolePolicy{CaseStyle::Snake, true, true, true}, name);
+}
+
+NamingScope::NamingScope(const CodegenNamingLanguage language, const llvm::ArrayRef<llvm::StringRef> reserved)
+    : language_(language)
+{
+    for (const auto& name : reserved)
     {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        used_.insert(name);
     }
-    return out;
+}
+
+std::string NamingScope::keyOf(const IdentifierRole role, const llvm::StringRef sourceName)
+{
+    return std::to_string(static_cast<int>(role)) + ":" + sourceName.str();
+}
+
+std::string NamingScope::declare(const IdentifierRole role, const llvm::StringRef sourceName)
+{
+    const std::string key = keyOf(role, sourceName);
+    const auto        it  = assigned_.find(key);
+    if (it != assigned_.end())
+    {
+        return it->second;
+    }
+
+    const std::string base      = codegenProjectIdentifier(language_, role, sourceName);
+    std::string       candidate = base;
+    unsigned          suffix    = 2;
+    while (!used_.insert(candidate).second)
+    {
+        candidate = base + "_" + std::to_string(suffix);
+        ++suffix;
+    }
+    assigned_[key] = candidate;
+    return candidate;
+}
+
+std::string NamingScope::get(const IdentifierRole role, const llvm::StringRef sourceName) const
+{
+    const auto it = assigned_.find(keyOf(role, sourceName));
+    if (it == assigned_.end())
+    {
+        return codegenProjectIdentifier(language_, role, sourceName);
+    }
+    return it->second;
 }
 
 }  // namespace llvmdsdl

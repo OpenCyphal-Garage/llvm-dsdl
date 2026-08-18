@@ -45,13 +45,17 @@
 namespace
 {
 
-using llvmdsdl::CodegenIdentifierAllocator;
+using llvmdsdl::NamingScope;
 using llvmdsdl::canonicalSnakeCase;
 using llvmdsdl::CodegenNamingLanguage;
+using llvmdsdl::codegenNamingPolicy;
+using llvmdsdl::codegenProjectIdentifier;
 using llvmdsdl::codegenSanitizeIdentifier;
 using llvmdsdl::codegenToPascalCaseIdentifier;
 using llvmdsdl::codegenToSnakeCaseIdentifier;
 using llvmdsdl::codegenToUpperSnakeCaseIdentifier;
+using llvmdsdl::CaseStyle;
+using llvmdsdl::IdentifierRole;
 using llvmdsdl::isReservedIdentifier;
 using llvmdsdl::renderVersionedFileStem;
 using llvmdsdl::renderVersionedTypeName;
@@ -323,25 +327,6 @@ constexpr std::array<Projection, 6> kProjections = {{
     {"type_name", &applyTypeName},
 }};
 
-/// @brief One allocator scenario: a scope's worth of source names and the projection they claim.
-struct AllocatorScope
-{
-    const char*                  name;
-    const char*                  projection;
-    std::vector<std::string>     sources;
-    std::vector<llvm::StringRef> reserved;
-};
-
-const std::vector<AllocatorScope>& allocatorScopes()
-{
-    static const std::vector<AllocatorScope> scopes = {
-        {"struct_body_snake", "snake", {"fooBar", "foo_bar", "FooBar", "break", "break_"}, {}},
-        {"struct_body_pascal", "pascal", {"fooBar", "foo_bar", "serialize", "Serialize"}, {"Serialize", "Deserialize"}},
-        {"constants_upper", "upper_snake", {"fooBar", "foo_bar", "FOO_BAR"}, {}},
-    };
-    return scopes;
-}
-
 void appendHeader(std::ostringstream& out)
 {
     out << "# llvm-dsdl identifier naming map (golden)\n"
@@ -427,7 +412,7 @@ void appendCollisions(std::ostringstream& out)
         << "# are excluded: a clash they cause is not a hazard the compiler can meet.\n"
         << "#\n"
         << "# guard: what stops the collision from reaching generated code today.\n"
-        << "#   allocator  an in-scope name; CodegenIdentifierAllocator appends _2 (next section).\n"
+        << "#   allocator  an in-scope name; the scope appends _2 (see naming-roles.txt).\n"
         << "#   discovery  every source folds to one Discovery key, so the frontend rejects the pair\n"
         << "#              before codegen runs.\n"
         << "#   MISSED     the sources fold to different Discovery keys but the same output name, so\n"
@@ -475,47 +460,168 @@ void appendCollisions(std::ostringstream& out)
     }
 }
 
-void appendAllocator(std::ostringstream& out)
+struct RoleEntry
 {
-    out << "\n== allocator ==\n"
-        << "#\n"
-        << "# CodegenIdentifierAllocator over one scope, in declaration order, showing the _2/_3\n"
-        << "# repair that keeps the map injective within that scope.\n\n";
-    appendRow(out, {{"scope", 20}, {"language", 9}, {"source", 14}, {"identifier", 0}});
-    out << std::string(20 + 9 + 14 + 20, '-') << "\n";
+    IdentifierRole role;
+    const char*    name;
+};
 
-    for (const auto& scope : allocatorScopes())
+/// @brief Every role, in enum order.
+constexpr std::array<RoleEntry, 8> kRoles = {{
+    {IdentifierRole::TypeName, "TypeName"},
+    {IdentifierRole::FieldName, "FieldName"},
+    {IdentifierRole::ConstantName, "ConstantName"},
+    {IdentifierRole::FunctionName, "FunctionName"},
+    {IdentifierRole::LocalName, "LocalName"},
+    {IdentifierRole::NamespaceName, "NamespaceName"},
+    {IdentifierRole::FileStem, "FileStem"},
+    {IdentifierRole::MacroName, "MacroName"},
+}};
+
+/// @brief Roles whose per-name projection is worth tabulating.
+///
+/// FunctionName and LocalName carry the same policy as FieldName and no call site feeds them a DSDL
+/// name yet, so their columns would be duplicates. The policy section above still lists them.
+constexpr std::array<RoleEntry, 6> kTabulatedRoles = {{
+    {IdentifierRole::TypeName, "TypeName"},
+    {IdentifierRole::FieldName, "FieldName"},
+    {IdentifierRole::ConstantName, "ConstantName"},
+    {IdentifierRole::NamespaceName, "NamespaceName"},
+    {IdentifierRole::FileStem, "FileStem"},
+    {IdentifierRole::MacroName, "MacroName"},
+}};
+
+const char* caseStyleName(const CaseStyle style)
+{
+    switch (style)
     {
-        const Projection* projection = nullptr;
-        for (const auto& candidate : kProjections)
-        {
-            if (std::string(candidate.name) == scope.projection)
-            {
-                projection = &candidate;
-            }
-        }
-        if (projection == nullptr)
-        {
-            out << "!! unknown projection " << scope.projection << "\n";
-            continue;
-        }
+    case CaseStyle::Preserve:
+        return "preserve";
+    case CaseStyle::Snake:
+        return "snake";
+    case CaseStyle::Pascal:
+        return "pascal";
+    }
+    return "?";
+}
+
+/// @brief One scope's worth of names and the role they claim an identifier in.
+struct ScopeScenario
+{
+    const char*                  name;
+    IdentifierRole               role;
+    std::vector<std::string>     sources;
+    std::vector<llvm::StringRef> reserved;
+};
+
+const std::vector<ScopeScenario>& scopeScenarios()
+{
+    static const std::vector<ScopeScenario> scenarios = {
+        {"struct_body", IdentifierRole::FieldName, {"fooBar", "foo_bar", "FooBar", "break", "break_"}, {}},
+        {"struct_body_reserved",
+         IdentifierRole::FieldName,
+         {"fooBar", "serialize", "Serialize"},
+         {"Serialize", "Deserialize"}},
+        {"constants", IdentifierRole::ConstantName, {"fooBar", "foo_bar", "FOO_BAR"}, {}},
+    };
+    return scenarios;
+}
+
+void appendScopes(std::ostringstream& out)
+{
+    out << "\n== scopes ==\n"
+        << "#\n"
+        << "# NamingScope over one region of generated code, in declaration order. Where a role's\n"
+        << "# projection is many-to-one the scope appends _2, _3, ... so the map stays injective; the\n"
+        << "# reserved scenario shows a field escaping a name the generated methods already own.\n"
+        << "# C, C++ and Rust keep the DSDL spelling for fields, so they need no repair at all -- the\n"
+        << "# same scope is only lossy in the backends that fold case.\n\n";
+    appendRow(out, {{"scope", 22}, {"language", 9}, {"source", 14}, {"identifier", 0}});
+    out << std::string(22 + 9 + 14 + 20, '-') << "\n";
+
+    for (const auto& scenario : scopeScenarios())
+    {
         for (const auto& entry : kLanguages)
         {
-            const CodegenNamingLanguage      language = entry.language;
-            const CodegenIdentifierAllocator allocator(
-                scope.sources,
-                [projection, language](const llvm::StringRef name) { return projection->apply(language, name.str()); },
-                scope.reserved);
-            for (const auto& source : scope.sources)
+            NamingScope scope(entry.language, scenario.reserved);
+            for (const auto& source : scenario.sources)
+            {
+                (void) scope.declare(scenario.role, source);
+            }
+            for (const auto& source : scenario.sources)
             {
                 appendRow(out,
-                          {{scope.name, 20},
+                          {{scenario.name, 22},
                            {entry.name, 9},
                            {quoted(source), 14},
-                           {quoted(allocator.get(source)), 0}});
+                           {quoted(scope.get(scenario.role, source)), 0}});
             }
         }
     }
+}
+
+std::string renderRoleGolden()
+{
+    std::ostringstream out;
+    out << "# llvm-dsdl identifier role policy (golden)\n"
+        << "#\n"
+        << "# Generated by test/unit/NamingGoldenTests.cpp. Do not edit by hand.\n"
+        << "# Regenerate:  LLVMDSDL_UPDATE_NAMING_GOLDEN=1 <build>/test/unit/llvmdsdl-unit-tests\n"
+        << "#\n"
+        << "# Phase 1 of docs/development/identifier-stropping.md. The table below is a description of\n"
+        << "# what the six emitters do today, not a design: every cell was taken from the call site\n"
+        << "# that produces that name, and NamingPolicyTests.cpp asserts each one against that call\n"
+        << "# site so the description cannot drift from the code while phase 2 is pending.\n"
+        << "#\n"
+        << "# escape  replaces characters outside [A-Za-z0-9_] and prefixes a leading digit.\n"
+        << "# strop   escapes a result that collides with a language keyword.\n"
+        << "# upper   upper-cases the finished identifier.\n"
+        << "#\n"
+        << "# The 'no' cells are the phase 4 worklist: C and C++ build macro tokens without a keyword\n"
+        << "# check and name headers after the raw DSDL short name, so those two roles skip stages\n"
+        << "# every other backend runs.\n";
+
+    out << "\n== role policy ==\n\n";
+    appendRow(out, {{"language", 9}, {"role", 15}, {"case", 10}, {"escape", 8}, {"strop", 7}, {"upper", 0}});
+    out << std::string(9 + 15 + 10 + 8 + 7 + 5, '-') << "\n";
+    for (const auto& entry : kLanguages)
+    {
+        for (const auto& role : kRoles)
+        {
+            const auto& policy = codegenNamingPolicy(entry.language).roleFor(role.role);
+            appendRow(out,
+                      {{entry.name, 9},
+                       {role.name, 15},
+                       {caseStyleName(policy.caseStyle), 10},
+                       {policy.escape ? "yes" : "no", 8},
+                       {policy.strop ? "yes" : "no", 7},
+                       {policy.upper ? "yes" : "no", 0}});
+        }
+    }
+
+    out << "\n== projections by role ==\n\n";
+    std::vector<std::pair<std::string, std::size_t>> header = {{"source", 18}, {"language", 9}};
+    for (const auto& role : kTabulatedRoles)
+    {
+        header.emplace_back(role.name, 20);
+    }
+    appendRow(out, header);
+    out << std::string(18 + 9 + (20 * (kTabulatedRoles.size() - 1)), '-') << "\n";
+
+    for (const auto& source : corpus())
+    {
+        for (const auto& entry : kLanguages)
+        {
+            std::vector<std::pair<std::string, std::size_t>> cells = {{quoted(source), 18}, {entry.name, 9}};
+            for (const auto& role : kTabulatedRoles)
+            {
+                cells.emplace_back(quoted(codegenProjectIdentifier(entry.language, role.role, source)), 20);
+            }
+            appendRow(out, cells);
+        }
+    }
+    appendScopes(out);
+    return out.str();
 }
 
 std::string renderGolden()
@@ -524,7 +630,6 @@ std::string renderGolden()
     appendHeader(out);
     appendProjections(out);
     appendCollisions(out);
-    appendAllocator(out);
     return out.str();
 }
 
@@ -574,11 +679,12 @@ void reportFirstDifference(const std::string& expected, const std::string& produ
 
 }  // namespace
 
-bool runNamingGoldenTests()
+namespace
 {
-    const std::string produced = renderGolden();
-    const std::string path     = LLVMDSDL_NAMING_GOLDEN_PATH;
 
+/// @brief Compares @p produced against the golden file at @p path, or rewrites it when asked.
+bool checkGolden(const std::string& path, const std::string& produced)
+{
     if (wantsUpdate())
     {
         std::ofstream out(path, std::ios::binary);
@@ -617,4 +723,13 @@ bool runNamingGoldenTests()
     std::cerr << "  a generated identifier changed; if that was intended, regenerate with\n"
               << "  LLVMDSDL_UPDATE_NAMING_GOLDEN=1 <build>/test/unit/llvmdsdl-unit-tests\n";
     return false;
+}
+
+}  // namespace
+
+bool runNamingGoldenTests()
+{
+    const bool mapOk   = checkGolden(LLVMDSDL_NAMING_GOLDEN_PATH, renderGolden());
+    const bool rolesOk = checkGolden(LLVMDSDL_NAMING_ROLES_GOLDEN_PATH, renderRoleGolden());
+    return mapOk && rolesOk;
 }

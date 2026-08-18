@@ -22,6 +22,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace llvmdsdl
@@ -48,6 +49,113 @@ enum class CodegenNamingLanguage
     /// @brief Python naming policy.
     Python,
 };
+
+/// @brief What an identifier is going to be used as.
+///
+/// Every language answers the same question -- how do I name a field? a constant? a file? -- with a
+/// different projection and a different reserved set, so the role is the axis the policy table is
+/// indexed on. See docs/development/identifier-stropping.md section 4.1.
+enum class IdentifierRole
+{
+    /// @brief A struct, class, or type alias name.
+    TypeName,
+
+    /// @brief A struct member, object key, or attribute name.
+    FieldName,
+
+    /// @brief A constant, enumerator, or `#define` value name.
+    ConstantName,
+
+    /// @brief A generated free function or method name.
+    FunctionName,
+
+    /// @brief A local or parameter inside a generated body.
+    LocalName,
+
+    /// @brief A namespace, package, or module identifier.
+    NamespaceName,
+
+    /// @brief An output file name without its extension.
+    FileStem,
+
+    /// @brief A C/C++ preprocessor token, including the include guard.
+    MacroName,
+};
+
+/// @brief The case projection a role receives before escaping.
+enum class CaseStyle
+{
+    /// @brief Leave the source spelling alone.
+    Preserve,
+
+    /// @brief Fold to snake_case (@ref canonicalSnakeCase).
+    Snake,
+
+    /// @brief Fold to PascalCase.
+    Pascal,
+};
+
+/// @brief How one role is named in one language.
+///
+/// The three booleans are deliberately separate from the case style because today's backends use
+/// every combination of them: a C macro token is escaped but not stropped, a C header stem is
+/// neither, and a Go constant is both and then uppercased. Recording that faithfully is what makes
+/// this a description of the current tree rather than an aspiration; the `false` entries are the
+/// phase 4 worklist in docs/development/identifier-stropping.md.
+struct RolePolicy final
+{
+    /// @brief Case projection applied first.
+    CaseStyle caseStyle = CaseStyle::Preserve;
+
+    /// @brief Whether characters outside `[A-Za-z0-9_]` and a leading digit are escaped.
+    bool escape = true;
+
+    /// @brief Whether a result that collides with a language keyword is escaped.
+    bool strop = true;
+
+    /// @brief Whether the final result is upper-cased (constants and macros).
+    bool upper = false;
+};
+
+/// @brief The complete naming policy for one target language.
+class LanguageNamingPolicy final
+{
+public:
+    /// @brief Builds the policy for @p language.
+    /// @param[in] language Naming language.
+    explicit LanguageNamingPolicy(CodegenNamingLanguage language);
+
+    /// @brief Returns how @p role is named in this language.
+    /// @param[in] role Identifier role.
+    /// @return The role's policy.
+    [[nodiscard]] const RolePolicy& roleFor(IdentifierRole role) const;
+
+    /// @brief Returns true when @p name is a keyword in this language.
+    /// @param[in] name Candidate identifier.
+    /// @return True when the identifier is reserved.
+    [[nodiscard]] bool isKeyword(llvm::StringRef name) const;
+
+private:
+    CodegenNamingLanguage language_;
+};
+
+/// @brief Returns the naming policy for @p language.
+/// @param[in] language Naming language.
+/// @return A reference to the language's policy, valid for the process lifetime.
+[[nodiscard]] const LanguageNamingPolicy& codegenNamingPolicy(CodegenNamingLanguage language);
+
+/// @brief Projects @p name into the identifier @p role calls for in @p language.
+///
+/// This is the shared pipeline: case projection, then escaping, then stropping, then the optional
+/// final upper-casing. The case-explicit helpers below are the same pipeline with the style passed
+/// in rather than looked up, and exist because the emitters have not been migrated to roles yet.
+/// @param[in] language Naming language.
+/// @param[in] role What the identifier will be used as.
+/// @param[in] name Source name.
+/// @return The language-safe identifier for that role.
+[[nodiscard]] std::string codegenProjectIdentifier(CodegenNamingLanguage language,
+                                                   IdentifierRole        role,
+                                                   llvm::StringRef       name);
 
 /// @brief Returns true when an identifier is a keyword in the target language.
 /// @param[in] language Naming language.
@@ -79,48 +187,47 @@ std::string codegenToPascalCaseIdentifier(CodegenNamingLanguage language, llvm::
 /// @return Language-safe UPPER_SNAKE_CASE identifier.
 std::string codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
 
-/// @brief Assigns collision-free identifiers to a set of distinct source names.
+/// @brief One region of generated code in which identifiers must not collide.
 ///
-/// The case-folding projections above are many-to-one, so two distinct, spec-valid DSDL names (e.g.
-/// `fooBar` and `foo_bar`, which both fold to `foo_bar`/`FooBar`) can map to the same identifier and
-/// produce duplicate struct fields / object keys / attributes in a generated type. This allocator
-/// applies a chosen projection to each source name in declaration order and appends `_2`, `_3`, ... to
-/// the second and subsequent names that would otherwise collide (checked against every previously
-/// assigned identifier, including suffixed ones), so the mapping stays injective. Source names must be
-/// distinct (the frontend already rejects exact duplicate attribute names).
-class CodegenIdentifierAllocator final
+/// A scope is a struct body, a namespace directory, a module's top level -- anywhere two names
+/// landing on one identifier would be a redeclaration. Names are declared in source order and the
+/// scope hands back the identifier each one gets, appending `_2`, `_3`, ... when a projection is
+/// many-to-one. Roles share one pool because they share one C++/Go/TypeScript scope: a Go field and
+/// a Go method on the same struct cannot both be `Serialize`.
+///
+/// This is the entry point the emitters move to in phase 2 of
+/// docs/development/identifier-stropping.md; nothing calls it yet.
+class NamingScope final
 {
 public:
-    /// @brief Builds the allocation over @p sourceNames (declaration order) using @p transform.
-    /// @param[in] sourceNames Distinct source names, in the order they should claim identifiers.
-    /// @param[in] transform Projection from a source name to its (possibly colliding) base identifier.
-    /// @param[in] reserved Identifiers that are already taken in the target scope (e.g. generated
-    ///            method names like Go `Serialize`/`Deserialize` that share the struct's namespace);
-    ///            a source name projecting onto one of these is disambiguated with a suffix.
-    CodegenIdentifierAllocator(llvm::ArrayRef<std::string>                       sourceNames,
-                               llvm::function_ref<std::string(llvm::StringRef)> transform,
-                               llvm::ArrayRef<llvm::StringRef>                   reserved = {});
+    /// @brief Opens a scope for @p language.
+    /// @param[in] language Naming language.
+    /// @param[in] reserved Identifiers already claimed in this scope by generated code.
+    explicit NamingScope(CodegenNamingLanguage language, llvm::ArrayRef<llvm::StringRef> reserved = {});
 
-    /// @brief Returns the collision-free identifier assigned to @p sourceName.
-    /// @param[in] sourceName A name provided at construction.
-    /// @return The unique identifier; falls back to @p sourceName if it was not registered.
-    [[nodiscard]] std::string get(llvm::StringRef sourceName) const;
+    /// @brief Claims an identifier for @p sourceName in @p role.
+    ///
+    /// Declaring the same (role, name) twice returns the first assignment rather than claiming a
+    /// second identifier, so a caller that walks a section more than once stays consistent.
+    /// @param[in] role What the identifier will be used as.
+    /// @param[in] sourceName The DSDL name.
+    /// @return The identifier assigned to it.
+    std::string declare(IdentifierRole role, llvm::StringRef sourceName);
+
+    /// @brief Returns the identifier already assigned to (@p role, @p sourceName).
+    /// @param[in] role What the identifier is used as.
+    /// @param[in] sourceName The DSDL name.
+    /// @return The assigned identifier, or the projection of @p sourceName if it was never declared.
+    [[nodiscard]] std::string get(IdentifierRole role, llvm::StringRef sourceName) const;
 
 private:
-    /// @brief Source name -> assigned unique identifier.
+    /// @brief Key for the assignment map: one source name may appear in two roles.
+    [[nodiscard]] static std::string keyOf(IdentifierRole role, llvm::StringRef sourceName);
+
+    CodegenNamingLanguage        language_;
+    llvm::StringSet<>            used_;
     llvm::StringMap<std::string> assigned_;
 };
-
-/// @brief Builds a collision-free UPPER_SNAKE_CASE allocation over @p names (declaration order).
-///
-/// Convenience wrapper around @ref CodegenIdentifierAllocator for constant names, whose projection
-/// (`codegenToUpperSnakeCaseIdentifier`) is many-to-one and can otherwise emit two `#define`s / `const`s
-/// with the same name (e.g. `fooBar` and `foo_bar` both fold to `FOO_BAR`).
-/// @param[in] language Naming language.
-/// @param[in] names Distinct source names in declaration order.
-/// @return Allocator mapping each source name to a unique UPPER_SNAKE_CASE identifier.
-[[nodiscard]] CodegenIdentifierAllocator codegenUpperSnakeAllocator(CodegenNamingLanguage        language,
-                                                                    llvm::ArrayRef<std::string> names);
 
 }  // namespace llvmdsdl
 

@@ -74,8 +74,7 @@ std::string pyConstValue(const TypeExprAST& type, const Value& value)
 
 std::string pyFieldIdentBase(const llvm::StringRef name)
 {
-    return codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                     codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, name));
+    return codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::FieldName, name);
 }
 
 /// @brief Collision-free attribute names for one section's fields.
@@ -83,7 +82,7 @@ std::string pyFieldIdentBase(const llvm::StringRef name)
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
 /// dataclass would silently declare one attribute for two DSDL fields and the (de)serializer would
 /// read/write the wrong one with no error. Built from `section.fields` order so every site agrees.
-CodegenIdentifierAllocator makePyFieldIdents(const SemanticSection& section)
+NamingScope makePyFieldIdents(const SemanticSection& section)
 {
     std::vector<std::string> names;
     for (const auto& field : section.fields)
@@ -95,10 +94,16 @@ CodegenIdentifierAllocator makePyFieldIdents(const SemanticSection& section)
     }
     // A field attribute must not shadow a generated method (a dataclass attribute named `serialize`
     // hides `serialize()`, so `self.serialize()` would call an int); escape such a field instead.
-    static constexpr std::array<llvm::StringRef, 4> kReservedMethods = {
-        "serialize", "deserialize", "_serialize_to", "_deserialize_from"};
-    return CodegenIdentifierAllocator(
-        names, [](llvm::StringRef name) { return pyFieldIdentBase(name); }, kReservedMethods);
+    static constexpr std::array<llvm::StringRef, 4> kReservedMethods = {"serialize",
+                                                                        "deserialize",
+                                                                        "_serialize_to",
+                                                                        "_deserialize_from"};
+    NamingScope                                     scope(CodegenNamingLanguage::Python, kReservedMethods);
+    for (const auto& name : names)
+    {
+        (void) scope.declare(IdentifierRole::FieldName, name);
+    }
+    return scope;
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -121,6 +126,8 @@ void emitAttachedDocPy(std::ostringstream& out, const int indent, const Attached
 
 std::string runtimeSerializeFn(const std::string& typeName)
 {
+    // Not a role: typeName is already a projected identifier, so this is a defensive escape of a
+    // symbol this generator assembled, not a DSDL name being named.
     return "_serialize_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, typeName);
 }
 
@@ -154,8 +161,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
             if (!current.empty())
             {
                 out.push_back(
-                    codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                              codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, current)));
+                    codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::NamespaceName, current));
                 current.clear();
             }
             continue;
@@ -164,8 +170,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     }
     if (!current.empty())
     {
-        out.push_back(codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
-                                                codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, current)));
+        out.push_back(codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::NamespaceName, current));
     }
     if (out.empty())
     {
@@ -183,8 +188,12 @@ public:
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     ///
@@ -384,12 +393,17 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Python, constNames);
-    const auto prefixupper = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, prefix);
+    NamingScope constScope(CodegenNamingLanguage::Python);
+    for (const auto& name : constNames)
+    {
+        (void) constScope.declare(IdentifierRole::ConstantName, name);
+    }
+    const auto prefixupper =
+        codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(out, 0, constant.doc);
-        const auto constName = prefixupper + "_" + constIdents.get(constant.name);
+        const auto constName = prefixupper + "_" + constScope.get(IdentifierRole::ConstantName, constant.name);
         emitLine(out, 0, constName + " = " + pyConstValue(constant.type, constant.value));
     }
 }
@@ -430,8 +444,8 @@ void emitStructSectionType(std::ostringstream&    out,
     emitLine(out, 0, "@dataclass(slots=True)");
     emitLine(out, 0, "class " + typeName + ":");
 
-    bool                             emittedField = false;
-    const CodegenIdentifierAllocator fieldIdents  = makePyFieldIdents(section);
+    bool              emittedField = false;
+    const NamingScope fieldIdents  = makePyFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -440,7 +454,7 @@ void emitStructSectionType(std::ostringstream&    out,
         }
         emittedField = true;
         emitAttachedDocPy(out, 1, field.doc);
-        const auto fieldName = fieldIdents.get(field.name);
+        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
         emitLine(out,
                  1,
                  fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
@@ -473,7 +487,7 @@ void emitUnionSectionType(std::ostringstream&    out,
     emitLine(out, 0, "class " + typeName + ":");
     emitLine(out, 1, "_tag: int = 0");
 
-    const CodegenIdentifierAllocator fieldIdents = makePyFieldIdents(section);
+    const NamingScope fieldIdents = makePyFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -481,7 +495,7 @@ void emitUnionSectionType(std::ostringstream&    out,
             continue;
         }
         emitAttachedDocPy(out, 1, field.doc);
-        const auto fieldName = fieldIdents.get(field.name);
+        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
         emitLine(out, 1, fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " | None = None");
     }
 
@@ -848,8 +862,8 @@ public:
         }
         emitLine(out_,
                  indent_ + 1,
-                 "raise ValueError(\"" +
-                     codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) + "\")");
+                 "raise ValueError(\"" + codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) +
+                     "\")");
         std::string prefixExpr = "len(" + arrVar + ")";
         if (!helpers.serArrayPrefix.empty())
         {
@@ -961,7 +975,10 @@ public:
     }
 
     /// @brief Sets the render direction (spellPad branches on it).
-    void setDirection(const HelperBindingDirection direction) { direction_ = direction; }
+    void setDirection(const HelperBindingDirection direction)
+    {
+        direction_ = direction;
+    }
 
 private:
     std::ostringstream&               out_;
@@ -1180,7 +1197,10 @@ public:
     }
 
     /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
-    void setBadTagDiagnosticPrefix(std::string prefix) { badTagDiagnosticPrefix_ = std::move(prefix); }
+    void setBadTagDiagnosticPrefix(std::string prefix)
+    {
+        badTagDiagnosticPrefix_ = std::move(prefix);
+    }
 
 private:
     std::ostringstream&              out_;
@@ -1226,12 +1246,12 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
     {
         return operationPlan.takeError();
     }
-    const CodegenIdentifierAllocator fieldIdents = makePyFieldIdents(section);
+    const NamingScope fieldIdents = makePyFieldIdents(section);
     for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
-        field.fieldName          = fieldIdents.get(semanticName);
+        field.fieldName          = fieldIdents.get(IdentifierRole::FieldName, semanticName);
     }
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
@@ -1287,19 +1307,20 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
             cases.reserve(operationPlan->fields.size());
             for (const auto& scriptedField : operationPlan->fields)
             {
-                cases.push_back(UnionCaseRender{
-                    scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
-                        const auto& field           = scriptedField.body.field;
-                        const auto  optionTag       = std::to_string(field.unionOptionIndex);
-                        const auto  optionValueExpr = "value." + field.fieldName;
-                        emitLine(out, 2, "if " + optionValueExpr + " is None:");
-                        emitLine(out,
-                                 3,
-                                 "raise ValueError(\"" +
-                                     codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) +
-                                     "\")");
-                        emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
-                    }});
+                cases.push_back(
+                    UnionCaseRender{scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
+                                        const auto& field           = scriptedField.body.field;
+                                        const auto  optionTag       = std::to_string(field.unionOptionIndex);
+                                        const auto  optionValueExpr = "value." + field.fieldName;
+                                        emitLine(out, 2, "if " + optionValueExpr + " is None:");
+                                        emitLine(out,
+                                                 3,
+                                                 "raise ValueError(\"" +
+                                                     codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName,
+                                                                                                      optionTag) +
+                                                     "\")");
+                                        emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
+                                    }});
             }
             renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
         }
@@ -1325,14 +1346,15 @@ llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
             cases.reserve(operationPlan->fields.size());
             for (const auto& scriptedField : operationPlan->fields)
             {
-                cases.push_back(UnionCaseRender{
-                    scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
-                        emitPyRuntimeDeserializeFieldValue(out,
-                                                           2,
-                                                           scriptedField,
-                                                           "value." + scriptedField.body.field.fieldName,
-                                                           ctx);
-                    }});
+                cases.push_back(
+                    UnionCaseRender{scriptedField.body.field.unionOptionIndex, [&out, &ctx, &scriptedField]() {
+                                        emitPyRuntimeDeserializeFieldValue(out,
+                                                                           2,
+                                                                           scriptedField,
+                                                                           "value." +
+                                                                               scriptedField.body.field.fieldName,
+                                                                           ctx);
+                                    }});
             }
             renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
         }
@@ -1462,7 +1484,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
     emitLine(out, 0, "DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion));
     emitLine(out, 0, "DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion));
-    const bool requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
+    const bool        requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
     const std::string requestZohReason =
         (requestSectionFacts != nullptr && !requestSectionFacts->zohAliasReason.empty())
             ? requestSectionFacts->zohAliasReason
@@ -1472,7 +1494,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (responseRuntimePlan != nullptr)
     {
         const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
-        const bool        responseZohEligible  = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
+        const bool responseZohEligible = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
         const std::string responseZohReason =
             (responseSectionFacts != nullptr && !responseSectionFacts->zohAliasReason.empty())
                 ? responseSectionFacts->zohAliasReason
@@ -1489,7 +1511,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        emitSectionType(out, baseType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        emitSectionType(out,
+                        baseType,
+                        def.request,
+                        def.doc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         if (!def.request.constants.empty())
@@ -1512,7 +1541,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto reqType  = baseType + "_Request";
     const auto respType = baseType + "_Response";
 
-    emitSectionType(out, reqType, def.request, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+    emitSectionType(out,
+                    reqType,
+                    def.request,
+                    def.doc,
+                    ctx,
+                    def.info.fullName,
+                    def.info.majorVersion,
+                    def.info.minorVersion);
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
@@ -1530,7 +1566,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        emitSectionType(out, respType, *def.response, def.doc, ctx, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        emitSectionType(out,
+                        respType,
+                        *def.response,
+                        def.doc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");
@@ -1757,8 +1800,11 @@ llvm::Error emitPython(const SemanticModule&    semantic,
 
     if (emitSupport)
     {
-        if (auto err =
-                ensurePackageInitChain(packageRoot, ctx.packageName(), std::filesystem::path{}, initializedPackages, options.writePolicy))
+        if (auto err = ensurePackageInitChain(packageRoot,
+                                              ctx.packageName(),
+                                              std::filesystem::path{},
+                                              initializedPackages,
+                                              options.writePolicy))
         {
             return err;
         }
@@ -1835,8 +1881,11 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         const auto                     relPath  = ctx.relativeFilePath(def->info);
         const auto                     fullPath = packageRoot / relPath;
 
-        if (auto err =
-                ensurePackageInitChain(packageRoot, ctx.packageName(), relPath.parent_path(), initializedPackages, options.writePolicy))
+        if (auto err = ensurePackageInitChain(packageRoot,
+                                              ctx.packageName(),
+                                              relPath.parent_path(),
+                                              initializedPackages,
+                                              options.writePolicy))
         {
             return err;
         }

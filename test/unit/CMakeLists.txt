@@ -73,6 +73,7 @@ target_include_directories(llvmdsdl-unit-tests
 target_compile_definitions(llvmdsdl-unit-tests
   PRIVATE
   LLVMDSDL_NAMING_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-map.txt"
+  LLVMDSDL_NAMING_ROLES_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-roles.txt"
 )
 
 add_test(NAME llvmdsdl-unit-tests COMMAND llvmdsdl-unit-tests)

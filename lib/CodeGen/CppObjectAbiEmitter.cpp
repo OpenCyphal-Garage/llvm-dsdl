@@ -41,32 +41,12 @@ namespace
 
 struct SectionPlan final
 {
-    std::string           sectionName;
-    std::string           cppTypeName;
-    std::string           cTypeName;
-    std::string           shimTypeName;
+    std::string            sectionName;
+    std::string            cppTypeName;
+    std::string            cTypeName;
+    std::string            shimTypeName;
     const SemanticSection* section{nullptr};
 };
-
-std::string sanitizeMacroToken(std::string token)
-{
-    for (char& c : token)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    if (!token.empty() && std::isdigit(static_cast<unsigned char>(token.front())))
-    {
-        token.insert(token.begin(), '_');
-    }
-    return token;
-}
 
 std::string cppNamespacePath(const std::vector<std::string>& components)
 {
@@ -77,7 +57,7 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
         {
             out += "::";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, components[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, components[i]);
     }
     return out;
 }
@@ -116,19 +96,21 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
         {
             out += "__";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.namespaceComponents[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        IdentifierRole::NamespaceName,
+                                        info.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.shortName);
+    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
     return out;
 }
 
 std::string cppTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    return codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, info.shortName);
+    return codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, info.shortName);
 }
 
 std::string shimTypeNameFromInfo(const DiscoveredDefinition& info)
@@ -136,9 +118,9 @@ std::string shimTypeNameFromInfo(const DiscoveredDefinition& info)
     std::string out = "llvmdsdl_cppabi";
     for (const auto& ns : info.namespaceComponents)
     {
-        out += "__" + codegenSanitizeIdentifier(CodegenNamingLanguage::C, ns);
+        out += "__" + codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::NamespaceName, ns);
     }
-    out += "__" + codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.shortName);
+    out += "__" + codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
     return out;
 }
 
@@ -248,7 +230,11 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
 {
     for (const auto& component : components)
     {
-        emitLine(out, 0, "namespace " + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component) + " {");
+        emitLine(out,
+                 0,
+                 "namespace " +
+                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) +
+                     " {");
     }
 }
 
@@ -256,7 +242,10 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
 {
     for (auto it = components.rbegin(); it != components.rend(); ++it)
     {
-        emitLine(out, 0, "} // namespace " + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, *it));
+        emitLine(out,
+                 0,
+                 "} // namespace " +
+                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, *it));
     }
 }
 
@@ -279,9 +268,9 @@ public:
         out << "::";
         for (const auto& ns : ref.namespaceComponents)
         {
-            out << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, ns) << "::";
+            out << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, ns) << "::";
         }
-        out << "abi::" << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, ref.shortName);
+        out << "abi::" << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, ref.shortName);
         return out.str();
     }
 
@@ -368,7 +357,8 @@ std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def
         const std::string cBase    = cTypeNameFromInfo(def.info);
         const std::string shimBase = shimTypeNameFromInfo(def.info);
 
-        out.push_back(SectionPlan{"request", cppBase + "__Request", cBase + "__Request", shimBase + "__Request", &def.request});
+        out.push_back(
+            SectionPlan{"request", cppBase + "__Request", cBase + "__Request", shimBase + "__Request", &def.request});
         if (def.response)
         {
             out.push_back(SectionPlan{"response",
@@ -380,16 +370,20 @@ std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def
     }
     else
     {
-        out.push_back(SectionPlan{"", cppTypeNameFromInfo(def.info), cTypeNameFromInfo(def.info), shimTypeNameFromInfo(def.info), &def.request});
+        out.push_back(SectionPlan{"",
+                                  cppTypeNameFromInfo(def.info),
+                                  cTypeNameFromInfo(def.info),
+                                  shimTypeNameFromInfo(def.info),
+                                  &def.request});
     }
     return out;
 }
 
-const LoweredSectionFacts* lookupSectionFacts(const LoweredFactsMap& loweredFacts,
+const LoweredSectionFacts* lookupSectionFacts(const LoweredFactsMap&    loweredFacts,
                                               const SemanticDefinition& def,
-                                              const std::string& sectionName)
+                                              const std::string&        sectionName)
 {
-    const auto key = loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+    const auto key   = loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion);
     const auto defIt = loweredFacts.find(key);
     if (defIt == loweredFacts.end())
     {
@@ -403,10 +397,10 @@ const LoweredSectionFacts* lookupSectionFacts(const LoweredFactsMap& loweredFact
     return &sectionIt->second;
 }
 
-void emitCanonicalStruct(std::ostringstream& out,
-                         const SectionPlan&  plan,
-                         const SemanticSection& section,
-                         const EmitterContext& ctx,
+void emitCanonicalStruct(std::ostringstream&        out,
+                         const SectionPlan&         plan,
+                         const SemanticSection&     section,
+                         const EmitterContext&      ctx,
                          const LoweredSectionFacts* sectionFacts)
 {
     emitLine(out, 0, "struct " + plan.cppTypeName + ";");
@@ -440,9 +434,10 @@ void emitCanonicalStruct(std::ostringstream& out,
             continue;
         }
 
-        const std::string member = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+        const std::string member =
+            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
         const std::string elemType = cppScalarType(field.resolvedType, ctx);
-        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cap      = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -454,9 +449,7 @@ void emitCanonicalStruct(std::ostringstream& out,
         }
         else
         {
-            emitLine(out,
-                     1,
-                     "::llvmdsdl::cppabi::BoundedSequence<" + elemType + ", " + cap + "> " + member + "{};");
+            emitLine(out, 1, "::llvmdsdl::cppabi::BoundedSequence<" + elemType + ", " + cap + "> " + member + "{};");
         }
         ++emittedFields;
     }
@@ -476,10 +469,10 @@ void emitCanonicalStruct(std::ostringstream& out,
         emitLine(out, 1, "std::uint8_t _dummy_{0U};");
     }
 
-    const bool zohEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohReason = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                      ? sectionFacts->zohAliasReason
-                                      : std::string("not-proven");
+    const bool        zohEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                        ? sectionFacts->zohAliasReason
+                                        : std::string("not-proven");
 
     emitLine(out,
              1,
@@ -489,28 +482,23 @@ void emitCanonicalStruct(std::ostringstream& out,
              1,
              "static constexpr std::size_t EXTENT_BYTES = " +
                  sizeLiteral(section.extentBits.has_value() ? (section.extentBits.value() / 8) : 0) + ";");
-    emitLine(out,
-             1,
-             std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohEligible ? "true;" : "false;"));
+    emitLine(out, 1, std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohEligible ? "true;" : "false;"));
     emitLine(out, 1, "static constexpr const char* ZOH_ALIAS_REASON = \"" + zohReason + "\";");
 
     emitLine(out, 1, "void to_c(" + plan.cTypeName + "* out) const;");
     emitLine(out, 1, "static void from_c(" + plan.cppTypeName + "* out, const " + plan.cTypeName + "* in);");
     out << '\n';
 
-    emitLine(out,
-             1,
-             "std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) const {");
+    emitLine(out, 1, "std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) const {");
     emitLine(out, 2, "return " + plan.cppTypeName + "__serialize_(this, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
-    emitLine(out,
-             1,
-             "std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
+    emitLine(out, 1, "std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
     emitLine(out, 2, "return " + plan.cppTypeName + "__deserialize_(this, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
-             "static std::int8_t try_deserialize_view(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+             "static std::int8_t try_deserialize_view(const std::uint8_t* buffer, std::size_t* "
+             "inout_buffer_size_bytes, "
              "const std::uint8_t** out_view_bytes) {");
     emitLine(out,
              2,
@@ -531,9 +519,7 @@ void emitCanonicalStruct(std::ostringstream& out,
     out << '\n';
 }
 
-void emitCanonicalConversionBodyToC(std::ostringstream& out,
-                                    const SectionPlan& plan,
-                                    const SemanticSection& section)
+void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
 {
     emitLine(out, 0, "void " + plan.cppTypeName + "::to_c(" + plan.cTypeName + "* const out) const");
     emitLine(out, 0, "{");
@@ -548,9 +534,11 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
         {
             continue;
         }
-        const std::string cppMember = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-        const std::string cMember   = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
-        const std::string cap       = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cppMember =
+            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
+        const std::string cMember =
+            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
+        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -562,9 +550,8 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
             {
                 emitLine(out,
                          1,
-                         "out->" + cMember +
-                             " = static_cast<std::remove_reference_t<decltype(out->" + cMember + ")>>(" +
-                             cppMember + ");");
+                         "out->" + cMember + " = static_cast<std::remove_reference_t<decltype(out->" + cMember +
+                             ")>>(" + cppMember + ");");
             }
             continue;
         }
@@ -578,7 +565,10 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
                 emitLine(out, 1, "}");
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out, 2, "if (" + cppMember + "[i]) {");
-                emitLine(out, 3, "out->" + cMember + "[i / 8U] = static_cast<std::uint8_t>(out->" + cMember + "[i / 8U] | (1U << (i % 8U)));" );
+                emitLine(out,
+                         3,
+                         "out->" + cMember + "[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
+                             "[i / 8U] | (1U << (i % 8U)));");
                 emitLine(out, 2, "}");
                 emitLine(out, 1, "}");
             }
@@ -593,9 +583,8 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out,
                          2,
-                         "out->" + cMember +
-                             "[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember + "[i])>>(" +
-                             cppMember + "[i]);");
+                         "out->" + cMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
+                             "[i])>>(" + cppMember + "[i]);");
                 emitLine(out, 1, "}");
             }
             continue;
@@ -604,21 +593,19 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
         emitLine(out, 1, "out->" + cMember + ".count = " + cppMember + ".count;");
         emitLine(out,
                  1,
-                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(" + cppMember +
-                     ".count, " + cap + ");");
+                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(" + cppMember + ".count, " +
+                     cap + ");");
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
             emitLine(out, 2, "out->" + cMember + ".bitpacked[i] = 0U;");
             emitLine(out, 1, "}");
-            emitLine(out,
-                     1,
-                     "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             emitLine(out, 2, "if (" + cppMember + ".elements[i]) {");
             emitLine(out,
                      3,
                      "out->" + cMember + ".bitpacked[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
-                         ".bitpacked[i / 8U] | (1U << (i % 8U)));" );
+                         ".bitpacked[i / 8U] | (1U << (i % 8U)));");
             emitLine(out, 2, "}");
             emitLine(out, 1, "}");
         }
@@ -631,14 +618,13 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
         else
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
-                emitLine(out,
-                         2,
-                         "out->" + cMember +
-                             ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
-                             ".elements[i])>>(" + cppMember + ".elements[i]);");
-                emitLine(out, 1, "}");
-            }
+            emitLine(out,
+                     2,
+                     "out->" + cMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
+                         ".elements[i])>>(" + cppMember + ".elements[i]);");
+            emitLine(out, 1, "}");
         }
+    }
 
     if (section.isUnion)
     {
@@ -649,9 +635,7 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out,
     out << '\n';
 }
 
-void emitCanonicalConversionBodyFromC(std::ostringstream& out,
-                                      const SectionPlan& plan,
-                                      const SemanticSection& section)
+void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
 {
     emitLine(out,
              0,
@@ -668,23 +652,26 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
         {
             continue;
         }
-        const std::string cppMember = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-        const std::string cMember   = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
-        const std::string cap       = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cppMember =
+            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
+        const std::string cMember =
+            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
+        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
-                emitLine(out, 1, "decltype(out->" + cppMember + ")::from_c(&out->" + cppMember + ", &in->" + cMember + ");");
+                emitLine(out,
+                         1,
+                         "decltype(out->" + cppMember + ")::from_c(&out->" + cppMember + ", &in->" + cMember + ");");
             }
             else
             {
                 emitLine(out,
                          1,
-                         "out->" + cppMember +
-                             " = static_cast<std::remove_reference_t<decltype(out->" + cppMember + ")>>(in->" +
-                             cMember + ");");
+                         "out->" + cppMember + " = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
+                             ")>>(in->" + cMember + ");");
             }
             continue;
         }
@@ -696,7 +683,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out,
                          2,
-                         "out->" + cppMember + "[i] = ((in->" + cMember + "[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+                         "out->" + cppMember + "[i] = ((in->" + cMember +
+                             "[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
                 emitLine(out, 1, "}");
             }
             else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
@@ -704,7 +692,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out,
                          2,
-                         "decltype(out->" + cppMember + "[i])::from_c(&out->" + cppMember + "[i], &in->" + cMember + "[i]);");
+                         "decltype(out->" + cppMember + "[i])::from_c(&out->" + cppMember + "[i], &in->" + cMember +
+                             "[i]);");
                 emitLine(out, 1, "}");
             }
             else
@@ -712,8 +701,7 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out,
                          2,
-                         "out->" + cppMember +
-                             "[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
+                         "out->" + cppMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
                              "[i])>>(in->" + cMember + "[i]);");
                 emitLine(out, 1, "}");
             }
@@ -723,8 +711,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
         emitLine(out, 1, "out->" + cppMember + ".count = in->" + cMember + ".count;");
         emitLine(out,
                  1,
-                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(in->" + cMember +
-                     ".count, " + cap + ");");
+                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(in->" + cMember + ".count, " +
+                     cap + ");");
 
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
@@ -734,7 +722,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             emitLine(out,
                      2,
-                     "out->" + cppMember + ".elements[i] = ((in->" + cMember + ".bitpacked[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+                     "out->" + cppMember + ".elements[i] = ((in->" + cMember +
+                         ".bitpacked[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
             emitLine(out, 1, "}");
         }
         else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
@@ -742,8 +731,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             emitLine(out,
                      2,
-                     "decltype(out->" + cppMember + ".elements[i])::from_c(&out->" + cppMember +
-                         ".elements[i], &in->" + cMember + ".elements[i]);");
+                     "decltype(out->" + cppMember + ".elements[i])::from_c(&out->" + cppMember + ".elements[i], &in->" +
+                         cMember + ".elements[i]);");
             emitLine(out, 1, "}");
         }
         else
@@ -751,9 +740,8 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out,
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             emitLine(out,
                      2,
-                     "out->" + cppMember +
-                         ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
-                         ".elements[i])>>(in->" + cMember + ".elements[i]);");
+                     "out->" + cppMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" +
+                         cppMember + ".elements[i])>>(in->" + cMember + ".elements[i]);");
             emitLine(out, 1, "}");
         }
     }
@@ -805,7 +793,8 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
     emitLine(out,
              0,
              "std::int8_t " + plan.cppTypeName +
-                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes, "
+                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                 "inout_buffer_size_bytes, "
                  "const std::uint8_t** const out_view_bytes)");
     emitLine(out, 0, "{");
     emitLine(out,
@@ -829,16 +818,19 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
 }
 
 std::string renderCanonicalHeader(const SemanticDefinition& def,
-                                  const LoweredFactsMap& loweredFacts,
-                                  const EmitterContext& ctx)
+                                  const LoweredFactsMap&    loweredFacts,
+                                  const EmitterContext&     ctx)
 {
     std::ostringstream out;
-    const std::string guard = sanitizeMacroToken("LLVMDSDL_CPPABI_" + def.info.fullName + "_" +
-                                                  std::to_string(def.info.majorVersion) + "_" +
-                                                  std::to_string(def.info.minorVersion) + "_HPP");
+    const std::string  guard =
+        codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                 IdentifierRole::MacroName,
+                                 "LLVMDSDL_CPPABI_" + def.info.fullName + "_" + std::to_string(def.info.majorVersion) +
+                                     "_" + std::to_string(def.info.minorVersion) + "_HPP");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp canonical ABI) */\n";
-    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << " */\n\n";
+    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+        << " */\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
     out << "#include <array>\n";
@@ -874,11 +866,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
     const auto plans = sectionPlansForDefinition(def);
     for (const auto& plan : plans)
     {
-        emitCanonicalStruct(out,
-                            plan,
-                            *plan.section,
-                            ctx,
-                            lookupSectionFacts(loweredFacts, def, plan.sectionName));
+        emitCanonicalStruct(out, plan, *plan.section, ctx, lookupSectionFacts(loweredFacts, def, plan.sectionName));
     }
 
     if (def.isService)
@@ -887,8 +875,8 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
         emitLine(out, 0, "using " + baseName + " = " + baseName + "__Request;");
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseName +
-                     "__serialize_(const " + baseName + "* const obj, std::uint8_t* const buffer, "
+                 "inline std::int8_t " + baseName + "__serialize_(const " + baseName +
+                     "* const obj, std::uint8_t* const buffer, "
                      "std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
@@ -898,8 +886,8 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
         emitLine(out, 0, "}");
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseName +
-                     "__deserialize_(" + baseName + "* const out_obj, const std::uint8_t* const buffer, "
+                 "inline std::int8_t " + baseName + "__deserialize_(" + baseName +
+                     "* const out_obj, const std::uint8_t* const buffer, "
                      "std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
@@ -943,7 +931,8 @@ std::string renderCanonicalSource(const SemanticDefinition& def)
     std::ostringstream out;
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp canonical ABI) */\n";
-    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << " */\n\n";
+    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+        << " */\n\n";
     out << "#include \"" << canonicalHeaderPath(def.info).generic_string() << "\"\n";
     out << "#include <algorithm>\n\n";
     out << "#include <type_traits>\n\n";
@@ -966,10 +955,10 @@ std::string renderCanonicalSource(const SemanticDefinition& def)
     return out.str();
 }
 
-void emitShimStruct(std::ostringstream& out,
-                    const SectionPlan& plan,
+void emitShimStruct(std::ostringstream&    out,
+                    const SectionPlan&     plan,
                     const SemanticSection& section,
-                    const EmitterContext& ctx)
+                    const EmitterContext&  ctx)
 {
     emitLine(out, 0, "typedef struct " + plan.shimTypeName + " {");
 
@@ -980,9 +969,10 @@ void emitShimStruct(std::ostringstream& out,
         {
             continue;
         }
-        const std::string member = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
+        const std::string member =
+            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
         const std::string elemType = shimScalarType(field.resolvedType, ctx);
-        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cap      = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -1007,7 +997,10 @@ void emitShimStruct(std::ostringstream& out,
         // Tag storage must match the wire tag width; a hardcoded uint8_t truncates a wide
         // tag (>256-option unions get a 16-bit tag). sectionFacts isn't threaded to the
         // shim struct; resolveUnionTagBits falls back to the authoritative per-field width.
-        emitLine(out, 1, renderUnsignedStorageToken(StorageTokenLanguage::C, resolveUnionTagBits(section, nullptr)) + " _tag_;");
+        emitLine(out,
+                 1,
+                 renderUnsignedStorageToken(StorageTokenLanguage::C, resolveUnionTagBits(section, nullptr)) +
+                     " _tag_;");
         ++emittedFields;
     }
     if (emittedFields == 0)
@@ -1047,12 +1040,15 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
 {
     std::ostringstream out;
 
-    const std::string guard = sanitizeMacroToken("LLVMDSDL_CPPABI_C_SHIM_" + def.info.fullName + "_" +
-                                                  std::to_string(def.info.majorVersion) + "_" +
-                                                  std::to_string(def.info.minorVersion) + "_H");
+    const std::string guard = codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                                       IdentifierRole::MacroName,
+                                                       "LLVMDSDL_CPPABI_C_SHIM_" + def.info.fullName + "_" +
+                                                           std::to_string(def.info.majorVersion) + "_" +
+                                                           std::to_string(def.info.minorVersion) + "_H");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp C shim) */\n";
-    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << " */\n\n";
+    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+        << " */\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
     out << "#include <stdbool.h>\n";
@@ -1093,9 +1089,9 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
 
     if (def.isService)
     {
-        const auto base      = shimTypeNameFromInfo(def.info);
+        const auto base        = shimTypeNameFromInfo(def.info);
         const auto requestStem = shimSymbolStem(def, "request");
-        const auto baseStem = shimSymbolStem(def, "");
+        const auto baseStem    = shimSymbolStem(def, "");
         emitLine(out,
                  0,
                  "int8_t " + baseStem + "__serialize_(const " + base +
@@ -1123,30 +1119,34 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
     return out.str();
 }
 
-void emitShimDefinition(std::ostringstream& out,
+void emitShimDefinition(std::ostringstream&       out,
                         const SemanticDefinition& def,
-                        const SectionPlan&       plan,
-                        const std::string&       canonicalPrefix)
+                        const SectionPlan&        plan,
+                        const std::string&        canonicalPrefix)
 {
     const std::string canonicalType = canonicalPrefix + plan.cppTypeName;
-    const std::string symbolStem = shimSymbolStem(def, plan.sectionName);
+    const std::string symbolStem    = shimSymbolStem(def, plan.sectionName);
 
     emitLine(out,
              0,
-             "static_assert(sizeof(" + canonicalType + ") == sizeof(" + plan.shimTypeName + "), "
-             "\"shim/canonical size mismatch\");");
+             "static_assert(sizeof(" + canonicalType + ") == sizeof(" + plan.shimTypeName +
+                 "), "
+                 "\"shim/canonical size mismatch\");");
     emitLine(out,
              0,
-             "static_assert(alignof(" + canonicalType + ") == alignof(" + plan.shimTypeName + "), "
-             "\"shim/canonical alignment mismatch\");");
+             "static_assert(alignof(" + canonicalType + ") == alignof(" + plan.shimTypeName +
+                 "), "
+                 "\"shim/canonical alignment mismatch\");");
     emitLine(out,
              0,
-             "static_assert(std::is_trivially_copyable<" + canonicalType + ">::value, "
-             "\"canonical ABI type must be trivially copyable\");");
+             "static_assert(std::is_trivially_copyable<" + canonicalType +
+                 ">::value, "
+                 "\"canonical ABI type must be trivially copyable\");");
     emitLine(out,
              0,
-             "static_assert(std::is_trivially_copyable<" + plan.shimTypeName + ">::value, "
-             "\"shim type must be trivially copyable\");");
+             "static_assert(std::is_trivially_copyable<" + plan.shimTypeName +
+                 ">::value, "
+                 "\"shim type must be trivially copyable\");");
     out << '\n';
 
     emitLine(out,
@@ -1190,8 +1190,7 @@ void emitShimDefinition(std::ostringstream& out,
     emitLine(out, 0, "{");
     emitLine(out,
              1,
-             "return " + canonicalType +
-                 "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+             "return " + canonicalType + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 0, "}");
     out << '\n';
 
@@ -1215,7 +1214,8 @@ std::string renderShimSource(const SemanticDefinition& def)
     const std::string  canonicalPrefix = canonicalQualifiedPrefix(def.info);
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp C shim) */\n";
-    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << " */\n\n";
+    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+        << " */\n\n";
     out << "#include \"" << canonicalHeaderPath(def.info).generic_string() << "\"\n";
     out << "#include \"" << shimHeaderPath(def.info).generic_string() << "\"\n";
     out << "#include <cstring>\n";
@@ -1241,8 +1241,9 @@ std::string renderShimSource(const SemanticDefinition& def)
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + reqStem + "__serialize_(reinterpret_cast<const " + shimBase + "__Request*>(obj), "
-                 "buffer, inout_buffer_size_bytes);");
+                 "return " + reqStem + "__serialize_(reinterpret_cast<const " + shimBase +
+                     "__Request*>(obj), "
+                     "buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
         out << '\n';
 
@@ -1253,8 +1254,9 @@ std::string renderShimSource(const SemanticDefinition& def)
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + reqStem + "__deserialize_(reinterpret_cast<" + shimBase + "__Request*>(out_obj), "
-                 "buffer, inout_buffer_size_bytes);");
+                 "return " + reqStem + "__deserialize_(reinterpret_cast<" + shimBase +
+                     "__Request*>(out_obj), "
+                     "buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
         out << '\n';
 
@@ -1266,8 +1268,7 @@ std::string renderShimSource(const SemanticDefinition& def)
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + reqStem +
-                     "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+                 "return " + reqStem + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
         emitLine(out, 0, "}");
         out << '\n';
 
@@ -1293,20 +1294,24 @@ std::string renderAdapterHeader(const SemanticDefinition& def, llvm::StringRef p
 {
     std::ostringstream out;
 
-    const std::string guard = sanitizeMacroToken("LLVMDSDL_CPPABI_ADAPTER_" + profile.str() + "_" + def.info.fullName +
-                                                  "_" + std::to_string(def.info.majorVersion) + "_" +
-                                                  std::to_string(def.info.minorVersion) + "_HPP");
+    const std::string guard =
+        codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
+                                 IdentifierRole::MacroName,
+                                 "LLVMDSDL_CPPABI_ADAPTER_" + profile.str() + "_" + def.info.fullName + "_" +
+                                     std::to_string(def.info.majorVersion) + "_" +
+                                     std::to_string(def.info.minorVersion) + "_HPP");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp " << profile.str() << " adapter) */\n";
-    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << " */\n\n";
+    out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+        << " */\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
     out << "#include \"" << canonicalHeaderPath(def.info).generic_string() << "\"\n\n";
 
     emitNamespaceOpen(out, def.info.namespaceComponents);
 
-    const auto baseName = cppTypeNameFromInfo(def.info);
-    const auto cppNs = cppNamespacePath(def.info.namespaceComponents);
+    const auto        baseName        = cppTypeNameFromInfo(def.info);
+    const auto        cppNs           = cppNamespacePath(def.info.namespaceComponents);
     const std::string canonicalPrefix = cppNs.empty() ? "::abi::" : ("::" + cppNs + "::abi::");
     if (def.isService)
     {
@@ -1368,9 +1373,9 @@ llvm::Error emitCRuntimeForwardHeader(const CppObjectAbiEmitOptions& options)
 
 }  // namespace
 
-llvm::Error emitCppObjectAbiStage(const SemanticModule&          semantic,
-                                  const LoweredFactsMap&         loweredFacts,
-                                  const CppObjectAbiEmitOptions& options,
+llvm::Error emitCppObjectAbiStage(const SemanticModule&                     semantic,
+                                  const LoweredFactsMap&                    loweredFacts,
+                                  const CppObjectAbiEmitOptions&            options,
                                   std::vector<std::filesystem::path>* const outCppSources)
 {
     if (outCppSources == nullptr)
@@ -1378,7 +1383,7 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&          semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "null outCppSources sink");
     }
 
-    const auto selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    const auto     selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
     EmitterContext ctx(semantic);
 
     if (auto err = emitRuntimeHeader(options))
@@ -1413,24 +1418,17 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&          semantic,
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(canonicalSource,
-                                          renderCanonicalSource(def),
-                                          options.writePolicy,
-                                          requiredTypeKeys))
+        if (auto err =
+                writeGeneratedFile(canonicalSource, renderCanonicalSource(def), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(shimHeader,
-                                          renderShimHeader(def, ctx),
-                                          options.writePolicy,
-                                          requiredTypeKeys))
+        if (auto err =
+                writeGeneratedFile(shimHeader, renderShimHeader(def, ctx), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(shimSource,
-                                          renderShimSource(def),
-                                          options.writePolicy,
-                                          requiredTypeKeys))
+        if (auto err = writeGeneratedFile(shimSource, renderShimSource(def), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
@@ -1438,7 +1436,8 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&          semantic,
         outCppSources->push_back(canonicalSource);
         outCppSources->push_back(shimSource);
 
-        for (const llvm::StringRef profile : {llvm::StringRef("std"), llvm::StringRef("pmr"), llvm::StringRef("autosar")})
+        for (const llvm::StringRef profile :
+             {llvm::StringRef("std"), llvm::StringRef("pmr"), llvm::StringRef("autosar")})
         {
             const auto adapter = options.stageRoot / adapterHeaderPath(profile, def.info);
             if (auto err = writeGeneratedFile(adapter,

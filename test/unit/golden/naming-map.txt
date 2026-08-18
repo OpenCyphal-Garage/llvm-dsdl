@@ -389,7 +389,7 @@ type              no     python   type                type                Type  
 # are excluded: a clash they cause is not a hazard the compiler can meet.
 #
 # guard: what stops the collision from reaching generated code today.
-#   allocator  an in-scope name; CodegenIdentifierAllocator appends _2 (next section).
+#   allocator  an in-scope name; the scope appends _2 (see naming-roles.txt).
 #   discovery  every source folds to one Discovery key, so the frontend rejects the pair
 #              before codegen runs.
 #   MISSED     the sources fold to different Discovery keys but the same output name, so
@@ -575,83 +575,3 @@ python   type_name    discovery  FooBar_1_0          fooBar, foo_bar, FooBar
 python   type_name    MISSED     Foo_1_0             _foo, __foo, _Foo, foo_, Foo_
 python   type_name    MISSED     Map_1_0             map, Map_
 python   type_name    MISSED     Match_1_0           match, Match_
-
-== allocator ==
-#
-# CodegenIdentifierAllocator over one scope, in declaration order, showing the _2/_3
-# repair that keeps the map injective within that scope.
-
-scope               language source        identifier
----------------------------------------------------------------
-struct_body_snake   c        fooBar        foo_bar
-struct_body_snake   c        foo_bar       foo_bar_2
-struct_body_snake   c        FooBar        foo_bar_3
-struct_body_snake   c        break         break_
-struct_body_snake   c        break_        break__2
-struct_body_snake   cpp      fooBar        foo_bar
-struct_body_snake   cpp      foo_bar       foo_bar_2
-struct_body_snake   cpp      FooBar        foo_bar_3
-struct_body_snake   cpp      break         break_
-struct_body_snake   cpp      break_        break__2
-struct_body_snake   rust     fooBar        foo_bar
-struct_body_snake   rust     foo_bar       foo_bar_2
-struct_body_snake   rust     FooBar        foo_bar_3
-struct_body_snake   rust     break         break_
-struct_body_snake   rust     break_        break__2
-struct_body_snake   go       fooBar        foo_bar
-struct_body_snake   go       foo_bar       foo_bar_2
-struct_body_snake   go       FooBar        foo_bar_3
-struct_body_snake   go       break         break_
-struct_body_snake   go       break_        break__2
-struct_body_snake   ts       fooBar        foo_bar
-struct_body_snake   ts       foo_bar       foo_bar_2
-struct_body_snake   ts       FooBar        foo_bar_3
-struct_body_snake   ts       break         break_
-struct_body_snake   ts       break_        break__2
-struct_body_snake   python   fooBar        foo_bar
-struct_body_snake   python   foo_bar       foo_bar_2
-struct_body_snake   python   FooBar        foo_bar_3
-struct_body_snake   python   break         break_
-struct_body_snake   python   break_        break__2
-struct_body_pascal  c        fooBar        FooBar
-struct_body_pascal  c        foo_bar       FooBar_2
-struct_body_pascal  c        serialize     Serialize_2
-struct_body_pascal  c        Serialize     Serialize_3
-struct_body_pascal  cpp      fooBar        FooBar
-struct_body_pascal  cpp      foo_bar       FooBar_2
-struct_body_pascal  cpp      serialize     Serialize_2
-struct_body_pascal  cpp      Serialize     Serialize_3
-struct_body_pascal  rust     fooBar        FooBar
-struct_body_pascal  rust     foo_bar       FooBar_2
-struct_body_pascal  rust     serialize     Serialize_2
-struct_body_pascal  rust     Serialize     Serialize_3
-struct_body_pascal  go       fooBar        FooBar
-struct_body_pascal  go       foo_bar       FooBar_2
-struct_body_pascal  go       serialize     Serialize_2
-struct_body_pascal  go       Serialize     Serialize_3
-struct_body_pascal  ts       fooBar        FooBar
-struct_body_pascal  ts       foo_bar       FooBar_2
-struct_body_pascal  ts       serialize     Serialize_2
-struct_body_pascal  ts       Serialize     Serialize_3
-struct_body_pascal  python   fooBar        FooBar
-struct_body_pascal  python   foo_bar       FooBar_2
-struct_body_pascal  python   serialize     Serialize_2
-struct_body_pascal  python   Serialize     Serialize_3
-constants_upper     c        fooBar        FOO_BAR
-constants_upper     c        foo_bar       FOO_BAR_2
-constants_upper     c        FOO_BAR       FOO_BAR_3
-constants_upper     cpp      fooBar        FOO_BAR
-constants_upper     cpp      foo_bar       FOO_BAR_2
-constants_upper     cpp      FOO_BAR       FOO_BAR_3
-constants_upper     rust     fooBar        FOO_BAR
-constants_upper     rust     foo_bar       FOO_BAR_2
-constants_upper     rust     FOO_BAR       FOO_BAR_3
-constants_upper     go       fooBar        FOO_BAR
-constants_upper     go       foo_bar       FOO_BAR_2
-constants_upper     go       FOO_BAR       FOO_BAR_3
-constants_upper     ts       fooBar        FOO_BAR
-constants_upper     ts       foo_bar       FOO_BAR_2
-constants_upper     ts       FOO_BAR       FOO_BAR_3
-constants_upper     python   fooBar        FOO_BAR
-constants_upper     python   foo_bar       FOO_BAR_2
-constants_upper     python   FOO_BAR       FOO_BAR_3

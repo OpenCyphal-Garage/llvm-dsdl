@@ -16,6 +16,8 @@
 # in the path even though it is escaped in identifiers.
 # RUN: test -f %t/c/fixtures_naming/naming/Break_1_0.h
 
+# RUN: cat %t/c/fixtures_naming/naming/Constants_1_0.h | FileCheck %s --check-prefix=C_CONSTANTS
+
 # RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/cpp/fixtures_naming/naming/Keywords_1_0.hpp | FileCheck %s --check-prefix=CPP_KEYWORDS
 # RUN: test -f %t/cpp/fixtures_naming/naming/Break_1_0.hpp
@@ -28,6 +30,9 @@
 # RUN: cat %t/go/fixtures_naming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
 # RUN: cat %t/go/fixtures_naming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
 # RUN: test -f %t/go/fixtures_naming/naming/break__1_0.go
+# RUN: cat %t/go/fixtures_naming/naming/constants_1_0.go | FileCheck %s --check-prefix=GO_CONSTANTS
+# A namespace component that is a Go keyword is escaped in both the directory and the package clause.
+# RUN: cat %t/go/fixtures_naming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
 
 # RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/ts/fixtures_naming/naming/keywords_1_0.ts | FileCheck %s --check-prefix=TS_KEYWORDS
@@ -39,6 +44,9 @@
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/keywords_1_0.py | FileCheck %s --check-prefix=PY_KEYWORDS
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/case_folds_1_0.py | FileCheck %s --check-prefix=PY_FOLDS
 # RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/break__1_0.py
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/constants_1_0.py | FileCheck %s --check-prefix=PY_CONSTANTS
+# `map` is not a Python keyword, so the same namespace component that Go had to escape is left alone.
+# RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/map/nested_1_0.py
 
 # SUMMARY: Run summary:
 # SUMMARY: files generated:
@@ -112,3 +120,23 @@
 # PY_FOLDS: foo_bar: int = 0
 # PY_FOLDS: foo_bar_2: int = 0
 # PY_FOLDS: foo_bar_3: int = 0
+
+# C builds macro tokens by upper-casing the raw name, so `fooBar` becomes FOOBAR rather than
+# FOO_BAR and does not collide with the constant actually spelled FOO_BAR. C also skips the keyword
+# escape for macros -- `break` is not a macro-namespace hazard in C -- so this reads BREAK, not
+# BREAK_. Both are the `strop: no` cell of the role table in test/unit/golden/naming-roles.txt.
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_FOO_BAR (1)
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_FOOBAR (2)
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_BREAK (3)
+
+# Go folds to UPPER_SNAKE_CASE first, so `FOO_BAR` and `fooBar` do collide and the scope repairs the
+# second one; and it does strop, so `break` becomes BREAK_.
+# GO_CONSTANTS: const CONSTANTS_1_0_FOO_BAR = 1
+# GO_CONSTANTS: const CONSTANTS_1_0_FOO_BAR_2 = 2
+# GO_CONSTANTS: const CONSTANTS_1_0_BREAK_ = 3
+
+# GO_NAMESPACE: package map_
+
+# PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR = 1
+# PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR_2 = 2
+# PY_CONSTANTS: CONSTANTS_1_0_BREAK_ = 3
