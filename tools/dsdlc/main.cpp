@@ -82,7 +82,7 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
         llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
         return;
     }
-    auto events = sink.events();
+    auto              events = sink.events();
     const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
     if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
     {
@@ -137,12 +137,12 @@ struct CliOptions final
     /// @brief Criteria selecting when support code is generated.
     llvmdsdl::SupportGeneration supportGeneration{llvmdsdl::SupportGeneration::AsNeeded};
     bool                        sawGenerateSupport{false};
-    bool optimizeLoweredSerDes{false};
-    bool emitDeprecationAttributes{true};
-    bool dryRun{false};
-    bool listOutputs{false};
-    bool listInputs{false};
-    bool emitDepfiles{false};
+    bool                        optimizeLoweredSerDes{false};
+    bool                        emitDeprecationAttributes{true};
+    bool                        dryRun{false};
+    bool                        listOutputs{false};
+    bool                        listInputs{false};
+    bool                        emitDepfiles{false};
 
     /// @brief Per-tranche manifest enabling removal of outputs this run no longer produces.
     std::string pruneManifest;
@@ -195,6 +195,46 @@ bool isHelpToken(llvm::StringRef arg)
 bool isVersionToken(llvm::StringRef arg)
 {
     return arg == "--version" || arg == "-V";
+}
+
+/// @brief Maps a `--target-language` value onto the naming policies its output will use.
+///
+/// Only source-emitting targets contribute: `ast` and `mlir` produce no identifiers, so they name no
+/// language and the frontend runs no output-name collision check for them. `obj` emits both a C++
+/// header and a C shim, so it names both. See the decisions section of
+/// docs/development/identifier-stropping.md.
+llvm::SmallVector<llvmdsdl::OutputLanguage, 2> namingLanguagesForTarget(const llvm::StringRef language)
+{
+    using llvmdsdl::CodegenNamingLanguage;
+    if (language == "c")
+    {
+        return {{CodegenNamingLanguage::C, "c"}};
+    }
+    if (language == "cpp")
+    {
+        return {{CodegenNamingLanguage::Cpp, "cpp"}};
+    }
+    if (language == "rust")
+    {
+        return {{CodegenNamingLanguage::Rust, "rust"}};
+    }
+    if (language == "go")
+    {
+        return {{CodegenNamingLanguage::Go, "go"}};
+    }
+    if (language == "ts")
+    {
+        return {{CodegenNamingLanguage::TypeScript, "ts"}};
+    }
+    if (language == "python")
+    {
+        return {{CodegenNamingLanguage::Python, "python"}};
+    }
+    if (language == "obj")
+    {
+        return {{CodegenNamingLanguage::Cpp, "obj"}, {CodegenNamingLanguage::C, "obj"}};
+    }
+    return {};
 }
 
 bool isCodegenLanguage(llvm::StringRef language)
@@ -1362,7 +1402,9 @@ int main(int argc, char** argv)
     }
 
     logVerbose(1, "discovering and parsing definitions");
-    auto ast = llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics);
+    const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage);
+    auto       ast =
+        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics, outputLanguages);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());
@@ -1674,19 +1716,19 @@ int main(int argc, char** argv)
 
     // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
     // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
-    const char* const              emitTraceEnv     = std::getenv("LLVMDSDL_EMIT_TRACE");
+    const char* const              emitTraceEnv = std::getenv("LLVMDSDL_EMIT_TRACE");
     llvmdsdl::EmitTraceSink        emitTraceSink;
     llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
 
     if (options.targetLanguage == "c")
     {
         llvmdsdl::CEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
@@ -1705,13 +1747,13 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "cpp")
     {
         llvmdsdl::CppEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.profile               = options.cppProfile;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.profile                   = options.cppProfile;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
@@ -1734,17 +1776,17 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "rust")
     {
         llvmdsdl::RustEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.crateName             = options.rustCrateName;
-        emitOptions.profile               = options.rustProfile;
-        emitOptions.runtimeSpecialization = options.rustRuntimeSpecialization;
-        emitOptions.memoryMode            = options.rustMemoryMode;
-        emitOptions.inlineThresholdBytes  = options.rustInlineThresholdBytes;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.crateName                 = options.rustCrateName;
+        emitOptions.profile                   = options.rustProfile;
+        emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
+        emitOptions.memoryMode                = options.rustMemoryMode;
+        emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
@@ -1852,13 +1894,13 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "obj")
     {
         llvmdsdl::ObjectEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.targetEndianness      = options.objTargetEndianness;
-        emitOptions.targetTriple          = options.objTargetTriple;
-        emitOptions.archiveName           = options.objArchiveName;
-        emitOptions.noArchive             = options.objNoArchive;
-        emitOptions.abiLanguage           = (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp
-                                                                                : llvmdsdl::ObjectAbiLanguage::C;
+        emitOptions.outDir           = options.outDir;
+        emitOptions.targetEndianness = options.objTargetEndianness;
+        emitOptions.targetTriple     = options.objTargetTriple;
+        emitOptions.archiveName      = options.objArchiveName;
+        emitOptions.noArchive        = options.objNoArchive;
+        emitOptions.abiLanguage =
+            (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp : llvmdsdl::ObjectAbiLanguage::C;
         emitOptions.compileJobs           = options.jobs;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;

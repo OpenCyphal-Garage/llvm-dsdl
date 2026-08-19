@@ -16,10 +16,11 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-#include "llvmdsdl/Support/NameCanonicalization.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <compare>
 #include <cstddef>
@@ -193,9 +194,10 @@ void discoverInRoot(const std::filesystem::path&       root,
 
 }  // namespace
 
-std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>& rootNamespaceDirs,
-                                                      const std::vector<std::string>& lookupDirs,
-                                                      DiagnosticEngine&               diagnostics)
+std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
+                                                      const std::vector<std::string>&      lookupDirs,
+                                                      DiagnosticEngine&                    diagnostics,
+                                                      const llvm::ArrayRef<OutputLanguage> outputLanguages)
 {
     std::vector<DiscoveredDefinition> definitions;
 
@@ -226,7 +228,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
 
     std::unordered_map<std::string, std::string> caseInsensitiveNames;
     std::unordered_map<std::string, std::string> versionUnique;
-    std::unordered_map<std::string, std::string> generatedFileNames;
+    std::unordered_map<std::string, std::string> generatedOutputNames;
 
     for (const auto& def : definitions)
     {
@@ -239,27 +241,49 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                                   itName->second);
         }
 
-        // The Go/Rust/TypeScript/Python backends derive the output file (and module) name by
-        // snake_casing each name component, which is many-to-one: two distinct types in a namespace
-        // that differ only in case/underscore style (e.g. `FooBar` and `Foo_bar`) fold to the same
-        // file (`foo_bar_1_0`), so one would silently overwrite the other and a whole type would be
-        // lost. Reject the pair up front (the case-insensitive check above does not catch
-        // underscore-only differences). The fold matches the emitters' projection exactly.
-        std::string generatedStem;
-        for (const auto& component : def.namespaceComponents)
+        // Two distinct DSDL types can land on one generated name, because both the file-stem and the
+        // type-name projections are many-to-one and they fold differently: the stem keeps
+        // underscores and the type name drops them. `FooBar`/`Foo_bar` collide as file names,
+        // `Break`/`Break_` collide once the keyword escape fires, and `_foo`/`foo_` take two files
+        // but one type name. Whichever half collides, one type is lost or the output does not
+        // compile, so the pair is rejected here.
+        //
+        // The keys come from the same engine the emitters name with, so this check cannot drift from
+        // what is actually written -- which is how the earlier hand-rolled fold came to miss the
+        // keyword escape. Only the languages selected for this invocation are checked; see the
+        // decisions section of docs/development/identifier-stropping.md.
+        for (const auto& [language, languageName] : outputLanguages)
         {
-            generatedStem += canonicalSnakeCase(component);
-            generatedStem.push_back('/');
-        }
-        generatedStem += canonicalSnakeCase(def.shortName);
-        const std::string fileKey = generatedStem + ":" + std::to_string(def.majorVersion) + ":" +
-                                    std::to_string(def.minorVersion);
-        const auto [itFile, insertedFile] = generatedFileNames.emplace(fileKey, def.fullName);
-        if (!insertedFile && itFile->second != def.fullName)
-        {
-            diagnostics.error({def.filePath, 1, 1},
-                              "type name collision in generated output: " + def.fullName + " and " + itFile->second +
-                                  " map to the same generated file name (they differ only in case or underscores)");
+            std::string namespacePath;
+            for (const auto& component : def.namespaceComponents)
+            {
+                namespacePath += codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
+                namespacePath.push_back('/');
+            }
+            const std::string versionSuffix =
+                ":" + std::to_string(def.majorVersion) + ":" + std::to_string(def.minorVersion);
+
+            const std::array<std::pair<IdentifierRole, const char*>, 2> kOutputNames = {
+                {{IdentifierRole::FileStem, "output file name"}, {IdentifierRole::TypeName, "generated type name"}}};
+
+            // A pair that collides on both halves is still one problem to the reader, so the first
+            // one reported wins and the second is suppressed.
+            bool reported = false;
+            for (const auto& [role, what] : kOutputNames)
+            {
+                const std::string key = std::string(languageName) + ":" + std::to_string(static_cast<int>(role)) + ":" +
+                                        namespacePath + codegenProjectIdentifier(language, role, def.shortName) +
+                                        versionSuffix;
+                const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
+                if (!inserted && it->second != def.fullName && !reported)
+                {
+                    diagnostics.error({def.filePath, 1, 1},
+                                      "type name collision in generated output: " + def.fullName + " and " +
+                                          it->second + " map to the same " + what + " for target language '" +
+                                          languageName.str() + "'");
+                    reported = true;
+                }
+            }
         }
 
         const std::string versionKey =

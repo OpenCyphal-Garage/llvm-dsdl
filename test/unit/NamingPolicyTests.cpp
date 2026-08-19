@@ -13,7 +13,7 @@
 
 #include "llvm/ADT/StringRef.h"
 
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 
 namespace
 {

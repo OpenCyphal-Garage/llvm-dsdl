@@ -1,15 +1,15 @@
 # Identifier stropping (design)
 
-Every backend has to turn a DSDL name into an identifier the target language will accept. Today six
-emitters each do that for themselves by calling a handful of free functions in
-`lib/CodeGen/NamingPolicy.cpp`, and the frontend re-implements part of the same projection to detect
-output-file collisions. The policy is therefore stated three times and agrees only by accident — §3
-shows a case where it does not agree, and a whole type is silently lost.
+Every backend has to turn a DSDL name into an identifier the target language will accept. When this
+note was written, six emitters each did that for themselves by calling a handful of free functions in
+`lib/CodeGen/NamingPolicy.cpp`, and the frontend re-implemented part of the same projection to detect
+output-file collisions. The policy was therefore stated three times and agreed only by accident — §3
+shows a case where it did not, and a whole type was silently lost.
 
 This note specifies a single stropping engine: one pipeline, one table per language, and collision
 detection that consumes the engine rather than approximating it.
 
-Status: proposed, with §7 settled. Phases 0, 1 and 2 (§5) have landed; nothing else has.
+Status: proposed, with §7 settled. Phases 0 through 3 (§5) have landed; phases 4 and 5 have not.
 
 ---
 
@@ -75,7 +75,11 @@ micro-optimization: it is the difference between escaping 81 names and escaping 
 
 ---
 
-## 3. What is broken today
+## 3. What was broken
+
+This section records the tree as it stood before §5's phases, because it is the motivation for the
+design in §4 — not a description of the current state. §3.1, §3.2 and §3.5 are closed; §3.3 and §3.4
+are phase 4 and phase 5 respectively and are still open.
 
 **3.1 Collision detection does not model the escape step, and a type is silently lost.**
 [`Discovery.cpp:251`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/Frontend/Discovery.cpp) folds each type name with
@@ -101,7 +105,7 @@ This is the same failure class as the already-fixed sibling-filename collision, 
 different door — which is the argument for §4.5 rather than for another patch.
 
 **3.2 Policy is stated in three places.** The keyword tables and the escape live in
-`NamingPolicy.cpp`; `CEmitter.cpp:75` and `CppEmitter.cpp:76` each carry a private
+`NamingPolicy.cpp` (moved to `lib/Support/` in phase 3); `CEmitter.cpp:75` and `CppEmitter.cpp:76` each carry a private
 `sanitizeMacroToken` (phase 2 found a third in `CppObjectAbiEmitter.cpp` and two more inline in the
 header-guard builders); `Discovery.cpp` carries the fold. Only `GoEmitter.cpp` reserves the names its
 own generated code claims (`Serialize`, `Deserialize`); the other five backends have the same
@@ -300,7 +304,7 @@ Each phase is independently shippable and leaves the tree green.
 | 0 | Freeze current output as a golden map over an adversarial DSDL corpus — **done** | none |
 | 1 | Add roles, scopes, and the policy struct; port existing behavior verbatim — **done** | none — golden map byte-identical |
 | 2 | Route all six emitters through `NamingScope`; delete the `sanitizeMacroToken` copies — **done** | none — generated output byte-identical |
-| 3 | Discovery consumes the engine | §3.1 becomes an error instead of a lost type |
+| 3 | Discovery consumes the engine — **done** | §3.1 and §3.5 become errors instead of a lost type / a package that will not compile |
 | 4 | Reserved patterns, `predeclared`, `runtimeOwned` per language | some identifiers gain a `_`; golden map updated once, deliberately |
 | 5 | Manifest `names` section, remark, LSP hover, Python packaging note (§7.2) | additive |
 
@@ -355,6 +359,27 @@ commented in place.
 
 The §4.1 rule that no emitter calls a projection directly is now enforceable by `grep` for
 `codegenTo*CaseIdentifier` outside `NamingPolicy.cpp`, which returns nothing.
+
+Phase 3 moved the engine down a layer and pointed the frontend at it. `NamingPolicy` now lives in
+`llvmdsdlSupport` rather than `llvmdsdlCodeGen`, because `Frontend` cannot depend on `CodeGen` — the
+same argument that had already put `canonicalSnakeCase` in Support, now applied to the whole engine.
+`Discovery` keys on the `FileStem` *and* `TypeName` identifiers the selected backends will actually
+use, so §3.1 and §3.5 are errors rather than silent losses, and the hand-rolled fold that missed the
+keyword escape is gone.
+
+The `--target-language` value maps to the naming policies its output uses: one language for each
+source-emitting target, both C and C++ for `obj`, and none for `ast` and `mlir`. Two consequences
+follow from decision §7.1, both covered by `test/lit/naming-stropping.txt`:
+
+- a C build of `Break`/`Break_` still succeeds, because C names headers after the raw short name;
+- `dsdlc --target-language ast` runs no output-name check at all, since it emits no identifiers.
+
+That second one is a deliberate narrowing: `test/lit/type-filename-collision.txt` used `ast` to
+trigger the old check and now names a real backend. Validating a namespace's output names is
+something you now ask a backend for, not something an AST dump does on the side.
+
+The standard `uavcan` namespace generates clean on all seven targets (379 to 382 files for C and
+C++, 191 to 263 elsewhere, zero errors), so the new rejection does not touch conformant DSDL.
 
 One divergence surfaced and is pinned rather than smoothed over: on the empty name the pipeline
 substitutes `_` while the emitter-private macro and stem paths return the empty string. The empty

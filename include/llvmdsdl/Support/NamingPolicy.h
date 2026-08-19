@@ -14,8 +14,8 @@
 /// common case projections (snake/pascal/upper-snake) used by emitters.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_NAMING_POLICY_H
-#define LLVMDSDL_CODEGEN_NAMING_POLICY_H
+#ifndef LLVMDSDL_SUPPORT_NAMING_POLICY_H
+#define LLVMDSDL_SUPPORT_NAMING_POLICY_H
 
 #include <string>
 
@@ -231,4 +231,4 @@ private:
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_CODEGEN_NAMING_POLICY_H
+#endif  // LLVMDSDL_SUPPORT_NAMING_POLICY_H

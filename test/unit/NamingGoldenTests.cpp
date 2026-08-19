@@ -38,7 +38,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/NameCanonicalization.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 

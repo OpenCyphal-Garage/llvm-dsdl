@@ -130,9 +130,9 @@ std::optional<__int128> parseIntegerLiteral(const std::string& in)
 /// `.5` / `3.` real-literal reassembly performed by the expression parser.
 bool isDecimalIntegerLiteral(const std::string& text)
 {
-    return !(text.size() >= 2 && text[0] == '0' &&
-             (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B' || text[1] == 'o' ||
-              text[1] == 'O'));
+    return !(
+        text.size() >= 2 && text[0] == '0' &&
+        (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B' || text[1] == 'o' || text[1] == 'O'));
 }
 
 /// @brief True when @p text exactly matches `literal_integer_decimal`
@@ -832,8 +832,9 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
     {
         if (!silent)
         {
-            diagnostics_.error(baseTok.location,
-                               "a cast mode ('saturated'/'truncated') may only precede an integer or floating-point type");
+            diagnostics_
+                .error(baseTok.location,
+                       "a cast mode ('saturated'/'truncated') may only precede an integer or floating-point type");
         }
         return fail();
     }
@@ -1060,8 +1061,10 @@ std::shared_ptr<ExprAST> Parser::parseExpression()
 namespace
 {
 
-std::shared_ptr<ExprAST> makeBinaryNode(BinaryOp op, std::shared_ptr<ExprAST> lhs, std::shared_ptr<ExprAST> rhs,
-                                        const SourceLocation& location)
+std::shared_ptr<ExprAST> makeBinaryNode(BinaryOp                 op,
+                                        std::shared_ptr<ExprAST> lhs,
+                                        std::shared_ptr<ExprAST> rhs,
+                                        const SourceLocation&    location)
 {
     auto node      = std::make_shared<ExprAST>();
     node->location = location;
@@ -1265,8 +1268,7 @@ std::shared_ptr<ExprAST> Parser::parseAttributeAccess()
     {
         return nullptr;
     }
-    while (check(TokenKind::Dot) && cursor_ + 1 < tokens_.size() &&
-           tokens_[cursor_ + 1].kind == TokenKind::Identifier)
+    while (check(TokenKind::Dot) && cursor_ + 1 < tokens_.size() && tokens_[cursor_ + 1].kind == TokenKind::Identifier)
     {
         const Token op    = advance();  // '.'
         const Token ident = advance();  // identifier
@@ -1335,8 +1337,7 @@ std::shared_ptr<ExprAST> Parser::parsePrimary()
         // (`3.field` therefore becomes real `3.` followed by a dangling `field`,
         // a parse error). Only a '.' separated from the digits by whitespace
         // (`3 . field`) is attribute access. Hex/bin/oct cannot take a '.'.
-        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) &&
-            tokensAdjacent(intToken, current()))
+        if (check(TokenKind::Dot) && isDecimalIntegerLiteral(intToken.text) && tokensAdjacent(intToken, current()))
         {
             (void) advance();  // consume '.'
             const auto value = parseRealLiteral(intToken.text + ".");
@@ -1494,12 +1495,13 @@ std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind)
     }
 }
 
-llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootNamespaceDirs,
-                                           const std::vector<std::string>& lookupDirs,
-                                           DiagnosticEngine&               diagnostics)
+llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
+                                           const std::vector<std::string>&      lookupDirs,
+                                           DiagnosticEngine&                    diagnostics,
+                                           const llvm::ArrayRef<OutputLanguage> outputLanguages)
 {
     ASTModule module;
-    auto      defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics);
+    auto      defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics, outputLanguages);
 
     for (const auto& def : defs)
     {

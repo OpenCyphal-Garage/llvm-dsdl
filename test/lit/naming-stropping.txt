@@ -140,3 +140,35 @@
 # PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR = 1
 # PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR_2 = 2
 # PY_CONSTANTS: CONSTANTS_1_0_BREAK_ = 3
+
+# ---------------------------------------------------------------------------------------------
+# Phase 3: two distinct DSDL types that project onto one generated name are rejected, and the
+# check covers only the backends this invocation emits for.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: rm -rf %t/collide && mkdir -p %t/collide/root/ns
+# RUN: printf 'uint8 c\n@sealed\n' > %t/collide/root/ns/Break.1.0.dsdl
+# RUN: printf 'uint8 d\n@sealed\n' > %t/collide/root/ns/Break_.1.0.dsdl
+
+# The keyword escape makes both stems `break__1_0`; before phase 3 the second type silently
+# overwrote the first, because the frontend folded names without modelling the escape.
+# RUN: not %dsdlc --target-language go %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
+# STEM_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
+
+# Decision 7.1: C names headers after the raw DSDL short name, so the same pair is not a collision
+# there and a C build must not fail over a hazard only Go has.
+# RUN: %dsdlc --target-language c %t/collide/root --outdir %t/collide/c
+# RUN: test -f %t/collide/c/root/ns/Break_1_0.h
+# RUN: test -f %t/collide/c/root/ns/Break__1_0.h
+
+# Nothing is emitted for an AST dump, so no output-name check runs.
+# RUN: %dsdlc --target-language ast %t/collide/root > /dev/null
+
+# The other half of the pair: `_foo` and `foo_` take two different files but one type name, because
+# the stem projection keeps underscores and the type-name projection drops them. Go puts one
+# directory in one package, so before phase 3 this produced a package that would not compile.
+# RUN: rm -rf %t/typecollide && mkdir -p %t/typecollide/root/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/typecollide/root/ns/_foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
+# RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
+# TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same generated type name for target language 'go'

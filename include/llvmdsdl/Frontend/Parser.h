@@ -15,6 +15,7 @@
 #define LLVMDSDL_FRONTEND_PARSER_H
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 
 #include "llvm/Support/Error.h"
@@ -160,7 +161,8 @@ private:
 /// @return Parsed AST module or an error on unrecoverable failure.
 llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootNamespaceDirs,
                                            const std::vector<std::string>& lookupDirs,
-                                           DiagnosticEngine&               diagnostics);
+                                           DiagnosticEngine&               diagnostics,
+                                           llvm::ArrayRef<OutputLanguage>  outputLanguages = {});
 
 }  // namespace llvmdsdl
 

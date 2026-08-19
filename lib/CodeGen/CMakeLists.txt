@@ -85,7 +85,6 @@ add_library(llvmdsdlCodeGen
   NativeHelperContract.cpp
   NativeEmitterTraversal.cpp
   NativeFunctionSkeleton.cpp
-  NamingPolicy.cpp
   MlirLoweredFacts.cpp
   ObjectEmitter.cpp
   RuntimeHelperBindings.cpp
