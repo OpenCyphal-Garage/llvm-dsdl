@@ -197,13 +197,15 @@ bool isVersionToken(llvm::StringRef arg)
     return arg == "--version" || arg == "-V";
 }
 
-/// @brief Maps a `--target-language` value onto the naming policies its output will use.
+/// @brief Maps a `--target-language` value onto the naming policies whose output names are checked.
 ///
-/// Only source-emitting targets contribute: `ast` and `mlir` produce no identifiers, so they name no
-/// language and the frontend runs no output-name collision check for them. `obj` emits both a C++
-/// header and a C shim, so it names both. See the decisions section of
-/// docs/development/identifier-stropping.md.
-llvm::SmallVector<llvmdsdl::OutputLanguage, 2> namingLanguagesForTarget(const llvm::StringRef language)
+/// A source-emitting target names the language it emits, so a build never fails over a collision in
+/// output it was not going to produce; `obj` emits both a C++ header and a C shim, so it names both.
+/// `ast` and `mlir` emit no identifiers at all, so there is no build to fail and they check every
+/// language instead -- they are the analysis modes, and a namespace that would break a Go build is
+/// worth saying so about while the user is asking questions rather than generating. See the
+/// decisions section of docs/development/identifier-stropping.md.
+llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const llvm::StringRef language)
 {
     using llvmdsdl::CodegenNamingLanguage;
     if (language == "c")
@@ -234,7 +236,8 @@ llvm::SmallVector<llvmdsdl::OutputLanguage, 2> namingLanguagesForTarget(const ll
     {
         return {{CodegenNamingLanguage::Cpp, "obj"}, {CodegenNamingLanguage::C, "obj"}};
     }
-    return {};
+    const auto all = llvmdsdl::allOutputLanguages();
+    return {all.begin(), all.end()};
 }
 
 bool isCodegenLanguage(llvm::StringRef language)

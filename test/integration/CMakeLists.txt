@@ -2900,6 +2900,22 @@ set_tests_properties(
 )
 
 add_test(
+  NAME llvmdsdl-uavcan-obj-determinism
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-obj-determinism-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanObjDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-obj-determinism
+  PROPERTIES
+    LABELS "integration;uavcan;obj;slow;determinism"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-cpp-generation
   COMMAND
     ${CMAKE_COMMAND}

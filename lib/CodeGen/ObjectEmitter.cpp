@@ -738,19 +738,51 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                                            archivePath.string().c_str());
         }
 
-        std::vector<std::string> args;
-        args.push_back("rcs");
-        args.push_back(archivePath.string());
+        // The archive has to be byte-reproducible across runs and hosts like every other generated
+        // artefact, and `ar` records each member's modification time, uid and gid by default -- so
+        // two runs a second apart produce two different archives from identical objects. The two
+        // archiver families spell the fix differently and ignore each other's spelling, so both are
+        // applied:
+        //
+        //   * GNU ar and llvm-ar take a `D` modifier that zeroes mtime, uid, gid and mode.
+        //   * cctools ar (Apple) rejects `D` outright but honours ZERO_AR_DATE, which zeroes mtime,
+        //     uid and gid; the mode it still records is a constant, not a property of the host.
+        //
+        // `D` is attempted first and dropped if the archiver will not take it, which is cheaper and
+        // more durable than sniffing the archiver's identity or version.
+        std::vector<std::string> objectArgs;
+        objectArgs.push_back(archivePath.string());
         for (const auto& objectPath : objectOutputs)
         {
-            args.push_back(objectPath.string());
+            objectArgs.push_back(objectPath.string());
         }
 
         if (!options.writePolicy.dryRun)
         {
+            // Set on this process so the archiver child inherits it. dsdlc is a short-lived tool and
+            // the value is constant, so there is nothing to restore.
+            ::setenv("ZERO_AR_DATE", "1", 1);
+
+            std::vector<std::string> args;
+            args.reserve(objectArgs.size() + 1U);
+            args.push_back("rcsD");
+            args.insert(args.end(), objectArgs.begin(), objectArgs.end());
+
             if (auto err = executeCommand(*arOrErr, args, "archive invocation"))
             {
-                return err;
+                // An archiver that will not take `D` leaves nothing usable behind, so start clean
+                // rather than risk appending to a partial archive on the second attempt.
+                llvm::consumeError(std::move(err));
+                std::error_code removeError;
+                std::filesystem::remove(archivePath, removeError);
+
+                args.clear();
+                args.push_back("rcs");
+                args.insert(args.end(), objectArgs.begin(), objectArgs.end());
+                if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation"))
+                {
+                    return retryErr;
+                }
             }
             if (auto err = setPathMode(archivePath, options.writePolicy.fileMode))
             {

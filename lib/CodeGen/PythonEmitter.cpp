@@ -92,13 +92,9 @@ NamingScope makePyFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    // A field attribute must not shadow a generated method (a dataclass attribute named `serialize`
-    // hides `serialize()`, so `self.serialize()` would call an int); escape such a field instead.
-    static constexpr std::array<llvm::StringRef, 4> kReservedMethods = {"serialize",
-                                                                        "deserialize",
-                                                                        "_serialize_to",
-                                                                        "_deserialize_from"};
-    NamingScope                                     scope(CodegenNamingLanguage::Python, kReservedMethods);
+    // The generated methods a field attribute must not shadow are claimed by the FieldName role's
+    // policy, so the scope only has to keep the fields apart from each other.
+    NamingScope scope(CodegenNamingLanguage::Python);
     for (const auto& name : names)
     {
         (void) scope.declare(IdentifierRole::FieldName, name);

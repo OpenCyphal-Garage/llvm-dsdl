@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <set>
 #include <cctype>
 #include <compare>
 #include <cstddef>
@@ -194,6 +196,17 @@ void discoverInRoot(const std::filesystem::path&       root,
 
 }  // namespace
 
+llvm::ArrayRef<OutputLanguage> allOutputLanguages()
+{
+    static const std::array<OutputLanguage, 6> kAll = {{{CodegenNamingLanguage::C, "c"},
+                                                        {CodegenNamingLanguage::Cpp, "cpp"},
+                                                        {CodegenNamingLanguage::Rust, "rust"},
+                                                        {CodegenNamingLanguage::Go, "go"},
+                                                        {CodegenNamingLanguage::TypeScript, "ts"},
+                                                        {CodegenNamingLanguage::Python, "python"}}};
+    return kAll;
+}
+
 std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
                                                       const std::vector<std::string>&      lookupDirs,
                                                       DiagnosticEngine&                    diagnostics,
@@ -252,37 +265,51 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         // what is actually written -- which is how the earlier hand-rolled fold came to miss the
         // keyword escape. Only the languages selected for this invocation are checked; see the
         // decisions section of docs/development/identifier-stropping.md.
-        for (const auto& [language, languageName] : outputLanguages)
+        const std::string versionSuffix =
+            ":" + std::to_string(def.majorVersion) + ":" + std::to_string(def.minorVersion);
+        const std::array<std::pair<IdentifierRole, const char*>, 2> kOutputNames = {
+            {{IdentifierRole::FileStem, "output file name"}, {IdentifierRole::TypeName, "generated type name"}}};
+
+        // One diagnostic per colliding pair, naming every language it affects: renaming one of the
+        // two types fixes all of them at once, so a line per language would be a line per reader
+        // eye-roll. The role loop is outermost for the same reason -- a pair whose file names
+        // already collide does not also need to be told its type names do.
+        std::set<std::string> reportedAgainst;
+        for (const auto& [role, what] : kOutputNames)
         {
-            std::string namespacePath;
-            for (const auto& component : def.namespaceComponents)
+            std::map<std::string, std::vector<std::string>> collidedWith;
+            for (const auto& [language, languageName] : outputLanguages)
             {
-                namespacePath += codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
-                namespacePath.push_back('/');
-            }
-            const std::string versionSuffix =
-                ":" + std::to_string(def.majorVersion) + ":" + std::to_string(def.minorVersion);
-
-            const std::array<std::pair<IdentifierRole, const char*>, 2> kOutputNames = {
-                {{IdentifierRole::FileStem, "output file name"}, {IdentifierRole::TypeName, "generated type name"}}};
-
-            // A pair that collides on both halves is still one problem to the reader, so the first
-            // one reported wins and the second is suppressed.
-            bool reported = false;
-            for (const auto& [role, what] : kOutputNames)
-            {
+                std::string namespacePath;
+                for (const auto& component : def.namespaceComponents)
+                {
+                    namespacePath += codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
+                    namespacePath.push_back('/');
+                }
                 const std::string key = std::string(languageName) + ":" + std::to_string(static_cast<int>(role)) + ":" +
                                         namespacePath + codegenProjectIdentifier(language, role, def.shortName) +
                                         versionSuffix;
                 const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
-                if (!inserted && it->second != def.fullName && !reported)
+                if (!inserted && it->second != def.fullName)
                 {
-                    diagnostics.error({def.filePath, 1, 1},
-                                      "type name collision in generated output: " + def.fullName + " and " +
-                                          it->second + " map to the same " + what + " for target language '" +
-                                          languageName.str() + "'");
-                    reported = true;
+                    collidedWith[it->second].push_back(languageName.str());
                 }
+            }
+            for (const auto& [other, languages] : collidedWith)
+            {
+                if (!reportedAgainst.insert(other).second)
+                {
+                    continue;
+                }
+                std::string languageList;
+                for (std::size_t i = 0; i < languages.size(); ++i)
+                {
+                    languageList += (i > 0 ? ", " : "") + ("'" + languages[i] + "'");
+                }
+                diagnostics.error({def.filePath, 1, 1},
+                                  "type name collision in generated output: " + def.fullName + " and " + other +
+                                      " map to the same " + what + " for target language" +
+                                      (languages.size() > 1U ? "s " : " ") + languageList);
             }
         }
 

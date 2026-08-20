@@ -452,13 +452,21 @@ void emitSectionTypedef(std::ostringstream&    out,
 
 void emitSectionConstants(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    // Two DSDL constants can project onto one macro token -- `foo_bar` and `FOO_BAR` both upper-case
+    // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
+    // apart. The generated metadata macros need no reservation here: they carry a trailing `_`
+    // (`<Type>_FULL_NAME_`), which no projection of a DSDL name produces.
+    NamingScope constScope(CodegenNamingLanguage::C);
+    for (const auto& c : section.constants)
+    {
+        (void) constScope.declare(IdentifierRole::ConstantName, c.name);
+    }
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(out, 0, c.doc);
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" +
-                     codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::ConstantName, c.name) + " (" +
+                 "#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
                      valueToCExpr(c.type, c.value) + ")");
     }
     if (!section.constants.empty())

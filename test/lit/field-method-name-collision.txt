@@ -1,11 +1,15 @@
 # Regression: a DSDL field named the same as a generated method (`serialize` / `deserialize`) is
 # spec-valid (not a language keyword, so the frontend accepts it) but collides with the type's methods
-# in Go (a struct field and method cannot share a name -> compile error) and Python (a dataclass
-# attribute shadows the method, so `self.serialize()` tries to call an int at runtime). Rust (fields and
-# inherent methods occupy separate namespaces) and C/C++/TypeScript (free functions, not members) are
-# unaffected. The Go/Python field allocators now reserve the generated method names, so such a field is
-# escaped (`Serialize_2` / `serialize_2`) while the method keeps its name. See the composite-reference
-# read-as-review.
+# in Go (a struct field and method cannot share a name -> compile error), C++ (a data member and a
+# member function cannot either) and Python (a dataclass attribute shadows the method, so
+# `self.serialize()` tries to call an int at runtime). Rust (fields and inherent methods occupy
+# separate namespaces) and TypeScript (free functions, not members) are unaffected.
+#
+# The names the generated code claims are part of the naming policy rather than of any one scope, so
+# such a field is escaped to `Serialize_` / `serialize_` while the method keeps its name. The escape
+# was `Serialize_2` until the claimed-name policy landed: that spelling came from the collision
+# repair, which means "the second name wanting this identifier" and was the wrong thing to say about
+# a name no other field was competing for.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/mf
 # RUN: printf 'uint8 serialize\nuint8 deserialize\n@sealed\n' > %t/dsdl/mf/M.1.0.dsdl
@@ -13,17 +17,26 @@
 # Go: fields escaped, methods intact, references consistent.
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module mf
 # RUN: cat %t/go/dsdl/mf/m_1_0.go | FileCheck %s --check-prefix=GO
-# GO-DAG: Serialize_2 uint8
-# GO-DAG: Deserialize_2 uint8
+# GO-DAG: Serialize_ uint8
+# GO-DAG: Deserialize_ uint8
 # GO-DAG: func (obj *M_1_0) Serialize(
 # GO-DAG: func (obj *M_1_0) Deserialize(
-# GO-DAG: obj.Serialize_2
-# GO-DAG: obj.Deserialize_2
+# GO-DAG: obj.Serialize_
+# GO-DAG: obj.Deserialize_
 
 # Python: attribute escaped so it does not shadow the method; the method still calls self.serialize().
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
 # RUN: cat %t/py/dsdl_gen/dsdl/mf/m_1_0.py | FileCheck %s --check-prefix=PY
-# PY-DAG: serialize_2: int = 0
-# PY-DAG: deserialize_2: int = 0
+# PY-DAG: serialize_: int = 0
+# PY-DAG: deserialize_: int = 0
 # PY-DAG: def serialize(self)
 # PY-DAG: def deserialize(cls
+
+# C++ was in the "unaffected" list above until the claimed-name policy was written and the case was
+# actually generated: `serialize` and `deserialize` are member functions of the generated struct, so
+# a field of either name did not compile.
+# RUN: %dsdlc --target-language cpp %t/dsdl --cpp-profile std --outdir %t/cpp
+# RUN: cat %t/cpp/dsdl/mf/M_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP-DAG: std::uint8_t serialize_{};
+# CPP-DAG: std::uint8_t deserialize_{};
+# CPP-DAG: inline std::int8_t serialize(

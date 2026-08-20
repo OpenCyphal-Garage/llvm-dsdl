@@ -1703,14 +1703,27 @@ void emitSectionStruct(std::ostringstream&              out,
         emitLine(out, 1, "static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(optionCount) + "U;");
     }
 
+    // Two DSDL constants can upper-case onto one name; a duplicate `static constexpr` does not
+
+    // compile. The generated statics are claimed by the ConstantName role's policy, so a DSDL
+
+    // constant named FULL_NAME is escaped before it reaches the scope.
+
+    NamingScope constScope(CodegenNamingLanguage::Cpp);
+
+    for (const auto& c : section.constants)
+
+    {
+        (void) constScope.declare(IdentifierRole::ConstantName, c.name);
+    }
+
     for (const auto& c : section.constants)
     {
         emitAttachedDocCpp(out, 1, c.doc);
         emitLine(out,
                  1,
-                 "static constexpr auto " +
-                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, c.name) +
-                     " = " + valueToCppExpr(c.type, c.value) + ";");
+                 "static constexpr auto " + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
+                     valueToCppExpr(c.type, c.value) + ";");
     }
 
     emitArrayMetadata(out, typeName, section);

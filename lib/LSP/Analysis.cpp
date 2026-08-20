@@ -624,7 +624,12 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
 
     DiagnosticEngine                  discoveryDiagnostics;
     std::vector<DiscoveredDefinition> discovered =
-        discoverDefinitions(config.rootNamespaceDirs, config.lookupDirs, discoveryDiagnostics);
+        discoverDefinitions(config.rootNamespaceDirs,
+                            config.lookupDirs,
+                            discoveryDiagnostics,
+                            // The editor emits nothing, so it is the analysis case: surface a name
+                            // collision for any backend rather than none.
+                            allOutputLanguages());
 
     std::unordered_map<std::string, DocumentSnapshot> overlaysByPath;
     std::unordered_map<std::string, std::string>      overlayUriByPath;
@@ -748,14 +753,14 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
             continue;
         }
 
-        DiagnosticEngine              parseDiagnostics;
-        Lexer                         lexer(current->second.filePath, current->second.text);
-        std::vector<Token>            lexTokens = lexer.lex();
+        DiagnosticEngine   parseDiagnostics;
+        Lexer              lexer(current->second.filePath, current->second.text);
+        std::vector<Token> lexTokens = lexer.lex();
         for (const LexerError& lexError : lexer.errors())
         {
             parseDiagnostics.error(lexError.location, lexError.message);
         }
-        std::vector<Token> parserTokens = lexTokens;
+        std::vector<Token>            parserTokens = lexTokens;
         Parser                        parser(current->second.filePath, std::move(parserTokens), parseDiagnostics);
         llvm::Expected<DefinitionAST> parsed = parser.parseDefinition();
         if (!parsed)
@@ -880,7 +885,7 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
         DiagnosticEngine      loweringDiagnostics;
         mlir::DialectRegistry registry;
         registry.insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect>();
-        mlir::MLIRContext                 context(registry);
+        mlir::MLIRContext context(registry);
         // Best-effort introspection snapshot: lower error-tolerant / partial semantic
         // models without the strict codegen-path verification (which would reject a
         // partial module and drop the snapshot entirely).
@@ -2032,8 +2037,8 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
 
                 const std::string replacement = std::to_string(*suggestedExtent);
                 const std::string key         = std::to_string(static_cast<int>(matchedSite->responseSection)) + ":" +
-                                        std::to_string(matchedSite->line) + ":" +
-                                        std::to_string(matchedSite->character) + ":" + replacement;
+                                                std::to_string(matchedSite->line) + ":" +
+                                                std::to_string(matchedSite->character) + ":" + replacement;
                 if (!emittedExtentFixKeys.insert(key).second)
                 {
                     continue;

@@ -161,8 +161,10 @@
 # RUN: test -f %t/collide/c/root/ns/Break_1_0.h
 # RUN: test -f %t/collide/c/root/ns/Break__1_0.h
 
-# Nothing is emitted for an AST dump, so no output-name check runs.
-# RUN: %dsdlc --target-language ast %t/collide/root > /dev/null
+# An AST dump emits nothing, so there is no build to fail and it checks every backend instead,
+# naming the ones affected in a single diagnostic rather than one line per language.
+# RUN: not %dsdlc --target-language ast %t/collide/root 2>&1 | FileCheck %s --check-prefix=AST_COLLIDE
+# AST_COLLIDE: error: type name collision in generated output: {{.*}} for target languages 'rust', 'go', 'ts', 'python'
 
 # The other half of the pair: `_foo` and `foo_` take two different files but one type name, because
 # the stem projection keeps underscores and the type-name projection drops them. Go puts one
@@ -172,3 +174,44 @@
 # RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
 # RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
 # TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same generated type name for target language 'go'
+
+# The same pair under an AST dump reports the three backends whose type names actually collide --
+# C, C++ and Rust build namespace-qualified symbols and are unaffected.
+# RUN: not %dsdlc --target-language ast %t/typecollide/root 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE_AST
+# TYPE_COLLIDE_AST: error: {{.*}} map to the same generated type name for target languages 'go', 'ts', 'python'
+
+# ---------------------------------------------------------------------------------------------
+# Phase 4: names the generated code already claims. Claimed.1.0 names its constants after every
+# per-type constant the backends emit and its field after a generated method, so a regression here
+# is a duplicate declaration in a language that has to compile.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
+# RUN: cat %t/go/fixtures_naming/naming/claimed_1_0.go | FileCheck %s --check-prefix=GO_CLAIMED
+# RUN: cat %t/rust/src/fixtures_naming/naming/claimed_1_0.rs | FileCheck %s --check-prefix=RUST_CLAIMED
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/claimed_1_0.py | FileCheck %s --check-prefix=PY_CLAIMED
+# RUN: cat %t/c/fixtures_naming/naming/Claimed_1_0.h | FileCheck %s --check-prefix=C_CLAIMED
+
+# A C++ struct holds its fields, its DSDL constants and the generated statics and methods together.
+# CPP_CLAIMED: std::uint8_t serialize_{};
+# CPP_CLAIMED: static constexpr const char* FULL_NAME =
+# CPP_CLAIMED: static constexpr auto FULL_NAME_ = 1;
+# CPP_CLAIMED: static constexpr auto EXTENT_BYTES_ = 4;
+
+# Go gives a DSDL constant the same prefix as its metadata constants, and forbids a field and a
+# method sharing a name.
+# GO_CLAIMED: const CLAIMED_1_0_FULL_NAME =
+# GO_CLAIMED: const CLAIMED_1_0_FULL_NAME_ = 1
+# GO_CLAIMED: Serialize_ uint8
+
+# RUST_CLAIMED: pub const FULL_NAME: &'static str =
+# RUST_CLAIMED: pub const FULL_NAME_: u64 = 1;
+
+# A dataclass attribute named `serialize` would hide the generated method.
+# PY_CLAIMED: serialize_: int = 0
+
+# C needs no escape at all: its metadata macros carry a trailing underscore, so `<Type>_FULL_NAME`
+# and `<Type>_FULL_NAME_` cannot meet. The macro is also left unstropped -- a macro is not an
+# identifier in C's namespace -- which is why this reads FULL_NAME and not FULL_NAME_.
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)

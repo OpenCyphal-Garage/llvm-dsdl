@@ -7,7 +7,8 @@
       "rust": 100,
       "go": 100,
       "ts": 100,
-      "python": 100
+      "python": 100,
+      "obj": 100
     },
     "overall": 100
   },
@@ -17,6 +18,7 @@
     "rust": true,
     "go": true,
     "ts": true,
-    "python": true
+    "python": true,
+    "obj": true
   }
 }

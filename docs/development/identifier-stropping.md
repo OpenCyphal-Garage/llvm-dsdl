@@ -9,7 +9,8 @@ shows a case where it did not, and a whole type was silently lost.
 This note specifies a single stropping engine: one pipeline, one table per language, and collision
 detection that consumes the engine rather than approximating it.
 
-Status: proposed, with §7 settled. Phases 0 through 3 (§5) have landed; phases 4 and 5 have not.
+Status: proposed, with §7 settled. Phases 0 through 3 have landed, phase 4 in part (§5); §3.3
+and §3.4 remain open.
 
 ---
 
@@ -78,8 +79,12 @@ micro-optimization: it is the difference between escaping 81 names and escaping 
 ## 3. What was broken
 
 This section records the tree as it stood before §5's phases, because it is the motivation for the
-design in §4 — not a description of the current state. §3.1, §3.2 and §3.5 are closed; §3.3 and §3.4
-are phase 4 and phase 5 respectively and are still open.
+design in §4 — not a description of the current state. §3.1, §3.2 and §3.5 are closed. §3.3 is still
+open and phase 4 explains why (the escape mechanism it needs does not exist yet); §3.4 is phase 5.
+
+Phase 4 also found five failures §3 had not predicted, all of them names the *generated code* had
+already taken rather than names the language reserves — recorded in §5 rather than here, because
+they were found by building the fix, not by the survey.
 
 **3.1 Collision detection does not model the escape step, and a type is silently lost.**
 [`Discovery.cpp:251`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/Frontend/Discovery.cpp) folds each type name with
@@ -212,9 +217,16 @@ them, it needs no failure handler, and it is what the emitters already produce �
 §4.1–4.2 is a refactor, not a regeneration.
 
 **Fixpoint argument.** Appending `_` to `X` can only produce a name needing further escape if `X_`
-is itself reserved. No keyword in any of the six languages ends in `_`, and every reserved pattern
-worth encoding is prefix-anchored, so one iteration always terminates. This is an invariant of the
-tables, not of the algorithm, so §6 asserts it directly.
+is itself reserved. No keyword in any of the six languages ends in `_`, and no name the generated
+code claims does either, so one iteration always terminates. This is an invariant of the tables, not
+of the algorithm, so §6 asserts it directly.
+
+The first version of this paragraph added "and every reserved pattern worth encoding is
+prefix-anchored", offering that as further support. It is the opposite: a trailing `_` cannot repair
+a *prefix* violation at all. `__bar` is reserved for any use in C and C++, and `__bar_` is just as
+reserved. Prefix-anchored patterns need a different repair — removing or replacing the offending
+prefix — and that repair is many-to-one (`__bar` and `bar` both become `bar`), so it needs a scope
+to restore injectivity. That is why §3.3 is still open after phase 4; see §5.
 
 Rust's `r#` raw identifiers were considered and rejected: `self`, `Self`, `crate`, and `super`
 cannot be raw, so Rust would need the trailing form anyway, and having two escape mechanisms in one
@@ -230,7 +242,22 @@ One `struct LanguageNamingPolicy` per language, data only, no behavior:
 | `keywords` | hard-reserved in every role |
 | `predeclared` | shadowable names, reserved only in the roles where shadowing bites |
 | `reservedPatterns` | `llvm::Regex` + role mask (C `^_[A-Z]`, `^__`, `_t$`, `^E[A-Z0-9]`; C++ `__`) |
-| `runtimeOwned` | names our generated code claims — Go `Serialize`/`Deserialize`, Python `_serialize_*`, C++ member helpers |
+| `runtimeOwned` | names our generated code claims — the seven per-type metadata constants, Go/C++/Python method names, TypeScript `constructor`/`prototype` |
+
+`runtimeOwned` is checked against the *finished* identifier, after the case projection and any
+upper-casing, because that is the spelling that has to miss the generated one: a Go constant named
+`full_name` is emitted as `FULL_NAME`, and comparing before the upper-case would never match. It is
+also deliberately independent of `strop`. Keyword stropping asks whether the language will parse the
+identifier; this asks whether something the backend already emitted has taken the name. A C++ macro
+token needs the second question answered and not the first.
+
+It belongs to the policy rather than to a `NamingScope`, which is the reverse of where the first
+draft of this note put it. A scope reservation describes one particular scope; these names are
+claimed for *every* type the backend emits, and they are needed at call sites that cannot see a
+scope at all — C++ computes member names inside serialization lambdas that never receive the section.
+Making it policy also fixes the spelling: the escape is `Serialize_`, not the `Serialize_2` the old
+scope reservation produced, and `_2` means "the second name competing for this identifier", which
+was the wrong thing to say about a name no other field wanted.
 
 `predeclared` is where role-awareness pays. Python's builtins (`str`, `list`, `id`) are shadowable
 and harmless as attribute names — nunavut escapes all of them because it computes its reserved set
@@ -305,7 +332,7 @@ Each phase is independently shippable and leaves the tree green.
 | 1 | Add roles, scopes, and the policy struct; port existing behavior verbatim — **done** | none — golden map byte-identical |
 | 2 | Route all six emitters through `NamingScope`; delete the `sanitizeMacroToken` copies — **done** | none — generated output byte-identical |
 | 3 | Discovery consumes the engine — **done** | §3.1 and §3.5 become errors instead of a lost type / a package that will not compile |
-| 4 | Reserved patterns, `predeclared`, `runtimeOwned` per language | some identifiers gain a `_`; golden map updated once, deliberately |
+| 4 | `runtimeOwned` and `predeclared` — **done**; reserved patterns deferred (§4.3) | claimed names gain a `_`; role golden updated once, deliberately |
 | 5 | Manifest `names` section, remark, LSP hover, Python packaging note (§7.2) | additive |
 
 Phase 0 first is not ceremony. It is the only thing that makes "port verbatim" in phase 1 a
@@ -335,7 +362,10 @@ four. Two things make the port checkable rather than asserted:
 
 That table is also where the §4.4 `escape`/`strop` columns first earn their keep: they are `no` for
 exactly two cells — C/C++ macro tokens (escaped, never stropped) and C/C++ header stems (neither).
-Those two `no`s are the phase 4 worklist stated as data.
+Phase 1 read those as the phase 4 worklist. Phase 4 found they are deliberate: a header stem is a
+file name rather than an identifier, and a macro token is not in the language's namespace and always
+carries its type name as a prefix, so neither needs a keyword escape. What those two cells did earn
+was the discovery that `strop` was conflating two questions — see §4.4.
 
 Phase 2 moved all six emitters onto the engine — about ninety call sites — and every one of the 82
 files the fixture generates came out byte-for-byte identical, checked after each emitter in turn
@@ -367,19 +397,61 @@ same argument that had already put `canonicalSnakeCase` in Support, now applied 
 use, so §3.1 and §3.5 are errors rather than silent losses, and the hand-rolled fold that missed the
 keyword escape is gone.
 
-The `--target-language` value maps to the naming policies its output uses: one language for each
-source-emitting target, both C and C++ for `obj`, and none for `ast` and `mlir`. Two consequences
-follow from decision §7.1, both covered by `test/lit/naming-stropping.txt`:
+The `--target-language` value maps to the naming policies whose names are checked: one language for
+each source-emitting target, both C and C++ for `obj`, and all six for `ast` and `mlir`. The language
+server passes all six for the same reason. Both halves of §7.1 are covered by
+`test/lit/naming-stropping.txt`:
 
-- a C build of `Break`/`Break_` still succeeds, because C names headers after the raw short name;
-- `dsdlc --target-language ast` runs no output-name check at all, since it emits no identifiers.
-
-That second one is a deliberate narrowing: `test/lit/type-filename-collision.txt` used `ast` to
-trigger the old check and now names a real backend. Validating a namespace's output names is
-something you now ask a backend for, not something an AST dump does on the side.
+- a C build of `Break`/`Break_` still succeeds and emits both headers, because C names headers after
+  the raw DSDL short name;
+- `dsdlc --target-language ast` reports the pair and names the four backends it breaks.
 
 The standard `uavcan` namespace generates clean on all seven targets (379 to 382 files for C and
-C++, 191 to 263 elsewhere, zero errors), so the new rejection does not touch conformant DSDL.
+C++, 191 to 263 elsewhere) and reports nothing under the all-six analysis mode, so the new rejection
+does not touch conformant DSDL.
+
+Phase 4 set out to add three tables and delivered two, having found that the third needs a mechanism
+§4.3 does not have. What it did find was worse than what it was looking for.
+
+The survey in §3.3 was about names the *language* reserves, which is a pedantic, compiles-anyway
+concern. Generating the cases turned up five that do not compile at all, every one of them a name the
+*generated code* had already claimed:
+
+| Case | Backend | Before |
+|---|---|---|
+| DSDL constant named `FULL_NAME` (or any of the seven metadata constants) | C++, Go, Rust | duplicate declaration; `go build` fails |
+| DSDL field named `FULL_NAME` | C++ | data member redeclares the generated static |
+| DSDL field named `serialize` | C++ | data member and member function share a name |
+| Two DSDL constants folding together (`foo_bar` + `FOO_BAR`) | C | duplicate `#define`; the second value silently wins |
+| Same pair | C++ | duplicate `static constexpr` |
+
+C and C++ had no constant scope at all, so the last two were not even the claimed-name problem —
+they were the same many-to-one fold the other four backends had been repairing since before this
+note. `test/lit/field-method-name-collision.txt` had asserted C++ was *unaffected* by the third row;
+it was written from the same reasoning as §3.3 and never generated the case.
+
+C needs none of the claimed-name escapes, because its metadata macros carry a trailing `_` —
+`<Type>_FULL_NAME_` cannot meet `<Type>_FULL_NAME`. That convention, already in the C emitter, is the
+one that made this class of bug impossible, and it is worth copying rather than re-deriving.
+
+The standard `uavcan` namespace generates byte-identically across all seven targets, so nothing real
+moved. The role golden moved by five rows, all of them the claimed-name escape.
+
+Checking that produced one finding of its own, unrelated to naming: the `obj` backend's
+`llvmdsdl_generated.a` differed between two runs of the same binary on the same input. `ar` records
+each member's modification time, uid and gid, so identical objects archived a second apart gave
+different bytes. It was invisible to the determinism matrix because that report's backend table
+listed six backends and `obj` was not one of them — a backend missing from the table is not reported
+as uncovered, it is not reported at all, and the summary read "Missing Backends: None" throughout.
+Fixed in `ObjectEmitter.cpp`, gated by `llvmdsdl-uavcan-obj-determinism`, and the table now carries
+`obj`.
+
+**What is left.** Reserved *patterns* — C's `^__` and `^_[A-Z]`, C++'s `__` anywhere — need a repair
+a trailing `_` cannot provide (§4.3), and the prefix-stripping repair that would work is many-to-one,
+so it needs a scope to restore injectivity. C++ has no field scope today, because `Preserve` is
+injective and nothing had needed one. That is two decisions and a threading change, and it is worth
+doing deliberately rather than at the end of this phase. The hazard it addresses is real but
+theoretical: `__bar` as a C field member is reserved for any use, and compiles everywhere today.
 
 One divergence surfaced and is pinned rather than smoothed over: on the empty name the pipeline
 substitutes `_` while the emitter-private macro and stem paths return the empty string. The empty
@@ -415,21 +487,35 @@ intended rather than as a regression.
 The three questions this note opened are settled. They are recorded here rather than folded silently
 into §4 because each one traded something real away.
 
-### 7.1 The collision check covers only the selected backends
+### 7.1 Emitting checks its own backend; analysing checks all of them
 
-`Discovery` runs the `FileStem` check for the target languages named in this invocation, not for all
-six. A C-only build does not fail over a collision that only Go would suffer.
+`Discovery` runs the check for the target languages the invocation will actually emit. A C-only
+build does not fail over a collision that only Go would suffer: failing a build over output it was
+never going to produce is the kind of diagnostic people learn to route around, and coupling every
+build's success to the union of all backend policies would make *adding* a backend a breaking change
+for existing namespaces.
 
-What this gives up: a namespace can be clean today and collide the first time someone adds
-`--target-language go`, and the error surfaces to whoever flips the flag rather than to whoever
-added the type. That is accepted for two reasons. Failing a build over output it was never going to
-produce is the kind of diagnostic people learn to route around, and the alternative silently couples
-every build's success to the union of all backend policies — including backends added later, which
-would make adding a backend a breaking change for existing namespaces.
+An invocation that emits nothing is the opposite case, and gets the opposite answer. `ast`, `mlir`
+and the language server check all six, because there is no build to fail — the diagnostic is pure
+information, and these are the modes people use to ask whether a namespace is sound. Hiding a
+collision there helps nobody.
 
-The compensating control is §6's adversarial corpus, which runs all six on every CI run, so a
-backend-specific collision is caught in this repository rather than in a user's. The diagnostic
-names the language that collided, so the message stays actionable when it does fire late.
+The first draft of this decision extended "only the selected backend" to the analysis modes too, on
+the grounds that they select nothing. That was consistent and wrong: it took away the only cheap way
+to ask "will this namespace survive every backend?" and it did so silently, by retargeting the test
+that used to ask exactly that. The rule is better stated as *never fail a build over output it will
+not produce* than as *only check the selected backend*, and the two only diverge when nothing is
+being produced.
+
+One diagnostic is emitted per colliding pair, naming every language affected:
+
+```
+error: type name collision in generated output: ns.Foo_bar and ns.FooBar
+       map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
+```
+
+Renaming one of the two types fixes every language at once, so a line per language would be noise;
+and a pair whose file names already collide is not also told that its type names do.
 
 ### 7.2 Python stdlib shadowing is a packaging constraint, not a naming rule
 

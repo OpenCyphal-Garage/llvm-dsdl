@@ -21,6 +21,7 @@
 #include <cctype>
 #include <string>
 #include <cstddef>
+#include <optional>
 
 #include "llvm/ADT/StringSet.h"
 
@@ -234,17 +235,18 @@ std::string normalizePascalCase(llvm::StringRef name)
 namespace
 {
 
-/// @brief The role policy table: how each language names each kind of identifier today.
+/// @brief The role policy table: how each language names each kind of identifier.
 ///
-/// Read this as a description of the current tree, not a design. Every cell was taken from the call
-/// site that produces that name, and the `escape`/`strop` columns record where a backend skips a
-/// stage: C and C++ name headers after the raw DSDL short name (CEmitter.cpp `headerFileName`) and
-/// build macro tokens without a keyword check (CEmitter.cpp `sanitizeMacroToken`). Those gaps are
-/// the phase 4 worklist in docs/development/identifier-stropping.md, not accidents of this table.
+/// The `escape` and `strop` columns are not uniform. A role skips the keyword escape when its output
+/// is not an identifier in the language's own namespace -- a file name, or a token that is always
+/// emitted under a type-name prefix -- because there is nothing there for a keyword to collide with.
+/// Names the generated code has already claimed are a separate question and are checked regardless;
+/// see @ref runtimeOwnedNames.
 ///
-/// FunctionName and LocalName have no call site that feeds them a DSDL-derived name today: the
-/// generated helpers and locals are built from mangled type names and generator-internal spellings.
-/// They carry the same policy as FieldName so phase 2 has somewhere to land.
+/// FunctionName and LocalName carry the same policy as FieldName. No call site feeds them a
+/// DSDL-derived name -- generated helpers and locals are built from mangled type names and
+/// generator-internal spellings -- so nothing exercises them; they exist so that a backend which
+/// starts naming one from DSDL has a defined answer rather than a new decision.
 const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const IdentifierRole role)
 {
     static constexpr RolePolicy kPreserve{CaseStyle::Preserve, true, true, false};
@@ -252,9 +254,9 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     static constexpr RolePolicy kPascal{CaseStyle::Pascal, true, true, false};
     static constexpr RolePolicy kUpperSnake{CaseStyle::Snake, true, true, true};
 
-    // C and C++ macro tokens: escaped and upper-cased, never stropped.
+    // A preprocessor token: escaped and upper-cased, never stropped against keywords.
     static constexpr RolePolicy kMacroToken{CaseStyle::Preserve, true, false, true};
-    // C and C++ header stems: the DSDL short name, untouched.
+    // A file name taken from the DSDL short name, untouched.
     static constexpr RolePolicy kVerbatim{CaseStyle::Preserve, false, false, false};
 
     const bool cLike    = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
@@ -284,12 +286,106 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     return kPreserve;
 }
 
+/// @brief The names generated code claims for a role, per language.
+///
+/// A backend contributes names for a role when what it emits for every type lands in the same scope,
+/// and under the same prefix, as the DSDL-derived names for that role. Where the two are separated
+/// -- by a prefix on one side and not the other, or by different scopes -- there is nothing to
+/// escape, and the arm below says so.
+///
+/// These names are the emitters' to change, and this list is the only copy: a second one in the
+/// emitting layer would be the duplication this engine exists to remove. What keeps the two in step
+/// is a test rather than a cross-reference -- `test/lit/naming-stropping.txt` generates a type whose
+/// DSDL constants are named after every entry here, so a name added to an emitter and forgotten here
+/// surfaces as a duplicate declaration in a language that has to compile.
+llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage language, const IdentifierRole role)
+{
+    static constexpr std::array<llvm::StringRef, 7> kMetadata = {"FULL_NAME",
+                                                                 "FULL_NAME_AND_VERSION",
+                                                                 "IS_DEPRECATED",
+                                                                 "EXTENT_BYTES",
+                                                                 "SERIALIZATION_BUFFER_SIZE_BYTES",
+                                                                 "ZOH_ALIAS_ELIGIBLE",
+                                                                 "ZOH_ALIAS_REASON"};
+
+    static constexpr std::array<llvm::StringRef, 11> kCppMembers = {"FULL_NAME",
+                                                                    "FULL_NAME_AND_VERSION",
+                                                                    "IS_DEPRECATED",
+                                                                    "EXTENT_BYTES",
+                                                                    "SERIALIZATION_BUFFER_SIZE_BYTES",
+                                                                    "ZOH_ALIAS_ELIGIBLE",
+                                                                    "ZOH_ALIAS_REASON",
+                                                                    "serialize",
+                                                                    "deserialize",
+                                                                    "try_serialize_view",
+                                                                    "try_deserialize_view"};
+
+    static constexpr std::array<llvm::StringRef, 2> kGoMethods = {"Serialize", "Deserialize"};
+
+    static constexpr std::array<llvm::StringRef, 4> kPyMethods = {"serialize",
+                                                                  "deserialize",
+                                                                  "_serialize_to",
+                                                                  "_deserialize_from"};
+
+    static constexpr std::array<llvm::StringRef, 2> kTsProperties = {"constructor", "prototype"};
+
+    static constexpr std::array<llvm::StringRef, 0> kNone = {};
+
+    switch (language)
+    {
+    case CodegenNamingLanguage::Cpp:
+        // The struct holds its fields, its constants and the generated statics and member functions
+        // in one scope, so a field competes with all of them.
+        if (role == IdentifierRole::FieldName)
+        {
+            return kCppMembers;
+        }
+        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
+                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
+    case CodegenNamingLanguage::Go:
+        // A struct field and a method may not share a name; constants take the same type prefix as
+        // the generated ones.
+        if (role == IdentifierRole::FieldName)
+        {
+            return kGoMethods;
+        }
+        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
+                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
+    case CodegenNamingLanguage::Rust:
+        // Constants share the inherent impl with the generated ones. Fields do not: fields and
+        // methods occupy separate namespaces.
+        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
+                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
+    case CodegenNamingLanguage::Python:
+        // A dataclass attribute shadows the method of the same name, so `self.serialize()` would call
+        // an int. Constants are safe: the generated ones take a different prefix.
+        return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kPyMethods)
+                                                   : llvm::ArrayRef<llvm::StringRef>(kNone);
+    case CodegenNamingLanguage::TypeScript:
+        // A property named `constructor` or `prototype` shadows the one every object has. Constants
+        // are safe: the generated ones take a different prefix.
+        return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kTsProperties)
+                                                   : llvm::ArrayRef<llvm::StringRef>(kNone);
+    case CodegenNamingLanguage::C:
+        // Nothing to claim: the generated metadata macros carry a trailing underscore, which no
+        // projection of a DSDL name produces.
+        break;
+    }
+    return kNone;
+}
+
 /// @brief Runs the shared naming pipeline.
 ///
 /// Stage order is load-bearing and matches what the case-explicit helpers did before this existed:
 /// the keyword check runs on the cased but not yet upper-cased form, so a Go constant named `break`
 /// becomes `break_` and only then `BREAK_`.
-std::string runPipeline(const CodegenNamingLanguage language, const RolePolicy& policy, const llvm::StringRef name)
+/// @param[in] role The role whose claimed-name set applies, or nullopt for a token this generator
+///            constructed rather than a DSDL name being named -- those must not pick up names the
+///            generated code owns, because they are not competing for the same scope.
+std::string runPipeline(const CodegenNamingLanguage         language,
+                        const std::optional<IdentifierRole> role,
+                        const RolePolicy&                   policy,
+                        const llvm::StringRef               name)
 {
     std::string out;
     switch (policy.caseStyle)
@@ -325,11 +421,13 @@ std::string runPipeline(const CodegenNamingLanguage language, const RolePolicy& 
         }
     }
 
+    // Keywords are a property of the identifier as cased here: a Go constant named `break` folds to
+    // `break`, is escaped to `break_`, and only then becomes `BREAK_`.
     if (policy.strop && keywordSet(language).contains(out))
     {
         out += "_";
         // One iteration suffices because no keyword in any table ends in `_`. The table invariant
-        // test in NamingGoldenTests.cpp is what keeps that true as the tables grow.
+        // test in NamingPolicyTests.cpp is what keeps that true.
         assert(!keywordSet(language).contains(out));
     }
 
@@ -338,6 +436,25 @@ std::string runPipeline(const CodegenNamingLanguage language, const RolePolicy& 
         for (char& c : out)
         {
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+    }
+
+    // Names the generated code claims are a property of the *finished* identifier, so this runs after
+    // the upper-casing: a Go constant named `full_name` is emitted as FULL_NAME, which is what has to
+    // miss the metadata constant, and comparing before the upper-case would never match.
+    //
+    // This is deliberately not gated on `strop`. Keyword stropping asks whether the language will
+    // parse the identifier; this asks whether something the backend already emitted has taken the
+    // name. A C++ macro token needs the second question answered and not the first.
+    if (role.has_value())
+    {
+        for (const auto& owned : runtimeOwnedNames(language, *role))
+        {
+            if (owned == out)
+            {
+                out += "_";
+                break;
+            }
         }
     }
     return out;
@@ -358,6 +475,11 @@ const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
 bool LanguageNamingPolicy::isKeyword(const llvm::StringRef name) const
 {
     return keywordSet(language_).contains(name);
+}
+
+llvm::ArrayRef<llvm::StringRef> LanguageNamingPolicy::runtimeOwned(const IdentifierRole role) const
+{
+    return runtimeOwnedNames(language_, role);
 }
 
 const LanguageNamingPolicy& codegenNamingPolicy(const CodegenNamingLanguage language)
@@ -391,7 +513,7 @@ std::string codegenProjectIdentifier(const CodegenNamingLanguage language,
                                      const IdentifierRole        role,
                                      const llvm::StringRef       name)
 {
-    return runPipeline(language, rolePolicy(language, role), name);
+    return runPipeline(language, role, rolePolicy(language, role), name);
 }
 
 bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
@@ -401,22 +523,22 @@ bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRe
 
 std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, RolePolicy{CaseStyle::Preserve, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Preserve, true, true, false}, name);
 }
 
 std::string codegenToSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, RolePolicy{CaseStyle::Snake, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, false}, name);
 }
 
 std::string codegenToPascalCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, RolePolicy{CaseStyle::Pascal, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Pascal, true, true, false}, name);
 }
 
 std::string codegenToUpperSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, RolePolicy{CaseStyle::Snake, true, true, true}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, true}, name);
 }
 
 NamingScope::NamingScope(const CodegenNamingLanguage language, const llvm::ArrayRef<llvm::StringRef> reserved)

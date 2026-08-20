@@ -135,6 +135,16 @@ public:
     /// @return True when the identifier is reserved.
     [[nodiscard]] bool isKeyword(llvm::StringRef name) const;
 
+    /// @brief Names the generated code already claims for @p role in this language.
+    ///
+    /// A DSDL attribute that projects onto one of these would redeclare something the backend emits
+    /// for every type, so the projection escapes it. Contrast @ref NamingScope's reservations, which
+    /// one particular scope claims; these are claimed for every type the backend emits, which is why
+    /// they are policy rather than context.
+    /// @param[in] role Identifier role.
+    /// @return The claimed names, or an empty list.
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> runtimeOwned(IdentifierRole role) const;
+
 private:
     CodegenNamingLanguage language_;
 };

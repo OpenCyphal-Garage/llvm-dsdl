@@ -92,10 +92,10 @@ NamingScope makeExportedFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    // A field must not take the name of a generated method (Go forbids a field and method sharing a
-    // name); such a field is escaped instead of clashing with `obj.Serialize()` / `obj.Deserialize()`.
-    static constexpr std::array<llvm::StringRef, 2> kReservedMethods = {"Serialize", "Deserialize"};
-    NamingScope                                     scope(CodegenNamingLanguage::Go, kReservedMethods);
+    // The generated methods a field must not collide with are claimed by the FieldName role's policy
+    // (Go forbids a field and a method sharing a name), so the scope only has to keep the fields
+    // apart from each other.
+    NamingScope scope(CodegenNamingLanguage::Go);
     for (const auto& name : names)
     {
         (void) scope.declare(IdentifierRole::FieldName, name);

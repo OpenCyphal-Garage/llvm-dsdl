@@ -1,0 +1,13 @@
+# Every constant here is named after one the backends emit for every type, and the field is named
+# after a generated method. Before the claimed-name policy these produced duplicate declarations:
+# a C++ struct holds fields, DSDL constants and the generated statics together, and Go and Rust give
+# a DSDL constant the same prefix as their metadata constants.
+uint8 serialize
+uint8 FULL_NAME = 1
+uint8 FULL_NAME_AND_VERSION = 2
+uint8 IS_DEPRECATED = 3
+uint8 EXTENT_BYTES = 4
+uint8 SERIALIZATION_BUFFER_SIZE_BYTES = 5
+uint8 ZOH_ALIAS_ELIGIBLE = 6
+uint8 ZOH_ALIAS_REASON = 7
+@sealed

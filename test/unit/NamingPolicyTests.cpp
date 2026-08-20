@@ -30,6 +30,10 @@ using llvmdsdl::NamingScope;
 
 /// @brief A spread of names that reaches every stage of the pipeline.
 ///
+/// Names the generated code claims are deliberately absent too: the case-explicit helpers the oracles
+/// below are built from do not apply that escape, so including one would compare a role against a
+/// function that was never meant to agree with it. @ref runNamingClaimedNameTests covers those.
+///
 /// The empty string is deliberately absent: it is not a DSDL name, and it is the one input where the
 /// shared pipeline and the emitter-private paths disagree. That divergence is pinned separately by
 /// @ref runEmptyNameDivergenceTest so it is recorded rather than assumed away.
@@ -177,6 +181,56 @@ bool runEmptyNameDivergenceTest()
     return ok;
 }
 
+/// @brief Checks that a name the generated code already claims is escaped.
+///
+/// Every case below was a real duplicate declaration before this existed: a C++ struct holds its
+/// fields, its DSDL constants and the generated statics and methods in one scope; Go and Rust give a
+/// DSDL constant the same prefix as their metadata constants. C is absent on purpose -- it suffixes
+/// its metadata macros with `_` -- and so are TypeScript and Python for constants, which prefix
+/// theirs with `DSDL_` while DSDL constants take a type prefix.
+bool runNamingClaimedNameTests()
+{
+    struct Case
+    {
+        CodegenNamingLanguage language;
+        IdentifierRole        role;
+        const char*           source;
+        const char*           expected;
+    };
+
+    // The Go and Rust cases start from a lower-case source on purpose: the claimed-name check has to
+    // run after the upper-casing, or `full_name` would be compared as `full_name` and never match.
+    static const std::array<Case, 12> kCases = {{
+        {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME_"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "extent_bytes", "EXTENT_BYTES_"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "serialize", "serialize_"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "try_deserialize_view", "try_deserialize_view_"},
+        {CodegenNamingLanguage::Go, IdentifierRole::ConstantName, "full_name", "FULL_NAME_"},
+        {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "serialize", "Serialize_"},
+        {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "zoh_alias_reason", "ZOH_ALIAS_REASON_"},
+        {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
+        {CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
+        // Not claimed: C metadata macros carry a trailing underscore, so nothing needs escaping.
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
+        // A C macro token is not an identifier in the language namespace, so keywords are left alone.
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "break", "BREAK"},
+    }};
+
+    bool ok = true;
+    for (const auto& c : kCases)
+    {
+        const std::string actual = codegenProjectIdentifier(c.language, c.role, c.source);
+        if (actual != c.expected)
+        {
+            std::cerr << "claimed-name escape mismatch for \"" << c.source << "\": got \"" << actual
+                      << "\", expected \"" << c.expected << "\"\n";
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 /// @brief Checks the table properties the one-pass strop depends on.
 ///
 /// Section 4.3 of docs/development/identifier-stropping.md argues that appending `_` terminates in
@@ -257,12 +311,13 @@ bool runNamingScopeTests()
         ok = false;
     }
 
-    // A name that would take a reserved identifier is escaped rather than shadowing it.
-    static constexpr std::array<llvm::StringRef, 2> kReserved = {"Serialize", "Deserialize"};
+    // A name claimed by a particular scope is escaped rather than shadowing it. Names the backend
+    // claims for *every* type are policy instead, and are covered by runNamingClaimedNameTests.
+    static constexpr std::array<llvm::StringRef, 1> kReserved = {"Extra"};
     NamingScope                                     reservedScope(CodegenNamingLanguage::Go, kReserved);
-    if (reservedScope.declare(IdentifierRole::FieldName, "serialize") != "Serialize_2")
+    if (reservedScope.declare(IdentifierRole::FieldName, "extra") != "Extra_2")
     {
-        std::cerr << "scope did not escape a field colliding with a generated method\n";
+        std::cerr << "scope did not escape a field colliding with a scope-reserved name\n";
         ok = false;
     }
 
@@ -339,6 +394,6 @@ bool runNamingPolicyTests()
         return false;
     }
 
-    return runNamingRoleTests() && runEmptyNameDivergenceTest() && runNamingTableInvariantTests() &&
-           runNamingScopeTests();
+    return runNamingRoleTests() && runEmptyNameDivergenceTest() && runNamingClaimedNameTests() &&
+           runNamingTableInvariantTests() && runNamingScopeTests();
 }

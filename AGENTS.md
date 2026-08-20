@@ -130,3 +130,13 @@ This is click bait. Do _not_ use anything adjacent to "this one weird trick..." 
 Write the fact, not the teaser. In some cases, where something really should be emphasised for scanability, use an emoji sigil rather than smarmy text:
 
 > 💡 Tip: Use cyanoacrylate to tack the workpiece down first.
+
+# Do not break encapsulation to give an example
+
+Do not enumerate actual options as an "example" for something that is meant to be a pass through to a lower domain.
+
+> ❌ // Provide one of the backend implementations -- for example, Rust, C, or C++
+
+This pollutes a higher-level API with knowledge of identifiers that may or may not be valid or remain valid.
+
+> ✅ // Provide one of the backend implementations. See [documentation link] for supported values.
