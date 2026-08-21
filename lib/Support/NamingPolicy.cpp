@@ -382,10 +382,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
 /// @param[in] role The role whose claimed-name set applies, or nullopt for a token this generator
 ///            constructed rather than a DSDL name being named -- those must not pick up names the
 ///            generated code owns, because they are not competing for the same scope.
-std::string runPipeline(const CodegenNamingLanguage         language,
-                        const std::optional<IdentifierRole> role,
-                        const RolePolicy&                   policy,
-                        const llvm::StringRef               name)
+ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
+                                const std::optional<IdentifierRole> role,
+                                const RolePolicy&                   policy,
+                                const llvm::StringRef               name)
 {
     std::string out;
     switch (policy.caseStyle)
@@ -401,9 +401,11 @@ std::string runPipeline(const CodegenNamingLanguage         language,
         break;
     }
 
+    bool escaped = false;
     if (out.empty())
     {
-        out = (policy.caseStyle == CaseStyle::Pascal) ? "X" : "_";
+        out     = (policy.caseStyle == CaseStyle::Pascal) ? "X" : "_";
+        escaped = true;
     }
 
     if (policy.escape)
@@ -412,12 +414,14 @@ std::string runPipeline(const CodegenNamingLanguage         language,
         {
             if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
             {
-                c = '_';
+                c       = '_';
+                escaped = true;
             }
         }
         if (std::isdigit(static_cast<unsigned char>(out.front())))
         {
             out.insert(out.begin(), '_');
+            escaped = true;
         }
     }
 
@@ -426,6 +430,7 @@ std::string runPipeline(const CodegenNamingLanguage         language,
     if (policy.strop && keywordSet(language).contains(out))
     {
         out += "_";
+        escaped = true;
         // One iteration suffices because no keyword in any table ends in `_`. The table invariant
         // test in NamingPolicyTests.cpp is what keeps that true.
         assert(!keywordSet(language).contains(out));
@@ -440,12 +445,11 @@ std::string runPipeline(const CodegenNamingLanguage         language,
     }
 
     // Names the generated code claims are a property of the *finished* identifier, so this runs after
-    // the upper-casing: a Go constant named `full_name` is emitted as FULL_NAME, which is what has to
-    // miss the metadata constant, and comparing before the upper-case would never match.
+    // the upper-casing: a Go constant named `full_name` is emitted as FULL_NAME, which is the
+    // spelling that has to miss the metadata constant.
     //
-    // This is deliberately not gated on `strop`. Keyword stropping asks whether the language will
-    // parse the identifier; this asks whether something the backend already emitted has taken the
-    // name. A C++ macro token needs the second question answered and not the first.
+    // Independent of `strop`, which governs only the keyword check: a C++ macro token is claimed
+    // against the generated statics but never against keywords.
     if (role.has_value())
     {
         for (const auto& owned : runtimeOwnedNames(language, *role))
@@ -453,11 +457,12 @@ std::string runPipeline(const CodegenNamingLanguage         language,
             if (owned == out)
             {
                 out += "_";
+                escaped = true;
                 break;
             }
         }
     }
-    return out;
+    return ProjectedIdentifier{out, escaped};
 }
 
 }  // namespace
@@ -509,11 +514,18 @@ const LanguageNamingPolicy& codegenNamingPolicy(const CodegenNamingLanguage lang
     return kTs;
 }
 
+ProjectedIdentifier codegenProjectIdentifierDetailed(const CodegenNamingLanguage language,
+                                                     const IdentifierRole        role,
+                                                     const llvm::StringRef       name)
+{
+    return runPipeline(language, role, rolePolicy(language, role), name);
+}
+
 std::string codegenProjectIdentifier(const CodegenNamingLanguage language,
                                      const IdentifierRole        role,
                                      const llvm::StringRef       name)
 {
-    return runPipeline(language, role, rolePolicy(language, role), name);
+    return codegenProjectIdentifierDetailed(language, role, name).identifier;
 }
 
 bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
@@ -523,22 +535,22 @@ bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRe
 
 std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Preserve, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Preserve, true, true, false}, name).identifier;
 }
 
 std::string codegenToSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, false}, name).identifier;
 }
 
 std::string codegenToPascalCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Pascal, true, true, false}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Pascal, true, true, false}, name).identifier;
 }
 
 std::string codegenToUpperSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
-    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, true}, name);
+    return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, true}, name).identifier;
 }
 
 NamingScope::NamingScope(const CodegenNamingLanguage language, const llvm::ArrayRef<llvm::StringRef> reserved)

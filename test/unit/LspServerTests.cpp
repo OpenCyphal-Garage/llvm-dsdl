@@ -491,6 +491,43 @@ bool runLspServerTests()
         }
     }
 
+    // Hovering a field reports what it will be called in each target, grouped by identifier so a
+    // name that is the same in five of six languages does not print six rows. `count` is a Go
+    // keyword-free name that still differs there, because Go exports fields as PascalCase.
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 148},
+        {"method", "textDocument/hover"},
+        {"params",
+         llvm::json::Object{
+             {"textDocument", llvm::json::Object{{"uri", typeBUri}}},
+             {"position", llvm::json::Object{{"line", 1}, {"character", 7}}},
+         }},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 fieldHover = findResponseByIntegerId(outgoing, 148);
+        if (!fieldHover)
+        {
+            std::cerr << "missing field hover response\n";
+            return false;
+        }
+        const auto* result   = fieldHover->getObject("result");
+        const auto* contents = result ? result->getObject("contents") : nullptr;
+        const auto  value    = contents ? contents->getString("value") : std::nullopt;
+        if (!value || value->find("emits as") == std::string::npos)
+        {
+            std::cerr << "field hover payload missing the generated-name summary\n";
+            return false;
+        }
+        if (value->find("`Count` (go)") == std::string::npos)
+        {
+            std::cerr << "field hover did not report the Go identifier: "
+                      << (value ? value->str() : std::string("<none>")) << "\n";
+            return false;
+        }
+    }
+
     server.handleMessage(llvm::json::Object{
         {"jsonrpc", "2.0"},
         {"id", 41},

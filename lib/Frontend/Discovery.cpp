@@ -261,9 +261,8 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         // but one type name. Whichever half collides, one type is lost or the output does not
         // compile, so the pair is rejected here.
         //
-        // The keys come from the same engine the emitters name with, so this check cannot drift from
-        // what is actually written -- which is how the earlier hand-rolled fold came to miss the
-        // keyword escape. Only the languages selected for this invocation are checked; see the
+        // The keys come from the same engine the emitters name with, so the check cannot drift from
+        // what is written. Only the languages selected for this invocation are checked; see the
         // decisions section of docs/development/identifier-stropping.md.
         const std::string versionSuffix =
             ":" + std::to_string(def.majorVersion) + ":" + std::to_string(def.minorVersion);
@@ -275,6 +274,11 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         // eye-roll. The role loop is outermost for the same reason -- a pair whose file names
         // already collide does not also need to be told its type names do.
         std::set<std::string> reportedAgainst;
+        // Path-level renames are announced without asking (see the decisions section of
+        // docs/development/identifier-stropping.md): a renamed output file or package directory
+        // changes what a build has to reference, and nothing else tells the user it happened. The
+        // set keeps one note per (language, name) even though the name is projected several times.
+        std::set<std::string> renameNotes;
         for (const auto& [role, what] : kOutputNames)
         {
             std::map<std::string, std::vector<std::string>> collidedWith;
@@ -283,12 +287,25 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                 std::string namespacePath;
                 for (const auto& component : def.namespaceComponents)
                 {
-                    namespacePath += codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
+                    const auto projected =
+                        codegenProjectIdentifierDetailed(language, IdentifierRole::NamespaceName, component);
+                    if (projected.escaped && role == IdentifierRole::FileStem)
+                    {
+                        // Reported once per language, under the file-stem pass, so a namespace does
+                        // not announce itself again for the type-name pass.
+                        renameNotes.emplace(std::string(languageName) + ":" + component + ":" + projected.identifier);
+                    }
+                    namespacePath += projected.identifier;
                     namespacePath.push_back('/');
                 }
+                const auto projectedName = codegenProjectIdentifierDetailed(language, role, def.shortName);
+                if (projectedName.escaped && role == IdentifierRole::FileStem)
+                {
+                    renameNotes.emplace(std::string(languageName) + ":" + def.shortName + ":" +
+                                        projectedName.identifier);
+                }
                 const std::string key = std::string(languageName) + ":" + std::to_string(static_cast<int>(role)) + ":" +
-                                        namespacePath + codegenProjectIdentifier(language, role, def.shortName) +
-                                        versionSuffix;
+                                        namespacePath + projectedName.identifier + versionSuffix;
                 const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
                 if (!inserted && it->second != def.fullName)
                 {
@@ -311,6 +328,16 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                                       " map to the same " + what + " for target language" +
                                       (languages.size() > 1U ? "s " : " ") + languageList);
             }
+        }
+
+        for (const auto& note : renameNotes)
+        {
+            const auto firstColon  = note.find(':');
+            const auto secondColon = note.find(':', firstColon + 1);
+            diagnostics.note({def.filePath, 1, 1},
+                             "'" + note.substr(firstColon + 1, secondColon - firstColon - 1) + "' is emitted as '" +
+                                 note.substr(secondColon + 1) + "' for target language '" + note.substr(0, firstColon) +
+                                 "'");
         }
 
         const std::string versionKey =

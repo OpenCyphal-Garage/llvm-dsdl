@@ -978,6 +978,58 @@ bool AnalysisPipeline::documentTextMatches(const std::string& uri, const std::st
     return it != cachedDefinitionsByPath_.end() && it->second.sourceText == text;
 }
 
+namespace
+{
+
+/// @brief Renders "emits as X (c, cpp) - Y (go)" for one attribute.
+///
+/// Languages are grouped by the identifier they produce, because listing six rows for a name that
+/// is the same in five of them is noise. The scope is rebuilt from the attribute names in
+/// declaration order, which is how the emitters build theirs, so a name that had to be
+/// disambiguated reads the same here as it will in the generated source.
+std::string renderGeneratedNames(const std::vector<std::string>& orderedNames,
+                                 const std::string&              hovered,
+                                 const llvmdsdl::IdentifierRole  role)
+{
+    std::vector<std::pair<std::string, std::vector<std::string>>> groups;
+    for (const auto& [language, languageName] : llvmdsdl::allOutputLanguages())
+    {
+        llvmdsdl::NamingScope scope(language);
+        for (const auto& name : orderedNames)
+        {
+            (void) scope.declare(role, name);
+        }
+        const std::string identifier = scope.get(role, hovered);
+
+        auto group = std::find_if(groups.begin(), groups.end(), [&identifier](const auto& entry) {
+            return entry.first == identifier;
+        });
+        if (group == groups.end())
+        {
+            groups.push_back({identifier, {languageName.str()}});
+        }
+        else
+        {
+            group->second.push_back(languageName.str());
+        }
+    }
+
+    std::string out = "\n\nemits as ";
+    for (std::size_t i = 0; i < groups.size(); ++i)
+    {
+        out += (i > 0 ? " · " : "");
+        out += "`" + groups[i].first + "` (";
+        for (std::size_t j = 0; j < groups[i].second.size(); ++j)
+        {
+            out += (j > 0 ? ", " : "") + groups[i].second[j];
+        }
+        out += ")";
+    }
+    return out;
+}
+
+}  // namespace
+
 std::optional<HoverData> AnalysisPipeline::hover(const std::string&  uri,
                                                  const std::uint32_t line,
                                                  const std::uint32_t character) const
@@ -1012,14 +1064,28 @@ std::optional<HoverData> AnalysisPipeline::hover(const std::string&  uri,
     {
         if (field.line == line && containsCharacter(field.character, field.length, character))
         {
-            return HoverData{"`" + field.name + "`: `" + field.typeDisplay + "`"};
+            std::vector<std::string> names;
+            names.reserve(it->second.fieldSymbols.size());
+            for (const auto& symbol : it->second.fieldSymbols)
+            {
+                names.push_back(symbol.name);
+            }
+            return HoverData{"`" + field.name + "`: `" + field.typeDisplay + "`" +
+                             renderGeneratedNames(names, field.name, llvmdsdl::IdentifierRole::FieldName)};
         }
     }
     for (const CachedDefinition::ConstantSymbol& constant : it->second.constantSymbols)
     {
         if (constant.line == line && containsCharacter(constant.character, constant.length, character))
         {
-            return HoverData{"`" + constant.name + "`: `" + constant.typeDisplay + "`"};
+            std::vector<std::string> names;
+            names.reserve(it->second.constantSymbols.size());
+            for (const auto& symbol : it->second.constantSymbols)
+            {
+                names.push_back(symbol.name);
+            }
+            return HoverData{"`" + constant.name + "`: `" + constant.typeDisplay + "`" +
+                             renderGeneratedNames(names, constant.name, llvmdsdl::IdentifierRole::ConstantName)};
         }
     }
 

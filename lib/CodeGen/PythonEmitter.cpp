@@ -15,6 +15,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 
@@ -94,12 +95,7 @@ NamingScope makePyFieldIdents(const SemanticSection& section)
     }
     // The generated methods a field attribute must not shadow are claimed by the FieldName role's
     // policy, so the scope only has to keep the fields apart from each other.
-    NamingScope scope(CodegenNamingLanguage::Python);
-    for (const auto& name : names)
-    {
-        (void) scope.declare(IdentifierRole::FieldName, name);
-    }
-    return scope;
+    return makeSectionFieldScope(CodegenNamingLanguage::Python, section);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -389,12 +385,8 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    NamingScope constScope(CodegenNamingLanguage::Python);
-    for (const auto& name : constNames)
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, name);
-    }
-    const auto prefixupper =
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
+    const auto  prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {

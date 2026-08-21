@@ -66,10 +66,9 @@ constexpr std::array<CodegenNamingLanguage, 6> kAllLanguages = {CodegenNamingLan
                                                                 CodegenNamingLanguage::TypeScript,
                                                                 CodegenNamingLanguage::Python};
 
-/// @brief Reproduces the private `sanitizeMacroToken` in CEmitter.cpp and CppEmitter.cpp.
+/// @brief Reference implementation of the C and C++ macro token transform.
 ///
-/// Phase 2 deletes those copies in favour of the MacroName role. Until then this is the oracle the
-/// role has to match, so that the migration is a deletion rather than a behavior change.
+/// Upper-cases and escapes without stropping. The MacroName role has to match it.
 std::string emitterMacroToken(std::string token)
 {
     for (char& c : token)
@@ -106,11 +105,10 @@ bool expectRole(const CodegenNamingLanguage language,
     return true;
 }
 
-/// @brief Ties every role in the table to the call site it was taken from.
+/// @brief Ties every role in the table to the projection its call sites use.
 ///
-/// The role table in NamingPolicy.cpp is a claim about what the emitters do today. Phase 2 will make
-/// that claim structural by routing the emitters through it; until then these assertions are what
-/// keep the table honest, and they are what will fail loudly if it was recorded wrong.
+/// A role that is recorded wrong produces identifiers no backend intended, and the emitters cannot
+/// catch it themselves now that they name through the roles. These assertions can.
 bool runNamingRoleTests()
 {
     bool ok = true;
@@ -152,14 +150,10 @@ bool runNamingRoleTests()
     return ok;
 }
 
-/// @brief Records the one input where the role table and the emitter call sites disagree.
+/// @brief Pins what an empty name projects to.
 ///
-/// On the empty name the shared pipeline substitutes `_`, because no target accepts an empty
-/// identifier; the emitter-private `sanitizeMacroToken` and the raw C/C++ header stem both hand the
-/// empty string straight back. The empty name cannot come from DSDL, so this is not reachable from
-/// the compiler -- but phase 2 replaces those call sites, and when it does the pipeline's answer is
-/// the one that survives. This test exists so that change reads as intended rather than as a
-/// regression against the equivalence assertions above.
+/// No target accepts an empty identifier, so the pipeline substitutes `_` rather than passing one
+/// through. The empty name cannot come from DSDL; the language server and library callers reach it.
 bool runEmptyNameDivergenceTest()
 {
     bool ok = true;

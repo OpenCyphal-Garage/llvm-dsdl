@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -293,12 +294,8 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    NamingScope constScope(CodegenNamingLanguage::TypeScript);
-    for (const auto& name : constNames)
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, name);
-    }
-    const auto prefixupper =
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section);
+    const auto  prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {
@@ -328,12 +325,7 @@ NamingScope makeTsFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    NamingScope scope(CodegenNamingLanguage::TypeScript);
-    for (const auto& name : names)
-    {
-        (void) scope.declare(IdentifierRole::FieldName, name);
-    }
-    return scope;
+    return makeSectionFieldScope(CodegenNamingLanguage::TypeScript, section);
 }
 
 void emitDeprecationJsDocTs(std::ostringstream& out,

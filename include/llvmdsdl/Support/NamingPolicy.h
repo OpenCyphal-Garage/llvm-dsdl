@@ -97,11 +97,9 @@ enum class CaseStyle
 
 /// @brief How one role is named in one language.
 ///
-/// The three booleans are deliberately separate from the case style because today's backends use
-/// every combination of them: a C macro token is escaped but not stropped, a C header stem is
-/// neither, and a Go constant is both and then uppercased. Recording that faithfully is what makes
-/// this a description of the current tree rather than an aspiration; the `false` entries are the
-/// phase 4 worklist in docs/development/identifier-stropping.md.
+/// The three booleans are separate from the case style because the backends use every combination of
+/// them: a C macro token is escaped but not stropped, a C header stem is neither, and a Go constant
+/// is both and then uppercased.
 struct RolePolicy final
 {
     /// @brief Case projection applied first.
@@ -154,6 +152,30 @@ private:
 /// @return A reference to the language's policy, valid for the process lifetime.
 [[nodiscard]] const LanguageNamingPolicy& codegenNamingPolicy(CodegenNamingLanguage language);
 
+/// @brief A projected identifier and whether producing it needed an escape.
+struct ProjectedIdentifier final
+{
+    /// @brief The identifier to emit.
+    std::string identifier;
+
+    /// @brief True when a keyword, a claimed name, or an illegal character forced a change beyond
+    ///        the role's case projection.
+    ///
+    /// Case projection alone does not count: every backend renames `FooBar` to `foo_bar` or
+    /// `FOO_BAR` as a matter of course, and reporting that would bury the cases a reader needs to
+    /// know about under the ones they already expect.
+    bool escaped = false;
+};
+
+/// @brief Projects @p name and reports whether an escape was needed.
+/// @param[in] language Naming language.
+/// @param[in] role What the identifier will be used as.
+/// @param[in] name Source name.
+/// @return The identifier and the escape flag.
+[[nodiscard]] ProjectedIdentifier codegenProjectIdentifierDetailed(CodegenNamingLanguage language,
+                                                                   IdentifierRole        role,
+                                                                   llvm::StringRef       name);
+
 /// @brief Projects @p name into the identifier @p role calls for in @p language.
 ///
 /// This is the shared pipeline: case projection, then escaping, then stropping, then the optional
@@ -204,9 +226,6 @@ std::string codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage language, ll
 /// scope hands back the identifier each one gets, appending `_2`, `_3`, ... when a projection is
 /// many-to-one. Roles share one pool because they share one C++/Go/TypeScript scope: a Go field and
 /// a Go method on the same struct cannot both be `Serialize`.
-///
-/// This is the entry point the emitters move to in phase 2 of
-/// docs/development/identifier-stropping.md; nothing calls it yet.
 class NamingScope final
 {
 public:

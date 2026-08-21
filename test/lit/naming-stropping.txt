@@ -215,3 +215,18 @@
 # identifier in C's namespace -- which is why this reads FULL_NAME and not FULL_NAME_.
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)
+
+# ---------------------------------------------------------------------------------------------
+# Phase 5: the naming manifest and the path-level rename note.
+# ---------------------------------------------------------------------------------------------
+
+# A path-level rename is reported without being asked for; a rename inside a file is not.
+# RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/note 2>&1 | FileCheck %s --check-prefix=RENAME_NOTE
+# RENAME_NOTE-DAG: note: 'Break' is emitted as 'break_' for target language 'go'
+# RENAME_NOTE-DAG: note: 'map' is emitted as 'map_' for target language 'go'
+# RENAME_NOTE-NOT: note: 'break' is emitted as
+
+# The manifest reports the identifiers the backend actually writes, so the stems it names are the
+# files on disk. An analysis target reports every language at once.
+# RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
+# RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note

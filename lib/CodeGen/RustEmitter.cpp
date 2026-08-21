@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 
@@ -1458,11 +1459,7 @@ void emitSectionType(std::ostringstream&              out,
     {
         constNames.push_back(c.name);
     }
-    NamingScope constScope(CodegenNamingLanguage::Rust);
-    for (const auto& name : constNames)
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, name);
-    }
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(out, 1, c.doc);

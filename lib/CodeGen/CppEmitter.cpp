@@ -15,6 +15,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
@@ -1709,13 +1710,7 @@ void emitSectionStruct(std::ostringstream&              out,
 
     // constant named FULL_NAME is escaped before it reaches the scope.
 
-    NamingScope constScope(CodegenNamingLanguage::Cpp);
-
-    for (const auto& c : section.constants)
-
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, c.name);
-    }
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
 
     for (const auto& c : section.constants)
     {

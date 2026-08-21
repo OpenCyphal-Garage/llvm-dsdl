@@ -90,6 +90,8 @@ add_library(llvmdsdlCodeGen
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp
+  NamingManifest.cpp
+  SectionNaming.cpp
   ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
   PythonEmitter.cpp

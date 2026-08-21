@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
@@ -456,11 +457,7 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
     // apart. The generated metadata macros need no reservation here: they carry a trailing `_`
     // (`<Type>_FULL_NAME_`), which no projection of a DSDL name produces.
-    NamingScope constScope(CodegenNamingLanguage::C);
-    for (const auto& c : section.constants)
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, c.name);
-    }
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(out, 0, c.doc);

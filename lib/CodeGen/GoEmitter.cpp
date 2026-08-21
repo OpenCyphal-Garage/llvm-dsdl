@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 
@@ -95,12 +96,7 @@ NamingScope makeExportedFieldIdents(const SemanticSection& section)
     // The generated methods a field must not collide with are claimed by the FieldName role's policy
     // (Go forbids a field and a method sharing a name), so the scope only has to keep the fields
     // apart from each other.
-    NamingScope scope(CodegenNamingLanguage::Go);
-    for (const auto& name : names)
-    {
-        (void) scope.declare(IdentifierRole::FieldName, name);
-    }
-    return scope;
+    return makeSectionFieldScope(CodegenNamingLanguage::Go, section);
 }
 
 std::string packagePathFromComponents(const std::vector<std::string>& components)
@@ -1323,11 +1319,7 @@ void emitSectionType(std::ostringstream&                       out,
     {
         constNames.push_back(c.name);
     }
-    NamingScope constScope(CodegenNamingLanguage::Go);
-    for (const auto& name : constNames)
-    {
-        (void) constScope.declare(IdentifierRole::ConstantName, name);
-    }
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocGo(out, 0, c.doc);

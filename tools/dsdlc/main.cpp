@@ -38,6 +38,7 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/NamingManifest.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
@@ -143,6 +144,9 @@ struct CliOptions final
     bool                        listOutputs{false};
     bool                        listInputs{false};
     bool                        emitDepfiles{false};
+
+    /// @brief Where to write the DSDL-name to generated-identifier map, if requested.
+    std::string namingManifest;
 
     /// @brief Per-tranche manifest enabling removal of outputs this run no longer produces.
     std::string pruneManifest;
@@ -304,6 +308,11 @@ void printHelp()
                  << "        only                - only generate support code.\n"
                  << "      'always' and 'only' need no positional targets. Requires a\n"
                  << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
+                 << "  --naming-manifest <file>\n"
+                 << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
+                 << "      as, for every target language this invocation names. Answers 'what did\n"
+                 << "      my field become' without reading generated source, and lets a build\n"
+                 << "      reference a generated symbol without reimplementing the projection.\n"
                  << "  --prune-manifest <file>\n"
                  << "      Record this run's outputs in <file> and, on the next run, delete the\n"
                  << "      outputs it recorded that are no longer produced. One manifest per dsdlc\n"
@@ -554,6 +563,16 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.outDir = *value;
+            continue;
+        }
+        if (arg == "--naming-manifest")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.namingManifest = *value;
             continue;
         }
         if (arg == "--prune-manifest")
@@ -1583,6 +1602,30 @@ int main(int argc, char** argv)
                             std::chrono::steady_clock::now() - startTime);
             return (forceFailure || pruneFailed || diagnostics.hasErrors()) ? 1 : 0;
         };
+
+    // Written before the language dispatch so it is available for every target, including the
+    // analysis ones: asking what a name will be generated as is a question you ask *before*
+    // generating, and `ast` already checks every backend's output names for the same reason.
+    if (!options.namingManifest.empty())
+    {
+        const auto manifestSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        const auto manifestLanguages =
+            outputLanguages.empty() ? namingLanguagesForTarget(options.targetLanguage) : outputLanguages;
+        const std::string manifest =
+            llvmdsdl::renderNamingManifest(manifestSemantic, manifestLanguages, llvmdsdl::kVersionString);
+        std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
+        if (!stream.good())
+        {
+            llvm::errs() << "cannot write naming manifest: " << options.namingManifest << "\n";
+            return finish("stdout", {}, true);
+        }
+        stream << manifest;
+        if (!stream.good())
+        {
+            llvm::errs() << "failed writing naming manifest: " << options.namingManifest << "\n";
+            return finish("stdout", {}, true);
+        }
+    }
 
     if (options.targetLanguage == "ast")
     {
