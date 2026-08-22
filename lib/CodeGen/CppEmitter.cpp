@@ -326,7 +326,7 @@ public:
     {
         emitLine(out,
                  0,
-                 "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
+                 "inline std::int8_t " + typeName + "_serialize_(const " + typeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -430,7 +430,7 @@ public:
     {
         emitLine(out,
                  0,
-                 "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
+                 "inline std::int8_t " + typeName + "_deserialize_(" + typeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -1306,7 +1306,7 @@ private:
             }
             emitLine(out_,
                      indent_,
-                     "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
+                     "std::int8_t " + errVar + " = " + nestedType + "_serialize_(&" + expr +
                          ", &buffer[offset_bits / 8U], &" + sizeVar +
                          (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
             emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1372,7 +1372,7 @@ private:
                 emitLine(out_, indent_, "std::size_t " + consumed + " = " + sizeVar + ";");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                         "const std::int8_t " + errVar + " = " + nestedType + "_deserialize_(&" + expr +
                              ", &buffer[offset_bits / 8U], &" + consumed +
                              (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
                 emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1388,7 +1388,7 @@ private:
                          " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
             emitLine(out_,
                      indent_,
-                     "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                     "const std::int8_t " + errVar + " = " + nestedType + "_deserialize_(&" + expr +
                          ", &buffer[offset_bits / 8U], &" + sizeVar +
                          (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
             emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1487,23 +1487,23 @@ void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName
     emitLine(out, 0, "struct " + typeName + ";");
     emitLine(out,
              0,
-             "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
+             "inline std::int8_t " + typeName + "_serialize_(const " + typeName +
                  "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
                  (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     emitLine(out,
              0,
-             "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
+             "inline std::int8_t " + typeName + "_deserialize_(" + typeName +
                  "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
                  (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+                 "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
                  "const std::uint8_t** out_view_bytes);");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
                  "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     out << "\n";
 }
@@ -1732,11 +1732,11 @@ void emitSectionStruct(std::ostringstream&              out,
     {
         emitLine(out,
                  2,
-                 "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+                 "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
     }
     else
     {
-        emitLine(out, 2, "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes);");
+        emitLine(out, 2, "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
     }
     emitLine(out, 1, "}");
 
@@ -1748,11 +1748,11 @@ void emitSectionStruct(std::ostringstream&              out,
     {
         emitLine(out,
                  2,
-                 "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+                 "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
     }
     else
     {
-        emitLine(out, 2, "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes);");
+        emitLine(out, 2, "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
     }
     emitLine(out, 1, "}");
 
@@ -1760,9 +1760,7 @@ void emitSectionStruct(std::ostringstream&              out,
              1,
              "LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
              "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
-    emitLine(out,
-             2,
-             "return " + typeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    emitLine(out, 2, "return " + typeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
@@ -1771,7 +1769,7 @@ void emitSectionStruct(std::ostringstream&              out,
     emitLine(out,
              2,
              "return " + typeName +
-                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
 
     if (isPmrFlavor(flavor))
@@ -1780,9 +1778,7 @@ void emitSectionStruct(std::ostringstream&              out,
                  1,
                  "LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
-        emitLine(out,
-                 2,
-                 "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+        emitLine(out, 2, "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
         emitLine(out, 1, "}");
 
         emitLine(out,
@@ -1791,7 +1787,7 @@ void emitSectionStruct(std::ostringstream&              out,
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
         emitLine(out,
                  2,
-                 "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+                 "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
         emitLine(out, 1, "}");
     }
 
@@ -1804,7 +1800,7 @@ void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                 "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                  "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
     emitLine(out, 0, "{");
     emitLine(out,
@@ -1836,7 +1832,7 @@ void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                  "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
     emitLine(out, 0, "{");
     emitLine(out, 1, "if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
@@ -1974,8 +1970,10 @@ std::string renderHeader(const SemanticDefinition& def,
 
     if (def.isService)
     {
-        const auto requestType  = baseTypeName + "__Request";
-        const auto responseType = baseTypeName + "__Response";
+        // A single underscore: C++ reserves any identifier containing `__`, and these name C++
+        // structs. The C emitter keeps `__` for its own service section types, where it is legal.
+        const auto requestType  = baseTypeName + "_Request";
+        const auto responseType = baseTypeName + "_Response";
 
         emitLine(out, 0, "constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
         emitLine(out,
@@ -2025,14 +2023,14 @@ std::string renderHeader(const SemanticDefinition& def,
 
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
+                 "inline std::int8_t " + baseTypeName + "_serialize_(const " + baseTypeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__serialize_(reinterpret_cast<const " + requestType +
+                 "return " + requestType + "_serialize_(reinterpret_cast<const " + requestType +
                      "*>(obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                      ");");
         emitLine(out, 0, "}");
@@ -2040,14 +2038,14 @@ std::string renderHeader(const SemanticDefinition& def,
 
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseTypeName + "__deserialize_(" + baseTypeName +
+                 "inline std::int8_t " + baseTypeName + "_deserialize_(" + baseTypeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__deserialize_(reinterpret_cast<" + requestType +
+                 "return " + requestType + "_deserialize_(reinterpret_cast<" + requestType +
                      "*>(out_obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                      ");");
         emitLine(out, 0, "}");
@@ -2056,25 +2054,25 @@ std::string renderHeader(const SemanticDefinition& def,
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseTypeName +
-                     "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                     "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+                 "return " + requestType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
         emitLine(out, 0, "}");
         out << "\n";
 
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseTypeName +
-                     "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                     "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                      "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + requestType +
-                     "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                     "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
     }
     else

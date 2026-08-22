@@ -28,6 +28,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -144,6 +145,9 @@ struct CliOptions final
     bool                        listOutputs{false};
     bool                        listInputs{false};
     bool                        emitDepfiles{false};
+
+    /// @brief Accept names that land in a language's reserved namespace, encoding them.
+    bool encodeReservedIdentifiers{false};
 
     /// @brief Where to write the DSDL-name to generated-identifier map, if requested.
     std::string namingManifest;
@@ -308,6 +312,12 @@ void printHelp()
                  << "        only                - only generate support code.\n"
                  << "      'always' and 'only' need no positional targets. Requires a\n"
                  << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
+                 << "  --encode-reserved-identifiers\n"
+                 << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
+                 << "      namespace, encoding the offending characters instead of rejecting the\n"
+                 << "      definition. Rejecting is the default because the encoding is not pleasant\n"
+                 << "      to read; this is the escape hatch when renaming the definition is not an\n"
+                 << "      option.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
                  << "      as, for every target language this invocation names. Answers 'what did\n"
@@ -563,6 +573,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.outDir = *value;
+            continue;
+        }
+        if (arg == "--encode-reserved-identifiers")
+        {
+            options.encodeReservedIdentifiers = true;
             continue;
         }
         if (arg == "--naming-manifest")
@@ -1602,6 +1617,68 @@ int main(int argc, char** argv)
                             std::chrono::steady_clock::now() - startTime);
             return (forceFailure || pruneFailed || diagnostics.hasErrors()) ? 1 : 0;
         };
+
+    // A DSDL name can land in a namespace the language reserves -- C reserves a leading `__` or `_`
+    // plus a capital, C++ any identifier containing `__` -- and no suffix repairs that, so the
+    // engine encodes the offending characters. The encoding is legal but unpleasant, so the default
+    // is to reject the definition and let the author rename it; --encode-reserved-identifiers is the
+    // escape hatch for when they cannot.
+    if (!options.encodeReservedIdentifiers && !outputLanguages.empty())
+    {
+        const auto reservedSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        for (const auto& def : reservedSemantic.definitions)
+        {
+            const auto report = [&](const llvmdsdl::OutputLanguage& language,
+                                    const char* const               what,
+                                    const std::string&              name,
+                                    const llvmdsdl::IdentifierRole  role) {
+                const auto projected = llvmdsdl::codegenProjectIdentifierDetailed(language.language, role, name);
+                if (!projected.reservedNamespaceEncoded)
+                {
+                    return;
+                }
+                diagnostics.error({def.info.filePath, 1, 1},
+                                  std::string(what) + " '" + name +
+                                      "' is a reserved identifier for target "
+                                      "language '" +
+                                      language.name.str() +
+                                      "'; rename it, or pass "
+                                      "--encode-reserved-identifiers to emit it as '" +
+                                      projected.identifier + "'");
+            };
+
+            for (const auto& language : outputLanguages)
+            {
+                report(language, "type name", def.info.shortName, llvmdsdl::IdentifierRole::TypeName);
+                for (const auto& component : def.info.namespaceComponents)
+                {
+                    report(language, "namespace component", component, llvmdsdl::IdentifierRole::NamespaceName);
+                }
+                const auto reportSection = [&](const llvmdsdl::SemanticSection& section) {
+                    for (const auto& field : section.fields)
+                    {
+                        if (!field.isPadding)
+                        {
+                            report(language, "field", field.name, llvmdsdl::IdentifierRole::FieldName);
+                        }
+                    }
+                    for (const auto& constant : section.constants)
+                    {
+                        report(language, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
+                    }
+                };
+                reportSection(def.request);
+                if (def.isService && def.response.has_value())
+                {
+                    reportSection(*def.response);
+                }
+            }
+        }
+        if (diagnostics.hasErrors())
+        {
+            return finish("stdout", {}, true);
+        }
+    }
 
     // Written before the language dispatch so it is available for every target, including the
     // analysis ones: asking what a name will be generated as is a question you ask *before*

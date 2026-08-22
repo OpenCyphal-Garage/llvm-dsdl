@@ -358,11 +358,11 @@ std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def
         const std::string shimBase = shimTypeNameFromInfo(def.info);
 
         out.push_back(
-            SectionPlan{"request", cppBase + "__Request", cBase + "__Request", shimBase + "__Request", &def.request});
+            SectionPlan{"request", cppBase + "_Request", cBase + "__Request", shimBase + "__Request", &def.request});
         if (def.response)
         {
             out.push_back(SectionPlan{"response",
-                                      cppBase + "__Response",
+                                      cppBase + "_Response",
                                       cBase + "__Response",
                                       shimBase + "__Response",
                                       &(*def.response)});
@@ -406,21 +406,21 @@ void emitCanonicalStruct(std::ostringstream&        out,
     emitLine(out, 0, "struct " + plan.cppTypeName + ";");
     emitLine(out,
              0,
-             "std::int8_t " + plan.cppTypeName + "__serialize_(const " + plan.cppTypeName +
+             "std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
                  "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     emitLine(out,
              0,
-             "std::int8_t " + plan.cppTypeName + "__deserialize_(" + plan.cppTypeName +
+             "std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
                  "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     emitLine(out,
              0,
              "std::int8_t " + plan.cppTypeName +
-                 "__try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+                 "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
                  "const std::uint8_t** out_view_bytes);");
     emitLine(out,
              0,
              "std::int8_t " + plan.cppTypeName +
-                 "__try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
                  "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     out << '\n';
 
@@ -490,10 +490,10 @@ void emitCanonicalStruct(std::ostringstream&        out,
     out << '\n';
 
     emitLine(out, 1, "std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) const {");
-    emitLine(out, 2, "return " + plan.cppTypeName + "__serialize_(this, buffer, inout_buffer_size_bytes);");
+    emitLine(out, 2, "return " + plan.cppTypeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
     emitLine(out, 1, "std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
-    emitLine(out, 2, "return " + plan.cppTypeName + "__deserialize_(this, buffer, inout_buffer_size_bytes);");
+    emitLine(out, 2, "return " + plan.cppTypeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
@@ -502,8 +502,7 @@ void emitCanonicalStruct(std::ostringstream&        out,
              "const std::uint8_t** out_view_bytes) {");
     emitLine(out,
              2,
-             "return " + plan.cppTypeName +
-                 "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+             "return " + plan.cppTypeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
@@ -512,7 +511,7 @@ void emitCanonicalStruct(std::ostringstream&        out,
     emitLine(out,
              2,
              "return " + plan.cppTypeName +
-                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
 
     emitLine(out, 0, "};");
@@ -759,7 +758,7 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
 {
     emitLine(out,
              0,
-             "std::int8_t " + plan.cppTypeName + "__serialize_(const " + plan.cppTypeName +
+             "std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
                  "* const obj, std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
     emitLine(out, 0, "{");
     emitLine(out, 1, "if (obj == nullptr) {");
@@ -773,7 +772,7 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
 
     emitLine(out,
              0,
-             "std::int8_t " + plan.cppTypeName + "__deserialize_(" + plan.cppTypeName +
+             "std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
                  "* const out_obj, const std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
     emitLine(out, 0, "{");
     emitLine(out, 1, "if (out_obj == nullptr) {");
@@ -793,7 +792,7 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
     emitLine(out,
              0,
              "std::int8_t " + plan.cppTypeName +
-                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                 "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                  "inout_buffer_size_bytes, "
                  "const std::uint8_t** const out_view_bytes)");
     emitLine(out, 0, "{");
@@ -806,7 +805,7 @@ void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
     emitLine(out,
              0,
              "std::int8_t " + plan.cppTypeName +
-                 "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                  "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
     emitLine(out, 0, "{");
     emitLine(out,
@@ -872,50 +871,50 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
     if (def.isService)
     {
         const auto baseName = cppTypeNameFromInfo(def.info);
-        emitLine(out, 0, "using " + baseName + " = " + baseName + "__Request;");
+        emitLine(out, 0, "using " + baseName + " = " + baseName + "_Request;");
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseName + "__serialize_(const " + baseName +
+                 "inline std::int8_t " + baseName + "_serialize_(const " + baseName +
                      "* const obj, std::uint8_t* const buffer, "
                      "std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + baseName + "__Request__serialize_(reinterpret_cast<const " + baseName +
-                     "__Request*>(obj), buffer, inout_buffer_size_bytes);");
+                 "return " + baseName + "_Request_serialize_(reinterpret_cast<const " + baseName +
+                     "_Request*>(obj), buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseName + "__deserialize_(" + baseName +
+                 "inline std::int8_t " + baseName + "_deserialize_(" + baseName +
                      "* const out_obj, const std::uint8_t* const buffer, "
                      "std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + baseName + "__Request__deserialize_(reinterpret_cast<" + baseName +
-                     "__Request*>(out_obj), buffer, inout_buffer_size_bytes);");
+                 "return " + baseName + "_Request_deserialize_(reinterpret_cast<" + baseName +
+                     "_Request*>(out_obj), buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseName +
-                     "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                     "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + baseName +
-                     "__Request__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+                     "_Request_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
         emitLine(out, 0, "}");
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseName +
-                     "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                     "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                      "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + baseName +
-                     "__Request__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                     "_Request_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
     }
 
@@ -1159,7 +1158,7 @@ void emitShimDefinition(std::ostringstream&       out,
     emitLine(out, 1, "}");
     emitLine(out, 1, canonicalType + " abi_obj{};");
     emitLine(out, 1, "std::memcpy(&abi_obj, obj, sizeof(abi_obj));");
-    emitLine(out, 1, "return " + canonicalType + "__serialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
+    emitLine(out, 1, "return " + canonicalType + "_serialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
     emitLine(out, 0, "}");
     out << '\n';
 
@@ -1174,7 +1173,7 @@ void emitShimDefinition(std::ostringstream&       out,
     emitLine(out, 1, canonicalType + " abi_obj{};");
     emitLine(out,
              1,
-             "const int8_t rc = " + canonicalType + "__deserialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
+             "const int8_t rc = " + canonicalType + "_deserialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "if (rc >= 0) {");
     emitLine(out, 2, "std::memcpy(out_obj, &abi_obj, sizeof(abi_obj));");
     emitLine(out, 1, "}");
@@ -1190,7 +1189,7 @@ void emitShimDefinition(std::ostringstream&       out,
     emitLine(out, 0, "{");
     emitLine(out,
              1,
-             "return " + canonicalType + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+             "return " + canonicalType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 0, "}");
     out << '\n';
 
@@ -1203,7 +1202,7 @@ void emitShimDefinition(std::ostringstream&       out,
     emitLine(out,
              1,
              "return " + canonicalType +
-                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
     emitLine(out, 0, "}");
     out << '\n';
 }
@@ -1315,12 +1314,12 @@ std::string renderAdapterHeader(const SemanticDefinition& def, llvm::StringRef p
     const std::string canonicalPrefix = cppNs.empty() ? "::abi::" : ("::" + cppNs + "::abi::");
     if (def.isService)
     {
-        emitLine(out, 0, "using " + baseName + "__Request = " + canonicalPrefix + baseName + "__Request;");
+        emitLine(out, 0, "using " + baseName + "_Request = " + canonicalPrefix + baseName + "_Request;");
         if (def.response)
         {
-            emitLine(out, 0, "using " + baseName + "__Response = " + canonicalPrefix + baseName + "__Response;");
+            emitLine(out, 0, "using " + baseName + "_Response = " + canonicalPrefix + baseName + "_Response;");
         }
-        emitLine(out, 0, "using " + baseName + " = " + baseName + "__Request;");
+        emitLine(out, 0, "using " + baseName + " = " + baseName + "_Request;");
     }
     else
     {

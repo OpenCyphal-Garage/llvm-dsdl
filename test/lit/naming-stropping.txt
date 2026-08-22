@@ -111,6 +111,32 @@
 # TS_UNDERSCORES: foo_: number;
 # TS_UNDERSCORES: bar: number;
 
+# ---------------------------------------------------------------------------------------------
+# Names that land in a namespace C or C++ reserves are rejected, with the encoding offered as the
+# way to keep the definition unchanged.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: not %dsdlc --target-language c %S/fixtures_naming_reserved --outdir %t/reserved-c 2>&1 | FileCheck %s --check-prefix=RESERVED_C
+# RESERVED_C-DAG: error: field '_Foo' is a reserved identifier for target language 'c'; rename it, or pass --encode-reserved-identifiers to emit it as 'zX005FFoo'
+# RESERVED_C-DAG: error: field '__bar' is a reserved identifier for target language 'c'
+# C treats a double underscore inside an identifier as ordinary, so `foo__bar` is not rejected there.
+# RESERVED_C-NOT: field 'foo__bar'
+
+# C++ reserves a double underscore anywhere, so it rejects one C accepts.
+# RUN: not %dsdlc --target-language cpp %S/fixtures_naming_reserved --cpp-profile std --outdir %t/reserved-cpp 2>&1 | FileCheck %s --check-prefix=RESERVED_CPP
+# RESERVED_CPP-DAG: error: field 'foo__bar' is a reserved identifier for target language 'cpp'
+
+# Go has no such namespace, so the same definitions generate without complaint.
+# RUN: %dsdlc --target-language go %S/fixtures_naming_reserved --go-module demo/reserved --outdir %t/reserved-go
+
+# The escape hatch generates, and the encoding is injective: `_Foo` and `__bar` stay distinct.
+# RUN: %dsdlc --target-language c %S/fixtures_naming_reserved --outdir %t/reserved-enc --encode-reserved-identifiers
+# RUN: cat %t/reserved-enc/fixtures_naming_reserved/reserved/Names_1_0.h | FileCheck %s --check-prefix=RESERVED_ENC
+# RESERVED_ENC: uint8_t zX005FFoo;
+# RESERVED_ENC: uint8_t zX005FzX005Fbar;
+# RESERVED_ENC: uint8_t foo__bar;
+# RESERVED_ENC: uint8_t plain;
+
 # PY_KEYWORDS: break_: int = 0
 # PY_KEYWORDS: class_: int = 0
 # PY_KEYWORDS: def_: int = 0

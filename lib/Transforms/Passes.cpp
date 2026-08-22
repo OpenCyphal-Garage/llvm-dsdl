@@ -242,7 +242,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
     const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
     const std::string funcName =
-        "__llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + sectionSuffix(section);
+        "llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + sectionSuffix(section);
     plan->setAttr(kLoweredCapacityCheckHelperAttr, builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -323,7 +323,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
     const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
     const std::string funcName =
-        "__llvmdsdl_plan_validate_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
+        "llvmdsdl_plan_validate_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
     plan->setAttr(kLoweredUnionTagValidateHelperAttr, builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -445,7 +445,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
         const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
         const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
 
-        const std::string symbolStem = "__llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
+        const std::string symbolStem = "llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName   = symbolStem + "__ser";
         const std::string deserName = symbolStem + "__deser";
@@ -577,7 +577,7 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
         const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
         const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
 
-        const std::string symbolStem = "__llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
+        const std::string symbolStem = "llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName   = symbolStem + "__ser";
         const std::string deserName = symbolStem + "__deser";
@@ -716,7 +716,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
             continue;
         }
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const std::string  symbolStem = "__llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
+        const std::string  symbolStem = "llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName   = symbolStem + "__ser";
         const std::string deserName = symbolStem + "__deser";
@@ -819,7 +819,7 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
         }
         const std::int64_t capacity   = nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const std::string  symbolName = "__llvmdsdl_plan_validate_array_length__" + schemaSym.getValue().str() +
+        const std::string  symbolName = "llvmdsdl_plan_validate_array_length__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         op.setAttr("lowered_array_length_validate_helper", builder.getStringAttr(symbolName));
 
@@ -915,7 +915,7 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
             return op.emitOpError("invalid array-length prefix width");
         }
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const std::string  symbolStem = "__llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
+        const std::string  symbolStem = "llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName   = symbolStem + "__ser";
         const std::string deserName = symbolStem + "__deser";
@@ -1016,7 +1016,7 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         return plan->emitOpError("invalid union tag width");
     }
 
-    const std::string symbolStem = "__llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
+    const std::string symbolStem = "llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
     const std::string serName    = symbolStem + "__ser";
     const std::string deserName  = symbolStem + "__deser";
     plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
@@ -1136,7 +1136,7 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
             continue;
         }
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const std::string  symbolName = "__llvmdsdl_plan_validate_delimiter_header__" + schemaSym.getValue().str() +
+        const std::string  symbolName = "llvmdsdl_plan_validate_delimiter_header__" + schemaSym.getValue().str() +
                                        sectionSuffix(section) + "__" + std::to_string(stepIndex);
         op.setAttr("lowered_delimiter_validate_helper", builder.getStringAttr(symbolName));
 

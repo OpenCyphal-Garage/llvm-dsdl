@@ -1,0 +1,8 @@
+# Names that land in a namespace C or C++ reserves. `__bar` and `_Foo` are reserved for any use in
+# both; `foo__bar` is reserved in C++ only, which treats a double underscore anywhere as reserved.
+# All three are legal DSDL, so the compiler rejects them for those targets and offers an encoding.
+uint8 _Foo
+uint8 __bar
+uint8 foo__bar
+uint8 plain
+@sealed

@@ -22,43 +22,43 @@ export interface Helpers_1_0 {
 export function serializeHelpers_1_0(value: Helpers_1_0): Uint8Array {
   const out = new Uint8Array(10);
   let offsetBits = 0;
-  const mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0 = (capacityBits: number): boolean => 80 <= capacityBits;
-  const mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0 = (capacityBits: number): boolean => 80 <= capacityBits;
+  const mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const clamped = raw < -4096n ? -4096n : (raw > 4095n ? 4095n : raw);
   return (typeof value === "bigint") ? clamped : Number(clamped);
   };
-  const mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser = (value: number): number => value;
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser = (value: number): number => value;
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
+  const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
   
-  if (!mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(out.length * 8)) {
+  if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
-  dsdlRuntime.writeSigned(out, offsetBits, 13, mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(value.a), true);
+  dsdlRuntime.writeSigned(out, offsetBits, 13, mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(value.a), true);
   offsetBits += 13;
-  dsdlRuntime.writeFloat(out, offsetBits, 16, mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(value.b));
+  dsdlRuntime.writeFloat(out, offsetBits, 16, mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(value.b));
   offsetBits += 16;
   const cArray = value.c;
   if (!Array.isArray(cArray)) {
     throw new Error("field 'c' expects an array");
   }
-  if (!mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cArray.length)) {
+  if (!mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cArray.length)) {
     throw new Error("field 'c' exceeds max length 5");
   }
-  dsdlRuntime.writeUnsigned(out, offsetBits, 8, Number(mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(cArray.length)), false);
+  dsdlRuntime.writeUnsigned(out, offsetBits, 8, Number(mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(cArray.length)), false);
   offsetBits += 8;
   for (let i = 0; i < cArray.length; ++i) {
-    dsdlRuntime.writeUnsigned(out, offsetBits, 8, mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(cArray[i]), false);
+    dsdlRuntime.writeUnsigned(out, offsetBits, 8, mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(cArray[i]), false);
     offsetBits += 8;
   }
   const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);
@@ -66,42 +66,42 @@ export function serializeHelpers_1_0(value: Helpers_1_0): Uint8Array {
 }
 
 export function deserializeHelpers_1_0(bytes: Uint8Array): { value: Helpers_1_0; consumed: number } {
-  const mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser = (value: number | bigint): number | bigint => {
   const raw = ((typeof value === "bigint") ? value : BigInt(Math.trunc(value))) & 8191n;
   const signed = (raw & 4096n) !== 0n ? (raw | (~8191n)) : raw;
   return (typeof value === "bigint") ? signed : Number(signed);
   };
-  const mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser = (value: number): number => value;
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser = (value: number): number => value;
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
+  const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
   
   const value = {} as Helpers_1_0;
   let offsetBits = 0;
   const aRaw = dsdlRuntime.readSigned(bytes, offsetBits, 13);
-  value.a = Number(mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(aRaw));
+  value.a = Number(mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(aRaw));
   offsetBits += 13;
   const bRaw = dsdlRuntime.readFloat(bytes, offsetBits, 16);
-  value.b = mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(bRaw);
+  value.b = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(bRaw);
   offsetBits += 16;
   const cLengthRaw = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 8));
   offsetBits += 8;
-  const cLength = Number(mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(cLengthRaw));
-  if (!mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cLength)) {
+  const cLength = Number(mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(cLengthRaw));
+  if (!mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cLength)) {
     throw new Error("decoded length for field 'c' exceeds max length 5");
   }
   const cArray: Array<number> = new Array(cLength);
   for (let i = 0; i < cLength; ++i) {
     const cItemRaw = dsdlRuntime.readUnsigned(bytes, offsetBits, 8);
-    cArray[i] = Number(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(cItemRaw));
+    cArray[i] = Number(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(cItemRaw));
     offsetBits += 8;
   }
   value.c = cArray;

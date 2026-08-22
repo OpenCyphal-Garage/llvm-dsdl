@@ -97,72 +97,72 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT hit_pos EQUAL -1)
     list(APPEND generic_lowering_hits "${c_file}")
   endif()
-  string(FIND "${impl_text}" "_err_capacity = __llvmdsdl_plan_capacity_check__"
+  string(FIND "${impl_text}" "_err_capacity = llvmdsdl_plan_capacity_check__"
          capacity_call_pos)
   if(capacity_call_pos EQUAL -1)
     list(APPEND missing_capacity_call_hits "${c_file}")
   endif()
-  string(FIND "${impl_text}" "int8_t __llvmdsdl_plan_capacity_check__"
+  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_capacity_check__"
          capacity_helper_pos)
   if(capacity_helper_pos EQUAL -1)
     list(APPEND missing_capacity_helper_hits "${c_file}")
   endif()
-  string(FIND "${impl_text}" "_err_union_tag = __llvmdsdl_plan_validate_union_tag__"
+  string(FIND "${impl_text}" "_err_union_tag = llvmdsdl_plan_validate_union_tag__"
          union_tag_call_pos)
   if(NOT union_tag_call_pos EQUAL -1)
     set(found_union_tag_call 1)
   endif()
-  string(FIND "${impl_text}" "int8_t __llvmdsdl_plan_validate_union_tag__"
+  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_validate_union_tag__"
          union_tag_helper_pos)
   if(NOT union_tag_helper_pos EQUAL -1)
     set(found_union_tag_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (uint64_t)__llvmdsdl_plan_union_tag__"
+  string(FIND "${impl_text}" "= (uint64_t)llvmdsdl_plan_union_tag__"
          union_tag_io_call_pos)
   if(NOT union_tag_io_call_pos EQUAL -1)
     set(found_union_tag_io_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t __llvmdsdl_plan_union_tag__"
+  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_union_tag__"
          union_tag_io_helper_pos)
   if(NOT union_tag_io_helper_pos EQUAL -1)
     set(found_union_tag_io_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (uint64_t)__llvmdsdl_plan_scalar_unsigned__"
+  string(FIND "${impl_text}" "= (uint64_t)llvmdsdl_plan_scalar_unsigned__"
          scalar_call_pos)
   if(NOT scalar_call_pos EQUAL -1)
     set(found_scalar_unsigned_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t __llvmdsdl_plan_scalar_unsigned__"
+  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_unsigned__"
          scalar_helper_pos)
   if(NOT scalar_helper_pos EQUAL -1)
     set(found_scalar_unsigned_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (int64_t)__llvmdsdl_plan_scalar_signed__"
+  string(FIND "${impl_text}" "= (int64_t)llvmdsdl_plan_scalar_signed__"
          scalar_signed_call_pos)
   if(NOT scalar_signed_call_pos EQUAL -1)
     set(found_scalar_signed_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t __llvmdsdl_plan_scalar_signed__"
+  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_signed__"
          scalar_signed_helper_pos)
   if(NOT scalar_signed_helper_pos EQUAL -1)
     set(found_scalar_signed_helper 1)
   endif()
-  string(FIND "${impl_text}" "= __llvmdsdl_plan_scalar_float__"
+  string(FIND "${impl_text}" "= llvmdsdl_plan_scalar_float__"
          scalar_float_call_pos)
   if(NOT scalar_float_call_pos EQUAL -1)
     set(found_scalar_float_call 1)
   endif()
-  string(FIND "${impl_text}" "double __llvmdsdl_plan_scalar_float__"
+  string(FIND "${impl_text}" "double llvmdsdl_plan_scalar_float__"
          scalar_float_helper_pos)
   if(NOT scalar_float_helper_pos EQUAL -1)
     set(found_scalar_float_helper 1)
   endif()
-  string(FIND "${impl_text}" "__llvmdsdl_plan_array_length_prefix__"
+  string(FIND "${impl_text}" "llvmdsdl_plan_array_length_prefix__"
          array_len_prefix_call_pos)
   if(NOT array_len_prefix_call_pos EQUAL -1)
     set(found_array_len_prefix_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t __llvmdsdl_plan_array_length_prefix__"
+  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_array_length_prefix__"
          array_len_prefix_helper_pos)
   if(NOT array_len_prefix_helper_pos EQUAL -1)
     set(found_array_len_prefix_helper 1)
@@ -172,7 +172,7 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT array_lenchk_call_pos EQUAL -1)
     set(found_array_len_validate_call 1)
   endif()
-  string(FIND "${impl_text}" "int8_t __llvmdsdl_plan_validate_array_length__"
+  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_validate_array_length__"
          array_lenchk_helper_pos)
   if(NOT array_lenchk_helper_pos EQUAL -1)
     set(found_array_len_validate_helper 1)
@@ -196,7 +196,7 @@ foreach(c_file IN LISTS generated_impls)
     set(found_delimiter_validate_call 1)
   endif()
   string(FIND "${impl_text}"
-         "int8_t __llvmdsdl_plan_validate_delimiter_header__"
+         "int8_t llvmdsdl_plan_validate_delimiter_header__"
          delimiter_helper_pos)
   if(NOT delimiter_helper_pos EQUAL -1)
     set(found_delimiter_validate_helper 1)

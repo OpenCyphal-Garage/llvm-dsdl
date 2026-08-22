@@ -95,8 +95,8 @@
 # CPP_STD: #include <vector>
 # CPP_STD: static constexpr bool ZOH_ALIAS_ELIGIBLE = true;
 # CPP_STD: static constexpr const char* ZOH_ALIAS_REASON = "eligible";
-# CPP_STD: __try_deserialize_view_
-# CPP_STD: __try_serialize_view_
+# CPP_STD: _try_deserialize_view_
+# CPP_STD: _try_serialize_view_
 # CPP_PMR: #include <memory_resource>
 # CPP_AUTOSAR_SUMMARY: Run summary:
 # CPP_AUTOSAR_SUMMARY: command: cpp

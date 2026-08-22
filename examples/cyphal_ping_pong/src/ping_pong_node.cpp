@@ -38,8 +38,8 @@ extern "C"
 namespace
 {
 
-using PingPongRequest  = dsdl::demo::ping::PingPong__Request;
-using PingPongResponse = dsdl::demo::ping::PingPong__Response;
+using PingPongRequest  = dsdl::demo::ping::PingPong_Request;
+using PingPongResponse = dsdl::demo::ping::PingPong_Response;
 
 constexpr size_t            kTxQueueCapacity    = 64U;
 constexpr size_t            kRxDatagramCapacity = 2048U;

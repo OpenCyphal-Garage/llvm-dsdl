@@ -314,20 +314,20 @@ FOO_BAR           rust     FOO_BAR             FOO_BAR             FOO_BAR      
 FOO_BAR           go       FOOBAR              FOOBAR              FOO_BAR             foo_bar             foo_bar             FOO_BAR
 FOO_BAR           ts       FOOBAR              foo_bar             FOO_BAR             foo_bar             foo_bar             FOO_BAR
 FOO_BAR           python   FOOBAR              foo_bar             FOO_BAR             foo_bar             foo_bar             FOO_BAR
-_foo              c        _foo                _foo                _FOO                _foo                _foo                _FOO
-_foo              cpp      _foo                _foo                _FOO                _foo                _foo                _FOO
+_foo              c        _foo                _foo                zX005FFOO           _foo                _foo                zX005FFOO
+_foo              cpp      _foo                _foo                zX005FFOO           _foo                _foo                zX005FFOO
 _foo              rust     _foo                _foo                FOO                 _foo                foo                 FOO
 _foo              go       Foo                 Foo                 FOO                 foo                 foo                 FOO
 _foo              ts       Foo                 foo                 FOO                 foo                 foo                 FOO
 _foo              python   Foo                 foo                 FOO                 foo                 foo                 FOO
-__foo             c        __foo               __foo               __FOO               __foo               __foo               __FOO
-__foo             cpp      __foo               __foo               __FOO               __foo               __foo               __FOO
+__foo             c        zX005FzX005Ffoo     zX005FzX005Ffoo     zX005FzX005FFOO     zX005FzX005Ffoo     zX005FzX005Ffoo     zX005FzX005FFOO
+__foo             cpp      zX005FzX005Ffoo     zX005FzX005Ffoo     zX005FzX005FFOO     zX005FzX005Ffoo     zX005FzX005Ffoo     zX005FzX005FFOO
 __foo             rust     __foo               __foo               FOO                 __foo               foo                 FOO
 __foo             go       Foo                 Foo                 FOO                 foo                 foo                 FOO
 __foo             ts       Foo                 foo                 FOO                 foo                 foo                 FOO
 __foo             python   Foo                 foo                 FOO                 foo                 foo                 FOO
-_Foo              c        _Foo                _Foo                _FOO                _Foo                _Foo                _FOO
-_Foo              cpp      _Foo                _Foo                _FOO                _Foo                _Foo                _FOO
+_Foo              c        zX005FFoo           zX005FFoo           zX005FFOO           zX005FFoo           zX005FFoo           zX005FFOO
+_Foo              cpp      zX005FFoo           zX005FFoo           zX005FFOO           zX005FFoo           zX005FFoo           zX005FFOO
 _Foo              rust     _Foo                _Foo                FOO                 _Foo                foo                 FOO
 _Foo              go       Foo                 Foo                 FOO                 foo                 foo                 FOO
 _Foo              ts       Foo                 foo                 FOO                 foo                 foo                 FOO
@@ -429,7 +429,7 @@ type              python   Type                type                TYPE         
 "foo bar"         ts       FooBar              foo_bar             FOO_BAR             foo_bar             foo_bar             FOO_BAR
 "foo bar"         python   FooBar              foo_bar             FOO_BAR             foo_bar             foo_bar             FOO_BAR
 "I\xe2\x9d\xa4c"  c        I___c               I___c               I___C               I___c               "I\xe2\x9d\xa4c"    I___C
-"I\xe2\x9d\xa4c"  cpp      I___c               I___c               I___C               I___c               "I\xe2\x9d\xa4c"    I___C
+"I\xe2\x9d\xa4c"  cpp      IzX005FzX005FzX005FcIzX005FzX005FzX005FcIzX005FzX005FzX005FCIzX005FzX005FzX005Fc"I\xe2\x9d\xa4c"    IzX005FzX005FzX005FC
 "I\xe2\x9d\xa4c"  rust     I___c               I___c               I_C                 I___c               i_c                 I_C
 "I\xe2\x9d\xa4c"  go       IC                  IC                  I_C                 i_c                 i_c                 I_C
 "I\xe2\x9d\xa4c"  ts       IC                  i_c                 I_C                 i_c                 i_c                 I_C

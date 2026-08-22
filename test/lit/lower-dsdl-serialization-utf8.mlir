@@ -8,7 +8,7 @@ module {
   }
 }
 
-// CHECK-DAG: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__deser"
-// CHECK: func.func @__llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__ser(
-// CHECK: func.func @__llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__deser(
+// CHECK-DAG: lowered_ser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_deser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__deser"
+// CHECK: func.func @llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__ser(
+// CHECK: func.func @llvmdsdl_plan_scalar_unsigned__test_Utf8_1_0__{{[0-9]+}}__deser(

@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cctype>
 #include <string>
+#include <vector>
 #include <cstddef>
 #include <optional>
 
@@ -374,6 +375,66 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     return kNone;
 }
 
+/// @brief Encodes the underscores that put @p identifier in a namespace the language reserves.
+///
+/// C reserves identifiers beginning `__` or `_` plus a capital ([reserved.names]); C++ reserves those
+/// and any identifier containing `__` anywhere. Appending to the end repairs none of them, so the
+/// offending underscores are replaced with the character encoding, which is injective and therefore
+/// needs no scope to disambiguate afterwards.
+///
+/// Only C and C++ have such a namespace; the other four return the identifier unchanged.
+std::string encodeReservedNamespace(const CodegenNamingLanguage language, const std::string& identifier, bool& encoded)
+{
+    encoded = false;
+    if (language != CodegenNamingLanguage::C && language != CodegenNamingLanguage::Cpp)
+    {
+        return identifier;
+    }
+    if (identifier.empty())
+    {
+        return identifier;
+    }
+
+    const bool interiorRunsReserved = language == CodegenNamingLanguage::Cpp;
+
+    std::string out;
+    out.reserve(identifier.size());
+    for (std::size_t i = 0; i < identifier.size();)
+    {
+        if (identifier[i] != '_')
+        {
+            out.push_back(identifier[i]);
+            ++i;
+            continue;
+        }
+
+        std::size_t run = 0;
+        while (i + run < identifier.size() && identifier[i + run] == '_')
+        {
+            ++run;
+        }
+        const char next = (i + run < identifier.size()) ? identifier[i + run] : '\0';
+
+        const bool leading  = (i == 0);
+        const bool violates = (run >= 2 && (leading || interiorRunsReserved)) ||
+                              (leading && run == 1 && std::isupper(static_cast<unsigned char>(next)));
+        if (violates)
+        {
+            for (std::size_t n = 0; n < run; ++n)
+            {
+                out += "zX005F";
+            }
+            encoded = true;
+        }
+        else
+        {
+            out.append(run, '_');
+        }
+        i += run;
+    }
+    return out;
+}
+
 /// @brief Runs the shared naming pipeline.
 ///
 /// Stage order is load-bearing and matches what the case-explicit helpers did before this existed:
@@ -462,7 +523,14 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
             }
         }
     }
-    return ProjectedIdentifier{out, escaped};
+    // Only a DSDL name being named: a token this generator constructed carries whatever shape the
+    // emitter gave it, and encoding it here would mangle a symbol that has to match something else.
+    bool reservedEncoded = false;
+    if (role.has_value())
+    {
+        out = encodeReservedNamespace(language, out, reservedEncoded);
+    }
+    return ProjectedIdentifier{out, escaped || reservedEncoded, reservedEncoded};
 }
 
 }  // namespace
@@ -485,6 +553,18 @@ bool LanguageNamingPolicy::isKeyword(const llvm::StringRef name) const
 llvm::ArrayRef<llvm::StringRef> LanguageNamingPolicy::runtimeOwned(const IdentifierRole role) const
 {
     return runtimeOwnedNames(language_, role);
+}
+
+std::vector<llvm::StringRef> LanguageNamingPolicy::keywords() const
+{
+    const auto&                  set = keywordSet(language_);
+    std::vector<llvm::StringRef> out;
+    out.reserve(set.size());
+    for (const auto& entry : set)
+    {
+        out.push_back(entry.getKey());
+    }
+    return out;
 }
 
 const LanguageNamingPolicy& codegenNamingPolicy(const CodegenNamingLanguage language)

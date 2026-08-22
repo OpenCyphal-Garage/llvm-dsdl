@@ -20,32 +20,32 @@ export type UnionTag_1_0 =
 export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
   const out = new Uint8Array(3);
   let offsetBits = 0;
-  const mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0 = (capacityBits: number): boolean => 24 <= capacityBits;
-  const mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
-  const mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0 = (capacityBits: number): boolean => 24 <= capacityBits;
+  const mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
+  const mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const clamped = raw < 0n ? 0n : (raw > 255n ? 255n : raw);
   return (typeof value === "bigint") ? clamped : Number(clamped);
   };
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const clamped = raw < 0n ? 0n : (raw > 65535n ? 65535n : raw);
   return (typeof value === "bigint") ? clamped : Number(clamped);
   };
   
-  if (!mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(out.length * 8)) {
+  if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
   let tag = Math.trunc((value as { _tag: number })._tag);
-  if (!mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {
+  if (!mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {
     throw new Error("invalid union tag " + tag);
   }
-  tag = Number(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag));
+  tag = Number(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag));
   dsdlRuntime.writeUnsigned(out, offsetBits, 8, tag, false);
   offsetBits += 8;
   switch (tag) {
@@ -54,7 +54,7 @@ export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
     if (optionValue === undefined) {
       throw new Error("union field 'first' missing for tag 0");
     }
-    dsdlRuntime.writeUnsigned(out, offsetBits, 8, mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(optionValue as number | bigint), true);
+    dsdlRuntime.writeUnsigned(out, offsetBits, 8, mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(optionValue as number | bigint), true);
     offsetBits += 8;
     break;
   }
@@ -63,7 +63,7 @@ export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
     if (optionValue === undefined) {
       throw new Error("union field 'second' missing for tag 1");
     }
-    dsdlRuntime.writeUnsigned(out, offsetBits, 16, mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(optionValue as number | bigint), true);
+    dsdlRuntime.writeUnsigned(out, offsetBits, 16, mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(optionValue as number | bigint), true);
     offsetBits += 16;
     break;
   }
@@ -80,18 +80,18 @@ export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
 }
 
 export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_0; consumed: number } {
-  const mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
-  const mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
+  const mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 255n;
   return (typeof value === "bigint") ? masked : Number(masked);
   };
-  const mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser = (value: number | bigint): number | bigint => {
+  const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
   const masked = raw & 65535n;
   return (typeof value === "bigint") ? masked : Number(masked);
@@ -99,8 +99,8 @@ export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_
   
   let offsetBits = 0;
   let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 8));
-  tag = Number(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag));
-  if (!mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {
+  tag = Number(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag));
+  if (!mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {
     throw new Error("decoded invalid union tag " + tag);
   }
   offsetBits += 8;
@@ -108,14 +108,14 @@ export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_
   switch (tag) {
   case 0: {
     const firstOptionRaw = dsdlRuntime.readUnsigned(bytes, offsetBits, 8);
-    const optionValue = Number(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(firstOptionRaw));
+    const optionValue = Number(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(firstOptionRaw));
     offsetBits += 8;
     value = { _tag: 0, first: optionValue } as UnionTag_1_0;
     break;
   }
   case 1: {
     const secondOptionRaw = dsdlRuntime.readUnsigned(bytes, offsetBits, 16);
-    const optionValue = Number(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(secondOptionRaw));
+    const optionValue = Number(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(secondOptionRaw));
     offsetBits += 16;
     value = { _tag: 1, second: optionValue } as UnionTag_1_0;
     break;

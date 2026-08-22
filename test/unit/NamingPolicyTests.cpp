@@ -8,6 +8,9 @@
 #include <array>
 #include <cctype>
 #include <iostream>
+#include <map>
+#include <random>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -30,9 +33,10 @@ using llvmdsdl::NamingScope;
 
 /// @brief A spread of names that reaches every stage of the pipeline.
 ///
-/// Names the generated code claims are deliberately absent too: the case-explicit helpers the oracles
-/// below are built from do not apply that escape, so including one would compare a role against a
-/// function that was never meant to agree with it. @ref runNamingClaimedNameTests covers those.
+/// Two kinds of name are deliberately absent: those the generated code claims, and those landing in a
+/// namespace C or C++ reserves. The case-explicit helpers the oracles below are built from apply
+/// neither escape, so including one would compare a role against a function never meant to agree with
+/// it. @ref runNamingClaimedNameTests and @ref runNamingReservedNamespaceTests cover them.
 ///
 /// The empty string is deliberately absent: it is not a DSDL name, and it is the one input where the
 /// shared pipeline and the emitter-private paths disagree. That divergence is pinned separately by
@@ -47,9 +51,7 @@ const std::vector<std::string>& sampleNames()
                                                    "fooBar",
                                                    "foo_bar",
                                                    "FooBar",
-                                                   "_foo",
                                                    "foo_",
-                                                   "__bar",
                                                    "OpticalFlowRate",
                                                    "VSLAMPoseUpdate",
                                                    "a",
@@ -225,6 +227,53 @@ bool runNamingClaimedNameTests()
     return ok;
 }
 
+/// @brief Checks that a name landing in a language's reserved namespace is encoded.
+///
+/// C reserves identifiers beginning `__` or `_` plus a capital; C++ reserves those and any identifier
+/// containing `__` anywhere. A trailing `_` repairs none of them, so the offending underscores are
+/// encoded, which is injective and needs no scope to disambiguate afterwards. Whether a definition
+/// needing this is *accepted* is the driver's decision, not the engine's.
+bool runNamingReservedNamespaceTests()
+{
+    struct Case
+    {
+        CodegenNamingLanguage language;
+        IdentifierRole        role;
+        const char*           source;
+        const char*           expected;
+    };
+
+    static const std::array<Case, 10> kCases = {{
+        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
+        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "__bar", "zX005FzX005Fbar"},
+        // C reserves a leading underscore before a capital, so the upper-casing a constant gets is
+        // what puts `_foo` in the reserved namespace; as a field it stays put.
+        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "_foo", "_foo"},
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "_foo", "zX005FFOO"},
+        // A double underscore inside an identifier is ordinary in C and reserved in C++.
+        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "foo__bar", "foo__bar"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "foo__bar", "foozX005FzX005Fbar"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
+        // No other language reserves a namespace of this kind.
+        {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "__bar", "Bar"},
+        {CodegenNamingLanguage::Rust, IdentifierRole::FieldName, "__bar", "__bar"},
+        {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "__bar", "bar"},
+    }};
+
+    bool ok = true;
+    for (const auto& c : kCases)
+    {
+        const auto projected = codegenProjectIdentifierDetailed(c.language, c.role, c.source);
+        if (projected.identifier != c.expected)
+        {
+            std::cerr << "reserved-namespace encoding mismatch for \"" << c.source << "\": got \""
+                      << projected.identifier << "\", expected \"" << c.expected << "\"\n";
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 /// @brief Checks the table properties the one-pass strop depends on.
 ///
 /// Section 4.3 of docs/development/identifier-stropping.md argues that appending `_` terminates in
@@ -247,34 +296,103 @@ bool runNamingTableInvariantTests()
         }
     }
 
-    // Every keyword, escaped once, must not be a keyword again -- otherwise the single-pass strop in
-    // runPipeline would leave an illegal identifier behind.
-    static const std::vector<std::string> probes = {"break",
-                                                    "class",
-                                                    "map",
-                                                    "def",
-                                                    "func",
-                                                    "impl",
-                                                    "let",
-                                                    "match",
-                                                    "type",
-                                                    "typedef",
-                                                    "yield",
-                                                    "namespace",
-                                                    "self",
-                                                    "export",
-                                                    "range",
-                                                    "chan",
-                                                    "lambda",
-                                                    "operator"};
+    // The single-pass escape in runPipeline appends `_` once and asserts the result is clean. That is
+    // sound only while no keyword ends in `_` -- otherwise escaping one could land on another. The
+    // claim is about every keyword in every table, so it is asked of every keyword in every table
+    // rather than of names a test author happened to think of.
     for (const auto language : kAllLanguages)
     {
-        for (const auto& probe : probes)
+        for (const auto& keyword : codegenNamingPolicy(language).keywords())
         {
-            if (codegenIsKeyword(language, probe) && codegenIsKeyword(language, probe + "_"))
+            if (keyword.ends_with("_"))
             {
-                std::cerr << "keyword \"" << probe << "\" escapes to another keyword\n";
+                std::cerr << "keyword \"" << keyword.str() << "\" ends in an underscore, which breaks the "
+                          << "single-pass escape\n";
                 ok = false;
+            }
+            if (codegenIsKeyword(language, keyword.str() + "_"))
+            {
+                std::cerr << "keyword \"" << keyword.str() << "\" escapes to another keyword\n";
+                ok = false;
+            }
+        }
+        // The same has to hold for the names the generated code claims, which take the same escape.
+        for (const auto role : {IdentifierRole::FieldName, IdentifierRole::ConstantName})
+        {
+            for (const auto& owned : codegenNamingPolicy(language).runtimeOwned(role))
+            {
+                if (owned.ends_with("_"))
+                {
+                    std::cerr << "claimed name \"" << owned.str() << "\" ends in an underscore\n";
+                    ok = false;
+                }
+            }
+        }
+    }
+    return ok;
+}
+
+/// @brief Checks that a scope's assignment is injective over generated name sets.
+///
+/// The engine's contract is that distinct DSDL names in one scope get distinct identifiers: the case
+/// projections are many-to-one, and the scope is what repairs them. A handful of hand-picked names
+/// cannot establish that, so the names are generated -- from the pieces that actually collide, which
+/// is case variation, underscore placement, and the escapes.
+bool runNamingInjectivityTests()
+{
+    // A deterministic sequence: a fixed seed makes a failure reproducible, and nothing here depends
+    // on the values being unpredictable.
+    std::mt19937 rng(20260820U);
+
+    static const std::array<llvm::StringRef, 12> kPieces =
+        {"foo", "Foo", "FOO", "bar", "Bar", "_", "__", "break", "Break", "serialize", "full", "name"};
+
+    bool ok = true;
+    for (unsigned round = 0; round < 200U; ++round)
+    {
+        // Distinct sources: the contract says nothing about a scope handed the same name twice, and
+        // the frontend rejects duplicate attribute names before codegen sees them.
+        std::set<std::string> sources;
+        const unsigned        count = 2U + (rng() % 7U);
+        while (sources.size() < count)
+        {
+            std::string    name;
+            const unsigned pieces = 1U + (rng() % 3U);
+            for (unsigned i = 0; i < pieces; ++i)
+            {
+                name += kPieces[rng() % kPieces.size()].str();
+            }
+            // Only names DSDL would accept: it requires a leading letter or underscore, and rejects
+            // anything both starting and ending with one.
+            if (name.empty() || std::isdigit(static_cast<unsigned char>(name.front())) != 0)
+            {
+                continue;
+            }
+            if (name.front() == '_' && name.back() == '_')
+            {
+                continue;
+            }
+            sources.insert(name);
+        }
+        const std::vector<std::string> ordered(sources.begin(), sources.end());
+
+        for (const auto language : kAllLanguages)
+        {
+            for (const auto role : {IdentifierRole::FieldName, IdentifierRole::ConstantName})
+            {
+                NamingScope                        scope(language);
+                std::map<std::string, std::string> assigned;
+                for (const auto& source : ordered)
+                {
+                    const std::string identifier = scope.declare(role, source);
+                    const auto [it, inserted]    = assigned.emplace(identifier, source);
+                    if (!inserted)
+                    {
+                        std::cerr << "scope is not injective: \"" << source << "\" and \"" << it->second
+                                  << "\" both became \"" << identifier << "\"\n";
+                        ok = false;
+                    }
+                }
             }
         }
     }
@@ -388,6 +506,15 @@ bool runNamingPolicyTests()
         return false;
     }
 
-    return runNamingRoleTests() && runEmptyNameDivergenceTest() && runNamingClaimedNameTests() &&
-           runNamingTableInvariantTests() && runNamingScopeTests();
+    // Each result is collected rather than short-circuited: `&&` would let the first failure hide
+    // every later one, and a naming change usually breaks more than one property at a time.
+    bool ok = true;
+    ok      = runNamingRoleTests() && ok;
+    ok      = runEmptyNameDivergenceTest() && ok;
+    ok      = runNamingClaimedNameTests() && ok;
+    ok      = runNamingReservedNamespaceTests() && ok;
+    ok      = runNamingTableInvariantTests() && ok;
+    ok      = runNamingScopeTests() && ok;
+    ok      = runNamingInjectivityTests() && ok;
+    return ok;
 }

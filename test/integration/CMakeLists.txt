@@ -373,6 +373,39 @@ if(PYTHON_EXECUTABLE)
       "Skipping embedded UAVCAN catalog guard tests: ${LLVMDSDL_UAVCAN_ROOT} missing")
   endif()
 
+  # The adversarial naming corpus, compiled in every backend. lit asserts the identifiers that come
+  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Generating all six
+  # regardless of what this build targets is deliberate: the frontend's collision check is keyed to
+  # the languages an invocation emits, so a hazard confined to one backend would otherwise surface
+  # first to whoever selects it. The corpus ships with the tree, so this needs no external namespace.
+  find_program(CARGO_EXECUTABLE cargo QUIET)
+  find_program(GO_EXECUTABLE go QUIET)
+  find_program(TSC_EXECUTABLE tsc QUIET)
+
+  add_test(
+    NAME llvmdsdl-naming-corpus-compile-gate
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_naming
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/naming-corpus-gate
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DCXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunNamingCorpusCompileGate.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-naming-corpus-compile-gate
+    PROPERTIES
+      LABELS "integration;naming;release-blocking"
+  )
+
   add_test(
     NAME llvmdsdl-parity-matrix-coverage
     COMMAND

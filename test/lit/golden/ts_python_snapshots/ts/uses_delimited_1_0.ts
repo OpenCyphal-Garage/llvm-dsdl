@@ -22,10 +22,10 @@ export interface UsesDelimited_1_0 {
 export function serializeUsesDelimited_1_0(value: UsesDelimited_1_0): Uint8Array {
   const out = new Uint8Array(12);
   let offsetBits = 0;
-  const mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0 = (capacityBits: number): boolean => 96 <= capacityBits;
-  const mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
+  const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0 = (capacityBits: number): boolean => 96 <= capacityBits;
+  const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
   
-  if (!mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(out.length * 8)) {
+  if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
   const nestedAlignedOffsetBits = Math.trunc((offsetBits + 7) / 8) * 8;
@@ -51,7 +51,7 @@ export function serializeUsesDelimited_1_0(value: UsesDelimited_1_0): Uint8Array
 }
 
 export function deserializeUsesDelimited_1_0(bytes: Uint8Array): { value: UsesDelimited_1_0; consumed: number } {
-  const mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
+  const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
   
   const value = {} as UsesDelimited_1_0;
   let offsetBits = 0;
@@ -59,7 +59,7 @@ export function deserializeUsesDelimited_1_0(bytes: Uint8Array): { value: UsesDe
   const nestedSizeBytes = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 32));
   offsetBits += 32;
   const nestedRemainingBytes = bytes.length - Math.min(Math.trunc(offsetBits / 8), bytes.length);
-  if (!mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nestedSizeBytes, nestedRemainingBytes)) {
+  if (!mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nestedSizeBytes, nestedRemainingBytes)) {
     throw new Error("decoded payload size for composite field 'nested' exceeds remaining buffer space");
   }
   const nestedStartByte = Math.min(Math.trunc(offsetBits / 8), bytes.length);

@@ -18,6 +18,7 @@
 #define LLVMDSDL_SUPPORT_NAMING_POLICY_H
 
 #include <string>
+#include <vector>
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -143,6 +144,14 @@ public:
     /// @return The claimed names, or an empty list.
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> runtimeOwned(IdentifierRole role) const;
 
+    /// @brief Every keyword in this language, in unspecified order.
+    ///
+    /// Exists so a test can state a property of the whole table rather than probe names it already
+    /// guessed: the one-pass escape in the pipeline is only sound while no keyword ends in `_`, and
+    /// that is a claim about all of them.
+    /// @return The language's keywords.
+    [[nodiscard]] std::vector<llvm::StringRef> keywords() const;
+
 private:
     CodegenNamingLanguage language_;
 };
@@ -165,6 +174,18 @@ struct ProjectedIdentifier final
     /// `FOO_BAR` as a matter of course, and reporting that would bury the cases a reader needs to
     /// know about under the ones they already expect.
     bool escaped = false;
+
+    /// @brief True when the name landed in a namespace the language reserves and had to be encoded.
+    ///
+    /// C reserves every identifier beginning with two underscores, or with one underscore and a
+    /// capital; C++ reserves any identifier containing two underscores anywhere. A trailing `_`
+    /// cannot repair either, so the offending underscores are encoded instead.
+    ///
+    /// The encoding is always applied, which keeps this function total and its result legal in every
+    /// target. Whether the *definition* is accepted is a separate question, asked once per run by
+    /// the driver: by default a name that needs this is rejected, and `--encode-reserved-identifiers`
+    /// is what accepts it. Emitters therefore never have to know which mode is in force.
+    bool reservedNamespaceEncoded = false;
 };
 
 /// @brief Projects @p name and reports whether an escape was needed.
