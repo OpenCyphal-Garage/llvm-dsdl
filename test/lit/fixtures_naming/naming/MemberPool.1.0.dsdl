@@ -1,0 +1,6 @@
+# A C++ struct body holds the fields and the constants, so the two roles share one pool there: the
+# field keeps `FOO` and the constant moves. The other five put constants where a field cannot reach
+# them -- outside the type, or behind a macro prefix -- and both keep the name.
+uint8 FOO
+uint8 foo = 2
+@sealed

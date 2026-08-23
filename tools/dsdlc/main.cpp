@@ -40,6 +40,7 @@
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
@@ -1677,6 +1678,61 @@ int main(int argc, char** argv)
         if (diagnostics.hasErrors())
         {
             return finish("stdout", {}, true);
+        }
+    }
+
+    // Two DSDL names can project onto one identifier -- `break` and `break_` both reach `break_` in
+    // C, C++ and Rust once the keyword strop runs -- and the scope repairs that by suffixing the
+    // second. The repair is correct and deterministic, but it changes a name the author wrote, so it
+    // is said out loud rather than discovered in the generated header.
+    if (!outputLanguages.empty())
+    {
+        const auto repairSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        for (const auto& def : repairSemantic.definitions)
+        {
+            for (const auto& language : outputLanguages)
+            {
+                const auto reportRepairs = [&](const llvmdsdl::SemanticSection& section) {
+                    const llvmdsdl::NamingScope fieldScope =
+                        llvmdsdl::makeSectionFieldScope(language.language, section);
+                    const llvmdsdl::NamingScope constScope =
+                        llvmdsdl::makeSectionConstantScope(language.language, section);
+
+                    const auto reportOne = [&](const llvmdsdl::NamingScope&   scope,
+                                               const char* const              what,
+                                               const std::string&             name,
+                                               const llvmdsdl::IdentifierRole role) {
+                        const std::string projected = llvmdsdl::codegenProjectIdentifier(language.language, role, name);
+                        const std::string assigned  = scope.get(role, name);
+                        if (assigned == projected)
+                        {
+                            return;
+                        }
+                        diagnostics.note({def.info.filePath, 1, 1},
+                                         std::string(what) + " '" + name + "' is emitted as '" + assigned +
+                                             "' for target language '" + language.name.str() +
+                                             "'; another name in the same scope already projects to '" + projected +
+                                             "'");
+                    };
+
+                    for (const auto& field : section.fields)
+                    {
+                        if (!field.isPadding)
+                        {
+                            reportOne(fieldScope, "field", field.name, llvmdsdl::IdentifierRole::FieldName);
+                        }
+                    }
+                    for (const auto& constant : section.constants)
+                    {
+                        reportOne(constScope, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
+                    }
+                };
+                reportRepairs(def.request);
+                if (def.isService && def.response.has_value())
+                {
+                    reportRepairs(*def.response);
+                }
+            }
         }
     }
 

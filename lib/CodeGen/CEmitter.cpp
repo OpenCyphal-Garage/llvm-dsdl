@@ -347,6 +347,10 @@ void emitSectionTypedef(std::ostringstream&    out,
                         const EmitterContext&  ctx,
                         const bool             deprecatedAttribute)
 {
+    // One scope for the whole section: the keyword and claimed-name escapes make the projection
+    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serializer
+    // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     emitLine(out, 0, "typedef struct " + typeName + " {");
 
     std::size_t emitted = 0;
@@ -357,7 +361,7 @@ void emitSectionTypedef(std::ostringstream&    out,
             continue;
         }
 
-        const auto cMember  = codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
+        const auto cMember  = fieldScope.get(IdentifierRole::FieldName, field.name);
         const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
@@ -739,6 +743,51 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     return out.str();
 }
 
+/// @brief Stamps the C member name for every field op in @p schema onto its `c_name` attribute.
+///
+/// The struct declaration in `emitSectionTypedef` and the member references in the generated
+/// serializer come from the same scope: the declaration reads it directly, the serializer reads it
+/// through this attribute, which `ConvertDSDLToEmitC` turns into `obj->`-qualified references. C
+/// naming is not a lowering decision, so lowering leaves the attribute unset and this is where it
+/// is filled in.
+/// @param[in] schema Cloned schema op for one definition.
+/// @param[in] def Semantic definition the schema was cloned from.
+void stampCMemberNames(mlir::Operation& schema, const SemanticDefinition& def)
+{
+    const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
+    const NamingScope responseScope =
+        makeSectionFieldScope(CodegenNamingLanguage::C, def.response.has_value() ? *def.response : def.request);
+
+    const auto scopeFor = [&](mlir::Operation* const op) -> const NamingScope& {
+        const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section");
+        return (sectionAttr && sectionAttr.getValue() == "response") ? responseScope : requestScope;
+    };
+
+    schema.walk([&](mlir::Operation* const op) {
+        const llvm::StringRef opName = op->getName().getStringRef();
+        if ((opName != "dsdl.field") && (opName != "dsdl.io"))
+        {
+            return;
+        }
+        if (op->hasAttr("padding") || (op->getAttrOfType<mlir::StringAttr>("kind") &&
+                                       op->getAttrOfType<mlir::StringAttr>("kind").getValue() == "padding"))
+        {
+            return;
+        }
+        const auto nameAttr = op->getAttrOfType<mlir::StringAttr>("name");
+        if (!nameAttr)
+        {
+            return;
+        }
+        // An io op names no section of its own; the plan that encloses it does.
+        mlir::Operation* const sectionCarrier = (opName == "dsdl.io") ? op->getParentOp() : op;
+        op->setAttr("c_name",
+                    mlir::StringAttr::get(op->getContext(),
+                                          scopeFor(sectionCarrier)
+                                              .get(IdentifierRole::FieldName, nameAttr.getValue())));
+    });
+}
+
 }  // namespace
 
 llvm::Error emitC(const SemanticModule& semantic,
@@ -814,7 +863,9 @@ llvm::Error emitC(const SemanticModule& semantic,
                               "failed to locate schema op for " + def.info.fullName + " (" + targetHeaderPath + ")");
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "schema selection failed");
         }
-        perDefModule.getBodyRegion().front().push_back(targetIt->second->clone());
+        mlir::Operation* const schemaClone = targetIt->second->clone();
+        perDefModule.getBodyRegion().front().push_back(schemaClone);
+        stampCMemberNames(*schemaClone, def);
 
         mlir::PassManager pm(perDefModule.getContext());
         pm.addPass(createLowerDSDLExecPass());

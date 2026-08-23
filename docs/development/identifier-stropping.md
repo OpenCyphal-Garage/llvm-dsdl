@@ -85,9 +85,18 @@ a module's top level. `NamingScope` takes names in declaration order and appends
 projection is many-to-one. Roles share one pool within a scope, because they share one scope in the
 language: a Go field and a Go method on the same struct cannot both be `Serialize`.
 
-`makeSectionFieldScope` and `makeSectionConstantScope` build the two scopes a section needs. The
-emitters and the naming manifest both go through them, which is what makes the manifest a report of
-what a backend writes rather than a second opinion about it.
+`makeSectionFieldScope` and `makeSectionConstantScope` build the scopes a section needs. How many
+that is depends on the language: a C++ struct body holds the fields and the constants, so both
+helpers return one shared scope there, while the other five put constants where a field cannot reach
+them and get a pool each. Every emitter and the naming manifest go through these, which is what makes
+the manifest a report of what a backend writes rather than a second opinion about it.
+
+The C backend is the one place where a scope crosses a layer. Its struct declaration reads the scope
+directly; its serializer bodies are emitted from MLIR by `convert-dsdl-to-emitc`, which reads member
+names from the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
+the C emitter stamps the scoped name over it on its own clone of the schema before the conversion
+runs -- so the declaration and the references cannot disagree, and hand-driven `dsdl-opt` runs still
+have a name to work with.
 
 ---
 

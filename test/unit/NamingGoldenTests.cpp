@@ -507,8 +507,9 @@ void appendScopes(std::ostringstream& out)
         << "# NamingScope over one region of generated code, in declaration order. Where a role's\n"
         << "# projection is many-to-one the scope appends _2, _3, ... so the map stays injective; the\n"
         << "# reserved scenario shows a field escaping a name the generated methods already own.\n"
-        << "# C, C++ and Rust keep the DSDL spelling for fields, so they need no repair at all -- the\n"
-        << "# same scope is only lossy in the backends that fold case.\n\n";
+        << "# Every backend needs the scope. Case-folding makes the projection many-to-one in Go,\n"
+        << "# TypeScript and Python; in C, C++ and Rust the case survives but the keyword and\n"
+        << "# claimed-name escapes do the same thing, which is what the break/break_ rows show.\n\n";
     appendRow(out, {{"scope", 22}, {"language", 9}, {"source", 14}, {"identifier", 0}});
     out << std::string(22 + 9 + 14 + 20, '-') << "\n";
 

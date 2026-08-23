@@ -310,84 +310,86 @@ public:
                        const SemanticSection&           section,
                        const LoweredSectionFacts* const sectionFacts)
     {
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
         (void) typeName;
         emitLine(out, 1, "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
         emitLine(out, 2, "let mut offset_bits: usize = 0;");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Serialize,
-            NativeFunctionSkeletonCallbacks{[this, &out](const SectionHelperBindingPlan& helperBindings) {
-                                                emitSerializeMlirHelperBindings(out, helperBindings, 2);
-                                            },
-                                            [&out](const std::string& missingHelperRequirement) {
-                                                emitLine(out,
-                                                         2,
-                                                         "// missing lowered helper contract: " +
-                                                             missingHelperRequirement);
-                                                emitLine(out,
-                                                         2,
-                                                         "return "
-                                                         "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
-                                                         "ARGUMENT);");
-                                            },
-                                            [this, &out](const SectionHelperBindingPlan& helperBindings) {
-                                                const auto capacityHelper =
-                                                    helperBindingName(helperBindings.capacityCheck->symbol);
-                                                emitLine(out,
-                                                         2,
-                                                         "let _err_capacity = " + capacityHelper +
-                                                             "(buffer.len().saturating_mul(8) as i64);");
-                                                emitLine(out,
-                                                         2,
-                                                         "if _err_capacity != "
-                                                         "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS {");
-                                                emitLine(out, 3, "return Err(_err_capacity);");
-                                                emitLine(out, 2, "}");
-                                            },
-                                            [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &out, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitSerializeUnion(out,
-                                                                           section,
-                                                                           unionBranches,
-                                                                           2,
-                                                                           sectionFacts,
-                                                                           renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &out](const std::int64_t alignmentBits) {
-                                                    emitAlignSerialize(out, alignmentBits, 2);
-                                                };
-                                                callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    const auto        fieldRef =
-                                                        "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                                                                           IdentifierRole::FieldName,
-                                                                                           field->name);
-                                                    emitSerializeAny(out,
-                                                                     field->resolvedType,
-                                                                     fieldRef,
-                                                                     2,
-                                                                     fieldStep.arrayLengthPrefixBits,
-                                                                     fieldStep.fieldFacts);
-                                                };
-                                                callbacks.onPaddingAlignment =
-                                                    [this, &out](const std::int64_t alignmentBits) {
-                                                        emitAlignSerialize(out, alignmentBits, 2);
-                                                    };
-                                                callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitSerializePadding(out, field->resolvedType, 2);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &out]() {
-                                                emitAlignSerialize(out, 8, 2);
-                                                emitLine(out, 2, "Ok(offset_bits / 8)");
-                                            }});
+        const auto emitted =
+            emitNativeFunctionSkeleton(section,
+                                       sectionFacts,
+                                       HelperBindingDirection::Serialize,
+                                       NativeFunctionSkeletonCallbacks{
+                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                               emitSerializeMlirHelperBindings(out, helperBindings, 2);
+                                           },
+                                           [&out](const std::string& missingHelperRequirement) {
+                                               emitLine(out,
+                                                        2,
+                                                        "// missing lowered helper contract: " +
+                                                            missingHelperRequirement);
+                                               emitLine(out,
+                                                        2,
+                                                        "return "
+                                                        "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
+                                                        "ARGUMENT);");
+                                           },
+                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                               const auto capacityHelper =
+                                                   helperBindingName(helperBindings.capacityCheck->symbol);
+                                               emitLine(out,
+                                                        2,
+                                                        "let _err_capacity = " + capacityHelper +
+                                                            "(buffer.len().saturating_mul(8) as i64);");
+                                               emitLine(out,
+                                                        2,
+                                                        "if _err_capacity != "
+                                                        "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS {");
+                                               emitLine(out, 3, "return Err(_err_capacity);");
+                                               emitLine(out, 2, "}");
+                                           },
+                                           [this, &out, &section, sectionFacts, &fieldScope](
+                                               const LoweredBodyRenderIR& renderIR) {
+                                               NativeEmitterTraversalCallbacks callbacks;
+                                               callbacks.onUnionDispatch =
+                                                   [this, &out, &section, sectionFacts, &renderIR](
+                                                       const std::vector<PlannedFieldStep>& unionBranches) {
+                                                       emitSerializeUnion(out,
+                                                                          section,
+                                                                          unionBranches,
+                                                                          2,
+                                                                          sectionFacts,
+                                                                          renderIR.helperBindings);
+                                                   };
+                                               callbacks.onFieldAlignment = [this,
+                                                                             &out](const std::int64_t alignmentBits) {
+                                                   emitAlignSerialize(out, alignmentBits, 2);
+                                               };
+                                               callbacks.onField = [this, &out, &fieldScope](
+                                                                       const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   const auto        fieldRef =
+                                                       "self." + fieldScope.get(IdentifierRole::FieldName, field->name);
+                                                   emitSerializeAny(out,
+                                                                    field->resolvedType,
+                                                                    fieldRef,
+                                                                    2,
+                                                                    fieldStep.arrayLengthPrefixBits,
+                                                                    fieldStep.fieldFacts);
+                                               };
+                                               callbacks.onPaddingAlignment = [this,
+                                                                               &out](const std::int64_t alignmentBits) {
+                                                   emitAlignSerialize(out, alignmentBits, 2);
+                                               };
+                                               callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   emitSerializePadding(out, field->resolvedType, 2);
+                                               };
+                                               return callbacks;
+                                           },
+                                           [this, &out]() {
+                                               emitAlignSerialize(out, 8, 2);
+                                               emitLine(out, 2, "Ok(offset_bits / 8)");
+                                           }});
         if (!emitted)
         {
             emitLine(out, 1, "}");
@@ -401,77 +403,79 @@ public:
                          const SemanticSection&           section,
                          const LoweredSectionFacts* const sectionFacts)
     {
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
         (void) typeName;
         emitLine(out, 1, "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
         emitLine(out, 2, "let capacity_bytes = buffer.len();");
         emitLine(out, 2, "let capacity_bits = capacity_bytes.saturating_mul(8);\n");
         emitLine(out, 2, "let mut offset_bits: usize = 0;");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Deserialize,
-            NativeFunctionSkeletonCallbacks{[this, &out](const SectionHelperBindingPlan& helperBindings) {
-                                                emitDeserializeMlirHelperBindings(out, helperBindings, 2);
-                                            },
-                                            [&out](const std::string& missingHelperRequirement) {
-                                                emitLine(out,
-                                                         2,
-                                                         "// missing lowered helper contract: " +
-                                                             missingHelperRequirement);
-                                                emitLine(out,
-                                                         2,
-                                                         "return "
-                                                         "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
-                                                         "ARGUMENT);");
-                                            },
-                                            nullptr,
-                                            [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &out, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitDeserializeUnion(out,
-                                                                             section,
-                                                                             unionBranches,
-                                                                             2,
-                                                                             sectionFacts,
-                                                                             renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &out](const std::int64_t alignmentBits) {
-                                                    emitAlignDeserialize(out, alignmentBits, 2);
-                                                };
-                                                callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    const auto        fieldRef =
-                                                        "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                                                                           IdentifierRole::FieldName,
-                                                                                           field->name);
-                                                    emitDeserializeAny(out,
-                                                                       field->resolvedType,
-                                                                       fieldRef,
-                                                                       2,
-                                                                       fieldStep.arrayLengthPrefixBits,
-                                                                       fieldStep.fieldFacts,
-                                                                       poolClassConstExprForField(field->name));
-                                                };
-                                                callbacks.onPaddingAlignment =
-                                                    [this, &out](const std::int64_t alignmentBits) {
-                                                        emitAlignDeserialize(out, alignmentBits, 2);
-                                                    };
-                                                callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitDeserializePadding(out, field->resolvedType, 2);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &out]() {
-                                                emitAlignDeserialize(out, 8, 2);
-                                                emitLine(out,
-                                                         2,
-                                                         "Ok(crate::dsdl_runtime::choose_min(offset_bits, "
-                                                         "capacity_bits) / 8)");
-                                            }});
+        const auto emitted =
+            emitNativeFunctionSkeleton(section,
+                                       sectionFacts,
+                                       HelperBindingDirection::Deserialize,
+                                       NativeFunctionSkeletonCallbacks{
+                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                               emitDeserializeMlirHelperBindings(out, helperBindings, 2);
+                                           },
+                                           [&out](const std::string& missingHelperRequirement) {
+                                               emitLine(out,
+                                                        2,
+                                                        "// missing lowered helper contract: " +
+                                                            missingHelperRequirement);
+                                               emitLine(out,
+                                                        2,
+                                                        "return "
+                                                        "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
+                                                        "ARGUMENT);");
+                                           },
+                                           nullptr,
+                                           [this, &out, &section, sectionFacts, &fieldScope](
+                                               const LoweredBodyRenderIR& renderIR) {
+                                               NativeEmitterTraversalCallbacks callbacks;
+                                               callbacks.onUnionDispatch =
+                                                   [this, &out, &section, sectionFacts, &renderIR](
+                                                       const std::vector<PlannedFieldStep>& unionBranches) {
+                                                       emitDeserializeUnion(out,
+                                                                            section,
+                                                                            unionBranches,
+                                                                            2,
+                                                                            sectionFacts,
+                                                                            renderIR.helperBindings);
+                                                   };
+                                               callbacks.onFieldAlignment = [this,
+                                                                             &out](const std::int64_t alignmentBits) {
+                                                   emitAlignDeserialize(out, alignmentBits, 2);
+                                               };
+                                               callbacks.onField = [this, &out, &fieldScope](
+                                                                       const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   const auto        fieldRef =
+                                                       "self." + fieldScope.get(IdentifierRole::FieldName, field->name);
+                                                   emitDeserializeAny(out,
+                                                                      field->resolvedType,
+                                                                      fieldRef,
+                                                                      2,
+                                                                      fieldStep.arrayLengthPrefixBits,
+                                                                      fieldStep.fieldFacts,
+                                                                      poolClassConstExprForField(field->name));
+                                               };
+                                               callbacks.onPaddingAlignment = [this,
+                                                                               &out](const std::int64_t alignmentBits) {
+                                                   emitAlignDeserialize(out, alignmentBits, 2);
+                                               };
+                                               callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   emitDeserializePadding(out, field->resolvedType, 2);
+                                               };
+                                               return callbacks;
+                                           },
+                                           [this, &out]() {
+                                               emitAlignDeserialize(out, 8, 2);
+                                               emitLine(out,
+                                                        2,
+                                                        "Ok(crate::dsdl_runtime::choose_min(offset_bits, "
+                                                        "capacity_bits) / 8)");
+                                           }});
         if (!emitted)
         {
             emitLine(out, 1, "}");
@@ -717,7 +721,8 @@ private:
                             const LoweredSectionFacts* const     sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        const NamingScope            fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
+        const auto                   tagBits    = resolveUnionTagBits(section, sectionFacts);
         UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
@@ -725,13 +730,11 @@ private:
         {
             const auto& field = *step.field;
             cases.push_back(
-                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field]() {
+                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field, &fieldScope]() {
                                     emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
                                     emitSerializeAny(out,
                                                      field.resolvedType,
-                                                     "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                                                                        IdentifierRole::FieldName,
-                                                                                        field.name),
+                                                     "self." + fieldScope.get(IdentifierRole::FieldName, field.name),
                                                      indent + 2,
                                                      step.arrayLengthPrefixBits,
                                                      step.fieldFacts);
@@ -747,7 +750,8 @@ private:
                               const LoweredSectionFacts* const     sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        const NamingScope            fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
+        const auto                   tagBits    = resolveUnionTagBits(section, sectionFacts);
         UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
@@ -755,13 +759,11 @@ private:
         {
             const auto& field = *step.field;
             cases.push_back(
-                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field]() {
+                UnionCaseRender{field.unionOptionIndex, [this, &out, indent, &step, &field, &fieldScope]() {
                                     emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
                                     emitDeserializeAny(out,
                                                        field.resolvedType,
-                                                       "self." + codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                                                                          IdentifierRole::FieldName,
-                                                                                          field.name),
+                                                       "self." + fieldScope.get(IdentifierRole::FieldName, field.name),
                                                        indent + 2,
                                                        step.arrayLengthPrefixBits,
                                                        step.fieldFacts,
@@ -1298,6 +1300,7 @@ void emitSectionType(std::ostringstream&              out,
                      const std::string&               definitionFullName,
                      const LoweredSectionFacts* const sectionFacts)
 {
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::unordered_map<std::string, std::string>       poolClassConstExprByField;
     std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
     std::set<std::string>                              usedPoolConstNames;
@@ -1345,8 +1348,8 @@ void emitSectionType(std::ostringstream&              out,
         emitAttachedDocRust(out, 1, field.doc);
         emitLine(out,
                  1,
-                 "pub " + codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) +
-                     ": " + rustFieldType(field.resolvedType, ctx) + ",");
+                 "pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+                     rustFieldType(field.resolvedType, ctx) + ",");
     }
 
     if (section.isUnion)
@@ -1381,7 +1384,7 @@ void emitSectionType(std::ostringstream&              out,
             }
             emitLine(out,
                      3,
-                     codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) +
+                     fieldScope.get(IdentifierRole::FieldName, field.name) +
                          ": crate::dsdl_runtime::DsdlVec::with_contract("
                          "crate::dsdl_runtime::VarArrayMemoryContract::new("
                          "Self::__LLVMDSDL_MEMORY_MODE, "
@@ -1391,8 +1394,8 @@ void emitSectionType(std::ostringstream&              out,
         }
         emitLine(out,
                  3,
-                 codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FieldName, field.name) + ": " +
-                     defaultExpr(field.resolvedType, ctx) + ",");
+                 fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + defaultExpr(field.resolvedType, ctx) +
+                     ",");
     }
     if (section.isUnion)
     {

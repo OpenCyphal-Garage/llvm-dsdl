@@ -1,11 +1,7 @@
-# Phase 0 of docs/development/identifier-stropping.md: freeze what each backend actually names
-# things when the DSDL is adversarial. The unit-level golden map (test/unit/golden/naming-map.txt)
-# pins the shared helpers in lib/CodeGen/NamingPolicy.cpp; this pins the six emitters that call
-# them, which is the layer phase 2 rewires. Between them, a refactor that claims to change no
-# generated identifier can be checked instead of trusted.
-#
-# Several expectations below record behavior the design intends to change. They are not endorsements
-# -- they are the "before" side of a diff that has to be deliberate.
+# What each backend names things when the DSDL is adversarial. The unit-level golden map
+# (test/unit/golden/naming-map.txt) pins the shared helpers in lib/Support/NamingPolicy.cpp; this
+# pins the six emitters that call them. Between them, a refactor that claims to change no generated
+# identifier can be checked instead of trusted.
 
 # RUN: rm -rf %t && mkdir -p %t
 
@@ -47,6 +43,28 @@
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/constants_1_0.py | FileCheck %s --check-prefix=PY_CONSTANTS
 # `map` is not a Python keyword, so the same namespace component that Go had to escape is left alone.
 # RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/map/nested_1_0.py
+
+# Two DSDL names, one identifier after the keyword strop. The scope repairs it, and what matters is
+# that the repair reaches the serializer too: in C the declaration and the body are produced by two
+# different layers, and the body only agrees because the emitter stamps the scope onto the IR.
+# RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.h | FileCheck %s --check-prefix=C_STROPPED
+# RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.c | FileCheck %s --check-prefix=C_STROPPED_BODY
+# RUN: cat %t/cpp/fixtures_naming/naming/Stropped_1_0.hpp | FileCheck %s --check-prefix=CPP_STROPPED
+# RUN: cat %t/rust/src/fixtures_naming/naming/stropped_1_0.rs | FileCheck %s --check-prefix=RUST_STROPPED
+
+# The same collision through the union and service paths, which each emitter renders separately. In
+# C the response fields keep their spelling, because `class` is not a C keyword and nothing collides.
+# RUN: cat %t/cpp/fixtures_naming/naming/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP_CHOICE
+# RUN: cat %t/cpp/fixtures_naming/naming/Call_1_0.hpp | FileCheck %s --check-prefix=CPP_CALL
+# RUN: cat %t/c/fixtures_naming/naming/Call_1_0.h | FileCheck %s --check-prefix=C_CALL
+
+# A C++ struct body holds the fields and the constants, so the two share one pool there and the
+# constant is the one that moves. Nowhere else can a field and a constant reach each other.
+# RUN: cat %t/cpp/fixtures_naming/naming/MemberPool_1_0.hpp | FileCheck %s --check-prefix=CPP_POOL
+# RUN: cat %t/go/fixtures_naming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
+
+# Every repair is reported, because it changes a name the author wrote.
+# RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
 
 # SUMMARY: Run summary:
 # SUMMARY: files generated:
@@ -256,3 +274,31 @@
 # files on disk. An analysis target reports every language at once.
 # RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
 # RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note
+
+# C_STROPPED: uint8_t break_;
+# C_STROPPED: uint8_t break__2;
+# C_STROPPED_BODY: obj->break_
+# C_STROPPED_BODY: obj->break__2
+# CPP_STROPPED: std::uint8_t break_{};
+# CPP_STROPPED: std::uint8_t break__2{};
+# RUST_STROPPED: pub break_: u8,
+# RUST_STROPPED: pub break__2: u8,
+
+# CPP_CHOICE: std::uint8_t break_{};
+# CPP_CHOICE: std::uint8_t break__2{};
+# CPP_CALL: std::uint8_t break_{};
+# CPP_CALL: std::uint8_t break__2{};
+# CPP_CALL: std::uint8_t class_{};
+# CPP_CALL: std::uint8_t class__2{};
+# C_CALL: uint8_t break_;
+# C_CALL: uint8_t break__2;
+# C_CALL: uint8_t class;
+# C_CALL: uint8_t class_;
+
+# CPP_POOL: std::uint8_t FOO{};
+# CPP_POOL: static constexpr auto FOO_2 = 2;
+# GO_POOL: const MEMBER_POOL_1_0_FOO = 2
+# GO_POOL: FOO uint8
+
+# NOTES: note: field 'break_' is emitted as 'break__2' for target language 'cpp'
+# NOTES: note: constant 'foo' is emitted as 'FOO_2' for target language 'cpp'

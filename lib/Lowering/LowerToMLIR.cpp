@@ -41,6 +41,7 @@
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
@@ -65,42 +66,6 @@ std::string fieldKind(const SemanticField& f)
     return f.isPadding ? "padding" : "field";
 }
 
-bool isCKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords =
-        {"auto",       "break",     "case",           "char",          "const",    "continue", "default",  "do",
-         "double",     "else",      "enum",           "extern",        "float",    "for",      "goto",     "if",
-         "inline",     "int",       "long",           "register",      "restrict", "return",   "short",    "signed",
-         "sizeof",     "static",    "struct",         "switch",        "typedef",  "union",    "unsigned", "void",
-         "volatile",   "while",     "_Alignas",       "_Alignof",      "_Atomic",  "_Bool",    "_Complex", "_Generic",
-         "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "true",     "false"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeIdentifier(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isCKeyword(name))
-    {
-        name += '_';
-    }
-    return name;
-}
-
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
 {
     std::string out;
@@ -110,13 +75,15 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
         {
             out += "__";
         }
-        out += sanitizeIdentifier(info.namespaceComponents[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        IdentifierRole::NamespaceName,
+                                        info.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += sanitizeIdentifier(info.shortName);
+    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
     return out;
 }
 
@@ -129,13 +96,15 @@ std::string cTypeNameFromRef(const SemanticTypeRef& ref)
         {
             out += "__";
         }
-        out += sanitizeIdentifier(ref.namespaceComponents[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        IdentifierRole::NamespaceName,
+                                        ref.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += sanitizeIdentifier(ref.shortName);
+    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, ref.shortName);
     return out;
 }
 
@@ -300,7 +269,13 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 mlir::OperationState fieldState(loc, "dsdl.field");
                 fieldState.addAttribute("name", builder.getStringAttr(field.name));
-                fieldState.addAttribute("c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
+                // The unscoped default. The C backend stamps the scoped name over this before it
+                // converts to EmitC, because only it knows what the struct declaration spells; what
+                // stays here is what keeps hand-driven `dsdl-opt` runs able to name a member at all.
+                fieldState.addAttribute("c_name",
+                                        builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                                                                       IdentifierRole::FieldName,
+                                                                                       field.name)));
                 fieldState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (field.isPadding)
                 {
@@ -391,7 +366,11 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 mlir::OperationState ioState(loc, "dsdl.io");
                 ioState.addAttribute("kind", builder.getStringAttr(fieldKind(field)));
                 ioState.addAttribute("name", builder.getStringAttr(field.name));
-                ioState.addAttribute("c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
+                // The unscoped default, as on `dsdl.field` above.
+                ioState.addAttribute("c_name",
+                                     builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                                                                    IdentifierRole::FieldName,
+                                                                                    field.name)));
                 ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (const auto doc = docAttrText(field.doc))
                 {

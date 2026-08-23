@@ -1,0 +1,6 @@
+# The keyword strop makes the projection many-to-one even where the case survives: `break` becomes
+# `break_` in C, C++ and Rust, which is a name the second field already spells. Both are conformant
+# DSDL -- section 3.2.5 reserves only `_name_` -- so the scope has to keep them apart.
+uint8 break
+uint8 break_
+@sealed
