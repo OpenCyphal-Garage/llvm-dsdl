@@ -318,21 +318,24 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
 
 void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
         {
             continue;
         }
-        const auto fieldName =
-            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::MacroName, field.name);
+        const auto named = [&](const ArrayMetadataKind kind) {
+            return constScope.get(IdentifierRole::MacroName,
+                                  arrayMetadataName(CodegenNamingLanguage::C, field.name, kind));
+        };
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + fieldName + "_ARRAY_CAPACITY_ " +
+                 "#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
                      std::to_string(field.resolvedType.arrayCapacity) + "U");
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + fieldName + "_ARRAY_IS_VARIABLE_LENGTH_ " +
+                 "#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
                      (isVariableArray(field.resolvedType.arrayKind) ? "true" : "false"));
     }
     if (!section.fields.empty())
@@ -459,8 +462,9 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
 {
     // Two DSDL constants can project onto one macro token -- `foo_bar` and `FOO_BAR` both upper-case
     // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
-    // apart. The generated metadata macros need no reservation here: they carry a trailing `_`
-    // (`<Type>_FULL_NAME_`), which no projection of a DSDL name produces.
+    // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
+    // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
+    // the policy tables and escaped by the projection this reads back.
     NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {

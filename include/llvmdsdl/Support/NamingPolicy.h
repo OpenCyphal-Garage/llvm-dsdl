@@ -216,6 +216,19 @@ struct ProjectedIdentifier final
 /// @return True when the identifier is reserved.
 bool codegenIsKeyword(CodegenNamingLanguage language, llvm::StringRef name);
 
+/// @brief True when @p identifier lies in a namespace @p language reserves for the implementation.
+///
+/// C reserves a leading `__` and a leading `_` before a capital; C++ reserves those and any
+/// identifier containing `__`. The other four reserve no such namespace and always answer false.
+///
+/// The projection escapes such names on the way in. This asks the question of an identifier that is
+/// already projected, which is what a caller composing one -- a disambiguation suffix, a generated
+/// prefix -- needs in order not to compose its way into the namespace.
+/// @param[in] language Naming language.
+/// @param[in] identifier An identifier, already projected.
+/// @return True when it is reserved.
+[[nodiscard]] bool codegenIsReservedNamespaceIdentifier(CodegenNamingLanguage language, llvm::StringRef identifier);
+
 /// @brief Sanitizes one identifier for the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Candidate identifier.

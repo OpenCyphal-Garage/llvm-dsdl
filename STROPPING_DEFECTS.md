@@ -1,38 +1,45 @@
 # Identifier naming defects
 
-Eighteen defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
+Nineteen defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
 `f8c2fad..docs/roadmap-g8-scorecard`; [D18](#d18) was found while preparing the fix for root cause
-[A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given. Each is reproduced
-against a built `dsdlc`; the transcripts are the generated output quoted under each entry.
+[A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given, and
+[D19](#d19) by a fixture added while fixing [A](#a-three-emitters-have-no-field-scope). Each is
+reproduced against a built `dsdlc`; the transcripts are the generated output quoted under each
+entry.
 
 Design record: [identifier-stropping.md](docs/development/identifier-stropping.md).
 
 Twelve of the eighteen share three root causes (§A, §B, §C). Fixing those closes D1–D4, D6–D9 and
 D11–D14.
 
-**Fixed so far:** [D18](#d18) (fork option 2), root cause [A](#a-three-emitters-have-no-field-scope)
-in all three backends, and with it [D1](#d1), [D8](#d8) and [D11](#d11).
+**Fixed so far:** [D18](#d18) (fork option 2), root causes
+[A](#a-three-emitters-have-no-field-scope) — in all four backends that lacked a scope, not the three
+the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
+[C](#c-c-claims-nothing-on-a-premise-that-is-false), and the driver fixes D6, D15 and D16. With them
+D1–D4 and D6–D18. Remaining: [D5](#d5) and [D19](#d19), both of which need a decision rather than an
+implementation.
 
 | ID | Severity | Area | Defect |
 |---|---|---|---|
 | [D1](#d1) | High | engine + emitters | ~~C, C++ and Rust name fields without a scope, so distinct DSDL fields emit one duplicate member~~ |
-| [D2](#d2) | High | engine | `UNION_OPTION_COUNT` is missing from the claimed-name tables |
-| [D3](#d3) | High | engine | Go's union `Tag` field is missing from the claimed-name table |
-| [D4](#d4) | High | engine + C | C claims no names on a false premise about trailing underscores |
+| [D2](#d2) | High | engine | ~~`UNION_OPTION_COUNT` is missing from the claimed-name tables~~ |
+| [D3](#d3) | High | engine | ~~Go's union `Tag` field is missing from the claimed-name table~~ |
+| [D4](#d4) | High | engine + C | ~~C claims no names on a false premise about trailing underscores~~ |
 | [D5](#d5) | High | C++ | `<Service>_Request` collides with a sibling type and Discovery cannot see it |
 | [D6](#d6) | High | driver | `obj` writes only the C half of the naming manifest |
-| [D7](#d7) | High | tests | The claimed-name test pins the false premise from D4 |
+| [D7](#d7) | High | tests | ~~The claimed-name test pins the false premise from D4~~ |
 | [D8](#d8) | High | docs | ~~The design record and a golden both describe repair that does not happen~~ |
-| [D9](#d9) | Medium | engine | The scope's `_2` suffix bypasses the reserved-namespace encoder |
-| [D10](#d10) | Medium | engine | PMR members are missing from the claimed-name table |
+| [D9](#d9) | Medium | engine | ~~The scope's `_2` suffix bypasses the reserved-namespace encoder~~ |
+| [D10](#d10) | Medium | engine | ~~PMR members are missing from the claimed-name table~~ |
 | [D11](#d11) | Medium | C++ | ~~Fields and constants use separate pools but share one C++ scope~~ |
-| [D12](#d12) | Medium | C/C++ | Array-metadata names are projected outside every scope |
-| [D13](#d13) | Medium | obj-cpp | `to_c`/`from_c` are missing from the claimed-name table |
-| [D14](#d14) | Medium | golden | `naming-roles.txt` pins a C++ identifier containing `__` |
+| [D12](#d12) | Medium | C/C++ | ~~Array-metadata names are projected outside every scope~~ |
+| [D13](#d13) | Medium | obj-cpp | ~~`to_c`/`from_c` are missing from the claimed-name table~~ |
+| [D14](#d14) | Medium | golden | ~~`naming-roles.txt` pins a C++ identifier containing `__`~~ |
 | [D15](#d15) | Medium | driver | `obj` reports reserved-identifier errors twice, verbatim |
 | [D16](#d16) | Medium | driver | `--naming-manifest` writes during `--dry-run` |
-| [D17](#d17) | Low | docs | The C emitter comment repeats the D4 premise |
+| [D17](#d17) | Low | docs | ~~The C emitter comment repeats the D4 premise~~ |
 | [D18](#d18) | High | lowering | ~~A sixth copy of the naming policy in `LowerToMLIR` makes `--encode-reserved-identifiers` emit C that does not compile~~ |
+| [D19](#d19) | High | obj | `--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build |
 
 ---
 
@@ -71,6 +78,27 @@ per-field array metadata.
 
 Closes D2, D3, D10, D12, D13.
 
+**Fixed.** The names were enumerated by generating a union, a service, an array-bearing message and
+a PMR type in all six backends and reading what each declared, rather than by adding the four the
+review named. `UNION_OPTION_COUNT` goes into both `kMetadata` and `kCppMembers`, `Tag` into Go's
+field set, and `set_memory_resource`, `_memory_resource`, `to_c` and `from_c` into `kCppMembers`;
+each is claimed for every type rather than only for the shape that emits it, so a member name does
+not change with `--cpp-profile` or with a type becoming a union. The array metadata is not a fixed
+list and could not go in a table at all, so it is allocated from the section's constant scope
+instead — see [D12](#d12).
+
+The enumeration also turned up two things the review did not:
+
+- `CppObjectAbiEmitter.cpp` names fields with a bare projection at five sites, so root cause
+  [A](#a-three-emitters-have-no-field-scope) applies to a fourth emitter. Two colliding DSDL fields
+  declared one member twice in the canonical struct and in the C shim, and the conversion bodies
+  disagreed with the C struct the C emitter had already repaired. Fixed with the same scopes; the C
+  side is built from `makeSectionFieldScope(C, …)`, which is what the C emitter declares.
+- The corpus compile gate set `-Wreserved-identifier` for C++ and never passed it to the compiler,
+  and compiled only the `std` profile. Both are why a PMR-only omission could sit there unnoticed.
+  The gate now compiles both profiles and passes the flag — which is what surfaced
+  [D9](#d9).
+
 ### C. C claims nothing, on a premise that is false
 
 The C arm returns an empty claimed-name set, justified in `NamingPolicy.cpp:369-371` and again in
@@ -83,6 +111,18 @@ names that both start *and* end with `_`, so `full_name_` is conformant DSDL and
 `FULL_NAME_`.
 
 Closes D4, D7, D17.
+
+**Fixed.** C gets a claimed-name set holding the eight metadata macro spellings *with* their trailing
+underscore, returned for `ConstantName` and `MacroName` alike — the two name one thing in C. Fields
+still claim nothing, correctly: the only member C adds of its own is a union's `_tag_`, which DSDL
+will not accept as a name.
+
+The change breaks the shorthand the table-invariant test was asserting. "No claimed name ends in `_`"
+was sufficient for the one-pass escape but was never the actual property, and C's claimed names have
+to be spelled the way C emits them. The test now asserts what the pipeline needs: appending `_` to a
+keyword or a claimed name lands on neither another keyword, nor another claimed name, nor a reserved
+namespace. `FULL_NAME_` escapes to `FULL_NAME__`, which is claimed by nothing and reserved in neither
+C nor C++, C reserving only a *leading* `__`.
 
 ---
 
@@ -145,6 +185,9 @@ this a `kCppMembers` omission as well as a `kMetadata` one.
 
 **Fix.** Add `UNION_OPTION_COUNT` to `kMetadata` and `kCppMembers`.
 
+**Fixed** in both, and claimed for every type rather than only for a union: whether a later revision
+of a type becomes a union should not rename a member.
+
 ### D3
 
 **Go's union `Tag` field is missing from the claimed-name table.**
@@ -169,6 +212,11 @@ $ grep Tag out/root/ns/u_1_0.go
 
 **Fix.** Add `Tag` to the Go `FieldName` claimed set. Check the other backends' union tag member
 names for the same omission.
+
+**Fixed.** The other five spell the discriminator `_tag_` (C, C++, Rust) or `_tag` (Python), or have
+no member at all (TypeScript, which renders a union as a discriminated type). `_tag_` is not
+conformant DSDL, and the snake projection drops the leading underscore of `_tag`, so Go is the only
+backend where a DSDL name can reach the discriminator.
 
 ### D4
 
@@ -196,6 +244,15 @@ same hole exists for `EXTENT_BYTES_`, `IS_DEPRECATED_`, `SERIALIZATION_BUFFER_SI
 
 **Fix.** Give C a claimed-name set containing the metadata macro spellings *with* their trailing
 underscore, and correct both comments (see D17).
+
+**Fixed** as described. The set was enumerated from what the C backend emits for a message, a union
+and a service rather than from the list above: it is the same eight, `FULL_NAME_` through
+`UNION_OPTION_COUNT_`. `<FIELD>_ARRAY_CAPACITY_` is not among them because it is not a fixed name —
+it is allocated from the section's constant scope instead, under [D12](#d12).
+
+A DSDL constant reaching one of these was already a `-Wmacro-redefined` warning, which the corpus
+gate turns into an error; the gate never saw it because no fixture carried such a name. One does
+now.
 
 ### D5
 
@@ -251,6 +308,14 @@ of "every target language this invocation names".
 **Fix.** Key the manifest by the naming language rather than the display name, emitting `c` and `cpp`
 entries for `obj`; or give the two entries distinct display names.
 
+**Fixed** by the second, with a correction the review missed: which languages `obj` names depends on
+`--obj-abi-language`. With `c` it publishes C headers only and now reports `{c}`; with `cpp` it
+publishes the C++ ABI, the AUTOSAR and PMR headers and a C shim, and reports `{c, cpp}` — the C++
+entry giving `serialize_` where the C entry gives `serialize`, which is what each header declares.
+`namingLanguagesForTarget` takes the ABI option to decide, so the reserved-identifier sweep and the
+output-name collision check narrow with it rather than checking a language the invocation will not
+emit.
+
 ### D7
 
 **The claimed-name test pins the false premise from D4.**
@@ -262,6 +327,14 @@ escaping" and exercises `FULL_NAME`, which genuinely needs no escape. The reacha
 contains trailing-underscore names (`Foo_`, `Break_`) but none matching a metadata macro.
 
 **Fix.** With D4: add `FULL_NAME_` and `ZOH_ALIAS_ELIGIBLE_` cases, and extend the golden corpus.
+
+**Fixed.** The claimed-name test gains five C cases — `FULL_NAME_`, its lower-case spelling,
+`zoh_alias_eligible_`, and `union_option_count_` under `MacroName` — alongside the `FULL_NAME` case
+that documents what stays put. The golden corpus gains `FULL_NAME`, `FULL_NAME_`,
+`zoh_alias_eligible_` and `UNION_OPTION_COUNT`, and a `constants_claimed` scope scenario that shows
+the escaped spelling meeting a DSDL name already spelled that way: in C++ `FULL_NAME` escapes to
+`FULL_NAME_` and a DSDL `FULL_NAME_` then has to move to `FULL_NAME_2`. Two fixtures,
+`TrailingUnderscores` and `TrailingUnion`, put the same names through the compile gate.
 
 ### D8
 
@@ -313,6 +386,13 @@ while generating one itself.
 The injectivity property test generates exactly these inputs but asserts only distinctness, so it
 cannot catch this.
 
+**Fixed** in `NamingScope::declare`: the ordinal is joined with `_` except where the base already
+ends in one, so `break_` disambiguates to `break_2` rather than `break__2`. The property test now
+asserts that no assignment lands in the language's reserved namespace as well as that no two
+assignments collide, through a new `codegenIsReservedNamespaceIdentifier`. This came out of root
+cause [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) rather than in its own turn:
+turning on the C++ gate's unused `-Wreserved-identifier` made the corpus fail to compile.
+
 **Fix.** Re-apply `encodeReservedNamespace` to the suffixed candidate, or choose a suffix separator
 that cannot form `__`. Extend the injectivity test to assert legality, not only distinctness.
 
@@ -337,6 +417,9 @@ A data member and a member function of one name, and the constructor calls the d
 
 **Fix.** Add both to `kCppMembers`. They are flavour-specific, so either claim them unconditionally
 or make the claimed set flavour-aware.
+
+**Fixed** unconditionally. A member name that changed with `--cpp-profile` would be an ABI that
+depends on how the generator was invoked rather than on the DSDL.
 
 ### D11
 
@@ -383,6 +466,22 @@ only in case reach one metadata name, duplicating a C++ static and silently rede
 
 **Fix.** Derive these from the same scope that names the fields they describe.
 
+**Fixed.** `makeSectionConstantScope` declares them, under `MacroName`, before the DSDL constants;
+`arrayMetadataName` composes the scope key from the DSDL field name so equal field projections give
+equal metadata projections. The key carries C's trailing `_` and not C++'s absence of one, because
+the scope has to compare what is emitted: without that, C would report a collision between a
+metadata macro and a DSDL constant that the trailing `_` keeps apart, and rename a macro that was
+never in danger.
+
+The order within the region runs fields, then array metadata, then DSDL constants — least to most
+willing to move. A field's identifier is the ABI a caller writes against and has to be predictable
+from the DSDL alone; a DSDL constant is the only one of the three an author can rename without
+changing the wire format or breaking a field access.
+
+Two of the review's claims did not survive checking. Two array fields differing only in case do
+*not* collide in Rust, which already uniquifies its pool-class constants, and the C case is a macro
+redefinition rather than a silent one. The rest reproduced.
+
 ### D13
 
 **`to_c`/`from_c` are missing from the claimed-name table.**
@@ -393,6 +492,9 @@ conformant DSDL field names.
 
 **Fix.** Add to `kCppMembers` with the other omissions.
 
+**Fixed**, along with the missing field scope in the same emitter — see root cause
+[B](#b-the-claimed-name-tables-were-built-from-one-plain-type).
+
 ### D14
 
 **`naming-roles.txt` pins a C++ identifier containing `__`.**
@@ -402,6 +504,8 @@ The golden records `struct_body cpp: break_ → break__2` as correct, which free
 expected behaviour. Whatever fix D9 takes, this row moves; until then the suite cannot flag it.
 
 **Fix.** Regenerate with D9.
+
+**Fixed:** regenerated with [D9](#d9). Five rows moved from `X__2` to `X_2`.
 
 ### D15
 
@@ -422,6 +526,10 @@ Two byte-identical messages at the same location.
 **Fix.** Falls out of D6 if the entries get distinct display names; otherwise deduplicate on
 (location, message).
 
+**Fixed** as the first: it fell out of [D6](#d6). `--obj-abi-language c` now reports once, and `cpp`
+reports once per language, naming `c` and `cpp` rather than `obj` twice. Two messages for a name
+reserved in both is the same shape `ast` has always had, and renaming fixes both.
+
 ### D16
 
 **`--naming-manifest` writes during `--dry-run`.**
@@ -439,6 +547,9 @@ for exactly this reason.
 
 **Fix.** Guard the block on `options.dryRun`, `listInputs` and `listOutputs`.
 
+**Fixed** as described, and `--help` now says so — a flag that quietly declines to do its job is worse
+than one that never had the option.
+
 ### D17
 
 **The C emitter comment repeats the D4 premise.**
@@ -449,6 +560,9 @@ trailing `_` … which no projection of a DSDL name produces". Same false statem
 `NamingPolicy.cpp:371`, in the code a reader checks first.
 
 **Fix.** Correct with D4.
+
+**Fixed.** Both comments now say the trailing `_` separates the generated names from most DSDL names
+rather than from all of them, and name the mechanism that closes the gap.
 
 ---
 
@@ -506,6 +620,53 @@ Keeping the default matters for `dsdl-opt`: `convert-dsdl-to-emitc` is reachable
 two integration tests run it on raw lowering output. It now rejects a field step with no `c_name`
 rather than emitting `obj->` with nothing after it.
 
+### D19
+
+**`--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build.**
+High · `lib/CodeGen/CppObjectAbiEmitter.cpp`, `lib/CodeGen/ObjectEmitter.cpp`
+
+The obj lane stages a C header and a C source, then — under the C++ ABI — includes that header from
+the C++ translation units that implement the ABI struct and the C shim. The header is named with C
+naming, which escapes C keywords and nothing else, so a DSDL field named after a C++-only keyword
+reaches C++ as a keyword.
+
+```
+uint8 class
+uint8 v
+@sealed
+```
+
+```console
+$ dsdlc --target-language obj --target-endianness little --obj-abi-language cpp ns --outdir out
+out/.obj_stage_cpp/c/p/ns/K_1_0.h:23:11: error: declaration of anonymous class must be a definition
+out/.obj_stage_cpp/c_shim/p/ns/K_1_0_c_shim.h:17:11: error: declaration of anonymous class must be a definition
+out/.obj_stage_cpp/c_shim/p/ns/K_1_0_c_shim.cpp:11:15: error: static assertion failed ...
+                                       'sizeof(p::ns::abi::K) == sizeof(llvmdsdl_cppabi__p__ns__K)'
+$ dsdlc --target-language obj --target-endianness little --obj-abi-language c   ns --outdir out   # exit 0
+```
+
+`class`, `new`, `operator`, `export` and `template` all reproduce it. `--obj-abi-language c` is
+unaffected: no C++ ever sees those headers. The published `c_shim` header has the same problem, and
+it is not staging — it is part of the artifact.
+
+The standard `uavcan` namespace uses none of these as a field name, and the corpus compile gate
+covers the six source backends rather than `obj`, which is why it has gone unnoticed.
+
+**Fix.** Needs a decision. Three shapes:
+
+1. **The obj lane's C-side naming, under the C++ ABI, is C++ naming.** The staged C is internal and
+   the shim type (`llvmdsdl_cppabi__<Type>`) is distinct from what `--target-language c` produces, so
+   nothing that ships twice would disagree. Costs: the same DSDL gets one member name from the C lane
+   and another from the obj lane's C shim.
+2. **A keyword set that is the union of C and C++, for that lane.** The most honest description of the
+   constraint — every identifier there has to be valid in both — but it is a seventh naming language,
+   which §5 deliberately does not have.
+3. **Reject.** Error when a DSDL name is a C++ keyword and `--obj-abi-language cpp` is selected.
+   Cheapest and correct, but the C++ lane itself handles `class` perfectly well, so the same
+   definition would be accepted for `cpp` and refused for `obj`.
+
+Whichever way it goes, the compile gate should generate the corpus through `obj` as well as the six.
+
 ---
 
 ## The D18 fork
@@ -532,20 +693,22 @@ escape hatch without fixing A.
 
 0. ~~**[D18](#d18)** — settle the fork above.~~ Settled as option 2 and landed.
 1. ~~**[A](#a-three-emitters-have-no-field-scope)** — D1, D8, D11.~~ Landed in all three backends.
-2. **[B](#b-the-claimed-name-tables-were-built-from-one-plain-type)** — D2, D3, D10, D12, D13. Derive
-   the tables by generating a union, a service, and a PMR type rather than by reading one plain
-   message.
-3. **[C](#c-c-claims-nothing-on-a-premise-that-is-false)** — D4, D7, D17.
-4. **D9** and **D14** together — the encoder fix and the golden it moves.
-5. **D6**, **D15**, **D16** — driver fixes, independent of the rest.
-6. **D5** last: it needs a mechanism decision, not an implementation.
+2. ~~**[B](#b-the-claimed-name-tables-were-built-from-one-plain-type)** — D2, D3, D10, D12, D13.~~
+   Landed, by generating a union, a service, an array-bearing message and a PMR type in all six
+   backends and reading what came out.
+3. ~~**D9** and **D14** together.~~ Landed with B: the compile gate's C++ leg was passing the flag
+   that catches D9 to nothing, and turning it on made the corpus fail to build.
+4. ~~**[C](#c-c-claims-nothing-on-a-premise-that-is-false)** — D4, D7, D17.~~ Landed.
+5. ~~**D6**, **D15**, **D16** — driver fixes, independent of the rest.~~ Landed.
+6. **D5** and **D19** last: both need a mechanism decision, not an implementation.
 
 Extend `test/lit/fixtures_naming` with a union, a service, a PMR-relevant type and the
 trailing-underscore constants, so the corpus compile gate covers the shapes the tables were derived
 from. Regenerate both goldens once, at the end.
 
-`Stropped`, `MemberPool`, `Choice` and `Call` are in the corpus already — the keyword-strop collision
-in a plain struct, in a union, and in both sections of a service, plus the field/constant collision
-from [D11](#d11). A PMR-relevant type and the trailing-underscore constants are still to come, with
-[B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
-[C](#c-c-claims-nothing-on-a-premise-that-is-false).
+`Stropped`, `MemberPool`, `Choice`, `Call`, `ClaimedUnion` and `Arrays` are in the corpus, and
+`Claimed` now carries a field for every claimed member rather than only the metadata constants: the
+keyword-strop collision in a plain struct, in a union, and in both sections of a service; the
+field/constant collision from [D11](#d11); the union claims where they occur; and both array-metadata
+collisions; and `TrailingUnderscores` and `TrailingUnion` for the C macro spellings. The gate
+compiles the corpus under the PMR profile as well as `std`. Everything the plan called for is in.

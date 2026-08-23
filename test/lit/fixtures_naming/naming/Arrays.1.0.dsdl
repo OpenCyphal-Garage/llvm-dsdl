@@ -1,0 +1,8 @@
+# C and C++ give every array field two generated constants derived from its name. The first two
+# fields differ only in case, which the macro projection folds away, so their metadata names collide
+# with each other; the constant collides with the metadata of the third.
+uint8[<=4] fooBar
+uint8[<=5] FooBar
+uint8[<=6] baz
+uint8 baz_array_capacity = 7
+@sealed

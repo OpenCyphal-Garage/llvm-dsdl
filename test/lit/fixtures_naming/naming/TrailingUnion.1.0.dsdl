@@ -1,0 +1,7 @@
+# The same, for the macro only a union gets. A constant rather than an option: in C the option is a
+# struct member and the macro is a macro, so only a constant can reach it.
+@union
+uint8 a
+uint16 b
+uint8 UNION_OPTION_COUNT_ = 9
+@sealed

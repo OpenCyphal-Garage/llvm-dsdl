@@ -301,27 +301,39 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
 /// surfaces as a duplicate declaration in a language that has to compile.
 llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage language, const IdentifierRole role)
 {
-    static constexpr std::array<llvm::StringRef, 7> kMetadata = {"FULL_NAME",
+    // `UNION_OPTION_COUNT` is emitted only for a union and the memory-resource pair only under the
+    // PMR profile, but both are claimed for every type: a member name that changed with
+    // `--cpp-profile`, or with whether a later revision of a type became a union, would be an ABI
+    // that depends on how the generator was invoked rather than on the DSDL.
+    static constexpr std::array<llvm::StringRef, 8> kMetadata = {"FULL_NAME",
                                                                  "FULL_NAME_AND_VERSION",
                                                                  "IS_DEPRECATED",
                                                                  "EXTENT_BYTES",
                                                                  "SERIALIZATION_BUFFER_SIZE_BYTES",
                                                                  "ZOH_ALIAS_ELIGIBLE",
-                                                                 "ZOH_ALIAS_REASON"};
+                                                                 "ZOH_ALIAS_REASON",
+                                                                 "UNION_OPTION_COUNT"};
 
-    static constexpr std::array<llvm::StringRef, 11> kCppMembers = {"FULL_NAME",
+    static constexpr std::array<llvm::StringRef, 16> kCppMembers = {"FULL_NAME",
                                                                     "FULL_NAME_AND_VERSION",
                                                                     "IS_DEPRECATED",
                                                                     "EXTENT_BYTES",
                                                                     "SERIALIZATION_BUFFER_SIZE_BYTES",
                                                                     "ZOH_ALIAS_ELIGIBLE",
                                                                     "ZOH_ALIAS_REASON",
+                                                                    "UNION_OPTION_COUNT",
                                                                     "serialize",
                                                                     "deserialize",
                                                                     "try_serialize_view",
-                                                                    "try_deserialize_view"};
+                                                                    "try_deserialize_view",
+                                                                    "set_memory_resource",
+                                                                    "_memory_resource",
+                                                                    "to_c",
+                                                                    "from_c"};
 
-    static constexpr std::array<llvm::StringRef, 2> kGoMethods = {"Serialize", "Deserialize"};
+    // `Tag` is the union discriminator; Go is the only backend that spells it as an exported field,
+    // and an exported field is what a DSDL field named `tag` projects to.
+    static constexpr std::array<llvm::StringRef, 3> kGoMethods = {"Serialize", "Deserialize", "Tag"};
 
     static constexpr std::array<llvm::StringRef, 4> kPyMethods = {"serialize",
                                                                   "deserialize",
@@ -329,6 +341,20 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                                   "_deserialize_from"};
 
     static constexpr std::array<llvm::StringRef, 2> kTsProperties = {"constructor", "prototype"};
+
+    // C spells the same constants as macros carrying a trailing `_`, and that underscore is part of
+    // the name to be missed rather than a reason there is nothing to miss: `ConstantName` in C is a
+    // macro token -- preserve case, escape, upper-case, no strop -- which passes a source name's own
+    // trailing underscore straight through, and DSDL reserves only names that both start and end
+    // with one. `full_name_` is a conformant DSDL constant that reaches `FULL_NAME_`.
+    static constexpr std::array<llvm::StringRef, 8> kCMacros = {"FULL_NAME_",
+                                                                "FULL_NAME_AND_VERSION_",
+                                                                "IS_DEPRECATED_",
+                                                                "EXTENT_BYTES_",
+                                                                "SERIALIZATION_BUFFER_SIZE_BYTES_",
+                                                                "ZOH_ALIAS_ELIGIBLE_",
+                                                                "ZOH_ALIAS_REASON_",
+                                                                "UNION_OPTION_COUNT_"};
 
     static constexpr std::array<llvm::StringRef, 0> kNone = {};
 
@@ -368,8 +394,13 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kTsProperties)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::C:
-        // Nothing to claim: the generated metadata macros carry a trailing underscore, which no
-        // projection of a DSDL name produces.
+        // `ConstantName` and `MacroName` are one thing in C -- both name a `<Type>_<TOKEN>` macro --
+        // so both are claimed against the same list. Fields need nothing: the only member C adds of
+        // its own is a union's `_tag_`, which DSDL will not accept as a name.
+        if ((role == IdentifierRole::ConstantName) || (role == IdentifierRole::MacroName))
+        {
+            return kCMacros;
+        }
         break;
     }
     return kNone;
@@ -608,6 +639,13 @@ std::string codegenProjectIdentifier(const CodegenNamingLanguage language,
     return codegenProjectIdentifierDetailed(language, role, name).identifier;
 }
 
+bool codegenIsReservedNamespaceIdentifier(const CodegenNamingLanguage language, const llvm::StringRef identifier)
+{
+    bool encoded = false;
+    (void) encodeReservedNamespace(language, identifier.str(), encoded);
+    return encoded;
+}
+
 bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
     return keywordSet(language).contains(name);
@@ -656,12 +694,18 @@ std::string NamingScope::declare(const IdentifierRole role, const llvm::StringRe
         return it->second;
     }
 
-    const std::string base      = codegenProjectIdentifier(language_, role, sourceName);
+    const std::string base = codegenProjectIdentifier(language_, role, sourceName);
+    // `_` joins the ordinal to the base, except where the base already ends in one. Doubling it
+    // would put the result in a namespace C and C++ reserve -- `break_` is what the keyword strop
+    // makes of `break`, and `break__2` is an identifier the standard says is not the program's to
+    // define. Nothing downstream repairs that: the reserved-namespace encoder runs inside the
+    // projection, before this suffix exists.
+    const std::string join      = base.empty() || (base.back() != '_') ? "_" : "";
     std::string       candidate = base;
     unsigned          suffix    = 2;
     while (!used_.insert(candidate).second)
     {
-        candidate = base + "_" + std::to_string(suffix);
+        candidate = base + join + std::to_string(suffix);
         ++suffix;
     }
     assigned_[key] = candidate;

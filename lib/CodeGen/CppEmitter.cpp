@@ -1488,21 +1488,24 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
 
 void emitArrayMetadata(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
         {
             continue;
         }
-        const auto fieldName =
-            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::MacroName, field.name);
+        const auto named = [&](const ArrayMetadataKind kind) {
+            return constScope.get(IdentifierRole::MacroName,
+                                  arrayMetadataName(CodegenNamingLanguage::Cpp, field.name, kind));
+        };
         emitLine(out,
                  1,
-                 "static constexpr std::size_t " + fieldName +
-                     "_ARRAY_CAPACITY = " + std::to_string(field.resolvedType.arrayCapacity) + "U;");
+                 "static constexpr std::size_t " + named(ArrayMetadataKind::Capacity) + " = " +
+                     std::to_string(field.resolvedType.arrayCapacity) + "U;");
         emitLine(out,
                  1,
-                 "static constexpr bool " + fieldName + "_ARRAY_IS_VARIABLE_LENGTH = " +
+                 "static constexpr bool " + named(ArrayMetadataKind::IsVariableLength) + " = " +
                      std::string(isVariableArray(field.resolvedType.arrayKind) ? "true" : "false") + ";");
     }
 }

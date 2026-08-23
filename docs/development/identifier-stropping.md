@@ -81,8 +81,11 @@ enum class IdentifierRole {
 ```
 
 A **scope** is a region in which identifiers must not collide: a struct body, a namespace directory,
-a module's top level. `NamingScope` takes names in declaration order and appends `_2`, `_3`, … when a
-projection is many-to-one. Roles share one pool within a scope, because they share one scope in the
+a module's top level. `NamingScope` takes names in declaration order and appends `2`, `3`, … when a
+projection is many-to-one, joined with a `_` except where the base already ends in one — `break_`
+disambiguates to `break_2`, not `break__2`, which C and C++ reserve. The suffix is appended after the
+pipeline has run and is the one part of an identifier the reserved-namespace stage never sees, so
+avoiding the namespace is this rule's job rather than that stage's. Roles share one pool within a scope, because they share one scope in the
 language: a Go field and a Go method on the same struct cannot both be `Serialize`.
 
 `makeSectionFieldScope` and `makeSectionConstantScope` build the scopes a section needs. How many
@@ -136,8 +139,14 @@ A trailing `_` cannot enter a reserved namespace in any of the six targets and n
 handler.
 
 **It terminates in one pass.** Appending `_` to `X` can only need a further escape if `X_` is itself
-reserved, and no keyword or claimed name in any table ends in `_`. That is a property of the tables
-rather than of the algorithm, so §7 asserts it over every entry in every table.
+something to escape from — another keyword, another claimed name, or a reserved namespace. It never
+is. That is a property of the tables rather than of the algorithm, so §7 asserts it over every entry
+in every table.
+
+The tempting shorthand for this — "no entry in any table ends in `_`" — is sufficient but not true.
+C's claimed names are its metadata macros, which are spelled with a trailing `_` and have to be
+claimed as spelled; `FULL_NAME_` escapes to `FULL_NAME__`, which is claimed by nothing and reserved
+in neither C nor C++, C reserving only a *leading* `__`.
 
 The argument covers suffixes only. A trailing `_` cannot repair a *prefix* violation — `__bar` is
 reserved for any use, and `__bar_` is just as reserved — which is why reserved namespaces are encoded
@@ -177,6 +186,12 @@ Most are emitted for every type: the seven per-type metadata constants (`FULL_NA
 TypeScript's `constructor` and `prototype` are the other kind, claimed by the language runtime rather
 than by anything we write.
 
+The rest are emitted only for some shapes — `UNION_OPTION_COUNT` and Go's `Tag` for a union, the
+memory-resource pair under the PMR profile, `to_c` and `from_c` by the object backend — and are
+claimed for every type regardless. A member name that changed with `--cpp-profile`, or with a later
+revision of a type becoming a union, would be an ABI that depends on how the generator was invoked
+rather than on the DSDL.
+
 Each entry exists because the case without it did not compile:
 
 | Case | Backend | Without the escape |
@@ -184,11 +199,26 @@ Each entry exists because the case without it did not compile:
 | DSDL constant named after a metadata constant | C++, Go, Rust | duplicate declaration; `go build` fails |
 | DSDL field named `FULL_NAME` | C++ | data member redeclares the generated static |
 | DSDL field named `serialize` | C++ | data member and member function share a name |
+| DSDL constant named `UNION_OPTION_COUNT`, in a union | C++, Go, Rust | duplicate declaration |
+| DSDL field named `tag`, in a union | Go | exported field declared twice |
+| DSDL field named `set_memory_resource` | C++ (PMR) | data member and member function share a name |
+| DSDL field named `to_c` | obj (C++ ABI) | data member and member function share a name |
 
-C needs none of them: its metadata macros carry a trailing `_`, so `<Type>_FULL_NAME_` cannot meet
-`<Type>_FULL_NAME`. That convention is worth copying into any backend that grows a new generated
-name. TypeScript and Python constants are equally safe, prefixing theirs with `DSDL_` while DSDL
-constants take a type prefix.
+The list is derived from what the backends emit for a union, a service, an array-bearing message and
+a PMR type, in all six languages. It was first derived from one plain message, which is why the four
+shape-specific groups above were absent from it for as long as they were.
+
+C claims the same list spelled the way it emits it, with the trailing `_`. The trailing underscore
+is worth copying into any backend that grows a new generated name, but it separates the generated
+names from *most* DSDL names rather than from all of them: `ConstantName` in C is a macro token —
+preserve case, escape, upper-case, no strop — so it passes a source name's own trailing underscore
+straight through, and DSDL reserves only names that both start and end with one. `full_name_` is a
+conformant DSDL constant that reaches `FULL_NAME_`, and `<Type>_ZOH_ALIAS_ELIGIBLE_` is tested by the
+generated `try_deserialize_view_` in an `#elif`, so redefining it changes what the generated code
+does. `ConstantName` and `MacroName` are one thing in C and are claimed alike.
+
+TypeScript and Python constants need nothing, prefixing theirs with `DSDL_` while DSDL constants take
+a type prefix.
 
 This belongs to the policy rather than to a `NamingScope`. A scope reservation describes one
 particular scope; these names are claimed for every type, and are needed at call sites that cannot
@@ -208,6 +238,20 @@ interpreter running the generator. A DSDL field named `str` is `str_` there and 
 There is no `fileStemAvoid` field either. The MS-DOS device names are rejected by the frontend as
 DSDL reserved identifiers, and stdlib shadowing is a packaging constraint rather than a naming one
 (§8.2).
+
+#### Names the table cannot hold
+
+C and C++ give every array field two constants named after it, `<FIELD>_ARRAY_CAPACITY` and
+`<FIELD>_ARRAY_IS_VARIABLE_LENGTH`. These are generated names in the same region as the DSDL
+constants, but there is no fixed list of them to claim: which exist depends on the type. They are
+allocated from the section's constant scope instead, declared before the DSDL constants so that a
+constant yields to them rather than the other way round, and keyed on a name built from the DSDL
+field name — which is what lets the scope see that two fields whose macro projections are equal
+(`fooBar` and `FooBar`) want one constant.
+
+The key carries C's trailing `_` and not C++'s absence of one, because the scope compares what is
+emitted. Without it C would report a collision between a metadata macro and a DSDL constant that the
+trailing `_` keeps apart, and rename a macro that was never in danger.
 
 ### 5.3 Reserved namespaces
 
@@ -279,7 +323,9 @@ type prefix is a defect rather than a style choice.
 
 - **Injectivity.** Generated sets of distinct DSDL names, run through a scope for each language and
   role, asserting the map is injective. This is the invariant §4 exists to provide, and the one
-  nunavut fails.
+  nunavut fails. The same pass asserts that no assignment lands in a reserved namespace: the
+  disambiguation suffix is composed after the pipeline, so distinctness alone does not establish that
+  the result is a name the program may define.
 - **Table invariants.** No keyword and no claimed name in any table ends in `_`, and no keyword
   escapes onto another — asked of every entry in every table, which is what makes §4.1's
   single-pass argument sound. `LanguageNamingPolicy::keywords()` exists for this.
@@ -287,11 +333,12 @@ type prefix is a defect rather than a style choice.
   generated code claims and names in a reserved namespace are excluded and covered separately, since
   the case-explicit helpers the oracles are built from apply neither escape.
 - **Adversarial corpus that compiles.** `llvmdsdl-naming-corpus-compile-gate` generates
-  `test/lit/fixtures_naming` for all six backends and compiles each: every C translation unit and a
-  C++ unit including every header under `-Werror -Wreserved-identifier`, `cargo build`,
-  `go build ./...`, `tsc --strict`, and a Python byte-compile. C and C++ are mandatory; the rest skip
-  when their toolchain is absent. Generating all six regardless of what the build targets is the
-  compensating control for §8.1.
+  `test/lit/fixtures_naming` for all six backends and compiles each: every C translation unit, a C++
+  unit including every header under both the `std` and PMR profiles, all under
+  `-Werror -Wreserved-identifier`, then `cargo build`, `go build ./...`, `tsc --strict`, and a Python
+  byte-compile. C and C++ are mandatory; the rest skip when their toolchain is absent. Generating all
+  six regardless of what the build targets is the compensating control for §8.1, and compiling both
+  C++ profiles is what covers the members only one of them emits.
 - **Golden maps.** `test/unit/golden/naming-map.txt` holds the case-explicit projections over an
   adversarial corpus and the collisions they produce; `naming-roles.txt` holds the role table, the
   per-role projections and scope repair. Regenerate both with
@@ -343,6 +390,11 @@ The asymmetry is about what the user can see. A field that became `map_` is visi
 header they are reading to call it. A type file that became `break__1_0.go` is invisible until a build
 rule expecting `break_1_0.go` fails, and by then the message is a missing-file error with no mention
 of naming.
+
+An in-scope collision repair (§6) is announced despite living inside a generated file, and the line
+between the two is predictability rather than location. `map_` follows from `map` and the rules; the
+`_2` in `break_2` follows from *another* name and from declaration order, and the identifier itself
+says nothing about which name it lost to.
 
 "A name changed" is useless as a trigger, since every backend renames `FooBar` to `foo_bar` as a
 matter of course. `codegenProjectIdentifierDetailed` reports a flag set only when a keyword, a claimed

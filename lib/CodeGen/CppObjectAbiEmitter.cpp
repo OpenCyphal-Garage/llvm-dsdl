@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
@@ -403,6 +404,7 @@ void emitCanonicalStruct(std::ostringstream&        out,
                          const EmitterContext&      ctx,
                          const LoweredSectionFacts* sectionFacts)
 {
+    const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     emitLine(out, 0, "struct " + plan.cppTypeName + ";");
     emitLine(out,
              0,
@@ -434,8 +436,7 @@ void emitCanonicalStruct(std::ostringstream&        out,
             continue;
         }
 
-        const std::string member =
-            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
+        const std::string member   = cppScope.get(IdentifierRole::FieldName, field.name);
         const std::string elemType = cppScalarType(field.resolvedType, ctx);
         const std::string cap      = sizeLiteral(field.resolvedType.arrayCapacity);
 
@@ -520,6 +521,11 @@ void emitCanonicalStruct(std::ostringstream&        out,
 
 void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
 {
+    // The canonical struct and the C struct it converts to are named by two different
+    // emitters, so both scopes are rebuilt here from the same section rather than a member
+    // name being invented locally: what this writes has to be what each of them declared.
+    const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+    const NamingScope cScope   = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     emitLine(out, 0, "void " + plan.cppTypeName + "::to_c(" + plan.cTypeName + "* const out) const");
     emitLine(out, 0, "{");
     emitLine(out, 1, "if (out == nullptr) {");
@@ -533,11 +539,9 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
         {
             continue;
         }
-        const std::string cppMember =
-            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
-        const std::string cMember =
-            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
-        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cppMember = cppScope.get(IdentifierRole::FieldName, field.name);
+        const std::string cMember   = cScope.get(IdentifierRole::FieldName, field.name);
+        const std::string cap       = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -636,6 +640,11 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
 
 void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
 {
+    // The canonical struct and the C struct it converts to are named by two different
+    // emitters, so both scopes are rebuilt here from the same section rather than a member
+    // name being invented locally: what this writes has to be what each of them declared.
+    const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+    const NamingScope cScope   = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     emitLine(out,
              0,
              "void " + plan.cppTypeName + "::from_c(" + plan.cppTypeName + "* const out, const " + plan.cTypeName +
@@ -651,11 +660,9 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
         {
             continue;
         }
-        const std::string cppMember =
-            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, field.name);
-        const std::string cMember =
-            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
-        const std::string cap = sizeLiteral(field.resolvedType.arrayCapacity);
+        const std::string cppMember = cppScope.get(IdentifierRole::FieldName, field.name);
+        const std::string cMember   = cScope.get(IdentifierRole::FieldName, field.name);
+        const std::string cap       = sizeLiteral(field.resolvedType.arrayCapacity);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -959,6 +966,7 @@ void emitShimStruct(std::ostringstream&    out,
                     const SemanticSection& section,
                     const EmitterContext&  ctx)
 {
+    const NamingScope cScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     emitLine(out, 0, "typedef struct " + plan.shimTypeName + " {");
 
     std::size_t emittedFields = 0;
@@ -968,8 +976,7 @@ void emitShimStruct(std::ostringstream&    out,
         {
             continue;
         }
-        const std::string member =
-            codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FieldName, field.name);
+        const std::string member   = cScope.get(IdentifierRole::FieldName, field.name);
         const std::string elemType = shimScalarType(field.resolvedType, ctx);
         const std::string cap      = sizeLiteral(field.resolvedType.arrayCapacity);
 

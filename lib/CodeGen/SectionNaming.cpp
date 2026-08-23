@@ -51,7 +51,56 @@ void declareConstants(NamingScope& scope, const SemanticSection& section)
     }
 }
 
+/// @brief True when @p language emits the per-array-field metadata constants.
+///
+/// Only C and C++ do. The other four expose an array's capacity through the container it is declared
+/// as, so they have no such constant and nothing to allocate a name for.
+bool emitsArrayMetadata(const CodegenNamingLanguage language)
+{
+    return language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+}
+
+/// @brief Declares @p section's array-metadata constants into @p scope, in DSDL field order.
+void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+{
+    for (const auto& field : section.fields)
+    {
+        if (field.isPadding || (field.resolvedType.arrayKind == ArrayKind::None))
+        {
+            continue;
+        }
+        for (const auto kind : {ArrayMetadataKind::Capacity, ArrayMetadataKind::IsVariableLength})
+        {
+            (void) scope.declare(IdentifierRole::MacroName, arrayMetadataName(language, field.name, kind));
+        }
+    }
+}
+
+/// @brief Declares everything @p language puts in one region with @p section's constants.
+///
+/// The order is what decides which name moves when two collide, and it runs from least to most
+/// willing to move. Fields are first because a field's identifier is the ABI a caller writes against
+/// and has to be predictable from the DSDL alone; the generated array metadata is next; DSDL
+/// constants are last, being the only one of the three a author can rename without changing the wire
+/// format or breaking a field access.
+void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+{
+    if (emitsArrayMetadata(language))
+    {
+        declareArrayMetadata(scope, section, language);
+    }
+    declareConstants(scope, section);
+}
+
 }  // namespace
+
+std::string arrayMetadataName(const CodegenNamingLanguage language,
+                              const llvm::StringRef       fieldName,
+                              const ArrayMetadataKind     kind)
+{
+    return fieldName.str() + ((kind == ArrayMetadataKind::Capacity) ? "_ARRAY_CAPACITY" : "_ARRAY_IS_VARIABLE_LENGTH") +
+           ((language == CodegenNamingLanguage::C) ? "_" : "");
+}
 
 NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const SemanticSection& section)
 {
@@ -59,7 +108,7 @@ NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const Se
     declareFields(scope, section);
     if (constantsShareTheFieldScope(language))
     {
-        declareConstants(scope, section);
+        declareConstantRegion(scope, section, language);
     }
     return scope;
 }
@@ -71,7 +120,7 @@ NamingScope makeSectionConstantScope(const CodegenNamingLanguage language, const
         return makeSectionFieldScope(language, section);
     }
     NamingScope scope(language);
-    declareConstants(scope, section);
+    declareConstantRegion(scope, section, language);
     return scope;
 }
 

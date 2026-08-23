@@ -214,7 +214,15 @@ bool isVersionToken(llvm::StringRef arg)
 /// language instead -- they are the analysis modes, and a namespace that would break a Go build is
 /// worth saying so about while the user is asking questions rather than generating. See the
 /// decisions section of docs/development/identifier-stropping.md.
-llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const llvm::StringRef language)
+/// @brief The languages whose identifiers @p language names, under @p objAbiLanguage for the `obj`
+///        lane.
+///
+/// `obj` publishes headers rather than a source tree, and which headers depends on `--obj-abi-language`:
+/// C alone, or C alongside the C++ ABI and its C shim. Both are reported under their own names rather
+/// than under `obj`, so that a build rule reading the manifest for a C++ member name looks it up the
+/// same way whichever lane produced it.
+llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const llvm::StringRef language,
+                                                                        const llvm::StringRef objAbiLanguage)
 {
     using llvmdsdl::CodegenNamingLanguage;
     if (language == "c")
@@ -243,7 +251,11 @@ llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const ll
     }
     if (language == "obj")
     {
-        return {{CodegenNamingLanguage::Cpp, "obj"}, {CodegenNamingLanguage::C, "obj"}};
+        if (objAbiLanguage == "cpp")
+        {
+            return {{CodegenNamingLanguage::C, "c"}, {CodegenNamingLanguage::Cpp, "cpp"}};
+        }
+        return {{CodegenNamingLanguage::C, "c"}};
     }
     const auto all = llvmdsdl::allOutputLanguages();
     return {all.begin(), all.end()};
@@ -324,6 +336,7 @@ void printHelp()
                  << "      as, for every target language this invocation names. Answers 'what did\n"
                  << "      my field become' without reading generated source, and lets a build\n"
                  << "      reference a generated symbol without reimplementing the projection.\n"
+                 << "      Not written under --dry-run, --list-inputs or --list-outputs.\n"
                  << "  --prune-manifest <file>\n"
                  << "      Record this run's outputs in <file> and, on the next run, delete the\n"
                  << "      outputs it recorded that are no longer produced. One manifest per dsdlc\n"
@@ -1440,7 +1453,7 @@ int main(int argc, char** argv)
     }
 
     logVerbose(1, "discovering and parsing definitions");
-    const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage);
+    const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage);
     auto       ast =
         llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics, outputLanguages);
     if (!ast)
@@ -1739,11 +1752,17 @@ int main(int argc, char** argv)
     // Written before the language dispatch so it is available for every target, including the
     // analysis ones: asking what a name will be generated as is a question you ask *before*
     // generating, and `ast` already checks every backend's output names for the same reason.
-    if (!options.namingManifest.empty())
+    //
+    // Not on a dry run, though, and not while listing. `--list-outputs` implies a dry run and is what
+    // a build system calls at configure time to learn what will be produced; writing a file then puts
+    // one in a tree the caller was told nothing would be touched. The prune step below declines for
+    // the same reason.
+    if (!options.namingManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs)
     {
-        const auto manifestSemantic = filterSemanticModule(localSemantic, selectedKeys);
-        const auto manifestLanguages =
-            outputLanguages.empty() ? namingLanguagesForTarget(options.targetLanguage) : outputLanguages;
+        const auto manifestSemantic  = filterSemanticModule(localSemantic, selectedKeys);
+        const auto manifestLanguages = outputLanguages.empty()
+                                           ? namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage)
+                                           : outputLanguages;
         const std::string manifest =
             llvmdsdl::renderNamingManifest(manifestSemantic, manifestLanguages, llvmdsdl::kVersionString);
         std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);

@@ -1,0 +1,14 @@
+# C spells its generated metadata as macros carrying a trailing `_`, and a DSDL constant can be
+# spelled that way too: section 3.2.5 reserves only names that both start and end with one. Each
+# constant here reaches a generated macro, so each has to be escaped off it. `ZOH_ALIAS_ELIGIBLE_` is
+# the one that matters most -- the generated `try_deserialize_view_` tests it in an `#elif`, so a
+# redefinition changes what the generated code does rather than only what it reports.
+uint8 v
+uint8 FULL_NAME_ = 1
+uint8 full_name_and_version_ = 2
+uint8 IS_DEPRECATED_ = 3
+uint8 EXTENT_BYTES_ = 4
+uint8 SERIALIZATION_BUFFER_SIZE_BYTES_ = 5
+uint8 ZOH_ALIAS_ELIGIBLE_ = 6
+uint8 zoh_alias_reason_ = 7
+@sealed

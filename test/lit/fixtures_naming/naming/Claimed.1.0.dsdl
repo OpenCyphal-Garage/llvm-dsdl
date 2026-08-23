@@ -1,8 +1,18 @@
-# Every constant here is named after one the backends emit for every type, and the field is named
-# after a generated method. Before the claimed-name policy these produced duplicate declarations:
-# a C++ struct holds fields, DSDL constants and the generated statics together, and Go and Rust give
-# a DSDL constant the same prefix as their metadata constants.
+# Every constant here is named after one the backends emit for every type, and every field after a
+# generated member or method. A C++ struct holds fields, DSDL constants and the generated statics
+# together; Go and Rust give a DSDL constant the same prefix as their metadata constants; and Go
+# spells its union discriminator as an exported field, which is what a field named `tag` projects to.
+#
+# The members below are emitted only for some shapes -- the memory-resource pair under the PMR
+# profile, `to_c`/`from_c` by the object backend, `UNION_OPTION_COUNT` for a union -- but all of them
+# are claimed for every type, so a plain message is where the claim is checked.
 uint8 serialize
+uint8 tag
+uint8 to_c
+uint8 from_c
+uint8 set_memory_resource
+uint8 _memory_resource
+uint8 UNION_OPTION_COUNT = 8
 uint8 FULL_NAME = 1
 uint8 FULL_NAME_AND_VERSION = 2
 uint8 IS_DEPRECATED = 3

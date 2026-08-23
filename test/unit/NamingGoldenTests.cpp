@@ -131,6 +131,12 @@ const std::vector<std::string>& corpus()
         "foo_",
         "Foo_",
         "foo_t",
+        // The names generated code claims, in the spellings that reach them. C spells its metadata as
+        // macros with a trailing `_`, which is a name a DSDL constant can carry.
+        "FULL_NAME",
+        "FULL_NAME_",
+        "zoh_alias_eligible_",
+        "UNION_OPTION_COUNT",
         "Efoo",
         "EFOO",
         // Acronym folding.
@@ -344,20 +350,20 @@ void appendHeader(std::ostringstream& out)
 void appendProjections(std::ostringstream& out)
 {
     out << "\n== projections ==\n\n";
-    std::vector<std::pair<std::string, std::size_t>> header = {{"source", 18}, {"reach", 7}, {"language", 9}};
+    std::vector<std::pair<std::string, std::size_t>> header = {{"source", 22}, {"reach", 7}, {"language", 9}};
     for (const auto& projection : kProjections)
     {
-        header.emplace_back(projection.name, 20);
+        header.emplace_back(projection.name, 23);
     }
     appendRow(out, header);
-    out << std::string(18 + 7 + 9 + (20 * (kProjections.size() - 1)), '-') << "\n";
+    out << std::string(22 + 7 + 9 + (23 * (kProjections.size() - 1)), '-') << "\n";
 
     for (const auto& source : corpus())
     {
         const char* reach = isDsdlReachable(source) ? "yes" : "no";
         for (const auto& entry : kLanguages)
         {
-            std::vector<std::pair<std::string, std::size_t>> cells = {{quoted(source), 18},
+            std::vector<std::pair<std::string, std::size_t>> cells = {{quoted(source), 22},
                                                                       {reach, 7},
                                                                       {entry.name, 9}};
             for (const auto& projection : kProjections)
@@ -365,7 +371,7 @@ void appendProjections(std::ostringstream& out)
                 cells.emplace_back(projectionApplies(projection.name, entry.language)
                                        ? quoted(projection.apply(entry.language, source))
                                        : "-",
-                                   20);
+                                   23);
             }
             appendRow(out, cells);
         }
@@ -496,6 +502,13 @@ const std::vector<ScopeScenario>& scopeScenarios()
          {"fooBar", "serialize", "Serialize"},
          {"Serialize", "Deserialize"}},
         {"constants", IdentifierRole::ConstantName, {"fooBar", "foo_bar", "FOO_BAR"}, {}},
+        // Claimed names as a scope sees them: the escape happens in the projection, so what the scope
+        // has to keep apart is the escaped spelling against a DSDL name that is already spelled that
+        // way. `FULL_NAME_` is C's metadata macro and `FULL_NAME` is everyone else's constant.
+        {"constants_claimed",
+         IdentifierRole::ConstantName,
+         {"FULL_NAME", "FULL_NAME_", "full_name_", "zoh_alias_eligible_"},
+         {}},
     };
     return scenarios;
 }
@@ -510,8 +523,8 @@ void appendScopes(std::ostringstream& out)
         << "# Every backend needs the scope. Case-folding makes the projection many-to-one in Go,\n"
         << "# TypeScript and Python; in C, C++ and Rust the case survives but the keyword and\n"
         << "# claimed-name escapes do the same thing, which is what the break/break_ rows show.\n\n";
-    appendRow(out, {{"scope", 22}, {"language", 9}, {"source", 14}, {"identifier", 0}});
-    out << std::string(22 + 9 + 14 + 20, '-') << "\n";
+    appendRow(out, {{"scope", 22}, {"language", 9}, {"source", 22}, {"identifier", 0}});
+    out << std::string(22 + 9 + 22 + 20, '-') << "\n";
 
     for (const auto& scenario : scopeScenarios())
     {
@@ -527,7 +540,7 @@ void appendScopes(std::ostringstream& out)
                 appendRow(out,
                           {{scenario.name, 22},
                            {entry.name, 9},
-                           {quoted(source), 14},
+                           {quoted(source), 22},
                            {quoted(scope.get(scenario.role, source)), 0}});
             }
         }
@@ -575,22 +588,22 @@ std::string renderRoleGolden()
     }
 
     out << "\n== projections by role ==\n\n";
-    std::vector<std::pair<std::string, std::size_t>> header = {{"source", 18}, {"language", 9}};
+    std::vector<std::pair<std::string, std::size_t>> header = {{"source", 22}, {"language", 9}};
     for (const auto& role : kTabulatedRoles)
     {
-        header.emplace_back(role.name, 20);
+        header.emplace_back(role.name, 23);
     }
     appendRow(out, header);
-    out << std::string(18 + 9 + (20 * (kTabulatedRoles.size() - 1)), '-') << "\n";
+    out << std::string(22 + 9 + (23 * (kTabulatedRoles.size() - 1)), '-') << "\n";
 
     for (const auto& source : corpus())
     {
         for (const auto& entry : kLanguages)
         {
-            std::vector<std::pair<std::string, std::size_t>> cells = {{quoted(source), 18}, {entry.name, 9}};
+            std::vector<std::pair<std::string, std::size_t>> cells = {{quoted(source), 22}, {entry.name, 9}};
             for (const auto& role : kTabulatedRoles)
             {
-                cells.emplace_back(quoted(codegenProjectIdentifier(entry.language, role.role, source)), 20);
+                cells.emplace_back(quoted(codegenProjectIdentifier(entry.language, role.role, source)), 23);
             }
             appendRow(out, cells);
         }

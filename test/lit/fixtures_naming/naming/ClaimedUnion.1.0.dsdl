@@ -1,0 +1,6 @@
+# The same claims where the shapes that motivate them actually occur: a union option named after the
+# generated option count, and the discriminator field Go emits beside it.
+@union
+uint8 UNION_OPTION_COUNT
+uint16 tag
+@sealed

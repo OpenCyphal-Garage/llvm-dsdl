@@ -92,9 +92,32 @@ string(APPEND _cpp_probe "int main() { return 0; }\n")
 file(WRITE "${WORK_DIR}/cpp_probe.cpp" "${_cpp_probe}")
 
 llvmdsdl_run_or_fail("C++ compile of the naming corpus under -Werror"
-  "${CXX_COMPILER}" -std=c++20 -Wall -Wextra -Werror
+  "${CXX_COMPILER}" -std=c++20 -Wall -Wextra ${_reserved_cxx} -Werror
                     -I "${WORK_DIR}/cpp" -c "${WORK_DIR}/cpp_probe.cpp"
                     -o "${WORK_DIR}/cpp_probe.o")
+
+# ---------------------------------------------------------------------------------------------------
+# C++ again, under the PMR profile. The profile adds two members to every struct, and a claimed-name
+# omission there is invisible to the std run above -- which is how both of them came to be missing.
+
+llvmdsdl_run_or_fail("dsdlc C++ PMR generation"
+  "${DSDLC}" --target-language cpp "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")
+
+file(GLOB_RECURSE _pmr_headers RELATIVE "${WORK_DIR}/cpp_pmr" "${WORK_DIR}/cpp_pmr/*.hpp")
+if(_pmr_headers STREQUAL "")
+  message(FATAL_ERROR "no C++ headers were generated from the naming corpus under the PMR profile")
+endif()
+set(_pmr_probe "")
+foreach(_header IN LISTS _pmr_headers)
+  string(APPEND _pmr_probe "#include \"${_header}\"\n")
+endforeach()
+string(APPEND _pmr_probe "int main() { return 0; }\n")
+file(WRITE "${WORK_DIR}/cpp_pmr_probe.cpp" "${_pmr_probe}")
+
+llvmdsdl_run_or_fail("C++ PMR compile of the naming corpus under -Werror"
+  "${CXX_COMPILER}" -std=c++20 -Wall -Wextra ${_reserved_cxx} -Werror
+                    -I "${WORK_DIR}/cpp_pmr" -c "${WORK_DIR}/cpp_pmr_probe.cpp"
+                    -o "${WORK_DIR}/cpp_pmr_probe.o")
 
 # ---------------------------------------------------------------------------------------------------
 # Rust

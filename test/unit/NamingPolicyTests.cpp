@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -23,6 +24,7 @@ namespace
 
 using llvmdsdl::CodegenNamingLanguage;
 using llvmdsdl::codegenIsKeyword;
+using llvmdsdl::codegenIsReservedNamespaceIdentifier;
 using llvmdsdl::codegenProjectIdentifier;
 using llvmdsdl::codegenSanitizeIdentifier;
 using llvmdsdl::codegenToPascalCaseIdentifier;
@@ -181,9 +183,10 @@ bool runEmptyNameDivergenceTest()
 ///
 /// Every case below was a real duplicate declaration before this existed: a C++ struct holds its
 /// fields, its DSDL constants and the generated statics and methods in one scope; Go and Rust give a
-/// DSDL constant the same prefix as their metadata constants. C is absent on purpose -- it suffixes
-/// its metadata macros with `_` -- and so are TypeScript and Python for constants, which prefix
-/// theirs with `DSDL_` while DSDL constants take a type prefix.
+/// DSDL constant the same prefix as their metadata constants. C claims the same names with the
+/// trailing `_` it spells them with, since a macro token passes a source name's own trailing
+/// underscore through. TypeScript and Python are absent for constants, prefixing theirs with `DSDL_`
+/// while DSDL constants take a type prefix.
 bool runNamingClaimedNameTests()
 {
     struct Case
@@ -196,7 +199,7 @@ bool runNamingClaimedNameTests()
 
     // The Go and Rust cases start from a lower-case source on purpose: the claimed-name check has to
     // run after the upper-casing, or `full_name` would be compared as `full_name` and never match.
-    static const std::array<Case, 12> kCases = {{
+    static const std::array<Case, 16> kCases = {{
         {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "extent_bytes", "EXTENT_BYTES_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
@@ -207,8 +210,17 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "zoh_alias_reason", "ZOH_ALIAS_REASON_"},
         {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
         {CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
-        // Not claimed: C metadata macros carry a trailing underscore, so nothing needs escaping.
+        // C spells its metadata macros with a trailing underscore, so `FULL_NAME` is free and
+        // `FULL_NAME_` is the one that has to move -- as does the lower-case spelling of it, since a
+        // macro token is upper-cased before the claim is checked.
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME_", "FULL_NAME__"},
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "full_name_", "FULL_NAME__"},
+        // The generated `try_deserialize_view_` tests this one in an `#elif`, so a redefinition
+        // changes what the generated code does rather than only what it reports.
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "zoh_alias_eligible_", "ZOH_ALIAS_ELIGIBLE__"},
+        // `MacroName` and `ConstantName` name the same thing in C and are claimed alike.
+        {CodegenNamingLanguage::C, IdentifierRole::MacroName, "union_option_count_", "UNION_OPTION_COUNT__"},
         // A C macro token is not an identifier in the language namespace, so keywords are left alone.
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "break", "BREAK"},
     }};
@@ -276,9 +288,9 @@ bool runNamingReservedNamespaceTests()
 
 /// @brief Checks the table properties the one-pass strop depends on.
 ///
-/// Section 4.3 of docs/development/identifier-stropping.md argues that appending `_` terminates in
-/// one step because no keyword ends in `_`. That is a property of the tables, not of the algorithm,
-/// so it is asserted here rather than assumed there.
+/// Section 4.1 of docs/development/identifier-stropping.md argues that appending `_` terminates in
+/// one step because the result is never something that has to be escaped again. That is a property
+/// of the tables, not of the algorithm, so it is asserted here rather than assumed there.
 bool runNamingTableInvariantTests()
 {
     bool ok = true;
@@ -317,13 +329,29 @@ bool runNamingTableInvariantTests()
             }
         }
         // The same has to hold for the names the generated code claims, which take the same escape.
-        for (const auto role : {IdentifierRole::FieldName, IdentifierRole::ConstantName})
+        // Ending in `_` is not itself the problem -- C's metadata macros are spelled that way and
+        // have to be claimed as spelled. What must not happen is the escape landing somewhere it
+        // then has to escape again, or somewhere the language reserves.
+        for (const auto role : {IdentifierRole::FieldName, IdentifierRole::ConstantName, IdentifierRole::MacroName})
         {
-            for (const auto& owned : codegenNamingPolicy(language).runtimeOwned(role))
+            const auto owned_names = codegenNamingPolicy(language).runtimeOwned(role);
+            for (const auto& owned : owned_names)
             {
-                if (owned.ends_with("_"))
+                const std::string escaped = owned.str() + "_";
+                if (llvm::is_contained(owned_names, llvm::StringRef(escaped)))
                 {
-                    std::cerr << "claimed name \"" << owned.str() << "\" ends in an underscore\n";
+                    std::cerr << "claimed name \"" << owned.str() << "\" escapes onto another claimed name\n";
+                    ok = false;
+                }
+                if (codegenIsKeyword(language, escaped))
+                {
+                    std::cerr << "claimed name \"" << owned.str() << "\" escapes onto a keyword, which the "
+                              << "keyword stage has already run past\n";
+                    ok = false;
+                }
+                if (codegenIsReservedNamespaceIdentifier(language, escaped))
+                {
+                    std::cerr << "claimed name \"" << owned.str() << "\" escapes into a reserved namespace\n";
                     ok = false;
                 }
             }
@@ -390,6 +418,16 @@ bool runNamingInjectivityTests()
                     {
                         std::cerr << "scope is not injective: \"" << source << "\" and \"" << it->second
                                   << "\" both became \"" << identifier << "\"\n";
+                        ok = false;
+                    }
+                    // Distinctness is not enough. The repair suffix is appended after the pipeline
+                    // has run, so it is the one part of an identifier the reserved-namespace stage
+                    // never sees; a scope that emits a name the language reserves is as broken as
+                    // one that emits a duplicate, and the engine rejects such a name on input.
+                    if (codegenIsReservedNamespaceIdentifier(language, identifier))
+                    {
+                        std::cerr << "scope produced a reserved identifier: \"" << source << "\" became \""
+                                  << identifier << "\"\n";
                         ok = false;
                     }
                 }

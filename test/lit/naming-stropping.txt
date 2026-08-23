@@ -66,6 +66,16 @@
 # Every repair is reported, because it changes a name the author wrote.
 # RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
 
+# RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
+# RUN: cat %t/cpp/fixtures_naming/naming/ClaimedUnion_1_0.hpp | FileCheck %s --check-prefix=CPP_UNION
+# RUN: cat %t/go/fixtures_naming/naming/claimed_union_1_0.go | FileCheck %s --check-prefix=GO_UNION
+# RUN: cat %t/rust/src/fixtures_naming/naming/claimed_union_1_0.rs | FileCheck %s --check-prefix=RUST_UNION
+# RUN: cat %t/cpp/fixtures_naming/naming/Arrays_1_0.hpp | FileCheck %s --check-prefix=CPP_ARRAYS
+# RUN: cat %t/c/fixtures_naming/naming/Arrays_1_0.h | FileCheck %s --check-prefix=C_ARRAYS
+
+# RUN: cat %t/c/fixtures_naming/naming/TrailingUnderscores_1_0.h | FileCheck %s --check-prefix=C_TRAILING
+# RUN: cat %t/c/fixtures_naming/naming/TrailingUnion_1_0.h | FileCheck %s --check-prefix=C_TRAILING_UNION
+
 # SUMMARY: Run summary:
 # SUMMARY: files generated:
 
@@ -230,7 +240,6 @@
 # is a duplicate declaration in a language that has to compile.
 # ---------------------------------------------------------------------------------------------
 
-# RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
 # RUN: cat %t/go/fixtures_naming/naming/claimed_1_0.go | FileCheck %s --check-prefix=GO_CLAIMED
 # RUN: cat %t/rust/src/fixtures_naming/naming/claimed_1_0.rs | FileCheck %s --check-prefix=RUST_CLAIMED
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/claimed_1_0.py | FileCheck %s --check-prefix=PY_CLAIMED
@@ -238,7 +247,11 @@
 
 # A C++ struct holds its fields, its DSDL constants and the generated statics and methods together.
 # CPP_CLAIMED: std::uint8_t serialize_{};
-# CPP_CLAIMED: static constexpr const char* FULL_NAME =
+# CPP_CLAIMED: std::uint8_t to_c_{};
+# CPP_CLAIMED: std::uint8_t from_c_{};
+# CPP_CLAIMED: std::uint8_t set_memory_resource_{};
+# CPP_CLAIMED: std::uint8_t _memory_resource_{};
+# CPP_CLAIMED: static constexpr auto UNION_OPTION_COUNT_ = 8;
 # CPP_CLAIMED: static constexpr auto FULL_NAME_ = 1;
 # CPP_CLAIMED: static constexpr auto EXTENT_BYTES_ = 4;
 
@@ -275,23 +288,44 @@
 # RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
 # RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note
 
+# The obj lane publishes headers rather than a source tree, and reports the languages of the headers
+# it publishes: C alone, or C and C++ when the C++ ABI is asked for. Reporting them under `obj` gave
+# one entry holding the other's names.
+# RUN: %dsdlc --target-language obj --target-endianness little %S/fixtures_naming_obj --outdir %t/obj_c --naming-manifest %t/obj_c.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c'], sorted(d['languages'])" %t/obj_c.json
+# RUN: %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_obj --outdir %t/obj_cpp --naming-manifest %t/obj_cpp.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c','cpp'], sorted(d['languages'])" %t/obj_cpp.json
+# The C++ entry has to be the C++ names: `serialize` is a member function there and a plain field in C.
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['cpp']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize_', f" %t/obj_cpp.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['c']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize', f" %t/obj_cpp.json
+
+# A reserved name is reported once per language rather than twice under one name.
+# RUN: not %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_reserved --outdir %t/obj_res 2>&1 | FileCheck %s --check-prefix=OBJ_RESERVED
+
+# Asking what a name will become is not asking for a file: --list-outputs is what a build system runs
+# at configure time, and it implies a dry run.
+# RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/dry --dry-run --naming-manifest %t/dry.json
+# RUN: not test -e %t/dry.json
+# RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/listed --list-outputs --naming-manifest %t/listed.json > /dev/null
+# RUN: not test -e %t/listed.json
+
 # C_STROPPED: uint8_t break_;
-# C_STROPPED: uint8_t break__2;
+# C_STROPPED: uint8_t break_2;
 # C_STROPPED_BODY: obj->break_
-# C_STROPPED_BODY: obj->break__2
+# C_STROPPED_BODY: obj->break_2
 # CPP_STROPPED: std::uint8_t break_{};
-# CPP_STROPPED: std::uint8_t break__2{};
+# CPP_STROPPED: std::uint8_t break_2{};
 # RUST_STROPPED: pub break_: u8,
-# RUST_STROPPED: pub break__2: u8,
+# RUST_STROPPED: pub break_2: u8,
 
 # CPP_CHOICE: std::uint8_t break_{};
-# CPP_CHOICE: std::uint8_t break__2{};
+# CPP_CHOICE: std::uint8_t break_2{};
 # CPP_CALL: std::uint8_t break_{};
-# CPP_CALL: std::uint8_t break__2{};
+# CPP_CALL: std::uint8_t break_2{};
 # CPP_CALL: std::uint8_t class_{};
-# CPP_CALL: std::uint8_t class__2{};
+# CPP_CALL: std::uint8_t class_2{};
 # C_CALL: uint8_t break_;
-# C_CALL: uint8_t break__2;
+# C_CALL: uint8_t break_2;
 # C_CALL: uint8_t class;
 # C_CALL: uint8_t class_;
 
@@ -300,5 +334,43 @@
 # GO_POOL: const MEMBER_POOL_1_0_FOO = 2
 # GO_POOL: FOO uint8
 
-# NOTES: note: field 'break_' is emitted as 'break__2' for target language 'cpp'
+# NOTES: note: field 'break_' is emitted as 'break_2' for target language 'cpp'
 # NOTES: note: constant 'foo' is emitted as 'FOO_2' for target language 'cpp'
+
+# Every name a backend emits for some shape is claimed for every type, so a plain message is where
+# the claim is checked; the union options and the discriminator are checked where they occur.
+# CPP_UNION: std::uint8_t UNION_OPTION_COUNT_{};
+# CPP_UNION: static constexpr std::size_t UNION_OPTION_COUNT = 2U;
+# GO_UNION: Tag_ uint16
+# GO_UNION: Tag uint8
+# A Rust struct field and an associated const are separate namespaces, so neither has to move.
+# RUST_UNION: pub UNION_OPTION_COUNT: u8,
+# RUST_UNION: pub const UNION_OPTION_COUNT: usize = 2;
+
+# The two array constants C and C++ derive from a field name are allocated from the same scope as the
+# DSDL constants: `fooBar` and `FooBar` fold to one macro token, and `baz_array_capacity` is the name
+# `baz`'s capacity constant already has. In C the generated macro keeps its trailing `_`, which is
+# what separates it from a DSDL constant of the same name, so only the C++ constant moves.
+# CPP_ARRAYS: static constexpr auto BAZ_ARRAY_CAPACITY_2 = 7;
+# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY = 4U;
+# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY_2 = 5U;
+# CPP_ARRAYS: static constexpr std::size_t BAZ_ARRAY_CAPACITY = 6U;
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_BAZ_ARRAY_CAPACITY (7)
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_ 4U
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_2 5U
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_BAZ_ARRAY_CAPACITY_ 6U
+
+# A DSDL constant can carry the trailing `_` that C spells its generated macros with, so the
+# separation those macros rely on is a name to be missed rather than a reason to miss nothing. The
+# `#elif` on ZOH_ALIAS_ELIGIBLE_ in try_deserialize_view_ is why this one is not only cosmetic.
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_ "fixtures_naming.naming.TrailingUnderscores"
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE_ true
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME__ (1)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_AND_VERSION__ (2)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE__ (6)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_REASON__ (7)
+# C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT__ (9)
+# C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT_ 2U
+
+# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'c'
+# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'cpp'

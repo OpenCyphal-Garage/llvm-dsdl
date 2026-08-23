@@ -17,11 +17,44 @@
 #ifndef LLVMDSDL_CODEGEN_SECTION_NAMING_H
 #define LLVMDSDL_CODEGEN_SECTION_NAMING_H
 
+#include <cstdint>
+#include <string>
+
+#include "llvm/ADT/StringRef.h"
+
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
 namespace llvmdsdl
 {
+
+/// @brief Which of the two constants a variable- or fixed-length array field contributes.
+enum class ArrayMetadataKind : std::uint8_t
+{
+    Capacity,
+    IsVariableLength,
+};
+
+/// @brief The name an array field's generated metadata constant is declared under in a section scope.
+///
+/// C and C++ emit `<FIELD>_ARRAY_CAPACITY` and `<FIELD>_ARRAY_IS_VARIABLE_LENGTH` beside the DSDL
+/// constants, so those names have to be allocated from the same scope or nothing keeps them apart:
+/// two array fields whose macro projections are equal (`fooBar` and `FooBar`) would otherwise declare
+/// one constant twice, and a DSDL constant named `foo_array_capacity` would collide with the metadata
+/// of an array field named `foo`.
+///
+/// The name is composed from the DSDL field name rather than from its projection, so that the scope
+/// sees the collision: equal projections of the field name give equal projections here. It carries
+/// the trailing `_` that C puts on a generated macro and C++ does not, because the scope compares
+/// what is emitted -- without it, C would report a collision between a metadata macro and a DSDL
+/// constant that the trailing `_` keeps apart.
+/// @param[in] language Naming language.
+/// @param[in] fieldName DSDL field name.
+/// @param[in] kind Which constant.
+/// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
+[[nodiscard]] std::string arrayMetadataName(CodegenNamingLanguage language,
+                                            llvm::StringRef       fieldName,
+                                            ArrayMetadataKind     kind);
 
 /// @brief Builds the field-name scope for @p section in @p language.
 ///
