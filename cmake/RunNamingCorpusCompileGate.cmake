@@ -73,6 +73,25 @@ foreach(_unit IN LISTS _c_units)
                     -I "${WORK_DIR}/c" -c "${_unit}" -o "${WORK_DIR}/c_${_stem}.o")
 endforeach()
 
+# One translation unit including every generated header. Compiling each unit on its own says nothing
+# about two headers meeting, which is where a type name shared by two definitions actually bites: the
+# per-unit loop above would pass a corpus that cannot be used. The C++ leg has always done this.
+file(GLOB_RECURSE _c_headers RELATIVE "${WORK_DIR}/c" "${WORK_DIR}/c/*.h")
+if(_c_headers STREQUAL "")
+  message(FATAL_ERROR "no C headers were generated from the naming corpus")
+endif()
+set(_c_probe "")
+foreach(_header IN LISTS _c_headers)
+  string(APPEND _c_probe "#include \"${_header}\"\n")
+endforeach()
+string(APPEND _c_probe "int main(void) { return 0; }\n")
+file(WRITE "${WORK_DIR}/c_probe.c" "${_c_probe}")
+
+llvmdsdl_run_or_fail("C compile of every generated header in one unit under -Werror"
+  "${C_COMPILER}" -std=c11 -Wall -Wextra ${_reserved_c} -Werror
+                  -I "${WORK_DIR}/c" -c "${WORK_DIR}/c_probe.c"
+                  -o "${WORK_DIR}/c_probe.o")
+
 # ---------------------------------------------------------------------------------------------------
 # C++ -- a single translation unit including every generated header, so that a type whose members
 # collide with the generated statics is compiled rather than merely emitted.

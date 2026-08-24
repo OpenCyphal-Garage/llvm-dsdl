@@ -143,6 +143,24 @@ const llvm::StringSet<>& keywordSet(const CodegenNamingLanguage language)
                                                   "xor",
                                                   "xor_eq"};
 
+    // C output is compiled as C++ more often than not, so it is escaped against both sets. The
+    // object backend is the case that forced it: its C++ ABI lane includes the staged C headers from
+    // C++ translation units, and the `c_shim` header it publishes is a dual-language surface that the
+    // suite compiles both ways. `extern "C"` changes linkage, not tokenization, so a member named
+    // `class` is a parse error there however it is linked.
+    //
+    // The cost is a trailing `_` on the handful of DSDL names that are C++ keywords and not C ones --
+    // `class`, `new`, `operator`, `template`, `export` and their kin. Macro constants are unaffected:
+    // `MacroName` in C is a macro token, which is never stropped, and always carries a type prefix.
+    static const llvm::StringSet<> cKeywordsIncludingCpp = [] {
+        llvm::StringSet<> merged = cKeywords;
+        for (const auto& keyword : cppKeywords)
+        {
+            merged.insert(keyword.getKey());
+        }
+        return merged;
+    }();
+
     static const llvm::StringSet<> rustKeywords = {"as",      "break",   "const",    "continue", "crate",  "else",
                                                    "enum",    "extern",  "false",    "fn",       "for",    "if",
                                                    "impl",    "in",      "let",      "loop",     "match",  "mod",
@@ -178,7 +196,7 @@ const llvm::StringSet<>& keywordSet(const CodegenNamingLanguage language)
     switch (language)
     {
     case CodegenNamingLanguage::C:
-        return cKeywords;
+        return cKeywordsIncludingCpp;
     case CodegenNamingLanguage::Cpp:
         return cppKeywords;
     case CodegenNamingLanguage::Rust:
@@ -556,8 +574,13 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
     }
     // Only a DSDL name being named: a token this generator constructed carries whatever shape the
     // emitter gave it, and encoding it here would mangle a symbol that has to match something else.
+    //
+    // A file stem is exempt because it is not an identifier: `__Foo_1_0.h` sits in no namespace the
+    // language reserves, and encoding it would rename a file for a hazard that does not exist there.
+    // The C and C++ emitters have always written the stem unencoded; what this fixes is the naming
+    // manifest, which reported the encoded spelling and so named a header that is not on disk.
     bool reservedEncoded = false;
-    if (role.has_value())
+    if (role.has_value() && (*role != IdentifierRole::FileStem))
     {
         out = encodeReservedNamespace(language, out, reservedEncoded);
     }

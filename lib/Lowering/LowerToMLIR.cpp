@@ -40,6 +40,7 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -49,18 +50,6 @@ namespace llvmdsdl
 namespace
 {
 
-std::string mangleSymbol(std::string fullName, std::uint32_t major, std::uint32_t minor)
-{
-    for (char& c : fullName)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
-}
-
 std::string fieldKind(const SemanticField& f)
 {
     return f.isPadding ? "padding" : "field";
@@ -68,23 +57,12 @@ std::string fieldKind(const SemanticField& f)
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    std::string out;
-    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
-                                        IdentifierRole::NamespaceName,
-                                        info.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
-    return out;
+    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    false);
 }
 
 std::string cTypeNameFromRef(const SemanticTypeRef& ref)
@@ -110,7 +88,8 @@ std::string cTypeNameFromRef(const SemanticTypeRef& ref)
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return info.shortName + "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion) + ".h";
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           ".h";
 }
 
 std::string relativeHeaderPath(const DiscoveredDefinition& info)
@@ -211,8 +190,9 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
         mlir::OperationState state(loc, "dsdl.schema");
         state.addAttribute("sym_name",
-                           builder.getStringAttr(
-                               mangleSymbol(def.info.fullName, def.info.majorVersion, def.info.minorVersion)));
+                           builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
+                                                                            def.info.majorVersion,
+                                                                            def.info.minorVersion)));
         state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));

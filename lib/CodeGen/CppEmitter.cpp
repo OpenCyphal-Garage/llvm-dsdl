@@ -47,6 +47,7 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
@@ -76,14 +77,18 @@ namespace
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}.hpp", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
+           ".hpp";
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    std::string g = "LLVMDSDL_CPP_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
-                    std::to_string(info.minorVersion) + "_HPP";
-    return codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::MacroName, g);
+    return renderIncludeGuard(CodegenNamingLanguage::Cpp,
+                              "LLVMDSDL_CPP_",
+                              info.fullName,
+                              info.majorVersion,
+                              info.minorVersion,
+                              "_HPP");
 }
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
@@ -207,14 +212,13 @@ public:
 
     std::string cppTypeName(const DiscoveredDefinition& info) const
     {
-        std::string out =
-            codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, info.shortName);
         const auto it = versionCountByFullName_.find(info.fullName);
-        if (it != versionCountByFullName_.end() && it->second > 1U)
-        {
-            out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
-        }
-        return out;
+        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        (it != versionCountByFullName_.end()) && (it->second > 1U));
     }
 
     std::string cppTypeName(const SemanticDefinition& def) const
@@ -229,9 +233,14 @@ public:
             return cppTypeName(*def);
         }
 
-        std::string out = codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, ref.shortName);
-        out += "_" + std::to_string(ref.majorVersion) + "_" + std::to_string(ref.minorVersion);
-        return out;
+        // Nothing to count versions against, so assume the name is ambiguous and spell the version.
+        // Guessing the other way would name a type that does not exist if it turns out there are two.
+        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+                                        ref.namespaceComponents,
+                                        ref.shortName,
+                                        ref.majorVersion,
+                                        ref.minorVersion,
+                                        true);
     }
 
     std::string cppQualifiedTypeName(const SemanticDefinition& def) const

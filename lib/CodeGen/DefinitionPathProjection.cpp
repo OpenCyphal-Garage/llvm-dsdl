@@ -17,6 +17,8 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 
+#include "llvmdsdl/Support/DefinitionNaming.h"
+
 namespace llvmdsdl
 {
 namespace
@@ -63,8 +65,7 @@ std::string renderVersionedFileStem(const CodegenNamingLanguage language,
                                     const std::uint32_t         majorVersion,
                                     const std::uint32_t         minorVersion)
 {
-    return codegenProjectIdentifier(language, IdentifierRole::FileStem, shortName) + "_" +
-           std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
+    return renderDefinitionFileStem(language, shortName, majorVersion, minorVersion);
 }
 
 std::filesystem::path renderNamespaceRelativePath(const CodegenNamingLanguage     language,

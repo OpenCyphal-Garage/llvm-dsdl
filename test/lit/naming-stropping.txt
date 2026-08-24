@@ -53,7 +53,7 @@
 # RUN: cat %t/rust/src/fixtures_naming/naming/stropped_1_0.rs | FileCheck %s --check-prefix=RUST_STROPPED
 
 # The same collision through the union and service paths, which each emitter renders separately. In
-# C the response fields keep their spelling, because `class` is not a C keyword and nothing collides.
+# both languages the response fields collide too: C escapes against C++'s keywords as well as its own.
 # RUN: cat %t/cpp/fixtures_naming/naming/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP_CHOICE
 # RUN: cat %t/cpp/fixtures_naming/naming/Call_1_0.hpp | FileCheck %s --check-prefix=CPP_CALL
 # RUN: cat %t/c/fixtures_naming/naming/Call_1_0.h | FileCheck %s --check-prefix=C_CALL
@@ -79,13 +79,17 @@
 # SUMMARY: Run summary:
 # SUMMARY: files generated:
 
-# C escapes only what C reserves: `class`, `operator` and `export` are ordinary identifiers here.
+# C escapes against C++'s keywords as well as its own, because generated C is compiled as C++ more
+# often than not -- the object backend does it to its own headers. So `class`, `operator` and
+# `export` are escaped here even though C reserves none of them; `func` and `impl` belong to neither
+# language and are left alone.
 # C_KEYWORDS: uint8_t break_;
 # C_KEYWORDS: uint8_t func;
-# C_KEYWORDS: uint8_t class;
+# C_KEYWORDS: uint8_t impl;
+# C_KEYWORDS: uint8_t class_;
 # C_KEYWORDS: uint8_t typedef_;
-# C_KEYWORDS: uint8_t operator;
-# C_KEYWORDS: uint8_t export;
+# C_KEYWORDS: uint8_t operator_;
+# C_KEYWORDS: uint8_t export_;
 
 # Field names reach C verbatim, so the three case variants stay distinct without disambiguation.
 # C_FOLDS: uint8_t fooBar;
@@ -326,8 +330,8 @@
 # CPP_CALL: std::uint8_t class_2{};
 # C_CALL: uint8_t break_;
 # C_CALL: uint8_t break_2;
-# C_CALL: uint8_t class;
 # C_CALL: uint8_t class_;
+# C_CALL: uint8_t class_2;
 
 # CPP_POOL: std::uint8_t FOO{};
 # CPP_POOL: static constexpr auto FOO_2 = 2;

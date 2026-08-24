@@ -1,23 +1,30 @@
 # Identifier naming defects
 
-Nineteen defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
+Twenty-one defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
 `f8c2fad..docs/roadmap-g8-scorecard`; [D18](#d18) was found while preparing the fix for root cause
-[A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given, and
-[D19](#d19) by a fixture added while fixing [A](#a-three-emitters-have-no-field-scope). Each is
-reproduced against a built `dsdlc`; the transcripts are the generated output quoted under each
-entry.
+[A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given; [D19](#d19) by a
+fixture added while fixing [A](#a-three-emitters-have-no-field-scope); [D20](#d20) while
+reproducing [D5](#d5); and [D21](#d21) while consolidating the file-stem producers under root cause
+[D](#d-composed-names-are-spliced-at-the-call-site). Each is reproduced against a built `dsdlc`; the transcripts are the generated
+output quoted under each entry.
 
 Design record: [identifier-stropping.md](docs/development/identifier-stropping.md).
 
-Twelve of the eighteen share three root causes (§A, §B, §C). Fixing those closes D1–D4, D6–D9 and
-D11–D14.
+Twelve of the twenty share three root causes (§A, §B, §C), which between them closed D1–D4 and
+D7–D14. A fourth, [§D](#d-composed-names-are-spliced-at-the-call-site), was found by asking why the version
+rule behind [D5](#d5) and [D20](#d20) is a per-emitter decision at all. Its mechanism is fixed; the
+policy that sits on it is deferred.
 
 **Fixed so far:** [D18](#d18) (fork option 2), root causes
 [A](#a-three-emitters-have-no-field-scope) — in all four backends that lacked a scope, not the three
 the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
 [C](#c-c-claims-nothing-on-a-premise-that-is-false), and the driver fixes D6, D15 and D16. With them
-D1–D4 and D6–D18. Remaining: [D5](#d5) and [D19](#d19), both of which need a decision rather than an
-implementation.
+D1–D4, D6–D19 and [D21](#d21), plus the mechanism half of root cause
+[D](#d-composed-names-are-spliced-at-the-call-site).
+
+**Deferred:** [D5](#d5) and [D20](#d20) only. Both turn on a versioning scheme, and that scheme
+should be settled after the newest-version-only feature rather than before it — see
+[Deferred](#deferred-the-two-that-turn-on-a-versioning-scheme).
 
 | ID | Severity | Area | Defect |
 |---|---|---|---|
@@ -26,7 +33,7 @@ implementation.
 | [D3](#d3) | High | engine | ~~Go's union `Tag` field is missing from the claimed-name table~~ |
 | [D4](#d4) | High | engine + C | ~~C claims no names on a false premise about trailing underscores~~ |
 | [D5](#d5) | High | C++ | `<Service>_Request` collides with a sibling type and Discovery cannot see it |
-| [D6](#d6) | High | driver | `obj` writes only the C half of the naming manifest |
+| [D6](#d6) | High | driver | ~~`obj` writes only the C half of the naming manifest~~ |
 | [D7](#d7) | High | tests | ~~The claimed-name test pins the false premise from D4~~ |
 | [D8](#d8) | High | docs | ~~The design record and a golden both describe repair that does not happen~~ |
 | [D9](#d9) | Medium | engine | ~~The scope's `_2` suffix bypasses the reserved-namespace encoder~~ |
@@ -35,11 +42,13 @@ implementation.
 | [D12](#d12) | Medium | C/C++ | ~~Array-metadata names are projected outside every scope~~ |
 | [D13](#d13) | Medium | obj-cpp | ~~`to_c`/`from_c` are missing from the claimed-name table~~ |
 | [D14](#d14) | Medium | golden | ~~`naming-roles.txt` pins a C++ identifier containing `__`~~ |
-| [D15](#d15) | Medium | driver | `obj` reports reserved-identifier errors twice, verbatim |
-| [D16](#d16) | Medium | driver | `--naming-manifest` writes during `--dry-run` |
+| [D15](#d15) | Medium | driver | ~~`obj` reports reserved-identifier errors twice, verbatim~~ |
+| [D16](#d16) | Medium | driver | ~~`--naming-manifest` writes during `--dry-run`~~ |
 | [D17](#d17) | Low | docs | ~~The C emitter comment repeats the D4 premise~~ |
 | [D18](#d18) | High | lowering | ~~A sixth copy of the naming policy in `LowerToMLIR` makes `--encode-reserved-identifiers` emit C that does not compile~~ |
-| [D19](#d19) | High | obj | `--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build |
+| [D19](#d19) | High | obj | ~~`--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build~~ |
+| [D20](#d20) | High | C/C++/obj | Type versions are not always in the type name, so two versions of one DSDL type collide |
+| [D21](#d21) | Medium | manifest | ~~The manifest reports an encoded C/C++ file stem that is not the file on disk~~ |
 
 ---
 
@@ -123,6 +132,88 @@ to be spelled the way C emits them. The test now asserts what the pipeline needs
 keyword or a claimed name lands on neither another keyword, nor another claimed name, nor a reserved
 namespace. `FULL_NAME_` escapes to `FULL_NAME__`, which is claimed by nothing and reserved in neither
 C nor C++, C reserving only a *leading* `__`.
+
+### D. Composed names are spliced at the call site
+
+The engine answers one question: how is *this one name* spelled in language L. Roles, keywords,
+claimed names, reserved namespaces — all of it is about a single identifier, and all of it is shared.
+
+Nothing owns the next question up. A definition does not have *a* name; it has a type name, a file
+stem, an include guard and a symbol base, each built from the same parts — namespace components,
+short name, major and minor version — under a rule that varies by language. Those are composed by
+concatenation wherever they happen to be needed.
+
+`DefinitionPathProjection.h` is where that composition was meant to live. `renderVersionedTypeName`
+projects the short name for the language and appends `_<major>_<minor>`; `renderVersionedFileStem`
+does the same for a stem. Three files call them.
+
+```console
+$ grep -rE 'to_string\([A-Za-z.]*majorVersion\)|formatv\("\{0\}_\{1\}_\{2\}' lib tools \
+    | grep -v DefinitionPathProjection.cpp | wc -l
+51
+$ grep -rl 'renderVersionedTypeName\|renderVersionedFileStem' lib tools | grep -v DefinitionPathProjection
+lib/CodeGen/NamingManifest.cpp
+lib/CodeGen/PythonEmitter.cpp
+lib/CodeGen/TsEmitter.cpp
+```
+
+Fifty-one hand-written splices across seventeen files, against three users of the helper. Not all
+fifty-one are type names — file stems, include guards, symbol bases and index keys are in there too —
+and that is the point rather than a caveat: one rule, applied to four or five different composed
+names, written out fifty-one times.
+
+Two of them are not variations at all. `goTypeName` (`GoEmitter.cpp:212`) is
+`renderVersionedTypeName(Go, …)` with the language hardcoded, expression for expression. And
+`cTypeNameFromInfo` exists three times — `CEmitter.cpp:125`, `CppObjectAbiEmitter.cpp:91`,
+`LowerToMLIR.cpp:69` — byte-identical after whitespace normalisation, in three different libraries.
+
+**Why this is a root cause rather than untidiness.** A rule with no home is made privately by whoever
+needs it first. C++ decides whether a type name carries its version from `versionCountByFullName_`, a
+private member of the C++ emitter populated from its own definition list. Nothing outside that class
+can consult it, which is why:
+
+- `Discovery`'s cross-type collision check cannot see the name C++ will actually emit, so [D5](#d5)
+  is invisible to the check that exists to catch exactly that;
+- `CppObjectAbiEmitter`, which also emits C++ structs, does not know the rule exists and versions
+  nothing — one arm of [D20](#d20);
+- `CEmitter` versions nothing either, the other and worse arm, which collides on this repository's
+  own showroom corpus.
+
+[D18](#d18) was the same shape one level down: a fourth copy of C naming, in the lowering layer, that
+had drifted from the other three and was found only because the escape hatch it broke was under test.
+It is closed and the three copies above now agree — but nothing keeps them agreeing.
+
+Covers [D5](#d5) and [D20](#d20); [D18](#d18) was an instance of it.
+
+**Fix.** A per-language table for a definition's names, the shape `rolePolicy()` already has for a
+single name's spelling: given a definition and a language, answer type name, qualified type name,
+file stem, include guard and symbol base. "Does the type name carry its version" becomes a field in
+that table rather than code in six emitters, and [D5](#d5) and [D20](#d20) become a one-line edit.
+
+Two things it should not try to be:
+
+- **Uniform.** Rust qualifies its type name with the namespace (`p_ns_Bar_1_0`), C joins components
+  with `__`, Go and TypeScript do not qualify at all. The table is parameterised per language, the way
+  the role table is; it is not one function.
+- **The identity key.** Some of the fifty-one sites build depfile keys and LSP index keys, which want
+  a stable identifier for a definition rather than one a caller writes. That is a different question,
+  and folding the two together would be its own defect. The layer should cover generated identifiers
+  and leave identity keys alone.
+
+This is larger than either defect under it and touches every emitter, so it is worth deciding as a
+piece of work rather than arriving at through [D5](#d5).
+
+**Mechanism landed; policy deferred.** `Support/DefinitionNaming.h` now answers a definition's type
+name, file stem, include guard, symbol base and section suffix from a per-language table, and every
+in-scope producer delegates to it: `mangleSymbol` x3, `sectionSuffix` x4, `cTypeNameFromInfo` x3,
+`goTypeName`, `rustTypeName`, `rustModuleName`, `cppTypeName`, `cppTypeNameFromInfo`,
+`shimTypeNameFromInfo`, eleven file-name builders and five include guards. Of the 51 hand-written
+version splices, 11 remain and all 11 are the identity keys, the LSP source-filename builder and two
+integer `DSDL_VERSION_MAJOR` values -- the categories held out above. Output is byte-identical apart
+from [D21](#d21), which the consolidation exposed and which is fixed.
+
+What is *not* done is the policy on top: [D5](#d5), [D19](#d19) and [D20](#d20) are still open. See
+the note below on why.
 
 ---
 
@@ -258,6 +349,7 @@ now.
 
 **`<Service>_Request` collides with a sibling type and Discovery cannot see it.**
 High · `lib/CodeGen/CppEmitter.cpp:1975`, `lib/CodeGen/CppObjectAbiEmitter.cpp:361`
+· root cause [D](#d-composed-names-are-spliced-at-the-call-site)
 
 The C++ service-section rename `__Request` → `_Request` made a previously impossible collision
 reachable: before it, the DSDL spelling needed to collide was `Foo__Request`, which the
@@ -280,10 +372,25 @@ a redefinition error. `Discovery.cpp:267-315` keys on each definition's own shor
 `Foo_Request` — so the cross-type check does not fire, and §6 of the design record's guarantee that
 cross-type collisions are rejected does not hold.
 
-**Fix.** Needs a decision. The suggested mechanism: have a service register `<Type>_Request` and
-`<Type>_Response` as additional output names in the same collision keyspace, so the pair is rejected
-by the existing path. The alternative — reverting to a separator no DSDL name can produce — reopens
-the `-Wreserved-identifier` problem the rename solved.
+The collision is C++-only. The other five put the version inside the type name — `Foo_1_0_Request`
+for the service section against `FooRequest_1_0` or `Foo_Request_1_0` for the message — so nothing
+meets. C++ does not always, which is [D20](#d20) and is what makes this reachable.
+
+**Fix.** Needs a decision. Three shapes:
+
+1. **Register the derived names in the collision keyspace.** A service registers `<Type>_Request` and
+   `<Type>_Response` beside its own name, and the existing cross-type path rejects the pair with the
+   existing diagnostic. Smallest change. Conformant DSDL that five backends handle becomes an error
+   whenever C++ is selected — the §8.1 asymmetry, which the design already accepts — and the keys have
+   to be computed with the same version rule the emitter uses, so the check stays coupled to it.
+2. **Always version the C++ type name**, which is [D20](#d20)'s fix. D5 then stops existing rather
+   than being rejected: `Foo_1_0_Request` and `Foo_Request_1_0` are different names. Costs an ABI
+   break for current C++ users, softened by a `using <Type> = <Type>_<newest>;` alias — the trick the
+   service arm already uses for `using Foo = Foo_Request;`.
+3. **A separator no DSDL name can produce**, reverting `_Request` to `__Request`. Already rejected:
+   `__` is C++-reserved and `-Wreserved-identifier` flags it.
+
+Deferred pending that decision; nothing here is implemented.
 
 ### D6
 
@@ -667,6 +774,153 @@ covers the six source backends rather than `obj`, which is why it has gone unnot
 
 Whichever way it goes, the compile gate should generate the corpus through `obj` as well as the six.
 
+**Fixed** by the first option, applied to all C output rather than to the lane: C's keyword set is
+now the union of C's and C++'s. The deciding evidence was that the published `c_shim/*_c_shim.h` is a
+genuine dual-language surface — written C-clean and compiled as C by
+`test/integration/RunObjCppBackendSmoke.cmake:240-247`, and as C++ by the lane itself — and that the
+plain C header `p/ns/<T>_1_0.h` is published in that lane too, so a lane-local rule would give one
+DSDL type two different published C headers. `extern "C"` changes linkage, not tokenization.
+
+`class`, `new`, `operator` and `export` all now generate and compile; `template` never reached the
+emitters, being rejected by the frontend as a DSDL reserved identifier. The cost is a trailing `_` on
+C field and type names that are C++ keywords and not C ones — five rows of `naming-map.txt` and five
+of `naming-roles.txt`. Macro constants are untouched: `MacroName` in C is never stropped and always
+carries a type prefix.
+
+**It changes one name in the standard corpus, and that is the point.** `uavcan.register.Access` has a
+field named `mutable`, so `uavcan/register/Access_1_0.h` declared `bool mutable;` — a header that
+could not be included from C++ at all, which is an ordinary thing to do with a generated C header. It
+is now `mutable_` and the header compiles as C++. The embedded catalog moves by three lines
+accordingly. This is a C ABI change for one standard type; anything reading `.mutable` needs the
+underscore.
+
+The gate item is done too: `cmake/RunNamingCorpusCompileGate.cmake` now compiles every generated C
+header in one translation unit, which its own comment had promised and which no code delivered. That
+is the probe that catches two definitions sharing a type name; the per-unit loop above it cannot,
+because a collision needs two headers to meet.
+
+### D20
+
+**C, C++ and obj-cpp do not always put a type's version in its type name, so two versions of one
+DSDL type meet.**
+High · `lib/CodeGen/CppEmitter.cpp:208-218`, `lib/Lowering/LowerToMLIR.cpp:69-88`,
+`lib/CodeGen/CppObjectAbiEmitter.cpp:112-115` · root cause [D](#d-composed-names-are-spliced-at-the-call-site)
+
+Found while reproducing [D5](#d5). Rust, Go, TypeScript and Python name a type
+`<ShortName>_<major>_<minor>` unconditionally. The other three do not, in three different ways.
+
+**C never includes it.** `cTypeNameFromInfo` builds `<ns>__<ShortName>` from the namespace components
+and the short name, and stops there.
+
+```
+ns/Bar.1.0.dsdl    uint8  a
+ns/Bar.2.0.dsdl    uint16 a
+```
+
+```console
+$ dsdlc --target-language c ns --outdir out          # exit 0
+$ grep -h 'typedef struct' out/p/ns/Bar_?_0.h
+typedef struct p__ns__Bar
+typedef struct p__ns__Bar
+$ clang -std=c11 -I out -fsyntax-only both.c         # #include both headers
+error: redefinition of 'p__ns__Bar'
+error: typedef redefinition with different types
+error: redefinition of 'p__ns__Bar__serialize_'
+```
+
+Six errors: the struct, the typedef and every generated function. The two headers have distinct
+include guards, so both are admitted and then collide.
+
+This is not a contrived corpus. `uavcan.diagnostic.Record` has 1.0 and 1.1, and the embedded catalog
+records `c_type_name = "uavcan__diagnostic__Record"` for both. So does this repository's own showroom,
+which ships `lanyard.flight.VehicleState` at 1.0, 1.1 and 2.0 to demonstrate version coexistence:
+
+```console
+$ dsdlc --target-language c examples/showroom/dsdl/lanyard --outdir out    # exit 0
+$ grep -h 'typedef struct' out/lanyard/flight/VehicleState_*.h | sort | uniq -c
+   3 typedef struct lanyard__flight__VehicleState
+$ clang -std=c11 -I out -fsyntax-only both.c    # includes 1.0 and 2.0
+6 errors
+```
+
+The same two headers under C++ compile clean, because three versions are present and C++ suffixes
+when they are. It stays latent in C only because nothing compiles two versions of one type into one
+translation unit.
+
+**C++ includes it only when more than one version is present**, from `versionCountByFullName_` — an
+undocumented rule, carrying no comment in the emitter and no mention in the reference docs. It avoids
+the collision, and the showroom's three `VehicleState` versions do compile together. What it costs is
+that the type name is a function of the invocation rather than of the definition:
+
+```console
+$ dsdlc --target-language cpp ns --cpp-profile std --outdir out   # ns holds Bar.1.0 only
+$ grep -oE '^struct [A-Za-z0-9_]+' out/p/ns/Bar_1_0.hpp
+struct Bar
+$ # someone adds ns/Bar.2.0.dsdl, and regenerates
+struct Bar_1_0
+```
+
+No alias is emitted, so every caller of `p::ns::Bar` stops compiling the day a second version lands
+in the namespace, with nothing to say why. The unresolved-reference path two functions below
+(`CppEmitter.cpp:232-234`) appends the version unconditionally, so a resolved single-version
+reference and an unresolved one already disagree.
+
+**obj-cpp never includes it**, `cppTypeNameFromInfo` being the bare projection of the short name. Two
+versions give one `struct Bar` in the `abi` namespace, and the staged C headers it includes carry C's
+collision as well:
+
+```console
+$ dsdlc --target-language obj --target-endianness little --obj-abi-language cpp ns --outdir out
+$ grep -h '^struct' out/abi/p/ns/Bar_?_0_abi.hpp
+struct Bar
+struct Bar
+```
+
+**Fix.** Needs a decision, and it is the same one [D5](#d5) turns on. Versioning all three
+unconditionally is the option that makes the six agree and removes both the collision and the
+instability; it is an ABI break for C and C++, mitigable with a `using`/`typedef` alias for the
+newest version of each type. Whatever is chosen, `cppTypeName`'s dependence on the compiled set
+should not survive it: a generated identifier that changes when an unrelated file appears is not one
+a caller can write against.
+
+Where the decision is *made* is root cause [D](#d-composed-names-are-spliced-at-the-call-site). Three emitters answer this
+question today because there is no one place that holds it; fixing the three in place would leave
+the fourth copy free to drift, which is how [D18](#d18) happened.
+
+The compile gate would not have caught any of this — it compiles each header standalone and the
+corpus has no type with two versions.
+
+### D21
+
+**The manifest reports an encoded C/C++ file stem that is not the file on disk.**
+Medium · `lib/Support/NamingPolicy.cpp` (the reserved-namespace stage)
+
+Found while consolidating the file-stem producers under root cause
+[D](#d-composed-names-are-spliced-at-the-call-site). The C and C++ emitters build a header name from
+the raw DSDL short name; the manifest builds it with `renderVersionedFileStem`, which projects under
+`IdentifierRole::FileStem`. Those agree for every name except one in a reserved namespace, because
+the projection ends with the reserved-namespace encoder and the emitters never ran it.
+
+```
+ns/__Foo.1.0.dsdl
+```
+
+```console
+$ dsdlc --target-language c ns --outdir out --naming-manifest n.json --encode-reserved-identifiers
+$ ls out/p/ns/
+__Foo_1_0.h  __Foo_1_0.c
+$ python3 -c "import json;print(json.load(open('n.json'))['languages']['c']['p.ns.__Foo.1.0']['file_stem'])"
+zX005FzX005FFoo_1_0
+```
+
+A build rule reading the manifest to find the header looks for a file that is not there. §9 of the
+design record claims `file_stem` is exact for all six.
+
+**Fixed.** The reserved-namespace stage no longer runs for `IdentifierRole::FileStem`. A file name is
+not an identifier — `__Foo_1_0.h` sits in no namespace C or C++ reserves — so the encoding was
+repairing a hazard that does not exist there, and the emitters were right to skip it. Four rows of
+`naming-roles.txt` move, all in the `file_stem` column, all for names that start with an underscore.
+
 ---
 
 ## The D18 fork
@@ -689,6 +943,37 @@ Three ways to make the C declaration and the C serialiser agree.
 Option 2 is the right end state and option 3 is the cheapest correct one. Option 1 alone fixes the
 escape hatch without fixing A.
 
+## Deferred: the two that turn on a versioning scheme
+
+[D5](#d5) and [D20](#d20) are not fixed. ([D19](#d19) was grouped with them until its fix turned out
+to be independent of the versioning question; it is done.) The mechanism they need landed with root cause
+[D](#d-composed-names-are-spliced-at-the-call-site); the policy did not, deliberately.
+
+The design reached before stopping: two modes rather than one rule, because whether a type name
+carries its version is a property of *the consuming code*, not of the corpus. Code that speaks one
+version of a type reads better with `p::ns::Bar`; code that deliberately handles two versions side by
+side needs `Bar_1_0` and `Bar_2_0` to keep them apart in its own source. So: unversioned by default,
+a flag for always-versioned, and in both the name is a function of the definition alone. C++'s
+current "version only when the corpus is ambiguous" is deleted rather than kept, since it makes the
+identifier depend on what else was in the invocation.
+
+What "unversioned" costs is not uniform, because what scopes a generated type differs:
+
+| Language | Scope holding the type | Two versions, unversioned |
+|---|---|---|
+| Rust, TypeScript, Python | module per type *and version* | safe |
+| C, C++ | global / namespace shared by versions | safe to generate; breaks only if a consumer includes both in one translation unit |
+| Go | package per namespace, shared by versions | cannot be generated -- the package will not compile |
+
+Go is what stalled it. The standard `uavcan` corpus has 20 full names with more than one version, so
+an unversioned default makes `--target-language go` fail on the most common input until the flag is
+passed.
+
+**The way out is a separate feature: generate the newest version of each type by default.** That
+removes the collision at its source for every language rather than working around it per backend,
+and it changes what D5, D19 and D20 should do -- so settling them first would be settling them
+against a corpus shape that is about to change. They wait for it.
+
 ## Suggested order
 
 0. ~~**[D18](#d18)** — settle the fork above.~~ Settled as option 2 and landed.
@@ -700,7 +985,7 @@ escape hatch without fixing A.
    that catches D9 to nothing, and turning it on made the corpus fail to build.
 4. ~~**[C](#c-c-claims-nothing-on-a-premise-that-is-false)** — D4, D7, D17.~~ Landed.
 5. ~~**D6**, **D15**, **D16** — driver fixes, independent of the rest.~~ Landed.
-6. **D5** and **D19** last: both need a mechanism decision, not an implementation.
+6. **D5** and **D20** — deferred; see below.
 
 Extend `test/lit/fixtures_naming` with a union, a service, a PMR-relevant type and the
 trailing-underscore constants, so the corpus compile gate covers the shapes the tables were derived

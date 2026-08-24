@@ -94,6 +94,24 @@ helpers return one shared scope there, while the other five put constants where 
 them and get a pool each. Every emitter and the naming manifest go through these, which is what makes
 the manifest a report of what a backend writes rather than a second opinion about it.
 
+### 3.1 One name, and the names built from a definition
+
+The engine above answers how *one* name is spelled. A definition also has names built from its parts
+-- its type name, its output file stem, its include guard, its linkage symbol base -- and those are
+composed rather than projected. `Support/DefinitionNaming.h` answers them, from a per-language table
+of the same shape as the role table: how the namespace is joined into the type name, whether the
+version is part of it, and whether the composed result is re-projected.
+
+It takes parts rather than a `DiscoveredDefinition` because `llvmdsdlFrontend` links only
+`llvmdsdlSupport`, and `Discovery` -- which has to agree with the emitters about what they will emit
+-- is in the frontend. `CodeGen/DefinitionPathProjection.h` holds the overloads that take the richer
+types and delegates to it.
+
+Before this existed each emitter composed its own. That is how `mangleSymbol` came to exist three
+times verbatim across three libraries, with the C backend linking only because all three agreed with
+their consumer by coincidence of identical source text; and how C, C++ and the object backend arrived
+at three different answers to whether a type name carries its version.
+
 The C backend is the one place where a scope crosses a layer. Its struct declaration reads the scope
 directly; its serializer bodies are emitted from MLIR by `convert-dsdl-to-emitc`, which reads member
 names from the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
@@ -167,6 +185,22 @@ One `LanguageNamingPolicy` per language, data only:
 | `caseByRole` | role → Snake / Pascal / Preserve, plus escape, strop and upper-case flags |
 | `keywords` | hard-reserved in every role |
 | `runtimeOwned` | names already taken in the scope, by the generated code or the language runtime |
+
+### 5.0 C escapes against C++'s keywords too
+
+Generated C is compiled as C++ more often than not. The object backend does it to its own staged
+headers, and the `c_shim` header it publishes is a dual-language surface -- written C-clean, compiled
+as C by the test suite and as C++ by the lane. `extern "C"` changes linkage, not tokenization, so a
+member named `class` is a parse error there whatever the linkage says.
+
+So C's keyword set is the union of C's and C++'s. The cost is a trailing `_` on the DSDL names that
+are C++ keywords and not C ones -- `class`, `new`, `operator`, `export` and their kin -- in C field
+and type names. Macro constants are unaffected: `ConstantName` in C is a macro token, which is never
+stropped, and always carries a `<Type>_` prefix.
+
+The alternative, escaping only in the object lane, was rejected: that lane publishes the plain C
+header too, so one DSDL type would get two different published C headers depending on which lane
+produced it.
 
 ### 5.1 Role policies are per-language and uneven
 

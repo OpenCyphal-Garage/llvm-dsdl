@@ -63,6 +63,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
@@ -75,37 +76,14 @@ namespace
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}.h", info.shortName, info.majorVersion, info.minorVersion).str();
-}
-
-std::string mangleSymbol(std::string fullName, std::uint32_t major, std::uint32_t minor)
-{
-    for (char& c : fullName)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
-}
-
-std::string sectionSuffix(const std::string& sectionName)
-{
-    if (sectionName == "request")
-    {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
-    }
-    return "";
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           ".h";
 }
 
 std::string sectionIRFunctionStem(const SemanticDefinition& def, const std::string& sectionName)
 {
-    return mangleSymbol(def.info.fullName, def.info.majorVersion, def.info.minorVersion) + sectionSuffix(sectionName);
+    return renderDefinitionSymbolBase(def.info.fullName, def.info.majorVersion, def.info.minorVersion) +
+           renderSectionSymbolSuffix(sectionName);
 }
 
 std::string implFileName(const DiscoveredDefinition& info)
@@ -124,30 +102,22 @@ std::string implFileName(const DiscoveredDefinition& info)
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    std::string out;
-    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
-                                        IdentifierRole::NamespaceName,
-                                        info.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
-    return out;
+    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    false);
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    std::string g = "LLVMDSDL_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
-                    std::to_string(info.minorVersion) + "_H";
-    return codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::MacroName, g);
+    return renderIncludeGuard(CodegenNamingLanguage::C,
+                              "LLVMDSDL_",
+                              info.fullName,
+                              info.majorVersion,
+                              info.minorVersion,
+                              "_H");
 }
 
 std::string valueToCExpr(const TypeExprAST& type, const Value& value)

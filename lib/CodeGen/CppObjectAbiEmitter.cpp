@@ -17,6 +17,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
@@ -65,95 +66,68 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}.h", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           ".h";
 }
 
 std::string cppHeaderFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}_abi.hpp", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
+           "_abi.hpp";
 }
 
 std::string cppSourceFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}_abi.cpp", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
+           "_abi.cpp";
 }
 
 std::string shimHeaderFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}_c_shim.h", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           "_c_shim.h";
 }
 
 std::string shimSourceFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}_c_shim.cpp", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           "_c_shim.cpp";
 }
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    std::string out;
-    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
-                                        IdentifierRole::NamespaceName,
-                                        info.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
-    return out;
+    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    false);
 }
 
 std::string cppTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    return codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, info.shortName);
+    // `false` reproduces what this emitter did before it shared the rule: it never versioned its
+    // type name, and never had the version count to decide with. It is the C++ policy that decides
+    // now, so the two lanes move together the next time that policy changes.
+    return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    false);
 }
 
 std::string shimTypeNameFromInfo(const DiscoveredDefinition& info)
 {
-    std::string out = "llvmdsdl_cppabi";
-    for (const auto& ns : info.namespaceComponents)
-    {
-        out += "__" + codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::NamespaceName, ns);
-    }
-    out += "__" + codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, info.shortName);
-    return out;
-}
-
-std::string mangleSymbol(std::string fullName, const std::uint32_t major, const std::uint32_t minor)
-{
-    for (char& c : fullName)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
-}
-
-std::string sectionSuffix(const std::string& sectionName)
-{
-    if (sectionName == "request")
-    {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
-    }
-    return "";
+    // The C type name under a prefix that keeps the shim's struct distinct from the C backend's own.
+    return "llvmdsdl_cppabi__" + cTypeNameFromInfo(info);
 }
 
 std::string shimSymbolStem(const SemanticDefinition& def, const std::string& sectionName)
 {
-    return "llvmdsdl_cppabi_" + mangleSymbol(def.info.fullName, def.info.majorVersion, def.info.minorVersion) +
-           sectionSuffix(sectionName);
+    return "llvmdsdl_cppabi_" +
+           renderDefinitionSymbolBase(def.info.fullName, def.info.majorVersion, def.info.minorVersion) +
+           renderSectionSymbolSuffix(sectionName);
 }
 
 std::string canonicalQualifiedPrefix(const DiscoveredDefinition& info)
@@ -199,7 +173,8 @@ std::filesystem::path shimSourcePath(const DiscoveredDefinition& info)
 std::filesystem::path adapterHeaderPath(llvm::StringRef profile, const DiscoveredDefinition& info)
 {
     return std::filesystem::path(profile.str()) / namespacePath(info.namespaceComponents) /
-           (llvm::formatv("{0}_{1}_{2}.hpp", info.shortName, info.majorVersion, info.minorVersion).str());
+           (renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
+            ".hpp");
 }
 
 std::filesystem::path cHeaderPath(const DiscoveredDefinition& info)
@@ -271,7 +246,15 @@ public:
         {
             out << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, ns) << "::";
         }
-        out << "abi::" << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::TypeName, ref.shortName);
+        // Through the same producer the struct is declared with, rather than re-deriving the short
+        // name here: the two agree today only because neither versions the name, and the whole point
+        // of a shared producer is that they keep agreeing when that changes.
+        DiscoveredDefinition tmp;
+        tmp.shortName           = ref.shortName;
+        tmp.namespaceComponents = ref.namespaceComponents;
+        tmp.majorVersion        = ref.majorVersion;
+        tmp.minorVersion        = ref.minorVersion;
+        out << "abi::" << cppTypeNameFromInfo(tmp);
         return out.str();
     }
 
@@ -828,11 +811,12 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
                                   const EmitterContext&     ctx)
 {
     std::ostringstream out;
-    const std::string  guard =
-        codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
-                                 IdentifierRole::MacroName,
-                                 "LLVMDSDL_CPPABI_" + def.info.fullName + "_" + std::to_string(def.info.majorVersion) +
-                                     "_" + std::to_string(def.info.minorVersion) + "_HPP");
+    const std::string  guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
+                                                  "LLVMDSDL_CPPABI_",
+                                                  def.info.fullName,
+                                                  def.info.majorVersion,
+                                                  def.info.minorVersion,
+                                                  "_HPP");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp canonical ABI) */\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -1046,11 +1030,12 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
 {
     std::ostringstream out;
 
-    const std::string guard = codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
-                                                       IdentifierRole::MacroName,
-                                                       "LLVMDSDL_CPPABI_C_SHIM_" + def.info.fullName + "_" +
-                                                           std::to_string(def.info.majorVersion) + "_" +
-                                                           std::to_string(def.info.minorVersion) + "_H");
+    const std::string guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
+                                                 "LLVMDSDL_CPPABI_C_SHIM_",
+                                                 def.info.fullName,
+                                                 def.info.majorVersion,
+                                                 def.info.minorVersion,
+                                                 "_H");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp C shim) */\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -1300,12 +1285,12 @@ std::string renderAdapterHeader(const SemanticDefinition& def, llvm::StringRef p
 {
     std::ostringstream out;
 
-    const std::string guard =
-        codegenProjectIdentifier(CodegenNamingLanguage::Cpp,
-                                 IdentifierRole::MacroName,
-                                 "LLVMDSDL_CPPABI_ADAPTER_" + profile.str() + "_" + def.info.fullName + "_" +
-                                     std::to_string(def.info.majorVersion) + "_" +
-                                     std::to_string(def.info.minorVersion) + "_HPP");
+    const std::string guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
+                                                 "LLVMDSDL_CPPABI_ADAPTER_" + profile.str() + "_",
+                                                 def.info.fullName,
+                                                 def.info.majorVersion,
+                                                 def.info.minorVersion,
+                                                 "_HPP");
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp " << profile.str() << " adapter) */\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion

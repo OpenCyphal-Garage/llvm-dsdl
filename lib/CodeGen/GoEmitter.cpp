@@ -49,6 +49,7 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
@@ -211,8 +212,12 @@ public:
 
     std::string goTypeName(const DiscoveredDefinition& info) const
     {
-        return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::TypeName, info.shortName) + "_" +
-               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
+        return renderDefinitionTypeName(CodegenNamingLanguage::Go,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        false);
     }
 
     std::string goTypeName(const SemanticTypeRef& ref) const
@@ -230,8 +235,11 @@ public:
 
     std::string goFileName(const DiscoveredDefinition& info) const
     {
-        return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::FileStem, info.shortName) + "_" +
-               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion) + ".go";
+        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion) +
+               ".go";
     }
 
 private:

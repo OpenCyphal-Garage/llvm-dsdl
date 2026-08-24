@@ -48,7 +48,7 @@ Map_                  yes    rust     Map_                   map_               
 Map_                  yes    go       Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
 Map_                  yes    ts       Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
 Map_                  yes    python   Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
-class                 yes    c        class                  class                  Class                  CLASS                  -                      -
+class                 yes    c        class_                 class_                 Class                  CLASS_                 -                      -
 class                 yes    cpp      class_                 class_                 Class                  CLASS_                 -                      -
 class                 yes    rust     class                  class                  Class                  CLASS                  class_1_0              -
 class                 yes    go       class                  class                  Class                  CLASS                  class_1_0              Class_1_0
@@ -192,31 +192,31 @@ register              yes    rust     register               register           
 register              yes    go       register               register               Register               REGISTER               register_1_0           Register_1_0
 register              yes    ts       register               register               Register               REGISTER               register_1_0           Register_1_0
 register              yes    python   register               register               Register               REGISTER               register_1_0           Register_1_0
-operator              yes    c        operator               operator               Operator               OPERATOR               -                      -
+operator              yes    c        operator_              operator_              Operator               OPERATOR_              -                      -
 operator              yes    cpp      operator_              operator_              Operator               OPERATOR_              -                      -
 operator              yes    rust     operator               operator               Operator               OPERATOR               operator_1_0           -
 operator              yes    go       operator               operator               Operator               OPERATOR               operator_1_0           Operator_1_0
 operator              yes    ts       operator               operator               Operator               OPERATOR               operator_1_0           Operator_1_0
 operator              yes    python   operator               operator               Operator               OPERATOR               operator_1_0           Operator_1_0
-namespace             yes    c        namespace              namespace              Namespace              NAMESPACE              -                      -
+namespace             yes    c        namespace_             namespace_             Namespace              NAMESPACE_             -                      -
 namespace             yes    cpp      namespace_             namespace_             Namespace              NAMESPACE_             -                      -
 namespace             yes    rust     namespace              namespace              Namespace              NAMESPACE              namespace_1_0          -
 namespace             yes    go       namespace              namespace              Namespace              NAMESPACE              namespace_1_0          Namespace_1_0
 namespace             yes    ts       namespace              namespace              Namespace              NAMESPACE              namespace_1_0          Namespace_1_0
 namespace             yes    python   namespace              namespace              Namespace              NAMESPACE              namespace_1_0          Namespace_1_0
-typename              yes    c        typename               typename               Typename               TYPENAME               -                      -
+typename              yes    c        typename_              typename_              Typename               TYPENAME_              -                      -
 typename              yes    cpp      typename_              typename_              Typename               TYPENAME_              -                      -
 typename              yes    rust     typename               typename               Typename               TYPENAME               typename_1_0           -
 typename              yes    go       typename               typename               Typename               TYPENAME               typename_1_0           Typename_1_0
 typename              yes    ts       typename               typename               Typename               TYPENAME               typename_1_0           Typename_1_0
 typename              yes    python   typename               typename               Typename               TYPENAME               typename_1_0           Typename_1_0
-delete                yes    c        delete                 delete                 Delete                 DELETE                 -                      -
+delete                yes    c        delete_                delete_                Delete                 DELETE_                -                      -
 delete                yes    cpp      delete_                delete_                Delete                 DELETE_                -                      -
 delete                yes    rust     delete                 delete                 Delete                 DELETE                 delete_1_0             -
 delete                yes    go       delete                 delete                 Delete                 DELETE                 delete_1_0             Delete_1_0
 delete                yes    ts       delete_                delete_                Delete                 DELETE_                delete__1_0            Delete_1_0
 delete                yes    python   delete                 delete                 Delete                 DELETE                 delete_1_0             Delete_1_0
-export                yes    c        export                 export                 Export                 EXPORT                 -                      -
+export                yes    c        export_                export_                Export                 EXPORT_                -                      -
 export                yes    cpp      export_                export_                Export                 EXPORT_                -                      -
 export                yes    rust     export                 export                 Export                 EXPORT                 export_1_0             -
 export                yes    go       export                 export                 Export                 EXPORT                 export_1_0             Export_1_0
@@ -417,6 +417,7 @@ language projection   guard      identifier          sources
 ---------------------------------------------------------------------------------------------
 c        snake        allocator  a                   a, A
 c        snake        allocator  break_              break, Break, Break_
+c        snake        allocator  class_              class, Class_
 c        snake        allocator  efoo                Efoo, EFOO
 c        snake        allocator  foo                 _foo, __foo, _Foo
 c        snake        allocator  foo_                foo_, Foo_
@@ -431,6 +432,7 @@ c        pascal       allocator  Map                 map, Map_
 c        pascal       allocator  Match               match, Match_
 c        upper_snake  allocator  A                   a, A
 c        upper_snake  allocator  BREAK_              break, Break, Break_
+c        upper_snake  allocator  CLASS_              class, Class_
 c        upper_snake  allocator  EFOO                Efoo, EFOO
 c        upper_snake  allocator  FOO                 _foo, __foo, _Foo
 c        upper_snake  allocator  FOO_                foo_, Foo_

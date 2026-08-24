@@ -48,6 +48,7 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
@@ -151,30 +152,20 @@ public:
 
     std::string rustModuleName(const DiscoveredDefinition& info) const
     {
-        return codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::FileStem, info.shortName) + "_" +
-               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
+        return renderDefinitionFileStem(CodegenNamingLanguage::Rust,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion);
     }
 
     std::string rustTypeName(const DiscoveredDefinition& info) const
     {
-        std::string out;
-        for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-        {
-            if (!out.empty())
-            {
-                out += "_";
-            }
-            out += codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                            IdentifierRole::NamespaceName,
-                                            info.namespaceComponents[i]);
-        }
-        if (!out.empty())
-        {
-            out += "_";
-        }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, info.shortName);
-        out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
-        return codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, out);
+        return renderDefinitionTypeName(CodegenNamingLanguage::Rust,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        false);
     }
 
     std::string rustTypeName(const SemanticTypeRef& ref) const
