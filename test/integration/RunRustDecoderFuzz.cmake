@@ -66,8 +66,17 @@ if(NOT gen_result EQUAL 0)
 endif()
 
 set(RUST_OUT "${rust_out}")
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
 configure_file("${cargo_toml_template}" "${harness_out}/Cargo.toml" @ONLY)
-configure_file("${main_rs_template}" "${harness_out}/src/main.rs" COPYONLY)
+configure_file("${main_rs_template}" "${harness_out}/src/main.rs" @ONLY)
 
 execute_process(
   COMMAND

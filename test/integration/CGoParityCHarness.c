@@ -156,56 +156,56 @@ typedef struct CCaseResult
     }
 
 DEFINE_ROUNDTRIP(c_heartbeat_roundtrip,
-                 uavcan__node__Heartbeat,
-                 uavcan__node__Heartbeat__deserialize_,
-                 uavcan__node__Heartbeat__serialize_)
+                 uavcan__node__Heartbeat@CV1_0@,
+                 uavcan__node__Heartbeat@CV1_0@__deserialize_,
+                 uavcan__node__Heartbeat@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_execute_command_request_roundtrip,
-                 uavcan__node__ExecuteCommand__Request,
-                 uavcan__node__ExecuteCommand__Request__deserialize_,
-                 uavcan__node__ExecuteCommand__Request__serialize_)
+                 uavcan__node__ExecuteCommand@CV1_3@__Request,
+                 uavcan__node__ExecuteCommand@CV1_3@__Request__deserialize_,
+                 uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_execute_command_response_roundtrip,
-                 uavcan__node__ExecuteCommand__Response,
-                 uavcan__node__ExecuteCommand__Response__deserialize_,
-                 uavcan__node__ExecuteCommand__Response__serialize_)
+                 uavcan__node__ExecuteCommand@CV1_3@__Response,
+                 uavcan__node__ExecuteCommand@CV1_3@__Response__deserialize_,
+                 uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_)
 
-DEFINE_ROUNDTRIP(c_node_id_roundtrip, uavcan__node__ID, uavcan__node__ID__deserialize_, uavcan__node__ID__serialize_)
+DEFINE_ROUNDTRIP(c_node_id_roundtrip, uavcan__node__ID@CV1_0@, uavcan__node__ID@CV1_0@__deserialize_, uavcan__node__ID@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_mode_roundtrip,
-                 uavcan__node__Mode,
-                 uavcan__node__Mode__deserialize_,
-                 uavcan__node__Mode__serialize_)
+                 uavcan__node__Mode@CV1_0@,
+                 uavcan__node__Mode@CV1_0@__deserialize_,
+                 uavcan__node__Mode@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_version_roundtrip,
-                 uavcan__node__Version,
-                 uavcan__node__Version__deserialize_,
-                 uavcan__node__Version__serialize_)
+                 uavcan__node__Version@CV1_0@,
+                 uavcan__node__Version@CV1_0@__deserialize_,
+                 uavcan__node__Version@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_health_roundtrip,
-                 uavcan__node__Health,
-                 uavcan__node__Health__deserialize_,
-                 uavcan__node__Health__serialize_)
+                 uavcan__node__Health@CV1_0@,
+                 uavcan__node__Health@CV1_0@__deserialize_,
+                 uavcan__node__Health@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_io_statistics_roundtrip,
-                 uavcan__node__IOStatistics,
-                 uavcan__node__IOStatistics__deserialize_,
-                 uavcan__node__IOStatistics__serialize_)
+                 uavcan__node__IOStatistics@CV0_1@,
+                 uavcan__node__IOStatistics@CV0_1@__deserialize_,
+                 uavcan__node__IOStatistics@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_get_info_response_roundtrip,
-                 uavcan__node__GetInfo__Response,
-                 uavcan__node__GetInfo__Response__deserialize_,
-                 uavcan__node__GetInfo__Response__serialize_)
+                 uavcan__node__GetInfo@CV1_0@__Response,
+                 uavcan__node__GetInfo@CV1_0@__Response__deserialize_,
+                 uavcan__node__GetInfo@CV1_0@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_diagnostic_record_roundtrip,
-                 uavcan__diagnostic__Record,
-                 uavcan__diagnostic__Record__deserialize_,
-                 uavcan__diagnostic__Record__serialize_)
+                 uavcan__diagnostic__Record@CV1_1@,
+                 uavcan__diagnostic__Record@CV1_1@__deserialize_,
+                 uavcan__diagnostic__Record@CV1_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_diagnostic_severity_roundtrip,
-                 uavcan__diagnostic__Severity,
-                 uavcan__diagnostic__Severity__deserialize_,
-                 uavcan__diagnostic__Severity__serialize_)
+                 uavcan__diagnostic__Severity@CV1_0@,
+                 uavcan__diagnostic__Severity@CV1_0@__deserialize_,
+                 uavcan__diagnostic__Severity@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_value_roundtrip,
                  uavcan__register___Value,
@@ -238,461 +238,461 @@ DEFINE_ROUNDTRIP(c_register_list_response_roundtrip,
                  uavcan__register___List__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_list_request_roundtrip,
-                 uavcan__file__List__Request,
-                 uavcan__file__List__Request__deserialize_,
-                 uavcan__file__List__Request__serialize_)
+                 uavcan__file__List@CV0_2@__Request,
+                 uavcan__file__List@CV0_2@__Request__deserialize_,
+                 uavcan__file__List@CV0_2@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_list_response_roundtrip,
-                 uavcan__file__List__Response,
-                 uavcan__file__List__Response__deserialize_,
-                 uavcan__file__List__Response__serialize_)
+                 uavcan__file__List@CV0_2@__Response,
+                 uavcan__file__List@CV0_2@__Response__deserialize_,
+                 uavcan__file__List@CV0_2@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_read_request_roundtrip,
-                 uavcan__file__Read__Request,
-                 uavcan__file__Read__Request__deserialize_,
-                 uavcan__file__Read__Request__serialize_)
+                 uavcan__file__Read@CV1_1@__Request,
+                 uavcan__file__Read@CV1_1@__Request__deserialize_,
+                 uavcan__file__Read@CV1_1@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_read_response_roundtrip,
-                 uavcan__file__Read__Response,
-                 uavcan__file__Read__Response__deserialize_,
-                 uavcan__file__Read__Response__serialize_)
+                 uavcan__file__Read@CV1_1@__Response,
+                 uavcan__file__Read@CV1_1@__Response__deserialize_,
+                 uavcan__file__Read@CV1_1@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_write_request_roundtrip,
-                 uavcan__file__Write__Request,
-                 uavcan__file__Write__Request__deserialize_,
-                 uavcan__file__Write__Request__serialize_)
+                 uavcan__file__Write@CV1_1@__Request,
+                 uavcan__file__Write@CV1_1@__Request__deserialize_,
+                 uavcan__file__Write@CV1_1@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_write_response_roundtrip,
-                 uavcan__file__Write__Response,
-                 uavcan__file__Write__Response__deserialize_,
-                 uavcan__file__Write__Response__serialize_)
+                 uavcan__file__Write@CV1_1@__Response,
+                 uavcan__file__Write@CV1_1@__Response__deserialize_,
+                 uavcan__file__Write@CV1_1@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_modify_request_roundtrip,
-                 uavcan__file__Modify__Request,
-                 uavcan__file__Modify__Request__deserialize_,
-                 uavcan__file__Modify__Request__serialize_)
+                 uavcan__file__Modify@CV1_1@__Request,
+                 uavcan__file__Modify@CV1_1@__Request__deserialize_,
+                 uavcan__file__Modify@CV1_1@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_modify_response_roundtrip,
-                 uavcan__file__Modify__Response,
-                 uavcan__file__Modify__Response__deserialize_,
-                 uavcan__file__Modify__Response__serialize_)
+                 uavcan__file__Modify@CV1_1@__Response,
+                 uavcan__file__Modify@CV1_1@__Response__deserialize_,
+                 uavcan__file__Modify@CV1_1@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_get_info_request_roundtrip,
-                 uavcan__file__GetInfo__Request,
-                 uavcan__file__GetInfo__Request__deserialize_,
-                 uavcan__file__GetInfo__Request__serialize_)
+                 uavcan__file__GetInfo@CV0_2@__Request,
+                 uavcan__file__GetInfo@CV0_2@__Request__deserialize_,
+                 uavcan__file__GetInfo@CV0_2@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_get_info_response_roundtrip,
-                 uavcan__file__GetInfo__Response,
-                 uavcan__file__GetInfo__Response__deserialize_,
-                 uavcan__file__GetInfo__Response__serialize_)
+                 uavcan__file__GetInfo@CV0_2@__Response,
+                 uavcan__file__GetInfo@CV0_2@__Response__deserialize_,
+                 uavcan__file__GetInfo@CV0_2@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_error_roundtrip,
-                 uavcan__file__Error,
-                 uavcan__file__Error__deserialize_,
-                 uavcan__file__Error__serialize_)
+                 uavcan__file__Error@CV1_0@,
+                 uavcan__file__Error@CV1_0@__deserialize_,
+                 uavcan__file__Error@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_get_transport_statistics_request_roundtrip,
-                 uavcan__node__GetTransportStatistics__Request,
-                 uavcan__node__GetTransportStatistics__Request__deserialize_,
-                 uavcan__node__GetTransportStatistics__Request__serialize_)
+                 uavcan__node__GetTransportStatistics@CV0_1@__Request,
+                 uavcan__node__GetTransportStatistics@CV0_1@__Request__deserialize_,
+                 uavcan__node__GetTransportStatistics@CV0_1@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_get_transport_statistics_response_roundtrip,
-                 uavcan__node__GetTransportStatistics__Response,
-                 uavcan__node__GetTransportStatistics__Response__deserialize_,
-                 uavcan__node__GetTransportStatistics__Response__serialize_)
+                 uavcan__node__GetTransportStatistics@CV0_1@__Response,
+                 uavcan__node__GetTransportStatistics@CV0_1@__Response__deserialize_,
+                 uavcan__node__GetTransportStatistics@CV0_1@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_frame_roundtrip,
-                 uavcan__metatransport__can__Frame,
-                 uavcan__metatransport__can__Frame__deserialize_,
-                 uavcan__metatransport__can__Frame__serialize_)
+                 uavcan__metatransport__can__Frame@CV0_2@,
+                 uavcan__metatransport__can__Frame@CV0_2@__deserialize_,
+                 uavcan__metatransport__can__Frame@CV0_2@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_data_classic_roundtrip,
-                 uavcan__metatransport__can__DataClassic,
-                 uavcan__metatransport__can__DataClassic__deserialize_,
-                 uavcan__metatransport__can__DataClassic__serialize_)
+                 uavcan__metatransport__can__DataClassic@CV0_1@,
+                 uavcan__metatransport__can__DataClassic@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__DataClassic@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_data_fd_roundtrip,
-                 uavcan__metatransport__can__DataFD,
-                 uavcan__metatransport__can__DataFD__deserialize_,
-                 uavcan__metatransport__can__DataFD__serialize_)
+                 uavcan__metatransport__can__DataFD@CV0_1@,
+                 uavcan__metatransport__can__DataFD@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__DataFD@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_error_roundtrip,
-                 uavcan__metatransport__can__Error,
-                 uavcan__metatransport__can__Error__deserialize_,
-                 uavcan__metatransport__can__Error__serialize_)
+                 uavcan__metatransport__can__Error@CV0_1@,
+                 uavcan__metatransport__can__Error@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__Error@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_rtr_roundtrip,
-                 uavcan__metatransport__can__RTR,
-                 uavcan__metatransport__can__RTR__deserialize_,
-                 uavcan__metatransport__can__RTR__serialize_)
+                 uavcan__metatransport__can__RTR@CV0_1@,
+                 uavcan__metatransport__can__RTR@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__RTR@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_manifestation_roundtrip,
-                 uavcan__metatransport__can__Manifestation,
-                 uavcan__metatransport__can__Manifestation__deserialize_,
-                 uavcan__metatransport__can__Manifestation__serialize_)
+                 uavcan__metatransport__can__Manifestation@CV0_1@,
+                 uavcan__metatransport__can__Manifestation@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__Manifestation@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_arbitration_id_roundtrip,
-                 uavcan__metatransport__can__ArbitrationID,
-                 uavcan__metatransport__can__ArbitrationID__deserialize_,
-                 uavcan__metatransport__can__ArbitrationID__serialize_)
+                 uavcan__metatransport__can__ArbitrationID@CV0_1@,
+                 uavcan__metatransport__can__ArbitrationID@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__ArbitrationID@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_base_arbitration_id_roundtrip,
-                 uavcan__metatransport__can__BaseArbitrationID,
-                 uavcan__metatransport__can__BaseArbitrationID__deserialize_,
-                 uavcan__metatransport__can__BaseArbitrationID__serialize_)
+                 uavcan__metatransport__can__BaseArbitrationID@CV0_1@,
+                 uavcan__metatransport__can__BaseArbitrationID@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__BaseArbitrationID@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_can_extended_arbitration_id_roundtrip,
-                 uavcan__metatransport__can__ExtendedArbitrationID,
-                 uavcan__metatransport__can__ExtendedArbitrationID__deserialize_,
-                 uavcan__metatransport__can__ExtendedArbitrationID__serialize_)
+                 uavcan__metatransport__can__ExtendedArbitrationID@CV0_1@,
+                 uavcan__metatransport__can__ExtendedArbitrationID@CV0_1@__deserialize_,
+                 uavcan__metatransport__can__ExtendedArbitrationID@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_metatransport_serial_fragment_roundtrip,
-                 uavcan__metatransport__serial__Fragment,
-                 uavcan__metatransport__serial__Fragment__deserialize_,
-                 uavcan__metatransport__serial__Fragment__serialize_)
+                 uavcan__metatransport__serial__Fragment@CV0_2@,
+                 uavcan__metatransport__serial__Fragment@CV0_2@__deserialize_,
+                 uavcan__metatransport__serial__Fragment@CV0_2@__serialize_)
 
 DEFINE_ROUNDTRIP(c_metatransport_ethernet_frame_roundtrip,
-                 uavcan__metatransport__ethernet__Frame,
-                 uavcan__metatransport__ethernet__Frame__deserialize_,
-                 uavcan__metatransport__ethernet__Frame__serialize_)
+                 uavcan__metatransport__ethernet__Frame@CV0_1@,
+                 uavcan__metatransport__ethernet__Frame@CV0_1@__deserialize_,
+                 uavcan__metatransport__ethernet__Frame@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_metatransport_udp_endpoint_roundtrip,
-                 uavcan__metatransport__udp__Endpoint,
-                 uavcan__metatransport__udp__Endpoint__deserialize_,
-                 uavcan__metatransport__udp__Endpoint__serialize_)
+                 uavcan__metatransport__udp__Endpoint@CV0_1@,
+                 uavcan__metatransport__udp__Endpoint@CV0_1@__deserialize_,
+                 uavcan__metatransport__udp__Endpoint@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_metatransport_udp_frame_roundtrip,
-                 uavcan__metatransport__udp__Frame,
-                 uavcan__metatransport__udp__Frame__deserialize_,
-                 uavcan__metatransport__udp__Frame__serialize_)
+                 uavcan__metatransport__udp__Frame@CV0_1@,
+                 uavcan__metatransport__udp__Frame@CV0_1@__deserialize_,
+                 uavcan__metatransport__udp__Frame@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_synchronization_roundtrip,
-                 uavcan__time__Synchronization,
-                 uavcan__time__Synchronization__deserialize_,
-                 uavcan__time__Synchronization__serialize_)
+                 uavcan__time__Synchronization@CV1_0@,
+                 uavcan__time__Synchronization@CV1_0@__deserialize_,
+                 uavcan__time__Synchronization@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_synchronized_timestamp_roundtrip,
-                 uavcan__time__SynchronizedTimestamp,
-                 uavcan__time__SynchronizedTimestamp__deserialize_,
-                 uavcan__time__SynchronizedTimestamp__serialize_)
+                 uavcan__time__SynchronizedTimestamp@CV1_0@,
+                 uavcan__time__SynchronizedTimestamp@CV1_0@__deserialize_,
+                 uavcan__time__SynchronizedTimestamp@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_system_roundtrip,
-                 uavcan__time__TimeSystem,
-                 uavcan__time__TimeSystem__deserialize_,
-                 uavcan__time__TimeSystem__serialize_)
+                 uavcan__time__TimeSystem@CV0_1@,
+                 uavcan__time__TimeSystem@CV0_1@__deserialize_,
+                 uavcan__time__TimeSystem@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_tai_info_roundtrip,
-                 uavcan__time__TAIInfo,
-                 uavcan__time__TAIInfo__deserialize_,
-                 uavcan__time__TAIInfo__serialize_)
+                 uavcan__time__TAIInfo@CV0_1@,
+                 uavcan__time__TAIInfo@CV0_1@__deserialize_,
+                 uavcan__time__TAIInfo@CV0_1@__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_get_sync_master_info_request_roundtrip,
-                 uavcan__time__GetSynchronizationMasterInfo__Request,
-                 uavcan__time__GetSynchronizationMasterInfo__Request__deserialize_,
-                 uavcan__time__GetSynchronizationMasterInfo__Request__serialize_)
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Request,
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Request__deserialize_,
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_time_get_sync_master_info_response_roundtrip,
-                 uavcan__time__GetSynchronizationMasterInfo__Response,
-                 uavcan__time__GetSynchronizationMasterInfo__Response__deserialize_,
-                 uavcan__time__GetSynchronizationMasterInfo__Response__serialize_)
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Response,
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Response__deserialize_,
+                 uavcan__time__GetSynchronizationMasterInfo@CV0_1@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_udp_outgoing_packet_roundtrip,
-                 uavcan__internet__udp__OutgoingPacket,
-                 uavcan__internet__udp__OutgoingPacket__deserialize_,
-                 uavcan__internet__udp__OutgoingPacket__serialize_)
+                 uavcan__internet__udp__OutgoingPacket@CV0_2@,
+                 uavcan__internet__udp__OutgoingPacket@CV0_2@__deserialize_,
+                 uavcan__internet__udp__OutgoingPacket@CV0_2@__serialize_)
 
 DEFINE_ROUNDTRIP(c_udp_handle_incoming_request_roundtrip,
-                 uavcan__internet__udp__HandleIncomingPacket__Request,
-                 uavcan__internet__udp__HandleIncomingPacket__Request__deserialize_,
-                 uavcan__internet__udp__HandleIncomingPacket__Request__serialize_)
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Request,
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Request__deserialize_,
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_udp_handle_incoming_response_roundtrip,
-                 uavcan__internet__udp__HandleIncomingPacket__Response,
-                 uavcan__internet__udp__HandleIncomingPacket__Response__deserialize_,
-                 uavcan__internet__udp__HandleIncomingPacket__Response__serialize_)
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Response,
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Response__deserialize_,
+                 uavcan__internet__udp__HandleIncomingPacket@CV0_2@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_angle_quaternion_roundtrip,
-                 uavcan__si__unit__angle__Quaternion,
-                 uavcan__si__unit__angle__Quaternion__deserialize_,
-                 uavcan__si__unit__angle__Quaternion__serialize_)
+                 uavcan__si__unit__angle__Quaternion@CV1_0@,
+                 uavcan__si__unit__angle__Quaternion@CV1_0@__deserialize_,
+                 uavcan__si__unit__angle__Quaternion@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_acceleration_vector3_roundtrip,
-                 uavcan__si__unit__acceleration__Vector3,
-                 uavcan__si__unit__acceleration__Vector3__deserialize_,
-                 uavcan__si__unit__acceleration__Vector3__serialize_)
+                 uavcan__si__unit__acceleration__Vector3@CV1_0@,
+                 uavcan__si__unit__acceleration__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__unit__acceleration__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_force_vector3_roundtrip,
-                 uavcan__si__unit__force__Vector3,
-                 uavcan__si__unit__force__Vector3__deserialize_,
-                 uavcan__si__unit__force__Vector3__serialize_)
+                 uavcan__si__unit__force__Vector3@CV1_0@,
+                 uavcan__si__unit__force__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__unit__force__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_length_wide_vector3_roundtrip,
-                 uavcan__si__unit__length__WideVector3,
-                 uavcan__si__unit__length__WideVector3__deserialize_,
-                 uavcan__si__unit__length__WideVector3__serialize_)
+                 uavcan__si__unit__length__WideVector3@CV1_0@,
+                 uavcan__si__unit__length__WideVector3@CV1_0@__deserialize_,
+                 uavcan__si__unit__length__WideVector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_torque_vector3_roundtrip,
-                 uavcan__si__unit__torque__Vector3,
-                 uavcan__si__unit__torque__Vector3__deserialize_,
-                 uavcan__si__unit__torque__Vector3__serialize_)
+                 uavcan__si__unit__torque__Vector3@CV1_0@,
+                 uavcan__si__unit__torque__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__unit__torque__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_angle_quaternion_roundtrip,
-                 uavcan__si__sample__angle__Quaternion,
-                 uavcan__si__sample__angle__Quaternion__deserialize_,
-                 uavcan__si__sample__angle__Quaternion__serialize_)
+                 uavcan__si__sample__angle__Quaternion@CV1_0@,
+                 uavcan__si__sample__angle__Quaternion@CV1_0@__deserialize_,
+                 uavcan__si__sample__angle__Quaternion@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_acceleration_vector3_roundtrip,
-                 uavcan__si__sample__acceleration__Vector3,
-                 uavcan__si__sample__acceleration__Vector3__deserialize_,
-                 uavcan__si__sample__acceleration__Vector3__serialize_)
+                 uavcan__si__sample__acceleration__Vector3@CV1_0@,
+                 uavcan__si__sample__acceleration__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__sample__acceleration__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_force_vector3_roundtrip,
-                 uavcan__si__sample__force__Vector3,
-                 uavcan__si__sample__force__Vector3__deserialize_,
-                 uavcan__si__sample__force__Vector3__serialize_)
+                 uavcan__si__sample__force__Vector3@CV1_0@,
+                 uavcan__si__sample__force__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__sample__force__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_torque_vector3_roundtrip,
-                 uavcan__si__sample__torque__Vector3,
-                 uavcan__si__sample__torque__Vector3__deserialize_,
-                 uavcan__si__sample__torque__Vector3__serialize_)
+                 uavcan__si__sample__torque__Vector3@CV1_0@,
+                 uavcan__si__sample__torque__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__sample__torque__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_velocity_vector3_roundtrip,
-                 uavcan__si__unit__velocity__Vector3,
-                 uavcan__si__unit__velocity__Vector3__deserialize_,
-                 uavcan__si__unit__velocity__Vector3__serialize_)
+                 uavcan__si__unit__velocity__Vector3@CV1_0@,
+                 uavcan__si__unit__velocity__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__unit__velocity__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_velocity_vector3_roundtrip,
-                 uavcan__si__sample__velocity__Vector3,
-                 uavcan__si__sample__velocity__Vector3__deserialize_,
-                 uavcan__si__sample__velocity__Vector3__serialize_)
+                 uavcan__si__sample__velocity__Vector3@CV1_0@,
+                 uavcan__si__sample__velocity__Vector3@CV1_0@__deserialize_,
+                 uavcan__si__sample__velocity__Vector3@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_temperature_scalar_roundtrip,
-                 uavcan__si__unit__temperature__Scalar,
-                 uavcan__si__unit__temperature__Scalar__deserialize_,
-                 uavcan__si__unit__temperature__Scalar__serialize_)
+                 uavcan__si__unit__temperature__Scalar@CV1_0@,
+                 uavcan__si__unit__temperature__Scalar@CV1_0@__deserialize_,
+                 uavcan__si__unit__temperature__Scalar@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_unit_voltage_scalar_roundtrip,
-                 uavcan__si__unit__voltage__Scalar,
-                 uavcan__si__unit__voltage__Scalar__deserialize_,
-                 uavcan__si__unit__voltage__Scalar__serialize_)
+                 uavcan__si__unit__voltage__Scalar@CV1_0@,
+                 uavcan__si__unit__voltage__Scalar@CV1_0@__deserialize_,
+                 uavcan__si__unit__voltage__Scalar@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_temperature_scalar_roundtrip,
-                 uavcan__si__sample__temperature__Scalar,
-                 uavcan__si__sample__temperature__Scalar__deserialize_,
-                 uavcan__si__sample__temperature__Scalar__serialize_)
+                 uavcan__si__sample__temperature__Scalar@CV1_0@,
+                 uavcan__si__sample__temperature__Scalar@CV1_0@__deserialize_,
+                 uavcan__si__sample__temperature__Scalar@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_si_sample_voltage_scalar_roundtrip,
-                 uavcan__si__sample__voltage__Scalar,
-                 uavcan__si__sample__voltage__Scalar__deserialize_,
-                 uavcan__si__sample__voltage__Scalar__serialize_)
+                 uavcan__si__sample__voltage__Scalar@CV1_0@,
+                 uavcan__si__sample__voltage__Scalar@CV1_0@__deserialize_,
+                 uavcan__si__sample__voltage__Scalar@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_natural8_roundtrip,
-                 uavcan__primitive__array__Natural8,
-                 uavcan__primitive__array__Natural8__deserialize_,
-                 uavcan__primitive__array__Natural8__serialize_)
+                 uavcan__primitive__array__Natural8@CV1_0@,
+                 uavcan__primitive__array__Natural8@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Natural8@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_real16_roundtrip,
-                 uavcan__primitive__array__Real16,
-                 uavcan__primitive__array__Real16__deserialize_,
-                 uavcan__primitive__array__Real16__serialize_)
+                 uavcan__primitive__array__Real16@CV1_0@,
+                 uavcan__primitive__array__Real16@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Real16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_real32_roundtrip,
-                 uavcan__primitive__array__Real32,
-                 uavcan__primitive__array__Real32__deserialize_,
-                 uavcan__primitive__array__Real32__serialize_)
+                 uavcan__primitive__array__Real32@CV1_0@,
+                 uavcan__primitive__array__Real32@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Real32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_bit_array_roundtrip,
-                 uavcan__primitive__array__Bit,
-                 uavcan__primitive__array__Bit__deserialize_,
-                 uavcan__primitive__array__Bit__serialize_)
+                 uavcan__primitive__array__Bit@CV1_0@,
+                 uavcan__primitive__array__Bit@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Bit@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_bit_roundtrip,
-                 uavcan__primitive__scalar__Bit,
-                 uavcan__primitive__scalar__Bit__deserialize_,
-                 uavcan__primitive__scalar__Bit__serialize_)
+                 uavcan__primitive__scalar__Bit@CV1_0@,
+                 uavcan__primitive__scalar__Bit@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Bit@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_integer8_roundtrip,
-                 uavcan__primitive__scalar__Integer8,
-                 uavcan__primitive__scalar__Integer8__deserialize_,
-                 uavcan__primitive__scalar__Integer8__serialize_)
+                 uavcan__primitive__scalar__Integer8@CV1_0@,
+                 uavcan__primitive__scalar__Integer8@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Integer8@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_integer16_roundtrip,
-                 uavcan__primitive__scalar__Integer16,
-                 uavcan__primitive__scalar__Integer16__deserialize_,
-                 uavcan__primitive__scalar__Integer16__serialize_)
+                 uavcan__primitive__scalar__Integer16@CV1_0@,
+                 uavcan__primitive__scalar__Integer16@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Integer16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_integer32_roundtrip,
-                 uavcan__primitive__scalar__Integer32,
-                 uavcan__primitive__scalar__Integer32__deserialize_,
-                 uavcan__primitive__scalar__Integer32__serialize_)
+                 uavcan__primitive__scalar__Integer32@CV1_0@,
+                 uavcan__primitive__scalar__Integer32@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Integer32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_integer64_roundtrip,
-                 uavcan__primitive__scalar__Integer64,
-                 uavcan__primitive__scalar__Integer64__deserialize_,
-                 uavcan__primitive__scalar__Integer64__serialize_)
+                 uavcan__primitive__scalar__Integer64@CV1_0@,
+                 uavcan__primitive__scalar__Integer64@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Integer64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_natural8_roundtrip,
-                 uavcan__primitive__scalar__Natural8,
-                 uavcan__primitive__scalar__Natural8__deserialize_,
-                 uavcan__primitive__scalar__Natural8__serialize_)
+                 uavcan__primitive__scalar__Natural8@CV1_0@,
+                 uavcan__primitive__scalar__Natural8@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Natural8@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_natural16_roundtrip,
-                 uavcan__primitive__scalar__Natural16,
-                 uavcan__primitive__scalar__Natural16__deserialize_,
-                 uavcan__primitive__scalar__Natural16__serialize_)
+                 uavcan__primitive__scalar__Natural16@CV1_0@,
+                 uavcan__primitive__scalar__Natural16@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Natural16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_natural32_roundtrip,
-                 uavcan__primitive__scalar__Natural32,
-                 uavcan__primitive__scalar__Natural32__deserialize_,
-                 uavcan__primitive__scalar__Natural32__serialize_)
+                 uavcan__primitive__scalar__Natural32@CV1_0@,
+                 uavcan__primitive__scalar__Natural32@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Natural32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_natural64_roundtrip,
-                 uavcan__primitive__scalar__Natural64,
-                 uavcan__primitive__scalar__Natural64__deserialize_,
-                 uavcan__primitive__scalar__Natural64__serialize_)
+                 uavcan__primitive__scalar__Natural64@CV1_0@,
+                 uavcan__primitive__scalar__Natural64@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Natural64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_real16_roundtrip,
-                 uavcan__primitive__scalar__Real16,
-                 uavcan__primitive__scalar__Real16__deserialize_,
-                 uavcan__primitive__scalar__Real16__serialize_)
+                 uavcan__primitive__scalar__Real16@CV1_0@,
+                 uavcan__primitive__scalar__Real16@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Real16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_real32_roundtrip,
-                 uavcan__primitive__scalar__Real32,
-                 uavcan__primitive__scalar__Real32__deserialize_,
-                 uavcan__primitive__scalar__Real32__serialize_)
+                 uavcan__primitive__scalar__Real32@CV1_0@,
+                 uavcan__primitive__scalar__Real32@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Real32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_scalar_real64_roundtrip,
-                 uavcan__primitive__scalar__Real64,
-                 uavcan__primitive__scalar__Real64__deserialize_,
-                 uavcan__primitive__scalar__Real64__serialize_)
+                 uavcan__primitive__scalar__Real64@CV1_0@,
+                 uavcan__primitive__scalar__Real64@CV1_0@__deserialize_,
+                 uavcan__primitive__scalar__Real64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_integer8_roundtrip,
-                 uavcan__primitive__array__Integer8,
-                 uavcan__primitive__array__Integer8__deserialize_,
-                 uavcan__primitive__array__Integer8__serialize_)
+                 uavcan__primitive__array__Integer8@CV1_0@,
+                 uavcan__primitive__array__Integer8@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Integer8@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_integer16_roundtrip,
-                 uavcan__primitive__array__Integer16,
-                 uavcan__primitive__array__Integer16__deserialize_,
-                 uavcan__primitive__array__Integer16__serialize_)
+                 uavcan__primitive__array__Integer16@CV1_0@,
+                 uavcan__primitive__array__Integer16@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Integer16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_integer32_roundtrip,
-                 uavcan__primitive__array__Integer32,
-                 uavcan__primitive__array__Integer32__deserialize_,
-                 uavcan__primitive__array__Integer32__serialize_)
+                 uavcan__primitive__array__Integer32@CV1_0@,
+                 uavcan__primitive__array__Integer32@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Integer32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_integer64_roundtrip,
-                 uavcan__primitive__array__Integer64,
-                 uavcan__primitive__array__Integer64__deserialize_,
-                 uavcan__primitive__array__Integer64__serialize_)
+                 uavcan__primitive__array__Integer64@CV1_0@,
+                 uavcan__primitive__array__Integer64@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Integer64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_natural16_roundtrip,
-                 uavcan__primitive__array__Natural16,
-                 uavcan__primitive__array__Natural16__deserialize_,
-                 uavcan__primitive__array__Natural16__serialize_)
+                 uavcan__primitive__array__Natural16@CV1_0@,
+                 uavcan__primitive__array__Natural16@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Natural16@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_natural32_roundtrip,
-                 uavcan__primitive__array__Natural32,
-                 uavcan__primitive__array__Natural32__deserialize_,
-                 uavcan__primitive__array__Natural32__serialize_)
+                 uavcan__primitive__array__Natural32@CV1_0@,
+                 uavcan__primitive__array__Natural32@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Natural32@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_natural64_roundtrip,
-                 uavcan__primitive__array__Natural64,
-                 uavcan__primitive__array__Natural64__deserialize_,
-                 uavcan__primitive__array__Natural64__serialize_)
+                 uavcan__primitive__array__Natural64@CV1_0@,
+                 uavcan__primitive__array__Natural64@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Natural64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_array_real64_roundtrip,
-                 uavcan__primitive__array__Real64,
-                 uavcan__primitive__array__Real64__deserialize_,
-                 uavcan__primitive__array__Real64__serialize_)
+                 uavcan__primitive__array__Real64@CV1_0@,
+                 uavcan__primitive__array__Real64@CV1_0@__deserialize_,
+                 uavcan__primitive__array__Real64@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_primitive_empty_roundtrip,
-                 uavcan__primitive__Empty,
-                 uavcan__primitive__Empty__deserialize_,
-                 uavcan__primitive__Empty__serialize_)
+                 uavcan__primitive__Empty@CV1_0@,
+                 uavcan__primitive__Empty@CV1_0@__deserialize_,
+                 uavcan__primitive__Empty@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_primitive_string_roundtrip,
-                 uavcan__primitive__String,
-                 uavcan__primitive__String__deserialize_,
-                 uavcan__primitive__String__serialize_)
+                 uavcan__primitive__String@CV1_0@,
+                 uavcan__primitive__String@CV1_0@__deserialize_,
+                 uavcan__primitive__String@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_primitive_unstructured_roundtrip,
-                 uavcan__primitive__Unstructured,
-                 uavcan__primitive__Unstructured__deserialize_,
-                 uavcan__primitive__Unstructured__serialize_)
+                 uavcan__primitive__Unstructured@CV1_0@,
+                 uavcan__primitive__Unstructured@CV1_0@__deserialize_,
+                 uavcan__primitive__Unstructured@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_path_roundtrip,
-                 uavcan__file__Path,
-                 uavcan__file__Path__deserialize_,
-                 uavcan__file__Path__serialize_)
+                 uavcan__file__Path@CV2_0@,
+                 uavcan__file__Path@CV2_0@__deserialize_,
+                 uavcan__file__Path@CV2_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_id_allocation_data_roundtrip,
-                 uavcan__pnp__NodeIDAllocationData,
-                 uavcan__pnp__NodeIDAllocationData__deserialize_,
-                 uavcan__pnp__NodeIDAllocationData__serialize_)
+                 uavcan__pnp__NodeIDAllocationData@CV2_0@,
+                 uavcan__pnp__NodeIDAllocationData@CV2_0@__deserialize_,
+                 uavcan__pnp__NodeIDAllocationData@CV2_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_entry_roundtrip,
-                 uavcan__pnp__cluster__Entry,
-                 uavcan__pnp__cluster__Entry__deserialize_,
-                 uavcan__pnp__cluster__Entry__serialize_)
+                 uavcan__pnp__cluster__Entry@CV1_0@,
+                 uavcan__pnp__cluster__Entry@CV1_0@__deserialize_,
+                 uavcan__pnp__cluster__Entry@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_append_entries_request_roundtrip,
-                 uavcan__pnp__cluster__AppendEntries__Request,
-                 uavcan__pnp__cluster__AppendEntries__Request__deserialize_,
-                 uavcan__pnp__cluster__AppendEntries__Request__serialize_)
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Request,
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Request__deserialize_,
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_append_entries_response_roundtrip,
-                 uavcan__pnp__cluster__AppendEntries__Response,
-                 uavcan__pnp__cluster__AppendEntries__Response__deserialize_,
-                 uavcan__pnp__cluster__AppendEntries__Response__serialize_)
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Response,
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Response__deserialize_,
+                 uavcan__pnp__cluster__AppendEntries@CV1_0@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_request_vote_request_roundtrip,
-                 uavcan__pnp__cluster__RequestVote__Request,
-                 uavcan__pnp__cluster__RequestVote__Request__deserialize_,
-                 uavcan__pnp__cluster__RequestVote__Request__serialize_)
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Request,
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Request__deserialize_,
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_request_vote_response_roundtrip,
-                 uavcan__pnp__cluster__RequestVote__Response,
-                 uavcan__pnp__cluster__RequestVote__Response__deserialize_,
-                 uavcan__pnp__cluster__RequestVote__Response__serialize_)
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Response,
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Response__deserialize_,
+                 uavcan__pnp__cluster__RequestVote@CV1_0@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_pnp_cluster_discovery_roundtrip,
-                 uavcan__pnp__cluster__Discovery,
-                 uavcan__pnp__cluster__Discovery__deserialize_,
-                 uavcan__pnp__cluster__Discovery__serialize_)
+                 uavcan__pnp__cluster__Discovery@CV1_0@,
+                 uavcan__pnp__cluster__Discovery@CV1_0@__deserialize_,
+                 uavcan__pnp__cluster__Discovery@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_port_service_id_roundtrip,
-                 uavcan__node__port__ServiceID,
-                 uavcan__node__port__ServiceID__deserialize_,
-                 uavcan__node__port__ServiceID__serialize_)
+                 uavcan__node__port__ServiceID@CV1_0@,
+                 uavcan__node__port__ServiceID@CV1_0@__deserialize_,
+                 uavcan__node__port__ServiceID@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_port_subject_id_roundtrip,
-                 uavcan__node__port__SubjectID,
-                 uavcan__node__port__SubjectID__deserialize_,
-                 uavcan__node__port__SubjectID__serialize_)
+                 uavcan__node__port__SubjectID@CV1_0@,
+                 uavcan__node__port__SubjectID@CV1_0@__deserialize_,
+                 uavcan__node__port__SubjectID@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_port_service_id_list_roundtrip,
-                 uavcan__node__port__ServiceIDList,
-                 uavcan__node__port__ServiceIDList__deserialize_,
-                 uavcan__node__port__ServiceIDList__serialize_)
+                 uavcan__node__port__ServiceIDList@CV1_0@,
+                 uavcan__node__port__ServiceIDList@CV1_0@__deserialize_,
+                 uavcan__node__port__ServiceIDList@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_port_subject_id_list_roundtrip,
-                 uavcan__node__port__SubjectIDList,
-                 uavcan__node__port__SubjectIDList__deserialize_,
-                 uavcan__node__port__SubjectIDList__serialize_)
+                 uavcan__node__port__SubjectIDList@CV1_0@,
+                 uavcan__node__port__SubjectIDList@CV1_0@__deserialize_,
+                 uavcan__node__port__SubjectIDList@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_port_id_roundtrip,
-                 uavcan__node__port__ID,
-                 uavcan__node__port__ID__deserialize_,
-                 uavcan__node__port__ID__serialize_)
+                 uavcan__node__port__ID@CV1_0@,
+                 uavcan__node__port__ID@CV1_0@__deserialize_,
+                 uavcan__node__port__ID@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_port_list_roundtrip,
-                 uavcan__node__port__List,
-                 uavcan__node__port__List__deserialize_,
-                 uavcan__node__port__List__serialize_)
+                 uavcan__node__port__List@CV1_0@,
+                 uavcan__node__port__List@CV1_0@__deserialize_,
+                 uavcan__node__port__List@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_metatransport_ethernet_ethertype_roundtrip,
-                 uavcan__metatransport__ethernet__EtherType,
-                 uavcan__metatransport__ethernet__EtherType__deserialize_,
-                 uavcan__metatransport__ethernet__EtherType__serialize_)
+                 uavcan__metatransport__ethernet__EtherType@CV0_1@,
+                 uavcan__metatransport__ethernet__EtherType@CV0_1@__deserialize_,
+                 uavcan__metatransport__ethernet__EtherType@CV0_1@__serialize_)

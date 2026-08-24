@@ -101,10 +101,19 @@ if(NOT go_result EQUAL 0)
 endif()
 
 set(GO_OUT "${go_out}")
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
 configure_file("${go_mod_template}" "${harness_out}/go.mod" @ONLY)
-configure_file("${main_go_template}" "${harness_out}/main.go" COPYONLY)
+configure_file("${main_go_template}" "${harness_out}/main.go" @ONLY)
 set(c_harness_src "${build_out}/c_harness.c")
-configure_file("${c_harness_template}" "${c_harness_src}" COPYONLY)
+configure_file("${c_harness_template}" "${c_harness_src}" @ONLY)
 
 set(harness_obj "${build_out}/c_harness.o")
 execute_process(

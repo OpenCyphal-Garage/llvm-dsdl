@@ -48,8 +48,8 @@ interface Target {
 }
 
 const targets: Target[] = [
-  { name: "Uni_1_0", deser: deserializeUni_1_0 as Deser, ser: serializeUni_1_0 as Ser },
-  { name: "Outer_1_0", deser: deserializeOuter_1_0 as Deser, ser: serializeOuter_1_0 as Ser },
+  { name: "Uni@V1_0@", deser: deserializeUni@V1_0@ as Deser, ser: serializeUni@V1_0@ as Ser },
+  { name: "Outer@V1_0@", deser: deserializeOuter@V1_0@ as Deser, ser: serializeOuter@V1_0@ as Ser },
 ];
 
 function runOne(target: Target, data: Uint8Array): void {

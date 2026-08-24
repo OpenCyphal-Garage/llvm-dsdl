@@ -43,11 +43,11 @@ static int run_heartbeat(const uint8_t* const input,
                          const size_t         output_capacity,
                          CCaseResult* const   result)
 {
-    uavcan__node__Heartbeat obj;
+    uavcan__node__Heartbeat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__node__Heartbeat__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__Heartbeat@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -58,7 +58,7 @@ static int run_heartbeat(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__node__Heartbeat__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__node__Heartbeat@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -70,11 +70,11 @@ static int run_health(const uint8_t* const input,
                       const size_t         output_capacity,
                       CCaseResult* const   result)
 {
-    uavcan__node__Health obj;
+    uavcan__node__Health@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__node__Health__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__Health@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -85,7 +85,7 @@ static int run_health(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__node__Health__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__node__Health@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -97,11 +97,11 @@ static int run_synchronized_timestamp(const uint8_t* const input,
                                       const size_t         output_capacity,
                                       CCaseResult* const   result)
 {
-    uavcan__time__SynchronizedTimestamp obj;
+    uavcan__time__SynchronizedTimestamp@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__time__SynchronizedTimestamp__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__time__SynchronizedTimestamp@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -112,7 +112,7 @@ static int run_synchronized_timestamp(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__time__SynchronizedTimestamp__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__time__SynchronizedTimestamp@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -124,11 +124,11 @@ static int run_integer8(const uint8_t* const input,
                         const size_t         output_capacity,
                         CCaseResult* const   result)
 {
-    uavcan__primitive__scalar__Integer8 obj;
+    uavcan__primitive__scalar__Integer8@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__primitive__scalar__Integer8__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__primitive__scalar__Integer8@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -139,7 +139,7 @@ static int run_integer8(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__primitive__scalar__Integer8__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__primitive__scalar__Integer8@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -151,11 +151,11 @@ static int run_execute_command_request(const uint8_t* const input,
                                        const size_t         output_capacity,
                                        CCaseResult* const   result)
 {
-    uavcan__node__ExecuteCommand__Request obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Request obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__node__ExecuteCommand__Request__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__ExecuteCommand@CV1_3@__Request__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -166,7 +166,7 @@ static int run_execute_command_request(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__node__ExecuteCommand__Request__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -178,11 +178,11 @@ static int run_execute_command_response(const uint8_t* const input,
                                         const size_t         output_capacity,
                                         CCaseResult* const   result)
 {
-    uavcan__node__ExecuteCommand__Response obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Response obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__node__ExecuteCommand__Response__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__ExecuteCommand@CV1_3@__Response__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -193,7 +193,7 @@ static int run_execute_command_response(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__node__ExecuteCommand__Response__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -205,11 +205,11 @@ static int run_frame(const uint8_t* const input,
                      const size_t         output_capacity,
                      CCaseResult* const   result)
 {
-    uavcan__metatransport__can__Frame obj;
+    uavcan__metatransport__can__Frame@CV0_2@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__metatransport__can__Frame__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__metatransport__can__Frame@CV0_2@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -220,7 +220,7 @@ static int run_frame(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__metatransport__can__Frame__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__metatransport__can__Frame@CV0_2@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -232,11 +232,11 @@ static int run_real32(const uint8_t* const input,
                       const size_t         output_capacity,
                       CCaseResult* const   result)
 {
-    uavcan__primitive__scalar__Real32 obj;
+    uavcan__primitive__scalar__Real32@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__primitive__scalar__Real32__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__primitive__scalar__Real32@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -247,7 +247,7 @@ static int run_real32(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__primitive__scalar__Real32__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__primitive__scalar__Real32@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -404,10 +404,10 @@ int c_frame_bad_union_tag_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t                     input[1] = {0xFFU};
-    uavcan__metatransport__can__Frame obj;
+    uavcan__metatransport__can__Frame@CV0_2@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__metatransport__can__Frame__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__metatransport__can__Frame@CV0_2@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -422,10 +422,10 @@ int c_execute_response_bad_array_length_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t                          input[2] = {0x00U, 0xFFU};  // status=0, output.count=255
-    uavcan__node__ExecuteCommand__Response obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Response obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__ExecuteCommand__Response__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__ExecuteCommand@CV1_3@__Response__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -440,10 +440,10 @@ int c_list_bad_delimiter_header_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t            input[4] = {0xFFU, 0xFFU, 0xFFU, 0x7FU};
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__port__List__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__port__List@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -458,10 +458,10 @@ int c_heartbeat_empty_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t           input[1] = {0x00U};
-    uavcan__node__Heartbeat obj;
+    uavcan__node__Heartbeat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = 0U;
-    const int8_t des             = uavcan__node__Heartbeat__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__Heartbeat@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -476,10 +476,10 @@ int c_list_nested_bad_union_tag_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t            input[5] = {0x01U, 0x00U, 0x00U, 0x00U, 0xFFU};
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__port__List__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__port__List@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -494,10 +494,10 @@ int c_list_second_delimiter_bad_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t            input[8] = {0x00U, 0x00U, 0x00U, 0x00U, 0xFFU, 0xFFU, 0xFFU, 0x7FU};
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__port__List__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__port__List@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -512,10 +512,10 @@ int c_list_second_section_nested_bad_union_tag_deserialize(CCaseResult* const re
         return -1;
     }
     const uint8_t            input[9] = {0x00U, 0x00U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x00U, 0xFFU};
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__port__List__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__port__List@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -530,10 +530,10 @@ int c_list_third_delimiter_bad_deserialize(CCaseResult* const result)
         return -1;
     }
     const uint8_t input[12] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0xFFU, 0xFFU, 0xFFU, 0x7FU};
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     size_t       consumed        = sizeof(input);
-    const int8_t des             = uavcan__node__port__List__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__node__port__List@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -547,14 +547,14 @@ int c_list_nested_bad_array_length_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__node__port__List obj;
+    uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.publishers._tag_             = 1U;
     obj.publishers.sparse_list.count = (size_t) uavcan__node__port__SubjectIDList_SPARSE_LIST_ARRAY_CAPACITY_ + 1U;
     uint8_t output[9000];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__node__port__List_SERIALIZATION_BUFFER_SIZE_BYTES_;
-    const int8_t ser             = uavcan__node__port__List__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_;
+    const int8_t ser             = uavcan__node__port__List@CV1_0@__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -568,13 +568,13 @@ int c_frame_bad_union_tag_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__metatransport__can__Frame obj;
+    uavcan__metatransport__can__Frame@CV0_2@ obj;
     memset(&obj, 0, sizeof(obj));
     obj._tag_ = 0xFFU;
     uint8_t output[128];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__metatransport__can__Frame_SERIALIZATION_BUFFER_SIZE_BYTES_;
-    const int8_t ser             = uavcan__metatransport__can__Frame__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__metatransport__can__Frame@CV0_2@_SERIALIZATION_BUFFER_SIZE_BYTES_;
+    const int8_t ser             = uavcan__metatransport__can__Frame@CV0_2@__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -588,14 +588,14 @@ int c_execute_response_bad_array_length_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__node__ExecuteCommand__Response obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Response obj;
     memset(&obj, 0, sizeof(obj));
     obj.status       = 0U;
-    obj.output.count = (size_t) uavcan__node__ExecuteCommand__Response_OUTPUT_ARRAY_CAPACITY_ + 1U;
+    obj.output.count = (size_t) uavcan__node__ExecuteCommand@CV1_3@__Response_OUTPUT_ARRAY_CAPACITY_ + 1U;
     uint8_t output[128];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand__Response_SERIALIZATION_BUFFER_SIZE_BYTES_;
-    const int8_t ser             = uavcan__node__ExecuteCommand__Response__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_;
+    const int8_t ser             = uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -609,14 +609,14 @@ int c_execute_request_bad_array_length_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__node__ExecuteCommand__Request obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Request obj;
     memset(&obj, 0, sizeof(obj));
     obj.command         = 0U;
-    obj.parameter.count = (size_t) uavcan__node__ExecuteCommand__Request_PARAMETER_ARRAY_CAPACITY_ + 1U;
+    obj.parameter.count = (size_t) uavcan__node__ExecuteCommand@CV1_3@__Request_PARAMETER_ARRAY_CAPACITY_ + 1U;
     uint8_t output[300];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand__Request_SERIALIZATION_BUFFER_SIZE_BYTES_;
-    const int8_t ser             = uavcan__node__ExecuteCommand__Request__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_;
+    const int8_t ser             = uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -630,12 +630,12 @@ int c_execute_request_too_small_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__node__ExecuteCommand__Request obj;
+    uavcan__node__ExecuteCommand@CV1_3@__Request obj;
     memset(&obj, 0, sizeof(obj));
     uint8_t output[300];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand__Request_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U;
-    const int8_t ser             = uavcan__node__ExecuteCommand__Request__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U;
+    const int8_t ser             = uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -649,12 +649,12 @@ int c_heartbeat_too_small_serialize(CCaseResult* const result)
     {
         return -1;
     }
-    uavcan__node__Heartbeat obj;
+    uavcan__node__Heartbeat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     uint8_t output[8];
     memset(output, 0, sizeof(output));
-    size_t       out_size        = (size_t) uavcan__node__Heartbeat_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U;
-    const int8_t ser             = uavcan__node__Heartbeat__serialize_(&obj, output, &out_size);
+    size_t       out_size        = (size_t) uavcan__node__Heartbeat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U;
+    const int8_t ser             = uavcan__node__Heartbeat@CV1_0@__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -668,12 +668,12 @@ int c_health_saturated_serialize(CCaseResult* const result, uint8_t* const outpu
     {
         return -1;
     }
-    uavcan__node__Health obj;
+    uavcan__node__Health@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.value = 0xFFU;
     memset(output, 0, output_capacity);
     size_t       out_size        = output_capacity;
-    const int8_t ser             = uavcan__node__Health__serialize_(&obj, output, &out_size);
+    const int8_t ser             = uavcan__node__Health@CV1_0@__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;
@@ -689,12 +689,12 @@ int c_synchronized_timestamp_truncated_serialize(CCaseResult* const result,
     {
         return -1;
     }
-    uavcan__time__SynchronizedTimestamp obj;
+    uavcan__time__SynchronizedTimestamp@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.microsecond = UINT64_C(0xFEDCBA9876543210);
     memset(output, 0, output_capacity);
     size_t       out_size        = output_capacity;
-    const int8_t ser             = uavcan__time__SynchronizedTimestamp__serialize_(&obj, output, &out_size);
+    const int8_t ser             = uavcan__time__SynchronizedTimestamp@CV1_0@__serialize_(&obj, output, &out_size);
     result->deserialize_rc       = 0;
     result->deserialize_consumed = 0;
     result->serialize_rc         = ser;

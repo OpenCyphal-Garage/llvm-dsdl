@@ -72,52 +72,52 @@ static void ndf_dispatch(unsigned target, const uint8_t* data, size_t size)
 {
     switch (target % NDF_TARGET_COUNT) {
     case 0U:
-        NDF_HANDLE(uavcan__node__Heartbeat,
-                   uavcan__node__Heartbeat__deserialize_,
-                   uavcan__node__Heartbeat__serialize_,
-                   uavcan__node__Heartbeat_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__node__Heartbeat@CV1_0@,
+                   uavcan__node__Heartbeat@CV1_0@__deserialize_,
+                   uavcan__node__Heartbeat@CV1_0@__serialize_,
+                   uavcan__node__Heartbeat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     case 1U:
-        NDF_HANDLE(uavcan__node__Health,
-                   uavcan__node__Health__deserialize_,
-                   uavcan__node__Health__serialize_,
-                   uavcan__node__Health_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__node__Health@CV1_0@,
+                   uavcan__node__Health@CV1_0@__deserialize_,
+                   uavcan__node__Health@CV1_0@__serialize_,
+                   uavcan__node__Health@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     case 2U:
-        NDF_HANDLE(uavcan__primitive__scalar__Integer8,
-                   uavcan__primitive__scalar__Integer8__deserialize_,
-                   uavcan__primitive__scalar__Integer8__serialize_,
-                   uavcan__primitive__scalar__Integer8_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__primitive__scalar__Integer8@CV1_0@,
+                   uavcan__primitive__scalar__Integer8@CV1_0@__deserialize_,
+                   uavcan__primitive__scalar__Integer8@CV1_0@__serialize_,
+                   uavcan__primitive__scalar__Integer8@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     case 3U:
-        NDF_HANDLE(uavcan__metatransport__can__Frame,
-                   uavcan__metatransport__can__Frame__deserialize_,
-                   uavcan__metatransport__can__Frame__serialize_,
-                   uavcan__metatransport__can__Frame_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__metatransport__can__Frame@CV0_2@,
+                   uavcan__metatransport__can__Frame@CV0_2@__deserialize_,
+                   uavcan__metatransport__can__Frame@CV0_2@__serialize_,
+                   uavcan__metatransport__can__Frame@CV0_2@_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     case 4U:
-        NDF_HANDLE(uavcan__node__ExecuteCommand__Request,
-                   uavcan__node__ExecuteCommand__Request__deserialize_,
-                   uavcan__node__ExecuteCommand__Request__serialize_,
-                   uavcan__node__ExecuteCommand__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__node__ExecuteCommand@CV1_3@__Request,
+                   uavcan__node__ExecuteCommand@CV1_3@__Request__deserialize_,
+                   uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_,
+                   uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     case 5U:
-        NDF_HANDLE(uavcan__node__ExecuteCommand__Response,
-                   uavcan__node__ExecuteCommand__Response__deserialize_,
-                   uavcan__node__ExecuteCommand__Response__serialize_,
-                   uavcan__node__ExecuteCommand__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__node__ExecuteCommand@CV1_3@__Response,
+                   uavcan__node__ExecuteCommand@CV1_3@__Response__deserialize_,
+                   uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_,
+                   uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     default:
-        NDF_HANDLE(uavcan__node__port__List,
-                   uavcan__node__port__List__deserialize_,
-                   uavcan__node__port__List__serialize_,
-                   uavcan__node__port__List_SERIALIZATION_BUFFER_SIZE_BYTES_);
+        NDF_HANDLE(uavcan__node__port__List@CV1_0@,
+                   uavcan__node__port__List@CV1_0@__deserialize_,
+                   uavcan__node__port__List@CV1_0@__serialize_,
+                   uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
         break;
     }
 }
 
 // Fail the build if any curated type outgrows the shared scratch buffer.
-typedef char ndf_scratch_fits_list[(uavcan__node__port__List_SERIALIZATION_BUFFER_SIZE_BYTES_
+typedef char ndf_scratch_fits_list[(uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_
                                     <= NDF_SCRATCH_BYTES)
                                        ? 1
                                        : -1];
@@ -178,20 +178,20 @@ int main(int argc, char** argv)
     }
     const char* dir = argv[1];
     int         rc  = 0;
-    NDF_EMIT(0U, uavcan__node__Heartbeat, uavcan__node__Heartbeat__serialize_,
-             uavcan__node__Heartbeat_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(1U, uavcan__node__Health, uavcan__node__Health__serialize_,
-             uavcan__node__Health_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(2U, uavcan__primitive__scalar__Integer8, uavcan__primitive__scalar__Integer8__serialize_,
-             uavcan__primitive__scalar__Integer8_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(3U, uavcan__metatransport__can__Frame, uavcan__metatransport__can__Frame__serialize_,
-             uavcan__metatransport__can__Frame_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(4U, uavcan__node__ExecuteCommand__Request, uavcan__node__ExecuteCommand__Request__serialize_,
-             uavcan__node__ExecuteCommand__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(5U, uavcan__node__ExecuteCommand__Response, uavcan__node__ExecuteCommand__Response__serialize_,
-             uavcan__node__ExecuteCommand__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
-    NDF_EMIT(6U, uavcan__node__port__List, uavcan__node__port__List__serialize_,
-             uavcan__node__port__List_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(0U, uavcan__node__Heartbeat@CV1_0@, uavcan__node__Heartbeat@CV1_0@__serialize_,
+             uavcan__node__Heartbeat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(1U, uavcan__node__Health@CV1_0@, uavcan__node__Health@CV1_0@__serialize_,
+             uavcan__node__Health@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(2U, uavcan__primitive__scalar__Integer8@CV1_0@, uavcan__primitive__scalar__Integer8@CV1_0@__serialize_,
+             uavcan__primitive__scalar__Integer8@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(3U, uavcan__metatransport__can__Frame@CV0_2@, uavcan__metatransport__can__Frame@CV0_2@__serialize_,
+             uavcan__metatransport__can__Frame@CV0_2@_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(4U, uavcan__node__ExecuteCommand@CV1_3@__Request, uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_,
+             uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(5U, uavcan__node__ExecuteCommand@CV1_3@__Response, uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_,
+             uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    NDF_EMIT(6U, uavcan__node__port__List@CV1_0@, uavcan__node__port__List@CV1_0@__serialize_,
+             uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
     return rc;
 }
 #elif defined(NDF_MODE_REPLAY)

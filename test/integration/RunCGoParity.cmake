@@ -124,9 +124,17 @@ endif()
 
 set(GO_OUT "${go_out}")
 configure_file("${go_mod_template}" "${harness_out}/go.mod" @ONLY)
-configure_file("${main_go_template}" "${harness_out}/main.go" COPYONLY)
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+configure_file("${main_go_template}" "${harness_out}/main.go" @ONLY)
 set(c_harness_src "${build_out}/c_harness.c")
-configure_file("${c_harness_template}" "${c_harness_src}" COPYONLY)
+configure_file("${c_harness_template}" "${c_harness_src}" @ONLY)
 
 # The harness round-trips every type in the corpus, deprecated ones included, so it trips the
 # deprecation attributes the C backend emits by default. That diagnostic is working as intended --

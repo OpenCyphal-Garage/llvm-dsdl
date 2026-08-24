@@ -36,11 +36,11 @@ static int run_int3sat(const uint8_t* const input,
                        const size_t         output_capacity,
                        CCaseResult* const   result)
 {
-    vendor__Int3Sat obj;
+    vendor__Int3Sat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = vendor__Int3Sat__deserialize_(&obj, input, &consumed);
+    const int8_t des             = vendor__Int3Sat@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -51,7 +51,7 @@ static int run_int3sat(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = vendor__Int3Sat__serialize_(&obj, output, &out_size);
+    const int8_t ser       = vendor__Int3Sat@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -63,11 +63,11 @@ static int run_int3trunc(const uint8_t* const input,
                          const size_t         output_capacity,
                          CCaseResult* const   result)
 {
-    vendor__Int3Trunc obj;
+    vendor__Int3Trunc@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = vendor__Int3Trunc__deserialize_(&obj, input, &consumed);
+    const int8_t des             = vendor__Int3Trunc@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -78,7 +78,7 @@ static int run_int3trunc(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = vendor__Int3Trunc__serialize_(&obj, output, &out_size);
+    const int8_t ser       = vendor__Int3Trunc@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -120,7 +120,7 @@ int c_int3sat_directed_serialize(const int8_t       value,
         return -1;
     }
 
-    vendor__Int3Sat obj;
+    vendor__Int3Sat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.value = value;
 
@@ -128,7 +128,7 @@ int c_int3sat_directed_serialize(const int8_t       value,
     result->deserialize_consumed = 0;
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = vendor__Int3Sat__serialize_(&obj, output, &out_size);
+    const int8_t ser       = vendor__Int3Sat@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -144,7 +144,7 @@ int c_int3trunc_directed_serialize(const int8_t       value,
         return -1;
     }
 
-    vendor__Int3Trunc obj;
+    vendor__Int3Trunc@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.value = value;
 
@@ -152,7 +152,7 @@ int c_int3trunc_directed_serialize(const int8_t       value,
     result->deserialize_consumed = 0;
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = vendor__Int3Trunc__serialize_(&obj, output, &out_size);
+    const int8_t ser       = vendor__Int3Trunc@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -165,11 +165,11 @@ int c_int3sat_deserialize_value(const uint8_t sample, int8_t* const out_value, C
         return -1;
     }
 
-    vendor__Int3Sat obj;
+    vendor__Int3Sat@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = 1U;
-    const int8_t des             = vendor__Int3Sat__deserialize_(&obj, &sample, &consumed);
+    const int8_t des             = vendor__Int3Sat@CV1_0@__deserialize_(&obj, &sample, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -185,11 +185,11 @@ int c_int3trunc_deserialize_value(const uint8_t sample, int8_t* const out_value,
         return -1;
     }
 
-    vendor__Int3Trunc obj;
+    vendor__Int3Trunc@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = 1U;
-    const int8_t des             = vendor__Int3Trunc__deserialize_(&obj, &sample, &consumed);
+    const int8_t des             = vendor__Int3Trunc@CV1_0@__deserialize_(&obj, &sample, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;

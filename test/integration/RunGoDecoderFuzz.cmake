@@ -53,7 +53,16 @@ endif()
 
 # Drop the fuzz harness into its own package within the generated module.
 file(MAKE_DIRECTORY "${OUT_DIR}/decoderfuzz")
-configure_file("${fuzz_harness}" "${OUT_DIR}/decoderfuzz/fuzz_test.go" COPYONLY)
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
+configure_file("${fuzz_harness}" "${OUT_DIR}/decoderfuzz/fuzz_test.go" @ONLY)
 
 set(go_cache "${OUT_DIR}/.gocache")
 set(go_mod_cache "${OUT_DIR}/.gomodcache")

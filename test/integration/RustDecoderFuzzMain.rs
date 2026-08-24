@@ -69,13 +69,13 @@ fn fuzz_one_input(data: &[u8]) {
     // tagged union, variable-length arrays, and the deep nested-delimited path.
     fuzz_types!(
         data,
-        uavcan_node_Heartbeat_1_0,
-        uavcan_node_Health_1_0,
-        uavcan_primitive_scalar_Integer8_1_0,
-        uavcan_metatransport_can_Frame_0_2,
+        uavcan_node_Heartbeat@V1_0@,
+        uavcan_node_Health@V1_0@,
+        uavcan_primitive_scalar_Integer8@V1_0@,
+        uavcan_metatransport_can_Frame@V0_2@,
         uavcan_node_ExecuteCommand_1_3_Request,
         uavcan_node_ExecuteCommand_1_3_Response,
-        uavcan_node_port_List_1_0,
+        uavcan_node_port_List@V1_0@,
     );
 }
 

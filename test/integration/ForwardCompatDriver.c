@@ -30,22 +30,22 @@
 int main(void)
 {
     // Forward compatibility: wide writer -> narrow reader skips the appended `y`.
-    wire__wid__Holder wide_in;
+    wire__wid__Holder@CV1_0@ wide_in;
     memset(&wide_in, 0, sizeof wide_in);
     wide_in.inner.x = 1U;
     wide_in.inner.y = 2U;
     wide_in.tail    = 99U;
     uint8_t wire[64];
     size_t  wire_size = sizeof wire;
-    if (wire__wid__Holder__serialize_(&wide_in, wire, &wire_size) != 0)
+    if (wire__wid__Holder@CV1_0@__serialize_(&wide_in, wire, &wire_size) != 0)
     {
         printf("c_serialize_wide_failed\n");
         return 2;
     }
-    wire__nar__Holder narrow_out;
+    wire__nar__Holder@CV1_0@ narrow_out;
     memset(&narrow_out, 0, sizeof narrow_out);
     size_t narrow_consumed = wire_size;
-    if (wire__nar__Holder__deserialize_(&narrow_out, wire, &narrow_consumed) != 0)
+    if (wire__nar__Holder@CV1_0@__deserialize_(&narrow_out, wire, &narrow_consumed) != 0)
     {
         printf("c_deserialize_narrow_failed\n");
         return 3;
@@ -58,21 +58,21 @@ int main(void)
     printf("fwdcompat_ok\n");
 
     // Zero extension: narrow writer -> wide reader zero-fills the absent `y`.
-    wire__nar__Holder narrow_in;
+    wire__nar__Holder@CV1_0@ narrow_in;
     memset(&narrow_in, 0, sizeof narrow_in);
     narrow_in.inner.x = 5U;
     narrow_in.tail    = 77U;
     uint8_t wire2[64];
     size_t  wire2_size = sizeof wire2;
-    if (wire__nar__Holder__serialize_(&narrow_in, wire2, &wire2_size) != 0)
+    if (wire__nar__Holder@CV1_0@__serialize_(&narrow_in, wire2, &wire2_size) != 0)
     {
         printf("c_serialize_narrow_failed\n");
         return 5;
     }
-    wire__wid__Holder wide_out;
+    wire__wid__Holder@CV1_0@ wide_out;
     memset(&wide_out, 0xEE, sizeof wide_out);  // poison so a missed zero-extension is visible
     size_t wide_consumed = wire2_size;
-    if (wire__wid__Holder__deserialize_(&wide_out, wire2, &wide_consumed) != 0)
+    if (wire__wid__Holder@CV1_0@__deserialize_(&wide_out, wire2, &wide_consumed) != 0)
     {
         printf("c_deserialize_wide_failed\n");
         return 6;

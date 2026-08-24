@@ -56,11 +56,15 @@ set(c_out "${OUT_DIR}/c")
 dsdlc_generate(c "" "${c_out}")
 file(GLOB_RECURSE c_sources "${c_out}/wire/*.c")
 set(c_bin "${OUT_DIR}/forward_compat_c")
+# The driver names generated types, so it goes through the token substitution like every other
+# harness rather than being compiled straight from the source tree.
+set(c_driver "${OUT_DIR}/ForwardCompatDriver.c")
+configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatDriver.c" "${c_driver}" @ONLY)
 execute_process(
   COMMAND
     "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
       -I "${c_out}"
-      "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.c"
+      "${c_driver}"
       ${c_sources}
       -o "${c_bin}"
   RESULT_VARIABLE c_cc_result
@@ -100,8 +104,17 @@ endif()
 set(rust_harness "${OUT_DIR}/rust-harness")
 file(MAKE_DIRECTORY "${rust_harness}/src")
 set(RUST_OUT "${rust_out}")
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
 configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatCargo.toml.in" "${rust_harness}/Cargo.toml" @ONLY)
-configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.rs" "${rust_harness}/src/main.rs" COPYONLY)
+configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.rs" "${rust_harness}/src/main.rs" @ONLY)
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OUT_DIR}/cargo-target"
@@ -121,7 +134,7 @@ endif()
 set(go_out "${OUT_DIR}/go")
 dsdlc_generate(go "--go-module;dsdlfwdcompat" "${go_out}")
 file(MAKE_DIRECTORY "${go_out}/cmd/forwardcompat")
-configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.go" "${go_out}/cmd/forwardcompat/main.go" COPYONLY)
+configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.go" "${go_out}/cmd/forwardcompat/main.go" @ONLY)
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "GOCACHE=${OUT_DIR}/.gocache" "GOFLAGS=-mod=mod"
@@ -166,7 +179,7 @@ if(TSC_EXECUTABLE AND NOT "${TSC_EXECUTABLE}" STREQUAL "" AND NODE_EXECUTABLE AN
   set(ts_out "${OUT_DIR}/ts")
   dsdlc_generate(ts "--ts-module;fcwire" "${ts_out}")
   configure_file(
-    "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.ts" "${ts_out}/forward_compat_driver.ts" COPYONLY)
+    "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.ts" "${ts_out}/forward_compat_driver.ts" @ONLY)
   file(WRITE "${ts_out}/tsconfig-forward-compat.json"
     "{ \"compilerOptions\": { \"target\": \"ES2020\", \"module\": \"CommonJS\", \"moduleResolution\": \"Node\", \"strict\": true, \"outDir\": \"./js\" }, \"include\": [\"./**/*.ts\"] }\n")
   execute_process(

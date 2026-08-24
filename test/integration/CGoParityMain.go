@@ -1057,7 +1057,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_heartbeat_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.Heartbeat_1_0
+				var obj node.Heartbeat@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1111,7 +1111,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.ID_1_0
+				var obj node.ID@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1129,7 +1129,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_mode_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.Mode_1_0
+				var obj node.Mode@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1147,7 +1147,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_version_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.Version_1_0
+				var obj node.Version@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1165,7 +1165,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_health_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.Health_1_0
+				var obj node.Health@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1183,7 +1183,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_io_statistics_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.IOStatistics_0_1
+				var obj node.IOStatistics@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1219,7 +1219,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_diagnostic_record_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj diagnosticpkg.Record_1_1
+				var obj diagnosticpkg.Record@V1_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1237,7 +1237,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_diagnostic_severity_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj diagnosticpkg.Severity_1_0
+				var obj diagnosticpkg.Severity@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1255,7 +1255,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_register_value_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.Value_1_0
+				var obj registerpkg.Value@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1309,7 +1309,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_register_name_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.Name_1_0
+				var obj registerpkg.Name@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1543,7 +1543,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_file_error_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Error_1_0
+				var obj filepkg.Error@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1597,7 +1597,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_frame_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.Frame_0_2
+				var obj metacan.Frame@V0_2@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1615,7 +1615,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_data_classic_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.DataClassic_0_1
+				var obj metacan.DataClassic@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1633,7 +1633,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_error_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.Error_0_1
+				var obj metacan.Error@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1651,7 +1651,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_data_fd_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.DataFD_0_1
+				var obj metacan.DataFD@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1669,7 +1669,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_rtr_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.RTR_0_1
+				var obj metacan.RTR@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1687,7 +1687,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_manifestation_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.Manifestation_0_1
+				var obj metacan.Manifestation@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1705,7 +1705,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_arbitration_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.ArbitrationID_0_1
+				var obj metacan.ArbitrationID@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1723,7 +1723,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_base_arbitration_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.BaseArbitrationID_0_1
+				var obj metacan.BaseArbitrationID@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1741,7 +1741,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_can_extended_arbitration_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metacan.ExtendedArbitrationID_0_1
+				var obj metacan.ExtendedArbitrationID@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1759,7 +1759,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_metatransport_serial_fragment_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metaserialpkg.Fragment_0_2
+				var obj metaserialpkg.Fragment@V0_2@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1777,7 +1777,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_metatransport_ethernet_frame_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metaethernetpkg.Frame_0_1
+				var obj metaethernetpkg.Frame@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1795,7 +1795,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_metatransport_ethernet_ethertype_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metaethernetpkg.EtherType_0_1
+				var obj metaethernetpkg.EtherType@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1813,7 +1813,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_metatransport_udp_endpoint_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metaudppkg.Endpoint_0_1
+				var obj metaudppkg.Endpoint@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1831,7 +1831,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_metatransport_udp_frame_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj metaudppkg.Frame_0_1
+				var obj metaudppkg.Frame@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1849,7 +1849,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_time_synchronization_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.Synchronization_1_0
+				var obj timepkg.Synchronization@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1867,7 +1867,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_time_synchronized_timestamp_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.SynchronizedTimestamp_1_0
+				var obj timepkg.SynchronizedTimestamp@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1885,7 +1885,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_time_system_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.TimeSystem_0_1
+				var obj timepkg.TimeSystem@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1903,7 +1903,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_time_tai_info_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.TAIInfo_0_1
+				var obj timepkg.TAIInfo@V0_1@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1957,7 +1957,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_udp_outgoing_packet_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj internetudppkg.OutgoingPacket_0_2
+				var obj internetudppkg.OutgoingPacket@V0_2@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2012,7 +2012,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_angle_quaternion_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitanglepkg.Quaternion_1_0
+				var obj siunitanglepkg.Quaternion@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2031,7 +2031,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_acceleration_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitaccelerationpkg.Vector3_1_0
+				var obj siunitaccelerationpkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2050,7 +2050,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_force_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitforcepkg.Vector3_1_0
+				var obj siunitforcepkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2069,7 +2069,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_length_wide_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitlengthpkg.WideVector3_1_0
+				var obj siunitlengthpkg.WideVector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2088,7 +2088,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_torque_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunittorquepkg.Vector3_1_0
+				var obj siunittorquepkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2107,7 +2107,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_angle_quaternion_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisampleanglepkg.Quaternion_1_0
+				var obj sisampleanglepkg.Quaternion@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2126,7 +2126,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_acceleration_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisampleaccelerationpkg.Vector3_1_0
+				var obj sisampleaccelerationpkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2145,7 +2145,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_force_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisampleforcepkg.Vector3_1_0
+				var obj sisampleforcepkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2164,7 +2164,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_torque_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisampletorquepkg.Vector3_1_0
+				var obj sisampletorquepkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2183,7 +2183,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_velocity_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitvelocitypkg.Vector3_1_0
+				var obj siunitvelocitypkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2202,7 +2202,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_velocity_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisamplevelocitypkg.Vector3_1_0
+				var obj sisamplevelocitypkg.Vector3@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2220,7 +2220,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_temperature_scalar_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitemperaturepkg.Scalar_1_0
+				var obj siunitemperaturepkg.Scalar@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2238,7 +2238,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_temperature_scalar_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisampletemperaturepkg.Scalar_1_0
+				var obj sisampletemperaturepkg.Scalar@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2256,7 +2256,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_unit_voltage_scalar_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj siunitvoltagepkg.Scalar_1_0
+				var obj siunitvoltagepkg.Scalar@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2274,7 +2274,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_si_sample_voltage_scalar_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj sisamplevoltagepkg.Scalar_1_0
+				var obj sisamplevoltagepkg.Scalar@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2292,7 +2292,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_natural8_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Natural8_1_0
+				var obj primarray.Natural8@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2311,7 +2311,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_real16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Real16_1_0
+				var obj primarray.Real16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2329,7 +2329,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_real32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Real32_1_0
+				var obj primarray.Real32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2347,7 +2347,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_bit_array_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Bit_1_0
+				var obj primarray.Bit@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2365,7 +2365,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_bit_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Bit_1_0
+				var obj primitivescalarpkg.Bit@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2383,7 +2383,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_integer8_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Integer8_1_0
+				var obj primitivescalarpkg.Integer8@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2401,7 +2401,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_integer16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Integer16_1_0
+				var obj primitivescalarpkg.Integer16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2419,7 +2419,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_integer32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Integer32_1_0
+				var obj primitivescalarpkg.Integer32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2437,7 +2437,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_integer64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Integer64_1_0
+				var obj primitivescalarpkg.Integer64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2455,7 +2455,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_natural8_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Natural8_1_0
+				var obj primitivescalarpkg.Natural8@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2473,7 +2473,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_natural16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Natural16_1_0
+				var obj primitivescalarpkg.Natural16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2491,7 +2491,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_natural32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Natural32_1_0
+				var obj primitivescalarpkg.Natural32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2509,7 +2509,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_natural64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Natural64_1_0
+				var obj primitivescalarpkg.Natural64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2527,7 +2527,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_real16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Real16_1_0
+				var obj primitivescalarpkg.Real16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2545,7 +2545,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_real32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Real32_1_0
+				var obj primitivescalarpkg.Real32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2563,7 +2563,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_scalar_real64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivescalarpkg.Real64_1_0
+				var obj primitivescalarpkg.Real64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2581,7 +2581,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_integer8_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Integer8_1_0
+				var obj primarray.Integer8@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2599,7 +2599,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_integer16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Integer16_1_0
+				var obj primarray.Integer16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2617,7 +2617,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_integer32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Integer32_1_0
+				var obj primarray.Integer32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2635,7 +2635,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_integer64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Integer64_1_0
+				var obj primarray.Integer64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2653,7 +2653,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_natural16_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Natural16_1_0
+				var obj primarray.Natural16@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2671,7 +2671,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_natural32_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Natural32_1_0
+				var obj primarray.Natural32@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2689,7 +2689,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_natural64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Natural64_1_0
+				var obj primarray.Natural64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2707,7 +2707,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_array_real64_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primarray.Real64_1_0
+				var obj primarray.Real64@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2725,7 +2725,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_primitive_empty_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivepkg.Empty_1_0
+				var obj primitivepkg.Empty@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2743,7 +2743,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_primitive_string_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivepkg.String_1_0
+				var obj primitivepkg.String@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2761,7 +2761,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_primitive_unstructured_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj primitivepkg.Unstructured_1_0
+				var obj primitivepkg.Unstructured@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2779,7 +2779,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_file_path_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Path_2_0
+				var obj filepkg.Path@V2_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2797,7 +2797,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_id_allocation_data_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnppkg.NodeIDAllocationData_2_0
+				var obj pnppkg.NodeIDAllocationData@V2_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2815,7 +2815,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_pnp_cluster_entry_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.Entry_1_0
+				var obj pnpclusterpkg.Entry@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2905,7 +2905,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_pnp_cluster_discovery_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.Discovery_1_0
+				var obj pnpclusterpkg.Discovery@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2923,7 +2923,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_port_service_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.ServiceID_1_0
+				var obj nodeport.ServiceID@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2941,7 +2941,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_port_subject_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.SubjectID_1_0
+				var obj nodeport.SubjectID@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2959,7 +2959,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_port_service_id_list_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.ServiceIDList_1_0
+				var obj nodeport.ServiceIDList@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2977,7 +2977,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_port_subject_id_list_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.SubjectIDList_1_0
+				var obj nodeport.SubjectIDList@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2995,7 +2995,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_node_port_id_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.ID_1_0
+				var obj nodeport.ID@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -3013,7 +3013,7 @@ func buildParityCases(baseIterations int) []parityCase {
 				return C.c_port_list_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj nodeport.List_1_0
+				var obj nodeport.List@V1_0@
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -4434,7 +4434,7 @@ func runCGoParity(iterations int) error {
 			return fmt.Errorf("real16_nan_vector: %w", err)
 		}
 		if outcome.cDeserializeRC >= 0 {
-			var obj primarray.Real16_1_0
+			var obj primarray.Real16@V1_0@
 			rc, _ := obj.Deserialize(nanInput)
 			if rc >= 0 && len(obj.Value) == 1 && !math.IsNaN(float64(obj.Value[0])) {
 				return fmt.Errorf("real16_nan_vector: expected NaN value after deserialize")

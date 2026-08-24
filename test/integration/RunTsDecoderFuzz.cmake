@@ -56,7 +56,16 @@ if(NOT gen_result EQUAL 0)
   message(FATAL_ERROR "TypeScript generation for the decoder fuzz lane failed")
 endif()
 
-configure_file("${driver_src}" "${ts_out}/decoder_fuzz.ts" COPYONLY)
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
+configure_file("${driver_src}" "${ts_out}/decoder_fuzz.ts" @ONLY)
 file(WRITE "${ts_out}/tsconfig.json"
   "{ \"compilerOptions\": { \"target\": \"ES2020\", \"module\": \"CommonJS\", \"moduleResolution\": \"node\", \"strict\": true, \"outDir\": \"./dist\", \"skipLibCheck\": true }, \"include\": [\"**/*.ts\"] }\n")
 
