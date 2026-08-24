@@ -971,8 +971,46 @@ passed.
 
 **The way out is a separate feature: generate the newest version of each type by default.** That
 removes the collision at its source for every language rather than working around it per backend,
-and it changes what D5, D19 and D20 should do -- so settling them first would be settling them
-against a corpus shape that is about to change. They wait for it.
+and it changes what D5 and D20 should do -- so settling them first would be settling them against a
+corpus shape that is about to change. They wait for it.
+
+### What an implementation attempt found (2026-08-24)
+
+The two modes were built end to end and then reverted, deliberately. Everything worked: a
+`--versioned-type-names` flag threaded from the driver into all eight backends, lowering left at the
+unversioned default with the C emitter restamping `c_type_name` on its own clone (the [D18](#d18)
+arrangement), a C/C++ per-type sentinel that turns a two-version include into one `#error` naming the
+flag, and a Go generation-time refusal. Versioned mode reproduced the existing Rust and Go output
+byte-for-byte, which is the check that the threading was faithful.
+
+It was reverted for one measured reason: **a uniform unversioned default fails 113 of 206 tests**,
+and the cause is structural rather than a matter of updating expectations.
+
+Every cross-language parity harness generates C *plus one other language* and names types in both
+halves. Those halves disagree today by design -- C is unversioned, the other five are versioned --
+and the harnesses are written against exactly that split. So neither setting of one global flag
+satisfies them: the default keeps the C half working and breaks the other, and the flag does the
+reverse. That is not a fixture problem; it is the same inconsistency §D describes, showing up in the
+test suite instead of the emitters.
+
+The counts, for whoever picks this up: 31 cross-language parity harnesses, 19 TypeScript runtime
+smokes, 11 Python runtime tests, the three decoder fuzzers, the Go build/determinism/generation
+lanes, `llvmdsdl-lit`, and the Python unit tests.
+
+An earlier estimate of this cost was wrong and worth recording as a trap. Measuring *generated files
+that change* gives 36 of 38 in Rust and Go and 7 of 38 in C++ -- which understates the work by an
+order of magnitude, because the cost is not in the generated tree but in the hand-written code that
+references it.
+
+Two consequences for the eventual design:
+
+- Newest-version-only would shrink this dramatically. With one version of each type in the corpus,
+  the C and C++ sentinels never fire, Go never refuses, and the harnesses stop straddling two naming
+  conventions.
+- If the modes land before that, scoping the default to C, C++ and obj-cpp costs no test churn at
+  all -- C is already unversioned and the other four are untouched -- while still fixing every defect
+  that exists. Uniformity across all six is the expensive half, and it buys consistency rather than
+  correctness.
 
 ## Suggested order
 
