@@ -1,12 +1,12 @@
 # Identifier naming defects
 
-Twenty-two defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
+Twenty-three defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
 `f8c2fad..docs/roadmap-g8-scorecard`; [D18](#d18) was found while preparing the fix for root cause
 [A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given; [D19](#d19) by a
 fixture added while fixing [A](#a-three-emitters-have-no-field-scope); [D20](#d20) while
 reproducing [D5](#d5); and [D21](#d21) while consolidating the file-stem producers under root cause
 [D](#d-composed-names-are-spliced-at-the-call-site); and [D22](#d22) by the lane added to run the
-naming corpus under both versioning schemes. Each is reproduced against a built `dsdlc`; the
+naming corpus under both versioning schemes, which also led to [D23](#d23). Each is reproduced against a built `dsdlc`; the
 transcripts are the generated output quoted under each entry.
 
 Design record: [identifier-stropping.md](docs/development/identifier-stropping.md).
@@ -20,7 +20,7 @@ policy that sits on it is deferred.
 [A](#a-three-emitters-have-no-field-scope) — in all four backends that lacked a scope, not the three
 the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
 [C](#c-c-claims-nothing-on-a-premise-that-is-false), and the driver fixes D6, D15 and D16. With them
-D1–D4, D6–D19, [D21](#d21) and [D22](#d22), plus the mechanism half of root cause
+D1–D4, D6–D19 and [D21](#d21)–[D23](#d23), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
 **Deferred:** [D5](#d5) and [D20](#d20) only. The mechanism they need is landed —
@@ -53,6 +53,7 @@ feature rather than before it. See
 | [D20](#d20) | High | C/C++/obj | Type versions are not always in the type name, so two versions of one DSDL type collide |
 | [D21](#d21) | Medium | manifest | ~~The manifest reports an encoded C/C++ file stem that is not the file on disk~~ |
 | [D22](#d22) | High | C | ~~Under `--versioned-type-names` the C header and the C implementation name different types~~ |
+| [D23](#d23) | High | obj | ~~The object backend accepts `--versioned-type-names` and ignores it~~ |
 
 ---
 
@@ -965,6 +966,38 @@ option nobody had tried.
 
 ---
 
+### D23
+
+**The object backend accepts `--versioned-type-names` and ignores it.**
+High · `lib/CodeGen/ObjectEmitter.cpp`
+
+Found by auditing which structs declare `typeNameVersioning` against which ones read it, after
+[Phase 3](#running-both-schemes) landed.
+
+The driver sets the option on the obj backend like the other seven. The obj backend drives the C
+emitter for its staged headers and, in the obj-cpp lane, the C++ ABI emitter, and forwarded neither.
+Both stages ran at the default whatever the user asked for.
+
+```console
+$ dsdlc --target-language obj --versioned-type-names --target-endianness little src --outdir out
+$ grep -o 'src__vv__T[A-Za-z0-9_]*' out/src/vv/T_1_0.h | head -1
+src__vv__T
+```
+
+The headers this backend publishes are the archive's interface, so a caller writes these names. The
+backend does deliberately opt out of one C option -- deprecation attributes, because the C it stages
+is an intermediate nobody sees -- and this was not that: the names are published.
+
+Worse than a silent no-op, it made the feature look tested. `RunObjCppBackendSmoke.cmake` passed the
+flag while its harness named unversioned types, and passed *because* the flag did nothing. A survey
+of which lanes pass the flag therefore counted obj as covered under both schemes when it was covered
+under neither.
+
+**Fixed.** Both stage option structs forward it. Both obj smokes are parameterised and registered
+under each scheme, so the forwarding is now what the test depends on.
+
+---
+
 ## The D18 fork
 
 Three ways to make the C declaration and the C serialiser agree.
@@ -1103,10 +1136,13 @@ run under both.
 | `llvmdsdl-naming-corpus-compile-gate-versioned-names` | all six languages over the adversarial naming corpus, under `-Werror` |
 | `llvmdsdl-uavcan-cpp-c-parity-versioned-names` | C and C++ |
 | `llvmdsdl-uavcan-c-rust-parity-versioned-names` | C and Rust |
+| `llvmdsdl-obj-backend-smoke-versioned-names` | obj's published C headers |
+| `llvmdsdl-obj-cpp-backend-smoke-versioned-names` | obj-cpp's published C++ headers and C shim |
 
-Rust, Go, TypeScript, Python and obj already ran under both, on lanes that predate the modes. C and
-C++ ran under neither -- every lane that touched them was on the default -- which is what let
-[D22](#d22) sit undetected.
+Rust, Go, TypeScript and Python already ran under both, on lanes that predate the modes. C and C++
+ran under neither -- every lane that touched them was on the default -- which is what let
+[D22](#d22) sit undetected, and obj *appeared* to run under both only because it was ignoring the
+flag ([D23](#d23)).
 
 Each harness script now settles its scheme in one call, `llvmdsdl_harness_naming_scheme`, which
 defines the substitution tokens *and* the dsdlc flags from one variable. Before, a script set them

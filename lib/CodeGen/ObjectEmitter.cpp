@@ -499,6 +499,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     // compiles itself and the user never sees, so a deprecation diagnostic on it has no audience.
     cOptions.emitDeprecationAttributes = false;
     cOptions.selectedTypeKeys      = options.selectedTypeKeys;
+    // Not opted out, unlike the deprecation attributes above: the headers this produces are
+    // published as the archive's interface, so a caller writes these names.
+    cOptions.typeNameVersioning    = options.typeNameVersioning;
     cOptions.writePolicy           = options.writePolicy;
     cOptions.writePolicy.recordedOutputs                = nullptr;
     cOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
@@ -625,6 +628,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         cppStageOptions.stageRoot         = cppStageRoot;
         cppStageOptions.cStageRoot        = cStageRoot;
         cppStageOptions.selectedTypeKeys  = options.selectedTypeKeys;
+        cppStageOptions.typeNameVersioning = options.typeNameVersioning;
         cppStageOptions.writePolicy       = options.writePolicy;
         std::vector<std::string> cppGenerated;
         cppStageOptions.writePolicy.recordedOutputs                = &cppGenerated;

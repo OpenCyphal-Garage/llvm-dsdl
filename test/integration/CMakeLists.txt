@@ -533,6 +533,25 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
         LABELS "integration;fixtures;obj"
     )
 
+    # As with the obj-cpp lane: the published C headers under the other spelling.
+    add_test(
+      NAME llvmdsdl-obj-backend-smoke-versioned-names
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-backend-smoke-versioned-names-out
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DTYPE_NAME_SCHEME=versioned
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjBackendSmoke.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-obj-backend-smoke-versioned-names
+      PROPERTIES
+        LABELS "integration;fixtures;obj;naming"
+    )
+
     if(CMAKE_CXX_COMPILER)
       add_test(
         NAME llvmdsdl-obj-cpp-backend-smoke
@@ -550,6 +569,27 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
         llvmdsdl-obj-cpp-backend-smoke
         PROPERTIES
           LABELS "integration;fixtures;obj;obj-cpp;release-blocking"
+      )
+
+      # The obj backend publishes the headers a consumer writes against, so both spellings of them
+      # are compiled and run. Until this lane existed the backend silently ignored the flag.
+      add_test(
+        NAME llvmdsdl-obj-cpp-backend-smoke-versioned-names
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-cpp-backend-smoke-versioned-names-out
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DTYPE_NAME_SCHEME=versioned
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjCppBackendSmoke.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-obj-cpp-backend-smoke-versioned-names
+        PROPERTIES
+          LABELS "integration;fixtures;obj;obj-cpp;release-blocking;naming"
       )
     else()
       message(STATUS "Skipping obj-cpp backend smoke test: C++ compiler unavailable")
