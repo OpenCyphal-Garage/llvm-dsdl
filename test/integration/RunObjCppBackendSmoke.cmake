@@ -33,7 +33,7 @@ file(MAKE_DIRECTORY "${no_archive_out}")
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
+      "${DSDLC}" --target-language obj --versioned-type-names --obj-abi-language cpp --target-endianness little
       --jobs 1 --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE little_result
   OUTPUT_VARIABLE little_stdout
@@ -48,7 +48,7 @@ endif()
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness big
+      "${DSDLC}" --target-language obj --versioned-type-names --obj-abi-language cpp --target-endianness big
       --jobs 2 --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE big_result
   OUTPUT_VARIABLE big_stdout
@@ -63,7 +63,7 @@ endif()
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
+      "${DSDLC}" --target-language obj --versioned-type-names --obj-abi-language cpp --target-endianness little
       --jobs 4 --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE no_archive_result
   OUTPUT_VARIABLE no_archive_stdout

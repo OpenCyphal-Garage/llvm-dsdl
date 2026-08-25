@@ -67,9 +67,30 @@ file(MAKE_DIRECTORY "${go_out}")
 file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
+# A single-version fixture corpus, so either scheme generates. The default follows the tool's.
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "unversioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
+# One variable drives both the generator and the harness tokens, so the two cannot
+# disagree about how a type is spelled.
+set(c_scheme_args "")
+if(C_TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(c_scheme_args --versioned-type-names)
+endif()
+set(other_scheme_args "")
+if(TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(other_scheme_args --versioned-type-names)
+endif()
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -85,7 +106,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --go-module "signed_narrow_generated"
@@ -101,14 +122,6 @@ if(NOT go_result EQUAL 0)
 endif()
 
 set(GO_OUT "${go_out}")
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "versioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
 
 configure_file("${go_mod_template}" "${harness_out}/go.mod" @ONLY)
 configure_file("${main_go_template}" "${harness_out}/main.go" @ONLY)

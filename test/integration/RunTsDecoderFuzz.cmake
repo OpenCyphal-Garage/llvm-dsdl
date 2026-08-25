@@ -42,7 +42,7 @@ file(WRITE "${dsdl_root}/vt/Outer.1.0.dsdl" "vt.Inner.1.0 inner\nvt.Inner.1.0[<=
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --versioned-type-names
       "${dsdl_root}"
       --outdir "${ts_out}"
       --ts-module dsdlgen

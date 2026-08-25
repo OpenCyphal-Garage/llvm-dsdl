@@ -15,6 +15,7 @@
 #define LLVMDSDL_CODEGEN_NAMING_MANIFEST_H
 
 #include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -34,9 +35,12 @@ namespace llvmdsdl
 /// @param[in] languages Languages to report, each with the name to key it under.
 /// @param[in] toolVersion Generator version, recorded so a consumer can tell manifests apart.
 /// @return The manifest as pretty-printed JSON, newline-terminated.
+/// @param[in] typeNameVersioning The scheme this invocation generated under. The names below depend
+///            on it, so a consumer should not have to infer which one produced them.
 [[nodiscard]] std::string renderNamingManifest(const SemanticModule&          semantic,
                                                llvm::ArrayRef<OutputLanguage> languages,
-                                               llvm::StringRef                toolVersion);
+                                               llvm::StringRef                toolVersion,
+                                               TypeNameVersioning             typeNameVersioning);
 
 }  // namespace llvmdsdl
 

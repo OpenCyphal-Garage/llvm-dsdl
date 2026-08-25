@@ -50,6 +50,7 @@
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
@@ -166,9 +167,16 @@ void emitAttachedDocGo(std::ostringstream& out, const int indent, const Attached
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
@@ -217,7 +225,7 @@ public:
                                         info.shortName,
                                         info.majorVersion,
                                         info.minorVersion,
-                                        false);
+                                        typeNameVersioning_);
     }
 
     std::string goTypeName(const SemanticTypeRef& ref) const
@@ -244,6 +252,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*  traceSink_ = nullptr;
 };
 
@@ -1500,6 +1509,46 @@ llvm::Error emitGo(const SemanticModule& semantic,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
+
+    // Go is the one backend that cannot express unversioned names where it matters. A DSDL namespace
+    // becomes one package and every version of a type lands in it, so two versions give one struct
+    // name and one set of metadata constants -- the package does not compile, and no include-time
+    // guard can help because Go compiles the package as a whole. Refuse rather than write a tree
+    // that cannot build.
+    if (options.typeNameVersioning == TypeNameVersioning::Unversioned)
+    {
+        std::map<std::string, std::vector<std::string>> versionsByFullName;
+        for (const auto& def : semantic.definitions)
+        {
+            versionsByFullName[def.info.fullName].push_back(std::to_string(def.info.majorVersion) + "." +
+                                                            std::to_string(def.info.minorVersion));
+        }
+        bool refused = false;
+        for (const auto& [fullName, versions] : versionsByFullName)
+        {
+            if (versions.size() > 1U)
+            {
+                std::string list;
+                for (const auto& v : versions)
+                {
+                    list += (list.empty() ? "" : ", ") + v;
+                }
+                diagnostics.error({"<go>", 1, 1},
+                                  "'" + fullName + "' has " + std::to_string(versions.size()) + " versions (" +
+                                      list +
+                                      ") in one namespace, which Go compiles as one package; unversioned "
+                                      "type names would declare it more than once. Pass "
+                                      "--versioned-type-names, or select one version.");
+                refused = true;
+            }
+        }
+        if (refused)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "Go cannot emit unversioned type names for a namespace holding "
+                                           "more than one version of a type");
+        }
+    }
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Go");
     LoweredFactsMap loweredFacts;
     if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Go", &loweredFacts, options.optimizeLoweredSerDes))
@@ -1547,7 +1596,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
         }
     }
 
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
     for (const auto& def : semantic.definitions)

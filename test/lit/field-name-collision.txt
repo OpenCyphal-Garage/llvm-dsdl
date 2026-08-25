@@ -17,8 +17,8 @@
 # GO-DAG: obj.FooBar
 # GO-DAG: obj.FooBar_2
 # Constants fold the same way (barBaz / bar_baz -> BAR_BAZ); they must stay distinct too.
-# GO-DAG: C_1_0_BAR_BAZ = 1
-# GO-DAG: C_1_0_BAR_BAZ_2 = 2
+# GO-DAG: C_BAR_BAZ = 1
+# GO-DAG: C_BAR_BAZ_2 = 2
 
 # TypeScript: two distinct properties.
 # RUN: %dsdlc --target-language ts %t/dsdl --outdir %t/ts --ts-module cx
@@ -26,8 +26,8 @@
 # TS-DAG: foo_bar: number;
 # TS-DAG: foo_bar_2: number;
 # TS-DAG: value.foo_bar_2 =
-# TS-DAG: C_1_0_BAR_BAZ = 1;
-# TS-DAG: C_1_0_BAR_BAZ_2 = 2;
+# TS-DAG: C_BAR_BAZ = 1;
+# TS-DAG: C_BAR_BAZ_2 = 2;
 
 # Python: two distinct dataclass attributes (no silent merge).
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
@@ -35,8 +35,8 @@
 # PY-DAG: foo_bar: int = 0
 # PY-DAG: foo_bar_2: int = 0
 # PY-DAG: value.foo_bar_2 =
-# PY-DAG: C_1_0_BAR_BAZ = 1
-# PY-DAG: C_1_0_BAR_BAZ_2 = 2
+# PY-DAG: C_BAR_BAZ = 1
+# PY-DAG: C_BAR_BAZ_2 = 2
 
 # Rust preserves raw field names (collision-free) but its constants fold like the others.
 # RUN: %dsdlc --target-language rust %t/dsdl --outdir %t/rust --rust-crate-name cx

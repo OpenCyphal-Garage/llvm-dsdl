@@ -43,6 +43,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -174,8 +175,11 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, std::vector<std::string> packageComponents)
+    EmitterContext(const SemanticModule&    semantic,
+                   std::vector<std::string> packageComponents,
+                   const TypeNameVersioning typeNameVersioning)
         : packageComponents_(std::move(packageComponents))
+        , typeNameVersioning_(typeNameVersioning)
         , index_(semantic)
     {
     }
@@ -215,10 +219,12 @@ public:
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return renderVersionedTypeName(CodegenNamingLanguage::Python,
-                                       info.shortName,
-                                       info.majorVersion,
-                                       info.minorVersion);
+        return renderDefinitionTypeName(CodegenNamingLanguage::Python,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        typeNameVersioning_);
     }
 
     std::string typeName(const SemanticTypeRef& ref) const
@@ -310,6 +316,7 @@ private:
 
     std::vector<std::string> packageComponents_;
     DefinitionIndex          index_;
+    TypeNameVersioning       typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*           traceSink_ = nullptr;
 };
 
@@ -1760,7 +1767,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     }
 
     const auto     packageComponents = splitPackageName(options.packageName);
-    EmitterContext ctx(semantic, packageComponents);
+    EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
     std::filesystem::path outRoot(options.outDir);

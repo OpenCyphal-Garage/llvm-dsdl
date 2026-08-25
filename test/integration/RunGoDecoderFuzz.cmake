@@ -35,9 +35,32 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+# The uavcan corpus carries several types at two or more versions, and Go compiles a namespace as
+# one package -- so unversioned names cannot express it and dsdlc refuses. Versioned is the only
+# scheme available here; the default says so rather than leaving it to a caller to discover.
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
+# One variable drives both the generator and the harness tokens, so the two cannot
+# disagree about how a type is spelled.
+set(c_scheme_args "")
+if(C_TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(c_scheme_args --versioned-type-names)
+endif()
+set(other_scheme_args "")
+if(TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(other_scheme_args --versioned-type-names)
+endif()
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go ${other_scheme_args}
       "${UAVCAN_ROOT}"
       --outdir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"
@@ -53,14 +76,6 @@ endif()
 
 # Drop the fuzz harness into its own package within the generated module.
 file(MAKE_DIRECTORY "${OUT_DIR}/decoderfuzz")
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "versioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
 
 configure_file("${fuzz_harness}" "${OUT_DIR}/decoderfuzz/fuzz_test.go" @ONLY)
 

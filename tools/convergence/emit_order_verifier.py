@@ -188,6 +188,11 @@ def run_dsdlc(dsdlc, lang, fixture_root, trace_path, out_dir, extra_env=None):
         cmd += ["--cpp-profile", "std"]   # a single flavor -> a single, non-doubled trace
     if lang == "ts":
         cmd += ["--ts-module", "emit_order_verifier"]
+    if lang == "go":
+        # Go compiles a namespace as one package, so the uavcan corpus -- which carries several
+        # types at two or more versions -- cannot be expressed with unversioned names at all. The
+        # emit order this verifies is the same either way; this just makes the corpus generable.
+        cmd += ["--versioned-type-names"]
     env = dict(os.environ, LLVMDSDL_EMIT_TRACE=trace_path)
     if extra_env:
         env.update(extra_env)

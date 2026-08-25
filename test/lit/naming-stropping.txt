@@ -114,7 +114,7 @@
 
 # Go exports fields as PascalCase, which lifts every one of them clear of the keyword set: Go
 # keywords are lowercase, so no field here needs an escape at all.
-# GO_KEYWORDS: type Keywords_1_0 struct {
+# GO_KEYWORDS: type Keywords struct {
 # GO_KEYWORDS: Break uint8
 # GO_KEYWORDS: Func uint8
 # GO_KEYWORDS: Map uint8
@@ -189,15 +189,15 @@
 
 # Go folds to UPPER_SNAKE_CASE first, so `FOO_BAR` and `fooBar` do collide and the scope repairs the
 # second one; and it does strop, so `break` becomes BREAK_.
-# GO_CONSTANTS: const CONSTANTS_1_0_FOO_BAR = 1
-# GO_CONSTANTS: const CONSTANTS_1_0_FOO_BAR_2 = 2
-# GO_CONSTANTS: const CONSTANTS_1_0_BREAK_ = 3
+# GO_CONSTANTS: const CONSTANTS_FOO_BAR = 1
+# GO_CONSTANTS: const CONSTANTS_FOO_BAR_2 = 2
+# GO_CONSTANTS: const CONSTANTS_BREAK_ = 3
 
 # GO_NAMESPACE: package map_
 
-# PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR = 1
-# PY_CONSTANTS: CONSTANTS_1_0_FOO_BAR_2 = 2
-# PY_CONSTANTS: CONSTANTS_1_0_BREAK_ = 3
+# PY_CONSTANTS: CONSTANTS_FOO_BAR = 1
+# PY_CONSTANTS: CONSTANTS_FOO_BAR_2 = 2
+# PY_CONSTANTS: CONSTANTS_BREAK_ = 3
 
 # ---------------------------------------------------------------------------------------------
 # Phase 3: two distinct DSDL types that project onto one generated name are rejected, and the
@@ -261,8 +261,8 @@
 
 # Go gives a DSDL constant the same prefix as its metadata constants, and forbids a field and a
 # method sharing a name.
-# GO_CLAIMED: const CLAIMED_1_0_FULL_NAME =
-# GO_CLAIMED: const CLAIMED_1_0_FULL_NAME_ = 1
+# GO_CLAIMED: const CLAIMED_FULL_NAME =
+# GO_CLAIMED: const CLAIMED_FULL_NAME_ = 1
 # GO_CLAIMED: Serialize_ uint8
 
 # RUST_CLAIMED: pub const FULL_NAME: &'static str =
@@ -335,7 +335,7 @@
 
 # CPP_POOL: std::uint8_t FOO{};
 # CPP_POOL: static constexpr auto FOO_2 = 2;
-# GO_POOL: const MEMBER_POOL_1_0_FOO = 2
+# GO_POOL: const MEMBER_POOL_FOO = 2
 # GO_POOL: FOO uint8
 
 # NOTES: note: field 'break_' is emitted as 'break_2' for target language 'cpp'

@@ -63,7 +63,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --versioned-type-names
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${ts_out}"

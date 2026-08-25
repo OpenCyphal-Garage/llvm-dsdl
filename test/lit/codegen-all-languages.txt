@@ -140,8 +140,8 @@
 # GO_SUMMARY: command: go
 # GO_SUMMARY: files generated:
 # GO_MODULE: module demo/generated/smoke
-# GO_TYPE: const WIDGET_1_0_ZOH_ALIAS_ELIGIBLE = true
-# GO_TYPE: const WIDGET_1_0_ZOH_ALIAS_REASON = "eligible"
+# GO_TYPE: const WIDGET_ZOH_ALIAS_ELIGIBLE = true
+# GO_TYPE: const WIDGET_ZOH_ALIAS_REASON = "eligible"
 
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts

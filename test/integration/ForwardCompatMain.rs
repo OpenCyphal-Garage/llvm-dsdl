@@ -11,10 +11,10 @@
 //! across two versions of a delimited composite (`wire.nar.Inner` has one field; `wire.wid.Inner`
 //! appends a second).
 
-use dsdl_generated::wire::nar::holder_1_0::wire_nar_Holder_1_0 as NarHolder;
-use dsdl_generated::wire::nar::inner_1_0::wire_nar_Inner_1_0 as NarInner;
-use dsdl_generated::wire::wid::holder_1_0::wire_wid_Holder_1_0 as WidHolder;
-use dsdl_generated::wire::wid::inner_1_0::wire_wid_Inner_1_0 as WidInner;
+use dsdl_generated::wire::nar::holder_1_0::wire_nar_Holder@V1_0@ as NarHolder;
+use dsdl_generated::wire::nar::inner_1_0::wire_nar_Inner@V1_0@ as NarInner;
+use dsdl_generated::wire::wid::holder_1_0::wire_wid_Holder@V1_0@ as WidHolder;
+use dsdl_generated::wire::wid::inner_1_0::wire_wid_Inner@V1_0@ as WidInner;
 
 fn main() {
     // Forward compatibility: wide writer -> narrow reader skips the appended `y`.

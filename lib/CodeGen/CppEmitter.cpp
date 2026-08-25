@@ -169,14 +169,23 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
+    EmitterContext(const SemanticModule&    semantic,
+                   const bool               emitDeprecationAttributes,
+                   const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , typeNameVersioning_(typeNameVersioning)
     {
         for (const auto& def : semantic.definitions)
         {
             versionCountByFullName_[def.info.fullName] += 1U;
         }
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief True when `@deprecated` definitions should carry a language-native attribute.
@@ -212,13 +221,12 @@ public:
 
     std::string cppTypeName(const DiscoveredDefinition& info) const
     {
-        const auto it = versionCountByFullName_.find(info.fullName);
         return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
                                         info.minorVersion,
-                                        (it != versionCountByFullName_.end()) && (it->second > 1U));
+                                        typeNameVersioning_);
     }
 
     std::string cppTypeName(const SemanticDefinition& def) const
@@ -240,7 +248,7 @@ public:
                                         ref.shortName,
                                         ref.majorVersion,
                                         ref.minorVersion,
-                                        true);
+                                        typeNameVersioning_);
     }
 
     std::string cppQualifiedTypeName(const SemanticDefinition& def) const
@@ -285,6 +293,7 @@ public:
 
 private:
     DefinitionIndex                              index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     std::unordered_map<std::string, std::size_t> versionCountByFullName_;
     EmitTraceSink*                               traceSink_ = nullptr;
     bool                                         emitDeprecationAttributes_{false};
@@ -1971,6 +1980,24 @@ std::string renderHeader(const SemanticDefinition& def,
     out << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << "\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
+
+    // Under the unversioned scheme this type's name carries no version, so two versions of it are
+    // one identifier. Generating both is fine -- they are separate headers -- but including both is
+    // not, and saying so here beats a cascade of redefinitions from inside generated code.
+    if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
+    {
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(CodegenNamingLanguage::Cpp, def.info.fullName, def.info.majorVersion,
+                                        def.info.minorVersion);
+        out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
+        out << "#  error \"" << def.info.fullName
+            << ": two versions of one type in one translation unit, but generated type names are "
+               "unversioned. Regenerate with --versioned-type-names to use both.\"\n";
+        out << "#endif\n";
+        out << "#define " << anyVersion << "\n";
+        out << "#define " << thisVersion << "\n\n";
+    }
+
     out << "#include <array>\n";
     out << "#include <cstddef>\n";
     out << "#include <cstdint>\n";
@@ -2184,7 +2211,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
     }
 
-    EmitterContext ctx(semantic, options.emitDeprecationAttributes);
+    EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
     for (const auto& def : semantic.definitions)
     {

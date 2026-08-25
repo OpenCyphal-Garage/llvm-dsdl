@@ -29,6 +29,8 @@ endif()
 
 set(dsdlc_args
   --target-language python
+  # The harness below is written against versioned type names.
+  --versioned-type-names
   "${UAVCAN_ROOT}"
   --outdir "${OUT_DIR}"
   --py-package "${PY_PACKAGE}"

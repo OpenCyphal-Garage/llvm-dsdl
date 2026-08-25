@@ -1014,7 +1014,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language python
+    "${DSDLC}" --target-language python --versioned-type-names
       "${fixture_root}"
       ${dsdlc_extra_args}
       --outdir "${py_out}"

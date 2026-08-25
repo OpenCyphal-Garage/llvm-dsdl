@@ -26,6 +26,8 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND "${DSDLC}" --target-language python
+    # The harness below is written against versioned type names.
+    --versioned-type-names
     "${FIXTURES_ROOT}"
     --outdir "${portable_out}"
     --py-package "${py_package_portable}"
@@ -42,6 +44,8 @@ endif()
 
 execute_process(
   COMMAND "${DSDLC}" --target-language python
+    # The harness below is written against versioned type names.
+    --versioned-type-names
     "${FIXTURES_ROOT}"
     --outdir "${fast_out}"
     --py-package "${py_package_fast}"

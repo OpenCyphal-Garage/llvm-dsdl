@@ -145,7 +145,7 @@ llvmdsdl_run_or_fail("C++ include-only compile under -Werror"
 
 file(WRITE "${WORK_DIR}/cpp_use_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
-static uavcan::file::Read_1_0_Request req;
+static uavcan::file::Read_Request req;
 int main() { (void)req; return 0; }
 ")
 

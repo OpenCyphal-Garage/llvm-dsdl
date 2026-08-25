@@ -150,6 +150,10 @@ struct CliOptions final
     /// @brief Accept names that land in a language's reserved namespace, encoding them.
     bool encodeReservedIdentifiers{false};
 
+    // Unversioned by default: most code speaks one version of a type and reads better without the
+    // suffix. See --versioned-type-names.
+    llvmdsdl::TypeNameVersioning typeNameVersioning{llvmdsdl::TypeNameVersioning::Unversioned};
+
     /// @brief Where to write the DSDL-name to generated-identifier map, if requested.
     std::string namingManifest;
 
@@ -331,6 +335,12 @@ void printHelp()
                  << "      definition. Rejecting is the default because the encoding is not pleasant\n"
                  << "      to read; this is the escape hatch when renaming the definition is not an\n"
                  << "      option.\n"
+                 << "  --versioned-type-names\n"
+                 << "      Put each type's version in its generated type name, so code that handles\n"
+                 << "      two versions of one type can keep them apart. Off by default: most code\n"
+                 << "      speaks one version and reads better without the suffix. Output file names\n"
+                 << "      carry the version either way, so this changes what you write, not what\n"
+                 << "      you include.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
                  << "      as, for every target language this invocation names. Answers 'what did\n"
@@ -592,6 +602,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--encode-reserved-identifiers")
         {
             options.encodeReservedIdentifiers = true;
+            continue;
+        }
+        if (arg == "--versioned-type-names")
+        {
+            options.typeNameVersioning = llvmdsdl::TypeNameVersioning::Versioned;
             continue;
         }
         if (arg == "--naming-manifest")
@@ -1764,7 +1779,10 @@ int main(int argc, char** argv)
                                            ? namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage)
                                            : outputLanguages;
         const std::string manifest =
-            llvmdsdl::renderNamingManifest(manifestSemantic, manifestLanguages, llvmdsdl::kVersionString);
+            llvmdsdl::renderNamingManifest(manifestSemantic,
+                                           manifestLanguages,
+                                           llvmdsdl::kVersionString,
+                                           options.typeNameVersioning);
         std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
         if (!stream.good())
         {
@@ -1922,6 +1940,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
@@ -1946,6 +1965,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CppEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
@@ -1975,6 +1995,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::RustEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.crateName                 = options.rustCrateName;
         emitOptions.profile                   = options.rustProfile;
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
@@ -2008,6 +2029,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::GoEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.moduleName            = options.goModuleName;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
@@ -2036,6 +2058,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::TsEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2065,6 +2088,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::PythonEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2093,6 +2117,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::ObjectEmitOptions emitOptions;
         emitOptions.outDir           = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.targetEndianness = options.objTargetEndianness;
         emitOptions.targetTriple     = options.objTargetTriple;
         emitOptions.archiveName      = options.objArchiveName;

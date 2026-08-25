@@ -57,6 +57,7 @@ function(llvmdsdl_add_showroom_variant variant_name)
     COMMAND
       $<TARGET_FILE:dsdlc>
         --target-language ${ARG_LANGUAGE}
+        --versioned-type-names
         "${LLVMDSDL_SHOWROOM_DSDL_ROOT}"
         ${ARG_OPTIONS}
         --outdir "${_variant_out}"

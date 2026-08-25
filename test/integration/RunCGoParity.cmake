@@ -89,9 +89,32 @@ file(MAKE_DIRECTORY "${go_out}")
 file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
+# The uavcan corpus carries several types at two or more versions, and Go compiles a namespace as
+# one package -- so unversioned names cannot express it and dsdlc refuses. Versioned is the only
+# scheme available here; the default says so rather than leaving it to a caller to discover.
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "versioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
+# One variable drives both the generator and the harness tokens, so the two cannot
+# disagree about how a type is spelled.
+set(c_scheme_args "")
+if(C_TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(c_scheme_args --versioned-type-names)
+endif()
+set(other_scheme_args "")
+if(TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(other_scheme_args --versioned-type-names)
+endif()
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -107,7 +130,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go ${other_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${go_out}"
@@ -124,14 +147,6 @@ endif()
 
 set(GO_OUT "${go_out}")
 configure_file("${go_mod_template}" "${harness_out}/go.mod" @ONLY)
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "versioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
 configure_file("${main_go_template}" "${harness_out}/main.go" @ONLY)
 set(c_harness_src "${build_out}/c_harness.c")
 configure_file("${c_harness_template}" "${c_harness_src}" @ONLY)

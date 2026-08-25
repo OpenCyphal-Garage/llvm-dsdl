@@ -407,7 +407,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 		{
 			name:                   "int3sat_truncated_input",
 			input:                  []byte{},
-			outputCapacity:         vendor.INT3SAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+			outputCapacity:         vendor.INT3SAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			expectDeserializeError: false,
 			expectSerializeError:   false,
 			cFn: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -418,7 +418,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 		{
 			name:                   "int3trunc_truncated_input",
 			input:                  []byte{},
-			outputCapacity:         vendor.INT3TRUNC_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+			outputCapacity:         vendor.INT3TRUNC@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			expectDeserializeError: false,
 			expectSerializeError:   false,
 			cFn: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -576,7 +576,7 @@ func main() {
 	if err := runRandomCase(
 		"vendor.Int3Sat.1.0",
 		iterations,
-		vendor.INT3SAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+		vendor.INT3SAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 		func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 			return C.c_int3sat_roundtrip(input, inputSize, output, outputCapacity, result)
 		},
@@ -598,7 +598,7 @@ func main() {
 	if err := runRandomCase(
 		"vendor.Int3Trunc.1.0",
 		iterations,
-		vendor.INT3TRUNC_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+		vendor.INT3TRUNC@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 		func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 			return C.c_int3trunc_roundtrip(input, inputSize, output, outputCapacity, result)
 		},

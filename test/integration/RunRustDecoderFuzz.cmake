@@ -51,7 +51,7 @@ file(MAKE_DIRECTORY "${harness_out}/src")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --versioned-type-names
       "${UAVCAN_ROOT}"
       --rust-crate-name uavcan_dsdl_generated
       --outdir "${rust_out}"

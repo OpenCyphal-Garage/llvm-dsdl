@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -34,18 +35,26 @@
 namespace llvmdsdl
 {
 
-/// @brief Whether a language's type name carries the definition's version.
+/// @brief Whether generated type names carry the definition's version.
+///
+/// This is a property of the *consuming* code, not of the corpus, which is why it is a choice and
+/// not a rule. Code that speaks one version of a type reads better with `p::ns::Bar`; code that
+/// deliberately handles two versions side by side needs `Bar_1_0` and `Bar_2_0` to keep them apart
+/// in its own source. Under either, the name follows from the definition alone -- neither depends on
+/// what else happened to be in the invocation.
 enum class TypeNameVersioning : std::uint8_t
 {
-    /// @brief Never suffixed. Two versions of one DSDL type therefore reach one identifier.
-    Never,
-    /// @brief Suffixed only when the short name has more than one version in the compiled set.
+    /// @brief The version is not part of the type name.
     ///
-    /// This makes the identifier a function of the invocation rather than of the definition: adding
-    /// a sibling version renames the type a caller was already writing against.
-    OnlyWhenAmbiguous,
-    /// @brief Always suffixed, so the identifier follows from the definition alone.
-    Always,
+    /// Two versions of one DSDL type then reach one identifier, and what that costs depends on what
+    /// scopes the type. Rust, TypeScript and Python give each version its own module and are
+    /// unaffected. C and C++ share a scope across versions, so the two collide only if a consumer
+    /// brings both into one translation unit -- which the generated headers detect and refuse. Go
+    /// shares a package across versions, so it cannot be generated at all and says so.
+    Unversioned,
+
+    /// @brief The version is part of the type name, so every version can be used at once.
+    Versioned,
 };
 
 /// @brief How one language composes a definition's type name.
@@ -56,9 +65,6 @@ struct DefinitionNamePolicy final
     /// Empty where the namespace is carried by the language instead -- C++ has real namespaces, and
     /// Go, TypeScript and Python put the type in a per-namespace module.
     llvm::StringRef namespaceJoin;
-
-    /// @brief Whether the version is part of the type name.
-    TypeNameVersioning versioning;
 
     /// @brief Whether to re-project the whole composed name once it has been assembled.
     ///
@@ -78,15 +84,14 @@ struct DefinitionNamePolicy final
 /// @param[in] shortName Unqualified DSDL type name.
 /// @param[in] majorVersion Major version.
 /// @param[in] minorVersion Minor version.
-/// @param[in] shortNameIsAmbiguous True when another version of this type is in the compiled set.
-///            Consulted only under @ref TypeNameVersioning::OnlyWhenAmbiguous.
+/// @param[in] versioning Whether the version is part of the name.
 /// @return The type name.
 [[nodiscard]] std::string renderDefinitionTypeName(CodegenNamingLanguage       language,
                                                    llvm::ArrayRef<std::string> namespaceComponents,
                                                    llvm::StringRef             shortName,
                                                    std::uint32_t               majorVersion,
                                                    std::uint32_t               minorVersion,
-                                                   bool                        shortNameIsAmbiguous);
+                                                   TypeNameVersioning          versioning);
 
 /// @brief Renders the output file stem for one definition, without an extension.
 ///
@@ -120,6 +125,24 @@ struct DefinitionNamePolicy final
                                              std::uint32_t         majorVersion,
                                              std::uint32_t         minorVersion,
                                              llvm::StringRef       suffix);
+
+/// @brief Renders the sentinel macros that detect two versions of one type in one translation unit.
+///
+/// Under @ref TypeNameVersioning::Unversioned two versions of a DSDL type reach one identifier. In C
+/// and C++ that is legal to *generate* -- the two live in separate headers, and generating both is
+/// ordinary -- and only breaks if a consumer includes both. The first header to be included defines
+/// the generic sentinel and its own specific one; a header for a different version then finds the
+/// generic set and its own missing, and stops with a message naming the flag rather than a cascade
+/// of redefinition errors from deep inside generated code.
+/// @param[in] language Naming language.
+/// @param[in] fullName Dot-separated DSDL full name.
+/// @param[in] majorVersion Major version.
+/// @param[in] minorVersion Minor version.
+/// @return A pair of macro names: the generic one, then the one specific to this version.
+[[nodiscard]] std::pair<std::string, std::string> renderVersionSentinelMacros(CodegenNamingLanguage language,
+                                                                              llvm::StringRef       fullName,
+                                                                              std::uint32_t         majorVersion,
+                                                                              std::uint32_t         minorVersion);
 
 /// @brief Renders the linkage-symbol base for one definition.
 ///

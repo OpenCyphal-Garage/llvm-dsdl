@@ -83,6 +83,31 @@ Namespace matching is anchored at a dot boundary, so `+uavcan.n` selects nothing
 standing in for `+uavcan.node`. A selector matching nothing is an error with a did-you-mean; an
 unavailable version reports the versions the catalog carries.
 
+## Type-name versioning
+
+A generated type name does not carry the definition's version by default: `uavcan.node.Heartbeat.1.0`
+becomes `Heartbeat` in C++, Go, TypeScript and Python, `uavcan__node__Heartbeat` in C, and
+`uavcan_node_Heartbeat` in Rust. `--versioned-type-names` puts the version back —
+`Heartbeat_1_0` — which is what you want when your own code handles two versions of one type at once
+and needs to keep them apart.
+
+Output file names carry the version under both schemes, so the flag changes what you *write*, not
+what you include or import.
+
+Under either scheme the name follows from the definition alone; it never depends on what else was in
+the invocation.
+
+What the default costs depends on what scopes the type in each language:
+
+| Language | Scope holding the type | Two versions, unversioned |
+|---|---|---|
+| Rust, TypeScript, Python | a module per type *and version* | no conflict |
+| C, C++ | a scope shared across versions | generates fine; a translation unit that includes two versions stops with an `#error` naming this flag |
+| Go | a package per namespace, shared across versions | cannot be generated — `dsdlc` refuses, naming the type, its versions and this flag |
+
+The Go case is the one you are most likely to meet: the standard `uavcan` namespace has twenty types
+with more than one version, so `--target-language go` over it needs `--versioned-type-names`.
+
 ## Deprecation
 
 A definition marked `@deprecated` generates a `Deprecated: …` notice in its documentation comment and

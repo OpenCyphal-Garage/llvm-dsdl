@@ -22,6 +22,7 @@
         "{dsdlc}",
         "--target-language",
         "rust",
+        "--versioned-type-names",
         "dsdl/lanyard",
         "--rust-profile",
         "std",

@@ -69,7 +69,9 @@ bool typeSymbolIsSharedProjection(const CodegenNamingLanguage language)
 }
 
 /// @brief Renders one definition under one language.
-llvm::json::Object renderDefinition(const CodegenNamingLanguage language, const SemanticDefinition& def)
+llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
+                                    const SemanticDefinition&   def,
+                                    const TypeNameVersioning    typeNameVersioning)
 {
     llvm::json::Array namespaceParts;
     for (const auto& component : def.info.namespaceComponents)
@@ -81,7 +83,12 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language, const 
     if (typeSymbolIsSharedProjection(language))
     {
         out["type_name"] =
-            renderVersionedTypeName(language, def.info.shortName, def.info.majorVersion, def.info.minorVersion);
+            renderDefinitionTypeName(language,
+                                     def.info.namespaceComponents,
+                                     def.info.shortName,
+                                     def.info.majorVersion,
+                                     def.info.minorVersion,
+                                     typeNameVersioning);
     }
     // Exact for every backend: C and C++ name headers after the raw short name, which is what the
     // FileStem role returns for them, and the other four fold it -- both go through this one call.
@@ -107,11 +114,14 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language, const 
 
 std::string renderNamingManifest(const SemanticModule&                semantic,
                                  const llvm::ArrayRef<OutputLanguage> languages,
-                                 const llvm::StringRef                toolVersion)
+                                 const llvm::StringRef                toolVersion,
+                                 const TypeNameVersioning             typeNameVersioning)
 {
     llvm::json::Object root;
     root["version"] = 1;
     root["tool"]    = toolVersion.str();
+    root["type_name_versioning"] =
+        (typeNameVersioning == TypeNameVersioning::Versioned) ? "versioned" : "unversioned";
 
     llvm::json::Object byLanguage;
     for (const auto& [language, languageName] : languages)
@@ -120,7 +130,7 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
         for (const auto& def : semantic.definitions)
         {
             byType[def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-                   std::to_string(def.info.minorVersion)] = renderDefinition(language, def);
+                   std::to_string(def.info.minorVersion)] = renderDefinition(language, def, typeNameVersioning);
         }
         byLanguage[languageName.str()] = std::move(byType);
     }

@@ -19,8 +19,8 @@
 # RUN: cat %t/go/dsdl/mf/m_1_0.go | FileCheck %s --check-prefix=GO
 # GO-DAG: Serialize_ uint8
 # GO-DAG: Deserialize_ uint8
-# GO-DAG: func (obj *M_1_0) Serialize(
-# GO-DAG: func (obj *M_1_0) Deserialize(
+# GO-DAG: func (obj *M) Serialize(
+# GO-DAG: func (obj *M) Deserialize(
 # GO-DAG: obj.Serialize_
 # GO-DAG: obj.Deserialize_
 

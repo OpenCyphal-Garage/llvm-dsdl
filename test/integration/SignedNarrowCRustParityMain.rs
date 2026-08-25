@@ -13,8 +13,8 @@
 use std::fmt::Write as _;
 use std::os::raw::c_int;
 
-use signed_narrow_generated::vendor::int3sat_1_0::vendor_Int3Sat_1_0;
-use signed_narrow_generated::vendor::int3trunc_1_0::vendor_Int3Trunc_1_0;
+use signed_narrow_generated::vendor::int3sat_1_0::vendor_Int3Sat@V1_0@;
+use signed_narrow_generated::vendor::int3trunc_1_0::vendor_Int3Trunc@V1_0@;
 
 const MAX_IO_BUFFER: usize = 64;
 

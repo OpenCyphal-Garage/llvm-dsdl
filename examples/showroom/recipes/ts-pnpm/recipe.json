@@ -26,6 +26,7 @@
         "{dsdlc}",
         "--target-language",
         "ts",
+        "--versioned-type-names",
         "dsdl/lanyard",
         "--ts-module",
         "lanyard",

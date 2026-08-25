@@ -94,17 +94,17 @@ std::string shimSourceFileName(const DiscoveredDefinition& info)
            "_c_shim.cpp";
 }
 
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
     return renderDefinitionTypeName(CodegenNamingLanguage::C,
                                     info.namespaceComponents,
                                     info.shortName,
                                     info.majorVersion,
                                     info.minorVersion,
-                                    false);
+                                    versioning);
 }
 
-std::string cppTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string cppTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
     // `false` reproduces what this emitter did before it shared the rule: it never versioned its
     // type name, and never had the version count to decide with. It is the C++ policy that decides
@@ -114,13 +114,13 @@ std::string cppTypeNameFromInfo(const DiscoveredDefinition& info)
                                     info.shortName,
                                     info.majorVersion,
                                     info.minorVersion,
-                                    false);
+                                    versioning);
 }
 
-std::string shimTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string shimTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
     // The C type name under a prefix that keeps the shim's struct distinct from the C backend's own.
-    return "llvmdsdl_cppabi__" + cTypeNameFromInfo(info);
+    return "llvmdsdl_cppabi__" + cTypeNameFromInfo(info, versioning);
 }
 
 std::string shimSymbolStem(const SemanticDefinition& def, const std::string& sectionName)
@@ -228,9 +228,16 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -254,7 +261,7 @@ public:
         tmp.namespaceComponents = ref.namespaceComponents;
         tmp.majorVersion        = ref.majorVersion;
         tmp.minorVersion        = ref.minorVersion;
-        out << "abi::" << cppTypeNameFromInfo(tmp);
+        out << "abi::" << cppTypeNameFromInfo(tmp, typeNameVersioning_);
         return out.str();
     }
 
@@ -262,17 +269,18 @@ public:
     {
         if (const auto* def = find(ref))
         {
-            return shimTypeNameFromInfo(def->info);
+            return shimTypeNameFromInfo(def->info, typeNameVersioning_);
         }
 
         DiscoveredDefinition tmp;
         tmp.shortName           = ref.shortName;
         tmp.namespaceComponents = ref.namespaceComponents;
-        return shimTypeNameFromInfo(tmp);
+        return shimTypeNameFromInfo(tmp, typeNameVersioning_);
     }
 
 private:
     DefinitionIndex index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
 std::string cppScalarType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -332,14 +340,15 @@ std::string shimScalarType(const SemanticFieldType& type, const EmitterContext& 
     return cScalarType(type);
 }
 
-std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def)
+std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def,
+                                                   const TypeNameVersioning  versioning)
 {
     std::vector<SectionPlan> out;
     if (def.isService)
     {
-        const std::string cppBase  = cppTypeNameFromInfo(def.info);
-        const std::string cBase    = cTypeNameFromInfo(def.info);
-        const std::string shimBase = shimTypeNameFromInfo(def.info);
+        const std::string cppBase  = cppTypeNameFromInfo(def.info, versioning);
+        const std::string cBase    = cTypeNameFromInfo(def.info, versioning);
+        const std::string shimBase = shimTypeNameFromInfo(def.info, versioning);
 
         out.push_back(
             SectionPlan{"request", cppBase + "_Request", cBase + "__Request", shimBase + "__Request", &def.request});
@@ -355,9 +364,9 @@ std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def
     else
     {
         out.push_back(SectionPlan{"",
-                                  cppTypeNameFromInfo(def.info),
-                                  cTypeNameFromInfo(def.info),
-                                  shimTypeNameFromInfo(def.info),
+                                  cppTypeNameFromInfo(def.info, versioning),
+                                  cTypeNameFromInfo(def.info, versioning),
+                                  shimTypeNameFromInfo(def.info, versioning),
                                   &def.request});
     }
     return out;
@@ -853,7 +862,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
     emitLine(out, 0, "namespace abi {");
     out << '\n';
 
-    const auto plans = sectionPlansForDefinition(def);
+    const auto plans = sectionPlansForDefinition(def, ctx.typeNameVersioning());
     for (const auto& plan : plans)
     {
         emitCanonicalStruct(out, plan, *plan.section, ctx, lookupSectionFacts(loweredFacts, def, plan.sectionName));
@@ -861,7 +870,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
 
     if (def.isService)
     {
-        const auto baseName = cppTypeNameFromInfo(def.info);
+        const auto baseName = cppTypeNameFromInfo(def.info, ctx.typeNameVersioning());
         emitLine(out, 0, "using " + baseName + " = " + baseName + "_Request;");
         emitLine(out,
                  0,
@@ -916,7 +925,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
     return out.str();
 }
 
-std::string renderCanonicalSource(const SemanticDefinition& def)
+std::string renderCanonicalSource(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::ostringstream out;
 
@@ -931,7 +940,7 @@ std::string renderCanonicalSource(const SemanticDefinition& def)
     emitLine(out, 0, "namespace abi {");
     out << '\n';
 
-    const auto plans = sectionPlansForDefinition(def);
+    const auto plans = sectionPlansForDefinition(def, versioning);
     for (const auto& plan : plans)
     {
         emitCanonicalConversionBodyToC(out, plan, *plan.section);
@@ -1061,14 +1070,14 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
 
     out << "\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
 
-    const auto plans = sectionPlansForDefinition(def);
+    const auto plans = sectionPlansForDefinition(def, ctx.typeNameVersioning());
     for (const auto& plan : plans)
     {
         emitShimStruct(out, plan, *plan.section, ctx);
     }
     if (def.isService)
     {
-        const auto base = shimTypeNameFromInfo(def.info);
+        const auto base = shimTypeNameFromInfo(def.info, ctx.typeNameVersioning());
         emitLine(out, 0, "typedef " + base + "__Request " + base + ";");
         out << '\n';
     }
@@ -1080,7 +1089,7 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
 
     if (def.isService)
     {
-        const auto base        = shimTypeNameFromInfo(def.info);
+        const auto base        = shimTypeNameFromInfo(def.info, ctx.typeNameVersioning());
         const auto requestStem = shimSymbolStem(def, "request");
         const auto baseStem    = shimSymbolStem(def, "");
         emitLine(out,
@@ -1199,7 +1208,7 @@ void emitShimDefinition(std::ostringstream&       out,
     out << '\n';
 }
 
-std::string renderShimSource(const SemanticDefinition& def)
+std::string renderShimSource(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::ostringstream out;
     const std::string  canonicalPrefix = canonicalQualifiedPrefix(def.info);
@@ -1213,7 +1222,7 @@ std::string renderShimSource(const SemanticDefinition& def)
     out << "#include <type_traits>\n\n";
     out << "extern \"C\" {\n\n";
 
-    const auto plans = sectionPlansForDefinition(def);
+    const auto plans = sectionPlansForDefinition(def, versioning);
     for (const auto& plan : plans)
     {
         emitShimDefinition(out, def, plan, canonicalPrefix);
@@ -1221,7 +1230,7 @@ std::string renderShimSource(const SemanticDefinition& def)
 
     if (def.isService)
     {
-        const auto shimBase = shimTypeNameFromInfo(def.info);
+        const auto shimBase = shimTypeNameFromInfo(def.info, versioning);
         const auto baseStem = shimSymbolStem(def, "");
         const auto reqStem  = shimSymbolStem(def, "request");
 
@@ -1281,7 +1290,9 @@ std::string renderShimSource(const SemanticDefinition& def)
     return out.str();
 }
 
-std::string renderAdapterHeader(const SemanticDefinition& def, llvm::StringRef profile)
+std::string renderAdapterHeader(const SemanticDefinition& def,
+                                llvm::StringRef           profile,
+                                const TypeNameVersioning  versioning)
 {
     std::ostringstream out;
 
@@ -1301,7 +1312,7 @@ std::string renderAdapterHeader(const SemanticDefinition& def, llvm::StringRef p
 
     emitNamespaceOpen(out, def.info.namespaceComponents);
 
-    const auto        baseName        = cppTypeNameFromInfo(def.info);
+    const auto        baseName        = cppTypeNameFromInfo(def.info, versioning);
     const auto        cppNs           = cppNamespacePath(def.info.namespaceComponents);
     const std::string canonicalPrefix = cppNs.empty() ? "::abi::" : ("::" + cppNs + "::abi::");
     if (def.isService)
@@ -1375,7 +1386,7 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
     }
 
     const auto     selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.typeNameVersioning);
 
     if (auto err = emitRuntimeHeader(options))
     {
@@ -1410,7 +1421,7 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
             return err;
         }
         if (auto err =
-                writeGeneratedFile(canonicalSource, renderCanonicalSource(def), options.writePolicy, requiredTypeKeys))
+                writeGeneratedFile(canonicalSource, renderCanonicalSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
@@ -1419,7 +1430,7 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(shimSource, renderShimSource(def), options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(shimSource, renderShimSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
@@ -1432,7 +1443,7 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             const auto adapter = options.stageRoot / adapterHeaderPath(profile, def.info);
             if (auto err = writeGeneratedFile(adapter,
-                                              renderAdapterHeader(def, profile),
+                                              renderAdapterHeader(def, profile, options.typeNameVersioning),
                                               options.writePolicy,
                                               requiredTypeKeys))
             {

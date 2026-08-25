@@ -49,9 +49,10 @@ if(NOT EXISTS "${FIXTURE_ROOT}")
   message(FATAL_ERROR "signed_narrow fixture root not found: ${FIXTURE_ROOT}")
 endif()
 
-set(parity_main "${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp")
-if(NOT EXISTS "${parity_main}")
-  message(FATAL_ERROR "signed narrow parity harness source missing: ${parity_main}")
+# The harness names generated types, so it is configured after the output tree is made; check the
+# template here, and the configured copy where it is produced.
+if(NOT EXISTS "${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp")
+  message(FATAL_ERROR "signed narrow parity harness source missing")
 endif()
 
 if(NOT DEFINED ITERATIONS OR "${ITERATIONS}" STREQUAL "")
@@ -65,6 +66,17 @@ endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
+
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "unversioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+set(parity_main "${OUT_DIR}/SignedNarrowCppCParityMain.cpp")
+configure_file("${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp" "${parity_main}" @ONLY)
 
 set(c_out "${OUT_DIR}/c")
 set(cpp_out "${OUT_DIR}/cpp")

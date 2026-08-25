@@ -120,9 +120,16 @@ void emitAttachedDocRust(std::ostringstream& out, const int indent, const Attach
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
@@ -165,7 +172,7 @@ public:
                                         info.shortName,
                                         info.majorVersion,
                                         info.minorVersion,
-                                        false);
+                                        typeNameVersioning_);
     }
 
     std::string rustTypeName(const SemanticTypeRef& ref) const
@@ -209,6 +216,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*  traceSink_ = nullptr;
 };
 
@@ -1769,7 +1777,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
     }
 
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
     std::map<std::string, std::set<std::string>> dirToSubdirs;

@@ -23,7 +23,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go --versioned-type-names
       "${UAVCAN_ROOT}"
       --outdir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"

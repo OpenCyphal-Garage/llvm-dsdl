@@ -32,6 +32,8 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 set(dsdlc_args
   --target-language python
+  # The smoke harness below is written against versioned type names.
+  --versioned-type-names
   "${FIXTURES_ROOT}"
   --outdir "${OUT_DIR}"
   --py-package "${PY_PACKAGE}"

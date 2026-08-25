@@ -55,17 +55,17 @@ std::string fieldKind(const SemanticField& f)
     return f.isPadding ? "padding" : "field";
 }
 
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
     return renderDefinitionTypeName(CodegenNamingLanguage::C,
                                     info.namespaceComponents,
                                     info.shortName,
                                     info.majorVersion,
                                     info.minorVersion,
-                                    false);
+                                    versioning);
 }
 
-std::string cTypeNameFromRef(const SemanticTypeRef& ref)
+std::string cTypeNameFromRef(const SemanticTypeRef& ref, const TypeNameVersioning versioning)
 {
     std::string out;
     for (std::size_t i = 0; i < ref.namespaceComponents.size(); ++i)
@@ -193,7 +193,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                            builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
                                                                             def.info.majorVersion,
                                                                             def.info.minorVersion)));
-        state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info)));
+        state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
         state.addAttribute("major", builder.getI32IntegerAttr(def.info.majorVersion));
@@ -231,7 +231,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
         builder.setInsertionPointToStart(&schemaBody.front());
 
         auto emitSection = [&](const SemanticSection& section, llvm::StringRef sectionName) {
-            const std::string baseCTypeName    = cTypeNameFromInfo(def.info);
+            const std::string baseCTypeName    = cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned);
             std::string       sectionCTypeName = baseCTypeName;
             if (def.isService)
             {
@@ -379,7 +379,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
                     ioState.addAttribute("composite_minor",
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
-                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref)));
+                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref, TypeNameVersioning::Unversioned)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));

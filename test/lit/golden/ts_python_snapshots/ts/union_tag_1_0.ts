@@ -12,12 +12,12 @@ export const DSDL_REQUEST_ZOH_ALIAS_REASON = "not-fixed-size";
 export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
 export const DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable";
 
-export type UnionTag_1_0 =
+export type UnionTag =
   | { _tag: 0; first: number; }
   | { _tag: 1; second: number; };
 
 
-export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
+export function serializeUnionTag(value: UnionTag): Uint8Array {
   const out = new Uint8Array(3);
   let offsetBits = 0;
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0 = (capacityBits: number): boolean => 24 <= capacityBits;
@@ -79,7 +79,7 @@ export function serializeUnionTag_1_0(value: UnionTag_1_0): Uint8Array {
   return out.subarray(0, usedBytes);
 }
 
-export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_0; consumed: number } {
+export function deserializeUnionTag(bytes: Uint8Array): { value: UnionTag; consumed: number } {
   const mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
   const mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser = (value: number | bigint): number | bigint => {
   const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
@@ -104,20 +104,20 @@ export function deserializeUnionTag_1_0(bytes: Uint8Array): { value: UnionTag_1_
     throw new Error("decoded invalid union tag " + tag);
   }
   offsetBits += 8;
-  let value: UnionTag_1_0;
+  let value: UnionTag;
   switch (tag) {
   case 0: {
     const firstOptionRaw = dsdlRuntime.readUnsigned(bytes, offsetBits, 8);
     const optionValue = Number(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(firstOptionRaw));
     offsetBits += 8;
-    value = { _tag: 0, first: optionValue } as UnionTag_1_0;
+    value = { _tag: 0, first: optionValue } as UnionTag;
     break;
   }
   case 1: {
     const secondOptionRaw = dsdlRuntime.readUnsigned(bytes, offsetBits, 16);
     const optionValue = Number(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(secondOptionRaw));
     offsetBits += 16;
-    value = { _tag: 1, second: optionValue } as UnionTag_1_0;
+    value = { _tag: 1, second: optionValue } as UnionTag;
     break;
   }
   default:

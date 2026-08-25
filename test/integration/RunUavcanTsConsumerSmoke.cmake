@@ -26,7 +26,7 @@ file(MAKE_DIRECTORY "${gen_dir}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --versioned-type-names
       "${UAVCAN_ROOT}"
       --outdir "${gen_dir}"
       --ts-module "uavcan_dsdl_generated_ts"

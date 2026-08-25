@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -91,9 +92,16 @@ void emitAttachedDocTs(std::ostringstream& out, const int indent, const Attached
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
@@ -136,10 +144,12 @@ public:
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return renderVersionedTypeName(CodegenNamingLanguage::TypeScript,
-                                       info.shortName,
-                                       info.majorVersion,
-                                       info.minorVersion);
+        return renderDefinitionTypeName(CodegenNamingLanguage::TypeScript,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        typeNameVersioning_);
     }
 
     /// @brief Local name for a *referenced* type in the file currently being emitted.
@@ -208,6 +218,7 @@ public:
 
 private:
     DefinitionIndex index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*  traceSink_ = nullptr;
 };
 
@@ -2161,7 +2172,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         }
     }
 
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
     std::vector<const SemanticDefinition*> ordered;

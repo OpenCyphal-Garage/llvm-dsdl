@@ -17,27 +17,27 @@ DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
 DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
 
 @dataclass(slots=True)
-class UnionTag_1_0:
+class UnionTag:
     _tag: int = 0
     first: int | None = None
     second: int | None = None
 
     def serialize(self) -> bytes:
-        return _serialize_UnionTag_1_0(self)
+        return _serialize_UnionTag(self)
 
     @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag_1_0":
-        value, _consumed = _deserialize_UnionTag_1_0(bytes(data))
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag":
+        value, _consumed = _deserialize_UnionTag(bytes(data))
         return value
 
     def _serialize_to(self, writer: object) -> None:
         writer.write(self.serialize())
 
     @classmethod
-    def _deserialize_from(cls, reader: object) -> "UnionTag_1_0":
+    def _deserialize_from(cls, reader: object) -> "UnionTag":
         return cls.deserialize(reader.read())
 
-def _serialize_UnionTag_1_0(value: UnionTag_1_0) -> bytes:
+def _serialize_UnionTag(value: UnionTag) -> bytes:
     out = bytearray(3)
     offset_bits = 0
     def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(capacity_bits: int) -> bool:
@@ -88,7 +88,7 @@ def _serialize_UnionTag_1_0(value: UnionTag_1_0) -> bytes:
     used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)
     return bytes(out[:used_bytes])
 
-def _deserialize_UnionTag_1_0(data: bytes | bytearray | memoryview) -> tuple[UnionTag_1_0, int]:
+def _deserialize_UnionTag(data: bytes | bytearray | memoryview) -> tuple[UnionTag, int]:
     data = bytes(data)
     def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_value: int) -> bool:
         return (tag_value == 0) or (tag_value == 1)
@@ -102,7 +102,7 @@ def _deserialize_UnionTag_1_0(data: bytes | bytearray | memoryview) -> tuple[Uni
     offset_bits = 0
     tag = int(dsdl_runtime.read_unsigned(data, offset_bits, 8))
     tag = int(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag))
-    value = UnionTag_1_0(_tag=tag)
+    value = UnionTag(_tag=tag)
     if not mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
         raise ValueError(f"decoded invalid union tag {tag}")
     offset_bits += 8

@@ -17,27 +17,27 @@ DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
 DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
 
 @dataclass(slots=True)
-class Helpers_1_0:
+class Helpers:
     a: int = 0
     b: float = 0.0
     c: list[int] = field(default_factory=list)
 
     def serialize(self) -> bytes:
-        return _serialize_Helpers_1_0(self)
+        return _serialize_Helpers(self)
 
     @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "Helpers_1_0":
-        value, _consumed = _deserialize_Helpers_1_0(bytes(data))
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> "Helpers":
+        value, _consumed = _deserialize_Helpers(bytes(data))
         return value
 
     def _serialize_to(self, writer: object) -> None:
         writer.write(self.serialize())
 
     @classmethod
-    def _deserialize_from(cls, reader: object) -> "Helpers_1_0":
+    def _deserialize_from(cls, reader: object) -> "Helpers":
         return cls.deserialize(reader.read())
 
-def _serialize_Helpers_1_0(value: Helpers_1_0) -> bytes:
+def _serialize_Helpers(value: Helpers) -> bytes:
     out = bytearray(10)
     offset_bits = 0
     def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(capacity_bits: int) -> bool:
@@ -75,7 +75,7 @@ def _serialize_Helpers_1_0(value: Helpers_1_0) -> bytes:
     used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)
     return bytes(out[:used_bytes])
 
-def _deserialize_Helpers_1_0(data: bytes | bytearray | memoryview) -> tuple[Helpers_1_0, int]:
+def _deserialize_Helpers(data: bytes | bytearray | memoryview) -> tuple[Helpers, int]:
     data = bytes(data)
     def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value: int) -> int:
         raw = int(value) & 8191
@@ -91,7 +91,7 @@ def _deserialize_Helpers_1_0(data: bytes | bytearray | memoryview) -> tuple[Help
     def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
         return (value >= 0) and (value <= 5)
     
-    value = Helpers_1_0()
+    value = Helpers()
     offset_bits = 0
     a_raw = dsdl_runtime.read_signed(data, offset_bits, 13)
     value.a = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(a_raw)

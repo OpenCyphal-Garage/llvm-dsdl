@@ -24,6 +24,15 @@ endforeach()
 set(expected_output [=[fwdcompat_ok
 zeroext_ok]=])
 
+if(NOT DEFINED C_TYPE_NAME_SCHEME)
+  set(C_TYPE_NAME_SCHEME "unversioned")
+endif()
+if(NOT DEFINED TYPE_NAME_SCHEME)
+  set(TYPE_NAME_SCHEME "unversioned")
+endif()
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+
 file(REMOVE_RECURSE "${OUT_DIR}")
 # The passed root's basename is the first namespace component, so `wire/` yields wire.nar / wire.wid.
 set(dsdl_root "${OUT_DIR}/wire")
@@ -104,15 +113,6 @@ endif()
 set(rust_harness "${OUT_DIR}/rust-harness")
 file(MAKE_DIRECTORY "${rust_harness}/src")
 set(RUST_OUT "${rust_out}")
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "versioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
-
 configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatCargo.toml.in" "${rust_harness}/Cargo.toml" @ONLY)
 configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.rs" "${rust_harness}/src/main.rs" @ONLY)
 execute_process(
@@ -157,10 +157,12 @@ set(ran_backends "C" "Rust" "Go")
 if(PYTHON_EXECUTABLE AND NOT "${PYTHON_EXECUTABLE}" STREQUAL "")
   set(py_out "${OUT_DIR}/py")
   dsdlc_generate(python "" "${py_out}")
+  set(py_driver "${OUT_DIR}/ForwardCompatDriver.py")
+  configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatDriver.py" "${py_driver}" @ONLY)
   execute_process(
     COMMAND
       "${CMAKE_COMMAND}" -E env "PYTHONPATH=${py_out}"
-        "${PYTHON_EXECUTABLE}" "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.py"
+        "${PYTHON_EXECUTABLE}" "${py_driver}"
     RESULT_VARIABLE py_run_result
     OUTPUT_VARIABLE py_run_stdout
     ERROR_VARIABLE py_run_stderr

@@ -12,14 +12,14 @@ export const DSDL_REQUEST_ZOH_ALIAS_REASON = "sub-byte-field";
 export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
 export const DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable";
 
-export interface Helpers_1_0 {
+export interface Helpers {
   a: number;
   b: number;
   c: Array<number>;
 }
 
 
-export function serializeHelpers_1_0(value: Helpers_1_0): Uint8Array {
+export function serializeHelpers(value: Helpers): Uint8Array {
   const out = new Uint8Array(10);
   let offsetBits = 0;
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0 = (capacityBits: number): boolean => 80 <= capacityBits;
@@ -65,7 +65,7 @@ export function serializeHelpers_1_0(value: Helpers_1_0): Uint8Array {
   return out.subarray(0, usedBytes);
 }
 
-export function deserializeHelpers_1_0(bytes: Uint8Array): { value: Helpers_1_0; consumed: number } {
+export function deserializeHelpers(bytes: Uint8Array): { value: Helpers; consumed: number } {
   const mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser = (value: number | bigint): number | bigint => {
   const raw = ((typeof value === "bigint") ? value : BigInt(Math.trunc(value))) & 8191n;
   const signed = (raw & 4096n) !== 0n ? (raw | (~8191n)) : raw;
@@ -84,7 +84,7 @@ export function deserializeHelpers_1_0(bytes: Uint8Array): { value: Helpers_1_0;
   };
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
   
-  const value = {} as Helpers_1_0;
+  const value = {} as Helpers;
   let offsetBits = 0;
   const aRaw = dsdlRuntime.readSigned(bytes, offsetBits, 13);
   value.a = Number(mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(aRaw));

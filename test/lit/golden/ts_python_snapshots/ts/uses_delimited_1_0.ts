@@ -2,8 +2,8 @@
 // Source: fixtures.vendor.UsesDelimited.1.0
 import * as dsdlRuntime from "../../dsdl_runtime";
 
-import { deserializeDelimited_1_0, serializeDelimited_1_0 } from "./delimited_1_0";
-import type { Delimited_1_0 } from "./delimited_1_0";
+import { deserializeDelimited, serializeDelimited } from "./delimited_1_0";
+import type { Delimited } from "./delimited_1_0";
 export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
 export const DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited";
 export const DSDL_IS_DEPRECATED = false;
@@ -14,12 +14,12 @@ export const DSDL_REQUEST_ZOH_ALIAS_REASON = "invalid-bit-length";
 export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
 export const DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable";
 
-export interface UsesDelimited_1_0 {
-  nested: Delimited_1_0;
+export interface UsesDelimited {
+  nested: Delimited;
 }
 
 
-export function serializeUsesDelimited_1_0(value: UsesDelimited_1_0): Uint8Array {
+export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
   const out = new Uint8Array(12);
   let offsetBits = 0;
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0 = (capacityBits: number): boolean => 96 <= capacityBits;
@@ -33,7 +33,7 @@ export function serializeUsesDelimited_1_0(value: UsesDelimited_1_0): Uint8Array
     dsdlRuntime.setBit(out, nestedAlignBit, false);
   }
   offsetBits = nestedAlignedOffsetBits;
-  const nestedBytes = serializeDelimited_1_0(value.nested);
+  const nestedBytes = serializeDelimited(value.nested);
   const nestedSizeBytes = nestedBytes.length;
   if (nestedSizeBytes > 12) {
     throw new Error("encoded payload for composite field 'nested' exceeds max payload bytes 12");
@@ -50,10 +50,10 @@ export function serializeUsesDelimited_1_0(value: UsesDelimited_1_0): Uint8Array
   return out.subarray(0, usedBytes);
 }
 
-export function deserializeUsesDelimited_1_0(bytes: Uint8Array): { value: UsesDelimited_1_0; consumed: number } {
+export function deserializeUsesDelimited(bytes: Uint8Array): { value: UsesDelimited; consumed: number } {
   const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
   
-  const value = {} as UsesDelimited_1_0;
+  const value = {} as UsesDelimited;
   let offsetBits = 0;
   offsetBits = Math.trunc((offsetBits + 7) / 8) * 8;
   const nestedSizeBytes = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 32));
@@ -65,7 +65,7 @@ export function deserializeUsesDelimited_1_0(bytes: Uint8Array): { value: UsesDe
   const nestedStartByte = Math.min(Math.trunc(offsetBits / 8), bytes.length);
   const nestedEndByte = Math.min(nestedStartByte + nestedSizeBytes, bytes.length);
   const nestedBytes = bytes.subarray(nestedStartByte, nestedEndByte);
-  value.nested = deserializeDelimited_1_0(nestedBytes).value;
+  value.nested = deserializeDelimited(nestedBytes).value;
   offsetBits += nestedSizeBytes * 8;
   const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));
   return { value, consumed };

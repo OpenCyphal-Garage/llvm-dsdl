@@ -32,7 +32,7 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language python
+  COMMAND "${DSDLC}" --target-language python --versioned-type-names
     "${FIXTURES_ROOT}"
     --outdir "${OUT_DIR}"
     --py-package "${PY_PACKAGE}"

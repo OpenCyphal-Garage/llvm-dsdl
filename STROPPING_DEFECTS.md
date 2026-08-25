@@ -22,8 +22,10 @@ the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-ty
 D1–D4, D6–D19 and [D21](#d21), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
-**Deferred:** [D5](#d5) and [D20](#d20) only. Both turn on a versioning scheme, and that scheme
-should be settled after the newest-version-only feature rather than before it — see
+**Deferred:** [D5](#d5) and [D20](#d20) only. The mechanism they need is landed —
+`--versioned-type-names`, with unversioned as the default — but the *policy* question they turn on is
+which versions reach the corpus at all, and that should be settled after the newest-version-only
+feature rather than before it. See
 [Deferred](#deferred-the-two-that-turn-on-a-versioning-scheme).
 
 | ID | Severity | Area | Defect |
@@ -946,15 +948,17 @@ escape hatch without fixing A.
 ## Deferred: the two that turn on a versioning scheme
 
 [D5](#d5) and [D20](#d20) are not fixed. ([D19](#d19) was grouped with them until its fix turned out
-to be independent of the versioning question; it is done.) The mechanism they need landed with root cause
-[D](#d-composed-names-are-spliced-at-the-call-site); the policy did not, deliberately.
+to be independent of the versioning question; it is done.) The mechanism they need landed with root
+cause [D](#d-composed-names-are-spliced-at-the-call-site), and the two modes described below are now
+in the tool. What is still open is the policy: which versions of a type reach the generated corpus at
+all.
 
-The design reached before stopping: two modes rather than one rule, because whether a type name
+The design, which is what shipped: two modes rather than one rule, because whether a type name
 carries its version is a property of *the consuming code*, not of the corpus. Code that speaks one
 version of a type reads better with `p::ns::Bar`; code that deliberately handles two versions side by
 side needs `Bar_1_0` and `Bar_2_0` to keep them apart in its own source. So: unversioned by default,
 a flag for always-versioned, and in both the name is a function of the definition alone. C++'s
-current "version only when the corpus is ambiguous" is deleted rather than kept, since it makes the
+previous "version only when the corpus is ambiguous" is deleted rather than kept, since it made the
 identifier depend on what else was in the invocation.
 
 What "unversioned" costs is not uniform, because what scopes a generated type differs:
@@ -965,16 +969,24 @@ What "unversioned" costs is not uniform, because what scopes a generated type di
 | C, C++ | global / namespace shared by versions | safe to generate; breaks only if a consumer includes both in one translation unit |
 | Go | package per namespace, shared by versions | cannot be generated -- the package will not compile |
 
-Go is what stalled it. The standard `uavcan` corpus has 20 full names with more than one version, so
-an unversioned default makes `--target-language go` fail on the most common input until the flag is
-passed.
+Go is what stalls the *default*. The standard `uavcan` corpus has 20 full names with more than one
+version, so an unversioned default makes `--target-language go` fail on the most common input until
+the flag is passed. It fails with a diagnostic naming the type, the versions and the flag rather than
+by emitting a package that will not compile -- but it still fails, and that is the cost the
+newest-version-only feature is meant to remove.
 
 **The way out is a separate feature: generate the newest version of each type by default.** That
 removes the collision at its source for every language rather than working around it per backend,
 and it changes what D5 and D20 should do -- so settling them first would be settling them against a
 corpus shape that is about to change. They wait for it.
 
-### What an implementation attempt found (2026-08-24)
+### The modes are landed (2026-08-25)
+
+`--versioned-type-names` exists and `TypeNameVersioning::Unversioned` is the default. What follows is
+the record of the attempt that was reverted first, and of what the second attempt cost, because the
+gap between the two estimates is the useful part.
+
+#### The first attempt, and why it was reverted (2026-08-24)
 
 The two modes were built end to end and then reverted, deliberately. Everything worked: a
 `--versioned-type-names` flag threaded from the driver into all eight backends, lowering left at the
@@ -1001,6 +1013,34 @@ An earlier estimate of this cost was wrong and worth recording as a trap. Measur
 that change* gives 36 of 38 in Rust and Go and 7 of 38 in C++ -- which understates the work by an
 order of magnitude, because the cost is not in the generated tree but in the hand-written code that
 references it.
+
+#### What the second attempt actually cost (2026-08-25)
+
+The 113 figure was real but it was a measure of *coupling*, not of work. Parameterising the harnesses
+first -- one token per version pair, `@CV1_0@` for C names and `@V1_0@` for the other five, resolved
+by `cmake/HarnessTypeNameTokens.cmake` -- took the residue down to **26 tests**, and those fell into
+four groups, only one of which was a real defect:
+
+1. **Go on a multi-version corpus (9 tests).** The refusal is correct behaviour, not a failure: the
+   `uavcan` corpus has 20 full names at two or more versions and Go compiles a namespace as one
+   package. Those lanes ask for `--versioned-type-names` because it is the only scheme that can
+   express the corpus. Each Go script now derives the flag from the same variable that sets its
+   tokens, so the generator and the harness cannot disagree about a spelling.
+2. **Harnesses written against versioned names whose generator lost the flag (8 tests).** One line
+   each.
+3. **`llvmdsdl-lit` (8 checks in one test).** Expectations and two golden snapshot sets, updated to
+   the new default. This is where the default belongs pinned.
+4. **A genuine gap in the Phase 1 parameterisation (the rest).** The tokeniser matched
+   `Name_1_0` only at a word boundary, so every identifier that *infixes* the version was silently
+   left literal: service sections (`ExecuteCommand_1_3_Request`) and Go's derived constants
+   (`INT3SAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES`). 176 occurrences across four harnesses. Worth
+   recording as the trap it is -- a regex anchored on the common case passes Phase 1's
+   inertness gate precisely because it changed nothing, and the omission only surfaces when the mode
+   flips.
+
+The lesson for the next scheme change: the cost of a naming default is dominated by hand-written
+code that names generated types, and the way to find all of it is to flip the mode and read the
+compiler errors, not to grep.
 
 Two consequences for the eventual design:
 

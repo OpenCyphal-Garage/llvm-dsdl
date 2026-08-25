@@ -100,14 +100,14 @@ std::string implFileName(const DiscoveredDefinition& info)
     return name;
 }
 
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
     return renderDefinitionTypeName(CodegenNamingLanguage::C,
                                     info.namespaceComponents,
                                     info.shortName,
                                     info.majorVersion,
                                     info.minorVersion,
-                                    false);
+                                    versioning);
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
@@ -138,10 +138,19 @@ std::string signedStorageType(const std::uint32_t bitLength)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
+    EmitterContext(const SemanticModule&    semantic,
+                   const bool               emitDeprecationAttributes,
+                   const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief True when `@deprecated` definitions should carry a language-native attribute.
@@ -157,7 +166,7 @@ public:
 
     std::string cTypeName(const SemanticDefinition& def) const
     {
-        return cTypeNameFromInfo(def.info);
+        return cTypeNameFromInfo(def.info, typeNameVersioning_);
     }
 
     std::string cTypeName(const SemanticTypeRef& ref) const
@@ -173,7 +182,7 @@ public:
         tmp.namespaceComponents = ref.namespaceComponents;
         tmp.majorVersion        = ref.majorVersion;
         tmp.minorVersion        = ref.minorVersion;
-        return cTypeNameFromInfo(tmp);
+        return cTypeNameFromInfo(tmp, typeNameVersioning_);
     }
 
     std::string relativeHeaderPath(const SemanticDefinition& def) const
@@ -207,8 +216,9 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
-    bool            emitDeprecationAttributes_{false};
+    DefinitionIndex    index_;
+    bool               emitDeprecationAttributes_{false};
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -623,6 +633,24 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         << " */\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
+
+    // Under the unversioned scheme this type's name carries no version, so two versions of it are
+    // one identifier. Generating both is fine -- they are separate headers -- but including both is
+    // not, and saying so here beats a cascade of redefinitions from inside generated code.
+    if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
+    {
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(CodegenNamingLanguage::C, def.info.fullName, def.info.majorVersion,
+                                        def.info.minorVersion);
+        out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
+        out << "#  error \"" << def.info.fullName
+            << ": two versions of one type in one translation unit, but generated type names are "
+               "unversioned. Regenerate with --versioned-type-names to use both.\"\n";
+        out << "#endif\n";
+        out << "#define " << anyVersion << "\n";
+        out << "#define " << thisVersion << "\n\n";
+    }
+
     out << "#include <stddef.h>\n";
     out << "#include <stdint.h>\n";
     out << "#include <stdbool.h>\n";
@@ -775,7 +803,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    EmitterContext        ctx(semantic, options.emitDeprecationAttributes);
+    EmitterContext        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write

@@ -22,10 +22,10 @@ const DefinitionNamePolicy& definitionNamePolicy(const CodegenNamingLanguage lan
     // C flattens the namespace into the identifier because it has nowhere else to put it. Rust does
     // the same and then re-checks the result. The other four let the language carry the namespace:
     // C++ in a real namespace, Go/TypeScript/Python in a per-namespace module.
-    static constexpr DefinitionNamePolicy kC{"__", TypeNameVersioning::Never, false};
-    static constexpr DefinitionNamePolicy kCpp{"", TypeNameVersioning::OnlyWhenAmbiguous, false};
-    static constexpr DefinitionNamePolicy kRust{"_", TypeNameVersioning::Always, true};
-    static constexpr DefinitionNamePolicy kModuleScoped{"", TypeNameVersioning::Always, false};
+    static constexpr DefinitionNamePolicy kC{"__", false};
+    static constexpr DefinitionNamePolicy kCpp{"", false};
+    static constexpr DefinitionNamePolicy kRust{"_", true};
+    static constexpr DefinitionNamePolicy kModuleScoped{"", false};
 
     switch (language)
     {
@@ -48,7 +48,7 @@ std::string renderDefinitionTypeName(const CodegenNamingLanguage       language,
                                      const llvm::StringRef             shortName,
                                      const std::uint32_t               majorVersion,
                                      const std::uint32_t               minorVersion,
-                                     const bool                        shortNameIsAmbiguous)
+                                     const TypeNameVersioning          versioning)
 {
     const DefinitionNamePolicy& policy = definitionNamePolicy(language);
 
@@ -70,9 +70,7 @@ std::string renderDefinitionTypeName(const CodegenNamingLanguage       language,
     }
     out += codegenProjectIdentifier(language, IdentifierRole::TypeName, shortName);
 
-    const bool versioned = (policy.versioning == TypeNameVersioning::Always) ||
-                           ((policy.versioning == TypeNameVersioning::OnlyWhenAmbiguous) && shortNameIsAmbiguous);
-    if (versioned)
+    if (versioning == TypeNameVersioning::Versioned)
     {
         out += "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
     }
@@ -103,6 +101,19 @@ std::string renderIncludeGuard(const CodegenNamingLanguage language,
     const std::string composed = prefix.str() + fullName.str() + "_" + std::to_string(majorVersion) + "_" +
                                  std::to_string(minorVersion) + suffix.str();
     return codegenProjectIdentifier(language, IdentifierRole::MacroName, composed);
+}
+
+std::pair<std::string, std::string> renderVersionSentinelMacros(const CodegenNamingLanguage language,
+                                                                const llvm::StringRef       fullName,
+                                                                const std::uint32_t         majorVersion,
+                                                                const std::uint32_t         minorVersion)
+{
+    // The generic one carries no version -- that is the whole point of it.
+    const std::string generic =
+        codegenProjectIdentifier(language, IdentifierRole::MacroName, "LLVMDSDL_SELECTED_" + fullName.str() + "_");
+    const std::string specific =
+        renderIncludeGuard(language, "LLVMDSDL_SELECTED_", fullName, majorVersion, minorVersion, "_");
+    return {generic, specific};
 }
 
 std::string renderDefinitionSymbolBase(const llvm::StringRef fullName,
