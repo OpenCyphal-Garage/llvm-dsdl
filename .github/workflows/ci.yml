@@ -600,6 +600,113 @@ jobs:
         # actually are -- a recipe.json the renderer chokes on should fail here, not at publish time.
         run: python3 tools/showroom/recipes_index.py
 
+  benchmarks:
+    name: Runtime benchmarks (linux / toolshed)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
+    # The runtime benchmarks measure generated Rust and generated Python doing real work. They are
+    # the only lane that runs the generated code for speed rather than for correctness, and until
+    # this job existed they ran nowhere: `test-ci-full` filters `-LE bench`, and the `test-ci-bench`
+    # preset had no caller. That is how the Rust harness came to stop compiling without anything
+    # noticing -- the failure was a broken benchmark, and no lane built one.
+    #
+    # So the first thing this lane buys is that the harnesses are exercised. The numbers are the
+    # second thing, and they are REPORTED, NOT ENFORCED, on purpose:
+    #
+    #   The two checked-in threshold files hold absolute wall-clock seconds calibrated on one
+    #   developer machine (macOS/arm64, and in the Python case a specific interpreter build --
+    #   `python_runtime_bench_thresholds.json` records 3.14/Clang timings to five decimal places).
+    #   Nothing about those numbers describes an ubuntu-26.04 container, so enforcing them here
+    #   would gate on a measurement that was never taken on this hardware.
+    #
+    # Turning them on takes three things, in order. Run this lane enough times to have a spread
+    # (the job summary prints every observation in `max_elapsed_sec` shape, so this is a copy);
+    # write those maxima plus a budget into runner-specific threshold files and point
+    # LLVMDSDL_*_BENCH_THRESHOLDS_JSON at them; then drop the two `=OFF` flags below. Do not skip
+    # the first step -- a hosted runner's variance is the thing being measured, and a budget
+    # guessed rather than observed either flakes or is too wide to catch anything.
+    #
+    # The durable answer is narrower than absolute seconds. The Python report already carries
+    # `fastVsPortableRatio`: two specializations timed in the same process on the same machine, so
+    # the ratio survives a runner that is having a bad day in a way that a second does not. A gate
+    # built on ratios would work here today; one built on seconds needs the calibration above.
+    #
+    # Independent of the `linux` job rather than needing it, like showroom-recipes: it builds dsdlc
+    # and the Python accelerator and nothing else, so a broken benchmark reports in minutes rather
+    # than behind the two-hour lane.
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+    timeout-minutes: 45
+    env:
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
+    steps:
+      - name: Checkout (with submodules)
+        # The Python benchmark reads the uavcan corpus, which is a submodule.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
+
+      - name: Prepare toolchains
+        # cargo for the Rust benchmark. The action fails loudly on a missing toolchain, which
+        # matters more here than elsewhere: a benchmark whose language toolchain is absent is not
+        # registered at configure time, so without this the lane would report green having measured
+        # nothing at all.
+        uses: ./.github/actions/setup-language-toolchains
+
+      - name: Configure (ci preset, thresholds reporting-only)
+        # See the note at the top of this job for why the thresholds are off and what turning them
+        # on requires. They are disabled here rather than deleted from the tree because the values
+        # are still correct for the machine they were calibrated on, where the suite does enforce
+        # them.
+        run: |
+          cmake --preset ci \
+            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF \
+            -DLLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF
+
+      - name: Build (Debug)
+        run: cmake --build --preset build-ci
+
+      - name: Build Python runtime accelerator
+        # The Python benchmark's `accel` runtime mode needs it. Without it that mode reports
+        # unavailable and the lane silently measures two of three backends.
+        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
+
+      - name: Run the benchmarks
+        # The preset selects the `bench` label and inherits no `jobs`, so ctest runs serially. Both
+        # tests also carry RUN_SERIAL, which is what keeps a wall-clock measurement off a machine
+        # that is compiling something else.
+        run: ctest --preset test-ci-bench
+
+      - name: Summarise
+        # `always()` because the numbers from a failed run are the interesting ones. The renderer
+        # exits non-zero when a report is missing, so a benchmark that did not run cannot be
+        # summarised into silence.
+        if: always()
+        run: |
+          python3 tools/benchmark/render_bench_report.py \
+            --rust-report build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json \
+            --python-report build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json \
+            --markdown "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload reports
+        # The calibration input. Keep them long enough to gather a spread across runs.
+        if: ${{ always() && !env.ACT }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-bench-reports
+          path: |
+            build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json
+            build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json
+          if-no-files-found: warn
+          retention-days: 90
+
   release-artifacts:
     name: Release artifacts
     # Opt-in, on the `release-ci` label. The packages are the only thing this
