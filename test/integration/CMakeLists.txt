@@ -2669,6 +2669,30 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeBench.cmake
   )
 
+  # The deterministic half of the same question. The benchmark above answers "how fast", which is a
+  # property of the machine; this answers "did the emitted code change", which is a property of the
+  # code. Skips where valgrind is absent -- notably Apple Silicon, which it has never supported.
+  add_test(
+    NAME llvmdsdl-fixtures-rust-runtime-instructions
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-instructions-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_BENCH_ROOT=${LLVMDSDL_SOURCE_DIR}/test/benchmark/rust_runtime/benchrust
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/test/integration/rust_runtime_instruction_counts.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeInstructions.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-rust-runtime-instructions
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      # Not in the `bench` label: this one is deterministic, so it belongs in the ordinary suite
+      # where it can actually gate, rather than in the reporting-only lane.
+      LABELS "integration;fixtures;rust;runtime;instructions;slow;release-blocking"
+  )
+
   set_tests_properties(
     llvmdsdl-fixtures-rust-runtime-bench
     PROPERTIES

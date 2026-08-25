@@ -631,6 +631,12 @@ jobs:
     # the ratio survives a runner that is having a bad day in a way that a second does not. A gate
     # built on ratios would work here today; one built on seconds needs the calibration above.
     #
+    # For the Rust half that question is already answered elsewhere and this lane is not where to
+    # look for it: `llvmdsdl-fixtures-rust-runtime-instructions` counts instructions under cachegrind
+    # rather than seconds, carries no `bench` label, and therefore runs and GATES in the `linux` job.
+    # It is deterministic -- six runs, idle and oversubscribed, agreed to the digit -- so it needs no
+    # calibration at all. What is measured here is time, which is the thing that cannot be gated.
+    #
     # Independent of the `linux` job rather than needing it, like showroom-recipes: it builds dsdlc
     # and the Python accelerator and nothing else, so a broken benchmark reports in minutes rather
     # than behind the two-hour lane.

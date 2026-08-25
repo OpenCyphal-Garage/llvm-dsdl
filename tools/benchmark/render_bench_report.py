@@ -111,11 +111,18 @@ def _render_python(report: dict | None, out: list[str]) -> None:
     out.append("")
     out.append(f"Interpreter: `{report.get('pythonVersion', '?').splitlines()[0]}`")
     out.append("")
-    out.append("| specialization | runtime mode | family | elapsed (s) | ops/sec |")
-    out.append("|---|---|---|---:|---:|")
+    # CPU seconds beside wall seconds. They agree on an idle machine and diverge by exactly the
+    # amount the process spent waiting for a CPU, which makes the pair readable as "was this
+    # measurement taken on a busy box" without needing to know anything about the runner.
+    out.append("| specialization | runtime mode | family | wall (s) | CPU (s) | CPU/wall | ops/sec |")
+    out.append("|---|---|---|---:|---:|---:|---:|")
     for spec, mode, family, m in _python_rows(report):
+        wall = m.get("elapsedSec", 0.0)
+        cpu = m.get("cpuSec")
+        cpu_cell = f"{cpu:.6f}" if cpu is not None else "—"
+        ratio_cell = f"{cpu / wall:.3f}" if cpu is not None and wall > 0 else "—"
         out.append(
-            f"| {spec} | {mode} | {family} | {m.get('elapsedSec', 0):.6f} | "
+            f"| {spec} | {mode} | {family} | {wall:.6f} | {cpu_cell} | {ratio_cell} | "
             f"{m.get('operationsPerSec', 0):,.0f} |"
         )
 
@@ -168,7 +175,10 @@ def _render_calibration(rust: dict | None, python: dict | None, out: list[str]) 
     if python is not None:
         py: dict = {}
         for spec, mode, family, m in _python_rows(python):
-            py.setdefault(spec, {}).setdefault(mode, {})[family] = round(m.get("elapsedSec", 0.0), 6)
+            entry = py.setdefault(spec, {}).setdefault(mode, {})
+            entry[family] = round(m.get("elapsedSec", 0.0), 6)
+            if m.get("cpuSec") is not None:
+                py.setdefault(spec + " (cpu)", {}).setdefault(mode, {})[family] = round(m["cpuSec"], 6)
         fragment["python"] = py
     out.append(json.dumps(fragment, indent=2, sort_keys=True))
     out.append("```")
@@ -195,6 +205,13 @@ def main(argv: list[str]) -> int:
         "Reported, not enforced. The checked-in thresholds are calibrated on one "
         "developer machine (macOS/arm64) and do not describe this runner; see "
         "`.github/workflows/ci.yml` for what turning them on requires."
+    )
+    out.append("")
+    out.append(
+        "Regressions in the generated Rust *are* gated, by "
+        "`llvmdsdl-fixtures-rust-runtime-instructions` in the main suite, which counts instructions "
+        "under cachegrind instead of seconds and so needs no calibration. Nothing on this page "
+        "fails a build."
     )
     out.append("")
     _render_rust(rust, out)
