@@ -2419,6 +2419,13 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-uavcan-python-runtime-bench
     PROPERTIES
+      # A benchmark asserting absolute wall-clock seconds cannot share the machine with the rest of
+      # the suite. Its thresholds were calibrated from serial runs; co-scheduled with three cargo/go
+      # builds at -j 4 a single family has been measured 32% over its limit while the structurally
+      # identical family in the other memory mode came in 8% under, in the same process. Widening the
+      # budget to absorb that would cost the check the regressions it exists to catch, so serialise
+      # the measurement instead.
+      RUN_SERIAL TRUE
       LABELS "integration;uavcan;python;bench;slow;release-blocking"
   )
 
@@ -2665,6 +2672,13 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-fixtures-rust-runtime-bench
     PROPERTIES
+      # A benchmark asserting absolute wall-clock seconds cannot share the machine with the rest of
+      # the suite. Its thresholds were calibrated from serial runs; co-scheduled with three cargo/go
+      # builds at -j 4 a single family has been measured 32% over its limit while the structurally
+      # identical family in the other memory mode came in 8% under, in the same process. Widening the
+      # budget to absorb that would cost the check the regressions it exists to catch, so serialise
+      # the measurement instead.
+      RUN_SERIAL TRUE
       LABELS "integration;fixtures;rust;runtime;bench;slow;rust-memory-mode;release-blocking"
   )
 
