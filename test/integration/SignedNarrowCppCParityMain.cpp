@@ -135,11 +135,11 @@ std::int8_t cInt3SatSerialize(const vendor__Int3Sat@CV1_0@* obj, std::uint8_t* b
 {
     return vendor__Int3Sat@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppInt3SatDeserialize(vendor::Int3Sat@CV1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize)
+std::int8_t cppInt3SatDeserialize(vendor::Int3Sat@V1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppInt3SatSerialize(const vendor::Int3Sat@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize)
+std::int8_t cppInt3SatSerialize(const vendor::Int3Sat@V1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize)
 {
     return obj->serialize(buffer, inoutSize);
 }
@@ -152,11 +152,11 @@ std::int8_t cInt3TruncSerialize(const vendor__Int3Trunc@CV1_0@* obj, std::uint8_
 {
     return vendor__Int3Trunc@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppInt3TruncDeserialize(vendor::Int3Trunc@CV1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize)
+std::int8_t cppInt3TruncDeserialize(vendor::Int3Trunc@V1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppInt3TruncSerialize(const vendor::Int3Trunc@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize)
+std::int8_t cppInt3TruncSerialize(const vendor::Int3Trunc@V1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize)
 {
     return obj->serialize(buffer, inoutSize);
 }
@@ -166,13 +166,13 @@ int runDirectedChecks()
     {
         // Saturated int3: +7 -> +3 (0b011).
         vendor__Int3Sat@CV1_0@ cObj{};
-        vendor::Int3Sat@CV1_0@ cppObj{};
+        vendor::Int3Sat@V1_0@ cppObj{};
         cObj.value   = static_cast<std::int8_t>(7);
         cppObj.value = static_cast<std::int8_t>(7);
         std::uint8_t      cBuffer[8]{};
         std::uint8_t      cppBuffer[8]{};
         std::size_t       cSize   = static_cast<std::size_t>(vendor__Int3Sat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = vendor::Int3Sat@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = vendor::Int3Sat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = cInt3SatSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppInt3SatSerialize(&cppObj, cppBuffer, &cppSize);
         if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -195,13 +195,13 @@ int runDirectedChecks()
     {
         // Saturated int3: -9 -> -4 (0b100).
         vendor__Int3Sat@CV1_0@ cObj{};
-        vendor::Int3Sat@CV1_0@ cppObj{};
+        vendor::Int3Sat@V1_0@ cppObj{};
         cObj.value   = static_cast<std::int8_t>(-9);
         cppObj.value = static_cast<std::int8_t>(-9);
         std::uint8_t      cBuffer[8]{};
         std::uint8_t      cppBuffer[8]{};
         std::size_t       cSize   = static_cast<std::size_t>(vendor__Int3Sat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = vendor::Int3Sat@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = vendor::Int3Sat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = cInt3SatSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppInt3SatSerialize(&cppObj, cppBuffer, &cppSize);
         if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -224,13 +224,13 @@ int runDirectedChecks()
     {
         // Truncated int3: +5 -> 0b101 (decode -3).
         vendor__Int3Trunc@CV1_0@ cObj{};
-        vendor::Int3Trunc@CV1_0@ cppObj{};
+        vendor::Int3Trunc@V1_0@ cppObj{};
         cObj.value   = static_cast<std::int8_t>(5);
         cppObj.value = static_cast<std::int8_t>(5);
         std::uint8_t      cBuffer[8]{};
         std::uint8_t      cppBuffer[8]{};
         std::size_t       cSize   = static_cast<std::size_t>(vendor__Int3Trunc@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = vendor::Int3Trunc@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = vendor::Int3Trunc@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = cInt3TruncSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppInt3TruncSerialize(&cppObj, cppBuffer, &cppSize);
         if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -253,13 +253,13 @@ int runDirectedChecks()
     {
         // Truncated int3: -5 -> low bits 0b011.
         vendor__Int3Trunc@CV1_0@ cObj{};
-        vendor::Int3Trunc@CV1_0@ cppObj{};
+        vendor::Int3Trunc@V1_0@ cppObj{};
         cObj.value   = static_cast<std::int8_t>(-5);
         cppObj.value = static_cast<std::int8_t>(-5);
         std::uint8_t      cBuffer[8]{};
         std::uint8_t      cppBuffer[8]{};
         std::size_t       cSize   = static_cast<std::size_t>(vendor__Int3Trunc@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = vendor::Int3Trunc@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = vendor::Int3Trunc@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = cInt3TruncSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppInt3TruncSerialize(&cppObj, cppBuffer, &cppSize);
         if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -284,7 +284,7 @@ int runDirectedChecks()
         for (const auto sample : {std::uint8_t{0x07U}, std::uint8_t{0x04U}})
         {
             vendor__Int3Sat@CV1_0@   cObj{};
-            vendor::Int3Sat@CV1_0@   cppObj{};
+            vendor::Int3Sat@V1_0@   cppObj{};
             std::size_t       cConsumed   = 1U;
             std::size_t       cppConsumed = 1U;
             const std::int8_t cRc         = cInt3SatDeserialize(&cObj, &sample, &cConsumed);
@@ -321,7 +321,7 @@ int runDirectedChecks()
         for (const auto sample : {std::uint8_t{0x05U}, std::uint8_t{0x03U}})
         {
             vendor__Int3Trunc@CV1_0@ cObj{};
-            vendor::Int3Trunc@CV1_0@ cppObj{};
+            vendor::Int3Trunc@V1_0@ cppObj{};
             std::size_t       cConsumed   = 1U;
             std::size_t       cppConsumed = 1U;
             const std::int8_t cRc         = cInt3TruncDeserialize(&cObj, &sample, &cConsumed);
@@ -375,11 +375,11 @@ int main(int argc, char** argv)
         iterations = static_cast<std::size_t>(parsed);
     }
 
-    if (runCase<vendor__Int3Sat@CV1_0@, vendor::Int3Sat@CV1_0@>("vendor.Int3Sat.1.0",
+    if (runCase<vendor__Int3Sat@CV1_0@, vendor::Int3Sat@V1_0@>("vendor.Int3Sat.1.0",
                                                   iterations,
                                                   static_cast<std::size_t>(
                                                       vendor__Int3Sat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                                                  vendor::Int3Sat@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                                                  vendor::Int3Sat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                                   cInt3SatDeserialize,
                                                   cInt3SatSerialize,
                                                   cppInt3SatDeserialize,
@@ -388,11 +388,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (runCase<vendor__Int3Trunc@CV1_0@, vendor::Int3Trunc@CV1_0@>("vendor.Int3Trunc.1.0",
+    if (runCase<vendor__Int3Trunc@CV1_0@, vendor::Int3Trunc@V1_0@>("vendor.Int3Trunc.1.0",
                                                       iterations,
                                                       static_cast<std::size_t>(
                                                           vendor__Int3Trunc@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                                                      vendor::Int3Trunc@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                                                      vendor::Int3Trunc@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                                       cInt3TruncDeserialize,
                                                       cInt3TruncSerialize,
                                                       cppInt3TruncDeserialize,

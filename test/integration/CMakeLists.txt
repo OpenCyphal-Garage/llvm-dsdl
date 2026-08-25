@@ -406,6 +406,34 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;naming;release-blocking"
   )
 
+  # The corpus is where a naming change should be pinned, so it runs under both spellings. Nothing in
+  # the gate names a type by hand -- every probe is assembled from a glob of what was generated -- so
+  # the second registration is one variable rather than a second corpus.
+  add_test(
+    NAME llvmdsdl-naming-corpus-compile-gate-versioned-names
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_naming
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/naming-corpus-gate-versioned-names
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DCXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DTYPE_NAME_SCHEME=versioned
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunNamingCorpusCompileGate.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-naming-corpus-compile-gate-versioned-names
+    PROPERTIES
+      LABELS "integration;naming;release-blocking"
+  )
+
   add_test(
     NAME llvmdsdl-parity-matrix-coverage
     COMMAND
@@ -3039,6 +3067,32 @@ set_tests_properties(
     LABELS "integration;uavcan;cpp;differential;slow"
 )
 
+# The same harness under versioned type names. One registration per language pair rather than a
+# second copy of every lane: what this covers is the *naming scheme*, and a scheme that survives one
+# full cross-language round trip is exercised. The wire checks these harnesses exist for are
+# unaffected by naming and stay at one run each.
+add_test(
+  NAME llvmdsdl-uavcan-cpp-c-parity-versioned-names
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-c-parity-versioned-names-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=std
+      -DC_TYPE_NAME_SCHEME=versioned
+      -DTYPE_NAME_SCHEME=versioned
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-c-parity-versioned-names
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow;naming"
+)
+
 # ASan/UBSan variant of the C/C++ decoder parity harness. Reuses the same
 # randomized + directed malformed-input harness but rebuilds the generated C and
 # C++ decoders (and the harness main) under sanitizers, so memory/UB defects in
@@ -3192,6 +3246,29 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     llvmdsdl-uavcan-c-rust-parity
     PROPERTIES
       LABELS "integration;uavcan;rust;differential;slow"
+  )
+
+  # As above: the C and Rust halves under versioned names.
+  add_test(
+    NAME llvmdsdl-uavcan-c-rust-parity-versioned-names
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-rust-parity-versioned-names-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DC_TYPE_NAME_SCHEME=versioned
+        -DTYPE_NAME_SCHEME=versioned
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-c-rust-parity-versioned-names
+    PROPERTIES
+      LABELS "integration;uavcan;rust;differential;slow;naming"
   )
 
   add_test(

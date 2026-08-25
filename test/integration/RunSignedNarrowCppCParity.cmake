@@ -67,14 +67,8 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "unversioned")
-endif()
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 set(parity_main "${OUT_DIR}/SignedNarrowCppCParityMain.cpp")
 configure_file("${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp" "${parity_main}" @ONLY)
 
@@ -87,7 +81,7 @@ file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -103,7 +97,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp
+    "${DSDLC}" --target-language cpp ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"

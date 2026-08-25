@@ -34,14 +34,8 @@ endif()
 
 # The harness names generated types, so it takes the token substitution rather than being compiled
 # straight from the source tree.
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "unversioned")
-endif()
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 set(harness_src "${OUT_DIR}/NativeDecoderFuzz.c")
 configure_file("${SOURCE_ROOT}/test/integration/NativeDecoderFuzz.c" "${harness_src}" @ONLY)
 if(NOT EXISTS "${harness_src}")
@@ -67,7 +61,7 @@ set(san_base
 
 # --- Generate C from the corpus --------------------------------------------
 execute_process(
-  COMMAND "${DSDLC}" --target-language c "${UAVCAN_ROOT}" --outdir "${c_out}"
+  COMMAND "${DSDLC}" --target-language c ${c_scheme_args} "${UAVCAN_ROOT}" --outdir "${c_out}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr

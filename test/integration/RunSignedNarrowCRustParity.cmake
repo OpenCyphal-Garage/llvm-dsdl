@@ -46,6 +46,9 @@ if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
 
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+
 execute_process(
   COMMAND "${DSDLC}" --version
   RESULT_VARIABLE dsdlc_version_result
@@ -115,7 +118,7 @@ file(MAKE_DIRECTORY "${harness_out}/src")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -131,7 +134,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --rust-profile "${RUST_PROFILE}"
@@ -158,14 +161,6 @@ if("${RUST_PROFILE}" STREQUAL "no-std-alloc")
     string(APPEND RUST_DEP_FEATURES ", features = [\"runtime-fast\"]")
   endif()
 endif()
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "unversioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
 
 configure_file("${cargo_toml_template}" "${harness_out}/Cargo.toml" @ONLY)
 configure_file("${main_rs_template}" "${harness_out}/src/main.rs" @ONLY)

@@ -68,25 +68,8 @@ file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
 # A single-version fixture corpus, so either scheme generates. The default follows the tool's.
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "unversioned")
-endif()
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
-
-# One variable drives both the generator and the harness tokens, so the two cannot
-# disagree about how a type is spelled.
-set(c_scheme_args "")
-if(C_TYPE_NAME_SCHEME STREQUAL "versioned")
-  set(c_scheme_args --versioned-type-names)
-endif()
-set(other_scheme_args "")
-if(TYPE_NAME_SCHEME STREQUAL "versioned")
-  set(other_scheme_args --versioned-type-names)
-endif()
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 
 execute_process(
   COMMAND

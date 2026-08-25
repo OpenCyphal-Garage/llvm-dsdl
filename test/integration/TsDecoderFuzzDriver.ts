@@ -22,8 +22,8 @@
 // Error is the expected rejection of malformed input. A hang is caught by the
 // harness process timeout.
 
-import { deserializeUni_1_0, serializeUni_1_0 } from "./dsdl/vt/uni_1_0";
-import { deserializeOuter_1_0, serializeOuter_1_0 } from "./dsdl/vt/outer_1_0";
+import { deserializeUni@V1_0@, serializeUni@V1_0@ } from "./dsdl/vt/uni_1_0";
+import { deserializeOuter@V1_0@, serializeOuter@V1_0@ } from "./dsdl/vt/outer_1_0";
 
 // Deterministic xorshift128+ style PRNG (BigInt-free) for reproducible inputs.
 let s0 = 0x9e3779b9 >>> 0;

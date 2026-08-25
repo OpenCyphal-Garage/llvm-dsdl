@@ -208,34 +208,34 @@ DEFINE_ROUNDTRIP(c_diagnostic_severity_roundtrip,
                  uavcan__diagnostic__Severity@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_value_roundtrip,
-                 uavcan__register___Value,
-                 uavcan__register___Value__deserialize_,
-                 uavcan__register___Value__serialize_)
+                 uavcan__register___Value@CV1_0@,
+                 uavcan__register___Value@CV1_0@__deserialize_,
+                 uavcan__register___Value@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_access_request_roundtrip,
-                 uavcan__register___Access__Request,
-                 uavcan__register___Access__Request__deserialize_,
-                 uavcan__register___Access__Request__serialize_)
+                 uavcan__register___Access@CV1_0@__Request,
+                 uavcan__register___Access@CV1_0@__Request__deserialize_,
+                 uavcan__register___Access@CV1_0@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_access_response_roundtrip,
-                 uavcan__register___Access__Response,
-                 uavcan__register___Access__Response__deserialize_,
-                 uavcan__register___Access__Response__serialize_)
+                 uavcan__register___Access@CV1_0@__Response,
+                 uavcan__register___Access@CV1_0@__Response__deserialize_,
+                 uavcan__register___Access@CV1_0@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_name_roundtrip,
-                 uavcan__register___Name,
-                 uavcan__register___Name__deserialize_,
-                 uavcan__register___Name__serialize_)
+                 uavcan__register___Name@CV1_0@,
+                 uavcan__register___Name@CV1_0@__deserialize_,
+                 uavcan__register___Name@CV1_0@__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_list_request_roundtrip,
-                 uavcan__register___List__Request,
-                 uavcan__register___List__Request__deserialize_,
-                 uavcan__register___List__Request__serialize_)
+                 uavcan__register___List@CV1_0@__Request,
+                 uavcan__register___List@CV1_0@__Request__deserialize_,
+                 uavcan__register___List@CV1_0@__Request__serialize_)
 
 DEFINE_ROUNDTRIP(c_register_list_response_roundtrip,
-                 uavcan__register___List__Response,
-                 uavcan__register___List__Response__deserialize_,
-                 uavcan__register___List__Response__serialize_)
+                 uavcan__register___List@CV1_0@__Response,
+                 uavcan__register___List@CV1_0@__Response__deserialize_,
+                 uavcan__register___List@CV1_0@__Response__serialize_)
 
 DEFINE_ROUNDTRIP(c_file_list_request_roundtrip,
                  uavcan__file__List@CV0_2@__Request,

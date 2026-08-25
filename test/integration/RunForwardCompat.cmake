@@ -24,14 +24,8 @@ endforeach()
 set(expected_output [=[fwdcompat_ok
 zeroext_ok]=])
 
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "unversioned")
-endif()
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 # The passed root's basename is the first namespace component, so `wire/` yields wire.nar / wire.wid.
@@ -62,7 +56,7 @@ endfunction()
 
 # --- C -----------------------------------------------------------------------------------------------
 set(c_out "${OUT_DIR}/c")
-dsdlc_generate(c "" "${c_out}")
+dsdlc_generate(c "${c_scheme_args}" "${c_out}")
 file(GLOB_RECURSE c_sources "${c_out}/wire/*.c")
 set(c_bin "${OUT_DIR}/forward_compat_c")
 # The driver names generated types, so it goes through the token substitution like every other
@@ -100,7 +94,7 @@ endif()
 
 # --- Rust --------------------------------------------------------------------------------------------
 set(rust_out "${OUT_DIR}/rust")
-dsdlc_generate(rust "--rust-crate-name;dsdl_generated" "${rust_out}")
+dsdlc_generate(rust "${other_scheme_args};--rust-crate-name;dsdl_generated" "${rust_out}")
 execute_process(
   COMMAND "${DSDLC}" --version
   OUTPUT_VARIABLE dsdlc_version_stdout
@@ -132,7 +126,7 @@ endif()
 
 # --- Go ----------------------------------------------------------------------------------------------
 set(go_out "${OUT_DIR}/go")
-dsdlc_generate(go "--go-module;dsdlfwdcompat" "${go_out}")
+dsdlc_generate(go "${other_scheme_args};--go-module;dsdlfwdcompat" "${go_out}")
 file(MAKE_DIRECTORY "${go_out}/cmd/forwardcompat")
 configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatMain.go" "${go_out}/cmd/forwardcompat/main.go" @ONLY)
 execute_process(
@@ -156,7 +150,7 @@ set(ran_backends "C" "Rust" "Go")
 # --- Python (optional; run when a python3 interpreter is provided) ------------------------------------
 if(PYTHON_EXECUTABLE AND NOT "${PYTHON_EXECUTABLE}" STREQUAL "")
   set(py_out "${OUT_DIR}/py")
-  dsdlc_generate(python "" "${py_out}")
+  dsdlc_generate(python "${other_scheme_args}" "${py_out}")
   set(py_driver "${OUT_DIR}/ForwardCompatDriver.py")
   configure_file("${SOURCE_ROOT}/test/integration/ForwardCompatDriver.py" "${py_driver}" @ONLY)
   execute_process(
@@ -179,7 +173,7 @@ endif()
 # --- TypeScript (optional; run when both tsc and node are provided) -----------------------------------
 if(TSC_EXECUTABLE AND NOT "${TSC_EXECUTABLE}" STREQUAL "" AND NODE_EXECUTABLE AND NOT "${NODE_EXECUTABLE}" STREQUAL "")
   set(ts_out "${OUT_DIR}/ts")
-  dsdlc_generate(ts "--ts-module;fcwire" "${ts_out}")
+  dsdlc_generate(ts "${other_scheme_args};--ts-module;fcwire" "${ts_out}")
   configure_file(
     "${SOURCE_ROOT}/test/integration/ForwardCompatDriver.ts" "${ts_out}/forward_compat_driver.ts" @ONLY)
   file(WRITE "${ts_out}/tsconfig-forward-compat.json"

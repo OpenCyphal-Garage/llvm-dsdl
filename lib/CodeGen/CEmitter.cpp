@@ -754,7 +754,14 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 /// is filled in.
 /// @param[in] schema Cloned schema op for one definition.
 /// @param[in] def Semantic definition the schema was cloned from.
-void stampCMemberNames(mlir::Operation& schema, const SemanticDefinition& def)
+/// @brief Rewrites, on the C backend's own clone, every C name lowering could only guess at.
+///
+/// Lowering writes the unversioned spelling because it does not know the backend's naming options
+/// and must produce one module the object and C backends share. The C backend clones the schema and
+/// restamps it here, which is the arrangement D18 settled on. Member names were the first thing that
+/// needed it; the type names beside them need it for the same reason, and leaving them out gave a
+/// header declaring `Foo_1_0` against an implementation defining `Foo`.
+void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
     const NamingScope responseScope =
@@ -787,6 +794,70 @@ void stampCMemberNames(mlir::Operation& schema, const SemanticDefinition& def)
                     mlir::StringAttr::get(op->getContext(),
                                           scopeFor(sectionCarrier)
                                               .get(IdentifierRole::FieldName, nameAttr.getValue())));
+    });
+
+    mlir::MLIRContext* const context      = schema.getContext();
+    const std::string        baseTypeName = cTypeNameFromInfo(def.info, versioning);
+    schema.setAttr("c_type_name", mlir::StringAttr::get(context, baseTypeName));
+
+    schema.walk([&](mlir::Operation* const op) {
+        const llvm::StringRef opName = op->getName().getStringRef();
+        if (opName == "dsdl.serialization_plan")
+        {
+            // A service section appends its suffix to the *type* name, so the version sits before
+            // it rather than at the end. Composing from the base is what keeps that true.
+            std::string sectionTypeName = baseTypeName;
+            if (const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section"))
+            {
+                if (sectionAttr.getValue() == "request")
+                {
+                    sectionTypeName += "__Request";
+                }
+                else if (sectionAttr.getValue() == "response")
+                {
+                    sectionTypeName += "__Response";
+                }
+            }
+            op->setAttr("c_type_name", mlir::StringAttr::get(context, sectionTypeName));
+            op->setAttr("c_serialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
+            op->setAttr("c_deserialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
+            return;
+        }
+        if (opName != "dsdl.io")
+        {
+            return;
+        }
+        // A referenced composite is named by the same rule as the definition itself. The io op
+        // carries the reference's identity, so this re-renders rather than patching the string
+        // lowering left.
+        const auto fullNameAttr = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
+        const auto majorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
+        const auto minorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
+        if (!fullNameAttr || !majorAttr || !minorAttr)
+        {
+            return;
+        }
+        llvm::SmallVector<llvm::StringRef, 8> parts;
+        fullNameAttr.getValue().split(parts, '.');
+        if (parts.empty())
+        {
+            return;
+        }
+        const llvm::StringRef    shortName = parts.back();
+        std::vector<std::string> namespaceComponents;
+        namespaceComponents.reserve(parts.size() - 1U);
+        for (std::size_t i = 0; (i + 1U) < parts.size(); ++i)
+        {
+            namespaceComponents.emplace_back(parts[i].str());
+        }
+        op->setAttr("composite_c_type_name",
+                    mlir::StringAttr::get(context,
+                                          renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                                                   namespaceComponents,
+                                                                   shortName,
+                                                                   static_cast<std::uint32_t>(majorAttr.getInt()),
+                                                                   static_cast<std::uint32_t>(minorAttr.getInt()),
+                                                                   versioning)));
     });
 }
 
@@ -867,7 +938,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         }
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
-        stampCMemberNames(*schemaClone, def);
+        stampCNames(*schemaClone, def, options.typeNameVersioning);
 
         mlir::PassManager pm(perDefModule.getContext());
         pm.addPass(createLowerDSDLExecPass());

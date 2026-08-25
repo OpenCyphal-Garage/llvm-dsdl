@@ -40,9 +40,12 @@ file(WRITE "${dsdl_root}/vt/Uni.1.0.dsdl" "@union\nuint8 a\nuint16 b\nuint8[<=64
 file(WRITE "${dsdl_root}/vt/Inner.1.0.dsdl" "uint16 x\n@extent 64 * 8\n")
 file(WRITE "${dsdl_root}/vt/Outer.1.0.dsdl" "vt.Inner.1.0 inner\nvt.Inner.1.0[<=3] more\nint7 narrow\n@sealed\n")
 
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "versioned")
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts --versioned-type-names
+    "${DSDLC}" --target-language ts ${other_scheme_args}
       "${dsdl_root}"
       --outdir "${ts_out}"
       --ts-module dsdlgen
@@ -56,14 +59,6 @@ if(NOT gen_result EQUAL 0)
   message(FATAL_ERROR "TypeScript generation for the decoder fuzz lane failed")
 endif()
 
-if(NOT DEFINED C_TYPE_NAME_SCHEME)
-  set(C_TYPE_NAME_SCHEME "unversioned")
-endif()
-if(NOT DEFINED TYPE_NAME_SCHEME)
-  set(TYPE_NAME_SCHEME "versioned")
-endif()
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
 
 configure_file("${driver_src}" "${ts_out}/decoder_fuzz.ts" @ONLY)
 file(WRITE "${ts_out}/tsconfig.json"

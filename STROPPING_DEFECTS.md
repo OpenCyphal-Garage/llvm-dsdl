@@ -1,12 +1,13 @@
 # Identifier naming defects
 
-Twenty-one defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
+Twenty-two defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
 `f8c2fad..docs/roadmap-g8-scorecard`; [D18](#d18) was found while preparing the fix for root cause
 [A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given; [D19](#d19) by a
 fixture added while fixing [A](#a-three-emitters-have-no-field-scope); [D20](#d20) while
 reproducing [D5](#d5); and [D21](#d21) while consolidating the file-stem producers under root cause
-[D](#d-composed-names-are-spliced-at-the-call-site). Each is reproduced against a built `dsdlc`; the transcripts are the generated
-output quoted under each entry.
+[D](#d-composed-names-are-spliced-at-the-call-site); and [D22](#d22) by the lane added to run the
+naming corpus under both versioning schemes. Each is reproduced against a built `dsdlc`; the
+transcripts are the generated output quoted under each entry.
 
 Design record: [identifier-stropping.md](docs/development/identifier-stropping.md).
 
@@ -19,7 +20,7 @@ policy that sits on it is deferred.
 [A](#a-three-emitters-have-no-field-scope) — in all four backends that lacked a scope, not the three
 the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
 [C](#c-c-claims-nothing-on-a-premise-that-is-false), and the driver fixes D6, D15 and D16. With them
-D1–D4, D6–D19 and [D21](#d21), plus the mechanism half of root cause
+D1–D4, D6–D19, [D21](#d21) and [D22](#d22), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
 **Deferred:** [D5](#d5) and [D20](#d20) only. The mechanism they need is landed —
@@ -51,6 +52,7 @@ feature rather than before it. See
 | [D19](#d19) | High | obj | ~~`--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build~~ |
 | [D20](#d20) | High | C/C++/obj | Type versions are not always in the type name, so two versions of one DSDL type collide |
 | [D21](#d21) | Medium | manifest | ~~The manifest reports an encoded C/C++ file stem that is not the file on disk~~ |
+| [D22](#d22) | High | C | ~~Under `--versioned-type-names` the C header and the C implementation name different types~~ |
 
 ---
 
@@ -925,6 +927,44 @@ repairing a hazard that does not exist there, and the emitters were right to ski
 
 ---
 
+### D22
+
+**Under `--versioned-type-names` the C header and the C implementation name different types.**
+High · `lib/CodeGen/CEmitter.cpp` (the restamp on the backend's own clone)
+
+Found by the [Phase 3](#running-both-schemes) lane that runs the naming corpus under both spellings.
+
+The [D18](#d18) arrangement is that lowering writes the unversioned C names -- it does not know the
+backend's naming options, and one module serves both the C and object backends -- and the C backend
+restamps them on its own clone. The restamp covered member names, which is what motivated it, and
+not the type names sitting beside them, which are stamped by exactly the same code for exactly the
+same reason. So the header, rendered directly by the emitter, declared `Foo_1_0`, while the
+implementation, rendered through EmitC from the MLIR attributes, defined `Foo`.
+
+```console
+$ dsdlc --target-language c --versioned-type-names test/lit/fixtures_naming --outdir out
+$ cc -std=c11 -I out -c out/fixtures_naming/naming/Arrays_1_0.c -o /dev/null
+out/fixtures_naming/naming/Arrays_1_0.c:29:8: error: conflicting types for
+    'fixtures_naming_naming_Arrays_1_0__serialize_ir_'
+out/fixtures_naming/naming/Arrays_1_0.h:51:8: note: previous declaration is here
+```
+
+Every generated C translation unit failed to compile, in every corpus. It was invisible because
+nothing generated C with the flag: the flag was new, and the lanes that exercise C were all on the
+default.
+
+**Fixed.** The restamp now covers `c_type_name` on the schema and on each plan,
+`c_serialize_symbol`, `c_deserialize_symbol`, and `composite_c_type_name` on each io op. The
+composite name is re-rendered from the reference's own identity -- the io op already carries
+`composite_full_name` and its two version numbers -- rather than by patching the string lowering
+left, so it goes through `renderDefinitionTypeName` like every other type name.
+
+The general lesson is the one [§D](#d-composed-names-are-spliced-at-the-call-site) is about: a name
+that is composed in two places will disagree in one of them, and the disagreement waits for whichever
+option nobody had tried.
+
+---
+
 ## The D18 fork
 
 Three ways to make the C declaration and the C serialiser agree.
@@ -1051,6 +1091,31 @@ Two consequences for the eventual design:
   all -- C is already unversioned and the other four are untouched -- while still fixing every defect
   that exists. Uniformity across all six is the expensive half, and it buys consistency rather than
   correctness.
+
+### Running both schemes
+
+Both spellings are now exercised deliberately rather than whichever one happens to be the default.
+Not by doubling the suite: three second registrations, chosen so that every language is compiled and
+run under both.
+
+| Lane | Covers |
+|---|---|
+| `llvmdsdl-naming-corpus-compile-gate-versioned-names` | all six languages over the adversarial naming corpus, under `-Werror` |
+| `llvmdsdl-uavcan-cpp-c-parity-versioned-names` | C and C++ |
+| `llvmdsdl-uavcan-c-rust-parity-versioned-names` | C and Rust |
+
+Rust, Go, TypeScript, Python and obj already ran under both, on lanes that predate the modes. C and
+C++ ran under neither -- every lane that touched them was on the default -- which is what let
+[D22](#d22) sit undetected.
+
+Each harness script now settles its scheme in one call, `llvmdsdl_harness_naming_scheme`, which
+defines the substitution tokens *and* the dsdlc flags from one variable. Before, a script set them
+separately, and the two ways of getting them out of step -- a token family expanded for one scheme
+against a generator invoked for the other, and a scheme block placed after the generation it was
+meant to govern -- both happened, more than once.
+
+The scheme variables are settable per `add_test`, so covering a further axis is a registration rather
+than a second copy of a harness.
 
 ## Suggested order
 

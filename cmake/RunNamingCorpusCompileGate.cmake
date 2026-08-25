@@ -38,6 +38,21 @@ foreach(_required DSDLC FIXTURE_ROOT WORK_DIR C_COMPILER CXX_COMPILER)
   endif()
 endforeach()
 
+# The corpus is adversarial about names, so it is worth running under both spellings: a versioned
+# name is a different string through case projection, keyword stropping, the claimed-name tables and
+# -- in Rust -- a second projection of the whole composed identifier. Nothing here writes a type name
+# by hand (every probe is assembled from a glob of what was generated), so one variable covers it.
+if(NOT DEFINED TYPE_NAME_SCHEME OR "${TYPE_NAME_SCHEME}" STREQUAL "")
+  set(TYPE_NAME_SCHEME "unversioned")
+endif()
+set(_scheme_args "")
+if(TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(_scheme_args --versioned-type-names)
+elseif(NOT TYPE_NAME_SCHEME STREQUAL "unversioned")
+  message(FATAL_ERROR "TYPE_NAME_SCHEME must be \"versioned\" or \"unversioned\", got \"${TYPE_NAME_SCHEME}\"")
+endif()
+message(STATUS "naming corpus compile gate: type names are ${TYPE_NAME_SCHEME}")
+
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
@@ -60,7 +75,7 @@ endfunction()
 # C -- every generated translation unit, plus a header-only probe.
 
 llvmdsdl_run_or_fail("dsdlc C generation"
-  "${DSDLC}" --target-language c "${FIXTURE_ROOT}" --outdir "${WORK_DIR}/c")
+  "${DSDLC}" --target-language c ${_scheme_args} "${FIXTURE_ROOT}" --outdir "${WORK_DIR}/c")
 
 file(GLOB_RECURSE _c_units "${WORK_DIR}/c/*.c")
 if(_c_units STREQUAL "")
@@ -97,7 +112,7 @@ llvmdsdl_run_or_fail("C compile of every generated header in one unit under -Wer
 # collide with the generated statics is compiled rather than merely emitted.
 
 llvmdsdl_run_or_fail("dsdlc C++ generation"
-  "${DSDLC}" --target-language cpp "${FIXTURE_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
+  "${DSDLC}" --target-language cpp ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
 file(GLOB_RECURSE _cpp_headers RELATIVE "${WORK_DIR}/cpp" "${WORK_DIR}/cpp/*.hpp")
 if(_cpp_headers STREQUAL "")
@@ -120,7 +135,7 @@ llvmdsdl_run_or_fail("C++ compile of the naming corpus under -Werror"
 # omission there is invisible to the std run above -- which is how both of them came to be missing.
 
 llvmdsdl_run_or_fail("dsdlc C++ PMR generation"
-  "${DSDLC}" --target-language cpp "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")
+  "${DSDLC}" --target-language cpp ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")
 
 file(GLOB_RECURSE _pmr_headers RELATIVE "${WORK_DIR}/cpp_pmr" "${WORK_DIR}/cpp_pmr/*.hpp")
 if(_pmr_headers STREQUAL "")
@@ -142,7 +157,7 @@ llvmdsdl_run_or_fail("C++ PMR compile of the naming corpus under -Werror"
 # Rust
 
 llvmdsdl_run_or_fail("dsdlc Rust generation"
-  "${DSDLC}" --target-language rust "${FIXTURE_ROOT}" --rust-profile std
+  "${DSDLC}" --target-language rust ${_scheme_args} "${FIXTURE_ROOT}" --rust-profile std
              --rust-crate-name naming_corpus --outdir "${WORK_DIR}/rust")
 
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE MATCHES "NOTFOUND")
@@ -158,7 +173,7 @@ endif()
 # field sharing a name with a generated method, stops the whole package building.
 
 llvmdsdl_run_or_fail("dsdlc Go generation"
-  "${DSDLC}" --target-language go "${FIXTURE_ROOT}" --go-module llvmdsdl/naming_corpus
+  "${DSDLC}" --target-language go ${_scheme_args} "${FIXTURE_ROOT}" --go-module llvmdsdl/naming_corpus
              --outdir "${WORK_DIR}/go")
 
 if(GO_EXECUTABLE AND NOT GO_EXECUTABLE MATCHES "NOTFOUND")
@@ -177,7 +192,7 @@ endif()
 # TypeScript
 
 llvmdsdl_run_or_fail("dsdlc TypeScript generation"
-  "${DSDLC}" --target-language ts "${FIXTURE_ROOT}" --ts-module naming_corpus
+  "${DSDLC}" --target-language ts ${_scheme_args} "${FIXTURE_ROOT}" --ts-module naming_corpus
              --outdir "${WORK_DIR}/ts")
 
 if(TSC_EXECUTABLE AND NOT TSC_EXECUTABLE MATCHES "NOTFOUND")
@@ -204,7 +219,7 @@ endif()
 # byte-compiling every module reaches all of them without needing the runtime on sys.path.
 
 llvmdsdl_run_or_fail("dsdlc Python generation"
-  "${DSDLC}" --target-language python "${FIXTURE_ROOT}" --py-package naming_corpus
+  "${DSDLC}" --target-language python ${_scheme_args} "${FIXTURE_ROOT}" --py-package naming_corpus
              --outdir "${WORK_DIR}/py")
 
 if(PYTHON_EXECUTABLE AND NOT PYTHON_EXECUTABLE MATCHES "NOTFOUND")

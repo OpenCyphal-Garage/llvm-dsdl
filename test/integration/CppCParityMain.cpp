@@ -165,10 +165,10 @@ int runCase(const char* const name,
 
 std::int8_t cHeartbeatDeserialize(uavcan__node__Heartbeat@CV1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize);
 std::int8_t cHeartbeatSerialize(const uavcan__node__Heartbeat@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
-std::int8_t cppHeartbeatDeserialize(uavcan::node::Heartbeat@CV1_0@* outObj,
+std::int8_t cppHeartbeatDeserialize(uavcan::node::Heartbeat@V1_0@* outObj,
                                     const std::uint8_t*      buffer,
                                     std::size_t*             inoutSize);
-std::int8_t cppHeartbeatSerialize(const uavcan::node::Heartbeat@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
+std::int8_t cppHeartbeatSerialize(const uavcan::node::Heartbeat@V1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
 std::int8_t cExecuteRequestSerialize(const uavcan__node__ExecuteCommand@CV1_3@__Request* obj,
                                      std::uint8_t*                                buffer,
                                      std::size_t*                                 inoutSize);
@@ -197,26 +197,26 @@ std::int8_t cFrameDeserialize(uavcan__metatransport__can__Frame@CV0_2@* outObj,
                               const std::uint8_t*                buffer,
                               std::size_t*                       inoutSize);
 std::int8_t cFrameSerialize(const uavcan__metatransport__can__Frame@CV0_2@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
-std::int8_t cppFrameDeserialize(uavcan::metatransport::can::Frame@CV0_2@* outObj,
+std::int8_t cppFrameDeserialize(uavcan::metatransport::can::Frame@V0_2@* outObj,
                                 const std::uint8_t*                    buffer,
                                 std::size_t*                           inoutSize);
-std::int8_t cppFrameSerialize(const uavcan::metatransport::can::Frame@CV0_2@* obj,
+std::int8_t cppFrameSerialize(const uavcan::metatransport::can::Frame@V0_2@* obj,
                               std::uint8_t*                                buffer,
                               std::size_t*                                 inoutSize);
 std::int8_t cHealthDeserialize(uavcan__node__Health@CV1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize);
 std::int8_t cHealthSerialize(const uavcan__node__Health@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
-std::int8_t cppHealthDeserialize(uavcan::node::Health@CV1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize);
-std::int8_t cppHealthSerialize(const uavcan::node::Health@CV1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
+std::int8_t cppHealthDeserialize(uavcan::node::Health@V1_0@* outObj, const std::uint8_t* buffer, std::size_t* inoutSize);
+std::int8_t cppHealthSerialize(const uavcan::node::Health@V1_0@* obj, std::uint8_t* buffer, std::size_t* inoutSize);
 std::int8_t cSynchronizedTimestampDeserialize(uavcan__time__SynchronizedTimestamp@CV1_0@* outObj,
                                               const std::uint8_t*                  buffer,
                                               std::size_t*                         inoutSize);
 std::int8_t cSynchronizedTimestampSerialize(const uavcan__time__SynchronizedTimestamp@CV1_0@* obj,
                                             std::uint8_t*                              buffer,
                                             std::size_t*                               inoutSize);
-std::int8_t cppSynchronizedTimestampDeserialize(uavcan::time::SynchronizedTimestamp@CV1_0@* outObj,
+std::int8_t cppSynchronizedTimestampDeserialize(uavcan::time::SynchronizedTimestamp@V1_0@* outObj,
                                                 const std::uint8_t*                  buffer,
                                                 std::size_t*                         inoutSize);
-std::int8_t cppSynchronizedTimestampSerialize(const uavcan::time::SynchronizedTimestamp@CV1_0@* obj,
+std::int8_t cppSynchronizedTimestampSerialize(const uavcan::time::SynchronizedTimestamp@V1_0@* obj,
                                               std::uint8_t*                              buffer,
                                               std::size_t*                               inoutSize);
 std::int8_t cInteger8Deserialize(uavcan__primitive__scalar__Integer8@CV1_0@* outObj,
@@ -225,10 +225,10 @@ std::int8_t cInteger8Deserialize(uavcan__primitive__scalar__Integer8@CV1_0@* out
 std::int8_t cInteger8Serialize(const uavcan__primitive__scalar__Integer8@CV1_0@* obj,
                                std::uint8_t*                              buffer,
                                std::size_t*                               inoutSize);
-std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@CV1_0@* outObj,
+std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@V1_0@* outObj,
                                    const std::uint8_t*                  buffer,
                                    std::size_t*                         inoutSize);
-std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@CV1_0@* obj,
+std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@V1_0@* obj,
                                  std::uint8_t*                              buffer,
                                  std::size_t*                               inoutSize);
 
@@ -238,7 +238,7 @@ int runDirectedErrorCases()
         // Truncated Heartbeat deserialization should succeed via implicit zero-extension.
         const std::uint8_t      input[1] = {0x00U};
         uavcan__node__Heartbeat@CV1_0@ cObj{};
-        uavcan::node::Heartbeat@CV1_0@ cppObj{};
+        uavcan::node::Heartbeat@V1_0@ cppObj{};
         std::size_t             cConsumed   = 0U;
         std::size_t             cppConsumed = 0U;
         const std::int8_t       cRc         = cHeartbeatDeserialize(&cObj, input, &cConsumed);
@@ -262,7 +262,7 @@ int runDirectedErrorCases()
         // Invalid union tag in Frame deserialization.
         const std::uint8_t                    input[1] = {0xFFU};
         uavcan__metatransport__can__Frame@CV0_2@     cObj{};
-        uavcan::metatransport::can::Frame@CV0_2@ cppObj{};
+        uavcan::metatransport::can::Frame@V0_2@ cppObj{};
         std::size_t                           cConsumed   = sizeof(input);
         std::size_t                           cppConsumed = sizeof(input);
         const std::int8_t                     cRc         = cFrameDeserialize(&cObj, input, &cConsumed);
@@ -404,7 +404,7 @@ int runDirectedErrorCases()
         // Invalid delimiter header in List deserialization.
         const std::uint8_t           input[4] = {0xFFU, 0xFFU, 0xFFU, 0x7FU};
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         std::size_t                  cConsumed   = sizeof(input);
         std::size_t                  cppConsumed = sizeof(input);
         const std::int8_t            cRc         = uavcan__node__port__List@CV1_0@__deserialize_(&cObj, input, &cConsumed);
@@ -428,7 +428,7 @@ int runDirectedErrorCases()
         // Multi-level delimiter failure: first delimiter valid (0), second delimiter invalid.
         const std::uint8_t           input[8] = {0x00U, 0x00U, 0x00U, 0x00U, 0xFFU, 0xFFU, 0xFFU, 0x7FU};
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         std::size_t                  cConsumed   = sizeof(input);
         std::size_t                  cppConsumed = sizeof(input);
         const std::int8_t            cRc         = uavcan__node__port__List@CV1_0@__deserialize_(&cObj, input, &cConsumed);
@@ -452,7 +452,7 @@ int runDirectedErrorCases()
         // Nested-composite failure: List.publishers contains invalid SubjectIDList union tag.
         const std::uint8_t input[5] = {0x01U, 0x00U, 0x00U, 0x00U, 0xFFU};  // publishers delimiter=1, nested _tag_=255
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         std::size_t                  cConsumed   = sizeof(input);
         std::size_t                  cppConsumed = sizeof(input);
         const std::int8_t            cRc         = uavcan__node__port__List@CV1_0@__deserialize_(&cObj, input, &cConsumed);
@@ -484,7 +484,7 @@ int runDirectedErrorCases()
                                                  0x00U,   // subscribers delimiter=1
                                                  0xFFU};  // subscribers nested _tag_=255
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         std::size_t                  cConsumed   = sizeof(input);
         std::size_t                  cppConsumed = sizeof(input);
         const std::int8_t            cRc         = uavcan__node__port__List@CV1_0@__deserialize_(&cObj, input, &cConsumed);
@@ -521,7 +521,7 @@ int runDirectedErrorCases()
             0x7FU  // clients delimiter invalid
         };
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         std::size_t                  cConsumed   = sizeof(input);
         std::size_t                  cppConsumed = sizeof(input);
         const std::int8_t            cRc         = uavcan__node__port__List@CV1_0@__deserialize_(&cObj, input, &cConsumed);
@@ -544,16 +544,16 @@ int runDirectedErrorCases()
     {
         // Nested-composite failure: List.publishers sparse_list length exceeds SubjectIDList capacity.
         uavcan__node__port__List@CV1_0@     cObj{};
-        uavcan::node::port::List@CV1_0@ cppObj{};
+        uavcan::node::port::List@V1_0@ cppObj{};
         cObj.publishers._tag_ = 1U;
         cObj.publishers.sparse_list.count =
-            static_cast<std::size_t>(uavcan__node__port__SubjectIDList_SPARSE_LIST_ARRAY_CAPACITY_ + 1U);
+            static_cast<std::size_t>(uavcan__node__port__SubjectIDList@CV1_0@_SPARSE_LIST_ARRAY_CAPACITY_ + 1U);
         cppObj.publishers._tag_ = 1U;
-        cppObj.publishers.sparse_list.resize(uavcan::node::port::SubjectIDList@CV1_0@::SPARSE_LIST_ARRAY_CAPACITY + 1U);
+        cppObj.publishers.sparse_list.resize(uavcan::node::port::SubjectIDList@V1_0@::SPARSE_LIST_ARRAY_CAPACITY + 1U);
         std::uint8_t      cBuffer[9000]{};
         std::uint8_t      cppBuffer[9000]{};
         std::size_t       cSize   = static_cast<std::size_t>(uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = uavcan::node::port::List@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = uavcan::node::port::List@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = uavcan__node__port__List@CV1_0@__serialize_(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppObj.serialize(cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-10);
@@ -574,14 +574,14 @@ int runDirectedErrorCases()
     {
         // Invalid union tag in Frame serialization.
         uavcan__metatransport__can__Frame@CV0_2@     cObj{};
-        uavcan::metatransport::can::Frame@CV0_2@ cppObj{};
+        uavcan::metatransport::can::Frame@V0_2@ cppObj{};
         cObj._tag_   = 0xFFU;
         cppObj._tag_ = 0xFFU;
         std::uint8_t cBuffer[128]{};
         std::uint8_t cppBuffer[128]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__metatransport__can__Frame@CV0_2@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize  = uavcan::metatransport::can::Frame@CV0_2@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize  = uavcan::metatransport::can::Frame@V0_2@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc      = cFrameSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc    = cppFrameSerialize(&cppObj, cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-11);
@@ -690,11 +690,11 @@ int runDirectedErrorCases()
     {
         // Too-small buffer in Heartbeat serialization.
         uavcan__node__Heartbeat@CV1_0@ cObj{};
-        uavcan::node::Heartbeat@CV1_0@ cppObj{};
+        uavcan::node::Heartbeat@V1_0@ cppObj{};
         std::uint8_t            cBuffer[8]{};
         std::uint8_t            cppBuffer[8]{};
         std::size_t cSize     = static_cast<std::size_t>(uavcan__node__Heartbeat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U);
-        std::size_t cppSize   = uavcan::node::Heartbeat@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES - 1U;
+        std::size_t cppSize   = uavcan::node::Heartbeat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES - 1U;
         const std::int8_t cRc = cHeartbeatSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc    = cppHeartbeatSerialize(&cppObj, cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-3);
@@ -715,13 +715,13 @@ int runDirectedErrorCases()
     {
         // Saturating serialize edge: Health.value is saturated uint2, so 0xFF must clamp to 0x03.
         uavcan__node__Health@CV1_0@ cObj{};
-        uavcan::node::Health@CV1_0@ cppObj{};
+        uavcan::node::Health@V1_0@ cppObj{};
         cObj.value   = 0xFFU;
         cppObj.value = 0xFFU;
         std::uint8_t      cBuffer[8]{};
         std::uint8_t      cppBuffer[8]{};
         std::size_t       cSize   = static_cast<std::size_t>(uavcan__node__Health@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize = uavcan::node::Health@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize = uavcan::node::Health@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc     = cHealthSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc   = cppHealthSerialize(&cppObj, cppBuffer, &cppSize);
         if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -746,14 +746,14 @@ int runDirectedErrorCases()
         constexpr std::uint64_t             kInput      = UINT64_C(0xFEDCBA9876543210);
         const std::uint8_t                  expected[7] = {0x10U, 0x32U, 0x54U, 0x76U, 0x98U, 0xBAU, 0xDCU};
         uavcan__time__SynchronizedTimestamp@CV1_0@ cObj{};
-        uavcan::time::SynchronizedTimestamp@CV1_0@ cppObj{};
+        uavcan::time::SynchronizedTimestamp@V1_0@ cppObj{};
         cObj.microsecond   = kInput;
         cppObj.microsecond = kInput;
         std::uint8_t cBuffer[16]{};
         std::uint8_t cppBuffer[16]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__time__SynchronizedTimestamp@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize     = uavcan::time::SynchronizedTimestamp@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize     = uavcan::time::SynchronizedTimestamp@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc         = cSynchronizedTimestampSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc       = cppSynchronizedTimestampSerialize(&cppObj, cppBuffer, &cppSize);
         const bool        cExpected   = (cSize == 7U) && (std::memcmp(cBuffer, expected, 7U) == 0);
@@ -779,7 +779,7 @@ int runDirectedErrorCases()
         // Signed scalar edge vectors for Integer8.
         const std::uint8_t                  input[1] = {0x80U};  // -128 in two's complement.
         uavcan__primitive__scalar__Integer8@CV1_0@ cObj{};
-        uavcan::primitive::scalar::Integer8@CV1_0@ cppObj{};
+        uavcan::primitive::scalar::Integer8@V1_0@ cppObj{};
         std::size_t                         cConsumed   = sizeof(input);
         std::size_t                         cppConsumed = sizeof(input);
         const std::int8_t                   cDesRc      = cInteger8Deserialize(&cObj, input, &cConsumed);
@@ -805,7 +805,7 @@ int runDirectedErrorCases()
         std::uint8_t cppBuffer[8]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__primitive__scalar__Integer8@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize  = uavcan::primitive::scalar::Integer8@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize  = uavcan::primitive::scalar::Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cSerRc   = cInteger8Serialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppSerRc = cppInteger8Serialize(&cppObj, cppBuffer, &cppSize);
         if ((cSerRc != 0) || (cppSerRc != 0) || (cSize != 1U) || (cppSize != 1U) || (cBuffer[0] != cppBuffer[0]) ||
@@ -833,7 +833,7 @@ int runDirectedErrorCases()
         // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
         const std::uint8_t                golden[4] = {0x01U, 0x00U, 0x80U, 0x7FU};  // float32 sNaN
         uavcan__primitive__scalar__Real32@CV1_0@ cObj{};
-        uavcan::primitive::scalar::Real32@CV1_0@ cppObj{};
+        uavcan::primitive::scalar::Real32@V1_0@ cppObj{};
         std::size_t                       cConsumed   = sizeof(golden);
         std::size_t                       cppConsumed = sizeof(golden);
         const std::int8_t                 cDesRc = uavcan__primitive__scalar__Real32@CV1_0@__deserialize_(&cObj, golden, &cConsumed);
@@ -879,13 +879,13 @@ std::int8_t cHeartbeatSerialize(const uavcan__node__Heartbeat@CV1_0@* const obj,
 {
     return uavcan__node__Heartbeat@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppHeartbeatDeserialize(uavcan::node::Heartbeat@CV1_0@* const outObj,
+std::int8_t cppHeartbeatDeserialize(uavcan::node::Heartbeat@V1_0@* const outObj,
                                     const std::uint8_t* const      buffer,
                                     std::size_t* const             inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppHeartbeatSerialize(const uavcan::node::Heartbeat@CV1_0@* const obj,
+std::int8_t cppHeartbeatSerialize(const uavcan::node::Heartbeat@V1_0@* const obj,
                                   std::uint8_t* const                  buffer,
                                   std::size_t* const                   inoutSize)
 {
@@ -954,13 +954,13 @@ std::int8_t cFrameSerialize(const uavcan__metatransport__can__Frame@CV0_2@* cons
 {
     return uavcan__metatransport__can__Frame@CV0_2@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppFrameDeserialize(uavcan::metatransport::can::Frame@CV0_2@* const outObj,
+std::int8_t cppFrameDeserialize(uavcan::metatransport::can::Frame@V0_2@* const outObj,
                                 const std::uint8_t* const                    buffer,
                                 std::size_t* const                           inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppFrameSerialize(const uavcan::metatransport::can::Frame@CV0_2@* const obj,
+std::int8_t cppFrameSerialize(const uavcan::metatransport::can::Frame@V0_2@* const obj,
                               std::uint8_t* const                                buffer,
                               std::size_t* const                                 inoutSize)
 {
@@ -979,13 +979,13 @@ std::int8_t cHealthSerialize(const uavcan__node__Health@CV1_0@* const obj,
 {
     return uavcan__node__Health@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppHealthDeserialize(uavcan::node::Health@CV1_0@* const outObj,
+std::int8_t cppHealthDeserialize(uavcan::node::Health@V1_0@* const outObj,
                                  const std::uint8_t* const   buffer,
                                  std::size_t* const          inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppHealthSerialize(const uavcan::node::Health@CV1_0@* const obj,
+std::int8_t cppHealthSerialize(const uavcan::node::Health@V1_0@* const obj,
                                std::uint8_t* const               buffer,
                                std::size_t* const                inoutSize)
 {
@@ -1004,13 +1004,13 @@ std::int8_t cSynchronizedTimestampSerialize(const uavcan__time__SynchronizedTime
 {
     return uavcan__time__SynchronizedTimestamp@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppSynchronizedTimestampDeserialize(uavcan::time::SynchronizedTimestamp@CV1_0@* const outObj,
+std::int8_t cppSynchronizedTimestampDeserialize(uavcan::time::SynchronizedTimestamp@V1_0@* const outObj,
                                                 const std::uint8_t* const                  buffer,
                                                 std::size_t* const                         inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppSynchronizedTimestampSerialize(const uavcan::time::SynchronizedTimestamp@CV1_0@* const obj,
+std::int8_t cppSynchronizedTimestampSerialize(const uavcan::time::SynchronizedTimestamp@V1_0@* const obj,
                                               std::uint8_t* const                              buffer,
                                               std::size_t* const                               inoutSize)
 {
@@ -1029,13 +1029,13 @@ std::int8_t cInteger8Serialize(const uavcan__primitive__scalar__Integer8@CV1_0@*
 {
     return uavcan__primitive__scalar__Integer8@CV1_0@__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@CV1_0@* const outObj,
+std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@V1_0@* const outObj,
                                    const std::uint8_t* const                  buffer,
                                    std::size_t* const                         inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@CV1_0@* const obj,
+std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@V1_0@* const obj,
                                  std::uint8_t* const                              buffer,
                                  std::size_t* const                               inoutSize)
 {
@@ -1062,11 +1062,11 @@ int main(int argc, char** argv)
     }
 
     if (runCase<uavcan__node__Heartbeat@CV1_0@,
-                uavcan::node::Heartbeat@CV1_0@>("uavcan.node.Heartbeat.1.0",
+                uavcan::node::Heartbeat@V1_0@>("uavcan.node.Heartbeat.1.0",
                                          iterations,
                                          static_cast<std::size_t>(
                                              uavcan__node__Heartbeat@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                                         uavcan::node::Heartbeat@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                                         uavcan::node::Heartbeat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                          cHeartbeatDeserialize,
                                          cHeartbeatSerialize,
                                          cppHeartbeatDeserialize,
@@ -1103,11 +1103,11 @@ int main(int argc, char** argv)
 
     if (runCase<uavcan__metatransport__can__Frame@CV0_2@,
                 uavcan::metatransport::can::
-                    Frame@CV0_2@>("uavcan.metatransport.can.Frame.0.2",
+                    Frame@V0_2@>("uavcan.metatransport.can.Frame.0.2",
                                iterations,
                                static_cast<std::size_t>(
                                    uavcan__metatransport__can__Frame@CV0_2@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                               uavcan::metatransport::can::Frame@CV0_2@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                               uavcan::metatransport::can::Frame@V0_2@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                cFrameDeserialize,
                                cFrameSerialize,
                                cppFrameDeserialize,
@@ -1116,11 +1116,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (runCase<uavcan__node__Health@CV1_0@, uavcan::node::Health@CV1_0@>("uavcan.node.Health.1.0",
+    if (runCase<uavcan__node__Health@CV1_0@, uavcan::node::Health@V1_0@>("uavcan.node.Health.1.0",
                                                             iterations,
                                                             static_cast<std::size_t>(
                                                                 uavcan__node__Health@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                                                            uavcan::node::Health@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                                                            uavcan::node::Health@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                                             cHealthDeserialize,
                                                             cHealthSerialize,
                                                             cppHealthDeserialize,
@@ -1131,11 +1131,11 @@ int main(int argc, char** argv)
 
     if (runCase<uavcan__time__SynchronizedTimestamp@CV1_0@,
                 uavcan::time::
-                    SynchronizedTimestamp>("uavcan.time.SynchronizedTimestamp.1.0",
+                    SynchronizedTimestamp@V1_0@>("uavcan.time.SynchronizedTimestamp.1.0",
                                            iterations,
                                            static_cast<std::size_t>(
                                                uavcan__time__SynchronizedTimestamp@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                                           uavcan::time::SynchronizedTimestamp@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                                           uavcan::time::SynchronizedTimestamp@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                                            cSynchronizedTimestampDeserialize,
                                            cSynchronizedTimestampSerialize,
                                            cppSynchronizedTimestampDeserialize,
@@ -1146,11 +1146,11 @@ int main(int argc, char** argv)
 
     if (runCase<uavcan__primitive__scalar__Integer8@CV1_0@,
                 uavcan::primitive::scalar::
-                    Integer8>("uavcan.primitive.scalar.Integer8.1.0",
+                    Integer8@V1_0@>("uavcan.primitive.scalar.Integer8.1.0",
                               iterations,
                               static_cast<std::size_t>(
                                   uavcan__primitive__scalar__Integer8@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_),
-                              uavcan::primitive::scalar::Integer8@CV1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                              uavcan::primitive::scalar::Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
                               cInteger8Deserialize,
                               cInteger8Serialize,
                               cppInteger8Deserialize,

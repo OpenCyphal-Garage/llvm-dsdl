@@ -259,11 +259,11 @@ static int run_value(const uint8_t* const input,
                      const size_t         output_capacity,
                      CCaseResult* const   result)
 {
-    uavcan__register___Value obj;
+    uavcan__register___Value@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
 
     size_t       consumed        = input_size;
-    const int8_t des             = uavcan__register___Value__deserialize_(&obj, input, &consumed);
+    const int8_t des             = uavcan__register___Value@CV1_0@__deserialize_(&obj, input, &consumed);
     result->deserialize_rc       = des;
     result->deserialize_consumed = consumed;
     result->serialize_rc         = 0;
@@ -274,7 +274,7 @@ static int run_value(const uint8_t* const input,
     }
 
     size_t       out_size  = output_capacity;
-    const int8_t ser       = uavcan__register___Value__serialize_(&obj, output, &out_size);
+    const int8_t ser       = uavcan__register___Value@CV1_0@__serialize_(&obj, output, &out_size);
     result->serialize_rc   = ser;
     result->serialize_size = out_size;
     return 0;
@@ -550,7 +550,7 @@ int c_list_nested_bad_array_length_serialize(CCaseResult* const result)
     uavcan__node__port__List@CV1_0@ obj;
     memset(&obj, 0, sizeof(obj));
     obj.publishers._tag_             = 1U;
-    obj.publishers.sparse_list.count = (size_t) uavcan__node__port__SubjectIDList_SPARSE_LIST_ARRAY_CAPACITY_ + 1U;
+    obj.publishers.sparse_list.count = (size_t) uavcan__node__port__SubjectIDList@CV1_0@_SPARSE_LIST_ARRAY_CAPACITY_ + 1U;
     uint8_t output[9000];
     memset(output, 0, sizeof(output));
     size_t       out_size        = (size_t) uavcan__node__port__List@CV1_0@_SERIALIZATION_BUFFER_SIZE_BYTES_;

@@ -50,3 +50,64 @@ function(llvmdsdl_harness_type_name_tokens c_scheme other_scheme)
     endif()
   endforeach()
 endfunction()
+
+# @brief Settles the naming scheme for one harness script: defaults, tokens, and generator flags.
+#
+# The three have to agree or the harness is testing nothing -- a script that expands its tokens
+# versioned while invoking dsdlc unversioned fails to compile, and the reverse fails only sometimes.
+# They are derived from one variable here so that they cannot be set separately.
+#
+# Each scheme variable is settable from the caller's `add_test` with a `-D`, which is how one harness
+# is registered twice to cover both schemes.
+#
+# @param C_DEFAULT     Scheme for C names when C_TYPE_NAME_SCHEME is unset. Default "unversioned".
+# @param OTHER_DEFAULT Scheme for the other five when TYPE_NAME_SCHEME is unset. Default "unversioned".
+#
+# Sets in the caller's scope: the CV*/V* token families, plus `c_scheme_args` and `other_scheme_args`
+# to splice into the matching dsdlc invocation.
+function(llvmdsdl_harness_naming_scheme)
+  cmake_parse_arguments(ARG "" "C_DEFAULT;OTHER_DEFAULT" "" ${ARGN})
+  if(NOT ARG_C_DEFAULT)
+    set(ARG_C_DEFAULT "unversioned")
+  endif()
+  if(NOT ARG_OTHER_DEFAULT)
+    set(ARG_OTHER_DEFAULT "unversioned")
+  endif()
+
+  if(NOT DEFINED C_TYPE_NAME_SCHEME OR "${C_TYPE_NAME_SCHEME}" STREQUAL "")
+    set(C_TYPE_NAME_SCHEME "${ARG_C_DEFAULT}")
+  endif()
+  if(NOT DEFINED TYPE_NAME_SCHEME OR "${TYPE_NAME_SCHEME}" STREQUAL "")
+    set(TYPE_NAME_SCHEME "${ARG_OTHER_DEFAULT}")
+  endif()
+
+  # A typo here would otherwise read as "unversioned" and pass, since only the exact string
+  # "versioned" turns anything on.
+  foreach(_pair "C_TYPE_NAME_SCHEME;${C_TYPE_NAME_SCHEME}" "TYPE_NAME_SCHEME;${TYPE_NAME_SCHEME}")
+    list(GET _pair 0 _name)
+    list(GET _pair 1 _value)
+    if(NOT _value STREQUAL "versioned" AND NOT _value STREQUAL "unversioned")
+      message(FATAL_ERROR "${_name} must be \"versioned\" or \"unversioned\", got \"${_value}\"")
+    endif()
+  endforeach()
+
+  llvmdsdl_harness_type_name_tokens("${C_TYPE_NAME_SCHEME}" "${TYPE_NAME_SCHEME}")
+  foreach(_pair IN LISTS LLVMDSDL_HARNESS_VERSION_PAIRS)
+    set("CV${_pair}" "${CV${_pair}}" PARENT_SCOPE)
+    set("V${_pair}" "${V${_pair}}" PARENT_SCOPE)
+  endforeach()
+
+  set(_c_args "")
+  if(C_TYPE_NAME_SCHEME STREQUAL "versioned")
+    set(_c_args --versioned-type-names)
+  endif()
+  set(_other_args "")
+  if(TYPE_NAME_SCHEME STREQUAL "versioned")
+    set(_other_args --versioned-type-names)
+  endif()
+
+  set(C_TYPE_NAME_SCHEME "${C_TYPE_NAME_SCHEME}" PARENT_SCOPE)
+  set(TYPE_NAME_SCHEME "${TYPE_NAME_SCHEME}" PARENT_SCOPE)
+  set(c_scheme_args "${_c_args}" PARENT_SCOPE)
+  set(other_scheme_args "${_other_args}" PARENT_SCOPE)
+endfunction()
