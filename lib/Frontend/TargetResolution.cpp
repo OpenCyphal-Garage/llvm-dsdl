@@ -252,6 +252,10 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
     std::set<std::filesystem::path>    roots;
     std::set<std::filesystem::path>    lookupRoots;
     std::set<std::filesystem::path>    explicitTargets;
+    // The subset of explicitTargets the user named one at a time, rather than swept in by pointing
+    // at a folder. Everything that generates cares only about the first set; a rule about what may
+    // be dropped by default has to be able to see the difference.
+    std::set<std::filesystem::path>    namedTargets;
     std::vector<std::filesystem::path> unresolvedFileTargets;
 
     for (const auto& envLookup : lookupDirsFromEnvironment())
@@ -295,6 +299,7 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
             }
             lookupRoots.insert(*resolvedRoot);
             explicitTargets.insert(*resolvedFile);
+            namedTargets.insert(*resolvedFile);
             continue;
         }
 
@@ -350,6 +355,7 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
             }
             roots.insert(*resolvedRoot);
             explicitTargets.insert(*resolvedFile);
+            namedTargets.insert(*resolvedFile);
             continue;
         }
 
@@ -422,6 +428,7 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
         roots.insert(matches.front());
         candidateRoots.insert(matches.front());
         explicitTargets.insert(file);
+        namedTargets.insert(file);
     }
 
     ResolvedTargets out;
@@ -441,15 +448,22 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
     {
         out.explicitTargetFiles.push_back(target.string());
     }
+    for (const auto& target : namedTargets)
+    {
+        out.namedTargetFiles.push_back(target.string());
+    }
 
     std::sort(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end());
     std::sort(out.lookupDirs.begin(), out.lookupDirs.end());
     std::sort(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end());
+    std::sort(out.namedTargetFiles.begin(), out.namedTargetFiles.end());
     out.rootNamespaceDirs.erase(std::unique(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end()),
                                 out.rootNamespaceDirs.end());
     out.lookupDirs.erase(std::unique(out.lookupDirs.begin(), out.lookupDirs.end()), out.lookupDirs.end());
     out.explicitTargetFiles.erase(std::unique(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end()),
                                   out.explicitTargetFiles.end());
+    out.namedTargetFiles.erase(std::unique(out.namedTargetFiles.begin(), out.namedTargetFiles.end()),
+                               out.namedTargetFiles.end());
     return out;
 }
 

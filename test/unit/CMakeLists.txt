@@ -9,6 +9,7 @@ add_executable(llvmdsdl-unit-tests
   EvaluatorTests.cpp
   DepfileRenderTests.cpp
   DepfilePlannerTests.cpp
+  TargetResolutionTests.cpp
   SupportGenerationTests.cpp
   AnalyzerTests.cpp
   RuntimeTests.cpp

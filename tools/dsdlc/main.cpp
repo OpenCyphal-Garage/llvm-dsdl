@@ -1489,9 +1489,17 @@ int main(int argc, char** argv)
         {
             explicitFileSet.insert(normalizePathForCompare(file));
         }
+        std::unordered_set<std::string> namedFileSet;
+        namedFileSet.reserve(resolved->namedTargetFiles.size());
+        for (const auto& file : resolved->namedTargetFiles)
+        {
+            namedFileSet.insert(normalizePathForCompare(file));
+        }
         for (auto& def : ast->definitions)
         {
-            def.info.isExplicitTarget = explicitFileSet.contains(normalizePathForCompare(def.info.filePath));
+            const auto path           = normalizePathForCompare(def.info.filePath);
+            def.info.isExplicitTarget = explicitFileSet.contains(path);
+            def.info.isNamedTarget    = namedFileSet.contains(path);
         }
     }
 

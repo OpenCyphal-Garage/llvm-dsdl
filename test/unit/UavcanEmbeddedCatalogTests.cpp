@@ -195,11 +195,24 @@ bool runUavcanEmbeddedCatalogTests()
         return false;
     }
 
+    // Whether the selector named a version is what tells a default that drops non-newest versions
+    // to leave this one alone, so it has to follow the spelling and not the result size.
+    if (!exact.namesExactVersion)
+    {
+        std::cerr << "versioned selector should report that it names an exact version\n";
+        return false;
+    }
+
     // Leading zeros are re-rendered from the parsed integers, so they agree with the key format.
     const auto paddedVersion = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat.01.00");
     if (paddedVersion.typeKeys != exact.typeKeys)
     {
         std::cerr << "zero-padded versions should resolve identically to their canonical spelling\n";
+        return false;
+    }
+    if (!paddedVersion.namesExactVersion)
+    {
+        std::cerr << "a zero-padded version selector still names an exact version\n";
         return false;
     }
 
@@ -217,9 +230,22 @@ bool runUavcanEmbeddedCatalogTests()
             return false;
         }
     }
+    // Heartbeat has exactly one version in the catalog, so this selector expands to the same single
+    // key the versioned one did. It still swept to get there, and must not claim otherwise -- a
+    // result-size test would get this wrong, which is why it is asserted on the one-version type.
+    if (byTypeName.namesExactVersion)
+    {
+        std::cerr << "a type selector sweeps versions even when only one exists\n";
+        return false;
+    }
 
     const auto namespaceKeys = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node");
     const auto rootKeys      = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan");
+    if (namespaceKeys.namesExactVersion || rootKeys.namesExactVersion)
+    {
+        std::cerr << "namespace selectors sweep; neither names a version\n";
+        return false;
+    }
     if (namespaceKeys.typeKeys.size() <= byTypeName.typeKeys.size() ||
         rootKeys.typeKeys.size() <= namespaceKeys.typeKeys.size())
     {
@@ -253,6 +279,11 @@ bool runUavcanEmbeddedCatalogTests()
 
     // A known type with an unavailable version suggests the versions that exist.
     const auto badVersion = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcan.node.Heartbeat.9.9");
+    if (badVersion.namesExactVersion)
+    {
+        std::cerr << "a selector that matched nothing names nothing\n";
+        return false;
+    }
     if (!badVersion.typeKeys.empty())
     {
         std::cerr << "an unavailable version must not resolve\n";

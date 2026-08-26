@@ -919,6 +919,7 @@ EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCata
         if (catalog.typeKeys.contains(*versioned))
         {
             expansion.typeKeys.push_back(*versioned);
+            expansion.namesExactVersion = true;
             return expansion;
         }
     }

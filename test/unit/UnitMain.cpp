@@ -16,6 +16,7 @@ bool runFlatSetTests();
 bool runEvaluatorTests();
 bool runDepfileRenderTests();
 bool runDepfilePlannerTests();
+bool runTargetResolutionTests();
 bool runSupportGenerationTests();
 bool runAnalyzerTests();
 bool runRuntimeTests();
@@ -78,6 +79,7 @@ int main()
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;
     ok      = runDepfilePlannerTests() && ok;
+    ok      = runTargetResolutionTests() && ok;
     ok      = runSupportGenerationTests() && ok;
     ok      = runAnalyzerTests() && ok;
     ok      = runRuntimeTests() && ok;

@@ -108,6 +108,12 @@ struct EmbeddedSelectorExpansion final
 
     /// @brief Near-miss candidates in selector spelling, offered when `typeKeys` is empty.
     std::vector<std::string> suggestions;
+
+    /// @brief True when the selector named one exact version (`uavcan.node.Heartbeat.1.0`).
+    ///
+    /// The other two spellings sweep -- every version of a type, or every type under a namespace --
+    /// and a swept version is one a default may drop. A named one is not. False when nothing matched.
+    bool namesExactVersion{false};
 };
 
 /// @brief Expands one embedded-catalog target selector into catalog type keys.
