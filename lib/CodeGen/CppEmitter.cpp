@@ -2037,8 +2037,8 @@ std::string renderHeader(const SemanticDefinition& def,
     {
         // A single underscore: C++ reserves any identifier containing `__`, and these name C++
         // structs. The C emitter keeps `__` for its own service section types, where it is legal.
-        const auto requestType  = baseTypeName + "_Request";
-        const auto responseType = baseTypeName + "_Response";
+        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "request");
+        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "response");
 
         emitLine(out, 0, "constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
         emitLine(out,

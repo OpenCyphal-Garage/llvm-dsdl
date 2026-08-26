@@ -1,12 +1,13 @@
 # Identifier naming defects
 
-Twenty-three defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
+Twenty-four defects in the identifier-naming subsystem. Seventeen were found by review of the unmerged range
 `f8c2fad..docs/roadmap-g8-scorecard`; [D18](#d18) was found while preparing the fix for root cause
 [A](#a-three-emitters-have-no-field-scope), in a file no reviewer had been given; [D19](#d19) by a
 fixture added while fixing [A](#a-three-emitters-have-no-field-scope); [D20](#d20) while
 reproducing [D5](#d5); and [D21](#d21) while consolidating the file-stem producers under root cause
 [D](#d-composed-names-are-spliced-at-the-call-site); and [D22](#d22) by the lane added to run the
-naming corpus under both versioning schemes, which also led to [D23](#d23). Each is reproduced against a built `dsdlc`; the
+naming corpus under both versioning schemes, which also led to [D23](#d23); [D24](#d24) while fixing
+[D5](#d5). Each is reproduced against a built `dsdlc`; the
 transcripts are the generated output quoted under each entry.
 
 Design record: [identifier-stropping.md](docs/development/identifier-stropping.md).
@@ -20,15 +21,12 @@ policy that sits on it is deferred.
 [A](#a-three-emitters-have-no-field-scope) — in all four backends that lacked a scope, not the three
 the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-type) and
 [C](#c-c-claims-nothing-on-a-premise-that-is-false), and the driver fixes D6, D15 and D16. With them
-D1–D4, D6–D19 and [D21](#d21)–[D23](#d23), plus the mechanism half of root cause
+D1–D19 except [D20](#d20), and [D21](#d21)–[D24](#d24), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
 **Deferred:** [D20](#d20) only, pending the newest-version-only feature — the mechanism it needs is
 landed (`--versioned-type-names`, unversioned by default), but the policy turns on which versions
-reach the corpus at all. **[D5](#d5) is still open and does *not* wait on that**: it is a service
-section colliding with a sibling type, so newest-only leaves both names in place. It is fixed under
-`--versioned-type-names` and live under the default. See
-[Deferred](#deferred-the-two-that-turn-on-a-versioning-scheme).
+reach the corpus at all.
 
 | ID | Severity | Area | Defect |
 |---|---|---|---|
@@ -36,7 +34,7 @@ section colliding with a sibling type, so newest-only leaves both names in place
 | [D2](#d2) | High | engine | ~~`UNION_OPTION_COUNT` is missing from the claimed-name tables~~ |
 | [D3](#d3) | High | engine | ~~Go's union `Tag` field is missing from the claimed-name table~~ |
 | [D4](#d4) | High | engine + C | ~~C claims no names on a false premise about trailing underscores~~ |
-| [D5](#d5) | High | C++ | `<Service>_Request` collides with a sibling type and Discovery cannot see it |
+| [D5](#d5) | High | C++ | ~~`<Service>_Request` collides with a sibling type and Discovery cannot see it~~ |
 | [D6](#d6) | High | driver | ~~`obj` writes only the C half of the naming manifest~~ |
 | [D7](#d7) | High | tests | ~~The claimed-name test pins the false premise from D4~~ |
 | [D8](#d8) | High | docs | ~~The design record and a golden both describe repair that does not happen~~ |
@@ -55,6 +53,7 @@ section colliding with a sibling type, so newest-only leaves both names in place
 | [D21](#d21) | Medium | manifest | ~~The manifest reports an encoded C/C++ file stem that is not the file on disk~~ |
 | [D22](#d22) | High | C | ~~Under `--versioned-type-names` the C header and the C implementation name different types~~ |
 | [D23](#d23) | High | obj | ~~The object backend accepts `--versioned-type-names` and ignores it~~ |
+| [D24](#d24) | High | frontend | ~~Two different types whose generated names collide are accepted when their versions differ~~ |
 
 ---
 
@@ -396,7 +395,27 @@ meets. C++ does not always, which is [D20](#d20) and is what makes this reachabl
 3. **A separator no DSDL name can produce**, reverting `_Request` to `__Request`. Already rejected:
    `__` is C++-reserved and `-Wreserved-identifier` flags it.
 
-Deferred pending that decision; nothing here is implemented.
+**Fixed, as option 1.** `checkServiceSectionTypeNameCollisions` registers each service's two section
+names beside every definition's own, and reports a pair that lands on one identifier. Three things
+made it worth more than the note anticipated:
+
+- **It runs after parsing, not in discovery.** Whether a definition is a service is a parse result,
+  and discovery does not lex. `parseDefinitions` has both halves, so the check lives there.
+- **The keys are the emitted identifiers, not a name plus a version.** The note worried that the
+  check would have to duplicate the emitter's version rule. It does not: it calls
+  `renderDefinitionTypeName` and `renderSectionTypeSuffix`, the same two the emitters now call, so
+  it cannot compute a different name than the one written. Under `--versioned-type-names` the two
+  names differ and nothing is reported -- fix option 2 remains available and is what the diagnostic
+  suggests.
+- **Only where a scope is actually shared.** C's single global scope, C++'s namespace and Go's
+  package can collide; Rust, TypeScript and Python give every definition its own module, so the
+  repeat is unreachable and is not reported. That is a property of the language, not a list of
+  languages that happen to fail today.
+
+Two things fell out of it. `renderSectionTypeSuffix` replaced **thirteen** independent splices of
+`"_Request"`/`"__Request"` across seven files -- the §D pattern that made D5 possible in the first
+place. And keying on the emitted identifier rather than on a name-plus-version closed a second hole
+the note did not know about: see [D24](#d24).
 
 ### D6
 
@@ -999,6 +1018,39 @@ under each scheme, so the forwarding is now what the test depends on.
 
 ---
 
+### D24
+
+**Two different types whose generated names collide are accepted when their versions differ.**
+High · `lib/Frontend/Discovery.cpp` (the output-name collision key)
+
+Found while fixing [D5](#d5), by asking what the collision key should be once the version is no
+longer part of the type name.
+
+The existing check keys each name on `<language>:<role>:<path><name>:<major>:<minor>`. That was right
+when every backend put the version in the type name: two names could only meet if their versions
+matched. Under the unversioned default the version is not in the identifier, so two *different* DSDL
+types whose names project onto one identifier collide whatever versions they carry -- and the key's
+version component made the check blind to exactly that.
+
+```console
+$ ls ns
+FooBar.1.0.dsdl  Foo_bar.2.0.dsdl        # distinct types; distinct file stems, so only the type name meets
+$ dsdlc --target-language go ns --outdir out --go-module m
+  files generated: 4                     # accepted
+$ grep -h '^type ' out/*/ns/foo_bar_*_0.go
+type FooBar                              # in package ns
+type FooBar                              # also in package ns -- does not compile
+```
+
+At the same version the pair is rejected, which is what made this look covered.
+
+**Fixed** with [D5](#d5), by the same change: the new check keys on the identifier as emitted, which
+carries the version only when the scheme puts it there. Two versions of *one* definition are
+excluded by comparing owners rather than by the key, so [D20](#d20)'s case is still left to the
+sentinel and the Go refusal, and a multi-version corpus still generates.
+
+---
+
 ## The D18 fork
 
 Three ways to make the C declaration and the C serialiser agree.
@@ -1021,8 +1073,9 @@ escape hatch without fixing A.
 
 ## Deferred: the two that turn on a versioning scheme
 
-[D5](#d5) and [D20](#d20) are not fixed. ([D19](#d19) was grouped with them until its fix turned out
-to be independent of the versioning question; it is done.) The mechanism they need landed with root
+[D20](#d20) is not fixed. ([D5](#d5) was grouped with it until it turned out that newest-only cannot
+reach it and `--versioned-type-names` already does; it is done. [D19](#d19) was grouped with them
+until its fix turned out to be independent of the versioning question; it is done too.) The mechanism they need landed with root
 cause [D](#d-composed-names-are-spliced-at-the-call-site), and the two modes described below are now
 in the tool. What is still open is the policy: which versions of a type reach the generated corpus at
 all.

@@ -237,11 +237,11 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 if (sectionName == "request")
                 {
-                    sectionCTypeName += "__Request";
+                    sectionCTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
                 }
                 else if (sectionName == "response")
                 {
-                    sectionCTypeName += "__Response";
+                    sectionCTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
                 }
             }
 

@@ -1437,8 +1437,8 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = baseType + "_Request";
-    const auto respType = baseType + "_Response";
+    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "request");
+    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "response");
     emitSectionType(out,
                     ctx,
                     reqType,

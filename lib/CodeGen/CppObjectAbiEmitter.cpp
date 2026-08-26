@@ -350,14 +350,25 @@ std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def
         const std::string cBase    = cTypeNameFromInfo(def.info, versioning);
         const std::string shimBase = shimTypeNameFromInfo(def.info, versioning);
 
-        out.push_back(
-            SectionPlan{"request", cppBase + "_Request", cBase + "__Request", shimBase + "__Request", &def.request});
+        // The shim is a C symbol, so it takes the C separator like the C name beside it.
+        const auto cppSuffix = [](const llvm::StringRef section) {
+            return renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, section);
+        };
+        const auto cSuffix = [](const llvm::StringRef section) {
+            return renderSectionTypeSuffix(CodegenNamingLanguage::C, section);
+        };
+
+        out.push_back(SectionPlan{"request",
+                                  cppBase + cppSuffix("request"),
+                                  cBase + cSuffix("request"),
+                                  shimBase + cSuffix("request"),
+                                  &def.request});
         if (def.response)
         {
             out.push_back(SectionPlan{"response",
-                                      cppBase + "_Response",
-                                      cBase + "__Response",
-                                      shimBase + "__Response",
+                                      cppBase + cppSuffix("response"),
+                                      cBase + cSuffix("response"),
+                                      shimBase + cSuffix("response"),
                                       &(*def.response)});
         }
     }

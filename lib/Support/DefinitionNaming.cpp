@@ -131,6 +131,16 @@ std::string renderDefinitionSymbolBase(const llvm::StringRef fullName,
     return out + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
 }
 
+std::string renderSectionTypeSuffix(const CodegenNamingLanguage language, const llvm::StringRef sectionName)
+{
+    if ((sectionName != "request") && (sectionName != "response"))
+    {
+        return "";
+    }
+    const llvm::StringRef separator = (language == CodegenNamingLanguage::C) ? "__" : "_";
+    return separator.str() + ((sectionName == "request") ? "Request" : "Response");
+}
+
 std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)
 {
     if (sectionName == "request")

@@ -1470,7 +1470,11 @@ int main(int argc, char** argv)
     logVerbose(1, "discovering and parsing definitions");
     const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage);
     auto       ast =
-        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics, outputLanguages);
+        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
+                                                     resolved->lookupDirs,
+                                                     diagnostics,
+                                                     outputLanguages,
+                                                     options.typeNameVersioning);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());

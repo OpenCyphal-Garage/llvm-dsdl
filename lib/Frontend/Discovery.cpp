@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
@@ -205,6 +206,120 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages()
                                                         {CodegenNamingLanguage::TypeScript, "ts"},
                                                         {CodegenNamingLanguage::Python, "python"}}};
     return kAll;
+}
+
+
+namespace
+{
+
+/// @brief True when @p language puts every definition of a namespace in one scope.
+///
+/// C has a single global scope and carries the namespace in the identifier; C++ has a namespace per
+/// DSDL namespace; Go compiles one per package. Rust, TypeScript and Python give each definition
+/// *and version* its own module, so two of them may spell a type the same way without meeting.
+bool namespaceIsOneScope(const CodegenNamingLanguage language)
+{
+    return (language == CodegenNamingLanguage::C) || (language == CodegenNamingLanguage::Cpp) ||
+           (language == CodegenNamingLanguage::Go);
+}
+
+/// @brief What produced a generated type name, for the collision diagnostic.
+struct TypeNameOrigin final
+{
+    /// @brief Full DSDL name of the definition that produced it.
+    std::string fullName;
+
+    /// @brief Section that produced it: `request`, `response`, or empty for the definition itself.
+    std::string section;
+
+    /// @brief Source file, so the diagnostic points at something the user can open.
+    std::string filePath;
+};
+
+/// @brief Renders an origin as a diagnostic phrase.
+std::string describeOrigin(const TypeNameOrigin& origin)
+{
+    if (origin.section.empty())
+    {
+        return "'" + origin.fullName + "'";
+    }
+    return "the " + origin.section + " section of '" + origin.fullName + "'";
+}
+
+}  // namespace
+
+void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> definitions,
+                                           const llvm::ArrayRef<OutputLanguage>   outputLanguages,
+                                           const TypeNameVersioning               versioning,
+                                           DiagnosticEngine&                      diagnostics)
+{
+    if (outputLanguages.empty())
+    {
+        return;
+    }
+
+    // Keyed on the identifier as emitted, not on the DSDL name plus a version: under the unversioned
+    // scheme the version is not in the identifier, so `Foo.1.0`'s request section and a sibling
+    // `Foo_Request.2.0` do meet, and a key carrying the version would miss it.
+    std::map<std::string, TypeNameOrigin> emitted;
+
+    const auto record = [&](const OutputLanguage& language,
+                            const std::string&    scope,
+                            const std::string&    name,
+                            const TypeNameOrigin& origin) {
+        const std::string key     = std::string(language.name) + ":" + scope + ":" + name;
+        const auto [it, inserted] = emitted.emplace(key, origin);
+        if (inserted || (it->second.fullName == origin.fullName))
+        {
+            return;
+        }
+        // Two versions of one definition are the same DSDL type and are D20's business, not this
+        // check's; the guard above lets them through. This is two *different* types.
+        diagnostics.error({origin.filePath, 1, 1},
+                          "type name collision in generated output: " + describeOrigin(origin) + " and " +
+                              describeOrigin(it->second) + " both emit '" + name +
+                              "' for target language '" + std::string(language.name) +
+                              "'; pass --versioned-type-names, or rename one of them");
+    };
+
+    for (const auto& parsed : definitions)
+    {
+        const auto& info = parsed.info;
+        for (const auto& language : outputLanguages)
+        {
+            if (!namespaceIsOneScope(language.language))
+            {
+                continue;
+            }
+            // The scope a name has to be unique within. C flattens the namespace into the
+            // identifier and shares one global scope; C++ and Go put the short name in a scope of
+            // their own per namespace, so that namespace is part of the key.
+            std::string scope;
+            for (const auto& component : info.namespaceComponents)
+            {
+                scope += codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
+                scope.push_back('.');
+            }
+            const std::string base = renderDefinitionTypeName(language.language,
+                                                              info.namespaceComponents,
+                                                              info.shortName,
+                                                              info.majorVersion,
+                                                              info.minorVersion,
+                                                              versioning);
+            record(language, scope, base, TypeNameOrigin{info.fullName, "", info.filePath});
+            if (!parsed.ast.isService())
+            {
+                continue;
+            }
+            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+            {
+                record(language,
+                       scope,
+                       base + renderSectionTypeSuffix(language.language, section),
+                       TypeNameOrigin{info.fullName, section.str(), info.filePath});
+            }
+        }
+    }
 }
 
 std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>&      rootNamespaceDirs,

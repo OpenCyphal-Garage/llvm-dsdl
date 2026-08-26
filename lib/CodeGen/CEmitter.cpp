@@ -679,8 +679,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 
     if (def.isService)
     {
-        const auto requestType  = baseTypeName + "__Request";
-        const auto responseType = baseTypeName + "__Response";
+        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
+        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
 
         for (const auto& line : renderCServiceAliasIdentityMacros(baseTypeName,
                                                                   def.info.fullName,
@@ -811,11 +811,11 @@ void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const T
             {
                 if (sectionAttr.getValue() == "request")
                 {
-                    sectionTypeName += "__Request";
+                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
                 }
                 else if (sectionAttr.getValue() == "response")
                 {
-                    sectionTypeName += "__Response";
+                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
                 }
             }
             op->setAttr("c_type_name", mlir::StringAttr::get(context, sectionTypeName));

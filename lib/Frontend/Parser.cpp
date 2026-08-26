@@ -1498,7 +1498,8 @@ std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind)
 llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
                                            const std::vector<std::string>&      lookupDirs,
                                            DiagnosticEngine&                    diagnostics,
-                                           const llvm::ArrayRef<OutputLanguage> outputLanguages)
+                                           const llvm::ArrayRef<OutputLanguage> outputLanguages,
+                                           const TypeNameVersioning             typeNameVersioning)
 {
     ASTModule module;
     auto      defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics, outputLanguages);
@@ -1520,6 +1521,14 @@ llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      
             continue;
         }
         module.definitions.push_back(ParsedDefinition{def, *parsed});
+    }
+
+    // Runs here rather than in discovery because it needs to know which definitions are services,
+    // which is a parse result. Skipped when parsing already failed: a definition that did not parse
+    // is missing from the set, so the check would be reporting on a partial picture.
+    if (!diagnostics.hasErrors())
+    {
+        checkServiceSectionTypeNameCollisions(module.definitions, outputLanguages, typeNameVersioning, diagnostics);
     }
 
     if (diagnostics.hasErrors())

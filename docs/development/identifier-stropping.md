@@ -345,6 +345,32 @@ error: type name collision in generated output: ns.Foo_bar and ns.FooBar
        map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
 ```
 
+A name a type does not declare can still collide. A service emits a type per section named after
+itself — `Foo` gives `Foo_Request` — and a sibling definition may be *called* `Foo_Request`, which is
+conformant DSDL. Neither declared name collides, so the check above cannot see it. A second pass
+therefore registers each service's section names beside every declared one:
+
+```
+error: type name collision in generated output: 'ns.Foo_Request' and the request section
+       of 'ns.Foo' both emit 'Foo_Request' for target language 'cpp';
+       pass --versioned-type-names, or rename one of them
+```
+
+Two things about that pass are worth stating, because both were wrong in the first attempt:
+
+- **It keys on the identifier as emitted, not on a name plus a version.** Under the unversioned
+  default the version is not in the identifier, so two types collide whatever versions they carry; a
+  key carrying the version misses the pair whose versions differ. Two versions of *one* definition
+  are excluded by comparing owners instead: that is what `--versioned-type-names` and the generated
+  include-time sentinel are for, and not this check's business.
+- **It reports only where a scope is actually shared** — C's single global scope, C++'s namespace,
+  Go's package. Rust, TypeScript and Python give every definition and version its own module, so a
+  repeat there is unreachable rather than merely unlikely.
+
+It runs after parsing rather than during discovery, because whether a definition is a service is a
+parse result. The section suffix comes from `renderSectionTypeSuffix`, the call the emitters use, so
+the check cannot compute a name different from the one written.
+
 ### 6.1 Macros stay unique by construction
 
 C and C++ macros are global. Every generated macro is `<TypeName>_<MEMBER>`, and type names are

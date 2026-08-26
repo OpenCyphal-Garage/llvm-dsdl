@@ -144,6 +144,21 @@ struct DefinitionNamePolicy final
                                                                               std::uint32_t         majorVersion,
                                                                               std::uint32_t         minorVersion);
 
+/// @brief Renders the suffix naming one section of a service's generated *type*.
+///
+/// A service emits a type per section, named after the service with a suffix. C separates with `__`
+/// because it has no namespaces and the doubled separator is what keeps the section apart from a
+/// sibling type whose DSDL name really does end in `_Request`; every other language separates with a
+/// single underscore.
+///
+/// This exists so the check that rejects such a collision computes the same name the emitter writes.
+/// It was nine independent splices, and the collision they let through is D5 in
+/// `STROPPING_DEFECTS.md`.
+/// @param[in] language Naming language.
+/// @param[in] sectionName Section name: `request`, `response`, or empty for a message.
+/// @return The suffix, or an empty string for a message.
+[[nodiscard]] std::string renderSectionTypeSuffix(CodegenNamingLanguage language, llvm::StringRef sectionName);
+
 /// @brief Renders the linkage-symbol base for one definition.
 ///
 /// `uavcan.node.Heartbeat` at 1.0 gives `uavcan_node_Heartbeat_1_0`. Callers append

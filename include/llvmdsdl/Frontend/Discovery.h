@@ -15,6 +15,7 @@
 #define LLVMDSDL_FRONTEND_DISCOVERY_H
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -63,6 +64,30 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages();
 ///            nothing passes @ref allOutputLanguages, because there is no build to fail and the
 ///            diagnostic is pure information. Empty disables the check.
 /// @return Discovered definitions with metadata and source text.
+/// @brief Rejects a service section whose generated type name collides with another type's.
+///
+/// A service emits a type per section, named after the service with a suffix -- `Foo` gives
+/// `Foo_Request`. A sibling definition may be *called* `Foo_Request`, which is conformant DSDL, and
+/// then the two land on one identifier. @ref discoverDefinitions cannot see this: it keys each
+/// definition on its own short name, and `Foo` and `Foo_Request` do not collide as declared names.
+///
+/// Only where a language shares one scope across a namespace does this break a build -- C in its
+/// single global scope, C++ in the namespace, Go in the package. Rust, TypeScript and Python give
+/// every definition its own module, so the repeat is unreachable and is not reported.
+///
+/// The check runs after parsing because that is where a definition is known to be a service, and it
+/// composes the section name with @ref renderSectionTypeSuffix, the same call the emitters use.
+///
+/// @param[in] definitions Parsed definitions to check.
+/// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.
+/// @param[in] versioning Whether generated type names carry the version. Under
+///            @ref TypeNameVersioning::Versioned the two names differ and nothing is reported.
+/// @param[in,out] diagnostics Diagnostic sink.
+void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
+                                           llvm::ArrayRef<OutputLanguage>  outputLanguages,
+                                           TypeNameVersioning              versioning,
+                                           DiagnosticEngine&               diagnostics);
+
 std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>& rootNamespaceDirs,
                                                       const std::vector<std::string>& lookupDirs,
                                                       DiagnosticEngine&               diagnostics,
