@@ -90,75 +90,57 @@ type names; a default run generates 167 of them and says so:
 
 ```
 note: generating the newest version of each type; 22 older version(s) were not generated.
-      Pass --all-type-versions for all of them, or name one to keep just it
 ```
 
-The reason is that a corpus holding several versions of a type forces a choice on everything
-downstream — Go compiles a namespace as one package and cannot hold two versions of a type at all,
-and C and C++ share a scope across versions — while most code speaks one version. With this default,
-`dsdlc --target-language go path/to/uavcan` works with no further flags.
+A corpus holding several versions of a type forces a choice on everything downstream — Go compiles a
+namespace as one package and cannot hold two versions of a type at all, and C and C++ share a scope
+across versions — while most code speaks one version.
 
 Newest is per **full name**, not per major version: `Foo.1.0`, `Foo.1.1` and `Foo.2.0` leave only
 `Foo.2.0`. Per-major would match Cyphal's compatibility model, where majors are incompatible, but it
 leaves a type that has two majors still carrying two versions — the thing this exists to prevent.
 
-### Keeping an older version
+Naming a version keeps it, and affects no other type. Any of the version-precise target spellings
+does it; `dsdlc --help` gives their syntax.
 
-Name it, and it stays. All three version-precise selectors work, and none of them affects any other
-type:
-
-```bash
-dsdlc --target-language cpp path/to/uavcan path/to/uavcan/pnp/8166.NodeIDAllocationData.1.0.dsdl
-dsdlc --target-language cpp path/to/uavcan:pnp/8166.NodeIDAllocationData.1.0.dsdl
-dsdlc --target-language cpp +uavcan.pnp.NodeIDAllocationData.1.0
-```
-
-`--all-type-versions` keeps every version of everything.
-
-### What this does not promise
+### Limits
 
 The narrowing applies to the set of types asked for, not to the finished output. A version that
 survives may still *reference* an older one — a field of type `Dep.1.0` in a definition that is
-itself the newest — and dependency resolution keeps what it needs. dsdlc says so:
+itself the newest — and dependency resolution keeps what it needs:
 
 ```
 note: kept 1 older version(s) that a newer definition still references: ns.Dep:1:0
 ```
 
-So the output is usually single-version per type, but not guaranteed to be, and the backends keep
-their own guards: Go still refuses such a corpus, and the C/C++ headers still carry the sentinel
-described under [Type-name versioning](#type-name-versioning).
+So the output is usually single-version per type without being guaranteed to be, and the backends
+keep their own guards, described below.
 
 ### Deprecated types
 
 A definition is deprecated because a newer version replaced it, so this default drops almost every
-`@deprecated` type as a side effect. `--all-type-versions` brings them back, with the deprecation
+`@deprecated` type as a side effect. Generating every version brings them back, with the deprecation
 attributes and notices described under [Deprecation](#deprecation).
 
 ## Type-name versioning
 
-A generated type name does not carry the definition's version by default: `uavcan.node.Heartbeat.1.0`
-becomes `Heartbeat` in C++, Go, TypeScript and Python, `uavcan__node__Heartbeat` in C, and
-`uavcan_node_Heartbeat` in Rust. `--versioned-type-names` puts the version back —
-`Heartbeat_1_0` — which is what you want when your own code handles two versions of one type at once
-and needs to keep them apart.
+A generated type name does not carry the definition's version: `uavcan.node.Heartbeat.1.0` becomes
+`Heartbeat` in C++, Go, TypeScript and Python, `uavcan__node__Heartbeat` in C, and
+`uavcan_node_Heartbeat` in Rust. Code that handles two versions of one type at once needs them kept
+apart, and can ask for the version to be included.
 
-Output file names carry the version under both schemes, so the flag changes what you *write*, not
-what you include or import.
+Output file names carry the version either way, so the choice changes what you *write*, not what you
+include or import. Under both, the name follows from the definition alone; it never depends on what
+else was in the invocation.
 
-Under either scheme the name follows from the definition alone; it never depends on what else was in
-the invocation.
-
-What the default costs depends on what scopes the type in each language:
+What an unversioned name costs depends on what scopes the type, and arises only where a corpus
+carries two versions of one type — which the newest-version default prevents:
 
 | Language | Scope holding the type | Two versions, unversioned |
 |---|---|---|
 | Rust, TypeScript, Python | a module per type *and version* | no conflict |
-| C, C++ | a scope shared across versions | generates fine; a translation unit that includes two versions stops with an `#error` naming this flag |
-| Go | a package per namespace, shared across versions | cannot be generated — `dsdlc` refuses, naming the type, its versions and this flag |
-
-The Go case is the one you are most likely to meet: the standard `uavcan` namespace has twenty types
-with more than one version, so `--target-language go` over it needs `--versioned-type-names`.
+| C, C++ | a scope shared across versions | generates; a translation unit including both stops on an `#error` |
+| Go | a package per namespace, shared across versions | cannot be generated; `dsdlc` refuses, naming the type and its versions |
 
 ## Deprecation
 
