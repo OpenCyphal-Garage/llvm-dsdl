@@ -129,11 +129,6 @@ public:
     /// @return The role's policy.
     [[nodiscard]] const RolePolicy& roleFor(IdentifierRole role) const;
 
-    /// @brief Returns true when @p name is a keyword in this language.
-    /// @param[in] name Candidate identifier.
-    /// @return True when the identifier is reserved.
-    [[nodiscard]] bool isKeyword(llvm::StringRef name) const;
-
     /// @brief Names the generated code already claims for @p role in this language.
     ///
     /// A DSDL attribute that projects onto one of these would redeclare something the backend emits

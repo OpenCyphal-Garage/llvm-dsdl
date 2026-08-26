@@ -599,11 +599,6 @@ const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
     return rolePolicy(language_, role);
 }
 
-bool LanguageNamingPolicy::isKeyword(const llvm::StringRef name) const
-{
-    return keywordSet(language_).contains(name);
-}
-
 llvm::ArrayRef<llvm::StringRef> LanguageNamingPolicy::runtimeOwned(const IdentifierRole role) const
 {
     return runtimeOwnedNames(language_, role);

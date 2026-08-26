@@ -316,11 +316,6 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     }
 }
 
-std::string tsFieldIdentBase(const llvm::StringRef name)
-{
-    return codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, name);
-}
-
 /// @brief Collision-free property names for one section's fields.
 ///
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the

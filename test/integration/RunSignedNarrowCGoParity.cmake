@@ -47,39 +47,14 @@ if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
 endif()
 
-# Keeping the scratch tree is opt-in, because the tree is large and the lane is usually run for its
-# verdict rather than its output. It is the only way to see what the harness was actually compiled
-# against: on success the run directory is deleted, and on failure the surviving one is easy to
-# mistake for a current one, since nothing here used to clear the old ones.
-#
-# Settable either way. The environment variable is the useful one, because it reaches the script
-# through ctest without editing a registration:
-#
-#   LLVMDSDL_KEEP_RUN_OUTPUT=1 ctest --test-dir <build> -R llvmdsdl-uavcan-c-go-parity
-#
-if(NOT DEFINED KEEP_RUN_OUTPUT)
-  set(KEEP_RUN_OUTPUT "$ENV{LLVMDSDL_KEEP_RUN_OUTPUT}")
-endif()
-
-file(MAKE_DIRECTORY "${OUT_DIR}")
+include("${SOURCE_ROOT}/cmake/HarnessRunScratch.cmake")
+llvmdsdl_harness_scratch_begin("${OUT_DIR}" run_out)
+# Layout left by the pre-run-directory version of this lane.
 foreach(stale_dir c go build harness .gocache .gomodcache)
   if(EXISTS "${OUT_DIR}/${stale_dir}")
     file(REMOVE_RECURSE "${OUT_DIR}/${stale_dir}")
   endif()
 endforeach()
-# Previous run directories go too. A failed run leaves its tree behind by design, and without this
-# they accumulate silently -- which is how a July directory came to sit beside an August one, both
-# looking equally current to anyone reading the output.
-file(GLOB stale_runs "${OUT_DIR}/run-*")
-foreach(stale_run IN LISTS stale_runs)
-  if(IS_DIRECTORY "${stale_run}")
-    file(REMOVE_RECURSE "${stale_run}")
-  endif()
-endforeach()
-string(TIMESTAMP parity_run_timestamp "%Y%m%d%H%M%S")
-string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef parity_run_nonce)
-set(run_out "${OUT_DIR}/run-${parity_run_timestamp}-${parity_run_nonce}")
-file(MAKE_DIRECTORY "${run_out}")
 
 set(c_out "${run_out}/c")
 set(go_out "${run_out}/go")
@@ -344,24 +319,11 @@ foreach(marker IN LISTS required_markers)
 endforeach()
 
 set(summary_file "${OUT_DIR}/signed-narrow-c-go-parity-summary.txt")
-set(summary_tmp "${summary_file}.tmp-${parity_run_nonce}")
+# Named for this run's scratch directory, which is already unique, so two lanes writing the same
+# summary cannot collide on the temporary.
+get_filename_component(_run_tag "${run_out}" NAME)
+set(summary_tmp "${summary_file}.tmp-${_run_tag}")
 file(WRITE "${summary_tmp}" "${run_stdout}\n")
 file(RENAME "${summary_tmp}" "${summary_file}")
-if(KEEP_RUN_OUTPUT)
-  # Said loudly, and with the parts named, because the directory is the whole point of asking.
-  message(STATUS
-    "KEEP_RUN_OUTPUT: parity scratch tree kept at ${run_out}\n"
-    "  ${run_out}/c        generated C\n"
-    "  ${run_out}/go       generated Go\n"
-    "  ${run_out}/harness  the harness sources, after token substitution\n"
-    "  ${run_out}/build    compiled artefacts")
-else()
-  file(REMOVE_RECURSE "${run_out}")
-  if(EXISTS "${run_out}")
-    execute_process(COMMAND "${CMAKE_COMMAND}" -E rm -rf "${run_out}")
-  endif()
-  if(EXISTS "${run_out}")
-    message(WARNING "unable to remove signed_narrow parity scratch directory: ${run_out}")
-  endif()
-endif()
+llvmdsdl_harness_scratch_finish("${run_out}" "signed-narrow C/Go parity")
 message(STATUS "Signed narrow C/Go parity summary:\n${run_stdout}")

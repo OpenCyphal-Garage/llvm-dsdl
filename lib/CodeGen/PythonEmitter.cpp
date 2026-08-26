@@ -74,11 +74,6 @@ std::string pyConstValue(const TypeExprAST& type, const Value& value)
     return renderConstantLiteral(ConstantLiteralLanguage::Python, value, makeConstantTypeInfo(type));
 }
 
-std::string pyFieldIdentBase(const llvm::StringRef name)
-{
-    return codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::FieldName, name);
-}
-
 /// @brief Collision-free attribute names for one section's fields.
 ///
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
