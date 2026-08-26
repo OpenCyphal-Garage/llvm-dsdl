@@ -27,6 +27,32 @@ The staging directories remain, and remain private: nothing should read `.obj_st
 - Exports C++ ABI symbols plus C-callable shim symbols
 - Stages under `.obj_stage_cpp` (including nested C stage)
 
+### Published layout
+
+This lane publishes several header sets rather than one, because it has several interfaces. Each gets
+a directory, and `-I<outdir>` plus the archive is the whole thing:
+
+```
+<outdir>/
+  std/<ns>/X_1_0.hpp          the profile a C++ consumer includes -- pick one
+  pmr/<ns>/X_1_0.hpp
+  autosar/<ns>/X_1_0.hpp
+  abi/<ns>/X_1_0_abi.hpp      the canonical ABI type the three profiles alias
+  c_shim/<ns>/X_1_0_c_shim.h  the C-callable shim symbols
+  c/<ns>/X_1_0.h              the C struct the ABI type wraps
+  c/dsdl_runtime.h            the C runtime
+  dsdl_cppabi_runtime.hpp     the C++ runtime
+  dsdl_runtime.h              forwards to `c/dsdl_runtime.h`
+```
+
+Include a profile header and the rest follows: the profile aliases the ABI type, which includes the
+C struct under `c/`. The root `dsdl_runtime.h` exists so that a translation unit reaching the C
+runtime by its unqualified name finds it wherever it was included from.
+
+Note that the C headers are under `c/`, which is *not* where the C lane puts them. They are an
+implementation detail of the ABI type here rather than the interface, and the generated ABI headers
+include them at that path.
+
 ## Endianness semantics
 
 The DSDL wire format is little-endian on every target, so `serialize_`/`deserialize_`

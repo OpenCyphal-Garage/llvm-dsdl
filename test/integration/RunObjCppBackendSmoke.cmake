@@ -108,6 +108,33 @@ if(NOT EXISTS "${little_out}/c_shim/fixtures/vendor/Widget_1_0_c_shim.o")
   message(FATAL_ERROR "missing C shim object for Widget.1.0")
 endif()
 
+# The published layout, asserted rather than only compiled. In this lane the C output is staged under
+# `c/` and the generated ABI headers include it from there, so it has to be published under `c/` too.
+# The compile below would not catch a missing root forwarder on its own: a quoted include resolves
+# against the including file's own directory first, so `#include "dsdl_runtime.h"` from
+# `c/<ns>/X.h` finds `c/dsdl_runtime.h` whether or not the root one exists.
+if(NOT EXISTS "${little_out}/c/fixtures/vendor/Widget_1_0.h")
+  message(FATAL_ERROR
+    "the C header the published ABI headers include is missing from the published tree: "
+    "expected ${little_out}/c/fixtures/vendor/Widget_1_0.h")
+endif()
+if(NOT EXISTS "${little_out}/c/dsdl_runtime.h")
+  message(FATAL_ERROR "missing published C runtime header at ${little_out}/c/dsdl_runtime.h")
+endif()
+file(READ "${little_out}/c/dsdl_runtime.h" _c_runtime_text)
+if(_c_runtime_text MATCHES "LLVMDSDL_CPPABI_C_RUNTIME_FORWARD_H")
+  message(FATAL_ERROR
+    "${little_out}/c/dsdl_runtime.h is the forwarder, not the C runtime header it forwards to")
+endif()
+if(NOT EXISTS "${little_out}/dsdl_runtime.h")
+  message(FATAL_ERROR "missing root C runtime forwarder at ${little_out}/dsdl_runtime.h")
+endif()
+file(READ "${little_out}/dsdl_runtime.h" _root_runtime_text)
+if(NOT _root_runtime_text MATCHES "LLVMDSDL_CPPABI_C_RUNTIME_FORWARD_H")
+  message(FATAL_ERROR
+    "${little_out}/dsdl_runtime.h is not the forwarder; the real C runtime header overwrote it")
+endif()
+
 set(cpp_harness "${OUT_DIR}/obj_cpp_harness.cpp")
 set(_body [=[
 #include <cstdint>
@@ -236,7 +263,7 @@ foreach(endian IN ITEMS little big)
   endif()
   list(APPEND cpp_compile_cmd
     -I
-    "${root}/.obj_stage_cpp"
+    "${root}"
     "${cpp_harness}"
     "${archive}"
     -o
@@ -260,7 +287,7 @@ foreach(endian IN ITEMS little big)
     COMMAND
       "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
       -I
-      "${root}/.obj_stage_cpp"
+      "${root}"
       -c "${c_harness}" -o "${OUT_DIR}/${endian}-c-harness.o"
     RESULT_VARIABLE c_compile_result
     OUTPUT_VARIABLE c_compile_stdout
@@ -344,7 +371,7 @@ execute_process(
   COMMAND
     "${CXX_COMPILER}" -std=c++17 -Wall -Wextra -Werror
     -I
-    "${no_archive_out}/.obj_stage_cpp"
+    "${no_archive_out}"
     "${cpp_harness}"
     ${no_archive_objects}
     -o
@@ -387,7 +414,7 @@ execute_process(
   COMMAND
     "${CXX_COMPILER}" -std=c++17 -Wall -Wextra -Werror
     -I
-    "${little_out}/.obj_stage_cpp"
+    "${little_out}"
     "${adapter_smoke}" -o "${adapter_exe}"
   RESULT_VARIABLE adapter_result
   OUTPUT_VARIABLE adapter_stdout

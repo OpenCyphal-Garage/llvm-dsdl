@@ -407,10 +407,22 @@ library implementations rests on the lint rather than on a differential build.
   defense-in-depth behind the input validation. New negative cases in `test/lit/cli.txt` prove the
   malicious triple and traversal archive name are rejected while a valid triple still passes.
 
-- [ ] **`obj --obj-abi-language cpp` publishes a header set that does not build from `-I<outdir>`.**
-  Found 2026-08-23 while mapping the lane's C/C++ boundary for the identifier-naming work; two
-  independent bugs in `publishStagedHeaders` (`lib/CodeGen/ObjectEmitter.cpp`), neither covered by a
-  test.
+- [x] **`obj --obj-abi-language cpp` publishes a header set that does not build from `-I<outdir>`.**
+  ✅ **Done (2026-08-25).** Both bugs had one cause: in this lane the C output is staged *under*
+  `c/` inside the C++ stage, and the generated ABI headers include it from there, but it was
+  published relative to the C stage root — which flattens the `c/` prefix away. One expression
+  (`cPublishStageRoot`) picks the C++ stage root in this lane, and the C headers land at
+  `c/<ns>/X.h` where the includes already point. The double-written `dsdl_runtime.h` falls out with
+  it: the real runtime now lands at `c/dsdl_runtime.h`, so the forwarder at the root no longer
+  overwrites anything. `--list-outputs` reports the new paths, and the published layout is now
+  documented in [object.md](../reference/codegen/object.md). The smoke test compiles against
+  `<outdir>` instead of `.obj_stage_cpp` and asserts the two runtime headers are the right way round
+  — a compile alone would not catch a missing forwarder, since a quoted include resolves against the
+  including file's own directory first. Verified load-bearing by reverting the fix and watching the
+  test fail.
+  Found 2026-08-23 while mapping the lane's C/C++ boundary for the identifier-naming work; reported
+  as two independent bugs in `publishStagedHeaders` (`lib/CodeGen/ObjectEmitter.cpp`), neither
+  covered by a test. They turned out to be one.
   1. The C headers publish relative to the *C* stage root and the C++ headers relative to the *C++*
      stage root, so the C headers land at `<outdir>/<ns>/X_1_0.h` while the published
      `abi/<ns>/X_1_0_abi.hpp` includes them as `"c/<ns>/X_1_0.h"` — a path that exists only in

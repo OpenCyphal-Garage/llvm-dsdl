@@ -516,8 +516,17 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
     // The C headers are the interface to the archive in the C ABI lane, and the interface to the
     // C-callable shim symbols in the C++ one, so they are published either way.
+    //
+    // Which root they are published *relative to* differs, because in the C++ ABI lane the C output
+    // is staged under `c/` inside the C++ stage and the generated ABI headers include it from there
+    // (`#include "c/<ns>/X_1_0.h"`). Publishing relative to the C stage root flattens that prefix
+    // away, so every one of those includes dangles in the tree the consumer is handed -- and the
+    // real `dsdl_runtime.h` lands on the root path the C++ lane's forwarder then overwrites.
+    // Relative to the C++ stage root, the `c/` prefix survives and both stop being true.
+    const std::filesystem::path cPublishStageRoot =
+        (options.abiLanguage == ObjectAbiLanguage::Cpp) ? cppStageRoot : cStageRoot;
     if (auto err = publishStagedHeaders(cGenerated,
-                                        cStageRoot,
+                                        cPublishStageRoot,
                                         outRoot,
                                         options.writePolicy,
                                         options.selectedTypeKeys))
