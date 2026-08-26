@@ -19,9 +19,11 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/Pass.h>
@@ -297,12 +299,15 @@ llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallb
     return *found;
 }
 
-llvm::Error executeCommand(llvm::StringRef              program,
+/// @param quiet Disconnects the child's stdout and stderr instead of letting them through. For
+///              probes, whose failure is an answer rather than something the user should read.
+llvm::Error executeCommand(llvm::StringRef                 program,
                            const std::vector<std::string>& args,
-                           llvm::StringRef              failContext)
+                           llvm::StringRef                 failContext,
+                           const bool                      quiet = false)
 {
-    llvm::BumpPtrAllocator  allocator;
-    llvm::StringSaver       saver(allocator);
+    llvm::BumpPtrAllocator                 allocator;
+    llvm::StringSaver                      saver(allocator);
     llvm::SmallVector<llvm::StringRef, 16> argv;
     argv.reserve(args.size() + 1U);
     argv.push_back(saver.save(program));
@@ -311,8 +316,14 @@ llvm::Error executeCommand(llvm::StringRef              program,
         argv.push_back(saver.save(arg));
     }
 
+    // An empty path in this array disconnects that descriptor portably; nullopt inherits ours.
+    const std::optional<llvm::StringRef> silenced[3] = {std::nullopt, llvm::StringRef(""), llvm::StringRef("")};
+    const llvm::ArrayRef<std::optional<llvm::StringRef>> redirects =
+        quiet ? llvm::ArrayRef<std::optional<llvm::StringRef>>(silenced)
+              : llvm::ArrayRef<std::optional<llvm::StringRef>>();
+
     std::string errMsg;
-    const int rc = llvm::sys::ExecuteAndWait(program, argv, std::nullopt, {}, 0, 0, &errMsg);
+    const int   rc = llvm::sys::ExecuteAndWait(program, argv, std::nullopt, redirects, 0, 0, &errMsg);
     if (rc != 0)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -328,6 +339,70 @@ bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 {
     const std::string basename = std::filesystem::path(compilerProgram.str()).filename().string();
     return llvm::StringRef(basename).contains_insensitive("clang");
+}
+
+/// @brief Probes whether @p compilerProgram accepts `-ffile-prefix-map`.
+///
+/// The input is a throwaway source holding a single declaration, rather than one of the staged
+/// sources: those need the include roots and endianness define that the real invocation passes, so
+/// using one would test the flags around the probe as much as the flag under it, and answer
+/// "unsupported" whenever the setup was wrong. A self-contained witness leaves only the flag.
+///
+/// `-fsyntax-only` so nothing is written and no output path is needed, and quiet so that a driver
+/// which does not know the flag answers the question without printing an error the user cannot act
+/// on. One process spawn per compiler for a whole run, against the hundreds of translation units
+/// that follow it.
+bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
+{
+    llvm::SmallString<128> probePath;
+    int                    probeFd = -1;
+    if (llvm::sys::fs::createTemporaryFile("llvmdsdl-file-prefix-map-probe", "c", probeFd, probePath))
+    {
+        return false;
+    }
+    {
+        // Takes the descriptor and closes it on the way out. A declaration rather than an empty
+        // file because an empty translation unit is not strictly valid C.
+        llvm::raw_fd_ostream probe(probeFd, /*shouldClose=*/true);
+        probe << "int llvmdsdl_file_prefix_map_probe;\n";
+    }
+
+    const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.",
+                                        "-fsyntax-only",
+                                        std::string(probePath.str())};
+    const bool                     accepted =
+        !static_cast<bool>(executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true));
+    llvm::sys::fs::remove(probePath);
+    return accepted;
+}
+
+/// @brief The `-ffile-prefix-map` argument that makes object output independent of @p outRoot, or
+///        nullopt when the mapping cannot be expressed or the compiler will not take it.
+///
+/// The staged sources this backend compiles live under the output directory, and it passes them --
+/// and their include roots -- to the compiler as absolute paths. `__FILE__` therefore expands to an
+/// absolute path, and `assert()` puts that string in .rodata, so two runs writing to different
+/// directories produced different objects from identical sources. glibc's assert.h uses `__FILE__`
+/// directly; Apple's prefers `__FILE_NAME__` where the compiler defines it, which is why this never
+/// showed on macOS. Mapping the output root to `.` collapses the difference at its source, and does
+/// so for debug paths too should this backend ever emit them.
+///
+/// Skipped rather than guessed when the root contains `=`: the flag's own syntax is
+/// `-ffile-prefix-map=OLD=NEW` with no escape for a literal `=`, so such a root would silently map
+/// something other than what was asked. Non-reproducible output beats wrongly-rewritten paths, and
+/// the determinism gate is what catches the former.
+std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& outRoot, llvm::StringRef compilerProgram)
+{
+    const std::string root = outRoot.string();
+    if (root.empty() || root.find('=') != std::string::npos)
+    {
+        return std::nullopt;
+    }
+    if (!compilerAcceptsFilePrefixMap(compilerProgram))
+    {
+        return std::nullopt;
+    }
+    return "-ffile-prefix-map=" + root + "=.";
 }
 
 struct CompileTask final
@@ -569,6 +644,13 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     std::vector<CompileTask> compileTasks;
     compileTasks.reserve(sources.size());
 
+    // Gated on the same condition as runCompileTasks below, which does nothing when there is nothing
+    // to compile or the run is a dry one -- probing would otherwise spawn a compiler for a run whose
+    // whole point is that it spawns none.
+    const std::optional<std::string> cFilePrefixMap = (sources.empty() || options.writePolicy.dryRun)
+                                                          ? std::optional<std::string>{}
+                                                          : filePrefixMapArgument(outRoot, cCompiler);
+
     for (const auto& source : sources)
     {
         std::filesystem::path relative = source.filename();
@@ -598,6 +680,10 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         args.push_back("-I" + cStageRoot.string());
         args.push_back("-DLLVMDSDL_TARGET_ENDIANNESS_" +
                        (targetEndianness == "big" ? std::string("BIG=1") : std::string("LITTLE=1")));
+        if (cFilePrefixMap)
+        {
+            args.push_back(*cFilePrefixMap);
+        }
         if (!options.targetTriple.empty())
         {
             args.push_back("--target=" + options.targetTriple);
@@ -678,6 +764,13 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         objectOutputs.reserve(objectOutputs.size() + cppSources.size());
         std::vector<CompileTask> cppCompileTasks;
         cppCompileTasks.reserve(cppSources.size());
+
+        // Probed separately from the C compiler: CC and CXX are resolved independently and need not
+        // be the same toolchain. Gated as above.
+        const std::optional<std::string> cppFilePrefixMap = (cppSources.empty() || options.writePolicy.dryRun)
+                                                                ? std::optional<std::string>{}
+                                                                : filePrefixMapArgument(outRoot, cxxCompiler);
+
         for (const auto& source : cppSources)
         {
             std::filesystem::path relative = source.filename();
@@ -713,6 +806,10 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             args.push_back("-I" + outRoot.string());
             args.push_back("-DLLVMDSDL_TARGET_ENDIANNESS_" +
                            (targetEndianness == "big" ? std::string("BIG=1") : std::string("LITTLE=1")));
+            if (cppFilePrefixMap)
+            {
+                args.push_back(*cppFilePrefixMap);
+            }
             if (!options.targetTriple.empty())
             {
                 args.push_back("--target=" + options.targetTriple);
