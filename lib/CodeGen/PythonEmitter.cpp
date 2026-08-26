@@ -174,8 +174,8 @@ public:
                    std::vector<std::string> packageComponents,
                    const TypeNameVersioning typeNameVersioning)
         : packageComponents_(std::move(packageComponents))
-        , typeNameVersioning_(typeNameVersioning)
         , index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
     }
 

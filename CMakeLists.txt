@@ -142,6 +142,15 @@ if(APPLE AND LLVM_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
   add_link_options("-Wl,-no_warn_duplicate_libraries")
 endif()
 
+# --- Warnings are errors ----------------------------------------------------
+# HandleLLVMOptions already gives every target LLVM's warning set (-Wall -Wextra
+# plus the -W flags LLVM curates), but it only appends -Werror when
+# LLVM_ENABLE_WERROR is set, and that option lives in LLVM's own top-level
+# CMakeLists -- it is undefined in a standalone project like this one. So the
+# warnings were being printed and ignored. Turn them back into build failures.
+#
+set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
+
 set(LLVMDSDL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LLVMDSDL_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 

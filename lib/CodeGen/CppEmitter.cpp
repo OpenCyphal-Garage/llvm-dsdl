@@ -173,8 +173,8 @@ public:
                    const bool               emitDeprecationAttributes,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
-        , emitDeprecationAttributes_(emitDeprecationAttributes)
         , typeNameVersioning_(typeNameVersioning)
+        , emitDeprecationAttributes_(emitDeprecationAttributes)
     {
     }
 
@@ -288,10 +288,10 @@ public:
     }
 
 private:
-    DefinitionIndex                              index_;
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*                               traceSink_ = nullptr;
-    bool                                         emitDeprecationAttributes_{false};
+    EmitTraceSink*     traceSink_ = nullptr;
+    bool               emitDeprecationAttributes_{false};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
