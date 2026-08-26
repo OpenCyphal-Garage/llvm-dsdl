@@ -37,7 +37,7 @@ a directory, and `-I<outdir>` plus the archive is the whole thing:
   std/<ns>/X_1_0.hpp          the profile a C++ consumer includes -- pick one
   pmr/<ns>/X_1_0.hpp
   autosar/<ns>/X_1_0.hpp
-  abi/<ns>/X_1_0_abi.hpp      the canonical ABI type the three profiles alias
+  abi/<ns>/X_1_0_abi.hpp      the canonical ABI type the profiles alias
   c_shim/<ns>/X_1_0_c_shim.h  the C-callable shim symbols
   c/<ns>/X_1_0.h              the C struct the ABI type wraps
   c/dsdl_runtime.h            the C runtime

@@ -1,6 +1,6 @@
 # What each backend names things when the DSDL is adversarial. The unit-level golden map
 # (test/unit/golden/naming-map.txt) pins the shared helpers in lib/Support/NamingPolicy.cpp; this
-# pins the six emitters that call them. Between them, a refactor that claims to change no generated
+# pins the emitters that call them. Between them, a refactor that claims to change no generated
 # identifier can be checked instead of trusted.
 
 # RUN: rm -rf %t && mkdir -p %t

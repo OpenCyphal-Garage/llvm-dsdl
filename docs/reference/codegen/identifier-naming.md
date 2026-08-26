@@ -1,8 +1,8 @@
 # Identifier naming
 
-A DSDL name is not an identifier in any of the six target languages. `break` is a keyword in all six,
-`fooBar` and `foo_bar` are one name in three of them, and `_Leading` is in the region C and C++
-reserve for their implementations. This describes what happens to a name on its way into generated
+A DSDL name is not an identifier in any target language. `break` is a keyword in every one of them,
+`fooBar` and `foo_bar` are one name in the ones that fold case, and `_Leading` is in the region C
+and C++ reserve for their implementations. This describes what happens to a name on its way into generated
 code, and what a corpus is rejected for.
 
 The projection is deterministic and depends only on the definition: the same DSDL name yields the
@@ -29,8 +29,8 @@ identifier, because `ConstantName` upper-cases and `FieldName` does not.
 
 ## The pipeline
 
-Every name passes through the same six stages, in order. A stage that does not apply to the role or
-the language is skipped.
+Every name passes through the same stages, in order. A stage that does not apply to the role or the
+language is skipped.
 
 1. **Case projection.** Fold the name to the language's convention for that role: `snake_case`,
    `PascalCase`, or preserve it as written.
@@ -79,8 +79,8 @@ note: field 'foo_bar' is emitted as 'FooBar_2' for target language 'go';
 ```
 
 A scope covers one region, not a whole file. C++ declares a definition's fields and constants into
-one struct body, so those share a scope; the other five put constants where a field cannot reach
-them, and give each its own.
+one struct body, so those share a scope; the languages that put constants where a field cannot reach
+them give each its own.
 
 ## Rejected corpora
 
@@ -88,8 +88,8 @@ A scope repairs a collision by renaming, which works while the name is internal 
 kinds of name cannot be repaired that way, because the choice of which definition to rename would
 depend on the order they were discovered in:
 
-- **Output file names.** `ns.FooBar.1.0` and `ns.Foo_bar.1.0` both want `foo_bar_1_0` in the four
-  languages that snake_case their file stems. One file would overwrite the other.
+- **Output file names.** `ns.FooBar.1.0` and `ns.Foo_bar.1.0` both want `foo_bar_1_0` wherever file
+  stems are snake_cased. One file would overwrite the other.
 - **Type names.** Two definitions projecting onto one type name in a language that shares a scope
   across a namespace.
 
@@ -102,7 +102,7 @@ error: type name collision in generated output: ns.Foo_bar and ns.FooBar map to 
 
 Only the languages the invocation emits are checked, so a build never fails over a hazard in output
 it was not going to produce. An invocation that emits nothing — analysis, or the language server —
-checks all six, because there is no build to fail.
+checks every language, because there is no build to fail.
 
 A service is checked the same way against its own sections. A service `Foo` emits `Foo_Request`, and
 a sibling definition may be *called* `Foo_Request`; the pair is rejected where the two would meet.
@@ -180,9 +180,9 @@ its own.
 
 ### Case folding
 
-Go, TypeScript and Python fold case, so `fooBar` and `foo_bar` are one identifier in those three and
-three identifiers in C, C++ and Rust. The scope repairs it either way: in C, C++ and Rust the keyword
-and claimed-name escapes are many-to-one where case folding is not.
+Go, TypeScript and Python fold case, so `fooBar` and `foo_bar` are one identifier there and distinct
+identifiers in C, C++ and Rust. The scope repairs it either way: in C, C++ and Rust the keyword and
+claimed-name escapes are many-to-one where case folding is not.
 
 ## Where it is decided in code
 

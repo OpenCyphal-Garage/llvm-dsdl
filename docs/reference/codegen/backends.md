@@ -38,7 +38,7 @@ Renames *inside* a file are not reported: the generated source carries them, and
 bury the path-level notes. The naming manifest records every name — per target language, each type's
 file stem and namespace path and every field and constant identifier — so a build rule can reference
 a generated symbol without reimplementing the projection. Targets that emit no source (`ast`, `mlir`)
-report all six languages at once.
+report every language at once.
 
 Two distinct types that would land on the same output file or the same type name are rejected rather
 than renamed, because choosing which one to rename would depend on directory traversal order and

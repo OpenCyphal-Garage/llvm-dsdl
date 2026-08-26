@@ -85,8 +85,7 @@ unavailable version reports the versions the catalog carries.
 
 ## Type versions
 
-Only the **newest version of each type** is generated. `uavcan` carries 189 definitions across 167
-type names; a default run generates 167 of them and says so:
+Only the **newest version of each type** is generated, and the run reports what it left out:
 
 ```
 note: generating the newest version of each type; 22 older version(s) were not generated.

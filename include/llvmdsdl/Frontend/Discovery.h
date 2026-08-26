@@ -49,7 +49,7 @@ struct OutputLanguage
 /// Pass this when the invocation emits no source of its own: there is no build to fail, so reporting
 /// a collision costs nothing and hiding one helps nobody. An invocation that does emit source passes
 /// only what it emits, so it never fails over output it was not going to produce.
-/// @return All six target languages, in a fixed order.
+/// @return Every target language, in a fixed order.
 llvm::ArrayRef<OutputLanguage> allOutputLanguages();
 
 /// @brief Rejects a service section whose generated type name collides with another type's.

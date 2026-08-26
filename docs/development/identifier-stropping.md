@@ -1,7 +1,7 @@
 # Identifier naming
 
 Every backend turns DSDL names into identifiers the target language accepts. One engine does that
-for all six, and the frontend's output-name collision check consumes the same engine rather than
+for every backend, and the frontend's output-name collision check consumes the same engine rather than
 approximating it.
 
 This is the as-built record. The user-facing description is in
@@ -58,7 +58,7 @@ role projecting to snake_case:
 | TypeScript | 47 | `class` `delete` `export` `function` `interface` `new` `null` `string` |
 | Python | 31 | `def` `del` `elif` `except` `lambda` `pass` `raise` `yield` |
 
-For roles projecting to PascalCase the set collapses to one across all six — Python's `None`. Role
+For roles projecting to PascalCase the set collapses to one across every language — Python's `None`. Role
 awareness is therefore not a micro-optimisation: it is the difference between escaping 81 names and
 escaping one.
 
@@ -153,7 +153,7 @@ produces an illegal identifier and nunavut needs a per-language failure handler 
 following character — `EMACRO_TOKEN` becomes `_eMACRO_TOKEN`. That handler is many-to-one and nothing
 repairs it, so `_Foo`, `__foo` and `_foo` all become `_foo` in its C backend.
 
-A trailing `_` cannot enter a reserved namespace in any of the six targets and needs no failure
+A trailing `_` cannot enter a reserved namespace in any target and needs no failure
 handler.
 
 **It terminates in one pass.** Appending `_` to `X` can only need a further escape if `X_` is itself
@@ -239,7 +239,7 @@ Each entry exists because the case without it did not compile:
 | DSDL field named `to_c` | obj (C++ ABI) | data member and member function share a name |
 
 The list is derived from what the backends emit for a union, a service, an array-bearing message and
-a PMR type, in all six languages. It was first derived from one plain message, which is why the four
+a PMR type, in every language. It was first derived from one plain message, which is why the four
 shape-specific groups above were absent from it for as long as they were.
 
 C claims the same list spelled the way it emits it, with the trailing `_`. The trailing underscore
@@ -393,7 +393,7 @@ type prefix is a defect rather than a style choice.
   generated code claims and names in a reserved namespace are excluded and covered separately, since
   the case-explicit helpers the oracles are built from apply neither escape.
 - **Adversarial corpus that compiles.** `llvmdsdl-naming-corpus-compile-gate` generates
-  `test/lit/fixtures_naming` for all six backends and compiles each: every C translation unit, a C++
+  `test/lit/fixtures_naming` for every backend and compiles each: every C translation unit, a C++
   unit including every header under both the `std` and PMR profiles, all under
   `-Werror -Wreserved-identifier`, then `cargo build`, `go build ./...`, `tsc --strict`, and a Python
   byte-compile. C and C++ are mandatory; the rest skip when their toolchain is absent. Generating all
@@ -422,7 +422,7 @@ of diagnostic people learn to route around, and coupling every build to the unio
 policies would make *adding* a backend a breaking change for existing namespaces.
 
 An invocation that emits nothing gets the opposite answer. `ast`, `mlir` and the language server check
-all six, because there is no build to fail — the diagnostic is information, and these are the modes
+every language, because there is no build to fail — the diagnostic is information, and these are the modes
 people use to ask whether a namespace is sound.
 
 Extending "only the selected backend" to the analysis modes is the consistent-looking reading: they
@@ -483,9 +483,9 @@ is worse than no switch.
 - **The naming manifest**, `--naming-manifest <file>`: per target language, each type's file stem and
   namespace path and every field and constant identifier. It lets a build rule reference a generated
   symbol without reimplementing the projection, and gives the language server its hover text. Targets
-  that emit no source report all six languages at once.
+  that emit no source report every language at once.
 
-  `file_stem` is exact for all six. `type_name` is reported only for Go, TypeScript and Python; C, C++
+  `file_stem` is exact for every backend. `type_name` is reported only for Go, TypeScript and Python; C, C++
   and Rust build namespace-qualified symbols in their own emitters, for which the shared projection is
   only part of the answer, so the manifest omits the key rather than report half a name.
 

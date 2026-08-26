@@ -374,7 +374,7 @@ if(PYTHON_EXECUTABLE)
   endif()
 
   # The adversarial naming corpus, compiled in every backend. lit asserts the identifiers that come
-  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Generating all six
+  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Generating every one
   # regardless of what this build targets is deliberate: the frontend's collision check is keyed to
   # the languages an invocation emits, so a hazard confined to one backend would otherwise surface
   # first to whoever selects it. The corpus ships with the tree, so this needs no external namespace.

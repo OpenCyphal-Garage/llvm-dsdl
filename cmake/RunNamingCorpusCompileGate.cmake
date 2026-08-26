@@ -13,7 +13,7 @@
 #
 # Every backend is generated, not only the ones a given build selects. The frontend's output-name
 # collision check is keyed to the languages an invocation emits, so a hazard confined to one backend
-# reaches a user only when they select it; running the corpus through all six here is what keeps that
+# reaches a user only when they select it; running the corpus through every backend here is what keeps that
 # from being the first time anyone finds out.
 #
 # The C and C++ halves are mandatory -- their compilers built this project. cargo, go, tsc and
