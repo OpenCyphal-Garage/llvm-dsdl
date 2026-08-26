@@ -17,9 +17,15 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+# This lane's whole assertion is that every definition in the corpus produced an output, which is
+# what catches a type going missing silently. The default generates only the newest version of each
+# type, so the lane asks for the whole corpus explicitly -- otherwise it would be comparing the
+# corpus against a deliberate subset of it, and would have to be weakened to a number nobody can
+# check by eye.
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp
+    "${DSDLC}" --target-language cpp --all-type-versions
       "${UAVCAN_ROOT}"
       --cpp-profile both
       --outdir "${OUT_DIR}"
@@ -35,7 +41,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp
+    "${DSDLC}" --target-language cpp --all-type-versions
       "${UAVCAN_ROOT}"
       --cpp-profile autosar
       --outdir "${OUT_DIR}/autosar"

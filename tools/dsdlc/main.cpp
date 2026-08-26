@@ -154,6 +154,13 @@ struct CliOptions final
     // suffix. See --versioned-type-names.
     llvmdsdl::TypeNameVersioning typeNameVersioning{llvmdsdl::TypeNameVersioning::Unversioned};
 
+    /// @brief Generate every version a target carries, rather than the newest of each type.
+    ///
+    /// Off by default. A corpus holding several versions of a type otherwise forces a choice on
+    /// every consumer of the output, and most consumers speak one version. See
+    /// --all-type-versions.
+    bool allTypeVersions{false};
+
     /// @brief Where to write the DSDL-name to generated-identifier map, if requested.
     std::string namingManifest;
 
@@ -341,6 +348,13 @@ void printHelp()
                  << "      speaks one version and reads better without the suffix. Output file names\n"
                  << "      carry the version either way, so this changes what you write, not what\n"
                  << "      you include.\n"
+                 << "  --all-type-versions\n"
+                 << "      Generate every version of a type that the targets carry. By default only\n"
+                 << "      the newest version of each type is generated, because a corpus holding\n"
+                 << "      several otherwise forces a choice on everything that consumes the output:\n"
+                 << "      Go cannot compile two versions of a type into one package, and C and C++\n"
+                 << "      share a scope across versions. Naming a version keeps it either way --\n"
+                 << "      as a file, with colon syntax, or as +<name>.<major>.<minor>.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
                  << "      as, for every target language this invocation names. Answers 'what did\n"
@@ -607,6 +621,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--versioned-type-names")
         {
             options.typeNameVersioning = llvmdsdl::TypeNameVersioning::Versioned;
+            continue;
+        }
+        if (arg == "--all-type-versions")
+        {
+            options.allTypeVersions = true;
             continue;
         }
         if (arg == "--naming-manifest")
@@ -1171,6 +1190,22 @@ std::unordered_set<std::string> collectExplicitKeys(const llvmdsdl::SemanticModu
     return out;
 }
 
+/// @brief Keys for definitions the user named one at a time, rather than sweeping in with a folder.
+///
+/// Naming a version is a request for that version, so the newest-version default leaves these alone.
+std::unordered_set<std::string> collectNamedKeys(const llvmdsdl::SemanticModule& semantic)
+{
+    std::unordered_set<std::string> out;
+    for (const auto& def : semantic.definitions)
+    {
+        if (def.info.isNamedTarget)
+        {
+            out.insert(llvmdsdl::definitionTypeKey(def.info));
+        }
+    }
+    return out;
+}
+
 std::string typeKeyFromRef(const llvmdsdl::SemanticTypeRef& ref)
 {
     return ref.fullName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
@@ -1546,6 +1581,9 @@ int main(int argc, char** argv)
     // Resolve '+' targets before analysis so a typo fails here, loudly, rather than surviving as a
     // successful build that quietly generated nothing.
     std::unordered_set<std::string> builtinExplicitKeys;
+    // The subset selected by a `+<name>.<major>.<minor>` selector. The type and namespace spellings
+    // sweep, so what they bring in is a candidate for the newest-version default like any other.
+    std::unordered_set<std::string> builtinNamedKeys;
     if (!options.builtinTargets.empty() && !embeddedCatalog)
     {
         diagnostics.error({"<cli>", 1, 1}, "embedded targets were requested but no embedded catalog is loaded");
@@ -1573,6 +1611,10 @@ int main(int argc, char** argv)
             return 1;
         }
         builtinExplicitKeys.insert(expansion.typeKeys.begin(), expansion.typeKeys.end());
+        if (expansion.namesExactVersion)
+        {
+            builtinNamedKeys.insert(expansion.typeKeys.begin(), expansion.typeKeys.end());
+        }
     }
     if (!builtinExplicitKeys.empty())
     {
@@ -1613,8 +1655,62 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // Narrow to the newest version of each type before the closure runs, not after: a version that
+    // survives and still references an older one must keep it, and only the closure knows that.
+    // Applied to the seed, so what a surviving type needs comes back regardless.
+    std::vector<std::string> narrowedAwayKeys;
+    if (!options.allTypeVersions)
+    {
+        auto pinnedKeys = collectNamedKeys(localSemantic);
+        // determinism-ok: a set, so insertion order cannot survive.
+        pinnedKeys.insert(builtinNamedKeys.begin(), builtinNamedKeys.end());
+
+        auto selection   = llvmdsdl::selectNewestTypeVersions(mergedSemantic, explicitKeys, pinnedKeys);
+        narrowedAwayKeys = std::move(selection.dropped);
+        explicitKeys     = std::move(selection.selected);
+    }
+
     const auto closureKeys  = computeDependencyClosure(mergedSemantic, explicitKeys);
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
+
+    // Reported only now, because the closure has the last word: a version dropped from the seed
+    // comes back if something that survived still references it, and saying it was not generated
+    // when it was would be worse than saying nothing.
+    if (!narrowedAwayKeys.empty())
+    {
+        std::vector<std::string> absent;
+        std::vector<std::string> restored;
+        for (const auto& key : narrowedAwayKeys)
+        {
+            ((selectedKeys.contains(key)) ? restored : absent).push_back(key);
+        }
+        if (!absent.empty())
+        {
+            // One note rather than one per type: on the public regulated corpus this is 22 of them,
+            // and the reader's question is what happened and how to undo it, not which 22.
+            diagnostics.note({"<cli>", 1, 1},
+                             "generating the newest version of each type; " + std::to_string(absent.size()) +
+                                 " older version(s) were not generated. Pass --all-type-versions for all of "
+                                 "them, or name one to keep just it");
+            for (const auto& key : absent)
+            {
+                logVerbose(1, "not generating older version " + key);
+            }
+        }
+        if (!restored.empty())
+        {
+            // Worth its own note: this is why the output can still hold two versions of a type, and
+            // therefore why a backend that cannot express that may still refuse.
+            std::string list;
+            for (const auto& key : restored)
+            {
+                list += (list.empty() ? "" : ", ") + key;
+            }
+            diagnostics.note({"<cli>", 1, 1},
+                             "kept " + std::to_string(restored.size()) +
+                                 " older version(s) that a newer definition still references: " + list);
+        }
+    }
 
     const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);

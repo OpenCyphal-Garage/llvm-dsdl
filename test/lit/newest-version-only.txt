@@ -1,0 +1,83 @@
+# Only the newest version of each type is generated, unless you say otherwise.
+#
+# A corpus that carries several versions of a type forces a choice on everything downstream: Go
+# compiles a namespace as one package and cannot hold two versions of a type at all, and C and C++
+# share a scope across versions. Most code speaks one version, so the newest of each is the default
+# and the other versions are available by asking.
+#
+# The rule is per full name, not per major. Per-major would preserve Cyphal's compatibility story,
+# but leaves a type carrying two majors still carrying two versions -- the thing this prevents.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+
+# A type at three versions, one single-version type beside it.
+# RUN: printf 'uint8 a\n@extent 64\n' > %t/dsdl/ns/Multi.1.0.dsdl
+# RUN: printf 'uint8 a\nuint8 b\n@extent 64\n' > %t/dsdl/ns/Multi.1.1.dsdl
+# RUN: printf 'uint16 a\n@sealed\n' > %t/dsdl/ns/Multi.2.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/dsdl/ns/Solo.1.0.dsdl
+
+# Default: the newest of Multi, all of Solo. Newest is 2.0, not 1.1 -- the major leads.
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
+# RUN: ls %t/c/dsdl/ns | FileCheck %s --check-prefix=NEWEST
+# NEWEST-NOT: Multi_1_0
+# NEWEST-NOT: Multi_1_1
+# NEWEST-DAG: Multi_2_0.h
+# NEWEST-DAG: Solo_1_0.h
+
+# And it says so, once, with the way out.
+# RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c2 2>&1 | FileCheck %s --check-prefix=NOTE
+# NOTE: note: generating the newest version of each type; 2 older version(s) were not generated
+# NOTE-SAME: --all-type-versions
+
+# --all-type-versions restores every one of them.
+# RUN: %dsdlc --target-language c --all-type-versions %t/dsdl --outdir %t/all
+# RUN: ls %t/all/dsdl/ns | FileCheck %s --check-prefix=ALL
+# ALL-DAG: Multi_1_0.h
+# ALL-DAG: Multi_1_1.h
+# ALL-DAG: Multi_2_0.h
+
+# Naming a version keeps that one, and only that one. The folder still sweeps the rest, so this is
+# the case where a named target and a swept target have to be told apart.
+# RUN: %dsdlc --target-language c %t/dsdl %t/dsdl:ns/Multi.1.0.dsdl --outdir %t/named
+# RUN: ls %t/named/dsdl/ns | FileCheck %s --check-prefix=NAMED
+# NAMED-NOT: Multi_1_1
+# NAMED-DAG: Multi_1_0.h
+# NAMED-DAG: Multi_2_0.h
+
+# Go is the backend that cannot express two versions of a type in one package. Under the default it
+# no longer has to: this is the case that used to be a hard refusal.
+# RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module m
+# RUN: ls %t/go/dsdl/ns | FileCheck %s --check-prefix=GO
+# GO-NOT: multi_1_0
+# GO-DAG: multi_2_0.go
+
+# ... and asking for every version brings the refusal back, rather than emitting a package that
+# cannot compile.
+# RUN: not %dsdlc --target-language go --all-type-versions %t/dsdl --outdir %t/go2 --go-module m 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=GOREFUSE
+# GOREFUSE: error: 'dsdl.ns.Multi' has 3 versions
+
+# The narrowing applies to the seed, not the result. A version that survives and still references an
+# older one keeps it -- dropping a version nothing asked for is the point; dropping one a surviving
+# type needs would be a bug. The output can therefore still hold two versions, which is why the
+# backends' own guards stay.
+# RUN: rm -rf %t/pin && mkdir -p %t/pin/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/pin/ns/Dep.1.0.dsdl
+# RUN: printf 'uint8 a\nuint8 b\n@sealed\n' > %t/pin/ns/Dep.2.0.dsdl
+# RUN: printf 'ns.Dep.1.0 d\n@sealed\n' > %t/pin/ns/User.1.0.dsdl
+# RUN: %dsdlc --target-language c %t/pin --outdir %t/pinout 2>&1 | FileCheck %s --check-prefix=KEPT
+# KEPT: note: kept 1 older version(s) that a newer definition still references: pin.ns.Dep:1:0
+# RUN: ls %t/pinout/pin/ns | FileCheck %s --check-prefix=KEPTFILES
+# KEPTFILES-DAG: Dep_1_0.h
+# KEPTFILES-DAG: Dep_2_0.h
+
+# A definition is deprecated because a newer version replaced it, so the default drops precisely the
+# deprecated types. Worth pinning: it is the most user-visible consequence of the rule.
+# RUN: rm -rf %t/dep && mkdir -p %t/dep/ns
+# RUN: printf '@deprecated\nuint8 a\n@extent 64\n' > %t/dep/ns/Aging.1.0.dsdl
+# RUN: printf 'uint8 a\nuint8 b\n@extent 64\n' > %t/dep/ns/Aging.1.1.dsdl
+# RUN: %dsdlc --target-language c %t/dep --outdir %t/depout
+# RUN: cat %t/depout/dep/ns/Aging_1_1.h | FileCheck %s --check-prefix=NOTDEPRECATED
+# NOTDEPRECATED: IS_DEPRECATED_ false
+# RUN: ls %t/depout/dep/ns | FileCheck %s --check-prefix=NODEPFILE
+# NODEPFILE-NOT: Aging_1_0

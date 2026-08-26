@@ -83,6 +83,58 @@ Namespace matching is anchored at a dot boundary, so `+uavcan.n` selects nothing
 standing in for `+uavcan.node`. A selector matching nothing is an error with a did-you-mean; an
 unavailable version reports the versions the catalog carries.
 
+## Type versions
+
+Only the **newest version of each type** is generated. `uavcan` carries 189 definitions across 167
+type names; a default run generates 167 of them and says so:
+
+```
+note: generating the newest version of each type; 22 older version(s) were not generated.
+      Pass --all-type-versions for all of them, or name one to keep just it
+```
+
+The reason is that a corpus holding several versions of a type forces a choice on everything
+downstream — Go compiles a namespace as one package and cannot hold two versions of a type at all,
+and C and C++ share a scope across versions — while most code speaks one version. With this default,
+`dsdlc --target-language go path/to/uavcan` works with no further flags.
+
+Newest is per **full name**, not per major version: `Foo.1.0`, `Foo.1.1` and `Foo.2.0` leave only
+`Foo.2.0`. Per-major would match Cyphal's compatibility model, where majors are incompatible, but it
+leaves a type that has two majors still carrying two versions — the thing this exists to prevent.
+
+### Keeping an older version
+
+Name it, and it stays. All three version-precise selectors work, and none of them affects any other
+type:
+
+```bash
+dsdlc --target-language cpp path/to/uavcan path/to/uavcan/pnp/8166.NodeIDAllocationData.1.0.dsdl
+dsdlc --target-language cpp path/to/uavcan:pnp/8166.NodeIDAllocationData.1.0.dsdl
+dsdlc --target-language cpp +uavcan.pnp.NodeIDAllocationData.1.0
+```
+
+`--all-type-versions` keeps every version of everything.
+
+### What this does not promise
+
+The narrowing applies to the set of types asked for, not to the finished output. A version that
+survives may still *reference* an older one — a field of type `Dep.1.0` in a definition that is
+itself the newest — and dependency resolution keeps what it needs. dsdlc says so:
+
+```
+note: kept 1 older version(s) that a newer definition still references: ns.Dep:1:0
+```
+
+So the output is usually single-version per type, but not guaranteed to be, and the backends keep
+their own guards: Go still refuses such a corpus, and the C/C++ headers still carry the sentinel
+described under [Type-name versioning](#type-name-versioning).
+
+### Deprecated types
+
+A definition is deprecated because a newer version replaced it, so this default drops almost every
+`@deprecated` type as a side effect. `--all-type-versions` brings them back, with the deprecation
+attributes and notices described under [Deprecation](#deprecation).
+
 ## Type-name versioning
 
 A generated type name does not carry the definition's version by default: `uavcan.node.Heartbeat.1.0`

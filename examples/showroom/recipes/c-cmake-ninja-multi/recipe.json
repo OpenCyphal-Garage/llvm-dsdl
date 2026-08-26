@@ -75,7 +75,7 @@
       "run": [
         "{python}",
         "-c",
-        "import pathlib,sys; g=pathlib.Path('build/generated'); missing=[p for p in ('lanyard/health/SystemHealth_1_0.h','lanyard/flight/VehicleState_1_0.h','dsdl_runtime.h','uavcan/time/SynchronizedTimestamp_1_0.h') if not (g/p).is_file()]; percfg=[p.name for p in g.iterdir() if p.name in ('Debug','Release')]; sys.exit('missing from the shared tree: %s' % missing if missing else ('per-config codegen found: %s' % percfg if percfg else 0))"
+        "import pathlib,sys; g=pathlib.Path('build/generated'); missing=[p for p in ('lanyard/health/SystemHealth_1_0.h','lanyard/flight/VehicleState_2_0.h','dsdl_runtime.h','uavcan/time/SynchronizedTimestamp_1_0.h') if not (g/p).is_file()]; percfg=[p.name for p in g.iterdir() if p.name in ('Debug','Release')]; sys.exit('missing from the shared tree: %s' % missing if missing else ('per-config codegen found: %s' % percfg if percfg else 0))"
       ]
     }
   ]
