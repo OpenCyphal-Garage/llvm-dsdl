@@ -35,13 +35,18 @@ file(WRITE
   "${parallel_script}"
   "#!/bin/sh\n"
   "set -eu\n"
-  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language go --versioned-type-names \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --go-module \"uavcan_dsdl_generated\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language go \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --go-module \"uavcan_dsdl_generated\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
   "pid_a=$!\n"
-  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language go --versioned-type-names \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --go-module \"uavcan_dsdl_generated\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language go \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --go-module \"uavcan_dsdl_generated\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
   "pid_b=$!\n"
   "wait \"$pid_a\"\n"
   "wait \"$pid_b\"\n"
 )
+
+# Runs at the default -- unversioned type names, newest version of each type. That combination used
+# to be impossible for Go on this corpus: a DSDL namespace is one Go package, and uavcan carries 20
+# types at more than one version, so dsdlc refused. Generating only the newest of each removed the
+# collision, and this lane running with no naming flags at all is the most direct evidence of it.
 
 execute_process(
   COMMAND "/bin/sh" "${parallel_script}"

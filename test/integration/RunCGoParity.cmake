@@ -89,11 +89,12 @@ file(MAKE_DIRECTORY "${go_out}")
 file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
-# The uavcan corpus carries several types at two or more versions, and Go compiles a namespace as
-# one package -- so unversioned names cannot express it and dsdlc refuses. Versioned is the only
-# scheme available here; the default says so rather than leaving it to a caller to discover.
+# Go used to have no choice here -- uavcan carries 20 types at more than one version and a DSDL
+# namespace is one Go package, so unversioned names could not be generated at all. The newest
+# version of each type is now the default, so this harness runs with no naming flags. The
+# harness names no version that the default drops, which is what makes that safe.
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "versioned")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 
 execute_process(
   COMMAND

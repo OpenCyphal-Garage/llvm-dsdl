@@ -35,11 +35,10 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
-# The uavcan corpus carries several types at two or more versions, and Go compiles a namespace as
-# one package -- so unversioned names cannot express it and dsdlc refuses. Versioned is the only
-# scheme available here; the default says so rather than leaving it to a caller to discover.
+# As with the C/Go parity lane: the newest-version default removes the collision that forced
+# versioned names on this corpus, so the fuzz harness runs at the default.
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "versioned")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 
 execute_process(
   COMMAND
