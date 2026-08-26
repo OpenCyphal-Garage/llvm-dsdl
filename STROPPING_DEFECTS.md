@@ -23,10 +23,11 @@ the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-ty
 D1–D4, D6–D19 and [D21](#d21)–[D23](#d23), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
-**Deferred:** [D5](#d5) and [D20](#d20) only. The mechanism they need is landed —
-`--versioned-type-names`, with unversioned as the default — but the *policy* question they turn on is
-which versions reach the corpus at all, and that should be settled after the newest-version-only
-feature rather than before it. See
+**Deferred:** [D20](#d20) only, pending the newest-version-only feature — the mechanism it needs is
+landed (`--versioned-type-names`, unversioned by default), but the policy turns on which versions
+reach the corpus at all. **[D5](#d5) is still open and does *not* wait on that**: it is a service
+section colliding with a sibling type, so newest-only leaves both names in place. It is fixed under
+`--versioned-type-names` and live under the default. See
 [Deferred](#deferred-the-two-that-turn-on-a-versioning-scheme).
 
 | ID | Severity | Area | Defect |
@@ -1048,10 +1049,30 @@ the flag is passed. It fails with a diagnostic naming the type, the versions and
 by emitting a package that will not compile -- but it still fails, and that is the cost the
 newest-version-only feature is meant to remove.
 
-**The way out is a separate feature: generate the newest version of each type by default.** That
-removes the collision at its source for every language rather than working around it per backend,
-and it changes what D5 and D20 should do -- so settling them first would be settling them against a
-corpus shape that is about to change. They wait for it.
+**The way out for D20 is a separate feature: generate the newest version of each type by default.**
+That removes the collision at its source for every language rather than working around it per
+backend, and it changes what D20 should do -- so settling it first would be settling it against a
+corpus shape that is about to change. It waits for that.
+
+**[D5](#d5) does not, and cannot.** Grouping the two here was wrong. D5 is a service section
+colliding with a *sibling type*, not with another version of itself:
+
+```console
+$ dsdlc --target-language cpp ns --cpp-profile std --outdir out   # ns/Foo.1.0.dsdl is a service,
+$ grep -rhE '^struct Foo_Request' out | sort | uniq -c              # ns/Foo_Request.1.0.dsdl a message
+   2 struct Foo_Request {
+   2 struct Foo_Request;
+$ dsdlc --target-language cpp --versioned-type-names ns --cpp-profile std --outdir out2
+$ grep -rhE '^struct Foo[A-Za-z0-9_]*' out2 | sort -u
+struct Foo_1_0_Request;
+struct Foo_Request_1_0;
+```
+
+Both definitions are the newest of their own name, so newest-version-only leaves both in place and
+the collision with them. What *does* separate them is `--versioned-type-names` -- D5's fix option 2,
+now available. So D5 is fixed under the versioned scheme and live under the default, which is the
+scheme most users get. Option 1 (register `<Type>_Request` and `<Type>_Response` in the collision
+keyspace) is the remaining candidate, and it is independent of the newest-only work.
 
 ### The modes are landed (2026-08-25)
 
