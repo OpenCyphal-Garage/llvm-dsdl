@@ -24,9 +24,10 @@ the review found — [B](#b-the-claimed-name-tables-were-built-from-one-plain-ty
 D1–D19 except [D20](#d20), and [D21](#d21)–[D24](#d24), plus the mechanism half of root cause
 [D](#d-composed-names-are-spliced-at-the-call-site).
 
-**Deferred:** [D20](#d20) only, pending the newest-version-only feature — the mechanism it needs is
-landed (`--versioned-type-names`, unversioned by default), but the policy turns on which versions
-reach the corpus at all.
+**All twenty-four are fixed.** The last, [D20](#d20), closed once generating the newest version of
+each type became the default: the collision it describes now mostly cannot arise, and where it still
+can — a surviving type referencing an older version — the C and C++ headers stop on a sentinel naming
+the flag rather than on six redefinition errors from deep inside generated code.
 
 | ID | Severity | Area | Defect |
 |---|---|---|---|
@@ -49,7 +50,7 @@ reach the corpus at all.
 | [D17](#d17) | Low | docs | ~~The C emitter comment repeats the D4 premise~~ |
 | [D18](#d18) | High | lowering | ~~A sixth copy of the naming policy in `LowerToMLIR` makes `--encode-reserved-identifiers` emit C that does not compile~~ |
 | [D19](#d19) | High | obj | ~~`--obj-abi-language cpp` compiles its staged C headers as C++, so a C-only escape does not build~~ |
-| [D20](#d20) | High | C/C++/obj | Type versions are not always in the type name, so two versions of one DSDL type collide |
+| [D20](#d20) | High | C/C++/obj | ~~Type versions are not always in the type name, so two versions of one DSDL type collide~~ |
 | [D21](#d21) | Medium | manifest | ~~The manifest reports an encoded C/C++ file stem that is not the file on disk~~ |
 | [D22](#d22) | High | C | ~~Under `--versioned-type-names` the C header and the C implementation name different types~~ |
 | [D23](#d23) | High | obj | ~~The object backend accepts `--versioned-type-names` and ignores it~~ |
@@ -208,7 +209,7 @@ Two things it should not try to be:
 This is larger than either defect under it and touches every emitter, so it is worth deciding as a
 piece of work rather than arriving at through [D5](#d5).
 
-**Mechanism landed; policy deferred.** `Support/DefinitionNaming.h` now answers a definition's type
+**Landed, mechanism and policy.** `Support/DefinitionNaming.h` now answers a definition's type
 name, file stem, include guard, symbol base and section suffix from a per-language table, and every
 in-scope producer delegates to it: `mangleSymbol` x3, `sectionSuffix` x4, `cTypeNameFromInfo` x3,
 `goTypeName`, `rustTypeName`, `rustModuleName`, `cppTypeName`, `cppTypeNameFromInfo`,
@@ -217,8 +218,11 @@ version splices, 11 remain and all 11 are the identity keys, the LSP source-file
 integer `DSDL_VERSION_MAJOR` values -- the categories held out above. Output is byte-identical apart
 from [D21](#d21), which the consolidation exposed and which is fixed.
 
-What is *not* done is the policy on top: [D5](#d5), [D19](#d19) and [D20](#d20) are still open. See
-the note below on why.
+The policy on top followed, in two flags and a default: `--versioned-type-names` decides whether a
+type name carries its version, and the newest version of each type is generated unless
+`--all-type-versions` says otherwise. The section suffix joined the table late, when [D5](#d5) turned
+out to be nine hand-written splices of `_Request`/`_Response` -- the same shape this root cause is
+about, one layer down.
 
 ---
 
@@ -915,6 +919,33 @@ the fourth copy free to drift, which is how [D18](#d18) happened.
 The compile gate would not have caught any of this — it compiles each header standalone and the
 corpus has no type with two versions.
 
+**Fixed**, in three parts, none of which is "always version the name":
+
+1. **The collision mostly cannot arise.** Generating the newest version of each type is the default,
+   so a corpus carrying two versions of one type yields one. The showroom reproduction above now
+   emits a single `lanyard__flight__VehicleState`, from `VehicleState.2.0` alone.
+2. **Where it still can, it is loud.** `--all-type-versions`, or a surviving type that references an
+   older version, can still put two in one translation unit. C, C++ and obj-cpp now carry a sentinel
+   that stops on one `#error` naming the flag — verified in all three — instead of six redefinition
+   errors from inside generated code. Go refuses at generation time.
+3. **Coexistence is supported rather than accidental.** `--versioned-type-names` makes all six
+   languages version the name, so the two headers compile together; the showroom's three
+   `VehicleState` versions do.
+
+The instability this entry singled out is gone with it. A C++ type name no longer depends on what
+else was in the invocation:
+
+```console
+$ dsdlc --target-language cpp p --cpp-profile std --outdir out   # p/ns holds Bar.1.0 only
+struct Bar
+$ # someone adds p/ns/Bar.2.0.dsdl, and regenerates with --all-type-versions
+struct Bar
+```
+
+`versionCountByFullName_`, the map that made the name a function of the compiled set, is deleted
+rather than left unread — this entry asked that it not survive, and a dead field is one someone can
+read again.
+
 ### D21
 
 **The manifest reports an encoded C/C++ file stem that is not the file on disk.**
@@ -1073,12 +1104,15 @@ escape hatch without fixing A.
 
 ## Deferred: the two that turn on a versioning scheme
 
-[D20](#d20) is not fixed. ([D5](#d5) was grouped with it until it turned out that newest-only cannot
-reach it and `--versioned-type-names` already does; it is done. [D19](#d19) was grouped with them
-until its fix turned out to be independent of the versioning question; it is done too.) The mechanism they need landed with root
-cause [D](#d-composed-names-are-spliced-at-the-call-site), and the two modes described below are now
-in the tool. What is still open is the policy: which versions of a type reach the generated corpus at
-all.
+Nothing here is deferred any more; the section is kept because the reasoning outlived the defects and
+is what the two shipped flags rest on.
+
+[D20](#d20) was the last one open, and it closed when the policy question below was settled: the
+newest version of each type is generated by default, so the corpus shape D20 needs mostly cannot
+occur. [D5](#d5) was grouped with it until it turned out that newest-only cannot reach it and
+`--versioned-type-names` already does; [D19](#d19) was grouped with them until its fix turned out to
+be independent of the versioning question. Both are done on their own terms. The mechanism all three
+needed landed with root cause [D](#d-composed-names-are-spliced-at-the-call-site).
 
 The design, which is what shipped: two modes rather than one rule, because whether a type name
 carries its version is a property of *the consuming code*, not of the corpus. Code that speaks one
@@ -1238,7 +1272,9 @@ than a second copy of a harness.
    that catches D9 to nothing, and turning it on made the corpus fail to build.
 4. ~~**[C](#c-c-claims-nothing-on-a-premise-that-is-false)** — D4, D7, D17.~~ Landed.
 5. ~~**D6**, **D15**, **D16** — driver fixes, independent of the rest.~~ Landed.
-6. **D5** and **D20** — deferred; see below.
+6. ~~**D5** and **D20** — deferred; see below.~~ Both landed. D5 turned out not to depend on the
+   versioning scheme at all and was fixed on its own terms; D20 closed once the newest-version
+   default removed the corpus shape it needs.
 
 Extend `test/lit/fixtures_naming` with a union, a service, a PMR-relevant type and the
 trailing-underscore constants, so the corpus compile gate covers the shapes the tables were derived

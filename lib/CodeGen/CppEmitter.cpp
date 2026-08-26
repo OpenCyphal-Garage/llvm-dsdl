@@ -176,10 +176,6 @@ public:
         , emitDeprecationAttributes_(emitDeprecationAttributes)
         , typeNameVersioning_(typeNameVersioning)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            versionCountByFullName_[def.info.fullName] += 1U;
-        }
     }
 
     /// @brief Whether generated type names carry the definition's version.
@@ -294,7 +290,6 @@ public:
 private:
     DefinitionIndex                              index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    std::unordered_map<std::string, std::size_t> versionCountByFullName_;
     EmitTraceSink*                               traceSink_ = nullptr;
     bool                                         emitDeprecationAttributes_{false};
 };
