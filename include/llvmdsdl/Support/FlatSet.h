@@ -46,6 +46,10 @@
 namespace llvmdsdl
 {
 
+// NOLINTBEGIN(readability-identifier-naming)
+// The names below are the standard container interface this type models. Spelling them in the
+// project's CamelCase would stop generic code, and range-for, from seeing a container at all.
+
 /// @brief Tag selecting the constructor that trusts its input to be sorted and unique.
 /// @details Mirrors `std::sorted_unique_t`; kept separate so this header does not
 ///   depend on `<flat_set>` being present at all.
@@ -74,6 +78,7 @@ public:
     using iterator               = const_iterator;
     using const_reverse_iterator = container_type::const_reverse_iterator;
     using reverse_iterator       = const_reverse_iterator;
+    // NOLINTEND(readability-identifier-naming)
 
     FlatSet() = default;
 

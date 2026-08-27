@@ -197,8 +197,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                            builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
-        state.addAttribute("major", builder.getI32IntegerAttr(def.info.majorVersion));
-        state.addAttribute("minor", builder.getI32IntegerAttr(def.info.minorVersion));
+        state.addAttribute("major", builder.getI32IntegerAttr(static_cast<std::int32_t>(def.info.majorVersion)));
+        state.addAttribute("minor", builder.getI32IntegerAttr(static_cast<std::int32_t>(def.info.minorVersion)));
         if (def.request.sealed)
         {
             state.addAttribute("sealed", builder.getUnitAttr());
@@ -227,6 +227,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
         auto* schema     = builder.create(state);
         auto& schemaBody = schema->getRegion(0);
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) -- Region::push_back takes ownership.
         schemaBody.push_back(new mlir::Block());
 
         builder.setInsertionPointToStart(&schemaBody.front());
@@ -331,6 +332,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             planState.addRegion();
             auto* plan       = builder.create(planState);
             auto& planRegion = plan->getRegion(0);
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) -- Region::push_back takes ownership.
             planRegion.push_back(new mlir::Block());
 
             builder.setInsertionPointToStart(&planRegion.front());

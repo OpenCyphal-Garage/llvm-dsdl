@@ -38,7 +38,7 @@ class DiagnosticEngine;
 struct OutputLanguage
 {
     /// @brief Naming policy to project names with.
-    CodegenNamingLanguage language;
+    CodegenNamingLanguage language{};
 
     /// @brief The `--target-language` spelling, for diagnostics.
     llvm::StringRef name;

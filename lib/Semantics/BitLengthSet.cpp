@@ -112,7 +112,10 @@ struct ResidueSet final
     }
 
     /// @brief Applies `fn(residue)` to each present residue in ascending order.
+    // fn is invoked once per element, so forwarding it would hand the first call an object the
+    // rest still need.
     template <typename Fn>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     void forEach(Fn&& fn) const
     {
         for (std::size_t wi = 0; wi < wordCount(); ++wi)
@@ -277,6 +280,11 @@ struct BitLengthSet::Node final
 
     Node() = default;
 
+    Node(const Node&)            = delete;
+    Node& operator=(const Node&) = delete;
+    Node(Node&&)                 = delete;
+    Node& operator=(Node&&)      = delete;
+
     /// @brief Iterative teardown so destroying a deep chain does not recurse.
     ///
     /// The default destructor would release `lhs`/`rhs` recursively: freeing the head of an
@@ -285,6 +293,8 @@ struct BitLengthSet::Node final
     /// reference to a node, steal ITS children first so its own destruction finds nothing to
     /// recurse into. The `const_cast` is safe: `use_count() == 1` means we are the sole owner of a
     /// node that is about to be destroyed, so mutating it is unobservable.
+    // Only the worklist allocation can throw, and an OOM during teardown has nowhere to report to.
+    // NOLINTNEXTLINE(bugprone-exception-escape)
     ~Node()
     {
         std::vector<std::shared_ptr<const Node>> pending;
@@ -302,6 +312,7 @@ struct BitLengthSet::Node final
             pending.pop_back();
             if (node.use_count() == 1)
             {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) -- sole owner; see the ~Node comment.
                 Node* const owned = const_cast<Node*>(node.get());
                 if (owned->lhs)
                 {
@@ -1013,6 +1024,7 @@ const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
     return leaf;
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) -- only zeroLeaf()'s one-time init can throw.
 BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     : root_(std::move(other.root_))
     , runSetCache_(std::move(other.runSetCache_))
@@ -1023,6 +1035,7 @@ BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     other.runSetCache_ = nullptr;
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) -- only zeroLeaf()'s one-time init can throw.
 BitLengthSet& BitLengthSet::operator=(BitLengthSet&& other) noexcept
 {
     if (this != &other)

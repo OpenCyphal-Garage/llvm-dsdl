@@ -43,7 +43,7 @@ std::string renderIntegerConstant(const ConstantLiteralLanguage language,
                                   const __int128                wide,
                                   const ConstantTypeInfo        typeInfo)
 {
-    const std::string dec = wideToString(wide);
+    std::string dec = wideToString(wide);
     switch (language)
     {
     case ConstantLiteralLanguage::Go:
@@ -108,7 +108,7 @@ std::string quoteCharLiteral(const char value)
 ///        `2.0` is not emitted as the integer `2`, which fails to type-check as `f64` in Rust).
 std::string renderIntegerValuedFloat(const ConstantLiteralLanguage language, const __int128 wide)
 {
-    const std::string dec = wideToString(wide);
+    std::string dec = wideToString(wide);
     switch (language)
     {
     case ConstantLiteralLanguage::TypeScript:

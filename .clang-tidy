@@ -23,6 +23,13 @@
 #     Fires on every adjacent (StringRef, StringRef) pair, which is most of the
 #     naming and rendering surface.
 #
+# bugprone-unchecked-optional-access
+#     Reads a dereference as unchecked unless the guard is a direct `has_value`
+#     on the same expression, which is not how this tree establishes engagement:
+#     MLIR's `FailureOr` behind `failed()`, paired predicates such as `isInteger`
+#     before `asWideInteger`, and preconditions held by the only caller.
+#     Satisfying it means writing branches that cannot be taken.
+#
 # cert-msc32-c, cert-msc51-cpp
 #     Aliases of bugprone-random-generator-seed, which is enabled.
 #
@@ -106,6 +113,7 @@ Checks: >
   portability-*,
   readability-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
   -cert-msc32-c,
   -cert-msc51-cpp,
   -cppcoreguidelines-avoid-c-arrays,

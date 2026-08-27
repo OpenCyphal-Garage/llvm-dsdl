@@ -13,6 +13,10 @@
 /// The implementation translates lowered section plans into C++ encode and decode routines plus supporting type
 /// wrappers.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -870,12 +874,14 @@ private:
                 UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field, &fieldScope]() {
                                     const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
                                     emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                    // NOLINTBEGIN(performance-inefficient-string-concatenation)
                                     emitSerializeValue(out,
                                                        field.resolvedType,
                                                        objRef + "->" + member,
                                                        indent + 1,
                                                        step.arrayLengthPrefixBits,
                                                        step.fieldFacts);
+                                    // NOLINTEND(performance-inefficient-string-concatenation)
                                 }});
         }
         renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
@@ -901,12 +907,14 @@ private:
                 UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field, &fieldScope]() {
                                     const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
                                     emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                    // NOLINTBEGIN(performance-inefficient-string-concatenation)
                                     emitDeserializeValue(out,
                                                          field.resolvedType,
                                                          objRef + "->" + member,
                                                          indent + 1,
                                                          step.arrayLengthPrefixBits,
                                                          step.fieldFacts);
+                                    // NOLINTEND(performance-inefficient-string-concatenation)
                                 }});
         }
         renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
@@ -1594,6 +1602,7 @@ void emitSectionStruct(std::ostringstream&              out,
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, baseType + " " + member + "{};");
             if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
@@ -1614,10 +1623,12 @@ void emitSectionStruct(std::ostringstream&              out,
             }
             else
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          "std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
                              member + "{};");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
@@ -1687,6 +1698,7 @@ void emitSectionStruct(std::ostringstream&              out,
                  "::llvmdsdl::cpp::default_memory_resource();");
         for (const auto& member : variableArrayMembers)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 2, member + " = decltype(" + member + ")(_memory_resource);");
         }
         for (const auto& member : compositeScalarMembers)
@@ -1697,16 +1709,20 @@ void emitSectionStruct(std::ostringstream&              out,
         {
             const auto i =
                 codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 2, "}");
         }
         for (const auto& member : compositeVariableArrayMembers)
         {
             const auto i =
                 codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 2, "}");
         }
         emitLine(out, 1, "}");

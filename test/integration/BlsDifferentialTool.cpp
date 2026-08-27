@@ -33,6 +33,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <llvm/Support/raw_ostream.h>
+#include <exception>
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -264,7 +266,9 @@ void emitCase(std::size_t id, const Case& c)
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
+{
+int runBlsDifferential(int argc, char** argv)
 {
     std::size_t randomCases = 500;
     if (argc > 1)
@@ -283,4 +287,25 @@ int main(int argc, char** argv)
         emitCase(id++, makeRandomCase(rng));
     }
     return 0;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runBlsDifferential(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "bls-differential: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "bls-differential: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

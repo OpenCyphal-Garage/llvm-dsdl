@@ -22,6 +22,7 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <exception>
 #include <cstdint>
 #include <iostream>
 
@@ -61,7 +62,9 @@ OPTIONS
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
+{
+int runDsdld(int argc, char** argv)
 {
     llvm::InitLLVM const y(argc, argv);
     for (int i = 1; i < argc; ++i)
@@ -127,4 +130,25 @@ int main(int argc, char** argv)
 
     server.shutdown();
     return server.exitCode();
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runDsdld(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "dsdld: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "dsdld: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

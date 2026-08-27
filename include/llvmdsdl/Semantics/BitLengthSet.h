@@ -227,6 +227,7 @@ public:
     ///         The tri-state is
     ///         deliberate: this class never converts "cannot evaluate" into a boolean guess.
     /// @note Mirrors pydsdl's `BitLengthSet.is_aligned_at`; the byte case is `is_aligned_at(8)`.
+    // NOLINTNEXTLINE(readability-identifier-naming) -- spelled as pydsdl spells it; see @note above.
     [[nodiscard]] std::optional<bool> is_aligned_at(std::int64_t alignment) const;
 
     /// @brief Rounds each candidate length up to the nearest multiple of `alignment`.

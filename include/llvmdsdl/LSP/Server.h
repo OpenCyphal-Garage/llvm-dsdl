@@ -59,6 +59,8 @@ public:
 
     Server(const Server&)            = delete;
     Server& operator=(const Server&) = delete;
+    Server(Server&&)                 = delete;
+    Server& operator=(Server&&)      = delete;
 
     /// @brief Handles one incoming JSON-RPC message.
     /// @param[in] message Parsed message object.

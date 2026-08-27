@@ -64,14 +64,8 @@ bool isSnakeCase(const std::string& text)
     {
         return false;
     }
-    for (const unsigned char c : text)
-    {
-        if (!std::islower(c) && !std::isdigit(c) && c != '_')
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(text,
+                               [](const unsigned char c) { return std::islower(c) || std::isdigit(c) || c == '_'; });
 }
 
 bool isUpperSnakeCase(const std::string& text)
@@ -84,14 +78,8 @@ bool isUpperSnakeCase(const std::string& text)
     {
         return false;
     }
-    for (const unsigned char c : text)
-    {
-        if (!std::isupper(c) && !std::isdigit(c) && c != '_')
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(text,
+                               [](const unsigned char c) { return std::isupper(c) || std::isdigit(c) || c == '_'; });
 }
 
 bool isPascalCase(const std::string& text)
@@ -104,14 +92,7 @@ bool isPascalCase(const std::string& text)
     {
         return false;
     }
-    for (const unsigned char c : text)
-    {
-        if (!std::isalnum(c) && c != '_')
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(text, [](const unsigned char c) { return std::isalnum(c) || c == '_'; });
 }
 
 std::string toSnakeCase(const std::string& text)
@@ -720,6 +701,11 @@ struct LintRegistry::PluginHandle final
         }
     }
 
+    PluginHandle(const PluginHandle&)            = delete;
+    PluginHandle& operator=(const PluginHandle&) = delete;
+    PluginHandle(PluginHandle&&)                 = delete;
+    PluginHandle& operator=(PluginHandle&&)      = delete;
+
     void* handle{nullptr};
 };
 
@@ -744,6 +730,7 @@ bool LintRegistry::loadPluginLibrary(const std::string& libraryPath, std::string
     {
         if (errorMessage)
         {
+            // NOLINTNEXTLINE(concurrency-mt-unsafe) -- reached only on the dlopen failure path.
             *errorMessage = dlerror();
         }
         return false;

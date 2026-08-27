@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 
+#include <algorithm>
 #include <sstream>
 #include <cstddef>
 #include <memory>
@@ -265,14 +266,8 @@ std::string ExprAST::str() const
 
 bool DefinitionAST::isService() const
 {
-    for (const auto& stmt : statements)
-    {
-        if (std::holds_alternative<ServiceResponseMarkerAST>(stmt))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(statements,
+                               [](const auto& stmt) { return std::holds_alternative<ServiceResponseMarkerAST>(stmt); });
 }
 
 std::string printAST(const ASTModule& module)

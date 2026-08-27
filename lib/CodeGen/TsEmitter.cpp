@@ -12,6 +12,10 @@
 ///
 /// This file emits TypeScript models, codec entry points, and runtime wiring from lowering contracts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -132,10 +136,6 @@ public:
         return index_.find(ref);
     }
 
-    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable for the same
-    /// reason `trace` is const: the free render functions are handed a `const EmitterContext&`.
-    mutable std::map<std::string, std::string> importAliases_;
-
     static std::string namespacePath(const DiscoveredDefinition& info)
     {
         return renderNamespaceRelativePath(CodegenNamingLanguage::TypeScript, info.namespaceComponents)
@@ -217,6 +217,10 @@ public:
     }
 
 private:
+    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable for the same
+    /// reason `trace` is const: the free render functions are handed a `const EmitterContext&`.
+    mutable std::map<std::string, std::string> importAliases_;
+
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*     traceSink_ = nullptr;
@@ -253,7 +257,7 @@ std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext&
 
 std::string tsFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    const auto base = tsFieldBaseType(type, ctx);
+    auto base = tsFieldBaseType(type, ctx);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -427,7 +431,7 @@ void emitUnionSectionType(std::ostringstream&    out,
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
                 << tsFieldType(field->resolvedType, ctx) << "; }";
-        const auto* const prefix = i == 0 ? "  | " : "  | ";
+        const auto* const prefix = "  | ";
         emitLine(out, 0, prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
     }
 }
@@ -487,7 +491,7 @@ std::string normalizeTsDeserScalarExpr(const RuntimeFieldPlan&        field,
     {
         return rawExpr;
     }
-    const auto helperCall = helpers.deserScalar + "(" + rawExpr + ")";
+    auto helperCall = helpers.deserScalar + "(" + rawExpr + ")";
     if (field.kind == RuntimeFieldKind::Unsigned || field.kind == RuntimeFieldKind::Signed)
     {
         return field.useBigInt ? ("BigInt(" + helperCall + ")") : ("Number(" + helperCall + ")");
@@ -1163,10 +1167,15 @@ private:
     std::string arrayElemType() const
     {
         const auto& field = operation_.body.field;
-        return field.kind == RuntimeFieldKind::Bool
-                   ? "boolean"
-                   : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx_)
-                                                                : (field.useBigInt ? "bigint" : "number"));
+        if (field.kind == RuntimeFieldKind::Bool)
+        {
+            return "boolean";
+        }
+        if (field.kind == RuntimeFieldKind::Composite)
+        {
+            return compositeTypeName(field, ctx_);
+        }
+        return field.useBigInt ? "bigint" : "number";
     }
 
     std::ostringstream&               out_;
@@ -1321,7 +1330,6 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
 
     if (operationPlan->isUnion)
     {
-        const auto tagBits = std::to_string(operationPlan->unionTagBits);
         ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
         emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
         emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
@@ -1616,6 +1624,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             {
                 rendered += ", ";
             }
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             rendered += (original == local) ? original : (original + " as " + local);
         }
         return rendered;
@@ -2232,6 +2241,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         }
         ++useCount;
 
+        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
         emitLine(index, 0, "export * as " + alias + " from \"./" + modulePath + "\";");
     }
 

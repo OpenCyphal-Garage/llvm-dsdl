@@ -100,8 +100,7 @@ double kindBoostSymbol(const std::int64_t kind)
     {
     case 23:  // Struct
         return 2.0;
-    case 8:  // Field
-        return 1.0;
+    case 8:   // Field
     case 14:  // Constant
         return 1.0;
     default:

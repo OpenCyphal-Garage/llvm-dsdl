@@ -389,17 +389,13 @@ bool parseSectionPlan(mlir::Operation&   plan,
     {
         section.extentBits = static_cast<std::int64_t>(extentBits.getInt());
     }
-    else if (section.sealed)
+    else if (section.sealed || defaultExtentBits < 0)
     {
         section.extentBits = maxValue;
-    }
-    else if (defaultExtentBits >= 0)
-    {
-        section.extentBits = defaultExtentBits;
     }
     else
     {
-        section.extentBits = maxValue;
+        section.extentBits = defaultExtentBits;
     }
 
     if (plan.getNumRegions() == 0 || plan.getRegion(0).empty())

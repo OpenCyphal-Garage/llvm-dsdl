@@ -150,6 +150,7 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
 {
     std::set<std::filesystem::path> out;
 
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     for (const auto& includePath : splitEnvPaths(std::getenv("DSDL_INCLUDE_PATH")))
     {
         if (includePath.empty())
@@ -159,6 +160,7 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
         out.insert(normalizePath(includePath));
     }
 
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     for (const auto& cyphalRoot : splitEnvPaths(std::getenv("CYPHAL_PATH")))
     {
         if (cyphalRoot.empty())

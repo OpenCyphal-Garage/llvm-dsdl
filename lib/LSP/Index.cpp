@@ -928,6 +928,11 @@ public:
         worker_ = std::thread([this]() { workerLoop(); });
     }
 
+    Impl(const Impl&)            = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&)                 = delete;
+    Impl& operator=(Impl&&)      = delete;
+
     ~Impl()
     {
         shutdown();
@@ -1198,7 +1203,7 @@ private:
 };
 
 IndexManager::IndexManager(const std::string& cacheDirectory)
-    : impl_(std::make_unique<Impl>(std::move(cacheDirectory)))
+    : impl_(std::make_unique<Impl>(cacheDirectory))
 {
 }
 

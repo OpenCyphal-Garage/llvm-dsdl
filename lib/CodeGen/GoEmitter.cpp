@@ -12,6 +12,10 @@
 ///
 /// This file materializes Go type declarations and serdes helpers from backend-neutral lowering plans.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -321,7 +325,7 @@ std::string goBaseFieldType(const SemanticFieldType&                  type,
         if (type.compositeType)
         {
             const auto depPath = ctx.packagePath(*type.compositeType);
-            const auto depType = ctx.goTypeName(*type.compositeType);
+            auto       depType = ctx.goTypeName(*type.compositeType);
             if (depPath.empty() || depPath == currentPackagePath)
             {
                 return depType;
@@ -343,7 +347,7 @@ std::string goFieldType(const SemanticFieldType&                  type,
                         const std::string&                        currentPackagePath,
                         const std::map<std::string, std::string>& importAliases)
 {
-    const auto base = goBaseFieldType(type, ctx, currentPackagePath, importAliases);
+    auto base = goBaseFieldType(type, ctx, currentPackagePath, importAliases);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -1424,6 +1428,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 1, "dsdlruntime \"" + moduleName + "/dsdlruntime\"");
     for (const auto& [path, alias] : imports)
     {
+        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
         emitLine(out, 1, alias + " \"" + moduleName + "/" + path + "\"");
     }
     emitLine(out, 0, ")");
@@ -1543,11 +1548,17 @@ llvm::Error emitGo(const SemanticModule& semantic,
                 {
                     list += (list.empty() ? "" : ", ") + v;
                 }
-                diagnostics.error({"<go>", 1, 1},
-                                  "'" + fullName + "' has " + std::to_string(versions.size()) + " versions (" + list +
-                                      ") in one namespace, which Go compiles as one package; unversioned "
-                                      "type names would declare it more than once. Pass "
-                                      "--versioned-type-names, or select one version.");
+                std::string clash;
+                clash.append("'")
+                    .append(fullName)
+                    .append("' has ")
+                    .append(std::to_string(versions.size()))
+                    .append(" versions (")
+                    .append(list)
+                    .append(") in one namespace, which Go compiles as one package; unversioned "
+                            "type names would declare it more than once. Pass "
+                            "--versioned-type-names, or select one version.");
+                diagnostics.error({"<go>", 1, 1}, clash);
                 refused = true;
             }
         }

@@ -8,6 +8,8 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/RunSet.h"
 
+#include <llvm/Support/raw_ostream.h>
+#include <exception>
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -374,10 +376,11 @@ void testSignedBoundaries(Tests& tests)
             for (const auto value : values)
             {
                 const std::int64_t remainder = value % alignment;
-                const __int128     padded    = remainder == 0
-                                                   ? static_cast<__int128>(value)
-                                                   : (value > 0 ? static_cast<__int128>(value) + alignment - remainder
-                                                                : static_cast<__int128>(value) - remainder);
+                auto               padded    = static_cast<__int128>(value);
+                if (remainder != 0)
+                {
+                    padded += (value > 0) ? (alignment - remainder) : -remainder;
+                }
                 if (padded < minimum || padded > maximum)
                 {
                     representable = false;
@@ -446,7 +449,9 @@ void testSignedBoundaries(Tests& tests)
 
 }  // namespace
 
-int main()
+namespace
+{
+int runBlsExactness()
 {
     Tests tests;
     testSaturation(tests);
@@ -459,4 +464,25 @@ int main()
     }
     std::cerr << tests.failures << " BLS exactness test(s) failed\n";
     return 1;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main()
+{
+    try
+    {
+        return runBlsExactness();
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "bls-exactness: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "bls-exactness: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

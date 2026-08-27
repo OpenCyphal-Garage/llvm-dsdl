@@ -138,7 +138,7 @@ llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
     {
         return std::move(contractErr);
     }
-    return llvm::Expected<ScriptedSectionOperationPlan>(std::move(out));
+    return {std::move(out)};
 }
 
 llvm::Error validateScriptedSectionOperationPlanContract(const ScriptedSectionOperationPlan& plan,

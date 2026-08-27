@@ -126,6 +126,8 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
         // Stride beyond int64: at most one element can satisfy both congruences inside the
         // clipped range (the range span is < int64 while the period exceeds it). Find it.
         // x = a.start + da * t where t === (diff/g) * inv(da/g) (mod db/g).
+        // g divides db and Run::stride >= 1 by invariant, so m >= 1.
+        // NOLINTNEXTLINE(clang-analyzer-core.DivideZero)
         const __int128 m  = db / g;
         __int128       t0 = (diff / g) % m * (((bez % m) + m) % m) % m;
         t0                = ((t0 % m) + m) % m;
@@ -139,10 +141,13 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
     const auto lcm = static_cast<std::int64_t>(lcm128);
 
     // Smallest solution of the pair of congruences, then advance into [lo, hi].
+    // g divides db and Run::stride >= 1 by invariant, so m >= 1.
+    // NOLINTBEGIN(clang-analyzer-core.DivideZero)
     const __int128 m  = db / g;
     __int128       t0 = (diff / g) % m * (((bez % m) + m) % m) % m;
     t0                = ((t0 % m) + m) % m;
-    __int128 x0       = a.start + (static_cast<__int128>(da) * t0);  // smallest x >= a.start
+    // NOLINTEND(clang-analyzer-core.DivideZero)
+    __int128 x0 = a.start + (static_cast<__int128>(da) * t0);  // smallest x >= a.start
     if (x0 < lo)
     {
         const __int128 steps = (static_cast<__int128>(lo) - x0 + lcm - 1) / lcm;
@@ -333,18 +338,9 @@ std::int64_t RunSet::max() const
 
 bool RunSet::contains(std::int64_t value) const
 {
-    for (const auto& r : runs_)
-    {
-        if (value < r.start || value > r.last())
-        {
-            continue;
-        }
-        if ((value - r.start) % r.stride == 0)
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(runs_, [value](const Run& r) {
+        return value >= r.start && value <= r.last() && (value - r.start) % r.stride == 0;
+    });
 }
 
 bool RunSet::isSubsetOf(const RunSet& other) const

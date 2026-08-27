@@ -290,6 +290,7 @@ bool runLspJsonRpcFuzzTests()
     server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"}, {"method", 99}});
     server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 2}, {"method", ""}});
 
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937                       rng(0xD5D1U);
     std::uniform_int_distribution<int> methodLength(0, 18);
     std::uniform_int_distribution<int> charDist(0, 25);

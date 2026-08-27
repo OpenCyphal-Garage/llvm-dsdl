@@ -15,6 +15,7 @@
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 
 #include "llvmdsdl/CodeGen/CppObjectAbiEmitter.h"
+#include <algorithm>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
@@ -75,14 +76,8 @@ bool isSafeTargetTriple(llvm::StringRef triple)
     {
         return false;
     }
-    for (const char c : triple)
-    {
-        if (!llvm::isAlnum(c) && c != '-' && c != '_' && c != '.')
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(triple,
+                               [](const char c) { return llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'; });
 }
 
 /// @brief Accepts only a single safe filename component (used for the archive name): non-empty,
@@ -93,14 +88,7 @@ bool isSafePathComponent(llvm::StringRef name)
     {
         return false;
     }
-    for (const char c : name)
-    {
-        if (!llvm::isAlnum(c) && c != '-' && c != '_' && c != '.')
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(name, [](const char c) { return llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'; });
 }
 
 /// @brief True when `candidate` normalizes to a location at or under `root` (no `..` traversal escape).
@@ -279,6 +267,7 @@ std::optional<std::string> environmentValue(const char* name)
     {
         return std::nullopt;
     }
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     if (const char* value = std::getenv(name))
     {
         if (*value != '\0')
@@ -375,7 +364,7 @@ std::vector<std::string> environmentWith(const llvm::StringRef name, const llvm:
 #ifdef __APPLE__
     char* const* const block = *::_NSGetEnviron();
 #else
-    char** const block = ::environ;
+    char* const* const block = ::environ;
 #endif
 
     const std::string        prefix = name.str() + "=";

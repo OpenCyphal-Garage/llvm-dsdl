@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/ilist_iterator.h>
@@ -131,14 +132,7 @@ std::optional<mlir::OwningOpRef<mlir::ModuleOp>> lowerFixture(llvmdsdl::Diagnost
 
 bool hasDiagnosticContaining(const llvmdsdl::DiagnosticEngine& diagnostics, const std::string& needle)
 {
-    for (const auto& d : diagnostics.diagnostics())
-    {
-        if (d.message.contains(needle))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diagnostics.diagnostics(), [&](const auto& d) { return d.message.contains(needle); });
 }
 
 bool removeFirstIoAttribute(mlir::ModuleOp module, const std::string& attrName)

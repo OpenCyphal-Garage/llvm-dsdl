@@ -113,14 +113,7 @@ ValueSet refModulo(const ValueSet& a, std::int64_t divisor)
 template <typename Range>
 bool isSubset(const Range& sub, const ValueSet& super)
 {
-    for (const auto v : sub)
-    {
-        if (super.count(v) == 0)
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(sub, [&](const auto v) { return super.count(v) != 0; });
 }
 
 template <typename Range>
@@ -302,6 +295,7 @@ void testUnionSemantics(TestContext& t)
     const BitLengthSet c(ValueSet{8});
 
     t.expectSetEq((a | b).expand(), {1, 2, 3}, "operator| denotes set union");
+    // NOLINTNEXTLINE(misc-redundant-expression) -- both sides equal is what idempotence means.
     t.expectSetEq((a | a).expand(), a.expand(), "| is idempotent");
     t.expectSetEq((a | b).expand(), (b | a).expand(), "| commutes");
     t.expectSetEq(((a | b) | c).expand(), (a | (b | c)).expand(), "| associates");
@@ -703,6 +697,8 @@ void testPersistence(TestContext& t)
 
     // A moved-from object is left denoting {0} — every call on it is well-defined, not a
     // null-root crash. Both move-construction and move-assignment reset the source.
+    // Reading the moved-from source is the assertion.
+    // NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
     BitLengthSet       movedFromCtor(ValueSet{8, 16, 24});
     const BitLengthSet movedIntoCtor = std::move(movedFromCtor);
     t.expectSetEq(movedIntoCtor.expand(), {8, 16, 24}, "move-constructed target keeps the value");
@@ -717,6 +713,7 @@ void testPersistence(TestContext& t)
     assignTarget = std::move(movedFromAssign);
     t.expectSetEq(assignTarget.expand(), {40}, "move-assigned target keeps the value");
     t.expectSetEq(movedFromAssign.expand(), {0}, "move-assigned source is left denoting {0}");
+    // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 }
 
 // Spec examples: the composition patterns the semantic analyzer builds (structs, unions,
@@ -758,7 +755,9 @@ void testDsdlCompositionPatterns(TestContext& t)
 // verified differentially against the reference model over a composed-operation battery — and
 // its count/membership/subset/equality closed forms agree with enumeration. Exact relations work
 // beyond the expand() limit, and huge structured sets evaluate in closed form without enumeration.
-static void testRunSet(TestContext& t)
+namespace
+{
+void testRunSet(TestContext& t)
 {
     using llvmdsdl::RunSet;
 
@@ -997,6 +996,7 @@ static void testRunSet(TestContext& t)
         t.expect(a.equalsExact(d) == std::optional<bool>{false}, "equalsExact rejects off-by-one-count huge set");
     }
 }
+}  // namespace
 
 bool runBitLengthSetTests()
 {

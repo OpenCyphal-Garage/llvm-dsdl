@@ -12,6 +12,10 @@
 ///
 /// The pass lowers dialect-specific control flow and bit operations into EmitC-compatible forms for C code emission.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include <llvm/ADT/StringRef.h>
@@ -1540,6 +1544,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         registry.insert<mlir::emitc::EmitCDialect>();
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         auto       module               = getOperation();
@@ -2010,6 +2015,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::emitc::VerbatimOp::create(builder, loc, "/* Generated from DSDL IR by convert-dsdl-to-emitc. */");
         for (const auto& typeName : forwardDeclaredTypes)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             mlir::emitc::VerbatimOp::create(builder, loc, "typedef struct " + typeName + " " + typeName + ";");
         }
         for (const auto& symbol : capacityCheckSymbols)
@@ -2045,6 +2051,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     ctype = "float";
                 }
             }
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             mlir::emitc::VerbatimOp::create(builder, loc, ctype + " " + symbol + "(" + ctype + ");");
         }
         for (const auto& symbol : arrayLengthPrefixHelperSymbols)

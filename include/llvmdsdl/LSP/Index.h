@@ -319,6 +319,8 @@ public:
 
     IndexManager(const IndexManager&)            = delete;
     IndexManager& operator=(const IndexManager&) = delete;
+    IndexManager(IndexManager&&)                 = delete;
+    IndexManager& operator=(IndexManager&&)      = delete;
 
     /// @brief Returns cache directory in use.
     /// @return Cache directory path string.

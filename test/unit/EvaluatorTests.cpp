@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -56,14 +57,9 @@ std::shared_ptr<llvmdsdl::ExprAST> parseAssertExpression(const std::string&     
 
 bool hasErrorContaining(const llvmdsdl::DiagnosticEngine& diag, std::string_view needle)
 {
-    for (const auto& d : diag.diagnostics())
-    {
-        if (d.level == llvmdsdl::DiagnosticLevel::Error && d.message.contains(needle))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diag.diagnostics(), [&](const auto& d) {
+        return d.level == llvmdsdl::DiagnosticLevel::Error && d.message.contains(needle);
+    });
 }
 
 std::optional<llvmdsdl::Value> evaluateAssertExpression(const std::string&                     expression,

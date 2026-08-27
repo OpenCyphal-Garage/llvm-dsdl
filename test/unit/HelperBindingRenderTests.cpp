@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -23,14 +24,7 @@ namespace
 
 bool hasSubstring(const std::vector<std::string>& lines, const std::string& needle)
 {
-    for (const auto& line : lines)
-    {
-        if (line.contains(needle))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(lines, [&](const auto& line) { return line.contains(needle); });
 }
 
 }  // namespace

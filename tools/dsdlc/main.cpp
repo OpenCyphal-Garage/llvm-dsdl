@@ -12,6 +12,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <exception>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -86,7 +87,8 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
         llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
         return;
     }
-    auto              events = sink.events();
+    auto events = sink.events();
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
     if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
     {
@@ -1414,7 +1416,9 @@ void emitScsvLists(const std::vector<std::string>& inputs,
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
+{
+int runDsdlc(int argc, char** argv)
 {
     llvm::InitLLVM const y(argc, argv);
 
@@ -1601,7 +1605,10 @@ int main(int argc, char** argv)
                 message += "; did you mean ";
                 for (std::size_t i = 0; i < expansion.suggestions.size(); ++i)
                 {
-                    message += (i > 0) ? ((i + 1U == expansion.suggestions.size()) ? " or " : ", ") : "";
+                    if (i > 0)
+                    {
+                        message += (i + 1U == expansion.suggestions.size()) ? " or " : ", ";
+                    }
                     message += "'+" + expansion.suggestions[i] + "'";
                 }
                 message += "?";
@@ -1844,11 +1851,18 @@ int main(int argc, char** argv)
                         {
                             return;
                         }
-                        diagnostics.note({def.info.filePath, 1, 1},
-                                         std::string(what) + " '" + name + "' is emitted as '" + assigned +
-                                             "' for target language '" + language.name.str() +
-                                             "'; another name in the same scope already projects to '" + projected +
-                                             "'");
+                        std::string note;
+                        note.append(what)
+                            .append(" '")
+                            .append(name)
+                            .append("' is emitted as '")
+                            .append(assigned)
+                            .append("' for target language '")
+                            .append(language.name.str())
+                            .append("'; another name in the same scope already projects to '")
+                            .append(projected)
+                            .append("'");
+                        diagnostics.note({def.info.filePath, 1, 1}, note);
                     };
 
                     for (const auto& field : section.fields)
@@ -2039,6 +2053,7 @@ int main(int argc, char** argv)
 
     // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
     // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const              emitTraceEnv = std::getenv("LLVMDSDL_EMIT_TRACE");
     llvmdsdl::EmitTraceSink        emitTraceSink;
     llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
@@ -2252,4 +2267,25 @@ int main(int argc, char** argv)
 
     llvm::errs() << "Unhandled language path: " << options.targetLanguage << "\n";
     return 1;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runDsdlc(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "dsdlc: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "dsdlc: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

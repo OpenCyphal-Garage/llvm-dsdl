@@ -12,6 +12,10 @@
 ///
 /// This file orchestrates pass pipelines, helper synthesis, and translation-unit rendering for generated C artifacts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -350,6 +354,7 @@ void emitSectionTypedef(std::ostringstream&    out,
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             emitAttachedDocC(out, 1, field.doc);
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, baseType + " " + cMember + ";");
             ++emitted;
             continue;
@@ -367,9 +372,11 @@ void emitSectionTypedef(std::ostringstream&    out,
             }
             else
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          baseType + " " + cMember + "[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             ++emitted;
             continue;
@@ -479,12 +486,16 @@ void emitSectionMetadata(std::ostringstream&              out,
     {
         emitLine(out, 0, line);
     }
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        zohAliasEligible
-            ? std::string("eligible")
-            : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason
-                                                                                  : std::string("not-proven"));
+    const bool  zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    std::string zohAliasReason   = "not-proven";
+    if (zohAliasEligible)
+    {
+        zohAliasReason = "eligible";
+    }
+    else if (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+    {
+        zohAliasReason = sectionFacts->zohAliasReason;
+    }
     emitLine(out,
              0,
              "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
@@ -988,8 +999,11 @@ llvm::Error emitC(const SemanticModule& semantic,
                 : std::string();
         const std::string implGuardClose =
             options.emitDeprecationAttributes ? std::string("\n#pragma GCC diagnostic pop\n") : std::string();
+        std::string implContents;
+        implContents.reserve(implPreamble.size() + implGuardOpen.size() + emitted.size() + implGuardClose.size());
+        implContents.append(implPreamble).append(implGuardOpen).append(emitted).append(implGuardClose);
         if (auto err = writeGeneratedFile(implDir / implFileName(def.info),
-                                          implPreamble + implGuardOpen + emitted + implGuardClose,
+                                          implContents,
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

@@ -417,8 +417,14 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                     renameNotes.emplace(std::string(languageName) + ":" + def.shortName + ":" +
                                         projectedName.identifier);
                 }
-                const std::string key = std::string(languageName) + ":" + std::to_string(static_cast<int>(role)) + ":" +
-                                        namespacePath + projectedName.identifier + versionSuffix;
+                std::string key;
+                key.append(languageName)
+                    .append(":")
+                    .append(std::to_string(static_cast<int>(role)))
+                    .append(":")
+                    .append(namespacePath)
+                    .append(projectedName.identifier)
+                    .append(versionSuffix);
                 const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
                 if (!inserted && it->second != def.fullName)
                 {
@@ -436,10 +442,17 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                 {
                     languageList += (i > 0 ? ", " : "") + ("'" + languages[i] + "'");
                 }
-                diagnostics.error({def.filePath, 1, 1},
-                                  "type name collision in generated output: " + def.fullName + " and " + other +
-                                      " map to the same " + what + " for target language" +
-                                      (languages.size() > 1U ? "s " : " ") + languageList);
+                std::string collision;
+                collision.append("type name collision in generated output: ")
+                    .append(def.fullName)
+                    .append(" and ")
+                    .append(other)
+                    .append(" map to the same ")
+                    .append(what)
+                    .append(" for target language")
+                    .append(languages.size() > 1U ? "s " : " ")
+                    .append(languageList);
+                diagnostics.error({def.filePath, 1, 1}, collision);
             }
         }
 

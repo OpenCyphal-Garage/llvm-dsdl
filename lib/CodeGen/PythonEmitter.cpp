@@ -13,6 +13,10 @@
 /// This file emits Python dataclass models, serializer/deserializer methods,
 /// and runtime wiring from lowering contracts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -342,7 +346,7 @@ std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext&
 
 std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    const auto base = pyFieldBaseType(type, ctx);
+    auto base = pyFieldBaseType(type, ctx);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -1464,6 +1468,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             }
             importNames += name;
         }
+        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
         emitLine(out, 0, "from " + modulePath + " import " + importNames);
     }
 

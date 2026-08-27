@@ -307,8 +307,14 @@ void attachDocToStatement(StatementAST& statement, AttachedDoc doc)
     std::visit([&](auto& node) { node.doc = std::move(doc); }, statement);
 }
 
+// The lines are moved out individually and the source is cleared below; the && states that
+// contract to the caller.
+// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
 void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
 {
+    // Only the elements are moved out; doc.lines itself is never moved, so reading and clearing
+    // it below is well defined.
+    // NOLINTBEGIN(clang-analyzer-cplusplus.Move)
     std::visit(
         [&](auto& node) {
             node.doc.lines.insert(node.doc.lines.end(),
@@ -321,6 +327,7 @@ void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
     // *next* statement's doc -- so a stale size here prefixes every subsequent field's documentation
     // with one blank line per line of the preceding field's comment block.
     doc.lines.clear();
+    // NOLINTEND(clang-analyzer-cplusplus.Move)
 }
 
 struct CollectedDocTrivia final
@@ -372,6 +379,8 @@ bool Parser::match(TokenKind kind)
 
 bool Parser::matchAny(std::initializer_list<TokenKind> kinds)
 {
+    // This consumes the matched token, so it is not a predicate; any_of would hide the advance().
+    // NOLINTNEXTLINE(readability-use-anyofallof)
     for (TokenKind const k : kinds)
     {
         if (check(k))
@@ -740,7 +749,9 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             {
                 return static_cast<std::uint32_t>(value);
             }
-        } catch (...)
+        }
+        // NOLINTNEXTLINE(bugprone-empty-catch) -- the failure is reported by the diagnostic below.
+        catch (...)
         {
         }
         if (!silent)

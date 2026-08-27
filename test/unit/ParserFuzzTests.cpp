@@ -53,12 +53,15 @@ using llvmdsdl::Parser;
 using llvmdsdl::Token;
 
 /// @brief Heartbeat incremented after each parse; watched for stalls (hangs).
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::atomic<std::uint64_t> gHeartbeat{0};
 
 /// @brief Signals the watchdog thread to stop once fuzzing is complete.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::atomic<bool> gFinished{false};
 
 /// @brief Snapshot of the input currently being parsed, for hang diagnostics.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::string gCurrentInput;
 
 /// @brief Renders bytes as hex for reproducible failure reports.
@@ -254,6 +257,7 @@ void mutate(Rng& rng, std::string& data)
 bool runEdgeCaseCorpus()
 {
     static const auto kCorpus = std::to_array<std::string_view>({
+        // NOLINTNEXTLINE(bugprone-string-constructor) -- spelled (bytes, length) like its neighbours.
         std::string_view("", 0),                          // Empty definition.
         "\n\n\n",                                         // Only newlines.
         "# just a comment\n",                             // Only a comment.
@@ -295,6 +299,7 @@ bool runEdgeCaseCorpus()
 /// @brief Streams of fully random bytes of varied lengths.
 bool runRandomByteFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937                       rng(0x0B5E55EDU);
     std::uniform_int_distribution<int> byte(0, 255);
     bool                               ok = true;
@@ -317,6 +322,7 @@ bool runRandomByteFuzz()
 /// @brief Token-aware inputs assembled from DSDL-like fragments.
 bool runStructuredFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937 rng(0xDEFEC8EDU);
     bool         ok = true;
 
@@ -337,6 +343,7 @@ bool runStructuredFuzz()
 /// @brief Mutational fuzzing seeded from valid-looking fragments.
 bool runMutationalFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937 rng(0xF0CACC1AU);
     bool         ok = true;
 

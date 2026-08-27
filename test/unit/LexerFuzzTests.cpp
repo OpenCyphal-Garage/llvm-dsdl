@@ -260,6 +260,7 @@ void mutate(Rng& rng, std::string& data)
 bool runEdgeCaseCorpus()
 {
     static const auto kCorpus = std::to_array<std::string_view>({
+        // NOLINTNEXTLINE(bugprone-string-constructor) -- spelled (bytes, length) like its neighbours.
         std::string_view("", 0),        // Empty input.
         std::string_view("\0", 1),      // Lone NUL byte.
         std::string_view("a\0b", 3),    // Embedded NUL inside identifier run.
@@ -297,6 +298,7 @@ bool runEdgeCaseCorpus()
 /// @brief Streams of fully random bytes of varied lengths.
 bool runRandomByteFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937                       rng(0xC0FFEEU);
     std::uniform_int_distribution<int> byte(0, 255);
     bool                               ok = true;
@@ -319,6 +321,7 @@ bool runRandomByteFuzz()
 /// @brief Token-aware inputs assembled from DSDL-like fragments.
 bool runStructuredFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937 rng(0x5EED1234U);
     bool         ok = true;
 
@@ -339,6 +342,7 @@ bool runStructuredFuzz()
 /// @brief Mutational fuzzing seeded from valid fragments and edge cases.
 bool runMutationalFuzz()
 {
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937 rng(0xABCDEF01U);
     bool         ok = true;
 

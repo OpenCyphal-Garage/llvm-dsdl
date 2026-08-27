@@ -27,6 +27,16 @@
 namespace llvmdsdl
 {
 
+std::string arrayLengthPrefixHelper(const HelperBindingDirection direction, const LoweredFieldFacts* const fieldFacts)
+{
+    if (fieldFacts == nullptr)
+    {
+        return {};
+    }
+    return (direction == HelperBindingDirection::Serialize) ? fieldFacts->serArrayLengthPrefixHelper
+                                                            : fieldFacts->deserArrayLengthPrefixHelper;
+}
+
 SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&       section,
                                                        const LoweredSectionFacts*   sectionFacts,
                                                        const HelperBindingDirection direction)
@@ -50,9 +60,12 @@ SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&   
         {
             out.unionTagValidate = shared.unionTagValidate;
         }
-        const auto symbol = (direction == HelperBindingDirection::Serialize)
-                                ? (sectionFacts ? sectionFacts->serUnionTagHelper : std::string{})
-                                : (sectionFacts ? sectionFacts->deserUnionTagHelper : std::string{});
+        std::string symbol;
+        if (sectionFacts != nullptr)
+        {
+            symbol = (direction == HelperBindingDirection::Serialize) ? sectionFacts->serUnionTagHelper
+                                                                      : sectionFacts->deserUnionTagHelper;
+        }
         if (!symbol.empty() && emittedSymbols.insert(symbol).second)
         {
             out.unionTagMask = UnionTagMaskBindingDescriptor{symbol, resolveUnionTagBits(section, sectionFacts)};
@@ -96,10 +109,7 @@ SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&   
         const auto arrayDescriptor =
             buildArrayLengthHelperDescriptor(field,
                                              loweredFieldArrayPrefixBits(sectionFacts, field.name),
-                                             (direction == HelperBindingDirection::Serialize)
-                                                 ? (fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{})
-                                                 : (fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper
-                                                               : std::string{}),
+                                             arrayLengthPrefixHelper(direction, fieldFacts),
                                              fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
         if (!arrayDescriptor)
         {

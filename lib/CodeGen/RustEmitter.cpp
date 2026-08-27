@@ -248,7 +248,7 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
 
 std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    const auto base = rustFieldBaseType(type, ctx);
+    auto base = rustFieldBaseType(type, ctx);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -270,7 +270,6 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt:
-        return "0";
     case SemanticScalarCategory::SignedInt:
         return "0";
     case SemanticScalarCategory::Float:
@@ -921,8 +920,6 @@ private:
                 break;
             }
             case FieldStepKind::ScalarSint: {
-                const std::string getter =
-                    "get_i" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
                 assert(!step.scalarHelperSymbol.empty());
                 const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 const auto raw    = owner_.nextName("raw");

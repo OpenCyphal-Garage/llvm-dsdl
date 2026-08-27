@@ -716,6 +716,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
         // NaN's mantissa payload and diverges bit-for-bit from the reference
         // compiler. The helper is an identity pass-through, so matching the width
         // preserves the exact bits.
+        // NOLINTNEXTLINE(cppcoreguidelines-slicing) -- mlir::Type is a value handle, so nothing is sliced.
         auto floatTy = (bitLength == 64) ? mlir::Type(builder.getF64Type()) : mlir::Type(builder.getF32Type());
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
@@ -1263,6 +1264,7 @@ struct LowerDSDLSerializationPass
         registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect, mlir::scf::SCFDialect>();
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         if (mlir::failed(runLowerDSDLSerializationLowering(getOperation())))
@@ -1287,6 +1289,7 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
         registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect, mlir::scf::SCFDialect>();
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         if (mlir::failed(runLowerDSDLSerializationLowering(getOperation())))
@@ -1311,6 +1314,7 @@ struct AnnotateDSDLAliasabilityPass
         return "Annotate serialization plans with conservative zero-overhead aliasability facts";
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         auto            module = getOperation();
@@ -1454,6 +1458,7 @@ struct DSDLEndianLegalizePass : public mlir::PassWrapper<DSDLEndianLegalizePass,
         return "Validate and stamp DSDL target endianness metadata (no byte reordering)";
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         auto            module = getOperation();

@@ -61,13 +61,23 @@ bool runTargetResolutionTests()
     const auto root = makeUniqueTempDir();
     struct Cleanup final
     {
+        explicit Cleanup(std::filesystem::path removeAtScopeExit)
+            : path(std::move(removeAtScopeExit))
+        {
+        }
+
         std::filesystem::path path;
         ~Cleanup()
         {
             std::error_code ec;
             std::filesystem::remove_all(path, ec);
         }
-    } cleanup{root};
+
+        Cleanup(const Cleanup&)            = delete;
+        Cleanup& operator=(const Cleanup&) = delete;
+        Cleanup(Cleanup&&)                 = delete;
+        Cleanup& operator=(Cleanup&&)      = delete;
+    } const cleanup{root};
 
     const auto nsDir = root / "ns";
     writeDefinition(nsDir / "Alpha.1.0.dsdl");

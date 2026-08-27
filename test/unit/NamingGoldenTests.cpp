@@ -156,6 +156,7 @@ const std::vector<std::string>& corpus()
         // Rejected by the DSDL charset -- these pin defensive behavior only.
         "9AxisIMU",
         "foo bar",
+        // NOLINTNEXTLINE(bugprone-suspicious-missing-comma) -- split so \xa4 does not swallow the 'c'.
         "I\xe2\x9d\xa4"
         "c",
     };
@@ -625,6 +626,7 @@ std::string renderGolden()
 
 bool wantsUpdate()
 {
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const value = std::getenv("LLVMDSDL_UPDATE_NAMING_GOLDEN");
     return value != nullptr && value[0] != '\0' && std::string(value) != "0";
 }

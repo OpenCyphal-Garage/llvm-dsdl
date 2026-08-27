@@ -69,8 +69,8 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
 // (the payload cap does nothing for a hostile header that never terminates a line
 // or streams unlimited header lines — both would balloon memory in the read loop).
 // Real LSP headers are a few dozen bytes; these limits are generous.
-constexpr std::size_t kMaxHeaderLineBytes = 8U * 1024U;
-constexpr std::size_t kMaxHeaderBytes     = 64U * 1024U;
+constexpr std::size_t kMaxHeaderLineBytes = std::size_t{8} * 1024;
+constexpr std::size_t kMaxHeaderBytes     = std::size_t{64} * 1024;
 
 // Reads one CRLF/LF-terminated header line into `line`, bounded to kMaxHeaderLineBytes
 // so a line without a terminator cannot grow without limit. Returns false on stream end
