@@ -1,7 +1,7 @@
 {
     "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
     "C_Cpp.intelliSenseEngine": "disabled",
-    "cSpell.language": "en-GB",
+    "cSpell.language": "en-GB,en-US",
     "cSpell.ignoreRegExpList": [
         "Compiler_Defines"
     ],
@@ -16,8 +16,10 @@
         "appendable",
         "asan",
         "BITLENGTHSET",
+        "bugprone",
         "CEMITTER",
         "CODEGEN",
+        "cppcoreguidelines",
         "CPPEMITTER",
         "cstdint",
         "ctest",
