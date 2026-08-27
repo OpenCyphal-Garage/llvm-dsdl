@@ -18,6 +18,10 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include <cstdint>
+#include <optional>
+#include <string>
 
 namespace llvmdsdl
 {

@@ -6,7 +6,10 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
+#include <mlir/IR/Location.h>
+#include <string>
 #include <unordered_set>
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -17,9 +20,11 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <llvm/Support/Error.h>
+#include <utility>
 
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
 #include "UnitTests.h"

@@ -19,7 +19,8 @@
 #include <algorithm>
 #include <sstream>
 #include <cstddef>
-#include <memory>
+#include <memory>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <string>
 #include <type_traits>
 #include <variant>
 #include <vector>

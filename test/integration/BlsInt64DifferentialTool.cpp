@@ -6,7 +6,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
+#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <exception>
 #include <cstdint>
@@ -16,7 +18,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace

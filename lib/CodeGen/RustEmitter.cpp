@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
@@ -22,17 +23,16 @@
 #include <llvm/Support/Error.h>
 #include <cassert>
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <optional>
 #include <set>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -64,7 +64,6 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 

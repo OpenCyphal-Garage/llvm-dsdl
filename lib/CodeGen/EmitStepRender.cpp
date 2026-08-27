@@ -14,12 +14,17 @@
 #include "llvmdsdl/CodeGen/EmitStep.h"
 
 #include <cassert>
-#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {

@@ -6,11 +6,14 @@
 //===----------------------------------------------------------------------===//
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
-#include <thread>
+#include <system_error>
+#include <vector>
 
 #include "llvmdsdl/LSP/Index.h"
 

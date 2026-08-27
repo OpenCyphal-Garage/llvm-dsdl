@@ -10,6 +10,8 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "UnitTests.h"

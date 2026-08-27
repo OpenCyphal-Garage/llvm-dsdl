@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <cstddef>
 #include <functional>
@@ -18,6 +19,7 @@
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"

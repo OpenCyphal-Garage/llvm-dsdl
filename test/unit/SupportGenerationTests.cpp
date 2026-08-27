@@ -12,6 +12,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/Frontend/AST.h"
 
 namespace
 {

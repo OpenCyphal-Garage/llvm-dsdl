@@ -19,8 +19,11 @@
 
 #include <cstdint>
 #include <sstream>
+#include <string>
+#include <variant>
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/Rational.h"
 
 namespace llvmdsdl

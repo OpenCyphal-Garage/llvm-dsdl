@@ -10,12 +10,14 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <system_error>
 
 #include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/DocumentStore.h"
 #include "llvmdsdl/LSP/ServerConfig.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 
 namespace
 {

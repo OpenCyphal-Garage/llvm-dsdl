@@ -38,6 +38,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"

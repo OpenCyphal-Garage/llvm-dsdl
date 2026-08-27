@@ -17,6 +17,7 @@
 #include "llvmdsdl/Frontend/SourceLocation.h"
 
 #include <sstream>
+#include <string>
 
 namespace llvmdsdl
 {

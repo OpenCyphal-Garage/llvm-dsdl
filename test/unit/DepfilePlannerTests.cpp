@@ -6,10 +6,12 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
-#include <filesystem>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Frontend/DepfilePlanner.h"

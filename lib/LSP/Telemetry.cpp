@@ -14,6 +14,10 @@
 
 #include "llvmdsdl/LSP/Telemetry.h"
 
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace llvmdsdl::lsp

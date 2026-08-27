@@ -14,7 +14,9 @@
 
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
 
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"

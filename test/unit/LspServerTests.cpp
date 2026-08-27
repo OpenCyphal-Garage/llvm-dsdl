@@ -13,16 +13,23 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <string>
+#include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/Server.h"
 #include "llvm/Support/JSON.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/LSP/Telemetry.h"
 
 namespace
 {

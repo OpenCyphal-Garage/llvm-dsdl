@@ -15,13 +15,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/Lexer.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
 
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <regex>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {

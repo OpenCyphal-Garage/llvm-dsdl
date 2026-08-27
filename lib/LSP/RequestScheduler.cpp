@@ -14,11 +14,16 @@
 
 #include "llvmdsdl/LSP/RequestScheduler.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <exception>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>

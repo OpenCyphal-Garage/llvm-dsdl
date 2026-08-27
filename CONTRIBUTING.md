@@ -44,7 +44,6 @@ Common optional tools (enable more checks/lanes):
 - `llvm-lit` or `lit` Python module. LLVM tester
 - `clang-format`
 - `clang-tidy`
-- `include-what-you-use`
 - `cargo`/`rustc`, `go`, Node/TypeScript (`tsc`) for language-specific
   integration lanes
 - MkDocs, to preview the documentation site — installed into its own virtualenv from
@@ -283,7 +282,6 @@ Common quality targets:
 
 ```bash
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-format
-cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-iwyu
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-clang-tidy
 ```
 

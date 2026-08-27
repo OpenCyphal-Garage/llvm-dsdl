@@ -16,6 +16,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <utility>
 

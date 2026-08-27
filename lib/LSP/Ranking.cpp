@@ -18,11 +18,23 @@
 #include "llvm/Support/JSON.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
+#include <iterator>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

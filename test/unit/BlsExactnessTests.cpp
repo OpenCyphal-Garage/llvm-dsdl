@@ -7,7 +7,9 @@
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/RunSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
+#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <exception>
 #include <algorithm>
@@ -18,6 +20,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace

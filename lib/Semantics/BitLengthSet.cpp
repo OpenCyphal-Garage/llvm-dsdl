@@ -22,15 +22,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 #include "llvmdsdl/Support/IntegerMath.h"
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <limits>
 #include <map>
-#include <numeric>
+#include <memory>
 #include <optional>
+#include <set>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>

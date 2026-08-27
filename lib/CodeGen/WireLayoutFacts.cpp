@@ -17,6 +17,7 @@
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"

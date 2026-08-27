@@ -14,7 +14,6 @@
 
 #include "llvmdsdl/Frontend/TargetResolution.h"
 
-#include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -23,9 +22,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <optional>
 #include <set>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace llvmdsdl

@@ -16,9 +16,11 @@
 
 #include "llvmdsdl/Frontend/Parser.h"
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 
@@ -26,13 +28,19 @@
 #include "llvm/Support/Error.h"
 
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <llvm/ADT/ArrayRef.h>
+#include <memory>
 #include <optional>
 #include <regex>
+#include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace llvmdsdl
 {

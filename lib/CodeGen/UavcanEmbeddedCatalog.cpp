@@ -17,9 +17,10 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/SHA256.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/Parser/Parser.h>
@@ -32,9 +33,15 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 

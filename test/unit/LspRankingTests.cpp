@@ -9,8 +9,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "llvmdsdl/LSP/Ranking.h"

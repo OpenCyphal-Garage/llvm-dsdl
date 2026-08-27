@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include <exception>
+#include <ios>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -30,11 +32,11 @@
 #include <memory>
 #include <optional>
 #include <queue>
-#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <system_error>
 
@@ -52,6 +54,7 @@
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/DepfilePlanner.h"
+#include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Frontend/TargetResolution.h"
@@ -59,7 +62,9 @@
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"

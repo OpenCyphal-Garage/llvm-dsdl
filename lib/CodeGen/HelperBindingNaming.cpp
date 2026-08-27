@@ -15,6 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
+#include <llvm/ADT/StringRef.h>
+#include <string>
 
 namespace llvmdsdl
 {

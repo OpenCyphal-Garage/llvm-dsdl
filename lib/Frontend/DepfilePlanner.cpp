@@ -13,13 +13,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/DepfilePlanner.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
-#include <queue>
+#include <string>
 #include <string_view>
 #include <system_error>
-#include <unordered_set>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {

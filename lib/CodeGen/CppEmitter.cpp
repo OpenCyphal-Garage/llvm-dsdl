@@ -19,6 +19,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
@@ -26,19 +27,17 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <cassert>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <ranges>
 #include <sstream>
-#include <unordered_map>
+#include <string>
+#include <unordered_set>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <system_error>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
@@ -69,7 +68,6 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 

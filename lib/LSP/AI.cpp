@@ -16,19 +16,28 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/AI.h"
+#include "llvmdsdl/LSP/Analysis.h"
+#include "llvmdsdl/LSP/DocumentStore.h"
+#include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 
 #include "llvm/ADT/StringRef.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iosfwd>
+#include <llvm/Support/JSON.h>
+#include <mutex>
 #include <optional>
 #include <regex>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace llvmdsdl::lsp

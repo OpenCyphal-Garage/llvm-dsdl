@@ -5,10 +5,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/Rational.h"
 
 #include "UnitTests.h"

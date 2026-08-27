@@ -21,18 +21,27 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <functional>
+#include <ios>
+#include <iterator>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
+#include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
-#include <sstream>
+#include <string>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

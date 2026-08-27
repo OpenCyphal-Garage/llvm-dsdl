@@ -16,9 +16,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/JSON.h>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

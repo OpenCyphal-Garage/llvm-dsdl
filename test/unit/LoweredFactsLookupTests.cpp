@@ -6,10 +6,13 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
+#include <utility>
 
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runLoweredFactsLookupTests()
 {

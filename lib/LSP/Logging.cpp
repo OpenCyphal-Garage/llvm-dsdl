@@ -13,7 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Logging.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
 
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/JSON.h>
+#include <mutex>
+#include <string>
 #include <utility>
 
 #include "llvm/Support/raw_ostream.h"

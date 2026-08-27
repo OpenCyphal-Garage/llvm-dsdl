@@ -18,16 +18,17 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/LogicalResult.h>
+#include <mlir/Conversion/ArithToEmitC/ArithToEmitCPass.h>
+#include <mlir/Conversion/FuncToEmitC/FuncToEmitCPass.h>
+#include <mlir/Conversion/SCFToEmitC/SCFToEmitC.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
@@ -35,17 +36,15 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/Support/LLVM.h>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <fstream>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <system_error>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/CHeaderRender.h"
@@ -69,7 +68,6 @@
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinAttributes.h"
 

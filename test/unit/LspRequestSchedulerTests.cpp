@@ -7,10 +7,14 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <llvm/Support/JSON.h>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <utility>
 
 #include "llvmdsdl/LSP/RequestScheduler.h"
 

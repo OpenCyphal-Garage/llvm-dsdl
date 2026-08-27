@@ -19,27 +19,26 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 
+#include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
-#include <array>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <optional>
 #include <set>
 #include <sstream>
-#include <unordered_map>
+#include <string>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <system_error>
 #include <utility>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
@@ -47,6 +46,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
@@ -62,7 +62,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 

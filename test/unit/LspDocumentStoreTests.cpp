@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <atomic>
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <thread>

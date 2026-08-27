@@ -17,10 +17,7 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/IR/Block.h>
+#include <cstdint>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
@@ -28,6 +25,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>

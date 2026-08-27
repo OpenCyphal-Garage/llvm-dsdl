@@ -18,9 +18,11 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
+#include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
 #include <cctype>
@@ -29,13 +31,11 @@
 #include <optional>
 #include <set>
 #include <sstream>
-#include <unordered_map>
+#include <string>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
-#include <system_error>
 #include <utility>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
@@ -59,7 +59,6 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 

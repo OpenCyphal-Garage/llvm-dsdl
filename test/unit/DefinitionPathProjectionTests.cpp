@@ -10,6 +10,9 @@
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 
 bool runDefinitionPathProjectionTests()
 {

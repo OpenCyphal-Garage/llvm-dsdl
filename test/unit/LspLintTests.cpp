@@ -5,16 +5,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <llvm/Support/Error.h>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/LSP/Lint.h"

@@ -40,7 +40,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <iostream>
 #include <random>
 #include <string>

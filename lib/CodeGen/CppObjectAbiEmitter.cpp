@@ -20,7 +20,10 @@
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
@@ -30,10 +33,10 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <ranges>

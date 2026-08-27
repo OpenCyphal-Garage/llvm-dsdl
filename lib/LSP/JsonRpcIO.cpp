@@ -18,11 +18,14 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
+#include <ios>
 #include <istream>
 #include <limits>
+#include <llvm/Support/JSON.h>
+#include <mutex>
 #include <ostream>
-#include <sstream>
 #include <string>
+#include <utility>
 
 namespace llvmdsdl::lsp
 {

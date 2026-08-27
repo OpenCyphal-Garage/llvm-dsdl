@@ -18,6 +18,8 @@
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include <cstdint>
+#include <string>
 
 namespace llvmdsdl
 {

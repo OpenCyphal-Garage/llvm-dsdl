@@ -19,15 +19,17 @@
 #include "llvmdsdl/LSP/Server.h"
 #include "llvm/Support/JSON.h"
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "UnitTests.h"

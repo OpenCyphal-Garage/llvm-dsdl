@@ -13,22 +13,38 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Server.h"
+#include "llvmdsdl/LSP/AI.h"
+#include "llvmdsdl/LSP/Analysis.h"
+#include "llvmdsdl/LSP/DocumentStore.h"
+#include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/Logging.h"
+#include "llvmdsdl/LSP/Ranking.h"
+#include "llvmdsdl/LSP/RequestScheduler.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/LSP/Telemetry.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Version.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iomanip>
+#include <llvm/Support/JSON.h>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 

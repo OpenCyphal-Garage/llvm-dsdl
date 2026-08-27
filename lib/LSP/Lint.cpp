@@ -13,18 +13,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Lint.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/Rational.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <dlfcn.h>
-#include <filesystem>
 #include <memory>
 #include <optional>
-#include <set>
 #include <sstream>
+#include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

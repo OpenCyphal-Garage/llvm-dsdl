@@ -21,7 +21,9 @@
 
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Support/FlatSet.h"

@@ -20,11 +20,16 @@
 #include "llvmdsdl/LSP/Server.h"
 #include "llvm/Support/JSON.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <llvm/Support/Error.h>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "UnitTests.h"

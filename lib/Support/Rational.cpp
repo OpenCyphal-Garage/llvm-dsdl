@@ -18,7 +18,8 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
+#include <cstdlib>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <optional>
 #include <string>
 
 namespace llvmdsdl

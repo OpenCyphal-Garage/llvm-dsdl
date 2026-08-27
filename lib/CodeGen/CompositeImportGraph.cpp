@@ -16,11 +16,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {

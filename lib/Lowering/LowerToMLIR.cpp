@@ -17,8 +17,10 @@
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
@@ -27,8 +29,8 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
 #include <algorithm>
-#include <cctype>
-#include <set>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <mlir/Support/LLVM.h>
 #include <cstddef>
 #include <cstdint>
 #include <optional>

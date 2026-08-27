@@ -16,8 +16,12 @@
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 
+#include <llvm/ADT/StringRef.h>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvm/Support/Error.h"
 

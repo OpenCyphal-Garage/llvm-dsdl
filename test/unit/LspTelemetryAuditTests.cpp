@@ -22,6 +22,7 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "UnitTests.h"
 

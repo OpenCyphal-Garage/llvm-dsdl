@@ -16,8 +16,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include <map>
+#include <string>
+#include <vector>
 
 namespace llvmdsdl
 {

@@ -15,26 +15,33 @@
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 
 #include "llvmdsdl/CodeGen/CppObjectAbiEmitter.h"
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include <algorithm>
+#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Allocator.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/Pass/Pass.h>
+#include <mlir/IR/OwningOpRef.h>
+// mlir::Pass must be complete where the unique_ptr<mlir::Pass> members are destroyed.
+#include <mlir/Pass/Pass.h>  // IWYU pragma: keep
 #include <mlir/Pass/PassManager.h>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <mlir/Support/LLVM.h>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 // For the process environment block. Apple exposes it to library code only through

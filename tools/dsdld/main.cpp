@@ -23,8 +23,9 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <exception>
-#include <cstdint>
 #include <iostream>
+#include <llvm/Support/JSON.h>
+#include <string>
 
 namespace
 {

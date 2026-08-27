@@ -19,12 +19,18 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <fstream>
-#include <sstream>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/Support/FormatVariadic.h>
+#include <string>
+#include <utility>
 
 namespace llvmdsdl
 {

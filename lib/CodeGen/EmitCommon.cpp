@@ -13,17 +13,28 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <ios>
+#include <llvm/ADT/StringRef.h>
 #include <map>
 #include <set>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <system_error>
+#include <vector>
 
 namespace llvmdsdl
 {

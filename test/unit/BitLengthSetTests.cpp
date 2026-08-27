@@ -25,8 +25,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -36,6 +38,8 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 
 #include "UnitTests.h"
+#include "llvmdsdl/Semantics/RunSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace
 {

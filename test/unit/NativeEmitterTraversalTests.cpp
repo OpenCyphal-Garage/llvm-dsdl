@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -15,6 +16,8 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "UnitTests.h"

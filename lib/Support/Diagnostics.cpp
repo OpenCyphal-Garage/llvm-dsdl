@@ -15,8 +15,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
 
 namespace llvmdsdl

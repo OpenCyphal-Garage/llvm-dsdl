@@ -18,16 +18,22 @@
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvm/Support/Error.h"
 
 namespace llvmdsdl

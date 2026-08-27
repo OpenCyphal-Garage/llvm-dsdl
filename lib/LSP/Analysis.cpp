@@ -14,12 +14,20 @@
 
 #include "llvmdsdl/LSP/Analysis.h"
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/LSP/DocumentStore.h"
+#include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/Lint.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
@@ -28,17 +36,27 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <ios>
+#include <llvm/Support/Error.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <optional>
 #include <queue>
 #include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

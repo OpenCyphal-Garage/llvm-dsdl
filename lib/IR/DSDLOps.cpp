@@ -20,7 +20,6 @@
 #include <set>
 #include <string>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/LogicalResult.h>
 #include <cstdint>
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"

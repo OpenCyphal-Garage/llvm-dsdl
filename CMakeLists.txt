@@ -174,13 +174,6 @@ find_program(LLVMDSDL_CLANG_TIDY_EXE
         clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy-15
 )
 
-find_program(LLVMDSDL_IWYU_EXE
-  NAMES include-what-you-use iwyu include-what-you-use-21
-        include-what-you-use-20 include-what-you-use-19
-        include-what-you-use-18 include-what-you-use-17
-        include-what-you-use-16 include-what-you-use-15
-)
-
 find_program(LLVMDSDL_PYTHON3_EXE
   NAMES python3 python
 )
@@ -410,12 +403,6 @@ if(NOT LLVMDSDL_CLANG_TIDY_EXE)
     "until it is installed.")
 endif()
 
-if(NOT LLVMDSDL_IWYU_EXE)
-  message(WARNING
-    "include-what-you-use not found; check-iwyu target will fail "
-    "until it is installed.")
-endif()
-
 if(NOT LLVMDSDL_PYTHON3_EXE)
   message(WARNING
     "python3 not found; Python wheel staging targets will fail "
@@ -458,22 +445,6 @@ add_custom_target(check-clang-tidy
   USES_TERMINAL
   VERBATIM
   COMMENT "Checking source diagnostics with clang-tidy"
-)
-
-add_custom_target(check-iwyu
-  COMMAND
-    ${CMAKE_COMMAND}
-      -DINCLUDE_WHAT_YOU_USE=${LLVMDSDL_IWYU_EXE}
-      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
-      -DLLVMDSDL_BINARY_DIR=${LLVMDSDL_BINARY_DIR}
-      -P ${LLVMDSDL_SOURCE_DIR}/cmake/CheckIncludeWhatYouUse.cmake
-  USES_TERMINAL
-  VERBATIM
-  COMMENT "Checking source includes with include-what-you-use"
-)
-
-add_custom_target(check-include-what-you-use
-  DEPENDS check-iwyu
 )
 
 add_custom_target(distclean

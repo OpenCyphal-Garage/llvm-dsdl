@@ -22,7 +22,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Frontend/TargetResolution.h"

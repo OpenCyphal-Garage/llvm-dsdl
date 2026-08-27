@@ -17,14 +17,22 @@
 #include "llvmdsdl/Semantics/Evaluator.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <sstream>
 #include <cstdint>
 #include <limits>
-#include <memory>
+#include <memory>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace llvmdsdl
 {

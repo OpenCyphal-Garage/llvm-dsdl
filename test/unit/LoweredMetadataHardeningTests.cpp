@@ -6,10 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>

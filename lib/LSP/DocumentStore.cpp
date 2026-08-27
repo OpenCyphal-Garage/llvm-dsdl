@@ -14,8 +14,13 @@
 
 #include "llvmdsdl/LSP/DocumentStore.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {

@@ -6,7 +6,6 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
-#include <string>
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 

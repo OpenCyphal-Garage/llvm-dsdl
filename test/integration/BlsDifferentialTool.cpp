@@ -33,6 +33,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <exception>
 #include <algorithm>
@@ -42,9 +43,11 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace
 {

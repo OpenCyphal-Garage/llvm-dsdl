@@ -17,8 +17,11 @@
 
 #include "llvmdsdl/Support/NamingPolicy.h"
 
+#include <array>
 #include <cassert>
 #include <cctype>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringRef.h>
 #include <string>
 #include <vector>
 #include <cstddef>

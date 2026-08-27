@@ -17,10 +17,19 @@
 
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 
+#include <cstdint>
+#include <llvm/Support/Error.h>
+#include <string>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
+#include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {

@@ -18,13 +18,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/RunSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 #include "llvmdsdl/Support/IntegerMath.h"
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {

@@ -58,10 +58,6 @@
 # cppcoreguidelines-pro-type-reinterpret-cast
 #     Type punning is intrinsic to reading and writing a wire format.
 #
-# misc-include-cleaner
-#     `check-iwyu` owns include hygiene and carries the project's mapping file,
-#     cmake/IwyuMappings.imp.
-#
 # misc-no-recursion
 #     Recursive descent in the parser, and recursive composite traversal in the
 #     analyser and every backend.
@@ -125,7 +121,6 @@ Checks: >
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-reinterpret-cast,
-  -misc-include-cleaner,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
   -modernize-avoid-c-arrays,

@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -22,10 +23,11 @@
 
 #include <algorithm>
 #include <array>
+#include <ios>
+#include <llvm/ADT/ArrayRef.h>
 #include <map>
 #include <set>
 #include <cctype>
-#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -33,8 +35,10 @@
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {

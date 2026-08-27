@@ -20,6 +20,7 @@
 #include <string>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Semantics/Model.h"

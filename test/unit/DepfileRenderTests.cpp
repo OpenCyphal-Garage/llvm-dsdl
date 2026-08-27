@@ -5,6 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstddef>
+#include <iterator>
 #include <llvm/Support/Error.h>
 #include <chrono>
 #include <filesystem>
@@ -12,6 +14,8 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
