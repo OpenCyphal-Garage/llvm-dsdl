@@ -208,7 +208,6 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages()
     return kAll;
 }
 
-
 namespace
 {
 
@@ -277,9 +276,8 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
         // check's; the guard above lets them through. This is two *different* types.
         diagnostics.error({origin.filePath, 1, 1},
                           "type name collision in generated output: " + describeOrigin(origin) + " and " +
-                              describeOrigin(it->second) + " both emit '" + name +
-                              "' for target language '" + std::string(language.name) +
-                              "'; pass --versioned-type-names, or rename one of them");
+                              describeOrigin(it->second) + " both emit '" + name + "' for target language '" +
+                              std::string(language.name) + "'; pass --versioned-type-names, or rename one of them");
     };
 
     for (const auto& parsed : definitions)

@@ -193,7 +193,7 @@ void renderFieldSteps(const FieldEmitStep&         step,
         assert(step.children.size() == 1U);
         if (serialize)
         {
-            spelling.spellFixedArrayLenCheck(step, expr);  // D2 interface point
+            spelling.spellFixedArrayLenCheck(step, expr);                   // D2 interface point
             if (spelling.trySpellArrayBulkFastPath(step, expr, direction))  // D3 interface point
             {
                 return;

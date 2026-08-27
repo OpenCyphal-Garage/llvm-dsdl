@@ -92,9 +92,7 @@ enum class ConstantLiteralLanguage
 ///            literals (suffixes, `INT64_MIN`, integer-valued floats, TypeScript `bigint`). Defaults
 ///            to `Other`/0, which preserves value-only rendering for callers without type context.
 /// @return Rendered constant expression.
-std::string renderConstantLiteral(ConstantLiteralLanguage language,
-                                  const Value&            value,
-                                  ConstantTypeInfo        typeInfo = {});
+std::string renderConstantLiteral(ConstantLiteralLanguage language, const Value& value, ConstantTypeInfo typeInfo = {});
 
 }  // namespace llvmdsdl
 

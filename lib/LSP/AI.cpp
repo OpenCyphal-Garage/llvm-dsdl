@@ -350,10 +350,10 @@ AiToolResult runAiTool(const llvm::StringRef     tool,
         const AnalysisStats& stats          = analysis.stats();
         result.ok                           = true;
         result.value                        = llvm::json::Object{
-                                   {"snapshot_version", static_cast<std::int64_t>(analysisResult.snapshotVersion)},
-                                   {"has_errors", analysisResult.hasErrors},
-                                   {"full_rebuilds", static_cast<std::int64_t>(stats.fullRebuildCount)},
-                                   {"incremental_rebuilds", static_cast<std::int64_t>(stats.incrementalRebuildCount)},
+            {"snapshot_version", static_cast<std::int64_t>(analysisResult.snapshotVersion)},
+            {"has_errors", analysisResult.hasErrors},
+            {"full_rebuilds", static_cast<std::int64_t>(stats.fullRebuildCount)},
+            {"incremental_rebuilds", static_cast<std::int64_t>(stats.incrementalRebuildCount)},
         };
         return result;
     }

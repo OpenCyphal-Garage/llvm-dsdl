@@ -37,9 +37,9 @@ static int parseHexBytes(const char* s, uint8_t* out, size_t out_cap)
     }
     for (size_t i = 0; i < len; i += 2U)
     {
-        char        byte_hex[3] = {s[i], s[i + 1U], '\0'};
-        char*       end         = NULL;
-        const long  v           = strtol(byte_hex, &end, 16);
+        char       byte_hex[3] = {s[i], s[i + 1U], '\0'};
+        char*      end         = NULL;
+        const long v           = strtol(byte_hex, &end, 16);
         if (end != byte_hex + 2)
         {
             return -1;
@@ -99,9 +99,9 @@ int main(int argc, char** argv)
         {
             *hash = '\0';
         }
-        char        op[32];
-        char        a[8][128];
-        const int   n = sscanf(line, "%31s %127s %127s %127s %127s %127s %127s", op, a[0], a[1], a[2], a[3], a[4], a[5]);
+        char      op[32];
+        char      a[8][128];
+        const int n = sscanf(line, "%31s %127s %127s %127s %127s %127s %127s", op, a[0], a[1], a[2], a[3], a[4], a[5]);
         if (n <= 0)
         {
             continue;  // blank / comment-only line
@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 
         if (strcmp(op, "f16pack") == 0 && n == 3)
         {
-            const uint16_t got = dsdl_runtime_float16_pack(bitsToF32((uint32_t) parseHexU64(a[0])));
+            const uint16_t got  = dsdl_runtime_float16_pack(bitsToF32((uint32_t) parseHexU64(a[0])));
             const uint16_t want = (uint16_t) parseHexU64(a[1]);
             if (got != want)
             {
@@ -150,11 +150,21 @@ int main(int argc, char** argv)
                 int64_t s = 0;
                 switch (type_bits)
                 {
-                case 8:  s = dsdl_runtime_get_i8((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 16: s = dsdl_runtime_get_i16((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 32: s = dsdl_runtime_get_i32((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 64: s = dsdl_runtime_get_i64((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                default: fail(op, "bad type_bits"); return 1;
+                case 8:
+                    s = dsdl_runtime_get_i8((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 16:
+                    s = dsdl_runtime_get_i16((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 32:
+                    s = dsdl_runtime_get_i32((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 64:
+                    s = dsdl_runtime_get_i64((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                default:
+                    fail(op, "bad type_bits");
+                    return 1;
                 }
                 got = (uint64_t) s;
             }
@@ -162,27 +172,44 @@ int main(int argc, char** argv)
             {
                 switch (type_bits)
                 {
-                case 8:  got = dsdl_runtime_get_u8((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 16: got = dsdl_runtime_get_u16((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 32: got = dsdl_runtime_get_u32((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                case 64: got = dsdl_runtime_get_u64((const uint8_t*) buf, (size_t) blen, off_bits, len_bits); break;
-                default: fail(op, "bad type_bits"); return 1;
+                case 8:
+                    got = dsdl_runtime_get_u8((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 16:
+                    got = dsdl_runtime_get_u16((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 32:
+                    got = dsdl_runtime_get_u32((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                case 64:
+                    got = dsdl_runtime_get_u64((const uint8_t*) buf, (size_t) blen, off_bits, len_bits);
+                    break;
+                default:
+                    fail(op, "bad type_bits");
+                    return 1;
                 }
             }
             if (got != want)
             {
                 char d[160];
-                snprintf(d, sizeof(d), "type=%u len=%u off=%zu buf=%s want=%016llx got=%016llx",
-                         type_bits, len_bits, off_bits, a[3], (unsigned long long) want, (unsigned long long) got);
+                snprintf(d,
+                         sizeof(d),
+                         "type=%u len=%u off=%zu buf=%s want=%016llx got=%016llx",
+                         type_bits,
+                         len_bits,
+                         off_bits,
+                         a[3],
+                         (unsigned long long) want,
+                         (unsigned long long) got);
                 fail(op, d);
                 return 1;
             }
         }
         else if (strcmp(op, "copybits") == 0 && n == 7)
         {
-            const size_t dst_off = (size_t) strtoul(a[0], NULL, 10);
+            const size_t dst_off  = (size_t) strtoul(a[0], NULL, 10);
             const size_t len_bits = (size_t) strtoul(a[1], NULL, 10);
-            const size_t src_off = (size_t) strtoul(a[2], NULL, 10);
+            const size_t src_off  = (size_t) strtoul(a[2], NULL, 10);
             uint8_t      src[64];
             uint8_t      dst[64];
             uint8_t      want[64];

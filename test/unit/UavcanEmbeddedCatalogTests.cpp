@@ -53,15 +53,15 @@ bool runUavcanEmbeddedCatalogTests()
         return false;
     }
     // (2) The verifier must compute SHA-256 correctly: the empty string has a well-known digest.
-    if (!llvmdsdl::verifyEmbeddedCatalogIntegrity(
-            "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+    if (!llvmdsdl::verifyEmbeddedCatalogIntegrity("",
+                                                  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
     {
         std::cerr << "verifyEmbeddedCatalogIntegrity rejected the known empty-string digest\n";
         return false;
     }
     // (3) A mismatched hash must be rejected (the check is not a no-op).
-    if (llvmdsdl::verifyEmbeddedCatalogIntegrity(
-            "dsdl.schema @tampered {}", "0000000000000000000000000000000000000000000000000000000000000000"))
+    if (llvmdsdl::verifyEmbeddedCatalogIntegrity("dsdl.schema @tampered {}",
+                                                 "0000000000000000000000000000000000000000000000000000000000000000"))
     {
         std::cerr << "verifyEmbeddedCatalogIntegrity accepted a mismatched hash\n";
         return false;

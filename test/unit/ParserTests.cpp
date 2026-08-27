@@ -327,10 +327,10 @@ bool runParserTests()
         };
 
         const std::pair<std::string, std::string> realCases[] = {
-            {"float32 A = .5", "1/2"},     // leading point
-            {"float32 B = 3.", "3"},       // trailing point
-            {"float32 C = .5e3", "500"},   // leading point with exponent
-            {"float32 D = 1.5", "3/2"},    // unchanged single-token form
+            {"float32 A = .5", "1/2"},    // leading point
+            {"float32 B = 3.", "3"},      // trailing point
+            {"float32 C = .5e3", "500"},  // leading point with exponent
+            {"float32 D = 1.5", "3/2"},   // unchanged single-token form
         };
         for (const auto& realCase : realCases)
         {
@@ -426,8 +426,20 @@ bool runParserTests()
         };
 
         const char* const rejectedTypes[] = {
-            "uint0",   "uint65",   "uint100", "int0",  "int1",   "int65", "int128",
-            "float8",  "float17",  "float0",  "float128", "void0", "void65", "void100",
+            "uint0",
+            "uint65",
+            "uint100",
+            "int0",
+            "int1",
+            "int65",
+            "int128",
+            "float8",
+            "float17",
+            "float0",
+            "float128",
+            "void0",
+            "void65",
+            "void100",
         };
         for (const char* rejected : rejectedTypes)
         {
@@ -439,7 +451,15 @@ bool runParserTests()
         }
 
         const char* const acceptedTypes[] = {
-            "uint1", "uint64", "int2", "int64", "float16", "float32", "float64", "void1", "void64",
+            "uint1",
+            "uint64",
+            "int2",
+            "int64",
+            "float16",
+            "float32",
+            "float64",
+            "void1",
+            "void64",
         };
         for (const char* accepted : acceptedTypes)
         {

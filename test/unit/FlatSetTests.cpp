@@ -45,7 +45,7 @@ struct TestContext final
         }
     }
 
-    void expectContents(const FlatSet<std::int64_t>& set,
+    void expectContents(const FlatSet<std::int64_t>&     set,
                         const std::vector<std::int64_t>& expected,
                         const std::string&               what)
     {
@@ -74,11 +74,11 @@ void testConstruction(TestContext& t)
     t.expect(FlatSet<std::int64_t>{}.empty(), "default construction reports empty");
 
     // Initializer lists are neither sorted nor unique in general.
-    t.expectContents(FlatSet<std::int64_t>{5, 1, 5, 3, 1}, {1, 3, 5},
-                     "initializer list is sorted and de-duplicated");
+    t.expectContents(FlatSet<std::int64_t>{5, 1, 5, 3, 1}, {1, 3, 5}, "initializer list is sorted and de-duplicated");
 
     std::vector<std::int64_t> unsorted{9, 2, 9, 4};
-    t.expectContents(FlatSet<std::int64_t>(std::move(unsorted)), {2, 4, 9},
+    t.expectContents(FlatSet<std::int64_t>(std::move(unsorted)),
+                     {2, 4, 9},
                      "vector constructor sorts and de-duplicates");
 
     const std::vector<std::int64_t> already{1, 2, 3};
@@ -102,32 +102,31 @@ void testSingleInsert(TestContext& t)
 void testRangeInsert(TestContext& t)
 {
     // Into an empty set: the merge has nothing on the left-hand side.
-    FlatSet<std::int64_t> empty;
+    FlatSet<std::int64_t>           empty;
     const std::vector<std::int64_t> src{3, 1, 2};
     empty.insert(src.begin(), src.end());
     t.expectContents(empty, {1, 2, 3}, "range insert into an empty set sorts the input");
 
     // Interleaved, so a merge that mishandled either run would be visible.
-    FlatSet<std::int64_t> interleaved{1, 3, 5, 7};
+    FlatSet<std::int64_t>           interleaved{1, 3, 5, 7};
     const std::vector<std::int64_t> evens{2, 4, 6, 8};
     interleaved.insert(evens.begin(), evens.end());
     t.expectContents(interleaved, {1, 2, 3, 4, 5, 6, 7, 8}, "range insert interleaves correctly");
 
     // Duplicates on both sides of the boundary, and within the incoming range.
-    FlatSet<std::int64_t> overlapping{10, 20, 30};
+    FlatSet<std::int64_t>           overlapping{10, 20, 30};
     const std::vector<std::int64_t> dupes{30, 20, 20, 40};
     overlapping.insert(dupes.begin(), dupes.end());
-    t.expectContents(overlapping, {10, 20, 30, 40},
-                     "range insert de-duplicates across the merge boundary");
+    t.expectContents(overlapping, {10, 20, 30, 40}, "range insert de-duplicates across the merge boundary");
 
     // Entirely below the existing contents: the appended tail sorts ahead of
     // everything, which a naive merge that assumed append-order would get wrong.
-    FlatSet<std::int64_t> below{100, 200};
+    FlatSet<std::int64_t>           below{100, 200};
     const std::vector<std::int64_t> small{3, 1, 2};
     below.insert(small.begin(), small.end());
     t.expectContents(below, {1, 2, 3, 100, 200}, "range insert wholly below existing contents");
 
-    FlatSet<std::int64_t> untouched{1, 2};
+    FlatSet<std::int64_t>           untouched{1, 2};
     const std::vector<std::int64_t> nothing;
     untouched.insert(nothing.begin(), nothing.end());
     t.expectContents(untouched, {1, 2}, "empty range insert is a no-op");

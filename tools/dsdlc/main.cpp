@@ -1504,12 +1504,11 @@ int main(int argc, char** argv)
 
     logVerbose(1, "discovering and parsing definitions");
     const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage);
-    auto       ast =
-        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
-                                                     resolved->lookupDirs,
-                                                     diagnostics,
-                                                     outputLanguages,
-                                                     options.typeNameVersioning);
+    auto       ast             = llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
+                                                            resolved->lookupDirs,
+                                                            diagnostics,
+                                                            outputLanguages,
+                                                            options.typeNameVersioning);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());
@@ -1886,12 +1885,11 @@ int main(int argc, char** argv)
         const auto manifestLanguages = outputLanguages.empty()
                                            ? namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage)
                                            : outputLanguages;
-        const std::string manifest =
-            llvmdsdl::renderNamingManifest(manifestSemantic,
-                                           manifestLanguages,
-                                           llvmdsdl::kVersionString,
-                                           options.typeNameVersioning);
-        std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
+        const std::string manifest   = llvmdsdl::renderNamingManifest(manifestSemantic,
+                                                                      manifestLanguages,
+                                                                      llvmdsdl::kVersionString,
+                                                                      options.typeNameVersioning);
+        std::ofstream     stream(options.namingManifest, std::ios::binary | std::ios::trunc);
         if (!stream.good())
         {
             llvm::errs() << "cannot write naming manifest: " << options.namingManifest << "\n";
@@ -2048,7 +2046,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
@@ -2073,7 +2071,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CppEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
@@ -2103,7 +2101,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::RustEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.crateName                 = options.rustCrateName;
         emitOptions.profile                   = options.rustProfile;
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
@@ -2137,7 +2135,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::GoEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.goModuleName;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
@@ -2166,7 +2164,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::TsEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2196,7 +2194,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::PythonEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2224,12 +2222,12 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "obj")
     {
         llvmdsdl::ObjectEmitOptions emitOptions;
-        emitOptions.outDir           = options.outDir;
+        emitOptions.outDir             = options.outDir;
         emitOptions.typeNameVersioning = options.typeNameVersioning;
-        emitOptions.targetEndianness = options.objTargetEndianness;
-        emitOptions.targetTriple     = options.objTargetTriple;
-        emitOptions.archiveName      = options.objArchiveName;
-        emitOptions.noArchive        = options.objNoArchive;
+        emitOptions.targetEndianness   = options.objTargetEndianness;
+        emitOptions.targetTriple       = options.objTargetTriple;
+        emitOptions.archiveName        = options.objArchiveName;
+        emitOptions.noArchive          = options.objNoArchive;
         emitOptions.abiLanguage =
             (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp : llvmdsdl::ObjectAbiLanguage::C;
         emitOptions.compileJobs           = options.jobs;

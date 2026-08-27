@@ -40,7 +40,8 @@ def DSDL_SchemaOp
 }
 
 def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
-  let summary = "A field declaration in schema space (introspection/documentation)";
+  let summary =
+      "A field declaration in schema space (introspection/documentation)";
   let description = [{
     Carries a field's schema-level identity (name, resolved type name, optional
     generated C name, docs, and owning service section) for introspection and
@@ -56,7 +57,8 @@ def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
 }
 
 def DSDL_ConstantOp : DSDL_Op<"constant", [NoMemoryEffect]> {
-  let summary = "A constant declaration in schema space (introspection/documentation)";
+  let summary =
+      "A constant declaration in schema space (introspection/documentation)";
   let description = [{
     Carries a constant's schema-level identity (name, type name, rendered value
     text, docs, owning service section) for introspection and comment
@@ -91,8 +93,7 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let hasVerifier = 1;
 }
 
-def DSDL_ExecPlanOp
-    : DSDL_Op<"exec_plan", [NoMemoryEffect, NoTerminator]> {
+def DSDL_ExecPlanOp : DSDL_Op<"exec_plan", [NoMemoryEffect, NoTerminator]> {
   let summary = "Container for executable wire operations";
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
@@ -110,7 +111,8 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write", [NoMemoryEffect]> {
   let assemblyFormat = "attr-dict";
 }
 
-def DSDL_UnionSwitchOp : DSDL_Op<"union_switch", [NoMemoryEffect, NoTerminator]> {
+def DSDL_UnionSwitchOp
+    : DSDL_Op<"union_switch", [NoMemoryEffect, NoTerminator]> {
   let summary = "Executable union tag dispatch operation";
   let arguments = (ins I64Attr:$tag_bits);
   let regions = (region AnyRegion:$body);

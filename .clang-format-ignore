@@ -1,0 +1,17 @@
+# Files clang-format must leave alone.
+#
+# These are configure_file templates carrying @PLACEHOLDER@ substitutions, and they are not valid
+# C or C++ until CMake has expanded them. clang-format reads `@` as an operator and spaces it,
+# turning `uavcan__node__Heartbeat@CV1_0@__serialize_` into `uavcan__node__Heartbeat @CV1_0 @`,
+# which then fails to compile inside the differential parity harnesses.
+#
+# The templates that already end in `.in` are outside the format target's globs. These carry a bare
+# `.c`/`.cpp` suffix, so they need naming here.
+test/integration/CGoParityCHarness.c
+test/integration/CRustParityCHarness.c
+test/integration/CppCParityMain.cpp
+test/integration/ForwardCompatDriver.c
+test/integration/NativeDecoderFuzz.c
+test/integration/SignedNarrowCGoParityCHarness.c
+test/integration/SignedNarrowCRustParityCHarness.c
+test/integration/SignedNarrowCppCParityMain.cpp

@@ -193,7 +193,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                            builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
                                                                             def.info.majorVersion,
                                                                             def.info.minorVersion)));
-        state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
+        state.addAttribute("c_type_name",
+                           builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
         state.addAttribute("major", builder.getI32IntegerAttr(def.info.majorVersion));
@@ -379,7 +380,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
                     ioState.addAttribute("composite_minor",
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
-                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref, TypeNameVersioning::Unversioned)));
+                    ioState.addAttribute("composite_c_type_name",
+                                         builder.getStringAttr(cTypeNameFromRef(ref, TypeNameVersioning::Unversioned)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));
@@ -425,8 +427,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
     // debug snapshot — a partial module there is an acceptable view, not a codegen contract.
     if (verifyModule)
     {
-        std::string              verifyError;
-        llvm::raw_string_ostream verifyStream(verifyError);
+        std::string                   verifyError;
+        llvm::raw_string_ostream      verifyStream(verifyError);
         mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& diag) {
             verifyStream << diag.str() << '\n';
             return mlir::success();

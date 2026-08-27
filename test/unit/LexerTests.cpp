@@ -90,13 +90,13 @@ bool runLexerTests()
     // Unicode escapes decode to UTF-8.
     // A backslash built from its ASCII code keeps these test cases free of
     // source-level escape-encoding hazards while still exercising "\u"/"\U".
-    const char        backslash    = static_cast<char>(92);
-    const std::string uAsciiSpace  = std::string("'") + backslash + "u0020'";
-    const std::string uBmpEAcute   = std::string("'") + backslash + "u00e9'";
-    ok = expectValue("u-ascii-space", uAsciiSpace, " ") && ok;
-    ok = expectValue("u-bmp-e-acute", uBmpEAcute, "\xc3\xa9") && ok;
-    ok = expectValue("U-ascii-lf", R"('\U0000000a')", "\n") && ok;
-    ok = expectValue("U-emoji", R"('\U0001F600')", "\xf0\x9f\x98\x80") && ok;
+    const char        backslash   = static_cast<char>(92);
+    const std::string uAsciiSpace = std::string("'") + backslash + "u0020'";
+    const std::string uBmpEAcute  = std::string("'") + backslash + "u00e9'";
+    ok                            = expectValue("u-ascii-space", uAsciiSpace, " ") && ok;
+    ok                            = expectValue("u-bmp-e-acute", uBmpEAcute, "\xc3\xa9") && ok;
+    ok                            = expectValue("U-ascii-lf", R"('\U0000000a')", "\n") && ok;
+    ok                            = expectValue("U-emoji", R"('\U0001F600')", "\xf0\x9f\x98\x80") && ok;
 
     // Spec example (section 3.2.4): the two literals must decode identically.
     {

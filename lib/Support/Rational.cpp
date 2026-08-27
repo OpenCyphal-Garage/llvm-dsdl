@@ -148,13 +148,14 @@ Rational Rational::fromWide(__int128 numerator, __int128 denominator, bool opera
 
 Rational operator+(const Rational& lhs, const Rational& rhs)
 {
-    __int128   t1  = 0;
-    __int128   t2  = 0;
-    __int128   n   = 0;
-    __int128   d   = 0;
-    const bool of  = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
+    __int128   t1 = 0;
+    __int128   t2 = 0;
+    __int128   n  = 0;
+    __int128   d  = 0;
+    const bool of = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
                     __builtin_mul_overflow(rhs.numerator_, lhs.denominator_, &t2) ||
-                    __builtin_add_overflow(t1, t2, &n) || __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
+                    __builtin_add_overflow(t1, t2, &n) ||
+                    __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
     if (of)
     {
         return Rational::fromWide(0, 1, true);
@@ -164,13 +165,14 @@ Rational operator+(const Rational& lhs, const Rational& rhs)
 
 Rational operator-(const Rational& lhs, const Rational& rhs)
 {
-    __int128   t1  = 0;
-    __int128   t2  = 0;
-    __int128   n   = 0;
-    __int128   d   = 0;
-    const bool of  = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
+    __int128   t1 = 0;
+    __int128   t2 = 0;
+    __int128   n  = 0;
+    __int128   d  = 0;
+    const bool of = __builtin_mul_overflow(lhs.numerator_, rhs.denominator_, &t1) ||
                     __builtin_mul_overflow(rhs.numerator_, lhs.denominator_, &t2) ||
-                    __builtin_sub_overflow(t1, t2, &n) || __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
+                    __builtin_sub_overflow(t1, t2, &n) ||
+                    __builtin_mul_overflow(lhs.denominator_, rhs.denominator_, &d);
     if (of)
     {
         return Rational::fromWide(0, 1, true);

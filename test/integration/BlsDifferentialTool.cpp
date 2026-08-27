@@ -146,7 +146,7 @@ Case makeRandomCase(std::mt19937& rng)
             recipe << " A";
             const auto rhs = stack.back();
             stack.pop_back();
-            stack.back() = stack.back() + rhs;
+            stack.back()         = stack.back() + rhs;
             const double rhsCost = cost.back();
             cost.pop_back();
             cost.back() = std::min(kPyEnumCostCap + 1.0, cost.back() * rhsCost);  // cartesian product
@@ -157,7 +157,7 @@ Case makeRandomCase(std::mt19937& rng)
             recipe << " U";
             const auto rhs = stack.back();
             stack.pop_back();
-            stack.back() = stack.back() | rhs;
+            stack.back()         = stack.back() | rhs;
             const double rhsCost = cost.back();
             cost.pop_back();
             cost.back() = cost.back() + rhsCost;
@@ -173,15 +173,15 @@ Case makeRandomCase(std::mt19937& rng)
             const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
             recipe << " R" << k;
             stack.back() = stack.back().repeat(k);
-            cost.back() = multicombinations(cost.back(), k);
+            cost.back()  = multicombinations(cost.back(), k);
             break;
         }
         default: {
             const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
             recipe << " Q" << k;
             stack.back() = stack.back().repeatRange(k);
-            cost.back() = std::min(kPyEnumCostCap + 1.0,
-                                   static_cast<double>(k + 1) * multicombinations(cost.back(), k));
+            cost.back() =
+                std::min(kPyEnumCostCap + 1.0, static_cast<double>(k + 1) * multicombinations(cost.back(), k));
             break;
         }
         }
@@ -201,9 +201,7 @@ std::vector<Case> directedCases()
     // Huge-count cases are extrema/residue parity only: pydsdl cannot ENUMERATE them cheaply
     // (its expansion is combinatorial in repeat counts), but its lazy min/max/fixed/% answer
     // instantly — which is exactly the comparison that matters in the closed-form regime.
-    add("L{8} Q9000 L{16} A P8",
-        (BitLengthSet(8).repeatRange(9000) + BitLengthSet(16)).padToAlignment(8),
-        false);
+    add("L{8} Q9000 L{16} A P8", (BitLengthSet(8).repeatRange(9000) + BitLengthSet(16)).padToAlignment(8), false);
     add("L{8} Q20000 L{16} A", BitLengthSet(8).repeatRange(20000) + BitLengthSet(16), false);
     add("L{8} R100000", BitLengthSet(8).repeat(100000), false);
     add("L{8,24} Q50000", BitLengthSet(std::set<std::int64_t>{8, 24}).repeatRange(50000), false);

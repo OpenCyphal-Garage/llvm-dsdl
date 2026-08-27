@@ -61,9 +61,9 @@ bool runHelperBindingRenderTests()
         descriptor.bitLength = 3;
         descriptor.castMode  = llvmdsdl::CastMode::Saturated;
         const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::Cpp,
-                                                         llvmdsdl::ScalarBindingRenderDirection::Serialize,
-                                                         "sat_u3",
-                                                         descriptor);
+                                                             llvmdsdl::ScalarBindingRenderDirection::Serialize,
+                                                             "sat_u3",
+                                                             descriptor);
         if (!hasSubstring(lines, "value > 7ULL"))
         {
             std::cerr << "cpp saturated unsigned scalar render mismatch\n";
@@ -77,9 +77,9 @@ bool runHelperBindingRenderTests()
         descriptor.bitLength = 3;
         descriptor.castMode  = llvmdsdl::CastMode::Truncated;
         const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::Rust,
-                                                         llvmdsdl::ScalarBindingRenderDirection::Deserialize,
-                                                         "des_i3",
-                                                         descriptor);
+                                                             llvmdsdl::ScalarBindingRenderDirection::Deserialize,
+                                                             "des_i3",
+                                                             descriptor);
         if (!hasSubstring(lines, "(raw & 4u64) != 0u64") || !hasSubstring(lines, "(raw | (!7u64)) as i64"))
         {
             std::cerr << "rust signed deserialize scalar render mismatch\n";
@@ -116,9 +116,9 @@ bool runHelperBindingRenderTests()
         descriptor.bitLength = 5;
         descriptor.castMode  = llvmdsdl::CastMode::Truncated;
         const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::Go,
-                                                         llvmdsdl::ScalarBindingRenderDirection::Deserialize,
-                                                         "des_i5_go",
-                                                         descriptor);
+                                                             llvmdsdl::ScalarBindingRenderDirection::Deserialize,
+                                                             "des_i5_go",
+                                                             descriptor);
         if (!hasSubstring(lines, "raw := uint64(value) & uint64(31)") ||
             !hasSubstring(lines, "return int64(raw | (^uint64(31)))"))
         {
@@ -143,9 +143,9 @@ bool runHelperBindingRenderTests()
         descriptor.bitLength = 5;
         descriptor.castMode  = llvmdsdl::CastMode::Truncated;
         const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::TypeScript,
-                                                         llvmdsdl::ScalarBindingRenderDirection::Deserialize,
-                                                         "des_i5_ts",
-                                                         descriptor);
+                                                             llvmdsdl::ScalarBindingRenderDirection::Deserialize,
+                                                             "des_i5_ts",
+                                                             descriptor);
         if (!hasSubstring(lines, "(raw & 16n) !== 0n") || !hasSubstring(lines, "raw | (~31n)"))
         {
             std::cerr << "typescript signed deserialize scalar render mismatch\n";
@@ -181,9 +181,9 @@ bool runHelperBindingRenderTests()
         descriptor.bitLength = 4;
         descriptor.castMode  = llvmdsdl::CastMode::Saturated;
         const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::Python,
-                                                         llvmdsdl::ScalarBindingRenderDirection::Serialize,
-                                                         "sat_u4_py",
-                                                         descriptor);
+                                                             llvmdsdl::ScalarBindingRenderDirection::Serialize,
+                                                             "sat_u4_py",
+                                                             descriptor);
         if (!hasSubstring(lines, "if raw > 15:") || !hasSubstring(lines, "return 15"))
         {
             std::cerr << "python saturated unsigned scalar render mismatch\n";

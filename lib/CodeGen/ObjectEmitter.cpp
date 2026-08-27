@@ -208,11 +208,11 @@ llvm::Error setPathMode(const std::filesystem::path& path, const std::uint32_t m
 /// Recording happens whether or not anything is written, matching `writeGeneratedFile`: under
 /// `--dry-run` (which `--list-outputs` implies) the staged files do not exist on disk, and a listing
 /// that omitted them would describe an output tree the real run does not produce.
-llvm::Error publishStagedHeaders(const std::vector<std::string>&    staged,
-                                 const std::filesystem::path&       stageRoot,
-                                 const std::filesystem::path&       outRoot,
-                                 const EmitWritePolicy&             policy,
-                                 const std::vector<std::string>&    selectedTypeKeys)
+llvm::Error publishStagedHeaders(const std::vector<std::string>& staged,
+                                 const std::filesystem::path&    stageRoot,
+                                 const std::filesystem::path&    outRoot,
+                                 const EmitWritePolicy&          policy,
+                                 const std::vector<std::string>& selectedTypeKeys)
 {
     for (const auto& entry : staged)
     {
@@ -438,10 +438,10 @@ std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& ou
 
 struct CompileTask final
 {
-    std::string                 compiler;
-    std::vector<std::string>    args;
-    std::string                 failContext;
-    std::filesystem::path       objectPath;
+    std::string              compiler;
+    std::vector<std::string> args;
+    std::string              failContext;
+    std::filesystem::path    objectPath;
 };
 
 std::size_t resolveCompileJobCount(const ObjectEmitOptions& options, const std::size_t taskCount)
@@ -476,9 +476,9 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
         return llvm::Error::success();
     }
 
-    std::mutex                stateMutex;
-    std::size_t               nextTaskIndex = 0U;
-    bool                      stopScheduling{false};
+    std::mutex                 stateMutex;
+    std::size_t                nextTaskIndex = 0U;
+    bool                       stopScheduling{false};
     std::optional<std::string> firstFailure;
 
     auto worker = [&]() {
@@ -497,7 +497,7 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             const auto& task = tasks[taskIndex];
             if (auto err = executeCommand(task.compiler, task.args, task.failContext))
             {
-                const std::string message = llvm::toString(std::move(err));
+                const std::string           message = llvm::toString(std::move(err));
                 std::lock_guard<std::mutex> lock(stateMutex);
                 if (!firstFailure)
                 {
@@ -508,7 +508,7 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             }
             if (auto err = setPathMode(task.objectPath, options.writePolicy.fileMode))
             {
-                const std::string message = llvm::toString(std::move(err));
+                const std::string           message = llvm::toString(std::move(err));
                 std::lock_guard<std::mutex> lock(stateMutex);
                 if (!firstFailure)
                 {
@@ -572,7 +572,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     const std::filesystem::path cppStageRoot = outRoot / ".obj_stage_cpp";
     const std::filesystem::path cStageRoot =
         (options.abiLanguage == ObjectAbiLanguage::Cpp) ? (cppStageRoot / "c") : (outRoot / ".obj_stage_c");
-    std::error_code             ec;
+    std::error_code ec;
     std::filesystem::create_directories(outRoot, ec);
     if (ec)
     {
@@ -604,11 +604,11 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     // Opted out of the default deliberately. The C emitted here is an intermediate that this backend
     // compiles itself and the user never sees, so a deprecation diagnostic on it has no audience.
     cOptions.emitDeprecationAttributes = false;
-    cOptions.selectedTypeKeys      = options.selectedTypeKeys;
+    cOptions.selectedTypeKeys          = options.selectedTypeKeys;
     // Not opted out, unlike the deprecation attributes above: the headers this produces are
     // published as the archive's interface, so a caller writes these names.
-    cOptions.typeNameVersioning    = options.typeNameVersioning;
-    cOptions.writePolicy           = options.writePolicy;
+    cOptions.typeNameVersioning                         = options.typeNameVersioning;
+    cOptions.writePolicy                                = options.writePolicy;
     cOptions.writePolicy.recordedOutputs                = nullptr;
     cOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
 
@@ -631,11 +631,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     // Relative to the C++ stage root, the `c/` prefix survives and both stop being true.
     const std::filesystem::path cPublishStageRoot =
         (options.abiLanguage == ObjectAbiLanguage::Cpp) ? cppStageRoot : cStageRoot;
-    if (auto err = publishStagedHeaders(cGenerated,
-                                        cPublishStageRoot,
-                                        outRoot,
-                                        options.writePolicy,
-                                        options.selectedTypeKeys))
+    if (auto err =
+            publishStagedHeaders(cGenerated, cPublishStageRoot, outRoot, options.writePolicy, options.selectedTypeKeys))
     {
         return err;
     }
@@ -685,7 +682,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     {
         std::filesystem::path relative = source.filename();
         std::error_code       relEc;
-        const auto maybeRel = std::filesystem::relative(source, cStageRoot, relEc);
+        const auto            maybeRel = std::filesystem::relative(source, cStageRoot, relEc);
         if (!relEc && !maybeRel.empty())
         {
             relative = maybeRel;
@@ -701,7 +698,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         std::filesystem::create_directories(objectPath.parent_path(), ec);
         if (ec)
         {
-            return llvm::createStringError(ec, "failed to create object output directory %s", objectPath.string().c_str());
+            return llvm::createStringError(ec,
+                                           "failed to create object output directory %s",
+                                           objectPath.string().c_str());
         }
 
         std::vector<std::string> args;
@@ -750,11 +749,11 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         }
 
         CppObjectAbiEmitOptions cppStageOptions;
-        cppStageOptions.stageRoot         = cppStageRoot;
-        cppStageOptions.cStageRoot        = cStageRoot;
-        cppStageOptions.selectedTypeKeys  = options.selectedTypeKeys;
+        cppStageOptions.stageRoot          = cppStageRoot;
+        cppStageOptions.cStageRoot         = cStageRoot;
+        cppStageOptions.selectedTypeKeys   = options.selectedTypeKeys;
         cppStageOptions.typeNameVersioning = options.typeNameVersioning;
-        cppStageOptions.writePolicy       = options.writePolicy;
+        cppStageOptions.writePolicy        = options.writePolicy;
         std::vector<std::string> cppGenerated;
         cppStageOptions.writePolicy.recordedOutputs                = &cppGenerated;
         cppStageOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
@@ -784,11 +783,10 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         const std::string cxxCompiler = *cxxCompilerOrErr;
         if (!options.targetTriple.empty() && !hasClangStyleTargetFlag(cxxCompiler))
         {
-            return llvm::createStringError(
-                llvm::inconvertibleErrorCode(),
-                "compiler '%s' does not support explicit target triples in object backend; "
-                "set CXX to clang++ or omit --target-triple",
-                cxxCompiler.c_str());
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "compiler '%s' does not support explicit target triples in object backend; "
+                                           "set CXX to clang++ or omit --target-triple",
+                                           cxxCompiler.c_str());
         }
 
         objectOutputs.reserve(objectOutputs.size() + cppSources.size());
@@ -805,7 +803,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         {
             std::filesystem::path relative = source.filename();
             std::error_code       relEc;
-            const auto maybeRel = std::filesystem::relative(source, cppStageRoot, relEc);
+            const auto            maybeRel = std::filesystem::relative(source, cppStageRoot, relEc);
             if (!relEc && !maybeRel.empty())
             {
                 relative = maybeRel;
@@ -848,8 +846,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             args.push_back("-o");
             args.push_back(objectPath.string());
 
-            cppCompileTasks.push_back(
-                CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
+            cppCompileTasks.push_back(CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
         }
 
         if (auto err = runCompileTasks(cppCompileTasks, options))

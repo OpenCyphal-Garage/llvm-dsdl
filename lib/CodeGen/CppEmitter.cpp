@@ -1981,9 +1981,10 @@ std::string renderHeader(const SemanticDefinition& def,
     // not, and saying so here beats a cascade of redefinitions from inside generated code.
     if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
     {
-        const auto [anyVersion, thisVersion] =
-            renderVersionSentinelMacros(CodegenNamingLanguage::Cpp, def.info.fullName, def.info.majorVersion,
-                                        def.info.minorVersion);
+        const auto [anyVersion, thisVersion] = renderVersionSentinelMacros(CodegenNamingLanguage::Cpp,
+                                                                           def.info.fullName,
+                                                                           def.info.majorVersion,
+                                                                           def.info.minorVersion);
         out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
         out << "#  error \"" << def.info.fullName
             << ": two versions of one type in one translation unit, but generated type names are "

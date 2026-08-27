@@ -273,7 +273,7 @@ private:
     AnalyzeOptions                                             options_;
     std::vector<State>                                         state_;
     std::vector<std::optional<SemanticDefinition>>             results_;
-    std::size_t                                               analysisDepth_ = 0;
+    std::size_t                                                analysisDepth_ = 0;
     std::unordered_map<std::string, std::size_t>               indexByKey_;
     std::unordered_map<std::string, const SemanticDefinition*> externalByKey_;
 
@@ -385,8 +385,8 @@ private:
             // A deep-but-finite chain of composite references (T0 -> T1 -> ... -> Tn) would otherwise
             // recurse until the stack overflows; reject it instead. Mark Done so it is not retried.
             diagnostics_.error(module_.definitions[idx].ast.location,
-                               "composite type nesting is too deep (exceeds " +
-                                   std::to_string(kMaxAnalysisDepth) + " levels)");
+                               "composite type nesting is too deep (exceeds " + std::to_string(kMaxAnalysisDepth) +
+                                   " levels)");
             state_[idx] = State::Done;
             return &results_[idx];
         }
@@ -394,7 +394,7 @@ private:
         state_[idx] = State::Visiting;
         ++analysisDepth_;
         const llvm::scope_exit depthGuard([this]() { --analysisDepth_; });
-        const auto& parsed    = module_.definitions[idx];
+        const auto&            parsed = module_.definitions[idx];
 
         SemanticDefinition sem;
         sem.info      = parsed.info;
@@ -548,10 +548,10 @@ private:
             layout.resolved.scalarCategory = SemanticScalarCategory::Composite;
             layout.resolved.alignmentBits  = 8;
             layout.resolved.compositeType  = SemanticTypeRef{def->info.fullName,
-                                                            def->info.namespaceComponents,
-                                                            def->info.shortName,
-                                                            def->info.majorVersion,
-                                                            def->info.minorVersion};
+                                                             def->info.namespaceComponents,
+                                                             def->info.shortName,
+                                                             def->info.majorVersion,
+                                                             def->info.minorVersion};
 
             const auto& sec                     = def->request;
             layout.resolved.compositeSealed     = sec.sealed;
@@ -709,11 +709,11 @@ private:
                 // (unsigned `[0, 2^n-1]`, signed two's-complement `[-2^(n-1), 2^(n-1)-1]`); `n <= 64`
                 // so every bound fits the 128-bit constant value type. Enforced here because the
                 // Rational core deliberately no longer poisons at 64-bit range.
-                const std::uint32_t bits = prim->bitLength;
+                const std::uint32_t bits     = prim->bitLength;
                 const bool          isSigned = prim->kind == PrimitiveKind::SignedInt;
                 const __int128      minValue = isSigned ? -(static_cast<__int128>(1) << (bits - 1U)) : __int128{0};
-                const __int128      maxValue = isSigned ? (static_cast<__int128>(1) << (bits - 1U)) - 1
-                                                        : (static_cast<__int128>(1) << bits) - 1;
+                const __int128      maxValue =
+                    isSigned ? (static_cast<__int128>(1) << (bits - 1U)) - 1 : (static_cast<__int128>(1) << bits) - 1;
                 if (*wide < minValue || *wide > maxValue)
                 {
                     diagnostics_.error(decl.location,

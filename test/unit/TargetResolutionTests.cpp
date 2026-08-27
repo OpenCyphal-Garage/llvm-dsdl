@@ -72,7 +72,7 @@ bool runTargetResolutionTests()
     writeDefinition(nsDir / "Alpha.2.0.dsdl");
     writeDefinition(nsDir / "Beta.1.0.dsdl");
 
-    llvmdsdl::DiagnosticEngine   diagnostics;
+    llvmdsdl::DiagnosticEngine     diagnostics;
     llvmdsdl::TargetResolveOptions options;
 
     // A folder target sweeps. Everything under it is targeted, and nothing under it was named.
@@ -112,8 +112,7 @@ bool runTargetResolutionTests()
             std::cerr << "file target should resolve\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "a file target should name exactly itself\n";
             return false;
@@ -135,8 +134,7 @@ bool runTargetResolutionTests()
             std::cerr << "colon-syntax target should resolve\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "colon syntax should name exactly the file after the colon\n";
             return false;
@@ -160,8 +158,7 @@ bool runTargetResolutionTests()
                       << resolved->explicitTargetFiles.size() << "\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "only the file named alongside the folder should be named\n";
             return false;

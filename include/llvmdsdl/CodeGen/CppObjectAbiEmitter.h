@@ -56,9 +56,9 @@ struct CppObjectAbiEmitOptions final
 /// @param[in] options C++ ABI stage options.
 /// @param[out] outCppSources Generated C++ translation units for compilation.
 /// @return Success or descriptive generation error.
-llvm::Error emitCppObjectAbiStage(const SemanticModule&         semantic,
-                                  const LoweredFactsMap&        loweredFacts,
-                                  const CppObjectAbiEmitOptions& options,
+llvm::Error emitCppObjectAbiStage(const SemanticModule&               semantic,
+                                  const LoweredFactsMap&              loweredFacts,
+                                  const CppObjectAbiEmitOptions&      options,
                                   std::vector<std::filesystem::path>* outCppSources);
 
 }  // namespace llvmdsdl

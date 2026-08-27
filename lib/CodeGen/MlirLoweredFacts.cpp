@@ -154,8 +154,8 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
         }
 
         const auto key      = loweredTypeKey(fullName.getValue().str(),
-                                        static_cast<std::uint32_t>(major.getInt()),
-                                        static_cast<std::uint32_t>(minor.getInt()));
+                                             static_cast<std::uint32_t>(major.getInt()),
+                                             static_cast<std::uint32_t>(minor.getInt()));
         auto&      sections = keyToSections[key];
 
         if (op.getNumRegions() == 0 || op.getRegion(0).empty())

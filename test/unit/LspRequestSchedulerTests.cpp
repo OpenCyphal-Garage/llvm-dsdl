@@ -91,11 +91,11 @@ bool runLspRequestSchedulerTests()
     // released, the queue + in-flight set fills to the cap and further enqueues are
     // rejected (return false), rather than growing without limit.
     {
-        constexpr std::size_t             cap = 4;
-        llvmdsdl::lsp::RequestScheduler   bounded(cap);
-        std::mutex                        gateMutex;
-        std::condition_variable           gateCv;
-        bool                              release = false;
+        constexpr std::size_t           cap = 4;
+        llvmdsdl::lsp::RequestScheduler bounded(cap);
+        std::mutex                      gateMutex;
+        std::condition_variable         gateCv;
+        bool                            release = false;
 
         auto blockingTask = [&](llvmdsdl::lsp::CancellationToken) {
             std::unique_lock<std::mutex> lock(gateMutex);
@@ -115,8 +115,7 @@ bool runLspRequestSchedulerTests()
         }
         if (accepted > cap)
         {
-            std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap
-                      << ")\n";
+            std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap << ")\n";
             {
                 std::lock_guard<std::mutex> lock(gateMutex);
                 release = true;

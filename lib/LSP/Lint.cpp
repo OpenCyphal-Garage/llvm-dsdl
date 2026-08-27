@@ -260,10 +260,10 @@ public:
                 continue;
             }
             LintFinding finding  = makeFinding(id(),
-                                              document,
-                                              field->nameLocation,
-                                              "field should use snake_case: " + field->name,
-                                              LintSeverity::Warning);
+                                               document,
+                                               field->nameLocation,
+                                               "field should use snake_case: " + field->name,
+                                               LintSeverity::Warning);
             finding.hasFix       = true;
             finding.preferredFix = true;
             finding.fixes.push_back(LintFixEdit{
@@ -300,10 +300,10 @@ public:
                 continue;
             }
             LintFinding finding  = makeFinding(id(),
-                                              document,
-                                              constant->nameLocation,
-                                              "constant should use UPPER_SNAKE_CASE: " + constant->name,
-                                              LintSeverity::Warning);
+                                               document,
+                                               constant->nameLocation,
+                                               "constant should use UPPER_SNAKE_CASE: " + constant->name,
+                                               LintSeverity::Warning);
             finding.hasFix       = true;
             finding.preferredFix = true;
             finding.fixes.push_back(LintFixEdit{

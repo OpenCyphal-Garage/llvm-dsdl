@@ -249,9 +249,9 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
                                                const TargetResolveOptions&     options,
                                                DiagnosticEngine&               diagnostics)
 {
-    std::set<std::filesystem::path>    roots;
-    std::set<std::filesystem::path>    lookupRoots;
-    std::set<std::filesystem::path>    explicitTargets;
+    std::set<std::filesystem::path> roots;
+    std::set<std::filesystem::path> lookupRoots;
+    std::set<std::filesystem::path> explicitTargets;
     // The subset of explicitTargets the user named one at a time, rather than swept in by pointing
     // at a folder. Everything that generates cares only about the first set; a rule about what may
     // be dropped by default has to be able to see the difference.

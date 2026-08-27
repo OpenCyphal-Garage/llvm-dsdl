@@ -78,7 +78,7 @@ bool readBoundedHeaderLine(std::istream& input, std::string& line, bool& overflo
 {
     line.clear();
     overflowed = false;
-    int ch = 0;
+    int ch     = 0;
     while ((ch = input.get()) != std::char_traits<char>::eof())
     {
         if (ch == '\n')

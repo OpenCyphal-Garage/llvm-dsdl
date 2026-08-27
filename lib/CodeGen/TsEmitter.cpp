@@ -217,9 +217,9 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*  traceSink_ = nullptr;
+    EmitTraceSink*     traceSink_ = nullptr;
 };
 
 std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)

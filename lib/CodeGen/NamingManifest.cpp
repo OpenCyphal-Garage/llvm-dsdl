@@ -82,13 +82,12 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
     llvm::json::Object out;
     if (typeSymbolIsSharedProjection(language))
     {
-        out["type_name"] =
-            renderDefinitionTypeName(language,
-                                     def.info.namespaceComponents,
-                                     def.info.shortName,
-                                     def.info.majorVersion,
-                                     def.info.minorVersion,
-                                     typeNameVersioning);
+        out["type_name"] = renderDefinitionTypeName(language,
+                                                    def.info.namespaceComponents,
+                                                    def.info.shortName,
+                                                    def.info.majorVersion,
+                                                    def.info.minorVersion,
+                                                    typeNameVersioning);
     }
     // Exact for every backend: C and C++ name headers after the raw short name, which is what the
     // FileStem role returns for them, and the other four fold it -- both go through this one call.
@@ -118,10 +117,9 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
                                  const TypeNameVersioning             typeNameVersioning)
 {
     llvm::json::Object root;
-    root["version"] = 1;
-    root["tool"]    = toolVersion.str();
-    root["type_name_versioning"] =
-        (typeNameVersioning == TypeNameVersioning::Versioned) ? "versioned" : "unversioned";
+    root["version"]              = 1;
+    root["tool"]                 = toolVersion.str();
+    root["type_name_versioning"] = (typeNameVersioning == TypeNameVersioning::Versioned) ? "versioned" : "unversioned";
 
     llvm::json::Object byLanguage;
     for (const auto& [language, languageName] : languages)

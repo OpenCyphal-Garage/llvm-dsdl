@@ -129,8 +129,7 @@ LogicalResult SerializationPlanOp::verify()
             return emitOpError("lowered plan requires supported llvmdsdl.lowered_contract_version");
         }
         const auto loweredContractProducer = (*this)->getAttrOfType<StringAttr>("llvmdsdl.lowered_contract_producer");
-        if (!loweredContractProducer ||
-            loweredContractProducer.getValue() != llvmdsdl::kLoweredSerDesContractProducer)
+        if (!loweredContractProducer || loweredContractProducer.getValue() != llvmdsdl::kLoweredSerDesContractProducer)
         {
             return emitOpError("lowered plan requires llvmdsdl.lowered_contract_producer=" +
                                std::string(llvmdsdl::kLoweredSerDesContractProducer));

@@ -40,8 +40,8 @@ constexpr __int128 kInt64Max = static_cast<__int128>(INT64_MAX);
 /// suffix even for small values. Go and Python integer literals are arbitrary precision, so the bare
 /// decimal is always correct.
 std::string renderIntegerConstant(const ConstantLiteralLanguage language,
-                                  const __int128             wide,
-                                  const ConstantTypeInfo     typeInfo)
+                                  const __int128                wide,
+                                  const ConstantTypeInfo        typeInfo)
 {
     const std::string dec = wideToString(wide);
     switch (language)
@@ -175,8 +175,8 @@ std::string renderConstantLiteral(const ConstantLiteralLanguage language,
             return floatTarget ? renderIntegerValuedFloat(language, wide)
                                : renderIntegerConstant(language, wide, typeInfo);
         }
-        const std::string num = wideToString(rationalValue->numerator());
-        const std::string den = wideToString(rationalValue->denominator());
+        const std::string  num = wideToString(rationalValue->numerator());
+        const std::string  den = wideToString(rationalValue->denominator());
         std::ostringstream out;
         switch (language)
         {

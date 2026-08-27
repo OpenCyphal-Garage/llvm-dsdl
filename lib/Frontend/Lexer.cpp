@@ -305,8 +305,8 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
                                    tokens_.back().location.line == line &&
                                    tokens_.back().location.column + 1U == column;
         const bool followedByDot = peek() == '.';
-        conforms = (precededByDot || followedByDot) ? numericLiteralConforms("." + text, true)
-                                                    : numericLiteralConforms(text, false);
+        conforms                 = (precededByDot || followedByDot) ? numericLiteralConforms("." + text, true)
+                                                                    : numericLiteralConforms(text, false);
     }
     if (!conforms)
     {

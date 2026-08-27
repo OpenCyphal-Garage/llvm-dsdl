@@ -131,15 +131,59 @@ bool lexAndCheck(std::string_view context, std::string_view input)
 /// @brief Token-like fragments covering every lexer branch, used as mutation seeds.
 constexpr auto kFragments = std::to_array<std::string_view>({
     // Identifiers and keywords.
-    "uint8", "float64", "bool", "void3", "_offset_", "saturated", "truncated", "true", "false", "x_1",
+    "uint8",
+    "float64",
+    "bool",
+    "void3",
+    "_offset_",
+    "saturated",
+    "truncated",
+    "true",
+    "false",
+    "x_1",
     // Numeric literals across every scanning path.
-    "0", "42", "1_000", "0x1F", "0X0a", "0b1010", "0B11", "0o755", "0O17", "1.5", ".5", "3.", "1e9", "2.0e-3", "6.022E+23",
+    "0",
+    "42",
+    "1_000",
+    "0x1F",
+    "0X0a",
+    "0b1010",
+    "0B11",
+    "0o755",
+    "0O17",
+    "1.5",
+    ".5",
+    "3.",
+    "1e9",
+    "2.0e-3",
+    "6.022E+23",
     // String literals and escapes.
-    "'hello'", "\"world\"", "'a\\nb'", "'tab\\t'", "'q\\'q'", "\"esc\\\\\"",
+    "'hello'",
+    "\"world\"",
+    "'a\\nb'",
+    "'tab\\t'",
+    "'q\\'q'",
+    "\"esc\\\\\"",
     // Comments and directives.
-    "# a comment", "@union", "@sealed", "@assert", "@extent",
+    "# a comment",
+    "@union",
+    "@sealed",
+    "@assert",
+    "@extent",
     // Structural markers and operators.
-    "---", "----", "<=", ">=", "==", "!=", "||", "&&", "**", "[", "]", "{", "}",
+    "---",
+    "----",
+    "<=",
+    ">=",
+    "==",
+    "!=",
+    "||",
+    "&&",
+    "**",
+    "[",
+    "]",
+    "{",
+    "}",
 });
 
 /// @brief Appends a random fragment, separator, or raw byte to @p out.
@@ -152,8 +196,7 @@ void appendRandomPiece(Rng& rng, std::string& out)
     case 0:
     case 1:
     case 2:
-    case 3:
-    {
+    case 3: {
         std::uniform_int_distribution<std::size_t> pick(0, kFragments.size() - 1);
         out.append(kFragments[pick(rng)]);
         break;
@@ -167,16 +210,14 @@ void appendRandomPiece(Rng& rng, std::string& out)
     case 6:
         out.append("\r\n");
         break;
-    case 7:
-    {
+    case 7: {
         // Lone punctuation, including bytes with no two-char operator partner.
-        static constexpr std::string_view kPunct = "@()[]{},.=+-*/%|^&!<>#'\"\\:;?~`";
+        static constexpr std::string_view          kPunct = "@()[]{},.=+-*/%|^&!<>#'\"\\:;?~`";
         std::uniform_int_distribution<std::size_t> pick(0, kPunct.size() - 1);
         out.push_back(kPunct[pick(rng)]);
         break;
     }
-    default:
-    {
+    default: {
         // Any raw byte, including NUL and high-bit / non-ASCII bytes.
         std::uniform_int_distribution<int> byte(0, 255);
         out.push_back(static_cast<char>(byte(rng)));
@@ -217,30 +258,30 @@ void mutate(Rng& rng, std::string& data)
 bool runEdgeCaseCorpus()
 {
     static const auto kCorpus = std::to_array<std::string_view>({
-        std::string_view("", 0),                            // Empty input.
-        std::string_view("\0", 1),                          // Lone NUL byte.
-        std::string_view("a\0b", 3),                        // Embedded NUL inside identifier run.
-        "'unterminated",                                    // String with no closing quote at EOF.
-        "\"unterminated",                                   // Double-quoted, unterminated.
-        "'newline\nafter",                                  // String terminated by a newline.
-        "'trailing backslash\\",                            // Backslash as final byte (escape at EOF).
-        std::string_view("'\\\0'", 4),                      // Escaped NUL inside a string.
-        "0x",                                               // Hex prefix with no digits.
-        "0b",                                               // Binary prefix with no digits.
-        "0o",                                               // Octal prefix with no digits.
-        "0xGHI",                                            // Hex prefix, non-hex tail.
-        "123_",                                             // Trailing digit separator.
-        "1.2.3",                                            // Multiple dots.
-        ".",                                                // Lone dot.
-        ".e5",                                              // Dot then exponent, no mantissa digits.
-        "1e",                                               // Exponent with no digits.
-        "1e+",                                              // Exponent sign with no digits.
-        "--",                                               // Two dashes (not a marker).
-        "------",                                           // Many dashes (marker plus extras).
-        "#",                                                // Bare comment introducer.
-        "\r",                                               // Lone carriage return.
-        "\xff\xfe\x80",                                     // High-bit / non-ASCII bytes.
-        "@\xc3\xa9",                                        // Directive introducer plus UTF-8 bytes.
+        std::string_view("", 0),        // Empty input.
+        std::string_view("\0", 1),      // Lone NUL byte.
+        std::string_view("a\0b", 3),    // Embedded NUL inside identifier run.
+        "'unterminated",                // String with no closing quote at EOF.
+        "\"unterminated",               // Double-quoted, unterminated.
+        "'newline\nafter",              // String terminated by a newline.
+        "'trailing backslash\\",        // Backslash as final byte (escape at EOF).
+        std::string_view("'\\\0'", 4),  // Escaped NUL inside a string.
+        "0x",                           // Hex prefix with no digits.
+        "0b",                           // Binary prefix with no digits.
+        "0o",                           // Octal prefix with no digits.
+        "0xGHI",                        // Hex prefix, non-hex tail.
+        "123_",                         // Trailing digit separator.
+        "1.2.3",                        // Multiple dots.
+        ".",                            // Lone dot.
+        ".e5",                          // Dot then exponent, no mantissa digits.
+        "1e",                           // Exponent with no digits.
+        "1e+",                          // Exponent sign with no digits.
+        "--",                           // Two dashes (not a marker).
+        "------",                       // Many dashes (marker plus extras).
+        "#",                            // Bare comment introducer.
+        "\r",                           // Lone carriage return.
+        "\xff\xfe\x80",                 // High-bit / non-ASCII bytes.
+        "@\xc3\xa9",                    // Directive introducer plus UTF-8 bytes.
     });
 
     bool ok = true;

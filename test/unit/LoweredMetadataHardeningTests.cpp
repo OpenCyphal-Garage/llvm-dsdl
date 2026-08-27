@@ -273,8 +273,7 @@ bool runLoweringMetadataFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend +
-                                              " backend validation"))
+                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
         {
             return false;
         }
@@ -320,8 +319,7 @@ bool runSchemaIdentityFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend +
-                                              " backend validation"))
+                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
         {
             return false;
         }

@@ -665,8 +665,8 @@ bool parseSemanticDefinition(mlir::Operation& schema, SemanticDefinition& out, D
 
 bool verifyEmbeddedCatalogIntegrity(llvm::StringRef mlirText, llvm::StringRef expectedSha256Hex)
 {
-    const std::array<uint8_t, 32> digest = llvm::SHA256::hash(
-        llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t*>(mlirText.data()), mlirText.size()));
+    const std::array<uint8_t, 32> digest =
+        llvm::SHA256::hash(llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t*>(mlirText.data()), mlirText.size()));
     const std::string actual = llvm::toHex(digest, /*LowerCase=*/true);
     return actual == expectedSha256Hex;
 }
@@ -684,7 +684,7 @@ llvm::StringRef embeddedUavcanCatalogRecordedSha256()
 
 std::string embeddedUavcanCatalogComputedSha256()
 {
-    const llvm::StringRef        text = uavcan_embedded_mlir::kEmbeddedUavcanMlirText;
+    const llvm::StringRef         text = uavcan_embedded_mlir::kEmbeddedUavcanMlirText;
     const std::array<uint8_t, 32> digest =
         llvm::SHA256::hash(llvm::ArrayRef<uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size()));
     return llvm::toHex(digest, /*LowerCase=*/true);

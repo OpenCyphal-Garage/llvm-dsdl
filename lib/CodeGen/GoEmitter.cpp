@@ -251,9 +251,9 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*  traceSink_ = nullptr;
+    EmitTraceSink*     traceSink_ = nullptr;
 };
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
@@ -1534,8 +1534,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
                     list += (list.empty() ? "" : ", ") + v;
                 }
                 diagnostics.error({"<go>", 1, 1},
-                                  "'" + fullName + "' has " + std::to_string(versions.size()) + " versions (" +
-                                      list +
+                                  "'" + fullName + "' has " + std::to_string(versions.size()) + " versions (" + list +
                                       ") in one namespace, which Go compiles as one package; unversioned "
                                       "type names would declare it more than once. Pass "
                                       "--versioned-type-names, or select one version.");

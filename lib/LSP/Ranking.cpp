@@ -172,7 +172,7 @@ RankingBreakdown scoreCommon(const std::string&                  query,
 
     out.lengthPenalty = -std::min(4.0, static_cast<double>(primary.size()) / 64.0);
     out.totalScore    = out.lexicalBase + out.matchQuality + out.fuzzyBoost + out.frequencyBoost + out.recencyBoost +
-                     out.kindBoost + out.lengthPenalty;
+                        out.kindBoost + out.lengthPenalty;
     return out;
 }
 

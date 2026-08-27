@@ -250,9 +250,9 @@ bool runLspJsonRpcFuzzTests()
         std::ostringstream                   out;
         llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
         const llvm::json::Value              message = llvm::json::Object{
-                         {"jsonrpc", "2.0"},
-                         {"id", 1},
-                         {"method", "initialize"},
+            {"jsonrpc", "2.0"},
+            {"id", 1},
+            {"method", "initialize"},
         };
         if (!transport.writeMessage(message))
         {

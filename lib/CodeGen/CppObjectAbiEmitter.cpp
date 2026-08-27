@@ -279,7 +279,7 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
@@ -340,8 +340,7 @@ std::string shimScalarType(const SemanticFieldType& type, const EmitterContext& 
     return cScalarType(type);
 }
 
-std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def,
-                                                   const TypeNameVersioning  versioning)
+std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::vector<SectionPlan> out;
     if (def.isService)
@@ -1431,8 +1430,10 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             return err;
         }
-        if (auto err =
-                writeGeneratedFile(canonicalSource, renderCanonicalSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(canonicalSource,
+                                          renderCanonicalSource(def, options.typeNameVersioning),
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
@@ -1441,7 +1442,10 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(shimSource, renderShimSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(shimSource,
+                                          renderShimSource(def, options.typeNameVersioning),
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }

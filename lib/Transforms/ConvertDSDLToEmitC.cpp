@@ -1138,8 +1138,8 @@ bool emitDeserializeField(std::ostringstream& out,
             // would misplace every subsequent field, breaking delimited forward compatibility.
             emitLine(out,
                      indent,
-                     "size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" +
-                         std::to_string(index) + ";");
+                     "size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" + std::to_string(index) +
+                         ";");
             emitLine(out,
                      indent,
                      "const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName +

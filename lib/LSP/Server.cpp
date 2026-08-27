@@ -839,7 +839,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 }
             }
         }
-        const std::string positionEncoding = negotiatePositionEncoding(message.get("params"));
+        const std::string  positionEncoding = negotiatePositionEncoding(message.get("params"));
         llvm::json::Object result;
         result["capabilities"] = llvm::json::Object{
             {"positionEncoding", positionEncoding},
@@ -1125,11 +1125,11 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         (void) ensureAnalysisSnapshot(false, false);
         const std::vector<std::string>    diagnosticMessages = parseCodeActionDiagnosticMessages(message.get("params"));
         const std::vector<CodeActionData> actions            = analysis_.codeActions(range->uri,
-                                                                          range->startLine,
-                                                                          range->startCharacter,
-                                                                          range->endLine,
-                                                                          range->endCharacter,
-                                                                          diagnosticMessages);
+                                                                                     range->startLine,
+                                                                                     range->startCharacter,
+                                                                                     range->endLine,
+                                                                                     range->endCharacter,
+                                                                                     diagnosticMessages);
         llvm::json::Array                 payload;
         for (const CodeActionData& action : actions)
         {
@@ -1347,11 +1347,11 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         const llvm::json::Object* arguments = paramsObject->getObject("arguments");
         const llvm::json::Object  emptyArguments;
         const AiToolResult        result = runAiTool(*tool,
-                                              arguments ? *arguments : emptyArguments,
-                                              analysis_,
-                                              config_,
-                                              documents_,
-                                              indexManager_.get());
+                                                     arguments ? *arguments : emptyArguments,
+                                                     analysis_,
+                                                     config_,
+                                                     documents_,
+                                                     indexManager_.get());
         std::string               argumentsText;
         llvm::raw_string_ostream  argumentsStream(argumentsText);
         llvm::json::Object        argumentsObject = arguments ? *arguments : emptyArguments;
@@ -1608,7 +1608,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 }
                 return RequestTaskResult{RequestTaskStatus::Completed,
                                          llvm::json::Object{{"slept_ms", sleepMilliseconds}},
-                                                    {}};
+                                         {}};
             },
             [this, requestId = cloneJsonId(id), requestMethod = method.str()](RequestTaskResult   result,
                                                                               const std::uint64_t latencyMicros) {
@@ -2016,18 +2016,18 @@ void Server::appendAiCodeActions(const std::string&              uri,
         return;
     }
 
-    const std::optional<DocumentSnapshot> snapshot   = documents_.lookup(uri);
-    const std::string                     sourceText = snapshot ? snapshot->text : std::string{};
-    const std::vector<std::string> symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
+    const std::optional<DocumentSnapshot> snapshot    = documents_.lookup(uri);
+    const std::string                     sourceText  = snapshot ? snapshot->text : std::string{};
+    const std::vector<std::string>        symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
 
     const AiCodeActionContext                 context     = aiContextPacker_.buildCodeActionContext(uri,
-                                                                                sourceText,
-                                                                                startLine,
-                                                                                startCharacter,
-                                                                                endLine,
-                                                                                endCharacter,
-                                                                                diagnosticMessages,
-                                                                                symbolHints);
+                                                                                                    sourceText,
+                                                                                                    startLine,
+                                                                                                    startCharacter,
+                                                                                                    endLine,
+                                                                                                    endCharacter,
+                                                                                                    diagnosticMessages,
+                                                                                                    symbolHints);
     const std::vector<AiCodeActionSuggestion> suggestions = aiProvider_->suggestCodeActions(config_.aiMode, context);
 
     aiAuditLogger_.record("code_action",

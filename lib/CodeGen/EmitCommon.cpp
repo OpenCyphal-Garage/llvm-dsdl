@@ -201,8 +201,8 @@ NewestVersionSelection selectNewestTypeVersions(const SemanticModule&           
         }
         classified.insert(key);
         const std::pair<std::uint32_t, std::uint32_t> version{def.info.majorVersion, def.info.minorVersion};
-        const auto                                    it = newest.find(def.info.fullName);
-        const bool isNewest = (it != newest.end()) && (version == it->second);
+        const auto                                    it       = newest.find(def.info.fullName);
+        const bool                                    isNewest = (it != newest.end()) && (version == it->second);
         if (isNewest || pinnedKeys.contains(key))
         {
             out.selected.insert(key);

@@ -119,13 +119,13 @@ llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
         {
             const auto* const fieldFacts = findLoweredFieldFacts(sectionFacts, semanticField->name);
             operation.serializeSteps     = buildFieldEmitSteps(semanticField->resolvedType,
-                                                           fieldFacts,
-                                                           bodyField.arrayPrefixOverride,
-                                                           HelperBindingDirection::Serialize);
+                                                               fieldFacts,
+                                                               bodyField.arrayPrefixOverride,
+                                                               HelperBindingDirection::Serialize);
             operation.deserializeSteps   = buildFieldEmitSteps(semanticField->resolvedType,
-                                                             fieldFacts,
-                                                             bodyField.arrayPrefixOverride,
-                                                             HelperBindingDirection::Deserialize);
+                                                               fieldFacts,
+                                                               bodyField.arrayPrefixOverride,
+                                                               HelperBindingDirection::Deserialize);
         }
         else if (operation.valueKind == ScriptedFieldValueKind::Padding)
         {

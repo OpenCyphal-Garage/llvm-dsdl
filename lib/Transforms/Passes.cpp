@@ -435,8 +435,8 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
 
         const std::string symbolStem = "llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string serName   = symbolStem + "__ser";
-        const std::string deserName = symbolStem + "__deser";
+        const std::string serName    = symbolStem + "__ser";
+        const std::string deserName  = symbolStem + "__deser";
         op.setAttr("lowered_ser_unsigned_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_unsigned_helper", builder.getStringAttr(deserName));
 
@@ -471,8 +471,9 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             else if (castMode == "saturated")
             {
                 auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
-                auto over = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
-                result    = mlir::arith::SelectOp::create(builder, loc, over, maskConst, value).getResult();
+                auto over =
+                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
+                result = mlir::arith::SelectOp::create(builder, loc, over, maskConst, value).getResult();
             }
             else
             {
@@ -567,8 +568,8 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
 
         const std::string symbolStem = "llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string serName   = symbolStem + "__ser";
-        const std::string deserName = symbolStem + "__deser";
+        const std::string serName    = symbolStem + "__ser";
+        const std::string deserName  = symbolStem + "__deser";
         op.setAttr("lowered_ser_signed_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_signed_helper", builder.getStringAttr(deserName));
 
@@ -603,8 +604,10 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             {
                 auto minConst = mlir::arith::ConstantIntOp::create(builder, loc, minValue, 64);
                 auto maxConst = mlir::arith::ConstantIntOp::create(builder, loc, maxValue, 64);
-                auto below = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, value, minConst);
-                auto above = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
+                auto below =
+                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, value, minConst);
+                auto above =
+                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
                 auto clampedLow = mlir::arith::SelectOp::create(builder, loc, below, minConst, value);
                 result          = mlir::arith::SelectOp::create(builder, loc, above, maxConst, clampedLow).getResult();
             }
@@ -706,8 +709,8 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
         const std::string  symbolStem = "llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string serName   = symbolStem + "__ser";
-        const std::string deserName = symbolStem + "__deser";
+        const std::string  serName    = symbolStem + "__ser";
+        const std::string  deserName  = symbolStem + "__deser";
         op.setAttr("lowered_ser_float_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_float_helper", builder.getStringAttr(deserName));
 
@@ -905,8 +908,8 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
         const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
         const std::string  symbolStem = "llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string serName   = symbolStem + "__ser";
-        const std::string deserName = symbolStem + "__deser";
+        const std::string  serName    = symbolStem + "__ser";
+        const std::string  deserName  = symbolStem + "__deser";
         op.setAttr("lowered_ser_array_length_prefix_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_array_length_prefix_helper", builder.getStringAttr(deserName));
 
@@ -1006,8 +1009,8 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
 
     const std::string symbolStem =
         "llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
-    const std::string serName    = symbolStem + "__ser";
-    const std::string deserName  = symbolStem + "__deser";
+    const std::string serName   = symbolStem + "__ser";
+    const std::string deserName = symbolStem + "__deser";
     plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
     plan->setAttr(kLoweredDeserUnionTagHelperAttr, builder.getStringAttr(deserName));
 
@@ -1334,9 +1337,9 @@ struct AnnotateDSDLAliasabilityPass
                 const auto fixedSize = child.hasAttr("fixed_size");
                 const auto sealed    = child.hasAttr("sealed");
 
-                std::string reason;
-                bool        hasPayloadFields = false;
-                std::int64_t offsetBits = 0;
+                std::string  reason;
+                bool         hasPayloadFields = false;
+                std::int64_t offsetBits       = 0;
 
                 if (child.getNumRegions() > 0 && !child.getRegion(0).empty())
                 {
@@ -1359,8 +1362,8 @@ struct AnnotateDSDLAliasabilityPass
                         {
                             continue;
                         }
-                        const auto kindAttr = step.getAttrOfType<mlir::StringAttr>("kind");
-                        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+                        const auto kindAttr  = step.getAttrOfType<mlir::StringAttr>("kind");
+                        const auto kind      = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
                         const auto bitLength = nonNegative(intAttrOrDefault(&step, "bit_length", 0));
                         if (kind == "padding")
                         {
@@ -1445,8 +1448,7 @@ struct AnnotateDSDLAliasabilityPass
 // legalized marker. It performs no byte reordering. The DSDL wire format is always
 // little-endian, so per-target endianness handling lives in the emitted code (the
 // `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
-struct DSDLEndianLegalizePass
-    : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
+struct DSDLEndianLegalizePass : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
     {
@@ -1516,10 +1518,10 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
-    static mlir::PassRegistration<LowerDSDLExecPass>          regExec;
+    static mlir::PassRegistration<LowerDSDLSerializationPass>   reg;
+    static mlir::PassRegistration<LowerDSDLExecPass>            regExec;
     static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> regAlias;
-    static mlir::PassRegistration<DSDLEndianLegalizePass>     regEndian;
+    static mlir::PassRegistration<DSDLEndianLegalizePass>       regEndian;
     static mlir::PassPipelineRegistration<>
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
