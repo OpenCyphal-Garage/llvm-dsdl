@@ -19,11 +19,9 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/Pass.h>
@@ -37,6 +35,15 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+
+// For the process environment block, which the archiver invocation copies and extends. Apple's
+// _NSGetEnviron() rather than the `environ` symbol: the latter is unavailable to anything but a main
+// executable there, and this is library code.
+#if defined(__APPLE__)
+#    include <crt_externs.h>
+#else
+#    include <unistd.h>
+#endif
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
@@ -318,12 +325,15 @@ llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallb
     return *found;
 }
 
-/// @param quiet Disconnects the child's stdout and stderr instead of letting them through. For
-///              probes, whose failure is an answer rather than something the user should read.
+/// @param quiet Disconnects all three of the child's standard descriptors instead of passing ours
+///              through. For probes: their failure is an answer rather than something the user
+///              should read, and they must not consume the parent's stdin.
+/// @param env   The child's complete environment. Empty (the default) inherits ours.
 llvm::Error executeCommand(llvm::StringRef                 program,
                            const std::vector<std::string>& args,
                            llvm::StringRef                 failContext,
-                           const bool                      quiet = false)
+                           const bool                      quiet = false,
+                           llvm::ArrayRef<std::string>     env   = {})
 {
     llvm::BumpPtrAllocator                 allocator;
     llvm::StringSaver                      saver(allocator);
@@ -335,14 +345,25 @@ llvm::Error executeCommand(llvm::StringRef                 program,
         argv.push_back(saver.save(arg));
     }
 
-    // An empty path in this array disconnects that descriptor portably; nullopt inherits ours.
-    const std::optional<llvm::StringRef> silenced[3] = {std::nullopt, llvm::StringRef(""), llvm::StringRef("")};
+    // An empty path in this array disconnects that descriptor portably; nullopt inherits ours. A
+    // disconnected stdin reads as end-of-file, which is what lets a probe compile the empty
+    // translation unit `-` without naming a null device this code would have to spell per platform.
+    const std::optional<llvm::StringRef> silenced[3] = {llvm::StringRef(""), llvm::StringRef(""), llvm::StringRef("")};
     const llvm::ArrayRef<std::optional<llvm::StringRef>> redirects =
         quiet ? llvm::ArrayRef<std::optional<llvm::StringRef>>(silenced)
               : llvm::ArrayRef<std::optional<llvm::StringRef>>();
 
+    llvm::SmallVector<llvm::StringRef, 64> envRefs;
+    envRefs.reserve(env.size());
+    for (const auto& entry : env)
+    {
+        envRefs.push_back(entry);
+    }
+    const std::optional<llvm::ArrayRef<llvm::StringRef>> childEnv =
+        env.empty() ? std::nullopt : std::make_optional(llvm::ArrayRef<llvm::StringRef>(envRefs));
+
     std::string errMsg;
-    const int   rc = llvm::sys::ExecuteAndWait(program, argv, std::nullopt, redirects, 0, 0, &errMsg);
+    const int   rc = llvm::sys::ExecuteAndWait(program, argv, childEnv, redirects, 0, 0, &errMsg);
     if (rc != 0)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -354,6 +375,34 @@ llvm::Error executeCommand(llvm::StringRef                 program,
     return llvm::Error::success();
 }
 
+/// @brief This process's environment with @p name set to @p value, replacing any inherited entry.
+///
+/// Built for one child rather than applied to this process with setenv(). ExecuteAndWait takes the
+/// child's environment explicitly, so there is no reason to reach for a process-wide mutation to
+/// talk to a child -- and doing it from library code is unsound in ways the call site cannot see:
+/// setenv() races any concurrent getenv() elsewhere in the process, and the value outlives the call
+/// in a host that is not a short-lived CLI. Copying the block costs a few microseconds, once.
+std::vector<std::string> environmentWith(const llvm::StringRef name, const llvm::StringRef value)
+{
+#if defined(__APPLE__)
+    char** const block = *::_NSGetEnviron();
+#else
+    char** const block = ::environ;
+#endif
+
+    const std::string        prefix = name.str() + "=";
+    std::vector<std::string> entries;
+    for (char** entry = block; (entry != nullptr) && (*entry != nullptr); ++entry)
+    {
+        if (!llvm::StringRef(*entry).starts_with(prefix))
+        {
+            entries.emplace_back(*entry);
+        }
+    }
+    entries.emplace_back(prefix + value.str());
+    return entries;
+}
+
 bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 {
     const std::string basename = std::filesystem::path(compilerProgram.str()).filename().string();
@@ -362,37 +411,27 @@ bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 
 /// @brief Probes whether @p compilerProgram accepts `-ffile-prefix-map`.
 ///
-/// The input is a throwaway source holding a single declaration, rather than one of the staged
-/// sources: those need the include roots and endianness define that the real invocation passes, so
-/// using one would test the flags around the probe as much as the flag under it, and answer
-/// "unsupported" whenever the setup was wrong. A self-contained witness leaves only the flag.
+/// Compiles the empty translation unit on a stdin that quiet mode has already disconnected, so the
+/// probe creates no file, writes nothing, and has nothing to clean up -- there is no failure here
+/// that is not the answer itself. A driver that does not know the flag rejects it before reading any
+/// input, so an empty unit is enough to ask the question.
 ///
-/// `-fsyntax-only` so nothing is written and no output path is needed, and quiet so that a driver
-/// which does not know the flag answers the question without printing an error the user cannot act
-/// on. One process spawn per compiler for a whole run, against the hundreds of translation units
-/// that follow it.
+/// Deliberately not one of the staged sources: those need the include roots and endianness define
+/// that the real invocation passes, so using one would test the flags around the probe as much as
+/// the flag under it, and answer "unsupported" whenever the setup was wrong.
+///
+/// One process spawn per compiler for a whole run, against the hundreds of translation units that
+/// follow it.
 bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
 {
-    llvm::SmallString<128> probePath;
-    int                    probeFd = -1;
-    if (llvm::sys::fs::createTemporaryFile("llvmdsdl-file-prefix-map-probe", "c", probeFd, probePath))
+    const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.", "-fsyntax-only", "-x", "c", "-"};
+    if (auto err = executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true))
     {
+        // The only thing a failure can mean here is that the flag was refused, which is the answer.
+        llvm::consumeError(std::move(err));
         return false;
     }
-    {
-        // Takes the descriptor and closes it on the way out. A declaration rather than an empty
-        // file because an empty translation unit is not strictly valid C.
-        llvm::raw_fd_ostream probe(probeFd, /*shouldClose=*/true);
-        probe << "int llvmdsdl_file_prefix_map_probe;\n";
-    }
-
-    const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.",
-                                        "-fsyntax-only",
-                                        std::string(probePath.str())};
-    const bool                     accepted =
-        !static_cast<bool>(executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true));
-    llvm::sys::fs::remove(probePath);
-    return accepted;
+    return true;
 }
 
 /// @brief The `-ffile-prefix-map` argument that makes object output independent of @p outRoot, or
@@ -888,16 +927,17 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
         if (!options.writePolicy.dryRun)
         {
-            // Set on this process so the archiver child inherits it. dsdlc is a short-lived tool and
-            // the value is constant, so there is nothing to restore.
-            ::setenv("ZERO_AR_DATE", "1", 1);
+            // Handed to the archiver child alone. Both attempts get it: which of them runs is
+            // decided by the archiver family, and ZERO_AR_DATE is what makes the second one -- the
+            // one cctools takes -- reproducible.
+            const std::vector<std::string> archiverEnv = environmentWith("ZERO_AR_DATE", "1");
 
             std::vector<std::string> args;
             args.reserve(objectArgs.size() + 1U);
             args.push_back("rcsD");
             args.insert(args.end(), objectArgs.begin(), objectArgs.end());
 
-            if (auto err = executeCommand(*arOrErr, args, "archive invocation"))
+            if (auto err = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
             {
                 // An archiver that will not take `D` leaves nothing usable behind, so start clean
                 // rather than risk appending to a partial archive on the second attempt.
@@ -908,7 +948,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                 args.clear();
                 args.push_back("rcs");
                 args.insert(args.end(), objectArgs.begin(), objectArgs.end());
-                if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation"))
+                if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
                 {
                     return retryErr;
                 }
