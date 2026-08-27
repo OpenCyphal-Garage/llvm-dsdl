@@ -74,27 +74,27 @@ bool numericLiteralConforms(const std::string& text, bool isReal)
 /// @brief Appends a Unicode scalar value to @p out encoded as UTF-8.
 void appendUtf8(std::string& out, std::uint32_t codePoint)
 {
-    if (codePoint <= 0x7Fu)
+    if (codePoint <= 0x7FU)
     {
         out.push_back(static_cast<char>(codePoint));
     }
-    else if (codePoint <= 0x7FFu)
+    else if (codePoint <= 0x7FFU)
     {
-        out.push_back(static_cast<char>(0xC0u | (codePoint >> 6)));
-        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+        out.push_back(static_cast<char>(0xC0U | (codePoint >> 6)));
+        out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
     }
-    else if (codePoint <= 0xFFFFu)
+    else if (codePoint <= 0xFFFFU)
     {
-        out.push_back(static_cast<char>(0xE0u | (codePoint >> 12)));
-        out.push_back(static_cast<char>(0x80u | ((codePoint >> 6) & 0x3Fu)));
-        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+        out.push_back(static_cast<char>(0xE0U | (codePoint >> 12)));
+        out.push_back(static_cast<char>(0x80U | ((codePoint >> 6) & 0x3FU)));
+        out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
     }
     else
     {
-        out.push_back(static_cast<char>(0xF0u | (codePoint >> 18)));
-        out.push_back(static_cast<char>(0x80u | ((codePoint >> 12) & 0x3Fu)));
-        out.push_back(static_cast<char>(0x80u | ((codePoint >> 6) & 0x3Fu)));
-        out.push_back(static_cast<char>(0x80u | (codePoint & 0x3Fu)));
+        out.push_back(static_cast<char>(0xF0U | (codePoint >> 18)));
+        out.push_back(static_cast<char>(0x80U | ((codePoint >> 12) & 0x3FU)));
+        out.push_back(static_cast<char>(0x80U | ((codePoint >> 6) & 0x3FU)));
+        out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
     }
 }
 
@@ -121,8 +121,8 @@ void Lexer::decodeUnicodeEscape(std::string& value, int hexDigits, std::uint32_t
     std::uint32_t codePoint = 0;
     for (int i = 0; i < hexDigits; ++i)
     {
-        const char digit = peek();
-        int        nibble;
+        const char digit  = peek();
+        int        nibble = 0;
         if (digit >= '0' && digit <= '9')
         {
             nibble = digit - '0';
@@ -145,7 +145,7 @@ void Lexer::decodeUnicodeEscape(std::string& value, int hexDigits, std::uint32_t
     }
 
     // Reject values outside the Unicode scalar range (surrogates and > U+10FFFF).
-    if (codePoint > 0x10FFFFu || (codePoint >= 0xD800u && codePoint <= 0xDFFFu))
+    if (codePoint > 0x10FFFFU || (codePoint >= 0xD800U && codePoint <= 0xDFFFU))
     {
         recordError(line, column, "invalid unicode code point in string literal");
         return;
@@ -288,8 +288,8 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
         }
     }
 
-    const bool isReal = hasDot || hasExp;
-    bool       conforms;
+    const bool isReal   = hasDot || hasExp;
+    bool       conforms = false;
     if (isReal)
     {
         conforms = numericLiteralConforms(text, true);
@@ -399,7 +399,7 @@ std::vector<Token> Lexer::lex()
                 (void) advance();
                 continue;
             }
-            recordError(tokLine, tokCol, "stray carriage return (line endings must be '\\n' or '\\r\\n')");
+            recordError(tokLine, tokCol, R"(stray carriage return (line endings must be '\n' or '\r\n'))");
             (void) advance();
             continue;
         }
@@ -569,7 +569,7 @@ std::vector<Token> Lexer::lex()
             // ASCII punctuation (?, $, \, `, ~, etc.) are lexical errors rather
             // than single-character identifiers.
             static const char* const kHex = "0123456789ABCDEF";
-            const unsigned char      byte = static_cast<unsigned char>(c);
+            const auto               byte = static_cast<unsigned char>(c);
             std::string              desc;
             if (byte >= 0x20 && byte < 0x7F)
             {

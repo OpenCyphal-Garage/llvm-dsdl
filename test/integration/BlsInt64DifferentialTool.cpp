@@ -52,7 +52,7 @@ Case leaf(std::mt19937& random)
     constexpr std::int64_t          maximum = std::numeric_limits<std::int64_t>::max();
     const std::vector<std::int64_t> domain{0, 1, 2, 7, 8, 9, maximum - 9, maximum - 2, maximum - 1, maximum};
     std::set<std::int64_t>          values;
-    const std::size_t               count = 1 + random() % 3;
+    const std::size_t               count = 1 + (random() % 3);
     for (std::size_t i = 0; i < count; ++i)
     {
         values.insert(domain[random() % domain.size()]);
@@ -77,25 +77,25 @@ Case randomCase(std::uint32_t seed)
 {
     std::mt19937      random(seed);
     Case              result     = leaf(random);
-    const std::size_t operations = 2 + random() % 5;
+    const std::size_t operations = 2 + (random() % 5);
     for (std::size_t operation = 0; operation < operations; ++operation)
     {
         switch (random() % 5)
         {
         case 0: {
-            Case rhs      = leaf(random);
-            result.recipe = result.recipe + ' ' + rhs.recipe + " A";
-            result.value  = result.value + rhs.value;
+            Case const rhs = leaf(random);
+            result.recipe  = result.recipe + ' ' + rhs.recipe + " A";
+            result.value   = result.value + rhs.value;
             break;
         }
         case 1: {
-            Case rhs      = leaf(random);
-            result.recipe = result.recipe + ' ' + rhs.recipe + " U";
-            result.value  = result.value | rhs.value;
+            Case const rhs = leaf(random);
+            result.recipe  = result.recipe + ' ' + rhs.recipe + " U";
+            result.value   = result.value | rhs.value;
             break;
         }
         case 2: {
-            const std::int64_t alignment = 1 + random() % 16;
+            const std::int64_t alignment = 1 + (random() % 16);
             result.recipe += " P" + std::to_string(alignment);
             result.value = result.value.padToAlignment(alignment);
             break;

@@ -38,7 +38,7 @@
 ///         option parsing or pass pipeline failure.
 int main(int argc, char** argv)
 {
-    llvm::InitLLVM y(argc, argv);
+    llvm::InitLLVM const y(argc, argv);
     for (int i = 1; i < argc; ++i)
     {
         const llvm::StringRef arg(argv[i]);

@@ -19,6 +19,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -566,7 +567,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
 
     for (int i = 1; i < argc; ++i)
     {
-        llvm::StringRef arg(argv[i]);
+        llvm::StringRef const arg(argv[i]);
 
         if (arg == "--")
         {
@@ -1064,7 +1065,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
 
 llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
 {
-    llvm::StringRef language(options.targetLanguage);
+    llvm::StringRef const language(options.targetLanguage);
 
     auto failIf = [&](bool condition, llvm::StringRef optionName, llvm::StringRef expectedLang) -> llvm::Expected<int> {
         if (!condition)
@@ -1341,8 +1342,8 @@ std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticMod
         out.push_back(normalizePathForCompare(def.info.filePath));
     }
 
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+    std::ranges::sort(out);
+    out.erase(std::ranges::unique(out).begin(), out.end());
     return out;
 }
 
@@ -1377,8 +1378,8 @@ llvmdsdl::SemanticModule mergeSemanticModulesPreferPrimary(const llvmdsdl::Seman
 
 std::vector<std::string> dedupSorted(std::vector<std::string> values)
 {
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
+    std::ranges::sort(values);
+    values.erase(std::ranges::unique(values).begin(), values.end());
     return values;
 }
 
@@ -1394,7 +1395,7 @@ void emitScsvLists(const std::vector<std::string>& inputs,
     }
     if (listInputs && listOutputs)
     {
-        cells.push_back("");
+        cells.emplace_back("");
     }
     if (listOutputs)
     {
@@ -1415,7 +1416,7 @@ void emitScsvLists(const std::vector<std::string>& inputs,
 
 int main(int argc, char** argv)
 {
-    llvm::InitLLVM y(argc, argv);
+    llvm::InitLLVM const y(argc, argv);
 
     const auto startTime = std::chrono::steady_clock::now();
 
@@ -1960,7 +1961,7 @@ int main(int argc, char** argv)
 
     // determinism-ok: sorted on the next line, before anything reads it.
     std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());
-    std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
+    std::ranges::sort(selectedTypeKeys);
 
     std::vector<std::string>                                  generatedOutputs;
     std::unordered_map<std::string, std::vector<std::string>> generatedOutputRequiredTypeKeys;

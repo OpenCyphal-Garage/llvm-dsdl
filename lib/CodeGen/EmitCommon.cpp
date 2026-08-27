@@ -226,7 +226,7 @@ NewestVersionSelection selectNewestTypeVersions(const SemanticModule&           
         }
     }
 
-    std::sort(out.dropped.begin(), out.dropped.end());
+    std::ranges::sort(out.dropped);
     return out;
 }
 
@@ -281,7 +281,7 @@ std::vector<std::string> wrapCommentText(const std::string& text, const std::siz
     }
     if (lines.empty())
     {
-        lines.push_back(std::string{});
+        lines.emplace_back();
     }
     return lines;
 }
@@ -317,7 +317,7 @@ AttachedDoc docWithDeprecationNotice(const AttachedDoc&  doc,
 
 std::unordered_set<std::string> makeTypeKeySet(const std::vector<std::string>& typeKeys)
 {
-    return std::unordered_set<std::string>(typeKeys.begin(), typeKeys.end());
+    return {typeKeys.begin(), typeKeys.end()};
 }
 
 bool shouldEmitDefinition(const DiscoveredDefinition&            info,
@@ -421,8 +421,8 @@ llvm::Error writeGeneratedFile(const std::filesystem::path&    path,
 std::string renderMakeDepfile(const std::string& target, const std::vector<std::string>& deps)
 {
     std::vector<std::string> normalizedDeps = deps;
-    std::sort(normalizedDeps.begin(), normalizedDeps.end());
-    normalizedDeps.erase(std::unique(normalizedDeps.begin(), normalizedDeps.end()), normalizedDeps.end());
+    std::ranges::sort(normalizedDeps);
+    normalizedDeps.erase(std::ranges::unique(normalizedDeps).begin(), normalizedDeps.end());
     return renderMakeRuleFromPreparedDeps(target, normalizedDeps);
 }
 
@@ -513,7 +513,7 @@ llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
     for (const auto& entry : previous)
     {
         const auto path = std::filesystem::path(entry).lexically_normal();
-        if (current.count(path.string()) != 0U)
+        if (current.contains(path.string()))
         {
             continue;
         }
@@ -528,9 +528,7 @@ llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
         }
         stale.push_back(path);
     }
-    std::sort(stale.begin(), stale.end(), [](const auto& a, const auto& b) {
-        return a.string().size() > b.string().size();
-    });
+    std::ranges::sort(stale, [](const auto& a, const auto& b) { return a.string().size() > b.string().size(); });
 
     std::set<std::filesystem::path> touchedDirectories;
     for (const auto& path : stale)
@@ -552,9 +550,7 @@ llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
 
     // Bottom-up: removing a leaf may empty its parent, which may empty its parent.
     std::vector<std::filesystem::path> candidates(touchedDirectories.begin(), touchedDirectories.end());
-    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
-        return a.string().size() > b.string().size();
-    });
+    std::ranges::sort(candidates, [](const auto& a, const auto& b) { return a.string().size() > b.string().size(); });
     for (std::size_t index = 0; index < candidates.size(); ++index)
     {
         const auto& directory = candidates[index];

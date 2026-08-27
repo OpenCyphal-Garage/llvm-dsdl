@@ -113,7 +113,7 @@ Case makeRandomCase(std::mt19937& rng)
     std::vector<double>       cost;  // parallel pydsdl-enumeration cost estimate per stack slot
 
     const auto pushLeaf = [&]() {
-        const std::size_t      n = 1 + rng() % 4;
+        const std::size_t      n = 1 + (rng() % 4);
         std::set<std::int64_t> values;
         for (std::size_t i = 0; i < n; ++i)
         {
@@ -131,12 +131,12 @@ Case makeRandomCase(std::mt19937& rng)
             first = false;
         }
         recipe << '}';
-        stack.push_back(BitLengthSet(values));
+        stack.emplace_back(values);
         cost.push_back(static_cast<double>(values.size()));
     };
 
     pushLeaf();
-    const std::size_t operations = 2 + rng() % 5;
+    const std::size_t operations = 2 + (rng() % 5);
     for (std::size_t i = 0; i < operations; ++i)
     {
         switch (rng() % 5)
@@ -170,14 +170,14 @@ Case makeRandomCase(std::mt19937& rng)
             break;
         }
         case 3: {
-            const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
+            const auto k = static_cast<std::int64_t>(rng() % 5);
             recipe << " R" << k;
             stack.back() = stack.back().repeat(k);
             cost.back()  = multicombinations(cost.back(), k);
             break;
         }
         default: {
-            const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
+            const auto k = static_cast<std::int64_t>(rng() % 5);
             recipe << " Q" << k;
             stack.back() = stack.back().repeatRange(k);
             cost.back() =

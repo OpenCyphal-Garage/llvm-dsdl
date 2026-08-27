@@ -186,14 +186,14 @@ public:
     /// @param[in] diagnostics Associated diagnostic messages.
     /// @param[in] symbolHints Nearby symbol names.
     /// @return Bounded AI context payload.
-    [[nodiscard]] AiCodeActionContext buildCodeActionContext(const std::string&              uri,
-                                                             const std::string&              sourceText,
-                                                             std::uint32_t                   startLine,
-                                                             std::uint32_t                   startCharacter,
-                                                             std::uint32_t                   endLine,
-                                                             std::uint32_t                   endCharacter,
-                                                             const std::vector<std::string>& diagnostics,
-                                                             const std::vector<std::string>& symbolHints) const;
+    [[nodiscard]] static AiCodeActionContext buildCodeActionContext(const std::string&              uri,
+                                                                    const std::string&              sourceText,
+                                                                    std::uint32_t                   startLine,
+                                                                    std::uint32_t                   startCharacter,
+                                                                    std::uint32_t                   endLine,
+                                                                    std::uint32_t                   endCharacter,
+                                                                    const std::vector<std::string>& diagnostics,
+                                                                    const std::vector<std::string>& symbolHints);
 };
 
 /// @brief Abstract AI provider interface for code-action assistance.

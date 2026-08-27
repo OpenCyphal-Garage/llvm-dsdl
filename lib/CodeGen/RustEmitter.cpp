@@ -157,7 +157,7 @@ public:
         return index_.find(ref);
     }
 
-    std::string rustModuleName(const DiscoveredDefinition& info) const
+    static std::string rustModuleName(const DiscoveredDefinition& info)
     {
         return renderDefinitionFileStem(CodegenNamingLanguage::Rust,
                                         info.shortName,
@@ -318,7 +318,7 @@ public:
                                        sectionFacts,
                                        HelperBindingDirection::Serialize,
                                        NativeFunctionSkeletonCallbacks{
-                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                           [&out](const SectionHelperBindingPlan& helperBindings) {
                                                emitSerializeMlirHelperBindings(out, helperBindings, 2);
                                            },
                                            [&out](const std::string& missingHelperRequirement) {
@@ -332,7 +332,7 @@ public:
                                                         "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
                                                         "ARGUMENT);");
                                            },
-                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                           [&out](const SectionHelperBindingPlan& helperBindings) {
                                                const auto capacityHelper =
                                                    helperBindingName(helperBindings.capacityCheck->symbol);
                                                emitLine(out,
@@ -413,7 +413,7 @@ public:
                                        sectionFacts,
                                        HelperBindingDirection::Deserialize,
                                        NativeFunctionSkeletonCallbacks{
-                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                           [&out](const SectionHelperBindingPlan& helperBindings) {
                                                emitDeserializeMlirHelperBindings(out, helperBindings, 2);
                                            },
                                            [&out](const std::string& missingHelperRequirement) {
@@ -510,35 +510,35 @@ private:
         return "_" + prefix + std::to_string(id_++) + "_";
     }
 
-    std::string helperBindingName(const std::string& helperSymbol) const
+    static std::string helperBindingName(const std::string& helperSymbol)
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, helperSymbol);
     }
 
-    void emitSerializeMlirHelperBindings(std::ostringstream&             out,
-                                         const SectionHelperBindingPlan& plan,
-                                         const int                       indent)
+    static void emitSerializeMlirHelperBindings(std::ostringstream&             out,
+                                                const SectionHelperBindingPlan& plan,
+                                                const int                       indent)
     {
         for (const auto& line : renderSectionHelperBindings(
                  plan,
                  HelperBindingRenderLanguage::Rust,
                  ScalarBindingRenderDirection::Serialize,
-                 [this](const std::string& symbol) { return helperBindingName(symbol); },
+                 [](const std::string& symbol) { return helperBindingName(symbol); },
                  /*emitCapacityCheck=*/true))
         {
             emitLine(out, indent, line);
         }
     }
 
-    void emitDeserializeMlirHelperBindings(std::ostringstream&             out,
-                                           const SectionHelperBindingPlan& plan,
-                                           const int                       indent)
+    static void emitDeserializeMlirHelperBindings(std::ostringstream&             out,
+                                                  const SectionHelperBindingPlan& plan,
+                                                  const int                       indent)
     {
         for (const auto& line : renderSectionHelperBindings(
                  plan,
                  HelperBindingRenderLanguage::Rust,
                  ScalarBindingRenderDirection::Deserialize,
-                 [this](const std::string& symbol) { return helperBindingName(symbol); },
+                 [](const std::string& symbol) { return helperBindingName(symbol); },
                  /*emitCapacityCheck=*/false))
         {
             emitLine(out, indent, line);
@@ -560,7 +560,7 @@ private:
         emitLine(out, indent, "}");
     }
 
-    void emitAlignDeserialize(std::ostringstream& out, const std::int64_t alignmentBits, const int indent)
+    void emitAlignDeserialize(std::ostringstream& out, const std::int64_t alignmentBits, const int indent) const
     {
         if (alignmentBits <= 1)
         {
@@ -590,7 +590,7 @@ private:
         emitLine(out, indent, "offset_bits += " + std::to_string(type.bitLength) + ";");
     }
 
-    void emitDeserializePadding(std::ostringstream& out, const SemanticFieldType& type, const int indent)
+    void emitDeserializePadding(std::ostringstream& out, const SemanticFieldType& type, const int indent) const
     {
         if (type.bitLength == 0)
         {
@@ -620,7 +620,8 @@ private:
 
         void spellSerializeValidateTag() override
         {
-            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            const auto validateHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
             owner_.trace(EmitTraceOp::ValidateTag);
             emitLine(out_, indent_, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
             emitLine(out_,
@@ -630,9 +631,10 @@ private:
 
         void spellSerializeWriteMaskedTag() override
         {
-            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
-            const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
-            const auto tagErr    = owner_.nextName("err");
+            const auto tagHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagExpr = tagHelper + "(self._tag_ as u64)";
+            const auto tagErr  = owner_.nextName("err");
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::WriteTag, tagBits_);
             emitLine(out_,
@@ -650,7 +652,8 @@ private:
                      indent_,
                      "let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
                          std::to_string(tagBits_) + "u8);");
-            const auto tagHelper = owner_.helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::StoreTag);
             emitLine(out_,
@@ -661,7 +664,8 @@ private:
 
         void spellDeserializeValidateTag() override
         {
-            const auto validateHelper = owner_.helperBindingName(helperBindings_.unionTagValidate->symbol);
+            const auto validateHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
             owner_.trace(EmitTraceOp::ValidateTag);
             emitLine(out_, indent_, "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
             emitLine(out_,
@@ -823,7 +827,7 @@ private:
             case FieldStepKind::ScalarUint: {
                 std::string valueExpr = expr + " as u64";
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 valueExpr         = helper + "(" + valueExpr + ")";
 
                 const auto err = owner_.nextName("err");
@@ -840,7 +844,7 @@ private:
             case FieldStepKind::ScalarSint: {
                 std::string valueExpr = expr + " as i64";
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 valueExpr         = helper + "(" + valueExpr + ")";
 
                 const auto err = owner_.nextName("err");
@@ -859,7 +863,7 @@ private:
                 const auto  floatType      = std::string(step.bits == 64 ? "f64" : "f32");
                 std::string normalizedExpr = expr + " as " + floatType;
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 normalizedExpr    = helper + "(" + normalizedExpr + ")";
                 std::string setCall;
                 if (step.bits == 16)
@@ -901,7 +905,7 @@ private:
                 const std::string getter =
                     "get_u" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 const auto raw    = owner_.nextName("raw");
                 owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
                 emitLine(out_,
@@ -920,7 +924,7 @@ private:
                 const std::string getter =
                     "get_i" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 const auto raw    = owner_.nextName("raw");
                 owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
                 emitLine(out_,
@@ -937,7 +941,7 @@ private:
             }
             case FieldStepKind::ScalarFloat: {
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = owner_.helperBindingName(step.scalarHelperSymbol);
+                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
                 if (step.bits == 16)
                 {
@@ -984,16 +988,18 @@ private:
         {
             assert(step.arrayHelpers.has_value());
             assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("len_rc");
+            const auto validateHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc = owner_.nextName("len_rc");
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             emitLine(out_, indent_, "let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
             emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
             std::string prefixExpr = expr + ".len() as u64";
             assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto serPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = owner_.nextName("err");
+            const auto serPrefixHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
+            prefixExpr     = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err = owner_.nextName("err");
             owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
             emitLine(out_,
                      indent_,
@@ -1019,12 +1025,14 @@ private:
             std::string countExpr = rawCount + " as usize";
             assert(step.arrayHelpers.has_value());
             assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto deserPrefixHelper = owner_.helperBindingName(step.arrayHelpers->prefixSymbol);
-            countExpr                    = deserPrefixHelper + "(" + rawCount + ") as usize";
+            const auto deserPrefixHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
+            countExpr = deserPrefixHelper + "(" + rawCount + ") as usize";
             emitLine(out_, indent_, "let " + count + " = " + countExpr + ";");
             assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = owner_.helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("len_rc");
+            const auto validateHelper =
+                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc = owner_.nextName("len_rc");
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             emitLine(out_, indent_, "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
             emitLine(out_, indent_, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
@@ -1109,7 +1117,7 @@ private:
                          "buffer.len().saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
                          "buffer.len()));");
                 assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto helper     = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
@@ -1154,7 +1162,7 @@ private:
                          "capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
                          "capacity_bytes));");
                 assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = owner_.helperBindingName(step.delimiterValidateSymbol);
+                const auto helper     = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
@@ -1461,7 +1469,7 @@ void emitSectionType(std::ostringstream&              out,
     {
         constNames.push_back(c.name);
     }
-    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(out, 1, c.doc);
@@ -1723,9 +1731,9 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
-    std::filesystem::path outRoot(options.outDir);
-    std::filesystem::path srcRoot          = outRoot / "src";
-    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    std::filesystem::path const outRoot(options.outDir);
+    std::filesystem::path const srcRoot          = outRoot / "src";
+    const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
     // them is independent of which definitions were selected -- except under `as-needed`, which
@@ -1811,7 +1819,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
             parentRel = dirRel;
         }
 
-        const auto modName = ctx.rustModuleName(def.info);
+        const auto modName = llvmdsdl::EmitterContext::rustModuleName(def.info);
         dirToFiles[dirRel].insert(modName);
 
         std::filesystem::path dir = srcRoot;
@@ -1893,7 +1901,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
             }
         }
 
-        std::filesystem::path dir = srcRoot / dirRel;
+        std::filesystem::path const dir = srcRoot / dirRel;
         if (auto err = writeGeneratedFile(dir / "mod.rs", mod.str(), options.writePolicy, options.selectedTypeKeys))
         {
             return err;

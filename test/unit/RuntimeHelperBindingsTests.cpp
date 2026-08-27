@@ -12,6 +12,8 @@
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runRuntimeHelperBindingsTests()
 {
     {

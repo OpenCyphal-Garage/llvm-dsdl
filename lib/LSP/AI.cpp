@@ -94,7 +94,7 @@ AiDocumentFacts collectDocumentFacts(const std::string& text)
 {
     AiDocumentFacts facts;
     facts.endsWithNewline    = !text.empty() && text.back() == '\n';
-    facts.hasSealedDirective = text.find("@sealed") != std::string::npos;
+    facts.hasSealedDirective = text.contains("@sealed");
 
     std::uint32_t lineIndex     = 0;
     std::uint32_t lineLength    = 0;
@@ -202,7 +202,7 @@ AiCodeActionContext AiContextPacker::buildCodeActionContext(const std::string&  
                                                             const std::uint32_t             endLine,
                                                             const std::uint32_t             endCharacter,
                                                             const std::vector<std::string>& diagnostics,
-                                                            const std::vector<std::string>& symbolHints) const
+                                                            const std::vector<std::string>& symbolHints)
 {
     AiCodeActionContext context;
     context.uri              = uri;
@@ -298,7 +298,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
         redacted += "...[truncated]";
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock const lock(mutex_);
     records_.push_back(AiAuditRecord{
         std::move(category),
         std::move(redacted),
@@ -311,7 +311,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
 
 std::vector<AiAuditRecord> AiAuditLogger::snapshot() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock const lock(mutex_);
     return records_;
 }
 

@@ -32,6 +32,7 @@
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -216,12 +217,12 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
 
 void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>& components)
 {
-    for (auto it = components.rbegin(); it != components.rend(); ++it)
+    for (const auto& component : std::views::reverse(components))
     {
         emitLine(out,
                  0,
                  "} // namespace " +
-                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, *it));
+                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component));
     }
 }
 
@@ -1395,8 +1396,8 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "null outCppSources sink");
     }
 
-    const auto     selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
-    EmitterContext ctx(semantic, options.typeNameVersioning);
+    const auto           selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    EmitterContext const ctx(semantic, options.typeNameVersioning);
 
     if (auto err = emitRuntimeHeader(options))
     {

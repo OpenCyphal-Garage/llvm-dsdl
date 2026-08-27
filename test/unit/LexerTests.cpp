@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -44,7 +46,7 @@ std::string lexStringValue(const std::string& source, std::size_t& errorCount)
             return token.text;
         }
     }
-    return std::string();
+    return {};
 }
 
 bool expectValue(const char* label, const std::string& source, const std::string& expected)

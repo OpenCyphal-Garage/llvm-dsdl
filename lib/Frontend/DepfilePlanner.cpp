@@ -41,7 +41,7 @@ std::string makeTypeKey(const SemanticTypeRef& ref)
 
 bool isEmbeddedUavcanSyntheticPath(const std::string& filePath)
 {
-    return filePath.rfind(kEmbeddedUavcanSyntheticPathPrefix, 0U) == 0U;
+    return filePath.starts_with(kEmbeddedUavcanSyntheticPathPrefix);
 }
 
 std::string normalizePathForDepfile(const std::string& path)
@@ -84,7 +84,7 @@ void appendSectionDependencyIndexes(const SemanticSection&                      
 
 }  // namespace
 
-DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, std::string toolchainStampPath)
+DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, const std::string& toolchainStampPath)
 {
     if (!toolchainStampPath.empty())
     {
@@ -129,8 +129,8 @@ DepfilePlanner::DepfilePlanner(const SemanticModule& semantic, std::string toolc
         }
 
         auto& deps = nodes_[i].dependencyIndexes;
-        std::sort(deps.begin(), deps.end());
-        deps.erase(std::unique(deps.begin(), deps.end()), deps.end());
+        std::ranges::sort(deps);
+        deps.erase(std::ranges::unique(deps).begin(), deps.end());
     }
 }
 
@@ -154,7 +154,7 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
 
     if (nextVisitEpoch_ == 0U)
     {
-        std::fill(visitEpochByNode_.begin(), visitEpochByNode_.end(), 0U);
+        std::ranges::fill(visitEpochByNode_, 0U);
         nextVisitEpoch_ = 1U;
     }
     const std::uint32_t visitEpoch = nextVisitEpoch_++;
@@ -196,8 +196,8 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
         deps.push_back(toolchainStampPath_);
     }
 
-    std::sort(deps.begin(), deps.end());
-    deps.erase(std::unique(deps.begin(), deps.end()), deps.end());
+    std::ranges::sort(deps);
+    deps.erase(std::ranges::unique(deps).begin(), deps.end());
 
     const auto [inserted, _] = depsByTypeKey_.emplace(typeKey, std::move(deps));
     return inserted->second;
@@ -212,8 +212,8 @@ const std::vector<std::string>& DepfilePlanner::depsForRequiredTypeKeys(
     }
 
     std::vector<std::string> canonicalKeys = requiredTypeKeys;
-    std::sort(canonicalKeys.begin(), canonicalKeys.end());
-    canonicalKeys.erase(std::unique(canonicalKeys.begin(), canonicalKeys.end()), canonicalKeys.end());
+    std::ranges::sort(canonicalKeys);
+    canonicalKeys.erase(std::ranges::unique(canonicalKeys).begin(), canonicalKeys.end());
 
     if (canonicalKeys.empty())
     {
@@ -239,8 +239,8 @@ const std::vector<std::string>& DepfilePlanner::depsForRequiredTypeKeys(
         merged.insert(merged.end(), deps.begin(), deps.end());
     }
 
-    std::sort(merged.begin(), merged.end());
-    merged.erase(std::unique(merged.begin(), merged.end()), merged.end());
+    std::ranges::sort(merged);
+    merged.erase(std::ranges::unique(merged).begin(), merged.end());
 
     const auto [inserted, _] = depsByRequiredSetSignature_.emplace(signature, std::move(merged));
     return inserted->second;

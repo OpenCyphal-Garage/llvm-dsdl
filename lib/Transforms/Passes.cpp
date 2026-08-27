@@ -61,8 +61,6 @@
 namespace llvmdsdl
 {
 
-void registerDSDLConvertPasses();
-
 namespace
 {
 
@@ -187,10 +185,7 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
 
     std::int64_t minBits = nonNegative(intAttrOrDefault(plan, "min_bits", 0));
     std::int64_t maxBits = nonNegative(intAttrOrDefault(plan, "max_bits", minBits));
-    if (maxBits < minBits)
-    {
-        maxBits = minBits;
-    }
+    maxBits              = std::max(maxBits, minBits);
     setI64Attr(plan, "min_bits", minBits, builder);
     setI64Attr(plan, "max_bits", maxBits, builder);
     setI64Attr(plan, kLoweredMinBitsAttr, minBits, builder);
@@ -205,7 +200,7 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
     if (plan->hasAttr("is_union"))
     {
         const std::int64_t unionTagBits     = nonNegative(intAttrOrDefault(plan, "union_tag_bits", 0));
-        const std::int64_t unionOptionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
+        const auto         unionOptionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
         setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
         setI64Attr(plan, "union_option_count", unionOptionCount, builder);
     }
@@ -237,7 +232,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
         return mlir::success();
     }
 
-    mlir::OpBuilder::InsertionGuard g(builder);
+    mlir::OpBuilder::InsertionGuard const g(builder);
     builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
     const mlir::Location loc    = plan->getLoc();
@@ -255,8 +250,8 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
 
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    mlir::Value  capacityBits = entry->getArgument(0);
-    std::int64_t requiredBits = 0;
+    mlir::Value const capacityBits = entry->getArgument(0);
+    std::int64_t      requiredBits = 0;
     if (const auto maxBits = plan->getAttrOfType<mlir::IntegerAttr>("max_bits"))
     {
         requiredBits = nonNegative(maxBits.getInt());
@@ -341,7 +336,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
         return plan->emitOpError("union plan has no selectable options");
     }
 
-    mlir::OpBuilder::InsertionGuard g(builder);
+    mlir::OpBuilder::InsertionGuard const g(builder);
     builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
     const mlir::Location loc    = plan->getLoc();
@@ -359,8 +354,8 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
 
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    mlir::Value tagValue = entry->getArgument(0);
-    mlir::Value anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
+    mlir::Value const tagValue = entry->getArgument(0);
+    mlir::Value       anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
     for (const std::int64_t option : optionIndexes)
     {
         auto optConst = mlir::arith::ConstantIntOp::create(builder, loc, option, 64).getResult();
@@ -447,7 +442,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -485,7 +480,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -583,7 +578,7 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -616,7 +611,7 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -725,7 +720,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{floatTy}, mlir::TypeRange{floatTy});
@@ -745,7 +740,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 fnType = builder.getFunctionType(mlir::TypeRange{floatTy}, mlir::TypeRange{floatTy});
@@ -819,7 +814,7 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
             continue;
         }
 
-        mlir::OpBuilder::InsertionGuard g(builder);
+        mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
         const mlir::Location loc    = op.getLoc();
@@ -920,7 +915,7 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -950,7 +945,7 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
         {
-            mlir::OpBuilder::InsertionGuard g(builder);
+            mlir::OpBuilder::InsertionGuard const g(builder);
             builder.setInsertionPointToEnd(&module.getBodyRegion().front());
             const mlir::Location loc    = op.getLoc();
             auto                 i64Ty  = builder.getIntegerType(64);
@@ -1020,7 +1015,7 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
 
     if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
     {
-        mlir::OpBuilder::InsertionGuard g(builder);
+        mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToEnd(&module.getBodyRegion().front());
         const mlir::Location loc    = plan->getLoc();
         auto                 i64Ty  = builder.getIntegerType(64);
@@ -1050,7 +1045,7 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
 
     if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
     {
-        mlir::OpBuilder::InsertionGuard g(builder);
+        mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToEnd(&module.getBodyRegion().front());
         const mlir::Location loc    = plan->getLoc();
         auto                 i64Ty  = builder.getIntegerType(64);
@@ -1137,7 +1132,7 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
             continue;
         }
 
-        mlir::OpBuilder::InsertionGuard g(builder);
+        mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
         const mlir::Location loc    = op.getLoc();
@@ -1518,11 +1513,11 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass>   reg;
-    static mlir::PassRegistration<LowerDSDLExecPass>            regExec;
-    static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> regAlias;
-    static mlir::PassRegistration<DSDLEndianLegalizePass>       regEndian;
-    static mlir::PassPipelineRegistration<>
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
+    static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
+    static mlir::PassRegistration<DSDLEndianLegalizePass> const       regEndian;
+    static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });

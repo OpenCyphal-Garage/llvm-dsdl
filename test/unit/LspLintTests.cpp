@@ -20,6 +20,8 @@
 #include "llvmdsdl/LSP/Lint.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -112,7 +114,7 @@ bool runLspLintTests()
     {
         llvmdsdl::lsp::LintExecutionConfig config;
         config.enabled = true;
-        llvmdsdl::lsp::LintEngine engine(llvmdsdl::lsp::LintRegistry{}, config);
+        llvmdsdl::lsp::LintEngine const engine(llvmdsdl::lsp::LintRegistry{}, config);
 
         const llvmdsdl::lsp::LintRunResult first  = engine.run({*document});
         const llvmdsdl::lsp::LintRunResult second = engine.run({*document});
@@ -185,7 +187,7 @@ bool runLspLintTests()
         suppressed.disabledRules.insert("naming.type_pascal_case");
         suppressed.fileDisabledRules[uri].insert("style.no_tabs");
 
-        llvmdsdl::lsp::LintEngine          engine(llvmdsdl::lsp::LintRegistry{}, suppressed);
+        llvmdsdl::lsp::LintEngine const    engine(llvmdsdl::lsp::LintRegistry{}, suppressed);
         const llvmdsdl::lsp::LintRunResult result = engine.run({*document});
         const auto                         ids    = findingIds(result.findings);
 
@@ -217,7 +219,7 @@ bool runLspLintTests()
             return false;
         }
 
-        llvmdsdl::lsp::LintEngine          engine(llvmdsdl::lsp::LintRegistry{}, llvmdsdl::lsp::LintExecutionConfig{});
+        llvmdsdl::lsp::LintEngine const    engine(llvmdsdl::lsp::LintRegistry{}, llvmdsdl::lsp::LintExecutionConfig{});
         const llvmdsdl::lsp::LintRunResult result = engine.run({*complexDoc});
         const auto                         ids    = findingIds(result.findings);
         if (!ids.contains("complexity.max_fields_per_type") || !ids.contains("complexity.max_constants_per_type"))
@@ -260,7 +262,7 @@ bool runLspLintTests()
         llvmdsdl::lsp::LintRegistry registry;
         registry.registerRuleFactory([]() { return std::make_unique<PluginRule>(); });
 
-        llvmdsdl::lsp::LintEngine          engine(std::move(registry), llvmdsdl::lsp::LintExecutionConfig{});
+        llvmdsdl::lsp::LintEngine const    engine(std::move(registry), llvmdsdl::lsp::LintExecutionConfig{});
         const llvmdsdl::lsp::LintRunResult result = engine.run({*document});
         const auto                         ids    = findingIds(result.findings);
         if (!ids.contains("plugin.example_rule"))

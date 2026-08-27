@@ -19,6 +19,8 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runLoweredBodyPlanTests()
 {
     {

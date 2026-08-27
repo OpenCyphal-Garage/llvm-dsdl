@@ -47,6 +47,8 @@
 #include <string_view>
 #include <vector>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -163,7 +165,7 @@ constexpr auto kFragments = std::to_array<std::string_view>({
     "'a\\nb'",
     "'tab\\t'",
     "'q\\'q'",
-    "\"esc\\\\\"",
+    R"("esc\\")",
     // Comments and directives.
     "# a comment",
     "@union",
@@ -285,9 +287,9 @@ bool runEdgeCaseCorpus()
     });
 
     bool ok = true;
-    for (std::size_t i = 0; i < kCorpus.size(); ++i)
+    for (auto kCorpu : kCorpus)
     {
-        ok = lexAndCheck("edge-case", kCorpus[i]) && ok;
+        ok = lexAndCheck("edge-case", kCorpu) && ok;
     }
     return ok;
 }
@@ -295,7 +297,7 @@ bool runEdgeCaseCorpus()
 /// @brief Streams of fully random bytes of varied lengths.
 bool runRandomByteFuzz()
 {
-    std::mt19937                       rng(0xC0FFEEu);
+    std::mt19937                       rng(0xC0FFEEU);
     std::uniform_int_distribution<int> byte(0, 255);
     bool                               ok = true;
 
@@ -317,7 +319,7 @@ bool runRandomByteFuzz()
 /// @brief Token-aware inputs assembled from DSDL-like fragments.
 bool runStructuredFuzz()
 {
-    std::mt19937 rng(0x5EED1234u);
+    std::mt19937 rng(0x5EED1234U);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)
@@ -337,7 +339,7 @@ bool runStructuredFuzz()
 /// @brief Mutational fuzzing seeded from valid fragments and edge cases.
 bool runMutationalFuzz()
 {
-    std::mt19937 rng(0xABCDEF01u);
+    std::mt19937 rng(0xABCDEF01U);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)

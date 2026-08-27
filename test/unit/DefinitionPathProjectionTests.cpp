@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 
+#include "UnitTests.h"
+
 bool runDefinitionPathProjectionTests()
 {
     using llvmdsdl::CodegenNamingLanguage;

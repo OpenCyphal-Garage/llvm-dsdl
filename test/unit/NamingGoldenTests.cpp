@@ -39,6 +39,8 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -171,13 +173,13 @@ bool isDsdlReachable(const std::string& name)
         return false;
     }
     const auto first = static_cast<unsigned char>(name.front());
-    if (!(std::isalpha(first) || name.front() == '_'))
+    if (!std::isalpha(first) && name.front() != '_')
     {
         return false;
     }
     for (const char c : name)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             return false;
         }
@@ -192,7 +194,7 @@ std::string quoted(const std::string& text)
     bool bare = !text.empty();
     for (const char c : text)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             bare = false;
             break;
@@ -691,7 +693,7 @@ bool checkGolden(const std::string& path, const std::string& produced)
         return true;
     }
 
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream const in(path, std::ios::binary);
     if (!in.good())
     {
         std::cerr << "naming golden map: cannot read " << path << "\n";

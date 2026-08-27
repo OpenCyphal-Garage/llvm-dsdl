@@ -22,6 +22,8 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include "UnitTests.h"
+
 bool runLoweredRenderIRTests()
 {
     {
@@ -86,7 +88,7 @@ bool runLoweredRenderIRTests()
             visited.push_back("padding:" + step.field->name);
         };
         callbacks.onUnionDispatch = [&visited](const std::vector<llvmdsdl::PlannedFieldStep>&) {
-            visited.push_back("union");
+            visited.emplace_back("union");
         };
         llvmdsdl::forEachLoweredRenderStep(renderIR, callbacks);
         if (visited.size() != 2U || visited[0] != "field:scalar" || visited[1] != "padding:_pad0")
@@ -148,14 +150,14 @@ bool runLoweredRenderIRTests()
         std::vector<std::string>             visited;
         llvmdsdl::LoweredRenderStepCallbacks callbacks;
         callbacks.onUnionDispatch = [&visited](const std::vector<llvmdsdl::PlannedFieldStep>& branches) {
-            visited.push_back("union");
+            visited.emplace_back("union");
             for (const auto& branch : branches)
             {
                 visited.push_back("branch:" + branch.field->name);
             }
         };
-        callbacks.onField   = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.push_back("field"); };
-        callbacks.onPadding = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.push_back("padding"); };
+        callbacks.onField   = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.emplace_back("field"); };
+        callbacks.onPadding = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.emplace_back("padding"); };
         llvmdsdl::forEachLoweredRenderStep(renderIR, callbacks);
         if (visited.size() != 3U || visited[0] != "union" || visited[1] != "branch:beta" ||
             visited[2] != "branch:alpha")

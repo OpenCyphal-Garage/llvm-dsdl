@@ -14,6 +14,8 @@
 #include "llvm/Support/Error.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runScriptedOperationPlanTests()
 {
     llvmdsdl::SemanticSection section;

@@ -43,7 +43,7 @@ namespace
 
 std::string toLower(std::string s)
 {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(s, s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
 
@@ -55,7 +55,7 @@ bool isValidNameComponent(const std::string& s)
 
 bool readTextFile(const std::filesystem::path& path, std::string& out)
 {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream const in(path, std::ios::binary);
     if (!in.good())
     {
         return false;
@@ -107,7 +107,7 @@ void discoverInRoot(const std::filesystem::path&       root,
         {
             continue;
         }
-        const auto path = entry.path();
+        const auto& path = entry.path();
         if (path.extension() != ".dsdl")
         {
             continue;
@@ -336,7 +336,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         discoverInRoot(lookup, false, definitions, diagnostics);
     }
 
-    std::sort(definitions.begin(), definitions.end(), [](const DiscoveredDefinition& a, const DiscoveredDefinition& b) {
+    std::ranges::sort(definitions, [](const DiscoveredDefinition& a, const DiscoveredDefinition& b) {
         if (a.fullName != b.fullName)
         {
             return a.fullName < b.fullName;

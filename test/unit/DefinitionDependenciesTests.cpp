@@ -10,6 +10,8 @@
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 

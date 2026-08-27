@@ -14,6 +14,8 @@
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runRuntimeLoweredPlanTests()
 {
     {

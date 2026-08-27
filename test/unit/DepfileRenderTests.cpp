@@ -16,6 +16,8 @@
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -32,7 +34,7 @@ std::string readTextFile(const std::filesystem::path& path)
     {
         return {};
     }
-    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return {(std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()};
 }
 
 bool endsWith(std::string_view text, std::string_view suffix)
@@ -108,8 +110,8 @@ bool runDepfileRenderTests()
         return fail("failed to create dependency fixture directory");
     }
     {
-        std::ofstream outA(depA);
-        std::ofstream outB(depB);
+        std::ofstream const outA(depA);
+        std::ofstream const outB(depB);
         if (!outA || !outB)
         {
             return fail("failed to create dependency fixture files");
@@ -131,14 +133,14 @@ bool runDepfileRenderTests()
         return false;
     }
 
-    std::filesystem::path depfilePath = outputPath.string() + ".d";
+    std::filesystem::path const depfilePath = outputPath.string() + ".d";
     if (!std::filesystem::exists(depfilePath, ec) || ec)
     {
         return fail("expected depfile output was not created");
     }
 
-    const std::string        depfileContent = readTextFile(depfilePath);
-    std::vector<std::string> normalizedDeps = {
+    const std::string              depfileContent = readTextFile(depfilePath);
+    std::vector<std::string> const normalizedDeps = {
         std::filesystem::absolute(depA, ec).lexically_normal().string(),
         std::filesystem::absolute(depB, ec).lexically_normal().string(),
     };
@@ -155,8 +157,8 @@ bool runDepfileRenderTests()
         return fail("depfile write did not record one .d output path");
     }
 
-    const std::filesystem::path preparedOutputPath = tmpRoot / "prepared" / "generated_prepared.c";
-    std::vector<std::string>    preparedDeps       = normalizedDeps;
+    const std::filesystem::path     preparedOutputPath = tmpRoot / "prepared" / "generated_prepared.c";
+    std::vector<std::string> const& preparedDeps       = normalizedDeps;
     if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(preparedOutputPath, preparedDeps, policy))
     {
         std::cerr << "writeDepfileForGeneratedOutputPrepared failed unexpectedly: " << llvm::toString(std::move(err))
@@ -198,7 +200,7 @@ bool runDepfileRenderTests()
         return false;
     }
 
-    std::filesystem::path dryDepfilePath = dryOutputPath.string() + ".d";
+    std::filesystem::path const dryDepfilePath = dryOutputPath.string() + ".d";
     if (std::filesystem::exists(dryDepfilePath, ec))
     {
         return fail("dry-run depfile write should not create files");

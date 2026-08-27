@@ -182,7 +182,7 @@ DiscoveredDefinition makeOverlayDiscoveredDefinition(const std::string& normaliz
     definition.filePath          = normalizedPath;
     definition.rootNamespacePath = std::filesystem::path(normalizedPath).parent_path().string();
     definition.shortName         = makeOverlayShortName(normalizedPath);
-    definition.namespaceComponents.push_back("__overlay");
+    definition.namespaceComponents.emplace_back("__overlay");
     definition.fullName     = "__overlay." + definition.shortName;
     definition.majorVersion = 1;
     definition.minorVersion = 0;
@@ -451,8 +451,8 @@ std::vector<std::string> collectTypeDependencies(const DefinitionAST& definition
             }
         }
     }
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+    std::ranges::sort(out);
+    out.erase(std::ranges::unique(out).begin(), out.end());
     return out;
 }
 
@@ -494,7 +494,7 @@ std::string normalizedPathToFileUri(const std::string& filePath)
     return "file:///" + normalized;
 }
 
-void AnalysisPipeline::populateCachedDefinitionMetadata(CachedDefinition& cached) const
+void AnalysisPipeline::populateCachedDefinitionMetadata(CachedDefinition& cached)
 {
     cached.typeReferences.clear();
     cached.fieldSymbols.clear();
@@ -508,7 +508,7 @@ void AnalysisPipeline::populateCachedDefinitionMetadata(CachedDefinition& cached
             const std::uint32_t line        = zeroBasedLine(field->type.location);
             const std::uint32_t col         = zeroBasedColumn(field->type.location);
             const std::string   typeDisplay = field->type.str();
-            const std::uint32_t typeLength  = static_cast<std::uint32_t>(typeDisplay.size());
+            const auto          typeLength  = static_cast<std::uint32_t>(typeDisplay.size());
 
             if (const auto* versioned = std::get_if<VersionedTypeExprAST>(&field->type.scalar))
             {
@@ -536,7 +536,7 @@ void AnalysisPipeline::populateCachedDefinitionMetadata(CachedDefinition& cached
             const std::uint32_t line        = zeroBasedLine(constant->type.location);
             const std::uint32_t col         = zeroBasedColumn(constant->type.location);
             const std::string   typeDisplay = constant->type.str();
-            const std::uint32_t typeLength  = static_cast<std::uint32_t>(typeDisplay.size());
+            const auto          typeLength  = static_cast<std::uint32_t>(typeDisplay.size());
 
             if (const auto* versioned = std::get_if<VersionedTypeExprAST>(&constant->type.scalar))
             {
@@ -622,8 +622,8 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
         ++stats_.incrementalRebuildCount;
     }
 
-    DiagnosticEngine                  discoveryDiagnostics;
-    std::vector<DiscoveredDefinition> discovered =
+    DiagnosticEngine                        discoveryDiagnostics;
+    std::vector<DiscoveredDefinition> const discovered =
         discoverDefinitions(config.rootNamespaceDirs,
                             config.lookupDirs,
                             discoveryDiagnostics,
@@ -794,7 +794,7 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
     {
         sortedPaths.push_back(path);
     }
-    std::sort(sortedPaths.begin(), sortedPaths.end());
+    std::ranges::sort(sortedPaths);
 
     std::vector<ParsedDefinition> parsedDefinitions;
     parsedDefinitions.reserve(cachedDefinitionsByPath_.size());
@@ -803,23 +803,23 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
         const CachedDefinition& cached = cachedDefinitionsByPath_.at(path);
         parsedDefinitions.push_back(ParsedDefinition{cached.info, cached.ast});
     }
-    std::sort(parsedDefinitions.begin(),
-              parsedDefinitions.end(),
-              [](const ParsedDefinition& lhs, const ParsedDefinition& rhs) {
-                  if (lhs.info.fullName != rhs.info.fullName)
-                  {
-                      return lhs.info.fullName < rhs.info.fullName;
-                  }
-                  if (lhs.info.majorVersion != rhs.info.majorVersion)
-                  {
-                      return lhs.info.majorVersion > rhs.info.majorVersion;
-                  }
-                  if (lhs.info.minorVersion != rhs.info.minorVersion)
-                  {
-                      return lhs.info.minorVersion > rhs.info.minorVersion;
-                  }
-                  return lhs.info.filePath < rhs.info.filePath;
-              });
+    std::ranges::sort(parsedDefinitions,
+
+                      [](const ParsedDefinition& lhs, const ParsedDefinition& rhs) {
+                          if (lhs.info.fullName != rhs.info.fullName)
+                          {
+                              return lhs.info.fullName < rhs.info.fullName;
+                          }
+                          if (lhs.info.majorVersion != rhs.info.majorVersion)
+                          {
+                              return lhs.info.majorVersion > rhs.info.majorVersion;
+                          }
+                          if (lhs.info.minorVersion != rhs.info.minorVersion)
+                          {
+                              return lhs.info.minorVersion > rhs.info.minorVersion;
+                          }
+                          return lhs.info.filePath < rhs.info.filePath;
+                      });
 
     ASTModule module;
     module.definitions = std::move(parsedDefinitions);
@@ -854,7 +854,7 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
                     definition.response->extentBits,
                 };
             }
-            latestExtentInfoByPath_.insert_or_assign(normalizePath(definition.info.filePath), std::move(extentInfo));
+            latestExtentInfoByPath_.insert_or_assign(normalizePath(definition.info.filePath), extentInfo);
         }
     }
 
@@ -928,9 +928,9 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
             });
         }
 
-        LintEngine    lintEngine(LintRegistry{}, std::move(lintConfig));
-        LintRunResult lintResult = lintEngine.run(lintDocuments);
-        latestLintFindingsByUri_ = lintResult.findingsByUri;
+        LintEngine const    lintEngine(LintRegistry{}, std::move(lintConfig));
+        LintRunResult const lintResult = lintEngine.run(lintDocuments);
+        latestLintFindingsByUri_       = lintResult.findingsByUri;
         for (const LintFinding& finding : lintResult.findings)
         {
             allDiagnostics.push_back(Diagnostic{
@@ -1001,9 +1001,8 @@ std::string renderGeneratedNames(const std::vector<std::string>& orderedNames,
         }
         const std::string identifier = scope.get(role, hovered);
 
-        auto group = std::find_if(groups.begin(), groups.end(), [&identifier](const auto& entry) {
-            return entry.first == identifier;
-        });
+        auto group =
+            std::ranges::find_if(groups, [&identifier](const auto& entry) { return entry.first == identifier; });
         if (group == groups.end())
         {
             groups.push_back({identifier, {languageName.str()}});
@@ -1173,16 +1172,17 @@ std::vector<AnalysisLocation> AnalysisPipeline::references(const std::string&  u
         }
     }
 
-    std::sort(out.begin(), out.end(), [](const AnalysisLocation& lhs, const AnalysisLocation& rhs) {
+    std::ranges::sort(out, [](const AnalysisLocation& lhs, const AnalysisLocation& rhs) {
         return std::tie(lhs.uri, lhs.line, lhs.character, lhs.length) <
                std::tie(rhs.uri, rhs.line, rhs.character, rhs.length);
     });
-    out.erase(std::unique(out.begin(),
-                          out.end(),
-                          [](const AnalysisLocation& lhs, const AnalysisLocation& rhs) {
-                              return lhs.uri == rhs.uri && lhs.line == rhs.line && lhs.character == rhs.character &&
-                                     lhs.length == rhs.length;
-                          }),
+    out.erase(std::ranges::unique(out,
+
+                                  [](const AnalysisLocation& lhs, const AnalysisLocation& rhs) {
+                                      return lhs.uri == rhs.uri && lhs.line == rhs.line &&
+                                             lhs.character == rhs.character && lhs.length == rhs.length;
+                                  })
+                  .begin(),
               out.end());
     return out;
 }
@@ -1239,7 +1239,7 @@ std::vector<DocumentSymbolData> AnalysisPipeline::documentSymbols(const std::str
         });
     }
 
-    std::sort(out.begin(), out.end(), [](const DocumentSymbolData& lhs, const DocumentSymbolData& rhs) {
+    std::ranges::sort(out, [](const DocumentSymbolData& lhs, const DocumentSymbolData& rhs) {
         return std::tie(lhs.location.line, lhs.location.character, lhs.name) <
                std::tie(rhs.location.line, rhs.location.character, rhs.name);
     });
@@ -1270,17 +1270,17 @@ std::vector<CompletionData> AnalysisPipeline::completions(const std::string&  ur
     const bool        directiveMode = !prefix.empty() && prefix.front() == '@';
     const std::string loweredPrefix = [&prefix]() {
         std::string lower = prefix;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](const unsigned char c) {
+        std::ranges::transform(lower, lower.begin(), [](const unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
         return lower;
     }();
     const auto matchesPrefix = [&loweredPrefix](const std::string& value) {
         std::string lower = value;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](const unsigned char c) {
+        std::ranges::transform(lower, lower.begin(), [](const unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
-        return loweredPrefix.empty() || lower.rfind(loweredPrefix, 0U) == 0U;
+        return loweredPrefix.empty() || lower.starts_with(loweredPrefix);
     };
     const auto lexicalScoreFor = [&loweredPrefix](const std::string& value) {
         if (loweredPrefix.empty())
@@ -1288,18 +1288,18 @@ std::vector<CompletionData> AnalysisPipeline::completions(const std::string&  ur
             return 10.0;
         }
         std::string lower = value;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](const unsigned char c) {
+        std::ranges::transform(lower, lower.begin(), [](const unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
         if (lower == loweredPrefix)
         {
             return 90.0;
         }
-        if (lower.rfind(loweredPrefix, 0U) == 0U)
+        if (lower.starts_with(loweredPrefix))
         {
             return 70.0 + std::min(15.0, static_cast<double>(loweredPrefix.size()));
         }
-        if (lower.find(loweredPrefix) != std::string::npos)
+        if (lower.contains(loweredPrefix))
         {
             return 40.0;
         }
@@ -1357,18 +1357,19 @@ std::vector<CompletionData> AnalysisPipeline::completions(const std::string&  ur
         }
     }
 
-    std::sort(out.begin(), out.end(), [](const CompletionData& lhs, const CompletionData& rhs) {
+    std::ranges::sort(out, [](const CompletionData& lhs, const CompletionData& rhs) {
         if (lhs.baseScore != rhs.baseScore)
         {
             return lhs.baseScore > rhs.baseScore;
         }
         return std::tie(lhs.label, lhs.kind) < std::tie(rhs.label, rhs.kind);
     });
-    out.erase(std::unique(out.begin(),
-                          out.end(),
-                          [](const CompletionData& lhs, const CompletionData& rhs) {
-                              return lhs.label == rhs.label && lhs.kind == rhs.kind && lhs.detail == rhs.detail;
-                          }),
+    out.erase(std::ranges::unique(out,
+
+                                  [](const CompletionData& lhs, const CompletionData& rhs) {
+                                      return lhs.label == rhs.label && lhs.kind == rhs.kind && lhs.detail == rhs.detail;
+                                  })
+                  .begin(),
               out.end());
     return out;
 }
@@ -1385,7 +1386,7 @@ std::vector<std::array<std::uint32_t, 5>> AnalysisPipeline::semanticTokens(const
 
     const CachedDefinition&     cached = it->second;
     std::vector<HighlightToken> tokens;
-    tokens.reserve(cached.fieldSymbols.size() * 2U + cached.constantSymbols.size() * 2U +
+    tokens.reserve((cached.fieldSymbols.size() * 2U) + (cached.constantSymbols.size() * 2U) +
                    cached.directiveTokens.size() + 8U);
 
     for (const CachedDefinition::DirectiveToken& directive : cached.directiveTokens)
@@ -1446,17 +1447,18 @@ std::vector<std::array<std::uint32_t, 5>> AnalysisPipeline::semanticTokens(const
         tokens.push_back(HighlightToken{constant.line, constant.character, constant.length, SemanticTypeProperty, 0});
     }
 
-    std::sort(tokens.begin(), tokens.end(), [](const HighlightToken& lhs, const HighlightToken& rhs) {
+    std::ranges::sort(tokens, [](const HighlightToken& lhs, const HighlightToken& rhs) {
         return std::tie(lhs.line, lhs.character, lhs.length, lhs.type) <
                std::tie(rhs.line, rhs.character, rhs.length, rhs.type);
     });
-    tokens.erase(std::unique(tokens.begin(),
-                             tokens.end(),
-                             [](const HighlightToken& lhs, const HighlightToken& rhs) {
-                                 return lhs.line == rhs.line && lhs.character == rhs.character &&
-                                        lhs.length == rhs.length && lhs.type == rhs.type &&
-                                        lhs.modifiers == rhs.modifiers;
-                             }),
+    tokens.erase(std::ranges::unique(tokens,
+
+                                     [](const HighlightToken& lhs, const HighlightToken& rhs) {
+                                         return lhs.line == rhs.line && lhs.character == rhs.character &&
+                                                lhs.length == rhs.length && lhs.type == rhs.type &&
+                                                lhs.modifiers == rhs.modifiers;
+                                     })
+                     .begin(),
                  tokens.end());
 
     std::uint32_t previousLine = 0U;
@@ -1488,7 +1490,7 @@ std::vector<IndexFileShard> AnalysisPipeline::buildIndexShards() const
     {
         sortedPaths.push_back(path);
     }
-    std::sort(sortedPaths.begin(), sortedPaths.end());
+    std::ranges::sort(sortedPaths);
 
     for (const std::string& path : sortedPaths)
     {
@@ -1592,35 +1594,35 @@ std::vector<IndexFileShard> AnalysisPipeline::buildIndexShards() const
             });
         }
 
-        std::sort(shard.symbols.begin(),
-                  shard.symbols.end(),
-                  [](const IndexSymbolRecord& lhs, const IndexSymbolRecord& rhs) {
-                      return std::tie(lhs.usr,
-                                      lhs.location.line,
-                                      lhs.location.character,
-                                      lhs.name,
-                                      lhs.qualifiedName,
-                                      lhs.kind) < std::tie(rhs.usr,
-                                                           rhs.location.line,
-                                                           rhs.location.character,
-                                                           rhs.name,
-                                                           rhs.qualifiedName,
-                                                           rhs.kind);
-                  });
+        std::ranges::sort(shard.symbols,
 
-        std::sort(shard.references.begin(),
-                  shard.references.end(),
-                  [](const IndexReferenceRecord& lhs, const IndexReferenceRecord& rhs) {
-                      return std::tie(lhs.targetUsr,
-                                      lhs.location.line,
-                                      lhs.location.character,
-                                      lhs.location.length,
-                                      lhs.isDeclaration) < std::tie(rhs.targetUsr,
-                                                                    rhs.location.line,
-                                                                    rhs.location.character,
-                                                                    rhs.location.length,
-                                                                    rhs.isDeclaration);
-                  });
+                          [](const IndexSymbolRecord& lhs, const IndexSymbolRecord& rhs) {
+                              return std::tie(lhs.usr,
+                                              lhs.location.line,
+                                              lhs.location.character,
+                                              lhs.name,
+                                              lhs.qualifiedName,
+                                              lhs.kind) < std::tie(rhs.usr,
+                                                                   rhs.location.line,
+                                                                   rhs.location.character,
+                                                                   rhs.name,
+                                                                   rhs.qualifiedName,
+                                                                   rhs.kind);
+                          });
+
+        std::ranges::sort(shard.references,
+
+                          [](const IndexReferenceRecord& lhs, const IndexReferenceRecord& rhs) {
+                              return std::tie(lhs.targetUsr,
+                                              lhs.location.line,
+                                              lhs.location.character,
+                                              lhs.location.length,
+                                              lhs.isDeclaration) < std::tie(rhs.targetUsr,
+                                                                            rhs.location.line,
+                                                                            rhs.location.character,
+                                                                            rhs.location.length,
+                                                                            rhs.isDeclaration);
+                          });
 
         shards.push_back(std::move(shard));
     }
@@ -1673,7 +1675,7 @@ std::optional<PrepareRenameData> AnalysisPipeline::prepareRename(const std::stri
 
     const std::uint32_t typeLine   = cached.ast.location.line == 0 ? 0U : cached.ast.location.line - 1U;
     const std::uint32_t typeColumn = cached.ast.location.column == 0 ? 0U : cached.ast.location.column - 1U;
-    const std::uint32_t typeLength = static_cast<std::uint32_t>(cached.info.shortName.size());
+    const auto          typeLength = static_cast<std::uint32_t>(cached.info.shortName.size());
     if (typeLine == line && containsCharacter(typeColumn, typeLength, character))
     {
         return PrepareRenameData{
@@ -1779,7 +1781,7 @@ RenamePlanData AnalysisPipeline::planRename(const std::string&  uri,
     {
         const std::uint32_t typeLine      = source.ast.location.line == 0 ? 0U : source.ast.location.line - 1U;
         const std::uint32_t typeCharacter = source.ast.location.column == 0 ? 0U : source.ast.location.column - 1U;
-        const std::uint32_t typeLength    = static_cast<std::uint32_t>(source.info.shortName.size());
+        const auto          typeLength    = static_cast<std::uint32_t>(source.info.shortName.size());
         if (typeLine == line && containsCharacter(typeCharacter, typeLength, character))
         {
             targetKind      = TargetKind::Type;
@@ -1835,11 +1837,11 @@ RenamePlanData AnalysisPipeline::planRename(const std::string&  uri,
                     continue;
                 }
                 std::string replacement = newFullSpelling;
-                if (reference.display.rfind(oldShortSpelling, 0U) == 0U)
+                if (reference.display.starts_with(oldShortSpelling))
                 {
                     replacement = newShortSpelling;
                 }
-                else if (reference.display.rfind(oldFullSpelling, 0U) == 0U)
+                else if (reference.display.starts_with(oldFullSpelling))
                 {
                     replacement = newFullSpelling;
                 }
@@ -1934,19 +1936,20 @@ RenamePlanData AnalysisPipeline::planRename(const std::string&  uri,
         return plan;
     }
 
-    std::sort(plan.edit.textEdits.begin(),
-              plan.edit.textEdits.end(),
-              [](const TextEditData& lhs, const TextEditData& rhs) {
-                  return std::tie(lhs.uri, lhs.line, lhs.character, lhs.length, lhs.newText) <
-                         std::tie(rhs.uri, rhs.line, rhs.character, rhs.length, rhs.newText);
-              });
-    plan.edit.textEdits.erase(std::unique(plan.edit.textEdits.begin(),
-                                          plan.edit.textEdits.end(),
-                                          [](const TextEditData& lhs, const TextEditData& rhs) {
-                                              return lhs.uri == rhs.uri && lhs.line == rhs.line &&
-                                                     lhs.character == rhs.character && lhs.length == rhs.length &&
-                                                     lhs.newText == rhs.newText;
-                                          }),
+    std::ranges::sort(plan.edit.textEdits,
+
+                      [](const TextEditData& lhs, const TextEditData& rhs) {
+                          return std::tie(lhs.uri, lhs.line, lhs.character, lhs.length, lhs.newText) <
+                                 std::tie(rhs.uri, rhs.line, rhs.character, rhs.length, rhs.newText);
+                      });
+    plan.edit.textEdits.erase(std::ranges::unique(plan.edit.textEdits,
+
+                                                  [](const TextEditData& lhs, const TextEditData& rhs) {
+                                                      return lhs.uri == rhs.uri && lhs.line == rhs.line &&
+                                                             lhs.character == rhs.character &&
+                                                             lhs.length == rhs.length && lhs.newText == rhs.newText;
+                                                  })
+                                  .begin(),
                               plan.edit.textEdits.end());
 
     plan.ok = true;
@@ -1974,7 +1977,7 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
         {
             return true;
         }
-        return std::find(diagnosticMessages.begin(), diagnosticMessages.end(), message) != diagnosticMessages.end();
+        return std::ranges::find(diagnosticMessages, message) != diagnosticMessages.end();
     };
     const auto inRange = [startLine, startCharacter, endLine, endCharacter](const Diagnostic& diagnostic) {
         const std::uint32_t line      = diagnostic.location.line == 0 ? 0U : diagnostic.location.line - 1U;
@@ -2130,7 +2133,7 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
                 continue;
             }
 
-            if (diagnostic.message.rfind("unresolved composite type: ", 0U) == 0U)
+            if (diagnostic.message.starts_with("unresolved composite type: "))
             {
                 const std::uint32_t line      = diagnostic.location.line == 0 ? 0U : diagnostic.location.line - 1U;
                 const std::uint32_t character = diagnostic.location.column == 0 ? 0U : diagnostic.location.column - 1U;
@@ -2155,7 +2158,7 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
                 {
                     candidateKeys.push_back(typeKey);
                 }
-                std::sort(candidateKeys.begin(), candidateKeys.end());
+                std::ranges::sort(candidateKeys);
 
                 const std::string unresolvedShort = shortNameFromTypeKey(diagnostic.message.substr(27));
                 std::string       chosen;
@@ -2219,8 +2222,8 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
                 continue;
             }
 
-            if (diagnostic.message.rfind("namespace root does not exist: ", 0U) == 0U ||
-                diagnostic.message.rfind("invalid root namespace directory name: ", 0U) == 0U)
+            if (diagnostic.message.starts_with("namespace root does not exist: ") ||
+                diagnostic.message.starts_with("invalid root namespace directory name: "))
             {
                 actions.push_back(CodeActionData{
                     "Review workspace roots/lookupDirs configuration",

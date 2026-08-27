@@ -16,9 +16,9 @@
 
 #include "llvmdsdl/Semantics/Evaluator.h"
 
+#include <algorithm>
 #include <optional>
 #include <sstream>
-#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -148,7 +148,7 @@ bool decideSetEquality(const BitLengthSet&   bls,
                 equal = false;
                 return true;
             }
-            equal = std::all_of(literal.begin(), literal.end(), [&](const Rational& r) {
+            equal = std::ranges::all_of(literal, [&](const Rational& r) {
                 const auto v = literalElementAsInt(r);
                 return v && rs->contains(*v);
             });
@@ -184,7 +184,7 @@ bool decideSetEquality(const BitLengthSet&   bls,
 
 bool asBool(const Value& v, bool& out)
 {
-    if (auto p = std::get_if<bool>(&v.data))
+    if (const auto* p = std::get_if<bool>(&v.data))
     {
         out = *p;
         return true;
@@ -194,7 +194,7 @@ bool asBool(const Value& v, bool& out)
 
 bool asRational(const Value& v, Rational& out)
 {
-    if (auto p = std::get_if<Rational>(&v.data))
+    if (const auto* p = std::get_if<Rational>(&v.data))
     {
         out = *p;
         return true;
@@ -395,7 +395,7 @@ std::optional<Value::Set> applySetElementwise(BinaryOp op, const Value::Set& lhs
             {
                 return std::nullopt;
             }
-            if (auto p = std::get_if<Rational>(&v->data))
+            if (auto* p = std::get_if<Rational>(&v->data))
             {
                 out.insert(*p);
             }
@@ -434,7 +434,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             return std::nullopt;
         }
 
-        if (auto bls = std::get_if<BitLengthSet>(&lhs->data))
+        if (auto* bls = std::get_if<BitLengthSet>(&lhs->data))
         {
             // Symbolic set: min/max are exact at any cardinality and never enumerate the set.
             if (rhsId->name == "min")
@@ -468,7 +468,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        if (auto set = std::get_if<Value::Set>(&lhs->data))
+        if (auto* set = std::get_if<Value::Set>(&lhs->data))
         {
             if (rhsId->name == "count")
             {
@@ -489,7 +489,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        if (auto t = std::get_if<TypeExprAST>(&lhs->data))
+        if (auto* t = std::get_if<TypeExprAST>(&lhs->data))
         {
             if (resolver)
             {
@@ -644,9 +644,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                             }
                             allLiteralInS = allLiteralInS && member;
                         }
-                        const std::uintmax_t symbolicCardinality = static_cast<std::uintmax_t>(*n);
-                        const std::uintmax_t literalCardinality  = static_cast<std::uintmax_t>(set->size());
-                        litInS                                   = allLiteralInS;
+                        const auto symbolicCardinality = static_cast<std::uintmax_t>(*n);
+                        const auto literalCardinality  = static_cast<std::uintmax_t>(set->size());
+                        litInS                         = allLiteralInS;
                         sInLit   = symbolicCardinality <= literalCardinality &&
                                    static_cast<std::uintmax_t>(literalMembersInSymbolic) == symbolicCardinality;
                         sameCard = symbolicCardinality == literalCardinality;
@@ -660,12 +660,8 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                     const auto values    = toRationalSet(expansion.values);
                     if (expansion.exact)
                     {
-                        litInS   = std::all_of(set->begin(), set->end(), [&](const Rational& r) {
-                            return values.contains(r);
-                        });
-                        sInLit   = std::all_of(values.begin(), values.end(), [&](const Rational& v) {
-                            return set->contains(v);
-                        });
+                        litInS   = std::ranges::all_of(*set, [&](const Rational& r) { return values.contains(r); });
+                        sInLit   = std::ranges::all_of(values, [&](const Rational& v) { return set->contains(v); });
                         sameCard = values.size() == set->size();
                     }
                     else
@@ -675,9 +671,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                         // S ⊆ L must include S's extrema; a sound-subset element outside L, or
                         // more sound-subset elements than L holds, also disproves S ⊆ L.
                         if (!set->contains(minR) || !set->contains(maxR) || values.size() > set->size() ||
-                            std::any_of(values.begin(), values.end(), [&](const Rational& v) {
-                                return !set->contains(v);
-                            }))
+                            std::ranges::any_of(values, [&](const Rational& v) { return !set->contains(v); }))
                         {
                             sInLit = false;
                         }
@@ -778,7 +772,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
 
         // Everything else: materialize the exact set (or fail) and dispatch through the
         // ordinary concrete-set paths below.
-        if (auto lbls = std::get_if<BitLengthSet>(&lhs->data))
+        if (auto* lbls = std::get_if<BitLengthSet>(&lhs->data))
         {
             auto set = materializeExact(*lbls, diagnostics, location);
             if (!set)
@@ -787,7 +781,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
             lhs->data = std::move(*set);
         }
-        if (auto rbls = std::get_if<BitLengthSet>(&rhs->data))
+        if (auto* rbls = std::get_if<BitLengthSet>(&rhs->data))
         {
             auto set = materializeExact(*rbls, diagnostics, location);
             if (!set)
@@ -798,9 +792,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         }
     }
 
-    if (auto l = std::get_if<Rational>(&lhs->data))
+    if (auto* l = std::get_if<Rational>(&lhs->data))
     {
-        if (auto r = std::get_if<Rational>(&rhs->data))
+        if (auto* r = std::get_if<Rational>(&rhs->data))
         {
             auto v = applyBinaryRational(b.op, *l, *r);
             if (!v)
@@ -811,9 +805,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         }
     }
 
-    if (auto l = std::get_if<bool>(&lhs->data))
+    if (auto* l = std::get_if<bool>(&lhs->data))
     {
-        if (auto r = std::get_if<bool>(&rhs->data))
+        if (auto* r = std::get_if<bool>(&rhs->data))
         {
             switch (b.op)
             {
@@ -831,9 +825,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         }
     }
 
-    if (auto l = std::get_if<std::string>(&lhs->data))
+    if (auto* l = std::get_if<std::string>(&lhs->data))
     {
-        if (auto r = std::get_if<std::string>(&rhs->data))
+        if (auto* r = std::get_if<std::string>(&rhs->data))
         {
             switch (b.op)
             {
@@ -849,9 +843,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         }
     }
 
-    if (auto ls = std::get_if<Value::Set>(&lhs->data))
+    if (auto* ls = std::get_if<Value::Set>(&lhs->data))
     {
-        if (auto rs = std::get_if<Value::Set>(&rhs->data))
+        if (auto* rs = std::get_if<Value::Set>(&rhs->data))
         {
             if (b.op == BinaryOp::Eq)
             {
@@ -864,10 +858,10 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             if (b.op == BinaryOp::Le || b.op == BinaryOp::Lt || b.op == BinaryOp::Ge || b.op == BinaryOp::Gt)
             {
                 const auto subset = [&]() {
-                    return std::all_of(ls->begin(), ls->end(), [&](const Rational& x) { return rs->contains(x); });
+                    return std::ranges::all_of(*ls, [&](const Rational& x) { return rs->contains(x); });
                 }();
                 const auto superset = [&]() {
-                    return std::all_of(rs->begin(), rs->end(), [&](const Rational& x) { return ls->contains(x); });
+                    return std::ranges::all_of(*rs, [&](const Rational& x) { return ls->contains(x); });
                 }();
                 if (b.op == BinaryOp::Le)
                 {
@@ -900,9 +894,9 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        if (auto rr = std::get_if<Rational>(&rhs->data))
+        if (auto* rr = std::get_if<Rational>(&rhs->data))
         {
-            Value::Set rs{*rr};
+            Value::Set const rs{*rr};
             if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div || b.op == BinaryOp::Mod ||
                 b.op == BinaryOp::Add || b.op == BinaryOp::Sub)
             {
@@ -917,11 +911,11 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         }
     }
 
-    if (auto lr = std::get_if<Rational>(&lhs->data))
+    if (auto* lr = std::get_if<Rational>(&lhs->data))
     {
-        if (auto rs = std::get_if<Value::Set>(&rhs->data))
+        if (auto* rs = std::get_if<Value::Set>(&rhs->data))
         {
-            Value::Set ls{*lr};
+            Value::Set const ls{*lr};
             if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div || b.op == BinaryOp::Mod ||
                 b.op == BinaryOp::Add || b.op == BinaryOp::Sub)
             {
@@ -945,19 +939,19 @@ std::optional<Value> evaluate(const ExprAST&               expr,
                               DiagnosticEngine&            diagnostics,
                               const TypeAttributeResolver* resolver)
 {
-    if (auto p = std::get_if<bool>(&expr.value))
+    if (const auto* p = std::get_if<bool>(&expr.value))
     {
         return Value{*p};
     }
-    if (auto p = std::get_if<Rational>(&expr.value))
+    if (const auto* p = std::get_if<Rational>(&expr.value))
     {
         return Value{*p};
     }
-    if (auto p = std::get_if<std::string>(&expr.value))
+    if (const auto* p = std::get_if<std::string>(&expr.value))
     {
         return Value{*p};
     }
-    if (auto p = std::get_if<ExprAST::Identifier>(&expr.value))
+    if (const auto* p = std::get_if<ExprAST::Identifier>(&expr.value))
     {
         const auto it = env.find(p->name);
         if (it == env.end())
@@ -967,7 +961,7 @@ std::optional<Value> evaluate(const ExprAST&               expr,
         }
         return it->second;
     }
-    if (auto p = std::get_if<ExprAST::Unary>(&expr.value))
+    if (const auto* p = std::get_if<ExprAST::Unary>(&expr.value))
     {
         auto operand = evaluate(*p->operand, env, diagnostics, resolver);
         if (!operand)
@@ -998,11 +992,11 @@ std::optional<Value> evaluate(const ExprAST&               expr,
         }
         return Value{r};
     }
-    if (auto p = std::get_if<ExprAST::Binary>(&expr.value))
+    if (const auto* p = std::get_if<ExprAST::Binary>(&expr.value))
     {
         return evaluateBinary(*p, expr.location, env, diagnostics, resolver);
     }
-    if (auto p = std::get_if<ExprAST::SetLiteral>(&expr.value))
+    if (const auto* p = std::get_if<ExprAST::SetLiteral>(&expr.value))
     {
         Value::Set set;
         for (const auto& elem : p->elements)
@@ -1012,7 +1006,7 @@ std::optional<Value> evaluate(const ExprAST&               expr,
             {
                 return std::nullopt;
             }
-            auto rv = std::get_if<Rational>(&value->data);
+            auto* rv = std::get_if<Rational>(&value->data);
             if (!rv)
             {
                 diagnostics.error(elem->location, "set literal elements must evaluate to rational");
@@ -1022,7 +1016,7 @@ std::optional<Value> evaluate(const ExprAST&               expr,
         }
         return Value{set};
     }
-    if (auto p = std::get_if<ExprAST::TypeLiteral>(&expr.value))
+    if (const auto* p = std::get_if<ExprAST::TypeLiteral>(&expr.value))
     {
         return Value{p->type};
     }
@@ -1063,19 +1057,19 @@ std::string Value::typeName() const
 std::string Value::str() const
 {
     std::ostringstream out;
-    if (auto p = std::get_if<bool>(&data))
+    if (const auto* p = std::get_if<bool>(&data))
     {
         out << (*p ? "true" : "false");
     }
-    else if (auto p = std::get_if<Rational>(&data))
+    else if (const auto* p = std::get_if<Rational>(&data))
     {
         out << p->str();
     }
-    else if (auto p = std::get_if<std::string>(&data))
+    else if (const auto* p = std::get_if<std::string>(&data))
     {
         out << '\'' << *p << '\'';
     }
-    else if (auto p = std::get_if<Set>(&data))
+    else if (const auto* p = std::get_if<Set>(&data))
     {
         out << '{';
         bool first = true;
@@ -1090,11 +1084,11 @@ std::string Value::str() const
         }
         out << '}';
     }
-    else if (auto p = std::get_if<TypeExprAST>(&data))
+    else if (const auto* p = std::get_if<TypeExprAST>(&data))
     {
         out << p->str();
     }
-    else if (auto p = std::get_if<BitLengthSet>(&data))
+    else if (const auto* p = std::get_if<BitLengthSet>(&data))
     {
         // Concrete rendering when the exact set materializes; otherwise the symbolic expression
         // — never a silently truncated set. Mirrors materializeExact's ladder: the RunSet path

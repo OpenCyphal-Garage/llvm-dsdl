@@ -11,6 +11,8 @@
 
 #include "dsdl_runtime.h"
 
+#include "UnitTests.h"
+
 bool runRuntimeTests()
 {
     {
@@ -66,7 +68,7 @@ bool runRuntimeTests()
     {
         std::uint8_t buffer[1] = {0U};
         const auto   err       = dsdl_runtime_set_uxx(buffer, 1U, 7U, 0x3U, 2U);
-        if (err != -(std::int8_t) DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL)
+        if (err != -static_cast<std::int8_t>(DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL))
         {
             std::cerr << "buffer-too-small path returned unexpected error\n";
             return false;

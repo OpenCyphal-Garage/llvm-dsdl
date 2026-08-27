@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 
+#include "UnitTests.h"
+
 bool runLoweredFactsLookupTests()
 {
     llvmdsdl::SemanticDefinition def;

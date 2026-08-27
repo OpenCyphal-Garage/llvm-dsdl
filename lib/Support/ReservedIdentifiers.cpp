@@ -40,7 +40,7 @@ bool isReservedIdentifier(const std::string& identifier)
         "aligned",   "const",     "struct", "super", "template", "enum", "self", "and",
         "or",        "not",       "auto",   "type",  "con",      "prn",  "aux",  "nul",
     };
-    if (kExactWords.find(lowered) != kExactWords.end())
+    if (kExactWords.contains(lowered))
     {
         return true;
     }

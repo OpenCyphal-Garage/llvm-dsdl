@@ -167,4 +167,8 @@ CheckOptions:
   # A virtual destructor as the sole special member is the intended shape for
   # the interfaces here.
   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+
+  # A random distribution draws through a non-const operator(), so the check's
+  # advice does not compile. It reads only the declaration, not the call.
+  misc-const-correctness.AllowedTypes: '::std::[a-z_]*_distribution'
  

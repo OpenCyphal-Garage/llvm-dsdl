@@ -38,7 +38,7 @@
 
 // For the process environment block. Apple exposes it to library code only through
 // _NSGetEnviron(); the `environ` symbol is available to a main executable alone.
-#if defined(__APPLE__)
+#ifdef __APPLE__
 #    include <crt_externs.h>
 #else
 #    include <unistd.h>
@@ -77,7 +77,7 @@ bool isSafeTargetTriple(llvm::StringRef triple)
     }
     for (const char c : triple)
     {
-        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
+        if (!llvm::isAlnum(c) && c != '-' && c != '_' && c != '.')
         {
             return false;
         }
@@ -95,7 +95,7 @@ bool isSafePathComponent(llvm::StringRef name)
     }
     for (const char c : name)
     {
-        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
+        if (!llvm::isAlnum(c) && c != '-' && c != '_' && c != '.')
         {
             return false;
         }
@@ -372,15 +372,15 @@ llvm::Error executeCommand(llvm::StringRef                 program,
 /// @brief This process's environment with @p name set to @p value, replacing any inherited entry.
 std::vector<std::string> environmentWith(const llvm::StringRef name, const llvm::StringRef value)
 {
-#if defined(__APPLE__)
-    char** const block = *::_NSGetEnviron();
+#ifdef __APPLE__
+    char* const* const block = *::_NSGetEnviron();
 #else
     char** const block = ::environ;
 #endif
 
     const std::string        prefix = name.str() + "=";
     std::vector<std::string> entries;
-    for (char** entry = block; (entry != nullptr) && (*entry != nullptr); ++entry)
+    for (char* const* entry = block; (entry != nullptr) && (*entry != nullptr); ++entry)
     {
         if (!llvm::StringRef(*entry).starts_with(prefix))
         {
@@ -425,7 +425,7 @@ bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
 std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& outRoot, llvm::StringRef compilerProgram)
 {
     const std::string root = outRoot.string();
-    if (root.empty() || root.find('=') != std::string::npos)
+    if (root.empty() || root.contains('='))
     {
         return std::nullopt;
     }
@@ -486,7 +486,7 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
         {
             std::size_t taskIndex = 0U;
             {
-                std::lock_guard<std::mutex> lock(stateMutex);
+                std::scoped_lock const lock(stateMutex);
                 if (stopScheduling || nextTaskIndex >= tasks.size())
                 {
                     return;
@@ -497,8 +497,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             const auto& task = tasks[taskIndex];
             if (auto err = executeCommand(task.compiler, task.args, task.failContext))
             {
-                const std::string           message = llvm::toString(std::move(err));
-                std::lock_guard<std::mutex> lock(stateMutex);
+                const std::string      message = llvm::toString(std::move(err));
+                std::scoped_lock const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;
@@ -508,8 +508,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             }
             if (auto err = setPathMode(task.objectPath, options.writePolicy.fileMode))
             {
-                const std::string           message = llvm::toString(std::move(err));
-                std::lock_guard<std::mutex> lock(stateMutex);
+                const std::string      message = llvm::toString(std::move(err));
+                std::scoped_lock const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;
@@ -704,8 +704,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         }
 
         std::vector<std::string> args;
-        args.push_back("-c");
-        args.push_back("-O2");
+        args.emplace_back("-c");
+        args.emplace_back("-O2");
         args.push_back("-I" + cStageRoot.string());
         args.push_back("-DLLVMDSDL_TARGET_ENDIANNESS_" +
                        (targetEndianness == "big" ? std::string("BIG=1") : std::string("LITTLE=1")));
@@ -718,7 +718,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             args.push_back("--target=" + options.targetTriple);
         }
         args.push_back(source.string());
-        args.push_back("-o");
+        args.emplace_back("-o");
         args.push_back(objectPath.string());
 
         compileTasks.push_back(CompileTask{cCompiler, std::move(args), "C compiler invocation", objectPath});
@@ -826,9 +826,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             }
 
             std::vector<std::string> args;
-            args.push_back("-c");
-            args.push_back("-O2");
-            args.push_back("-std=c++17");
+            args.emplace_back("-c");
+            args.emplace_back("-O2");
+            args.emplace_back("-std=c++17");
             args.push_back("-I" + cppStageRoot.string());
             args.push_back("-I" + cStageRoot.string());
             args.push_back("-I" + outRoot.string());
@@ -843,7 +843,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                 args.push_back("--target=" + options.targetTriple);
             }
             args.push_back(source.string());
-            args.push_back("-o");
+            args.emplace_back("-o");
             args.push_back(objectPath.string());
 
             cppCompileTasks.push_back(CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
@@ -867,7 +867,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         {
             return arOrErr.takeError();
         }
-        std::filesystem::path archivePath = outRoot / (options.archiveName + ".a");
+        std::filesystem::path const archivePath = outRoot / (options.archiveName + ".a");
         if (!isPathWithinRoot(outRoot, archivePath))
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -901,7 +901,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
             std::vector<std::string> args;
             args.reserve(objectArgs.size() + 1U);
-            args.push_back("rcsD");
+            args.emplace_back("rcsD");
             args.insert(args.end(), objectArgs.begin(), objectArgs.end());
 
             if (auto err = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
@@ -913,7 +913,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                 std::filesystem::remove(archivePath, removeError);
 
                 args.clear();
-                args.push_back("rcs");
+                args.emplace_back("rcs");
                 args.insert(args.end(), objectArgs.begin(), objectArgs.end());
                 if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
                 {

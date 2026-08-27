@@ -35,6 +35,8 @@
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -395,7 +397,7 @@ void testModulo(TestContext& t)
     {
         aligned.insert(16 * i);
     }
-    const auto residues = (BitLengthSet(aligned) | BitLengthSet(16 * 20000 + 7)).modulo(8);
+    const auto residues = (BitLengthSet(aligned) | BitLengthSet((16 * 20000) + 7)).modulo(8);
     t.expectSetEq(residues, {0, 7}, "modulo(8) is complete and sound for a ~20000-element set");
 
     // Symbolic residues compose exactly across the whole algebra, without enumerating S, and
@@ -561,7 +563,7 @@ void testValueDomainSafety(TestContext& t)
     t.expect(huge.padToAlignment(8).min() >= huge.min(), "saturated pad stays monotone (no wrap to negative)");
     t.expect((huge + BitLengthSet(10)).max() == kMax, "sum past INT64_MAX saturates");
     t.expect((huge + BitLengthSet(10)).min() >= 0, "saturated sum never wraps negative");
-    t.expect(BitLengthSet(kMax / 2 + 1).repeat(4).max() == kMax, "product past INT64_MAX saturates");
+    t.expect(BitLengthSet((kMax / 2) + 1).repeat(4).max() == kMax, "product past INT64_MAX saturates");
     t.expect(BitLengthSet(kMax).repeat(1000000).max() == kMax, "large repeat product saturates, no UB");
     // Saturated expansion is still a well-formed, non-empty set of non-negative values.
     const auto sat = (huge + BitLengthSet(ValueSet{0, 10})).expand();
@@ -756,7 +758,7 @@ void testDsdlCompositionPatterns(TestContext& t)
 // verified differentially against the reference model over a composed-operation battery — and
 // its count/membership/subset/equality closed forms agree with enumeration. Exact relations work
 // beyond the expand() limit, and huge structured sets evaluate in closed form without enumeration.
-void testRunSet(TestContext& t)
+static void testRunSet(TestContext& t)
 {
     using llvmdsdl::RunSet;
 
@@ -825,7 +827,7 @@ void testRunSet(TestContext& t)
         t.expect(rs->min() == *c.ref.begin() && rs->max() == *c.ref.rbegin(), "runSet bounds for " + c.name);
         for (const std::int64_t probe : {0LL, 1LL, 7LL, 8LL, 16LL, 23LL, 100LL})
         {
-            t.expect(rs->contains(probe) == (c.ref.count(probe) != 0),
+            t.expect(rs->contains(probe) == (c.ref.contains(probe)),
                      "runSet membership(" + std::to_string(probe) + ") for " + c.name);
         }
         // modulo: exact for divisors below AND above the symbolic-residue cap (the
@@ -850,7 +852,7 @@ void testRunSet(TestContext& t)
         if (rs)
         {
             t.expect(rs->count().value_or(0) == 9001, "vla offset count exact (9001)");
-            t.expect(rs->min() == 16 && rs->max() == 16 + 9000 * 8, "vla offset bounds");
+            t.expect(rs->min() == 16 && rs->max() == 16 + (9000 * 8), "vla offset bounds");
             t.expect(rs->contains(16) && rs->contains(24) && !rs->contains(17), "vla offset membership");
         }
         const auto huge = BitLengthSet(8).repeatRange(1000000000).runSet();
@@ -964,7 +966,7 @@ void testRunSet(TestContext& t)
             nearMax.reserve(200001);
             for (std::int64_t k = 200000; k >= 0; --k)
             {
-                nearMax.push_back(maxV - 8 * k);
+                nearMax.push_back(maxV - (8 * k));
             }
             llvmdsdl::FlatSet<std::int64_t> nearMaxSet;
             nearMaxSet.insert(nearMax.begin(), nearMax.end());

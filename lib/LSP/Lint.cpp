@@ -33,7 +33,7 @@ namespace
 
 std::string toLower(std::string text)
 {
-    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
+    std::ranges::transform(text, text.begin(), [](const unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
     return text;
@@ -66,7 +66,7 @@ bool isSnakeCase(const std::string& text)
     }
     for (const unsigned char c : text)
     {
-        if (!(std::islower(c) || std::isdigit(c) || c == '_'))
+        if (!std::islower(c) && !std::isdigit(c) && c != '_')
         {
             return false;
         }
@@ -86,7 +86,7 @@ bool isUpperSnakeCase(const std::string& text)
     }
     for (const unsigned char c : text)
     {
-        if (!(std::isupper(c) || std::isdigit(c) || c == '_'))
+        if (!std::isupper(c) && !std::isdigit(c) && c != '_')
         {
             return false;
         }
@@ -106,7 +106,7 @@ bool isPascalCase(const std::string& text)
     }
     for (const unsigned char c : text)
     {
-        if (!(std::isalnum(c) || c == '_'))
+        if (!std::isalnum(c) && c != '_')
         {
             return false;
         }
@@ -124,7 +124,7 @@ std::string toSnakeCase(const std::string& text)
     out.reserve(text.size() * 2U);
     for (std::size_t i = 0; i < text.size(); ++i)
     {
-        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const auto c = static_cast<unsigned char>(text[i]);
         if (std::isupper(c) && i > 0 && out.back() != '_')
         {
             out.push_back('_');
@@ -145,9 +145,7 @@ std::string toSnakeCase(const std::string& text)
 std::string toUpperSnakeCase(const std::string& text)
 {
     std::string out = toSnakeCase(text);
-    std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) {
-        return static_cast<char>(std::toupper(c));
-    });
+    std::ranges::transform(out, out.begin(), [](const unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return out;
 }
 
@@ -373,10 +371,10 @@ public:
             {
                 continue;
             }
-            SourceLocation location{document.info.filePath,
-                                    static_cast<std::uint32_t>(lineIndex + 1U),
-                                    static_cast<std::uint32_t>(tabPos + 1U)};
-            LintFinding    finding =
+            SourceLocation const location{document.info.filePath,
+                                          static_cast<std::uint32_t>(lineIndex + 1U),
+                                          static_cast<std::uint32_t>(tabPos + 1U)};
+            LintFinding          finding =
                 makeFinding(id(), document, location, "replace tab characters with spaces", LintSeverity::Warning);
             finding.hasFix       = true;
             finding.preferredFix = false;
@@ -419,10 +417,10 @@ public:
             {
                 continue;
             }
-            SourceLocation location{document.info.filePath,
-                                    static_cast<std::uint32_t>(lineIndex + 1U),
-                                    static_cast<std::uint32_t>(end + 1U)};
-            LintFinding    finding =
+            SourceLocation const location{document.info.filePath,
+                                          static_cast<std::uint32_t>(lineIndex + 1U),
+                                          static_cast<std::uint32_t>(end + 1U)};
+            LintFinding          finding =
                 makeFinding(id(), document, location, "remove trailing whitespace", LintSeverity::Info);
             finding.hasFix       = true;
             finding.preferredFix = true;
@@ -468,8 +466,8 @@ public:
             return;
         }
 
-        SourceLocation location{document.info.filePath, 1, 1};
-        LintFinding    finding =
+        SourceLocation const location{document.info.filePath, 1, 1};
+        LintFinding          finding =
             makeFinding(id(), document, location, "file should end with exactly one newline", LintSeverity::Info);
         finding.hasFix       = true;
         finding.preferredFix = true;
@@ -594,10 +592,9 @@ public:
         {
             // Prefer anchoring on @extent when present because it is commonly
             // interpreted as the directive that pushed policy complexity.
-            const auto extentDirective =
-                std::find_if(directives.begin(), directives.end(), [](const DirectiveAST* directive) {
-                    return directive->kind == DirectiveKind::Extent;
-                });
+            const auto extentDirective = std::ranges::find_if(directives, [](const DirectiveAST* directive) {
+                return directive->kind == DirectiveKind::Extent;
+            });
             if (extentDirective != directives.end())
             {
                 anchor = (*extentDirective)->location;
@@ -764,7 +761,7 @@ bool LintRegistry::loadPluginLibrary(const std::string& libraryPath, std::string
         return false;
     }
 
-    RegisterFn registerFn = reinterpret_cast<RegisterFn>(symbol);
+    auto registerFn = reinterpret_cast<RegisterFn>(symbol);
     registerFn(*this);
     pluginHandles_.push_back(std::make_shared<PluginHandle>(handle));
     return true;
@@ -783,15 +780,15 @@ std::vector<std::unique_ptr<LintRule>> LintRegistry::createRules() const
         }
         rules.push_back(std::move(rule));
     }
-    std::sort(rules.begin(),
-              rules.end(),
-              [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
-                  if (!lhs || !rhs)
-                  {
-                      return static_cast<bool>(rhs);
-                  }
-                  return lhs->id() < rhs->id();
-              });
+    std::ranges::sort(rules,
+
+                      [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
+                          if (!lhs || !rhs)
+                          {
+                              return static_cast<bool>(rhs);
+                          }
+                          return lhs->id() < rhs->id();
+                      });
     return rules;
 }
 
@@ -817,15 +814,15 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
     }
 
     std::vector<std::unique_ptr<LintRule>> rules = registry_.createRules();
-    std::sort(rules.begin(),
-              rules.end(),
-              [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
-                  if (!lhs || !rhs)
-                  {
-                      return static_cast<bool>(rhs);
-                  }
-                  return lhs->id() < rhs->id();
-              });
+    std::ranges::sort(rules,
+
+                      [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
+                          if (!lhs || !rhs)
+                          {
+                              return static_cast<bool>(rhs);
+                          }
+                          return lhs->id() < rhs->id();
+                      });
 
     std::vector<const LintDocument*> orderedDocuments;
     orderedDocuments.reserve(documents.size());
@@ -833,9 +830,8 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
     {
         orderedDocuments.push_back(&document);
     }
-    std::sort(orderedDocuments.begin(), orderedDocuments.end(), [](const LintDocument* lhs, const LintDocument* rhs) {
-        return lhs->path < rhs->path;
-    });
+    std::ranges::sort(orderedDocuments,
+                      [](const LintDocument* lhs, const LintDocument* rhs) { return lhs->path < rhs->path; });
 
     for (const LintDocument* document : orderedDocuments)
     {
@@ -851,7 +847,7 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
             std::vector<LintFinding> emitted;
             rule->run(*document, emitted);
 
-            std::sort(emitted.begin(), emitted.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+            std::ranges::sort(emitted, [](const LintFinding& lhs, const LintFinding& rhs) {
                 return std::tie(lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
                        std::tie(rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
             });
@@ -867,13 +863,13 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
 
     for (auto& [_, findings] : result.findingsByUri)
     {
-        std::sort(findings.begin(), findings.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+        std::ranges::sort(findings, [](const LintFinding& lhs, const LintFinding& rhs) {
             return std::tie(lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
                    std::tie(rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
         });
     }
 
-    std::sort(result.findings.begin(), result.findings.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+    std::ranges::sort(result.findings, [](const LintFinding& lhs, const LintFinding& rhs) {
         return std::tie(lhs.uri, lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
                std::tie(rhs.uri, rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
     });
@@ -883,14 +879,14 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
 
 std::vector<std::string> LintEngine::baselineRuleIds()
 {
-    LintRegistry             registry;
+    LintRegistry const       registry;
     std::vector<std::string> ids;
     for (const std::unique_ptr<LintRule>& rule : registry.createRules())
     {
         ids.push_back(rule->id());
     }
-    std::sort(ids.begin(), ids.end());
-    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    std::ranges::sort(ids);
+    ids.erase(std::ranges::unique(ids).begin(), ids.end());
     return ids;
 }
 
@@ -930,7 +926,7 @@ std::unordered_set<std::string> LintEngine::parseSourceSuppressions(const std::s
     for (const std::string& line : lines)
     {
         const std::string text = trim(line);
-        if (text.rfind("#", 0U) != 0U)
+        if (!text.starts_with("#"))
         {
             continue;
         }

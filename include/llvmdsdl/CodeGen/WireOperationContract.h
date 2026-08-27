@@ -30,13 +30,13 @@ inline constexpr std::int64_t kWireOperationContractMinor = 0;
 inline constexpr std::int64_t kWireOperationContractVersion = kWireOperationContractMajor;
 
 /// @brief Decodes major version from wire-operation contract encoding.
-inline constexpr std::int64_t wireOperationContractMajorFromEncoded(const std::int64_t encodedVersion)
+constexpr std::int64_t wireOperationContractMajorFromEncoded(const std::int64_t encodedVersion)
 {
     return encodedVersion;
 }
 
 /// @brief True when the encoded contract version is supported by this build.
-inline constexpr bool isSupportedWireOperationContractVersion(const std::int64_t encodedVersion)
+constexpr bool isSupportedWireOperationContractVersion(const std::int64_t encodedVersion)
 {
     return wireOperationContractMajorFromEncoded(encodedVersion) == kWireOperationContractMajor;
 }

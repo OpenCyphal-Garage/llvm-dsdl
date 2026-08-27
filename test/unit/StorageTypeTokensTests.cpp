@@ -10,6 +10,8 @@
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 
+#include "UnitTests.h"
+
 bool runStorageTypeTokensTests()
 {
     using llvmdsdl::StorageTokenLanguage;

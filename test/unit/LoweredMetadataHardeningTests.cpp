@@ -43,6 +43,8 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -131,7 +133,7 @@ bool hasDiagnosticContaining(const llvmdsdl::DiagnosticEngine& diagnostics, cons
 {
     for (const auto& d : diagnostics.diagnostics())
     {
-        if (d.message.find(needle) != std::string::npos)
+        if (d.message.contains(needle))
         {
             return true;
         }
@@ -280,12 +282,7 @@ bool runLoweringMetadataFamilyTests(mlir::MLIRContext& context)
     }
 
     auto cModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>((*malformed)->clone()));
-    if (!expectCEmitterFailure(*semantic, *cModule, "MLIR schema coverage validation failed for C emission"))
-    {
-        return false;
-    }
-
-    return true;
+    return expectCEmitterFailure(*semantic, *cModule, "MLIR schema coverage validation failed for C emission");
 }
 
 bool runSchemaIdentityFamilyTests(mlir::MLIRContext& context)

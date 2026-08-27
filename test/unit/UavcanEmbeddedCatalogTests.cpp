@@ -22,6 +22,8 @@
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -224,7 +226,7 @@ bool runUavcanEmbeddedCatalogTests()
     }
     for (const auto& key : byTypeName.typeKeys)
     {
-        if (key.rfind("uavcan.node.Heartbeat:", 0U) != 0U)
+        if (!key.starts_with("uavcan.node.Heartbeat:"))
         {
             std::cerr << "unversioned type selector leaked an unrelated key: " << key << "\n";
             return false;
@@ -257,7 +259,7 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "root namespace selector should select the whole catalog\n";
         return false;
     }
-    if (!std::is_sorted(rootKeys.typeKeys.begin(), rootKeys.typeKeys.end()))
+    if (!std::ranges::is_sorted(rootKeys.typeKeys))
     {
         std::cerr << "selector expansion should return sorted keys\n";
         return false;
@@ -289,16 +291,14 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "an unavailable version must not resolve\n";
         return false;
     }
-    if (std::find(badVersion.suggestions.begin(), badVersion.suggestions.end(), "uavcan.node.Heartbeat.1.0") ==
-        badVersion.suggestions.end())
+    if (std::ranges::find(badVersion.suggestions, "uavcan.node.Heartbeat.1.0") == badVersion.suggestions.end())
     {
         std::cerr << "an unavailable version should suggest the versions the catalog carries\n";
         return false;
     }
 
     const auto typo = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcna");
-    if (!typo.typeKeys.empty() ||
-        std::find(typo.suggestions.begin(), typo.suggestions.end(), "uavcan") == typo.suggestions.end())
+    if (!typo.typeKeys.empty() || std::ranges::find(typo.suggestions, "uavcan") == typo.suggestions.end())
     {
         std::cerr << "a transposed namespace should suggest the namespace it was reaching for\n";
         return false;

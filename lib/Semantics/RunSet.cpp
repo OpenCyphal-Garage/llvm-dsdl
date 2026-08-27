@@ -64,7 +64,7 @@ std::optional<Run> makeRunThrough(std::int64_t start, std::int64_t stride, std::
     {
         return std::nullopt;
     }
-    const __int128 count = distance / stride + 1;
+    const __int128 count = (distance / stride) + 1;
     if (count > std::numeric_limits<std::int64_t>::max())
     {
         return std::nullopt;
@@ -129,20 +129,20 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
         const __int128 m  = db / g;
         __int128       t0 = (diff / g) % m * (((bez % m) + m) % m) % m;
         t0                = ((t0 % m) + m) % m;
-        const __int128 x0 = a.start + static_cast<__int128>(da) * t0;
+        const __int128 x0 = a.start + (static_cast<__int128>(da) * t0);
         if (x0 < lo || x0 > hi)
         {
             return std::nullopt;
         }
         return makeRun(static_cast<std::int64_t>(x0), 1, 1);
     }
-    const std::int64_t lcm = static_cast<std::int64_t>(lcm128);
+    const auto lcm = static_cast<std::int64_t>(lcm128);
 
     // Smallest solution of the pair of congruences, then advance into [lo, hi].
     const __int128 m  = db / g;
     __int128       t0 = (diff / g) % m * (((bez % m) + m) % m) % m;
     t0                = ((t0 % m) + m) % m;
-    __int128 x0       = a.start + static_cast<__int128>(da) * t0;  // smallest x >= a.start
+    __int128 x0       = a.start + (static_cast<__int128>(da) * t0);  // smallest x >= a.start
     if (x0 < lo)
     {
         const __int128 steps = (static_cast<__int128>(lo) - x0 + lcm - 1) / lcm;
@@ -152,7 +152,7 @@ std::optional<Run> intersectRuns(const Run& a, const Run& b, bool& overflowed)
     {
         return std::nullopt;
     }
-    const __int128 n = (static_cast<__int128>(hi) - x0) / lcm + 1;
+    const __int128 n = ((static_cast<__int128>(hi) - x0) / lcm) + 1;
     if (n == 1)
     {
         return makeRun(static_cast<std::int64_t>(x0), 1, 1);
@@ -220,7 +220,7 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
             }
             // Elements of this class before the last cut element (they alternate with cut
             // elements, one per cut gap).
-            const std::int64_t n = std::min(cut.count - 1, (r.last() - classStart) / cut.stride + 1);
+            const std::int64_t n = std::min(cut.count - 1, ((r.last() - classStart) / cut.stride) + 1);
             if (n >= 1)
             {
                 if (!emit(Run{classStart, cut.stride, n}))
@@ -237,7 +237,7 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
     std::int64_t afterCut = 0;
     if (checkedAdd(cut.last(), r.stride, afterCut) && afterCut <= r.last())
     {
-        const std::int64_t n = (r.last() - afterCut) / r.stride + 1;
+        const std::int64_t n = ((r.last() - afterCut) / r.stride) + 1;
         if (!emit(Run{afterCut, r.stride, n}))
         {
             return false;
@@ -427,11 +427,11 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
             return false;
         }
         --budget;
-        Run  piece    = pending.back();
-        bool consumed = false;
+        Run const piece    = pending.back();
+        bool      consumed = false;
         pending.pop_back();
 
-        for (std::size_t i = 0; i < runs_.size(); ++i)
+        for (const auto& existing : runs_)
         {
             // Metered per examined run: the scan is O(|runs_|) per piece, so an unmetered walk
             // would make total work quadratic in the budget instead of bounded by it.
@@ -440,7 +440,6 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
                 return false;
             }
             --budget;
-            const Run& existing = runs_[i];
             if (piece.last() < existing.start || piece.start > existing.last())
             {
                 continue;  // ranges disjoint => sets disjoint
@@ -477,9 +476,7 @@ bool RunSet::insertRun(Run run, std::size_t& budget)
             continue;
         }
         // No overlap with any existing run: insert preserving start order.
-        const auto pos = std::lower_bound(runs_.begin(), runs_.end(), piece.start, [](const Run& r, std::int64_t s) {
-            return r.start < s;
-        });
+        const auto pos = std::ranges::lower_bound(runs_, piece.start, {}, &Run::start);
         runs_.insert(pos, piece);
     }
     return true;
@@ -642,7 +639,7 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                     {
                         const auto offset = static_cast<std::size_t>((x + small.min()) - static_cast<std::int64_t>(lo));
                         const std::size_t wordShift = offset / 64U;
-                        const unsigned    bitShift  = static_cast<unsigned>(offset % 64U);
+                        const auto        bitShift  = static_cast<unsigned>(offset % 64U);
                         for (std::size_t w = 0; w < smallWords; ++w)
                         {
                             result[wordShift + w] |= smallBits[w] << bitShift;
@@ -660,7 +657,8 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                         {
                             const auto bit = static_cast<std::size_t>(std::countr_zero(bits));
                             bits &= bits - 1;
-                            values.push_back(static_cast<std::int64_t>(lo) + static_cast<std::int64_t>(w * 64U + bit));
+                            values.push_back(static_cast<std::int64_t>(lo) +
+                                             static_cast<std::int64_t>((w * 64U) + bit));
                         }
                     }
                     return fromValues(FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end()));
@@ -689,8 +687,8 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                     values.push_back(s);
                 }
             }
-            std::sort(values.begin(), values.end());
-            values.erase(std::unique(values.begin(), values.end()), values.end());
+            std::ranges::sort(values);
+            values.erase(std::ranges::unique(values).begin(), values.end());
             return fromValues(FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end()));
         }
     }
@@ -762,7 +760,7 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
                 // Different strides: expand the smaller run into singleton shifts of the larger.
                 const Run& big   = (ra.count >= rb.count) ? ra : rb;
                 const Run& small = (ra.count >= rb.count) ? rb : ra;
-                if (static_cast<std::size_t>(small.count) > budget)
+                if (std::cmp_greater(small.count, budget))
                 {
                     return std::nullopt;
                 }
@@ -857,7 +855,7 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
                 return std::nullopt;
             }
             const std::int64_t classes = period / r.stride;  // = alignment / g
-            if (static_cast<std::size_t>(classes) > budget)
+            if (std::cmp_greater(classes, budget))
             {
                 return std::nullopt;
             }
@@ -872,7 +870,7 @@ std::optional<RunSet> RunSet::paddedTo(std::int64_t alignment) const
                 {
                     break;
                 }
-                const std::int64_t n = (r.last() - classStart) / period + 1;
+                const std::int64_t n = ((r.last() - classStart) / period) + 1;
                 std::int64_t       s = 0;
                 if (!padUp(classStart, s))
                 {
@@ -1189,7 +1187,7 @@ std::optional<RunSet> RunSet::repeatRange(std::int64_t countMax) const
         {
             break;
         }
-        const std::int64_t jEnd = j0 + ((countMax - j0) / P) * P;
+        const std::int64_t jEnd = j0 + (((countMax - j0) / P) * P);
         std::int64_t       lo   = 0;
         std::int64_t       hi   = 0;
         if (!checkedMultiply(j0, m, lo) || !checkedMultiply(jEnd, M, hi))
@@ -1243,7 +1241,7 @@ std::optional<FlatSet<std::int64_t>> RunSet::residues(std::int64_t divisor) cons
         // cross-run duplicates are removed by the FlatSet before the budget is re-checked.
         // Widen (never narrow) for the comparison: a size_t cast would truncate on ILP32 hosts
         // and bypass the guard.
-        if (static_cast<std::uintmax_t>(k) > kResidueBudget)
+        if (std::cmp_greater(k, kResidueBudget))
         {
             return std::nullopt;  // this run alone contributes more distinct residues than the budget
         }
@@ -1275,7 +1273,7 @@ std::optional<FlatSet<std::int64_t>> RunSet::materialize(std::size_t limit) cons
     const auto total = count();
     // Widen (never narrow) for the comparison: a size_t cast would truncate on ILP32 hosts and
     // bypass the allocation guard this check exists to enforce.
-    if (!total || static_cast<std::uintmax_t>(*total) > limit)
+    if (!total || std::cmp_greater(*total, limit))
     {
         return std::nullopt;
     }
@@ -1285,10 +1283,10 @@ std::optional<FlatSet<std::int64_t>> RunSet::materialize(std::size_t limit) cons
     {
         for (std::int64_t i = 0; i < r.count; ++i)
         {
-            values.push_back(r.start + i * r.stride);
+            values.push_back(r.start + (i * r.stride));
         }
     }
-    std::sort(values.begin(), values.end());
+    std::ranges::sort(values);
     return FlatSet<std::int64_t>(sorted_unique_t{}, values.begin(), values.end());
 }
 

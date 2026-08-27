@@ -28,6 +28,8 @@
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -47,7 +49,7 @@ void writeDefinition(const std::filesystem::path& path)
 /// @brief True when @p files contains an entry whose filename is @p name.
 bool containsFileNamed(const std::vector<std::string>& files, const std::string& name)
 {
-    return std::any_of(files.begin(), files.end(), [&name](const std::string& file) {
+    return std::ranges::any_of(files, [&name](const std::string& file) {
         return std::filesystem::path(file).filename().string() == name;
     });
 }
@@ -72,8 +74,8 @@ bool runTargetResolutionTests()
     writeDefinition(nsDir / "Alpha.2.0.dsdl");
     writeDefinition(nsDir / "Beta.1.0.dsdl");
 
-    llvmdsdl::DiagnosticEngine     diagnostics;
-    llvmdsdl::TargetResolveOptions options;
+    llvmdsdl::DiagnosticEngine           diagnostics;
+    llvmdsdl::TargetResolveOptions const options;
 
     // A folder target sweeps. Everything under it is targeted, and nothing under it was named.
     {

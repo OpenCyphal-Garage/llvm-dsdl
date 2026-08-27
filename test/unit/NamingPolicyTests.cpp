@@ -19,6 +19,8 @@
 
 #include "llvmdsdl/Support/NamingPolicy.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -77,7 +79,7 @@ std::string emitterMacroToken(std::string token)
 {
     for (char& c : token)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             c = '_';
         }

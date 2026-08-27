@@ -65,7 +65,7 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVe
                                     versioning);
 }
 
-std::string cTypeNameFromRef(const SemanticTypeRef& ref, const TypeNameVersioning versioning)
+std::string cTypeNameFromRef(const SemanticTypeRef& ref)
 {
     std::string out;
     for (std::size_t i = 0; i < ref.namespaceComponents.size(); ++i)
@@ -380,8 +380,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
                     ioState.addAttribute("composite_minor",
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
-                    ioState.addAttribute("composite_c_type_name",
-                                         builder.getStringAttr(cTypeNameFromRef(ref, TypeNameVersioning::Unversioned)));
+                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));
@@ -427,9 +426,9 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
     // debug snapshot — a partial module there is an acceptable view, not a codegen contract.
     if (verifyModule)
     {
-        std::string                   verifyError;
-        llvm::raw_string_ostream      verifyStream(verifyError);
-        mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic& diag) {
+        std::string                         verifyError;
+        llvm::raw_string_ostream            verifyStream(verifyError);
+        mlir::ScopedDiagnosticHandler const handler(&context, [&](mlir::Diagnostic& diag) {
             verifyStream << diag.str() << '\n';
             return mlir::success();
         });

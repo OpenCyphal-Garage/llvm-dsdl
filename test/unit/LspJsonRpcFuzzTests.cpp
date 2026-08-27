@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -116,7 +118,7 @@ bool runLspJsonRpcFuzzTests()
         llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
         llvm::json::Value                    message(llvm::json::Object{});
         std::string                          error;
-        if (transport.readMessage(message, error) || error.find("invalid JSON payload: ") != 0U)
+        if (transport.readMessage(message, error) || !error.starts_with("invalid JSON payload: "))
         {
             std::cerr << "expected invalid JSON payload error\n";
             return false;
@@ -195,7 +197,7 @@ bool runLspJsonRpcFuzzTests()
         // A single header line without a terminator must not grow the read buffer
         // without limit: the per-line cap rejects it before it can exhaust memory.
         // (The Content-Length payload cap does not protect the header phase.)
-        std::string                          giantHeaderLine = "X-Filler: " + std::string(200000, 'a');
+        std::string const                    giantHeaderLine = "X-Filler: " + std::string(200000, 'a');
         std::istringstream                   in(giantHeaderLine);  // no CRLF, no blank line
         std::ostringstream                   out;
         llvmdsdl::lsp::JsonRpcStdioTransport transport(in, out);
@@ -260,7 +262,7 @@ bool runLspJsonRpcFuzzTests()
             return false;
         }
         const std::string framed = out.str();
-        if (framed.find("Content-Length: ") != 0U || framed.find("\"initialize\"") == std::string::npos)
+        if (!framed.starts_with("Content-Length: ") || !framed.contains("\"initialize\""))
         {
             std::cerr << "writeMessage emitted unexpected frame\n";
             return false;
@@ -288,7 +290,7 @@ bool runLspJsonRpcFuzzTests()
     server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"}, {"method", 99}});
     server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 2}, {"method", ""}});
 
-    std::mt19937                       rng(0xD5D1u);
+    std::mt19937                       rng(0xD5D1U);
     std::uniform_int_distribution<int> methodLength(0, 18);
     std::uniform_int_distribution<int> charDist(0, 25);
     std::uniform_int_distribution<int> idDist(3, 200);

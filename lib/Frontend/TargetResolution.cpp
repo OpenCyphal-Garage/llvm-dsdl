@@ -109,7 +109,7 @@ bool isUnderRoot(const std::filesystem::path& file, const std::filesystem::path&
 
 char envPathSeparator()
 {
-#if defined(_WIN32)
+#ifdef _WIN32
     return ';';
 #else
     return ':';
@@ -191,11 +191,11 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
 
 llvm::Error expandRootTargets(const std::filesystem::path& root, std::set<std::filesystem::path>& explicitTargets)
 {
-    std::error_code                               ec;
-    std::filesystem::recursive_directory_iterator it(root,
-                                                     std::filesystem::directory_options::skip_permission_denied,
-                                                     ec);
-    std::filesystem::recursive_directory_iterator end;
+    std::error_code                                     ec;
+    std::filesystem::recursive_directory_iterator       it(root,
+                                                           std::filesystem::directory_options::skip_permission_denied,
+                                                           ec);
+    std::filesystem::recursive_directory_iterator const end;
     if (ec)
     {
         return llvm::createStringError(ec, "failed to enumerate root namespace directory %s", root.string().c_str());
@@ -453,17 +453,14 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
         out.namedTargetFiles.push_back(target.string());
     }
 
-    std::sort(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end());
-    std::sort(out.lookupDirs.begin(), out.lookupDirs.end());
-    std::sort(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end());
-    std::sort(out.namedTargetFiles.begin(), out.namedTargetFiles.end());
-    out.rootNamespaceDirs.erase(std::unique(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end()),
-                                out.rootNamespaceDirs.end());
-    out.lookupDirs.erase(std::unique(out.lookupDirs.begin(), out.lookupDirs.end()), out.lookupDirs.end());
-    out.explicitTargetFiles.erase(std::unique(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end()),
-                                  out.explicitTargetFiles.end());
-    out.namedTargetFiles.erase(std::unique(out.namedTargetFiles.begin(), out.namedTargetFiles.end()),
-                               out.namedTargetFiles.end());
+    std::ranges::sort(out.rootNamespaceDirs);
+    std::ranges::sort(out.lookupDirs);
+    std::ranges::sort(out.explicitTargetFiles);
+    std::ranges::sort(out.namedTargetFiles);
+    out.rootNamespaceDirs.erase(std::ranges::unique(out.rootNamespaceDirs).begin(), out.rootNamespaceDirs.end());
+    out.lookupDirs.erase(std::ranges::unique(out.lookupDirs).begin(), out.lookupDirs.end());
+    out.explicitTargetFiles.erase(std::ranges::unique(out.explicitTargetFiles).begin(), out.explicitTargetFiles.end());
+    out.namedTargetFiles.erase(std::ranges::unique(out.namedTargetFiles).begin(), out.namedTargetFiles.end());
     return out;
 }
 

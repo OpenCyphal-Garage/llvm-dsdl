@@ -538,21 +538,21 @@ llvm::json::Value cloneJsonId(const llvm::json::Value& id)
 {
     if (const auto text = id.getAsString())
     {
-        return llvm::json::Value(text->str());
+        return {text->str()};
     }
     if (const auto integer = id.getAsInteger())
     {
-        return llvm::json::Value(*integer);
+        return {*integer};
     }
     if (const auto number = id.getAsNumber())
     {
-        return llvm::json::Value(*number);
+        return {*number};
     }
     if (const auto boolean = id.getAsBoolean())
     {
-        return llvm::json::Value(*boolean);
+        return {*boolean};
     }
-    return llvm::json::Value(nullptr);
+    return {nullptr};
 }
 
 int diagnosticSeverityToLsp(const DiagnosticLevel level)
@@ -683,7 +683,7 @@ std::vector<RankedCompletion> rerankCompletions(const std::vector<CompletionData
         ranked.push_back(RankedCompletion{completion, breakdown});
     }
 
-    std::sort(ranked.begin(), ranked.end(), [](const RankedCompletion& lhs, const RankedCompletion& rhs) {
+    std::ranges::sort(ranked, [](const RankedCompletion& lhs, const RankedCompletion& rhs) {
         if (lhs.breakdown.totalScore != rhs.breakdown.totalScore)
         {
             return lhs.breakdown.totalScore > rhs.breakdown.totalScore;
@@ -720,7 +720,7 @@ std::vector<RankedSymbol> rerankSymbols(const std::vector<WorkspaceSymbolResult>
         ranked.push_back(RankedSymbol{symbol, breakdown});
     }
 
-    std::sort(ranked.begin(), ranked.end(), [](const RankedSymbol& lhs, const RankedSymbol& rhs) {
+    std::ranges::sort(ranked, [](const RankedSymbol& lhs, const RankedSymbol& rhs) {
         if (lhs.breakdown.totalScore != rhs.breakdown.totalScore)
         {
             return lhs.breakdown.totalScore > rhs.breakdown.totalScore;
@@ -1596,7 +1596,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         const bool        queued     = scheduler_.enqueue(
             requestKey,
             method.str(),
-            [sleepMilliseconds](CancellationToken token) {
+            [sleepMilliseconds](const CancellationToken& token) {
                 const auto start = std::chrono::steady_clock::now();
                 while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(sleepMilliseconds))
                 {
@@ -2020,14 +2020,14 @@ void Server::appendAiCodeActions(const std::string&              uri,
     const std::string                     sourceText  = snapshot ? snapshot->text : std::string{};
     const std::vector<std::string>        symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
 
-    const AiCodeActionContext                 context     = aiContextPacker_.buildCodeActionContext(uri,
-                                                                                                    sourceText,
-                                                                                                    startLine,
-                                                                                                    startCharacter,
-                                                                                                    endLine,
-                                                                                                    endCharacter,
-                                                                                                    diagnosticMessages,
-                                                                                                    symbolHints);
+    const AiCodeActionContext context = llvmdsdl::lsp::AiContextPacker::buildCodeActionContext(uri,
+                                                                                               sourceText,
+                                                                                               startLine,
+                                                                                               startCharacter,
+                                                                                               endLine,
+                                                                                               endCharacter,
+                                                                                               diagnosticMessages,
+                                                                                               symbolHints);
     const std::vector<AiCodeActionSuggestion> suggestions = aiProvider_->suggestCodeActions(config_.aiMode, context);
 
     aiAuditLogger_.record("code_action",

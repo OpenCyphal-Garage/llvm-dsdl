@@ -185,7 +185,7 @@ public:
         return cTypeNameFromInfo(tmp, typeNameVersioning_);
     }
 
-    std::string relativeHeaderPath(const SemanticDefinition& def) const
+    static std::string relativeHeaderPath(const SemanticDefinition& def)
     {
         std::filesystem::path p;
         for (const auto& ns : def.info.namespaceComponents)
@@ -445,7 +445,7 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
     // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
     // the policy tables and escaped by the projection this reads back.
-    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(out, 0, c.doc);
@@ -662,7 +662,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     {
         if (const auto* dep = ctx.find(depRef))
         {
-            out << "#include \"" << ctx.relativeHeaderPath(*dep) << "\"\n";
+            out << "#include \"" << llvmdsdl::EmitterContext::relativeHeaderPath(*dep) << "\"\n";
         }
     }
     out << "\n";
@@ -874,9 +874,9 @@ llvm::Error emitC(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    std::filesystem::path outRoot(options.outDir);
-    EmitterContext        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
-    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    std::filesystem::path const outRoot(options.outDir);
+    EmitterContext const        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
     // them is independent of which definitions were selected -- except under `as-needed`, which
@@ -929,7 +929,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.require_typed_lowering", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string targetHeaderPath = ctx.relativeHeaderPath(def);
+        const std::string targetHeaderPath = llvmdsdl::EmitterContext::relativeHeaderPath(def);
         const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
         if (targetIt == schemaByHeaderPath.end())
         {

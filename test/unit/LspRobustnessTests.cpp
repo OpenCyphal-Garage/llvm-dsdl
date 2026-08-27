@@ -30,6 +30,8 @@
 #include <thread>
 #include <vector>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -90,7 +92,7 @@ bool runLspRobustnessTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();
@@ -185,7 +187,7 @@ bool runLspRobustnessTests()
 
     int cancelledCount = 0;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock const lock(mutex);
         for (int index = 0; index < kStormRequests; ++index)
         {
             const auto* response = findResponseByStringId(outgoing, "storm-" + std::to_string(index));
@@ -253,12 +255,12 @@ bool runLspStructuredLoggingTests()
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server(
             [&mutex, &outgoing](llvm::json::Value message) {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock const lock(mutex);
                 outgoing.push_back(std::move(message));
             },
             {},
             [&mutex, &logLines](const std::string& line) {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock const lock(mutex);
                 logLines.push_back(line);
             });
         server.handleMessage(
@@ -267,7 +269,7 @@ bool runLspStructuredLoggingTests()
         {
             server.handleMessage(message);
         }
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock const lock(mutex);
         return logLines;
     };
 
@@ -337,7 +339,7 @@ bool runLspStructuredLoggingTests()
                  symbolRequest()});
     for (const std::string& line : afterOff)
     {
-        if (line.find("documentSymbol") != std::string::npos)
+        if (line.contains("documentSymbol"))
         {
             std::cerr << "request logged after $/setTrace off: " << line << "\n";
             return false;
@@ -353,8 +355,7 @@ bool runLspStructuredLoggingTests()
     bool       sawError = false;
     for (const std::string& line : errors)
     {
-        if (line.find("\"event\":\"error_response\"") != std::string::npos &&
-            line.find("\"level\":\"warn\"") != std::string::npos)
+        if (line.contains(R"("event":"error_response")") && line.contains(R"("level":"warn")"))
         {
             sawError = true;
         }
@@ -377,13 +378,13 @@ bool runLspPositionEncodingTests()
         std::mutex                     mutex;
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server([&mutex, &outgoing](llvm::json::Value message) {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock const lock(mutex);
             outgoing.push_back(std::move(message));
         });
         server.handleMessage(
             llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 response = findResponseByIntegerId(outgoing, 1);
+        std::scoped_lock const lock(mutex);
+        const auto*            response = findResponseByIntegerId(outgoing, 1);
         if (response == nullptr)
         {
             return std::nullopt;
@@ -450,7 +451,7 @@ bool runLspAdversarialRequestTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();
@@ -484,24 +485,24 @@ bool runLspAdversarialRequestTests()
     for (const char* method : featureMethods)
     {
         // Position far beyond the document (max uint32) on an open document.
-        hostileRequests.push_back(llvm::json::Object{{"jsonrpc", "2.0"},
-                                                     {"id", nextId++},
-                                                     {"method", method},
-                                                     {"params", positionParams(uri, 4294967295LL, 4294967295LL)}});
+        hostileRequests.emplace_back(llvm::json::Object{{"jsonrpc", "2.0"},
+                                                        {"id", nextId++},
+                                                        {"method", method},
+                                                        {"params", positionParams(uri, 4294967295LL, 4294967295LL)}});
         // A document that was never opened.
-        hostileRequests.push_back(
+        hostileRequests.emplace_back(
             llvm::json::Object{{"jsonrpc", "2.0"},
                                {"id", nextId++},
                                {"method", method},
                                {"params", positionParams("file:///tmp/never-opened.dsdl", 0, 0)}});
         // Missing position object entirely.
-        hostileRequests.push_back(
+        hostileRequests.emplace_back(
             llvm::json::Object{{"jsonrpc", "2.0"},
                                {"id", nextId++},
                                {"method", method},
                                {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
         // Position fields present but the wrong JSON type.
-        hostileRequests.push_back(
+        hostileRequests.emplace_back(
             llvm::json::Object{{"jsonrpc", "2.0"},
                                {"id", nextId++},
                                {"method", method},
@@ -510,17 +511,17 @@ bool runLspAdversarialRequestTests()
                                                    {"position",
                                                     llvm::json::Object{{"line", "nan"}, {"character", true}}}}}});
         // Params missing altogether.
-        hostileRequests.push_back(llvm::json::Object{{"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}});
+        hostileRequests.emplace_back(llvm::json::Object{{"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}});
     }
     // Structural requests on a never-opened document.
-    hostileRequests.push_back(
+    hostileRequests.emplace_back(
         llvm::json::Object{{"jsonrpc", "2.0"},
                            {"id", nextId++},
                            {"method", "textDocument/documentSymbol"},
                            {"params",
                             llvm::json::Object{
                                 {"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
-    hostileRequests.push_back(
+    hostileRequests.emplace_back(
         llvm::json::Object{{"jsonrpc", "2.0"},
                            {"id", nextId++},
                            {"method", "textDocument/semanticTokens/full"},

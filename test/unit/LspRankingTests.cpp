@@ -15,6 +15,8 @@
 
 #include "llvmdsdl/LSP/Ranking.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -84,7 +86,7 @@ bool runLspRankingTests()
         return fail("failed to flush signal store");
     }
 
-    llvmdsdl::lsp::AdaptiveSignalStore reloaded(signalPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const reloaded(signalPath.string(), 4);
     if (reloaded.size() > 4)
     {
         return fail("signal store did not respect bounded size");
@@ -132,7 +134,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write invalid json fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore invalidJsonStore(invalidJsonPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const invalidJsonStore(invalidJsonPath.string(), 4);
     if (invalidJsonStore.size() != 0)
     {
         return fail("invalid json should be ignored during load");
@@ -145,7 +147,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write wrong-schema fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore wrongSchemaStore(wrongSchemaPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const wrongSchemaStore(wrongSchemaPath.string(), 4);
     if (wrongSchemaStore.size() != 0)
     {
         return fail("wrong schema version should be ignored");
@@ -158,7 +160,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write clamping/pruning fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore clampedStore(negativeFixturePath.string(), 2);
+    llvmdsdl::lsp::AdaptiveSignalStore const clampedStore(negativeFixturePath.string(), 2);
     if (clampedStore.size() != 2 || clampedStore.currentTick() != 42)
     {
         return fail("clamped/pruned store did not load expected shape");

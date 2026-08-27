@@ -14,6 +14,8 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runTypeStorageTests()
 {
     if (llvmdsdl::scalarStorageBits(1) != 8 || llvmdsdl::scalarStorageBits(8) != 8 ||

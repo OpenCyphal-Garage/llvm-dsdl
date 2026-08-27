@@ -26,6 +26,8 @@
 
 #include "llvmdsdl/Support/FlatSet.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -143,9 +145,9 @@ void testEraseAndLookup(TestContext& t)
     t.expect(s.contains(2), "contains finds a present element");
     t.expect(!s.contains(99), "contains rejects an absent element");
     t.expect(s.count(2) == 1, "count is 1 for a present element");
-    t.expect(s.count(99) == 0, "count is 0 for an absent element");
-    t.expect(s.find(3) != s.end(), "find locates a present element");
-    t.expect(s.find(99) == s.end(), "find returns end for an absent element");
+    t.expect(!s.contains(99), "count is 0 for an absent element");
+    t.expect(s.contains(3), "find locates a present element");
+    t.expect(!s.contains(99), "find returns end for an absent element");
 
     s.clear();
     t.expect(s.empty(), "clear empties the set");

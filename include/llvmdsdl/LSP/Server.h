@@ -169,7 +169,6 @@ private:
     std::unique_ptr<AdaptiveSignalStore>                    signalStore_;
     std::string                                             signalStorePath_;
     std::unique_ptr<AiProvider>                             aiProvider_;
-    AiContextPacker                                         aiContextPacker_;
     mutable AiAuditLogger                                   aiAuditLogger_;
     std::unordered_map<std::string, AiCodeActionSuggestion> aiSuggestionsById_;
     std::unordered_set<std::string>                         publishedDiagnosticUris_;

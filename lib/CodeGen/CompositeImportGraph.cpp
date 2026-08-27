@@ -67,7 +67,7 @@ std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&
         }
     }
 
-    std::sort(out.begin(), out.end(), [](const SemanticTypeRef& lhs, const SemanticTypeRef& rhs) {
+    std::ranges::sort(out, [](const SemanticTypeRef& lhs, const SemanticTypeRef& rhs) {
         return dependencyKey(lhs) < dependencyKey(rhs);
     });
     return out;

@@ -63,7 +63,7 @@ OPTIONS
 
 int main(int argc, char** argv)
 {
-    llvm::InitLLVM y(argc, argv);
+    llvm::InitLLVM const y(argc, argv);
     for (int i = 1; i < argc; ++i)
     {
         const llvm::StringRef arg(argv[i]);
@@ -83,7 +83,7 @@ int main(int argc, char** argv)
 
     llvmdsdl::lsp::JsonRpcStdioTransport transport(std::cin, std::cout);
     llvmdsdl::lsp::Server                server(
-        [&transport](llvm::json::Value message) {
+        [&transport](const llvm::json::Value& message) {
             if (!transport.writeMessage(message))
             {
                 llvm::errs() << "[dsdld] failed to write JSON-RPC message\n";

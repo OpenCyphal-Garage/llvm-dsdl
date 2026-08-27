@@ -198,7 +198,7 @@ public:
     /// @brief Constructs a concrete set from expanded values.
     /// @param[in] values Explicit value set; an empty set is coerced to {0} (invariant I1) and any
     ///            negative element is clamped to 0 (see "Value domain").
-    explicit BitLengthSet(std::set<std::int64_t> values);
+    explicit BitLengthSet(const std::set<std::int64_t>& values);
 
     /// @brief Returns the exact minimum of the denoted set.
     /// @return `min(S)`; always defined because S is non-empty (I1).

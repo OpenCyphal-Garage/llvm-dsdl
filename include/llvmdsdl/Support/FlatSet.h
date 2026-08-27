@@ -67,12 +67,12 @@ public:
     using key_type       = T;
     using key_compare    = Compare;
     using container_type = std::vector<T>;
-    using size_type      = typename container_type::size_type;
+    using size_type      = container_type::size_type;
     // Elements are keys, so they are immutable in place: mutating one through an
     // iterator could break the sorted invariant the whole class rests on.
-    using const_iterator         = typename container_type::const_iterator;
+    using const_iterator         = container_type::const_iterator;
     using iterator               = const_iterator;
-    using const_reverse_iterator = typename container_type::const_reverse_iterator;
+    using const_reverse_iterator = container_type::const_reverse_iterator;
     using reverse_iterator       = const_reverse_iterator;
 
     FlatSet() = default;
@@ -88,7 +88,7 @@ public:
     ///   precondition violation that silently breaks lookup -- exactly as it would
     ///   with `std::flat_set`.
     template <typename InputIt>
-    FlatSet(sorted_unique_t, InputIt first, InputIt last)
+    FlatSet(sorted_unique_t /*unused*/, InputIt first, InputIt last)
         : data_(first, last)
     {
     }

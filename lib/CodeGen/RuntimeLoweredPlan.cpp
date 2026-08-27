@@ -168,8 +168,8 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "lowered runtime section plan contains null field");
         }
-        const auto&  field     = *orderedStep.field;
-        std::int64_t fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
+        const auto& field     = *orderedStep.field;
+        auto        fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
         if (fieldBits < 0)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -367,7 +367,7 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "union runtime plan metadata is incomplete or inconsistent");
         }
-        std::sort(plan.fields.begin(), plan.fields.end(), [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
+        std::ranges::sort(plan.fields, [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
             return lhs.unionOptionIndex < rhs.unionOptionIndex;
         });
         plan.unionTagBits          = *unionTagBits;

@@ -11,6 +11,8 @@
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 

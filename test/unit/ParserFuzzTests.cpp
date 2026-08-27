@@ -42,6 +42,8 @@
 #include <string_view>
 #include <thread>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -283,9 +285,9 @@ bool runEdgeCaseCorpus()
     });
 
     bool ok = true;
-    for (std::size_t i = 0; i < kCorpus.size(); ++i)
+    for (auto kCorpu : kCorpus)
     {
-        ok = parseAndCheck("edge-case", kCorpus[i]) && ok;
+        ok = parseAndCheck("edge-case", kCorpu) && ok;
     }
     return ok;
 }
@@ -293,7 +295,7 @@ bool runEdgeCaseCorpus()
 /// @brief Streams of fully random bytes of varied lengths.
 bool runRandomByteFuzz()
 {
-    std::mt19937                       rng(0x0B5E55EDu);
+    std::mt19937                       rng(0x0B5E55EDU);
     std::uniform_int_distribution<int> byte(0, 255);
     bool                               ok = true;
 
@@ -315,7 +317,7 @@ bool runRandomByteFuzz()
 /// @brief Token-aware inputs assembled from DSDL-like fragments.
 bool runStructuredFuzz()
 {
-    std::mt19937 rng(0xDEFEC8EDu);
+    std::mt19937 rng(0xDEFEC8EDU);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)
@@ -335,7 +337,7 @@ bool runStructuredFuzz()
 /// @brief Mutational fuzzing seeded from valid-looking fragments.
 bool runMutationalFuzz()
 {
-    std::mt19937 rng(0xF0CACC1Au);
+    std::mt19937 rng(0xF0CACC1AU);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)

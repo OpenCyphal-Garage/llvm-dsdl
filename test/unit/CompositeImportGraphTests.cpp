@@ -12,6 +12,8 @@
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 

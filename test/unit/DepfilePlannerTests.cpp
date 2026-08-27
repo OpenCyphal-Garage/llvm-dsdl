@@ -15,6 +15,8 @@
 #include "llvmdsdl/Frontend/DepfilePlanner.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -98,18 +100,18 @@ llvmdsdl::SemanticDefinition makeDefinition(const std::string&                  
 
 bool containsSuffix(const std::vector<std::string>& paths, const std::string_view suffix)
 {
-    return std::any_of(paths.begin(), paths.end(), [&](const std::string& path) {
+    return std::ranges::any_of(paths, [&](const std::string& path) {
         return path.size() >= suffix.size() && std::string_view(path).substr(path.size() - suffix.size()) == suffix;
     });
 }
 
 bool isSortedAndUnique(const std::vector<std::string>& values)
 {
-    if (!std::is_sorted(values.begin(), values.end()))
+    if (!std::ranges::is_sorted(values))
     {
         return false;
     }
-    return std::adjacent_find(values.begin(), values.end()) == values.end();
+    return std::ranges::adjacent_find(values) == values.end();
 }
 
 }  // namespace

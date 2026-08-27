@@ -11,6 +11,8 @@
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runScriptedBodyPlanTests()
 {
     {

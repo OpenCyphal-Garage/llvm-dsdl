@@ -11,6 +11,8 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/Support/Rational.h"
 
+#include "UnitTests.h"
+
 bool runConstantLiteralRenderTests()
 {
     using llvmdsdl::ConstantLiteralLanguage;
@@ -51,7 +53,7 @@ bool runConstantLiteralRenderTests()
     }
 
     const Value stringValue{std::string("a\"b\\c")};
-    if (renderConstantLiteral(ConstantLiteralLanguage::TypeScript, stringValue) != "\"a\\\"b\\\\c\"")
+    if (renderConstantLiteral(ConstantLiteralLanguage::TypeScript, stringValue) != R"("a\"b\\c")")
     {
         std::cerr << "string escaping mismatch\n";
         return false;

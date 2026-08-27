@@ -16,6 +16,8 @@
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/Frontend/AST.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -23,7 +25,7 @@ bool hasSubstring(const std::vector<std::string>& lines, const std::string& need
 {
     for (const auto& line : lines)
     {
-        if (line.find(needle) != std::string::npos)
+        if (line.contains(needle))
         {
             return true;
         }

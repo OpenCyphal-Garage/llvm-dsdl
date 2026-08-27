@@ -55,7 +55,7 @@ public:
     /// @param[in] method LSP method name.
     /// @param[in] latencyMicros Elapsed time in microseconds.
     /// @param[in] cancelled Whether request finished by cancellation.
-    void record(std::string method, std::uint64_t latencyMicros, bool cancelled);
+    void record(const std::string& method, std::uint64_t latencyMicros, bool cancelled);
 
     /// @brief Returns total recorded request count for the method.
     /// @param[in] method LSP method name.

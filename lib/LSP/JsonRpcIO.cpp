@@ -17,6 +17,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstddef>
 #include <istream>
 #include <limits>
 #include <ostream>
@@ -58,7 +59,7 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
             overflow = true;
             break;
         }
-        value = value * 10U + digit;
+        value = (value * 10U) + digit;
     }
     contentLength = overflow ? std::numeric_limits<std::size_t>::max() : value;
     return true;
@@ -198,7 +199,7 @@ bool JsonRpcStdioTransport::writeMessage(const llvm::json::Value& message)
     payloadStream << message;
     payloadStream.flush();
 
-    std::lock_guard<std::mutex> lock(writeMutex_);
+    std::scoped_lock const lock(writeMutex_);
     output_ << "Content-Length: " << payload.size() << "\r\n\r\n" << payload;
     output_.flush();
     return static_cast<bool>(output_);

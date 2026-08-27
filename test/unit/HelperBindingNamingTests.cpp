@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 
+#include "UnitTests.h"
+
 bool runHelperBindingNamingTests()
 {
     using llvmdsdl::CodegenNamingLanguage;

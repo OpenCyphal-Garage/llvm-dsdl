@@ -78,7 +78,7 @@ std::string wideToString(__int128 value)
     {
         digits.push_back('-');
     }
-    std::reverse(digits.begin(), digits.end());
+    std::ranges::reverse(digits);
     return digits;
 }
 
@@ -197,7 +197,7 @@ Rational operator/(const Rational& lhs, const Rational& rhs)
 {
     if (rhs.numerator_ == 0)
     {
-        return Rational(0, 1);
+        return {0, 1};
     }
     __int128   n  = 0;
     __int128   d  = 0;

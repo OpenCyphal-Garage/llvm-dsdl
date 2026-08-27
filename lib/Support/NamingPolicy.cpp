@@ -226,7 +226,7 @@ std::string normalizePascalCase(llvm::StringRef name)
     bool upperNext = true;
     for (const char c : name)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             upperNext = true;
             continue;
@@ -522,7 +522,7 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
     {
         for (char& c : out)
         {
-            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
             {
                 c       = '_';
                 escaped = true;

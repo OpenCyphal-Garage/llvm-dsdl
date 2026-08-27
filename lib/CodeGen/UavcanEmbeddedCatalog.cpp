@@ -172,12 +172,12 @@ TypeExprAST parseConstantType(llvm::StringRef text)
     out.location = {"<embedded-uavcan>", 1, 1};
 
     std::string normalized = text.str();
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](const unsigned char c) {
+    std::ranges::transform(normalized, normalized.begin(), [](const unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
 
     PrimitiveTypeExprAST prim;
-    if (normalized.find("truncated") != std::string::npos)
+    if (normalized.contains("truncated"))
     {
         prim.castMode = CastMode::Truncated;
     }
@@ -210,49 +210,49 @@ TypeExprAST parseConstantType(llvm::StringRef text)
         return static_cast<std::uint32_t>(*maybeBits);
     };
 
-    if (normalized.find("bool") != std::string::npos)
+    if (normalized.contains("bool"))
     {
         prim.kind      = PrimitiveKind::Bool;
         prim.bitLength = 1U;
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("byte") != std::string::npos)
+    if (normalized.contains("byte"))
     {
         prim.kind      = PrimitiveKind::Byte;
         prim.bitLength = 8U;
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("utf8") != std::string::npos)
+    if (normalized.contains("utf8"))
     {
         prim.kind      = PrimitiveKind::Utf8;
         prim.bitLength = 8U;
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("float") != std::string::npos)
+    if (normalized.contains("float"))
     {
         prim.kind      = PrimitiveKind::Float;
         prim.bitLength = parseBitLength("float", 64U);
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("uint") != std::string::npos)
+    if (normalized.contains("uint"))
     {
         prim.kind      = PrimitiveKind::UnsignedInt;
         prim.bitLength = parseBitLength("uint", 64U);
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("int") != std::string::npos)
+    if (normalized.contains("int"))
     {
         prim.kind      = PrimitiveKind::SignedInt;
         prim.bitLength = parseBitLength("int", 64U);
         out.scalar     = prim;
         return out;
     }
-    if (normalized.find("void") != std::string::npos)
+    if (normalized.contains("void"))
     {
         VoidTypeExprAST padding;
         padding.bitLength = parseBitLength("void", 1U);
@@ -763,26 +763,26 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
         catalog.semantic.definitions.push_back(std::move(sem));
     }
 
-    std::sort(catalog.semantic.definitions.begin(),
-              catalog.semantic.definitions.end(),
-              [](const SemanticDefinition& lhs, const SemanticDefinition& rhs) {
-                  if (lhs.info.fullName != rhs.info.fullName)
-                  {
-                      return lhs.info.fullName < rhs.info.fullName;
-                  }
-                  if (lhs.info.majorVersion != rhs.info.majorVersion)
-                  {
-                      return lhs.info.majorVersion < rhs.info.majorVersion;
-                  }
-                  return lhs.info.minorVersion < rhs.info.minorVersion;
-              });
+    std::ranges::sort(catalog.semantic.definitions,
+
+                      [](const SemanticDefinition& lhs, const SemanticDefinition& rhs) {
+                          if (lhs.info.fullName != rhs.info.fullName)
+                          {
+                              return lhs.info.fullName < rhs.info.fullName;
+                          }
+                          if (lhs.info.majorVersion != rhs.info.majorVersion)
+                          {
+                              return lhs.info.majorVersion < rhs.info.majorVersion;
+                          }
+                          return lhs.info.minorVersion < rhs.info.minorVersion;
+                      });
 
     return catalog;
 }
 
 bool isEmbeddedUavcanSyntheticPath(const std::string& filePath)
 {
-    return filePath.rfind(kEmbeddedUavcanSyntheticPathPrefix, 0U) == 0U;
+    return filePath.starts_with(kEmbeddedUavcanSyntheticPathPrefix);
 }
 
 namespace
@@ -798,7 +798,7 @@ llvm::StringRef fullNameOfKey(llvm::StringRef key)
 std::string selectorSpellingOfKey(llvm::StringRef key)
 {
     std::string out = key.str();
-    std::replace(out.begin(), out.end(), ':', '.');
+    std::ranges::replace(out, ':', '.');
     return out;
 }
 
@@ -884,7 +884,7 @@ std::vector<std::string> suggestionsForSelector(const UavcanEmbeddedCatalog& cat
     {
         ranked.emplace_back(llvm::StringRef(candidate).edit_distance(selector), candidate);
     }
-    std::sort(ranked.begin(), ranked.end());
+    std::ranges::sort(ranked);
 
     // Past roughly a third of the selector's length the "suggestion" is noise, not a correction.
     const unsigned tolerance = std::max<unsigned>(2U, static_cast<unsigned>(selector.size()) / 3U);
@@ -931,7 +931,7 @@ EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCata
             expansion.typeKeys.push_back(key);
         }
     }
-    std::sort(expansion.typeKeys.begin(), expansion.typeKeys.end());
+    std::ranges::sort(expansion.typeKeys);
 
     if (expansion.typeKeys.empty())
     {
@@ -971,7 +971,7 @@ llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&     
 
     // determinism-ok: sorted on the next line, before anything reads it.
     std::vector<std::string> orderedKeys(selectedTypeKeys.begin(), selectedTypeKeys.end());
-    std::sort(orderedKeys.begin(), orderedKeys.end());
+    std::ranges::sort(orderedKeys);
 
     for (const auto& key : orderedKeys)
     {

@@ -10,6 +10,8 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runDefinitionIndexTests()
 {
     llvmdsdl::SemanticModule module;
@@ -28,7 +30,7 @@ bool runDefinitionIndexTests()
     beta.info.shortName    = "Other";
     module.definitions.push_back(beta);
 
-    llvmdsdl::DefinitionIndex index(module);
+    llvmdsdl::DefinitionIndex const index(module);
 
     llvmdsdl::SemanticTypeRef alphaRef;
     alphaRef.fullName     = "vendor.alpha.Widget";

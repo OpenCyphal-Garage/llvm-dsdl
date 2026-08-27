@@ -100,7 +100,7 @@ bool validateNativeSectionHelperContract(const SemanticSection&           sectio
             {
                 return failContract(missingRequirement, "scalar-helper:" + field.name);
             }
-            if (scalarSymbols.find(scalarSymbol) == scalarSymbols.end())
+            if (!scalarSymbols.contains(scalarSymbol))
             {
                 return failContract(missingRequirement, "scalar-binding:" + field.name + ":" + scalarSymbol);
             }
@@ -128,12 +128,12 @@ bool validateNativeSectionHelperContract(const SemanticSection&           sectio
             {
                 return failContract(missingRequirement, "array-validate-helper:" + field.name);
             }
-            if (arrayPrefixSymbols.find(descriptor->prefixSymbol) == arrayPrefixSymbols.end())
+            if (!arrayPrefixSymbols.contains(descriptor->prefixSymbol))
             {
                 return failContract(missingRequirement,
                                     "array-prefix-binding:" + field.name + ":" + descriptor->prefixSymbol);
             }
-            if (arrayValidateSymbols.find(descriptor->validateSymbol) == arrayValidateSymbols.end())
+            if (!arrayValidateSymbols.contains(descriptor->validateSymbol))
             {
                 return failContract(missingRequirement,
                                     "array-validate-binding:" + field.name + ":" + descriptor->validateSymbol);
@@ -148,7 +148,7 @@ bool validateNativeSectionHelperContract(const SemanticSection&           sectio
             {
                 return failContract(missingRequirement, "delimiter-helper:" + field.name);
             }
-            if (delimiterSymbols.find(delimiterSymbol) == delimiterSymbols.end())
+            if (!delimiterSymbols.contains(delimiterSymbol))
             {
                 return failContract(missingRequirement, "delimiter-binding:" + field.name + ":" + delimiterSymbol);
             }

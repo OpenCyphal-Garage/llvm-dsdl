@@ -13,6 +13,8 @@
 
 #include "llvmdsdl/LSP/DocumentStore.h"
 
+#include "UnitTests.h"
+
 bool runLspDocumentStoreTests()
 {
     llvmdsdl::lsp::DocumentStore store;
