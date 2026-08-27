@@ -49,9 +49,10 @@ if(NOT EXISTS "${FIXTURE_ROOT}")
   message(FATAL_ERROR "signed_narrow fixture root not found: ${FIXTURE_ROOT}")
 endif()
 
-set(parity_main "${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp")
-if(NOT EXISTS "${parity_main}")
-  message(FATAL_ERROR "signed narrow parity harness source missing: ${parity_main}")
+# The harness names generated types, so it is configured after the output tree is made; check the
+# template here, and the configured copy where it is produced.
+if(NOT EXISTS "${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp")
+  message(FATAL_ERROR "signed narrow parity harness source missing")
 endif()
 
 if(NOT DEFINED ITERATIONS OR "${ITERATIONS}" STREQUAL "")
@@ -66,6 +67,11 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+set(parity_main "${OUT_DIR}/SignedNarrowCppCParityMain.cpp")
+configure_file("${SOURCE_ROOT}/test/integration/SignedNarrowCppCParityMain.cpp" "${parity_main}" @ONLY)
+
 set(c_out "${OUT_DIR}/c")
 set(cpp_out "${OUT_DIR}/cpp")
 set(build_out "${OUT_DIR}/build")
@@ -75,7 +81,7 @@ file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -91,7 +97,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp
+    "${DSDLC}" --target-language cpp ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"

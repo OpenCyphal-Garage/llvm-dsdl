@@ -40,7 +40,9 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
@@ -48,79 +50,22 @@ namespace llvmdsdl
 namespace
 {
 
-std::string mangleSymbol(std::string fullName, std::uint32_t major, std::uint32_t minor)
-{
-    for (char& c : fullName)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
-}
-
 std::string fieldKind(const SemanticField& f)
 {
     return f.isPadding ? "padding" : "field";
 }
 
-bool isCKeyword(const std::string& name)
+std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
-    static const std::set<std::string> kKeywords =
-        {"auto",       "break",     "case",           "char",          "const",    "continue", "default",  "do",
-         "double",     "else",      "enum",           "extern",        "float",    "for",      "goto",     "if",
-         "inline",     "int",       "long",           "register",      "restrict", "return",   "short",    "signed",
-         "sizeof",     "static",    "struct",         "switch",        "typedef",  "union",    "unsigned", "void",
-         "volatile",   "while",     "_Alignas",       "_Alignof",      "_Atomic",  "_Bool",    "_Complex", "_Generic",
-         "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "true",     "false"};
-    return kKeywords.contains(name);
+    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    versioning);
 }
 
-std::string sanitizeIdentifier(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isCKeyword(name))
-    {
-        name += '_';
-    }
-    return name;
-}
-
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
-{
-    std::string out;
-    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += sanitizeIdentifier(info.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += sanitizeIdentifier(info.shortName);
-    return out;
-}
-
-std::string cTypeNameFromRef(const SemanticTypeRef& ref)
+std::string cTypeNameFromRef(const SemanticTypeRef& ref, const TypeNameVersioning versioning)
 {
     std::string out;
     for (std::size_t i = 0; i < ref.namespaceComponents.size(); ++i)
@@ -129,19 +74,22 @@ std::string cTypeNameFromRef(const SemanticTypeRef& ref)
         {
             out += "__";
         }
-        out += sanitizeIdentifier(ref.namespaceComponents[i]);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        IdentifierRole::NamespaceName,
+                                        ref.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += sanitizeIdentifier(ref.shortName);
+    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, ref.shortName);
     return out;
 }
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return info.shortName + "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion) + ".h";
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           ".h";
 }
 
 std::string relativeHeaderPath(const DiscoveredDefinition& info)
@@ -242,9 +190,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
         mlir::OperationState state(loc, "dsdl.schema");
         state.addAttribute("sym_name",
-                           builder.getStringAttr(
-                               mangleSymbol(def.info.fullName, def.info.majorVersion, def.info.minorVersion)));
-        state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info)));
+                           builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
+                                                                            def.info.majorVersion,
+                                                                            def.info.minorVersion)));
+        state.addAttribute("c_type_name", builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
         state.addAttribute("major", builder.getI32IntegerAttr(def.info.majorVersion));
@@ -282,17 +231,17 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
         builder.setInsertionPointToStart(&schemaBody.front());
 
         auto emitSection = [&](const SemanticSection& section, llvm::StringRef sectionName) {
-            const std::string baseCTypeName    = cTypeNameFromInfo(def.info);
+            const std::string baseCTypeName    = cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned);
             std::string       sectionCTypeName = baseCTypeName;
             if (def.isService)
             {
                 if (sectionName == "request")
                 {
-                    sectionCTypeName += "__Request";
+                    sectionCTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
                 }
                 else if (sectionName == "response")
                 {
-                    sectionCTypeName += "__Response";
+                    sectionCTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
                 }
             }
 
@@ -300,7 +249,13 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 mlir::OperationState fieldState(loc, "dsdl.field");
                 fieldState.addAttribute("name", builder.getStringAttr(field.name));
-                fieldState.addAttribute("c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
+                // The unscoped default. The C backend stamps the scoped name over this before it
+                // converts to EmitC, because only it knows what the struct declaration spells; what
+                // stays here is what keeps hand-driven `dsdl-opt` runs able to name a member at all.
+                fieldState.addAttribute("c_name",
+                                        builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                                                                       IdentifierRole::FieldName,
+                                                                                       field.name)));
                 fieldState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (field.isPadding)
                 {
@@ -391,7 +346,11 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 mlir::OperationState ioState(loc, "dsdl.io");
                 ioState.addAttribute("kind", builder.getStringAttr(fieldKind(field)));
                 ioState.addAttribute("name", builder.getStringAttr(field.name));
-                ioState.addAttribute("c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
+                // The unscoped default, as on `dsdl.field` above.
+                ioState.addAttribute("c_name",
+                                     builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                                                                    IdentifierRole::FieldName,
+                                                                                    field.name)));
                 ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (const auto doc = docAttrText(field.doc))
                 {
@@ -420,7 +379,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
                     ioState.addAttribute("composite_minor",
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
-                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref)));
+                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref, TypeNameVersioning::Unversioned)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));

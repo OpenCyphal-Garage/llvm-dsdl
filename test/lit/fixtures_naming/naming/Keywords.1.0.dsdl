@@ -1,0 +1,19 @@
+# Field names that are keywords in at least one target language. Every one of these is a legal DSDL
+# identifier: DSDL section 3.2.5 reserves a different (smaller) set, so the backends have to escape
+# the remainder themselves.
+uint8 break
+uint8 func
+uint8 impl
+uint8 class
+uint8 def
+uint8 map
+uint8 interface
+uint8 let
+uint8 range
+uint8 typedef
+uint8 operator
+uint8 lambda
+uint8 chan
+uint8 yield
+uint8 export
+@sealed

@@ -19,7 +19,7 @@
 
 #include <string>
 
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace llvmdsdl

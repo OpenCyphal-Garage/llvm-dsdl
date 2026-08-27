@@ -35,9 +35,14 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+# As with the C/Go parity lane: the newest-version default removes the collision that forced
+# versioned names on this corpus, so the fuzz harness runs at the default.
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go ${other_scheme_args}
       "${UAVCAN_ROOT}"
       --outdir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"
@@ -53,7 +58,8 @@ endif()
 
 # Drop the fuzz harness into its own package within the generated module.
 file(MAKE_DIRECTORY "${OUT_DIR}/decoderfuzz")
-configure_file("${fuzz_harness}" "${OUT_DIR}/decoderfuzz/fuzz_test.go" COPYONLY)
+
+configure_file("${fuzz_harness}" "${OUT_DIR}/decoderfuzz/fuzz_test.go" @ONLY)
 
 set(go_cache "${OUT_DIR}/.gocache")
 set(go_mod_cache "${OUT_DIR}/.gomodcache")

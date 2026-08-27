@@ -1,0 +1,7 @@
+# Leading and trailing underscores survive DSDL validation (only `_name_` is reserved) but the
+# snake_case projection drops a leading one and keeps a trailing one, so `_foo` and `foo_` stay
+# distinct by luck rather than by design.
+uint8 _foo
+uint8 foo_
+uint8 bar
+@sealed

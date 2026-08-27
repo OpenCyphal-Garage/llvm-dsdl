@@ -10,8 +10,9 @@
 # Colliding pair -> hard error (no silent type loss).
 # RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/FooBar.1.0.dsdl
 # RUN: printf 'uint16 b\n@sealed\n' > %t/dsdl/ns/Foo_bar.1.0.dsdl
+# `ast` emits nothing, so it checks every backend and names the ones affected.
 # RUN: not %dsdlc --target-language ast %t/dsdl 2>&1 | FileCheck %s --check-prefix=COLLIDE
-# COLLIDE: type name collision in generated output: {{.*}} map to the same generated file name
+# COLLIDE: type name collision in generated output: {{.*}} map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
 
 # Distinct snake stems (foobar vs foo_bar) must NOT be rejected, and both files are generated.
 # RUN: rm -rf %t/ok && mkdir -p %t/ok/ns

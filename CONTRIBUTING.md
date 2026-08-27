@@ -111,6 +111,34 @@ Each workflow runs configure, then build, then a fixed sequence of test lanes:
 The `ci-asan` preset has no matrix workflow; drive it with the build and test
 presets directly.
 
+### 5.3 Warnings Are Errors
+
+Every build of this project's own C and C++ sources promotes warnings to
+errors, unconditionally. LLVM's `HandleLLVMOptions` supplies the warning set
+(`-Wall -Wextra` plus the flags LLVM curates) and the top-level `CMakeLists.txt`
+sets `CMAKE_COMPILE_WARNING_AS_ERROR`. There is no project option to turn this
+off, by design: a warning is a defect report, and the answer to one is to fix
+the code.
+
+If the diagnostic is a false positive the compiler cannot see through,
+restructure the code so the invariant is one the compiler can check, and say so
+in a comment -- do not reach for a pragma. `SerializationPlanOp::verify()` in
+`lib/IR/DSDLOps.cpp` carries a worked example.
+
+The warning set is not uniform across compilers, so a change that is clean
+locally can still fail CI: the primary lane builds with GCC and the sanitizer
+lane with Clang. `-Wmaybe-uninitialized` in particular is GCC-only. To reproduce
+a GCC diagnostic without pushing, build in the CI image:
+
+```bash
+docker run --rm -v "$PWD":/w -w /w ghcr.io/opencyphal/toolshed:ts26.4.3 bash -lc 'git config --global --add safe.directory /w && cmake -S /w -B /tmp/b -G Ninja -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-22/lib/cmake/mlir && cmake --build /tmp/b -- -k 0'
+```
+
+Warnings in *generated* code are gated separately: the integration harnesses in
+`test/integration/` compile emitted C, C++ and Go with their own explicit
+`-Wall -Wextra -Werror`, since those translation units are built by
+`execute_process` and inherit nothing from here.
+
 ## 6. Install Modes
 
 `llvm-dsdl` supports two install components:

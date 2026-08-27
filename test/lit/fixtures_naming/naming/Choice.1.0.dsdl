@@ -1,0 +1,6 @@
+# The same collision inside a union, which every backend renders through a separate path: a tagged
+# variant rather than a plain struct body.
+@union
+uint8 break
+uint8 break_
+@sealed

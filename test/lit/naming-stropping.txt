@@ -1,0 +1,380 @@
+# What each backend names things when the DSDL is adversarial. The unit-level golden map
+# (test/unit/golden/naming-map.txt) pins the shared helpers in lib/Support/NamingPolicy.cpp; this
+# pins the emitters that call them. Between them, a refactor that claims to change no generated
+# identifier can be checked instead of trusted.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/c 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/c/fixtures_naming/naming/Keywords_1_0.h | FileCheck %s --check-prefix=C_KEYWORDS
+# RUN: cat %t/c/fixtures_naming/naming/CaseFolds_1_0.h | FileCheck %s --check-prefix=C_FOLDS
+# C and C++ name the header after the raw DSDL short name, so a keyword type name is not escaped
+# in the path even though it is escaped in identifiers.
+# RUN: test -f %t/c/fixtures_naming/naming/Break_1_0.h
+
+# RUN: cat %t/c/fixtures_naming/naming/Constants_1_0.h | FileCheck %s --check-prefix=C_CONSTANTS
+
+# RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/cpp/fixtures_naming/naming/Keywords_1_0.hpp | FileCheck %s --check-prefix=CPP_KEYWORDS
+# RUN: test -f %t/cpp/fixtures_naming/naming/Break_1_0.hpp
+
+# RUN: %dsdlc --target-language rust %S/fixtures_naming --rust-crate-name naming_freeze --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/rust/src/fixtures_naming/naming/keywords_1_0.rs | FileCheck %s --check-prefix=RUST_KEYWORDS
+# RUN: test -f %t/rust/src/fixtures_naming/naming/break__1_0.rs
+
+# RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/go 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/go/fixtures_naming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
+# RUN: cat %t/go/fixtures_naming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
+# RUN: test -f %t/go/fixtures_naming/naming/break__1_0.go
+# RUN: cat %t/go/fixtures_naming/naming/constants_1_0.go | FileCheck %s --check-prefix=GO_CONSTANTS
+# A namespace component that is a Go keyword is escaped in both the directory and the package clause.
+# RUN: cat %t/go/fixtures_naming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
+
+# RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/ts/fixtures_naming/naming/keywords_1_0.ts | FileCheck %s --check-prefix=TS_KEYWORDS
+# RUN: cat %t/ts/fixtures_naming/naming/case_folds_1_0.ts | FileCheck %s --check-prefix=TS_FOLDS
+# RUN: cat %t/ts/fixtures_naming/naming/underscores_1_0.ts | FileCheck %s --check-prefix=TS_UNDERSCORES
+# RUN: test -f %t/ts/fixtures_naming/naming/break__1_0.ts
+
+# RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/py 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/keywords_1_0.py | FileCheck %s --check-prefix=PY_KEYWORDS
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/case_folds_1_0.py | FileCheck %s --check-prefix=PY_FOLDS
+# RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/break__1_0.py
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/constants_1_0.py | FileCheck %s --check-prefix=PY_CONSTANTS
+# `map` is not a Python keyword, so the same namespace component that Go had to escape is left alone.
+# RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/map/nested_1_0.py
+
+# Two DSDL names, one identifier after the keyword strop. The scope repairs it, and what matters is
+# that the repair reaches the serializer too: in C the declaration and the body are produced by two
+# different layers, and the body only agrees because the emitter stamps the scope onto the IR.
+# RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.h | FileCheck %s --check-prefix=C_STROPPED
+# RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.c | FileCheck %s --check-prefix=C_STROPPED_BODY
+# RUN: cat %t/cpp/fixtures_naming/naming/Stropped_1_0.hpp | FileCheck %s --check-prefix=CPP_STROPPED
+# RUN: cat %t/rust/src/fixtures_naming/naming/stropped_1_0.rs | FileCheck %s --check-prefix=RUST_STROPPED
+
+# The same collision through the union and service paths, which each emitter renders separately. In
+# both languages the response fields collide too: C escapes against C++'s keywords as well as its own.
+# RUN: cat %t/cpp/fixtures_naming/naming/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP_CHOICE
+# RUN: cat %t/cpp/fixtures_naming/naming/Call_1_0.hpp | FileCheck %s --check-prefix=CPP_CALL
+# RUN: cat %t/c/fixtures_naming/naming/Call_1_0.h | FileCheck %s --check-prefix=C_CALL
+
+# A C++ struct body holds the fields and the constants, so the two share one pool there and the
+# constant is the one that moves. Nowhere else can a field and a constant reach each other.
+# RUN: cat %t/cpp/fixtures_naming/naming/MemberPool_1_0.hpp | FileCheck %s --check-prefix=CPP_POOL
+# RUN: cat %t/go/fixtures_naming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
+
+# Every repair is reported, because it changes a name the author wrote.
+# RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
+
+# RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
+# RUN: cat %t/cpp/fixtures_naming/naming/ClaimedUnion_1_0.hpp | FileCheck %s --check-prefix=CPP_UNION
+# RUN: cat %t/go/fixtures_naming/naming/claimed_union_1_0.go | FileCheck %s --check-prefix=GO_UNION
+# RUN: cat %t/rust/src/fixtures_naming/naming/claimed_union_1_0.rs | FileCheck %s --check-prefix=RUST_UNION
+# RUN: cat %t/cpp/fixtures_naming/naming/Arrays_1_0.hpp | FileCheck %s --check-prefix=CPP_ARRAYS
+# RUN: cat %t/c/fixtures_naming/naming/Arrays_1_0.h | FileCheck %s --check-prefix=C_ARRAYS
+
+# RUN: cat %t/c/fixtures_naming/naming/TrailingUnderscores_1_0.h | FileCheck %s --check-prefix=C_TRAILING
+# RUN: cat %t/c/fixtures_naming/naming/TrailingUnion_1_0.h | FileCheck %s --check-prefix=C_TRAILING_UNION
+
+# SUMMARY: Run summary:
+# SUMMARY: files generated:
+
+# C escapes against C++'s keywords as well as its own, because generated C is compiled as C++ more
+# often than not -- the object backend does it to its own headers. So `class`, `operator` and
+# `export` are escaped here even though C reserves none of them; `func` and `impl` belong to neither
+# language and are left alone.
+# C_KEYWORDS: uint8_t break_;
+# C_KEYWORDS: uint8_t func;
+# C_KEYWORDS: uint8_t impl;
+# C_KEYWORDS: uint8_t class_;
+# C_KEYWORDS: uint8_t typedef_;
+# C_KEYWORDS: uint8_t operator_;
+# C_KEYWORDS: uint8_t export_;
+
+# Field names reach C verbatim, so the three case variants stay distinct without disambiguation.
+# C_FOLDS: uint8_t fooBar;
+# C_FOLDS: uint8_t foo_bar;
+# C_FOLDS: uint8_t FooBar;
+
+# C++ reserves more than C: `class`, `operator` and `export` are escaped, `impl` and `func` are not.
+# CPP_KEYWORDS: std::uint8_t break_{};
+# CPP_KEYWORDS: std::uint8_t func{};
+# CPP_KEYWORDS: std::uint8_t class_{};
+# CPP_KEYWORDS: std::uint8_t typedef_{};
+# CPP_KEYWORDS: std::uint8_t operator_{};
+# CPP_KEYWORDS: std::uint8_t export_{};
+
+# Rust escapes its own set: `impl`, `let` and `yield` are keywords, `typedef` and `class` are not.
+# RUST_KEYWORDS: pub break_: u8,
+# RUST_KEYWORDS: pub impl_: u8,
+# RUST_KEYWORDS: pub class: u8,
+# RUST_KEYWORDS: pub let_: u8,
+# RUST_KEYWORDS: pub typedef: u8,
+# RUST_KEYWORDS: pub yield_: u8,
+
+# Go exports fields as PascalCase, which lifts every one of them clear of the keyword set: Go
+# keywords are lowercase, so no field here needs an escape at all.
+# GO_KEYWORDS: type Keywords struct {
+# GO_KEYWORDS: Break uint8
+# GO_KEYWORDS: Func uint8
+# GO_KEYWORDS: Map uint8
+# GO_KEYWORDS: Range uint8
+
+# The PascalCase projection is many-to-one, so the per-scope allocator disambiguates.
+# GO_FOLDS: FooBar uint8
+# GO_FOLDS: FooBar_2 uint8
+# GO_FOLDS: FooBar_3 uint8
+
+# TypeScript and Python fold fields to snake_case, which puts them back in reach of the keyword set.
+# TS_KEYWORDS: break_: number;
+# TS_KEYWORDS: class_: number;
+# TS_KEYWORDS: interface_: number;
+# TS_KEYWORDS: let_: number;
+# TS_KEYWORDS: export_: number;
+
+# TS_FOLDS: foo_bar: number;
+# TS_FOLDS: foo_bar_2: number;
+# TS_FOLDS: foo_bar_3: number;
+
+# The snake_case projection drops a leading underscore but keeps a trailing one, so `_foo` and
+# `foo_` survive as distinct names -- by luck, not by design: had the stem been a keyword they
+# would have collided with each other's escaped form.
+# TS_UNDERSCORES: foo: number;
+# TS_UNDERSCORES: foo_: number;
+# TS_UNDERSCORES: bar: number;
+
+# ---------------------------------------------------------------------------------------------
+# Names that land in a namespace C or C++ reserves are rejected, with the encoding offered as the
+# way to keep the definition unchanged.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: not %dsdlc --target-language c %S/fixtures_naming_reserved --outdir %t/reserved-c 2>&1 | FileCheck %s --check-prefix=RESERVED_C
+# RESERVED_C-DAG: error: field '_Foo' is a reserved identifier for target language 'c'; rename it, or pass --encode-reserved-identifiers to emit it as 'zX005FFoo'
+# RESERVED_C-DAG: error: field '__bar' is a reserved identifier for target language 'c'
+# C treats a double underscore inside an identifier as ordinary, so `foo__bar` is not rejected there.
+# RESERVED_C-NOT: field 'foo__bar'
+
+# C++ reserves a double underscore anywhere, so it rejects one C accepts.
+# RUN: not %dsdlc --target-language cpp %S/fixtures_naming_reserved --cpp-profile std --outdir %t/reserved-cpp 2>&1 | FileCheck %s --check-prefix=RESERVED_CPP
+# RESERVED_CPP-DAG: error: field 'foo__bar' is a reserved identifier for target language 'cpp'
+
+# Go has no such namespace, so the same definitions generate without complaint.
+# RUN: %dsdlc --target-language go %S/fixtures_naming_reserved --go-module demo/reserved --outdir %t/reserved-go
+
+# The escape hatch generates, and the encoding is injective: `_Foo` and `__bar` stay distinct.
+# RUN: %dsdlc --target-language c %S/fixtures_naming_reserved --outdir %t/reserved-enc --encode-reserved-identifiers
+# RUN: cat %t/reserved-enc/fixtures_naming_reserved/reserved/Names_1_0.h | FileCheck %s --check-prefix=RESERVED_ENC
+# RESERVED_ENC: uint8_t zX005FFoo;
+# RESERVED_ENC: uint8_t zX005FzX005Fbar;
+# RESERVED_ENC: uint8_t foo__bar;
+# RESERVED_ENC: uint8_t plain;
+
+# PY_KEYWORDS: break_: int = 0
+# PY_KEYWORDS: class_: int = 0
+# PY_KEYWORDS: def_: int = 0
+# PY_KEYWORDS: lambda_: int = 0
+# PY_KEYWORDS: yield_: int = 0
+
+# PY_FOLDS: foo_bar: int = 0
+# PY_FOLDS: foo_bar_2: int = 0
+# PY_FOLDS: foo_bar_3: int = 0
+
+# C builds macro tokens by upper-casing the raw name, so `fooBar` becomes FOOBAR rather than
+# FOO_BAR and does not collide with the constant actually spelled FOO_BAR. C also skips the keyword
+# escape for macros -- `break` is not a macro-namespace hazard in C -- so this reads BREAK, not
+# BREAK_. Both are the `strop: no` cell of the role table in test/unit/golden/naming-roles.txt.
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_FOO_BAR (1)
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_FOOBAR (2)
+# C_CONSTANTS: #define fixtures_naming__naming__Constants_BREAK (3)
+
+# Go folds to UPPER_SNAKE_CASE first, so `FOO_BAR` and `fooBar` do collide and the scope repairs the
+# second one; and it does strop, so `break` becomes BREAK_.
+# GO_CONSTANTS: const CONSTANTS_FOO_BAR = 1
+# GO_CONSTANTS: const CONSTANTS_FOO_BAR_2 = 2
+# GO_CONSTANTS: const CONSTANTS_BREAK_ = 3
+
+# GO_NAMESPACE: package map_
+
+# PY_CONSTANTS: CONSTANTS_FOO_BAR = 1
+# PY_CONSTANTS: CONSTANTS_FOO_BAR_2 = 2
+# PY_CONSTANTS: CONSTANTS_BREAK_ = 3
+
+# ---------------------------------------------------------------------------------------------
+# Phase 3: two distinct DSDL types that project onto one generated name are rejected, and the
+# check covers only the backends this invocation emits for.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: rm -rf %t/collide && mkdir -p %t/collide/root/ns
+# RUN: printf 'uint8 c\n@sealed\n' > %t/collide/root/ns/Break.1.0.dsdl
+# RUN: printf 'uint8 d\n@sealed\n' > %t/collide/root/ns/Break_.1.0.dsdl
+
+# The keyword escape makes both stems `break__1_0`; before phase 3 the second type silently
+# overwrote the first, because the frontend folded names without modelling the escape.
+# RUN: not %dsdlc --target-language go %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
+# STEM_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
+
+# Decision 7.1: C names headers after the raw DSDL short name, so the same pair is not a collision
+# there and a C build must not fail over a hazard only Go has.
+# RUN: %dsdlc --target-language c %t/collide/root --outdir %t/collide/c
+# RUN: test -f %t/collide/c/root/ns/Break_1_0.h
+# RUN: test -f %t/collide/c/root/ns/Break__1_0.h
+
+# An AST dump emits nothing, so there is no build to fail and it checks every backend instead,
+# naming the ones affected in a single diagnostic rather than one line per language.
+# RUN: not %dsdlc --target-language ast %t/collide/root 2>&1 | FileCheck %s --check-prefix=AST_COLLIDE
+# AST_COLLIDE: error: type name collision in generated output: {{.*}} for target languages 'rust', 'go', 'ts', 'python'
+
+# The other half of the pair: `_foo` and `foo_` take two different files but one type name, because
+# the stem projection keeps underscores and the type-name projection drops them. Go puts one
+# directory in one package, so before phase 3 this produced a package that would not compile.
+# RUN: rm -rf %t/typecollide && mkdir -p %t/typecollide/root/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/typecollide/root/ns/_foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
+# RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
+# TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same generated type name for target language 'go'
+
+# The same pair under an AST dump reports the three backends whose type names actually collide --
+# C, C++ and Rust build namespace-qualified symbols and are unaffected.
+# RUN: not %dsdlc --target-language ast %t/typecollide/root 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE_AST
+# TYPE_COLLIDE_AST: error: {{.*}} map to the same generated type name for target languages 'go', 'ts', 'python'
+
+# ---------------------------------------------------------------------------------------------
+# Phase 4: names the generated code already claims. Claimed.1.0 names its constants after every
+# per-type constant the backends emit and its field after a generated method, so a regression here
+# is a duplicate declaration in a language that has to compile.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: cat %t/go/fixtures_naming/naming/claimed_1_0.go | FileCheck %s --check-prefix=GO_CLAIMED
+# RUN: cat %t/rust/src/fixtures_naming/naming/claimed_1_0.rs | FileCheck %s --check-prefix=RUST_CLAIMED
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/claimed_1_0.py | FileCheck %s --check-prefix=PY_CLAIMED
+# RUN: cat %t/c/fixtures_naming/naming/Claimed_1_0.h | FileCheck %s --check-prefix=C_CLAIMED
+
+# A C++ struct holds its fields, its DSDL constants and the generated statics and methods together.
+# CPP_CLAIMED: std::uint8_t serialize_{};
+# CPP_CLAIMED: std::uint8_t to_c_{};
+# CPP_CLAIMED: std::uint8_t from_c_{};
+# CPP_CLAIMED: std::uint8_t set_memory_resource_{};
+# CPP_CLAIMED: std::uint8_t _memory_resource_{};
+# CPP_CLAIMED: static constexpr auto UNION_OPTION_COUNT_ = 8;
+# CPP_CLAIMED: static constexpr auto FULL_NAME_ = 1;
+# CPP_CLAIMED: static constexpr auto EXTENT_BYTES_ = 4;
+
+# Go gives a DSDL constant the same prefix as its metadata constants, and forbids a field and a
+# method sharing a name.
+# GO_CLAIMED: const CLAIMED_FULL_NAME =
+# GO_CLAIMED: const CLAIMED_FULL_NAME_ = 1
+# GO_CLAIMED: Serialize_ uint8
+
+# RUST_CLAIMED: pub const FULL_NAME: &'static str =
+# RUST_CLAIMED: pub const FULL_NAME_: u64 = 1;
+
+# A dataclass attribute named `serialize` would hide the generated method.
+# PY_CLAIMED: serialize_: int = 0
+
+# C needs no escape at all: its metadata macros carry a trailing underscore, so `<Type>_FULL_NAME`
+# and `<Type>_FULL_NAME_` cannot meet. The macro is also left unstropped -- a macro is not an
+# identifier in C's namespace -- which is why this reads FULL_NAME and not FULL_NAME_.
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)
+
+# ---------------------------------------------------------------------------------------------
+# Phase 5: the naming manifest and the path-level rename note.
+# ---------------------------------------------------------------------------------------------
+
+# A path-level rename is reported without being asked for; a rename inside a file is not.
+# RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/note 2>&1 | FileCheck %s --check-prefix=RENAME_NOTE
+# RENAME_NOTE-DAG: note: 'Break' is emitted as 'break_' for target language 'go'
+# RENAME_NOTE-DAG: note: 'map' is emitted as 'map_' for target language 'go'
+# RENAME_NOTE-NOT: note: 'break' is emitted as
+
+# The manifest reports the identifiers the backend actually writes, so the stems it names are the
+# files on disk. An analysis target reports every language at once.
+# RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
+# RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note
+
+# The obj lane publishes headers rather than a source tree, and reports the languages of the headers
+# it publishes: C alone, or C and C++ when the C++ ABI is asked for. Reporting them under `obj` gave
+# one entry holding the other's names.
+# RUN: %dsdlc --target-language obj --target-endianness little %S/fixtures_naming_obj --outdir %t/obj_c --naming-manifest %t/obj_c.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c'], sorted(d['languages'])" %t/obj_c.json
+# RUN: %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_obj --outdir %t/obj_cpp --naming-manifest %t/obj_cpp.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c','cpp'], sorted(d['languages'])" %t/obj_cpp.json
+# The C++ entry has to be the C++ names: `serialize` is a member function there and a plain field in C.
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['cpp']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize_', f" %t/obj_cpp.json
+# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['c']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize', f" %t/obj_cpp.json
+
+# A reserved name is reported once per language rather than twice under one name.
+# RUN: not %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_reserved --outdir %t/obj_res 2>&1 | FileCheck %s --check-prefix=OBJ_RESERVED
+
+# Asking what a name will become is not asking for a file: --list-outputs is what a build system runs
+# at configure time, and it implies a dry run.
+# RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/dry --dry-run --naming-manifest %t/dry.json
+# RUN: not test -e %t/dry.json
+# RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/listed --list-outputs --naming-manifest %t/listed.json > /dev/null
+# RUN: not test -e %t/listed.json
+
+# C_STROPPED: uint8_t break_;
+# C_STROPPED: uint8_t break_2;
+# C_STROPPED_BODY: obj->break_
+# C_STROPPED_BODY: obj->break_2
+# CPP_STROPPED: std::uint8_t break_{};
+# CPP_STROPPED: std::uint8_t break_2{};
+# RUST_STROPPED: pub break_: u8,
+# RUST_STROPPED: pub break_2: u8,
+
+# CPP_CHOICE: std::uint8_t break_{};
+# CPP_CHOICE: std::uint8_t break_2{};
+# CPP_CALL: std::uint8_t break_{};
+# CPP_CALL: std::uint8_t break_2{};
+# CPP_CALL: std::uint8_t class_{};
+# CPP_CALL: std::uint8_t class_2{};
+# C_CALL: uint8_t break_;
+# C_CALL: uint8_t break_2;
+# C_CALL: uint8_t class_;
+# C_CALL: uint8_t class_2;
+
+# CPP_POOL: std::uint8_t FOO{};
+# CPP_POOL: static constexpr auto FOO_2 = 2;
+# GO_POOL: const MEMBER_POOL_FOO = 2
+# GO_POOL: FOO uint8
+
+# NOTES: note: field 'break_' is emitted as 'break_2' for target language 'cpp'
+# NOTES: note: constant 'foo' is emitted as 'FOO_2' for target language 'cpp'
+
+# Every name a backend emits for some shape is claimed for every type, so a plain message is where
+# the claim is checked; the union options and the discriminator are checked where they occur.
+# CPP_UNION: std::uint8_t UNION_OPTION_COUNT_{};
+# CPP_UNION: static constexpr std::size_t UNION_OPTION_COUNT = 2U;
+# GO_UNION: Tag_ uint16
+# GO_UNION: Tag uint8
+# A Rust struct field and an associated const are separate namespaces, so neither has to move.
+# RUST_UNION: pub UNION_OPTION_COUNT: u8,
+# RUST_UNION: pub const UNION_OPTION_COUNT: usize = 2;
+
+# The two array constants C and C++ derive from a field name are allocated from the same scope as the
+# DSDL constants: `fooBar` and `FooBar` fold to one macro token, and `baz_array_capacity` is the name
+# `baz`'s capacity constant already has. In C the generated macro keeps its trailing `_`, which is
+# what separates it from a DSDL constant of the same name, so only the C++ constant moves.
+# CPP_ARRAYS: static constexpr auto BAZ_ARRAY_CAPACITY_2 = 7;
+# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY = 4U;
+# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY_2 = 5U;
+# CPP_ARRAYS: static constexpr std::size_t BAZ_ARRAY_CAPACITY = 6U;
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_BAZ_ARRAY_CAPACITY (7)
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_ 4U
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_2 5U
+# C_ARRAYS: #define fixtures_naming__naming__Arrays_BAZ_ARRAY_CAPACITY_ 6U
+
+# A DSDL constant can carry the trailing `_` that C spells its generated macros with, so the
+# separation those macros rely on is a name to be missed rather than a reason to miss nothing. The
+# `#elif` on ZOH_ALIAS_ELIGIBLE_ in try_deserialize_view_ is why this one is not only cosmetic.
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_ "fixtures_naming.naming.TrailingUnderscores"
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE_ true
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME__ (1)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_AND_VERSION__ (2)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE__ (6)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_REASON__ (7)
+# C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT__ (9)
+# C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT_ 2U
+
+# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'c'
+# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'cpp'

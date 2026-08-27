@@ -1,0 +1,4 @@
+# Lives under a namespace component that is a keyword in Go, so the package and directory names go
+# through the NamespaceName projection rather than the field one.
+uint8 v
+@sealed

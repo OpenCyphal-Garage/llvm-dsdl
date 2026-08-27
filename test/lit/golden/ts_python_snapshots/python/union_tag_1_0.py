@@ -17,43 +17,43 @@ DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
 DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
 
 @dataclass(slots=True)
-class UnionTag_1_0:
+class UnionTag:
     _tag: int = 0
     first: int | None = None
     second: int | None = None
 
     def serialize(self) -> bytes:
-        return _serialize_UnionTag_1_0(self)
+        return _serialize_UnionTag(self)
 
     @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag_1_0":
-        value, _consumed = _deserialize_UnionTag_1_0(bytes(data))
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag":
+        value, _consumed = _deserialize_UnionTag(bytes(data))
         return value
 
     def _serialize_to(self, writer: object) -> None:
         writer.write(self.serialize())
 
     @classmethod
-    def _deserialize_from(cls, reader: object) -> "UnionTag_1_0":
+    def _deserialize_from(cls, reader: object) -> "UnionTag":
         return cls.deserialize(reader.read())
 
-def _serialize_UnionTag_1_0(value: UnionTag_1_0) -> bytes:
+def _serialize_UnionTag(value: UnionTag) -> bytes:
     out = bytearray(3)
     offset_bits = 0
-    def mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(capacity_bits: int) -> bool:
+    def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(capacity_bits: int) -> bool:
         return 24 <= capacity_bits
-    def mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_value: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_value: int) -> bool:
         return (tag_value == 0) or (tag_value == 1)
-    def mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(value: int) -> int:
         raw = int(value)
         if raw < 0:
             return 0
         if raw > 255:
             return 255
         return raw
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(value: int) -> int:
         raw = int(value)
         if raw < 0:
             return 0
@@ -61,23 +61,23 @@ def _serialize_UnionTag_1_0(value: UnionTag_1_0) -> bytes:
             return 65535
         return raw
     
-    if not mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(len(out) * 8):
+    if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
     tag = int(value._tag)
-    if not mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
+    if not mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
         raise ValueError(f"invalid union tag {tag}")
-    tag = int(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag))
+    tag = int(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag))
     dsdl_runtime.write_unsigned(out, offset_bits, 8, tag, False)
     offset_bits += 8
     if tag == 0:
         if value.first is None:
             raise ValueError("union field 'first' missing for tag 0")
-        dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(int(value.first))), True)
+        dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(int(value.first))), True)
         offset_bits += 8
     elif tag == 1:
         if value.second is None:
             raise ValueError("union field 'second' missing for tag 1")
-        dsdl_runtime.write_unsigned(out, offset_bits, 16, int(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(int(value.second))), True)
+        dsdl_runtime.write_unsigned(out, offset_bits, 16, int(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(int(value.second))), True)
         offset_bits += 16
     else:
         raise ValueError(f"invalid union tag {tag}")
@@ -88,31 +88,31 @@ def _serialize_UnionTag_1_0(value: UnionTag_1_0) -> bytes:
     used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)
     return bytes(out[:used_bytes])
 
-def _deserialize_UnionTag_1_0(data: bytes | bytearray | memoryview) -> tuple[UnionTag_1_0, int]:
+def _deserialize_UnionTag(data: bytes | bytearray | memoryview) -> tuple[UnionTag, int]:
     data = bytes(data)
-    def mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_value: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_value: int) -> bool:
         return (tag_value == 0) or (tag_value == 1)
-    def mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value: int) -> int:
         return int(value) & 65535
     
     offset_bits = 0
     tag = int(dsdl_runtime.read_unsigned(data, offset_bits, 8))
-    tag = int(mlir___llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag))
-    value = UnionTag_1_0(_tag=tag)
-    if not mlir___llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
+    tag = int(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag))
+    value = UnionTag(_tag=tag)
+    if not mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
         raise ValueError(f"decoded invalid union tag {tag}")
     offset_bits += 8
     if tag == 0:
         first_raw = dsdl_runtime.read_unsigned(data, offset_bits, 8)
-        value.first = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(first_raw)
+        value.first = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(first_raw)
         offset_bits += 8
     elif tag == 1:
         second_raw = dsdl_runtime.read_unsigned(data, offset_bits, 16)
-        value.second = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(second_raw)
+        value.second = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(second_raw)
         offset_bits += 16
     else:
         raise ValueError(f"decoded invalid union tag {tag}")

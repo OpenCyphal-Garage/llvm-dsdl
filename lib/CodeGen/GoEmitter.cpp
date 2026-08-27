@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 
@@ -48,7 +49,9 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
@@ -77,22 +80,12 @@ class DiagnosticEngine;
 namespace
 {
 
-std::string toExportedIdent(const llvm::StringRef in)
-{
-    auto out = codegenToPascalCaseIdentifier(CodegenNamingLanguage::Go, in);
-    if (!std::isupper(static_cast<unsigned char>(out.front())))
-    {
-        out.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(out.front())));
-    }
-    return out;
-}
-
 /// @brief Builds the collision-free exported field-name allocation for one section.
 ///
 /// Two distinct DSDL field names (e.g. `fooBar` and `foo_bar`) both export to `FooBar`; without this
 /// the struct would declare the same field twice (a compile error) and the (de)serializer would read
 /// or write the wrong field. Padding fields carry no exported name and are excluded.
-CodegenIdentifierAllocator makeExportedFieldIdents(const SemanticSection& section)
+NamingScope makeExportedFieldIdents(const SemanticSection& section)
 {
     std::vector<std::string> names;
     for (const auto& field : section.fields)
@@ -102,11 +95,10 @@ CodegenIdentifierAllocator makeExportedFieldIdents(const SemanticSection& sectio
             names.push_back(field.name);
         }
     }
-    // A field must not take the name of a generated method (Go forbids a field and method sharing a
-    // name); such a field is escaped instead of clashing with `obj.Serialize()` / `obj.Deserialize()`.
-    static constexpr std::array<llvm::StringRef, 2> kReservedMethods = {"Serialize", "Deserialize"};
-    return CodegenIdentifierAllocator(
-        names, [](llvm::StringRef name) { return toExportedIdent(name); }, kReservedMethods);
+    // The generated methods a field must not collide with are claimed by the FieldName role's policy
+    // (Go forbids a field and a method sharing a name), so the scope only has to keep the fields
+    // apart from each other.
+    return makeSectionFieldScope(CodegenNamingLanguage::Go, section);
 }
 
 std::string packagePathFromComponents(const std::vector<std::string>& components)
@@ -118,7 +110,7 @@ std::string packagePathFromComponents(const std::vector<std::string>& components
         {
             out += "/";
         }
-        out += codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Go, c);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::NamespaceName, c);
     }
     return out;
 }
@@ -131,7 +123,7 @@ std::string packageNameFromPath(const std::string& path)
     }
     const auto split = path.find_last_of('/');
     const auto leaf  = split == std::string::npos ? path : path.substr(split + 1);
-    auto       out   = codegenSanitizeIdentifier(CodegenNamingLanguage::Go, leaf);
+    auto       out   = codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::NamespaceName, leaf);
     if (out.empty())
     {
         out = "rootdsdl";
@@ -175,13 +167,24 @@ void emitAttachedDocGo(std::ostringstream& out, const int indent, const Attached
 class EmitterContext final
 {
 public:
-    explicit EmitterContext(const SemanticModule& semantic)
+    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
     {
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
+    }
+
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
@@ -217,8 +220,12 @@ public:
 
     std::string goTypeName(const DiscoveredDefinition& info) const
     {
-        return codegenToPascalCaseIdentifier(CodegenNamingLanguage::Go, info.shortName) + "_" +
-               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
+        return renderDefinitionTypeName(CodegenNamingLanguage::Go,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        typeNameVersioning_);
     }
 
     std::string goTypeName(const SemanticTypeRef& ref) const
@@ -236,12 +243,16 @@ public:
 
     std::string goFileName(const DiscoveredDefinition& info) const
     {
-        return codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Go, info.shortName) + "_" +
-               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion) + ".go";
+        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion) +
+               ".go";
     }
 
 private:
     DefinitionIndex index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*  traceSink_ = nullptr;
 };
 
@@ -267,8 +278,9 @@ std::map<std::string, std::string> computeImportAliases(const SemanticDefinition
         {
             continue;
         }
-        auto alias =
-            "pkg_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Go, llvm::join(ref.namespaceComponents, "_"));
+        auto alias = "pkg_" + codegenProjectIdentifier(CodegenNamingLanguage::Go,
+                                                       IdentifierRole::NamespaceName,
+                                                       llvm::join(ref.namespaceComponents, "_"));
         if (alias == "pkg_")
         {
             alias = "pkg_dep";
@@ -535,7 +547,8 @@ public:
     /// @brief Collision-free exported field name for the section currently being emitted.
     std::string exportedFieldIdent(const llvm::StringRef name) const
     {
-        return fieldIdents_ ? fieldIdents_->get(name) : toExportedIdent(name);
+        return fieldIdents_ ? fieldIdents_->get(IdentifierRole::FieldName, name)
+                            : codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::FieldName, name);
     }
 
 private:
@@ -544,8 +557,8 @@ private:
     const std::map<std::string, std::string>& importAliases_;
 
     /// @brief Per-section exported field-name allocation; set at the start of each function body.
-    std::optional<CodegenIdentifierAllocator> fieldIdents_;
-    std::size_t                               id_{0};
+    std::optional<NamingScope> fieldIdents_;
+    std::size_t                id_{0};
 
     std::string nextName(const std::string& prefix)
     {
@@ -676,9 +689,8 @@ private:
 
         void spellSerializeWriteMaskedTag() override
         {
-            const auto tagExpr =
-                owner_.helperBindingName(helperBindings_.unionTagMask->symbol) + "(uint64(obj.Tag))";
-            const auto tagErr = owner_.nextName("err");
+            const auto tagExpr = owner_.helperBindingName(helperBindings_.unionTagMask->symbol) + "(uint64(obj.Tag))";
+            const auto tagErr  = owner_.nextName("err");
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::WriteTag, tagBits_);
             emitLine(out_,
@@ -749,7 +761,10 @@ private:
                      "0");
         }
 
-        void spellEndDispatch() override { emitLine(out_, indent_, "}"); }
+        void spellEndDispatch() override
+        {
+            emitLine(out_, indent_, "}");
+        }
 
     private:
         FunctionBodyEmitter&            owner_;
@@ -766,8 +781,8 @@ private:
                             const LoweredSectionFacts*           sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
@@ -793,8 +808,8 @@ private:
                               const LoweredSectionFacts*           sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling                spelling(*this, out, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
@@ -947,8 +962,7 @@ private:
                 owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
                 emitLine(out_,
                          indent_,
-                         raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) +
-                             "))");
+                         raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) + "))");
                 emitLine(out_,
                          indent_,
                          expr + " = " + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper +
@@ -964,12 +978,11 @@ private:
                 owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
                 emitLine(out_,
                          indent_,
-                         raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) +
-                             "))");
+                         raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) + "))");
                 emitLine(out_,
                          indent_,
-                         expr + " = " + signedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper +
-                             "(" + raw + "))");
+                         expr + " = " + signedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper + "(" +
+                             raw + "))");
                 owner_.trace(EmitTraceOp::Advance, step.bits);
                 emitLine(out_, indent_, "offsetBits += " + std::to_string(step.bits));
                 break;
@@ -1048,8 +1061,7 @@ private:
             owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
             emitLine(out_,
                      indent_,
-                     rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.prefixBits) +
-                         ")");
+                     rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.prefixBits) + ")");
             owner_.trace(EmitTraceOp::Advance, step.prefixBits);
             emitLine(out_, indent_, "offsetBits += " + std::to_string(step.prefixBits));
             std::string countExpr = "int(" + rawCount + ")";
@@ -1085,8 +1097,8 @@ private:
         std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
             const auto index = owner_.nextName("index");
-            const auto count = step.kind == FieldStepKind::VariableArray ? "len(" + expr + ")"
-                                                                         : std::to_string(step.capacity);
+            const auto count =
+                step.kind == FieldStepKind::VariableArray ? "len(" + expr + ")" : std::to_string(step.capacity);
             owner_.trace(EmitTraceOp::ElemLoop);
             emitLine(out_, indent_, "for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
             ++indent_;
@@ -1100,9 +1112,7 @@ private:
             (void) step;
             const auto index = owner_.nextName("index");
             owner_.trace(EmitTraceOp::ElemLoop);
-            emitLine(out_,
-                     indent_,
-                     "for " + index + " := 0; " + index + " < " + countExpr + "; " + index + "++ {");
+            emitLine(out_, indent_, "for " + index + " := 0; " + index + " < " + countExpr + "; " + index + "++ {");
             ++indent_;
             return expr + "[" + index + "]";
         }
@@ -1125,8 +1135,7 @@ private:
 
         void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto sizeVar  = owner_.nextName("sizeBytes");
             const auto maxBytes = (step.type.bitLengthSet.max() + 7) / 8;
             if (!step.type.compositeSealed)
@@ -1182,8 +1191,7 @@ private:
 
         void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
         {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             if (!step.type.compositeSealed)
             {
                 const auto sizeVar = owner_.nextName("sizeBytes");
@@ -1213,8 +1221,8 @@ private:
                 const auto consumedVar = owner_.nextName("consumed");
                 emitLine(out_,
                          indent_,
-                         rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":" +
-                             endVar + "])");
+                         rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":" + endVar +
+                             "])");
                 emitLine(out_, indent_, "_ = " + consumedVar);
                 emitLine(out_, indent_, "if " + rcVar + " < 0 {");
                 emitLine(out_, indent_ + 1, "return " + rcVar + ", 0");
@@ -1229,8 +1237,7 @@ private:
             const auto consumedVar = owner_.nextName("consumed");
             emitLine(out_,
                      indent_,
-                     rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar +
-                         ":len(buffer)])");
+                     rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":len(buffer)])");
             emitLine(out_, indent_, "if " + rcVar + " < 0 {");
             emitLine(out_, indent_ + 1, "return " + rcVar + ", 0");
             emitLine(out_, indent_, "}");
@@ -1284,7 +1291,8 @@ void emitSectionType(std::ostringstream&                       out,
                      const std::map<std::string, std::string>& importAliases,
                      const LoweredSectionFacts*                sectionFacts)
 {
-    const auto typeConstPrefix = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, typeName);
+    const auto typeConstPrefix =
+        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
     emitLine(out, 0, "const " + typeConstPrefix + "_FULL_NAME = \"" + fullName + "\"");
     emitLine(out,
              0,
@@ -1300,9 +1308,10 @@ void emitSectionType(std::ostringstream&                       out,
              0,
              "const " + typeConstPrefix +
                  "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                             ? sectionFacts->zohAliasReason
+                                             : "not-proven";
     emitLine(out,
              0,
              "const " + typeConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + std::string(zohAliasEligible ? "true" : "false"));
@@ -1327,21 +1336,26 @@ void emitSectionType(std::ostringstream&                       out,
     {
         constNames.push_back(c.name);
     }
-    const auto constIdents = codegenUpperSnakeAllocator(CodegenNamingLanguage::Go, constNames);
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocGo(out, 0, c.doc);
         emitLine(out,
                  0,
-                 "const " + typeConstPrefix + "_" + constIdents.get(c.name) + " = " + goConstValue(c.type, c.value));
+                 "const " + typeConstPrefix + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
+                     goConstValue(c.type, c.value));
     }
     out << "\n";
 
     emitAttachedDocGo(out,
                       0,
-                      docWithDeprecationNotice(typeDoc, section.deprecated, definitionFullName, majorVersion, minorVersion));
+                      docWithDeprecationNotice(typeDoc,
+                                               section.deprecated,
+                                               definitionFullName,
+                                               majorVersion,
+                                               minorVersion));
     emitLine(out, 0, "type " + typeName + " struct {");
-    const CodegenIdentifierAllocator fieldIdents = makeExportedFieldIdents(section);
+    const NamingScope fieldIdents = makeExportedFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -1351,7 +1365,7 @@ void emitSectionType(std::ostringstream&                       out,
         emitAttachedDocGo(out, 1, field.doc);
         emitLine(out,
                  1,
-                 fieldIdents.get(field.name) + " " +
+                 fieldIdents.get(IdentifierRole::FieldName, field.name) + " " +
                      goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
     }
     if (section.isUnion)
@@ -1423,8 +1437,8 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = baseType + "_Request";
-    const auto respType = baseType + "_Response";
+    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "request");
+    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "response");
     emitSectionType(out,
                     ctx,
                     reqType,
@@ -1455,8 +1469,10 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         out << "\n";
     }
     emitLine(out, 0, "type " + baseType + " = " + reqType);
-    const auto baseConstPrefix = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, baseType);
-    const auto reqConstPrefix  = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, reqType);
+    const auto baseConstPrefix =
+        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
+    const auto reqConstPrefix =
+        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
     emitLine(out, 0, "const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
     emitLine(out, 0, "const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
     return out.str();
@@ -1492,6 +1508,46 @@ llvm::Error emitGo(const SemanticModule& semantic,
     if (options.outDir.empty())
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
+    }
+
+    // Go is the one backend that cannot express unversioned names where it matters. A DSDL namespace
+    // becomes one package and every version of a type lands in it, so two versions give one struct
+    // name and one set of metadata constants -- the package does not compile, and no include-time
+    // guard can help because Go compiles the package as a whole. Refuse rather than write a tree
+    // that cannot build.
+    if (options.typeNameVersioning == TypeNameVersioning::Unversioned)
+    {
+        std::map<std::string, std::vector<std::string>> versionsByFullName;
+        for (const auto& def : semantic.definitions)
+        {
+            versionsByFullName[def.info.fullName].push_back(std::to_string(def.info.majorVersion) + "." +
+                                                            std::to_string(def.info.minorVersion));
+        }
+        bool refused = false;
+        for (const auto& [fullName, versions] : versionsByFullName)
+        {
+            if (versions.size() > 1U)
+            {
+                std::string list;
+                for (const auto& v : versions)
+                {
+                    list += (list.empty() ? "" : ", ") + v;
+                }
+                diagnostics.error({"<go>", 1, 1},
+                                  "'" + fullName + "' has " + std::to_string(versions.size()) + " versions (" +
+                                      list +
+                                      ") in one namespace, which Go compiles as one package; unversioned "
+                                      "type names would declare it more than once. Pass "
+                                      "--versioned-type-names, or select one version.");
+                refused = true;
+            }
+        }
+        if (refused)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "Go cannot emit unversioned type names for a namespace holding "
+                                           "more than one version of a type");
+        }
     }
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Go");
     LoweredFactsMap loweredFacts;
@@ -1540,7 +1596,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
         }
     }
 
-    EmitterContext ctx(semantic);
+    EmitterContext ctx(semantic, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
     for (const auto& def : semantic.definitions)

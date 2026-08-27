@@ -15,6 +15,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
@@ -46,7 +47,8 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
@@ -73,47 +75,20 @@ class DiagnosticEngine;
 namespace
 {
 
-std::string sanitizeMacroToken(std::string token)
-{
-    for (char& c : token)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    if (!token.empty() && std::isdigit(static_cast<unsigned char>(token.front())))
-    {
-        token.insert(token.begin(), '_');
-    }
-    return token;
-}
-
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}.hpp", info.shortName, info.majorVersion, info.minorVersion).str();
+    return renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
+           ".hpp";
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    std::string g = "LLVMDSDL_CPP_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
-                    std::to_string(info.minorVersion) + "_HPP";
-    for (char& c : g)
-    {
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    return g;
+    return renderIncludeGuard(CodegenNamingLanguage::Cpp,
+                              "LLVMDSDL_CPP_",
+                              info.fullName,
+                              info.majorVersion,
+                              info.minorVersion,
+                              "_HPP");
 }
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
@@ -158,7 +133,7 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
         {
             out += "::";
         }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component);
+        out += codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component);
     }
     return out;
 }
@@ -171,7 +146,8 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
     }
     for (const auto& component : components)
     {
-        out << "namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component) << " {\n";
+        out << "namespace "
+            << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) << " {\n";
     }
     out << "\n";
 }
@@ -185,21 +161,27 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
     out << "\n";
     for (auto it = components.rbegin(); it != components.rend(); ++it)
     {
-        out << "} // namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, *it) << "\n";
+        out << "} // namespace "
+            << codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, *it) << "\n";
     }
 }
 
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
+    EmitterContext(const SemanticModule&    semantic,
+                   const bool               emitDeprecationAttributes,
+                   const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , typeNameVersioning_(typeNameVersioning)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            versionCountByFullName_[def.info.fullName] += 1U;
-        }
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief True when `@deprecated` definitions should carry a language-native attribute.
@@ -208,8 +190,12 @@ public:
         return emitDeprecationAttributes_;
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero cost.
-    void setTraceSink(EmitTraceSink* const sink) { traceSink_ = sink; }
+    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
+    /// cost.
+    void setTraceSink(EmitTraceSink* const sink)
+    {
+        traceSink_ = sink;
+    }
 
     /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
     template <typename PayloadT = std::int64_t>
@@ -231,13 +217,12 @@ public:
 
     std::string cppTypeName(const DiscoveredDefinition& info) const
     {
-        std::string out = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, info.shortName);
-        const auto  it  = versionCountByFullName_.find(info.fullName);
-        if (it != versionCountByFullName_.end() && it->second > 1U)
-        {
-            out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
-        }
-        return out;
+        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        typeNameVersioning_);
     }
 
     std::string cppTypeName(const SemanticDefinition& def) const
@@ -252,9 +237,14 @@ public:
             return cppTypeName(*def);
         }
 
-        std::string out = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, ref.shortName);
-        out += "_" + std::to_string(ref.majorVersion) + "_" + std::to_string(ref.minorVersion);
-        return out;
+        // Nothing to count versions against, so assume the name is ambiguous and spell the version.
+        // Guessing the other way would name a type that does not exist if it turns out there are two.
+        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+                                        ref.namespaceComponents,
+                                        ref.shortName,
+                                        ref.majorVersion,
+                                        ref.minorVersion,
+                                        typeNameVersioning_);
     }
 
     std::string cppQualifiedTypeName(const SemanticDefinition& def) const
@@ -298,10 +288,10 @@ public:
     }
 
 private:
-    DefinitionIndex                              index_;
-    std::unordered_map<std::string, std::size_t> versionCountByFullName_;
-    EmitTraceSink*                               traceSink_ = nullptr;
-    bool                                         emitDeprecationAttributes_{false};
+    DefinitionIndex    index_;
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+    EmitTraceSink*     traceSink_ = nullptr;
+    bool               emitDeprecationAttributes_{false};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -347,9 +337,10 @@ public:
                                const SemanticSection&           section,
                                const LoweredSectionFacts* const sectionFacts)
     {
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
         emitLine(out,
                  0,
-                 "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
+                 "inline std::int8_t " + typeName + "_serialize_(const " + typeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -371,69 +362,84 @@ public:
             section,
             sectionFacts,
             HelperBindingDirection::Serialize,
-            NativeFunctionSkeletonCallbacks{
-                [this, &out](const SectionHelperBindingPlan& helperBindings) {
-                    emitSerializeMlirHelperBindings(out, helperBindings, 1);
-                },
-                [&out](const std::string& missingHelperRequirement) {
-                    emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
-                    emitLine(out,
-                             1,
-                             "return static_cast<std::int8_t>("
-                             "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                },
-                [this, &out](const SectionHelperBindingPlan& helperBindings) {
-                    const auto capacityHelper = helperBindingName(helperBindings.capacityCheck->symbol);
-                    const auto errCapacity    = nextName("err_capacity");
-                    emitLine(out,
-                             1,
-                             "const std::int8_t " + errCapacity + " = " + capacityHelper +
-                                 "(static_cast<std::int64_t>(capacity_bytes * 8U));");
-                    emitLine(out, 1, "if (" + errCapacity + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-                    emitLine(out, 2, "return " + errCapacity + ";");
-                    emitLine(out, 1, "}");
-                },
-                [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                    NativeEmitterTraversalCallbacks callbacks;
-                    callbacks.onUnionDispatch = [this, &out, &section, sectionFacts, &renderIR](
-                                                    const std::vector<PlannedFieldStep>& unionBranches) {
-                        emitSerializeUnion(out,
-                                           section,
-                                           unionBranches,
-                                           "obj",
-                                           1,
-                                           sectionFacts,
-                                           renderIR.helperBindings);
-                    };
-                    callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
-                        emitAlignSerialize(out, alignmentBits, 1);
-                    };
-                    callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-                        const auto* const field = fieldStep.field;
-                        emitSerializeValue(out,
-                                           field->resolvedType,
-                                           "obj->" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
-                                           1,
-                                           fieldStep.arrayLengthPrefixBits,
-                                           fieldStep.fieldFacts);
-                    };
-                    callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
-                        emitAlignSerialize(out, alignmentBits, 1);
-                    };
-                    callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-                        const auto* const field = fieldStep.field;
-                        emitSerializePadding(out, field->resolvedType, 1);
-                    };
-                    return callbacks;
-                },
-                [this, &out]() {
-                    emitAlignSerialize(out, 8, 1);
-                    emitLine(out,
-                             1,
-                             "*inout_buffer_size_bytes = "
-                             "static_cast<std::size_t>(offset_bits / 8U);");
-                    emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-                }});
+            NativeFunctionSkeletonCallbacks{[this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                                emitSerializeMlirHelperBindings(out, helperBindings, 1);
+                                            },
+                                            [&out](const std::string& missingHelperRequirement) {
+                                                emitLine(out,
+                                                         1,
+                                                         "/* missing lowered helper contract: " +
+                                                             missingHelperRequirement + " */");
+                                                emitLine(out,
+                                                         1,
+                                                         "return static_cast<std::int8_t>("
+                                                         "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                                            },
+                                            [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                                const auto capacityHelper =
+                                                    helperBindingName(helperBindings.capacityCheck->symbol);
+                                                const auto errCapacity = nextName("err_capacity");
+                                                emitLine(out,
+                                                         1,
+                                                         "const std::int8_t " + errCapacity + " = " + capacityHelper +
+                                                             "(static_cast<std::int64_t>(capacity_bytes * 8U));");
+                                                emitLine(out,
+                                                         1,
+                                                         "if (" + errCapacity +
+                                                             " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+                                                emitLine(out, 2, "return " + errCapacity + ";");
+                                                emitLine(out, 1, "}");
+                                            },
+                                            [this, &out, &section, sectionFacts, &fieldScope](
+                                                const LoweredBodyRenderIR& renderIR) {
+                                                NativeEmitterTraversalCallbacks callbacks;
+                                                callbacks.onUnionDispatch =
+                                                    [this, &out, &section, sectionFacts, &renderIR](
+                                                        const std::vector<PlannedFieldStep>& unionBranches) {
+                                                        emitSerializeUnion(out,
+                                                                           section,
+                                                                           unionBranches,
+                                                                           "obj",
+                                                                           1,
+                                                                           sectionFacts,
+                                                                           renderIR.helperBindings);
+                                                    };
+                                                callbacks.onFieldAlignment = [this,
+                                                                              &out](const std::int64_t alignmentBits) {
+                                                    emitAlignSerialize(out, alignmentBits, 1);
+                                                };
+                                                callbacks.onField =
+                                                    [this, &out, &fieldScope](const PlannedFieldStep& fieldStep) {
+                                                        const auto* const field = fieldStep.field;
+                                                        emitSerializeValue(out,
+                                                                           field->resolvedType,
+                                                                           "obj->" +
+                                                                               fieldScope.get(IdentifierRole::FieldName,
+                                                                                              field->name),
+                                                                           1,
+                                                                           fieldStep.arrayLengthPrefixBits,
+                                                                           fieldStep.fieldFacts);
+                                                    };
+                                                callbacks.onPaddingAlignment =
+                                                    [this, &out](const std::int64_t alignmentBits) {
+                                                        emitAlignSerialize(out, alignmentBits, 1);
+                                                    };
+                                                callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                                                    const auto* const field = fieldStep.field;
+                                                    emitSerializePadding(out, field->resolvedType, 1);
+                                                };
+                                                return callbacks;
+                                            },
+                                            [this, &out]() {
+                                                emitAlignSerialize(out, 8, 1);
+                                                emitLine(out,
+                                                         1,
+                                                         "*inout_buffer_size_bytes = "
+                                                         "static_cast<std::size_t>(offset_bits / 8U);");
+                                                emitLine(out,
+                                                         1,
+                                                         "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
+                                            }});
         if (!emitted)
         {
             emitLine(out, 0, "}");
@@ -449,9 +455,10 @@ public:
                                  const SemanticSection&           section,
                                  const LoweredSectionFacts* const sectionFacts)
     {
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
         emitLine(out,
                  0,
-                 "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
+                 "inline std::int8_t " + typeName + "_deserialize_(" + typeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -480,65 +487,76 @@ public:
         emitLine(out, 1, "const std::size_t capacity_bytes = *inout_buffer_size_bytes;");
         emitLine(out, 1, "const std::size_t capacity_bits = capacity_bytes * 8U;");
         emitLine(out, 1, "std::size_t offset_bits = 0U;");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Deserialize,
-            NativeFunctionSkeletonCallbacks{
-                [this, &out](const SectionHelperBindingPlan& helperBindings) {
-                    emitDeserializeMlirHelperBindings(out, helperBindings, 1);
-                },
-                [&out](const std::string& missingHelperRequirement) {
-                    emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
-                    emitLine(out,
-                             1,
-                             "return static_cast<std::int8_t>("
-                             "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                },
-                nullptr,
-                [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                    NativeEmitterTraversalCallbacks callbacks;
-                    callbacks.onUnionDispatch = [this, &out, &section, sectionFacts, &renderIR](
-                                                    const std::vector<PlannedFieldStep>& unionBranches) {
-                        emitDeserializeUnion(out,
-                                             section,
-                                             unionBranches,
-                                             "out_obj",
-                                             1,
-                                             sectionFacts,
-                                             renderIR.helperBindings);
-                    };
-                    callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
-                        emitAlignDeserialize(out, alignmentBits, 1);
-                    };
-                    callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-                        const auto* const field = fieldStep.field;
-                        emitDeserializeValue(out,
-                                             field->resolvedType,
-                                             "out_obj->" +
-                                                 codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
-                                             1,
-                                             fieldStep.arrayLengthPrefixBits,
-                                             fieldStep.fieldFacts);
-                    };
-                    callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
-                        emitAlignDeserialize(out, alignmentBits, 1);
-                    };
-                    callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-                        const auto* const field = fieldStep.field;
-                        emitDeserializePadding(out, field->resolvedType, 1);
-                    };
-                    return callbacks;
-                },
-                [this, &out]() {
-                    emitAlignDeserialize(out, 8, 1);
-                    emitLine(out,
-                             1,
-                             "*inout_buffer_size_bytes = "
-                             "static_cast<std::size_t>(dsdl_runtime_choose_min(offset_bits, "
-                             "capacity_bits) / 8U);");
-                    emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-                }});
+        const auto emitted =
+            emitNativeFunctionSkeleton(section,
+                                       sectionFacts,
+                                       HelperBindingDirection::Deserialize,
+                                       NativeFunctionSkeletonCallbacks{
+                                           [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                                               emitDeserializeMlirHelperBindings(out, helperBindings, 1);
+                                           },
+                                           [&out](const std::string& missingHelperRequirement) {
+                                               emitLine(out,
+                                                        1,
+                                                        "/* missing lowered helper contract: " +
+                                                            missingHelperRequirement + " */");
+                                               emitLine(out,
+                                                        1,
+                                                        "return static_cast<std::int8_t>("
+                                                        "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                                           },
+                                           nullptr,
+                                           [this, &out, &section, sectionFacts, &fieldScope](
+                                               const LoweredBodyRenderIR& renderIR) {
+                                               NativeEmitterTraversalCallbacks callbacks;
+                                               callbacks.onUnionDispatch =
+                                                   [this, &out, &section, sectionFacts, &renderIR](
+                                                       const std::vector<PlannedFieldStep>& unionBranches) {
+                                                       emitDeserializeUnion(out,
+                                                                            section,
+                                                                            unionBranches,
+                                                                            "out_obj",
+                                                                            1,
+                                                                            sectionFacts,
+                                                                            renderIR.helperBindings);
+                                                   };
+                                               callbacks.onFieldAlignment = [this,
+                                                                             &out](const std::int64_t alignmentBits) {
+                                                   emitAlignDeserialize(out, alignmentBits, 1);
+                                               };
+                                               callbacks.onField = [this, &out, &fieldScope](
+                                                                       const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   emitDeserializeValue(out,
+                                                                        field->resolvedType,
+                                                                        "out_obj->" +
+                                                                            fieldScope.get(IdentifierRole::FieldName,
+                                                                                           field->name),
+                                                                        1,
+                                                                        fieldStep.arrayLengthPrefixBits,
+                                                                        fieldStep.fieldFacts);
+                                               };
+                                               callbacks.onPaddingAlignment = [this,
+                                                                               &out](const std::int64_t alignmentBits) {
+                                                   emitAlignDeserialize(out, alignmentBits, 1);
+                                               };
+                                               callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                                                   const auto* const field = fieldStep.field;
+                                                   emitDeserializePadding(out, field->resolvedType, 1);
+                                               };
+                                               return callbacks;
+                                           },
+                                           [this, &out]() {
+                                               emitAlignDeserialize(out, 8, 1);
+                                               emitLine(out,
+                                                        1,
+                                                        "*inout_buffer_size_bytes = "
+                                                        "static_cast<std::size_t>(dsdl_runtime_choose_min(offset_bits, "
+                                                        "capacity_bits) / 8U);");
+                                               emitLine(out,
+                                                        1,
+                                                        "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
+                                           }});
         if (!emitted)
         {
             emitLine(out, 0, "}");
@@ -759,9 +777,8 @@ private:
             owner_.trace(EmitTraceOp::StoreTag);
             emitLine(out_,
                      indent_,
-                     objRef_ + "->_tag_ = static_cast<" +
-                         unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + ">(" + tagHelper + "(" + rawTag +
-                         "));");
+                     objRef_ + "->_tag_ = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) +
+                         ">(" + tagHelper + "(" + rawTag + "));");
         }
 
         void spellDeserializeValidateTag() override
@@ -799,7 +816,10 @@ private:
                          "->_tag_ == " + std::to_string(optionIndex) + "U) {");
         }
 
-        void spellEndCase() override { emitLine(out_, indent_, "}"); }
+        void spellEndCase() override
+        {
+            emitLine(out_, indent_, "}");
+        }
 
         void spellBadTagDefault() override
         {
@@ -833,24 +853,25 @@ private:
                             const LoweredSectionFacts* const     sectionFacts,
                             const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+        const auto        tagBits    = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling     spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
-            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
-                                                const auto member =
-                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-                                                emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
-                                                emitSerializeValue(out,
-                                                                   field.resolvedType,
-                                                                   objRef + "->" + member,
-                                                                   indent + 1,
-                                                                   step.arrayLengthPrefixBits,
-                                                                   step.fieldFacts);
-                                            }});
+            cases.push_back(
+                UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field, &fieldScope]() {
+                                    const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+                                    emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                    emitSerializeValue(out,
+                                                       field.resolvedType,
+                                                       objRef + "->" + member,
+                                                       indent + 1,
+                                                       step.arrayLengthPrefixBits,
+                                                       step.fieldFacts);
+                                }});
         }
         renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
     }
@@ -863,24 +884,25 @@ private:
                               const LoweredSectionFacts* const     sectionFacts,
                               const SectionHelperBindingPlan&      helperBindings)
     {
-        const auto    tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+        const auto        tagBits    = resolveUnionTagBits(section, sectionFacts);
+        UnionSpelling     spelling(*this, out, objRef, indent, static_cast<std::int64_t>(tagBits), helperBindings);
         std::vector<UnionCaseRender> cases;
         cases.reserve(unionBranches.size());
         for (const auto& step : unionBranches)
         {
             const auto& field = *step.field;
-            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field]() {
-                                                const auto member =
-                                                    codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
-                                                emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
-                                                emitDeserializeValue(out,
-                                                                     field.resolvedType,
-                                                                     objRef + "->" + member,
-                                                                     indent + 1,
-                                                                     step.arrayLengthPrefixBits,
-                                                                     step.fieldFacts);
-                                            }});
+            cases.push_back(
+                UnionCaseRender{field.unionOptionIndex, [this, &out, &objRef, indent, &step, &field, &fieldScope]() {
+                                    const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+                                    emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
+                                    emitDeserializeValue(out,
+                                                         field.resolvedType,
+                                                         objRef + "->" + member,
+                                                         indent + 1,
+                                                         step.arrayLengthPrefixBits,
+                                                         step.fieldFacts);
+                                }});
         }
         renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
     }
@@ -927,8 +949,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarBool, 1);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " + expr + ");");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " +
+                             expr + ");");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -945,9 +967,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
-                             std::to_string(step.bits) + "U);");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
+                             valueExpr + ", " + std::to_string(step.bits) + "U);");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -964,9 +985,8 @@ private:
                 owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + err +
-                             " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", " +
-                             std::to_string(step.bits) + "U);");
+                         "const std::int8_t " + err + " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
+                             valueExpr + ", " + std::to_string(step.bits) + "U);");
                 emitLine(out_, indent_, "if (" + err + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + err + ";");
                 emitLine(out_, indent_, "}");
@@ -1031,8 +1051,8 @@ private:
                              "(buffer, capacity_bytes, offset_bits, " + std::to_string(step.bits) + "U));");
                 emitLine(out_,
                          indent_,
-                         expr + " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) +
-                             ">(" + helper + "(" + raw + "));");
+                         expr + " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + ">(" +
+                             helper + "(" + raw + "));");
                 owner_.trace(EmitTraceOp::Advance, step.bits);
                 emitLine(out_, indent_, "offset_bits += " + std::to_string(step.bits) + "U;");
                 break;
@@ -1106,8 +1126,7 @@ private:
                                        const HelperBindingDirection direction) override
         {
             // D3: fixed bool arrays are bit-copied wholesale instead of looping.
-            if (step.kind != FieldStepKind::FixedArray ||
-                step.children.front().kind != FieldStepKind::ScalarBool)
+            if (step.kind != FieldStepKind::FixedArray || step.children.front().kind != FieldStepKind::ScalarBool)
             {
                 return false;
             }
@@ -1147,8 +1166,8 @@ private:
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             emitLine(out_,
                      indent_,
-                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
-                         expr + ".size()));");
+                     "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" + expr +
+                         ".size()));");
             emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
             emitLine(out_, indent_ + 1, "return " + validateRc + ";");
             emitLine(out_, indent_, "}");
@@ -1244,9 +1263,8 @@ private:
         std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
         {
             const auto index = owner_.nextName("index");
-            const auto bound = step.kind == FieldStepKind::VariableArray
-                                   ? (expr + ".size()")
-                                   : std::to_string(step.capacity) + "U";
+            const auto bound =
+                step.kind == FieldStepKind::VariableArray ? (expr + ".size()") : std::to_string(step.capacity) + "U";
             owner_.trace(EmitTraceOp::ElemLoop);
             emitLine(out_,
                      indent_,
@@ -1293,8 +1311,7 @@ private:
                 return;
             }
 
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
             auto       sizeVar    = owner_.nextName("size_bytes");
             auto       errVar     = owner_.nextName("err");
@@ -1306,8 +1323,7 @@ private:
 
             emitLine(out_,
                      indent_,
-                     "std::size_t " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) +
-                         "U;");
+                     "std::size_t " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) + "U;");
             if (!step.type.compositeSealed)
             {
                 const auto remaining = owner_.nextName("remaining");
@@ -1320,15 +1336,15 @@ private:
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
-                             sizeVar + "), static_cast<std::int64_t>(" + remaining + "));");
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
+                             "), static_cast<std::int64_t>(" + remaining + "));");
                 emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + validateRc + ";");
                 emitLine(out_, indent_, "}");
             }
             emitLine(out_,
                      indent_,
-                     "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
+                     "std::int8_t " + errVar + " = " + nestedType + "_serialize_(&" + expr +
                          ", &buffer[offset_bits / 8U], &" + sizeVar +
                          (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
             emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1360,8 +1376,7 @@ private:
                 return;
             }
 
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline
-                                                   : EmitTraceOp::CompositeDelimHeader);
+            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
             const auto nestedType = owner_.ctx_.cppQualifiedTypeName(*step.type.compositeType);
             auto       sizeVar    = owner_.nextName("size_bytes");
             auto       errVar     = owner_.nextName("err");
@@ -1386,8 +1401,8 @@ private:
                 const auto validateRc = owner_.nextName("rc");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" +
-                             sizeVar + "), static_cast<std::int64_t>(" + remVar + "));");
+                         "const std::int8_t " + validateRc + " = " + helper + "(static_cast<std::int64_t>(" + sizeVar +
+                             "), static_cast<std::int64_t>(" + remVar + "));");
                 emitLine(out_, indent_, "if (" + validateRc + " < 0) {");
                 emitLine(out_, indent_ + 1, "return " + validateRc + ";");
                 emitLine(out_, indent_, "}");
@@ -1395,7 +1410,7 @@ private:
                 emitLine(out_, indent_, "std::size_t " + consumed + " = " + sizeVar + ";");
                 emitLine(out_,
                          indent_,
-                         "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                         "const std::int8_t " + errVar + " = " + nestedType + "_deserialize_(&" + expr +
                              ", &buffer[offset_bits / 8U], &" + consumed +
                              (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
                 emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1411,7 +1426,7 @@ private:
                          " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
             emitLine(out_,
                      indent_,
-                     "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
+                     "const std::int8_t " + errVar + " = " + nestedType + "_deserialize_(&" + expr +
                          ", &buffer[offset_bits / 8U], &" + sizeVar +
                          (isPmrFlavor(owner_.flavor_) ? ", effective_memory_resource" : "") + ");");
             emitLine(out_, indent_, "if (" + errVar + " < 0) {");
@@ -1486,20 +1501,24 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
 
 void emitArrayMetadata(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
         {
             continue;
         }
-        const auto fieldName = sanitizeMacroToken(field.name);
+        const auto named = [&](const ArrayMetadataKind kind) {
+            return constScope.get(IdentifierRole::MacroName,
+                                  arrayMetadataName(CodegenNamingLanguage::Cpp, field.name, kind));
+        };
         emitLine(out,
                  1,
-                 "static constexpr std::size_t " + fieldName +
-                     "_ARRAY_CAPACITY = " + std::to_string(field.resolvedType.arrayCapacity) + "U;");
+                 "static constexpr std::size_t " + named(ArrayMetadataKind::Capacity) + " = " +
+                     std::to_string(field.resolvedType.arrayCapacity) + "U;");
         emitLine(out,
                  1,
-                 "static constexpr bool " + fieldName + "_ARRAY_IS_VARIABLE_LENGTH = " +
+                 "static constexpr bool " + named(ArrayMetadataKind::IsVariableLength) + " = " +
                      std::string(isVariableArray(field.resolvedType.arrayKind) ? "true" : "false") + ";");
     }
 }
@@ -1509,38 +1528,39 @@ void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName
     emitLine(out, 0, "struct " + typeName + ";");
     emitLine(out,
              0,
-             "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
+             "inline std::int8_t " + typeName + "_serialize_(const " + typeName +
                  "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
                  (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     emitLine(out,
              0,
-             "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
+             "inline std::int8_t " + typeName + "_deserialize_(" + typeName +
                  "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
                  (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+                 "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
                  "const std::uint8_t** out_view_bytes);");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
                  "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     out << "\n";
 }
 
-void emitSectionStruct(std::ostringstream&    out,
-                       const std::string&     typeName,
-                       const std::string&     fullName,
-                       std::uint32_t          majorVersion,
-                       std::uint32_t          minorVersion,
-                       const SemanticSection& section,
-                       const EmitterContext&  ctx,
-                       const CppFlavor        flavor,
-                       const AttachedDoc&     typeDoc,
+void emitSectionStruct(std::ostringstream&              out,
+                       const std::string&               typeName,
+                       const std::string&               fullName,
+                       std::uint32_t                    majorVersion,
+                       std::uint32_t                    minorVersion,
+                       const SemanticSection&           section,
+                       const EmitterContext&            ctx,
+                       const CppFlavor                  flavor,
+                       const AttachedDoc&               typeDoc,
                        const LoweredSectionFacts* const sectionFacts)
 {
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     emitAttachedDocCpp(out, 0, typeDoc);
     const std::string structAttribute =
         (section.deprecated && ctx.emitDeprecationAttributes()) ? "[[deprecated]] " : "";
@@ -1559,7 +1579,7 @@ void emitSectionStruct(std::ostringstream&    out,
             continue;
         }
 
-        const auto member   = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field.name);
+        const auto member   = fieldScope.get(IdentifierRole::FieldName, field.name);
         const auto baseType = cppTypeFromFieldType(field.resolvedType, ctx);
         emitAttachedDocCpp(out, 1, field.doc);
 
@@ -1666,14 +1686,16 @@ void emitSectionStruct(std::ostringstream&    out,
         }
         for (const auto& member : compositeFixedArrayMembers)
         {
-            const auto i = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, member + "_index");
+            const auto i =
+                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
             emitLine(out, 2, "}");
         }
         for (const auto& member : compositeVariableArrayMembers)
         {
-            const auto i = codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, member + "_index");
+            const auto i =
+                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
             emitLine(out, 2, "for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
             emitLine(out, 3, member + "[" + i + "].set_memory_resource(_memory_resource);");
             emitLine(out, 2, "}");
@@ -1703,9 +1725,10 @@ void emitSectionStruct(std::ostringstream&    out,
              1,
              "static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                             ? sectionFacts->zohAliasReason
+                                             : "not-proven";
     emitLine(out,
              1,
              std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
@@ -1723,12 +1746,21 @@ void emitSectionStruct(std::ostringstream&    out,
         emitLine(out, 1, "static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(optionCount) + "U;");
     }
 
+    // Two DSDL constants can upper-case onto one name; a duplicate `static constexpr` does not
+
+    // compile. The generated statics are claimed by the ConstantName role's policy, so a DSDL
+
+    // constant named FULL_NAME is escaped before it reaches the scope.
+
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+
     for (const auto& c : section.constants)
     {
         emitAttachedDocCpp(out, 1, c.doc);
         emitLine(out,
                  1,
-                 "static constexpr auto " + sanitizeMacroToken(c.name) + " = " + valueToCppExpr(c.type, c.value) + ";");
+                 "static constexpr auto " + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
+                     valueToCppExpr(c.type, c.value) + ";");
     }
 
     emitArrayMetadata(out, typeName, section);
@@ -1742,11 +1774,11 @@ void emitSectionStruct(std::ostringstream&    out,
     {
         emitLine(out,
                  2,
-                 "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+                 "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
     }
     else
     {
-        emitLine(out, 2, "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes);");
+        emitLine(out, 2, "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
     }
     emitLine(out, 1, "}");
 
@@ -1758,11 +1790,11 @@ void emitSectionStruct(std::ostringstream&    out,
     {
         emitLine(out,
                  2,
-                 "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+                 "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
     }
     else
     {
-        emitLine(out, 2, "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes);");
+        emitLine(out, 2, "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
     }
     emitLine(out, 1, "}");
 
@@ -1770,7 +1802,7 @@ void emitSectionStruct(std::ostringstream&    out,
              1,
              "LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
              "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
-    emitLine(out, 2, "return " + typeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    emitLine(out, 2, "return " + typeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
     emitLine(out, 1, "}");
     emitLine(out,
              1,
@@ -1779,7 +1811,7 @@ void emitSectionStruct(std::ostringstream&    out,
     emitLine(out,
              2,
              "return " + typeName +
-                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
     emitLine(out, 1, "}");
 
     if (isPmrFlavor(flavor))
@@ -1788,9 +1820,7 @@ void emitSectionStruct(std::ostringstream&    out,
                  1,
                  "LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
-        emitLine(out,
-                 2,
-                 "return " + typeName + "__serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+        emitLine(out, 2, "return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
         emitLine(out, 1, "}");
 
         emitLine(out,
@@ -1799,7 +1829,7 @@ void emitSectionStruct(std::ostringstream&    out,
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
         emitLine(out,
                  2,
-                 "return " + typeName + "__deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+                 "return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
         emitLine(out, 1, "}");
     }
 
@@ -1812,10 +1842,12 @@ void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                 "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                  "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
     emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
+    emitLine(out,
+             1,
+             "if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
     emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     emitLine(out, 1, "}");
     emitLine(out, 1, "*out_view_bytes = nullptr;");
@@ -1842,7 +1874,7 @@ void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
     emitLine(out,
              0,
              "inline std::int8_t " + typeName +
-                 "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                 "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                  "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
     emitLine(out, 0, "{");
     emitLine(out, 1, "if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
@@ -1891,11 +1923,15 @@ void emitSection(std::ostringstream&              out,
                       section,
                       ctx,
                       flavor,
-                      docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion),
+                      docWithDeprecationNotice(typeDoc,
+                                               section.deprecated,
+                                               def.info.fullName,
+                                               def.info.majorVersion,
+                                               def.info.minorVersion),
                       sectionFacts);
 
-    const auto canonicalSectionName = fullName + "." + std::to_string(def.info.majorVersion) + "." +
-                                      std::to_string(def.info.minorVersion);
+    const auto canonicalSectionName =
+        fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
     FunctionBodyEmitter bodyEmitter(ctx, flavor);
     ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
     bodyEmitter.emitSerializeFunction(out, typeName, section, sectionFacts);
@@ -1910,8 +1946,7 @@ llvm::Expected<std::string> loadCRuntimeHeader()
     {
         return std::string(*data);
     }
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "embedded runtime source missing: dsdl_runtime.h");
+    return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: dsdl_runtime.h");
 }
 
 llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
@@ -1940,6 +1975,24 @@ std::string renderHeader(const SemanticDefinition& def,
     out << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << "\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
+
+    // Under the unversioned scheme this type's name carries no version, so two versions of it are
+    // one identifier. Generating both is fine -- they are separate headers -- but including both is
+    // not, and saying so here beats a cascade of redefinitions from inside generated code.
+    if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
+    {
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(CodegenNamingLanguage::Cpp, def.info.fullName, def.info.majorVersion,
+                                        def.info.minorVersion);
+        out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
+        out << "#  error \"" << def.info.fullName
+            << ": two versions of one type in one translation unit, but generated type names are "
+               "unversioned. Regenerate with --versioned-type-names to use both.\"\n";
+        out << "#endif\n";
+        out << "#define " << anyVersion << "\n";
+        out << "#define " << thisVersion << "\n\n";
+    }
+
     out << "#include <array>\n";
     out << "#include <cstddef>\n";
     out << "#include <cstdint>\n";
@@ -1977,8 +2030,10 @@ std::string renderHeader(const SemanticDefinition& def,
 
     if (def.isService)
     {
-        const auto requestType  = baseTypeName + "__Request";
-        const auto responseType = baseTypeName + "__Response";
+        // A single underscore: C++ reserves any identifier containing `__`, and these name C++
+        // structs. The C emitter keeps `__` for its own service section types, where it is legal.
+        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "request");
+        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "response");
 
         emitLine(out, 0, "constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
         emitLine(out,
@@ -2022,19 +2077,20 @@ std::string renderHeader(const SemanticDefinition& def,
                  "constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestType + "::ZOH_ALIAS_ELIGIBLE;");
         emitLine(out,
                  0,
-                 "constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType + "::ZOH_ALIAS_REASON;");
+                 "constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType +
+                     "::ZOH_ALIAS_REASON;");
         out << "\n";
 
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
+                 "inline std::int8_t " + baseTypeName + "_serialize_(const " + baseTypeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__serialize_(reinterpret_cast<const " + requestType +
+                 "return " + requestType + "_serialize_(reinterpret_cast<const " + requestType +
                      "*>(obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                      ");");
         emitLine(out, 0, "}");
@@ -2042,14 +2098,14 @@ std::string renderHeader(const SemanticDefinition& def,
 
         emitLine(out,
                  0,
-                 "inline std::int8_t " + baseTypeName + "__deserialize_(" + baseTypeName +
+                 "inline std::int8_t " + baseTypeName + "_deserialize_(" + baseTypeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
                      (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__deserialize_(reinterpret_cast<" + requestType +
+                 "return " + requestType + "_deserialize_(reinterpret_cast<" + requestType +
                      "*>(out_obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                      ");");
         emitLine(out, 0, "}");
@@ -2058,25 +2114,25 @@ std::string renderHeader(const SemanticDefinition& def,
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseTypeName +
-                     "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                     "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
-                 "return " + requestType + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+                 "return " + requestType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
         emitLine(out, 0, "}");
         out << "\n";
 
         emitLine(out,
                  0,
                  "inline std::int8_t " + baseTypeName +
-                     "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                     "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
                      "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + requestType +
-                     "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+                     "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
     }
     else
@@ -2150,7 +2206,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
     }
 
-    EmitterContext ctx(semantic, options.emitDeprecationAttributes);
+    EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
     for (const auto& def : semantic.definitions)
     {

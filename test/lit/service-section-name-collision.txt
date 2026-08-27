@@ -1,0 +1,61 @@
+# Regression (D5): a service emits a type per section, named after the service with a suffix, so
+# `ns.Foo.1.0` gives `Foo_Request`. A sibling definition may be *called* `ns.Foo_Request.1.0`, which
+# is conformant DSDL, and then the two land on one identifier. Discovery could not see it: it keys
+# each definition on its own short name, and `Foo` and `Foo_Request` do not collide as declared
+# names. C++ shares one namespace across a DSDL namespace, so two headers defined `struct
+# Foo_Request` and a translation unit including both did not compile.
+#
+# The version is not what separates them -- under the default scheme it is not in the type name at
+# all, so the pair collides whatever versions they carry. `--versioned-type-names` does separate
+# them (`Foo_1_0_Request` against `Foo_Request_1_0`), which is why it is what the diagnostic
+# suggests. See D5 in STROPPING_DEFECTS.md.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/dsdl/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/dsdl/ns/Foo_Request.1.0.dsdl
+
+# C++ shares a namespace across the types in it, so this is a redefinition and is rejected.
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/dsdl/ns --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=CPP
+# CPP: type name collision in generated output: 'ns.Foo_Request' and the request section of 'ns.Foo' both emit 'Foo_Request' for target language 'cpp'; pass --versioned-type-names, or rename one of them
+
+# Versioned names put the version where it separates the two, so the same corpus generates.
+# RUN: %dsdlc --target-language cpp --versioned-type-names --cpp-profile std %t/dsdl/ns --outdir %t/cppv
+# RUN: cat %t/cppv/ns/Foo_1_0.hpp %t/cppv/ns/Foo_Request_1_0.hpp | FileCheck %s --check-prefix=VERSIONED
+# VERSIONED-DAG: struct Foo_1_0_Request {
+# VERSIONED-DAG: struct Foo_Request_1_0 {
+
+# Rust gives every definition its own module, so the repeat is unreachable and must not be reported.
+# RUN: %dsdlc --target-language rust --rust-crate-name m %t/dsdl/ns --outdir %t/rust
+# RUN: cat %t/rust/src/ns/foo_1_0.rs %t/rust/src/ns/foo_request_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUST-DAG: pub struct ns_Foo_Request {
+
+# The versions do not have to match: the unversioned name carries neither, so a service at 1.0 and a
+# sibling at 2.0 collide just the same.
+# RUN: rm -rf %t/skew && mkdir -p %t/skew/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/skew/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/skew/ns/Foo_Request.2.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/skew/ns --outdir %t/skewout 2>&1 | FileCheck %s --check-prefix=SKEW
+# SKEW: and the request section of 'ns.Foo' both emit 'Foo_Request' for target language 'cpp'
+
+# The response section is checked too, and against a service's own sibling rather than only a message.
+# RUN: rm -rf %t/resp && mkdir -p %t/resp/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/resp/ns/Bar.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/resp/ns/Bar_Response.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/resp/ns --outdir %t/respout 2>&1 | FileCheck %s --check-prefix=RESP
+# RESP: the response section of 'ns.Bar' both emit 'Bar_Response' for target language 'cpp'
+
+# A service beside an ordinary sibling that does not collide must still generate.
+# RUN: rm -rf %t/ok && mkdir -p %t/ok/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ok/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/ok/ns/Other.1.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/ok/ns --outdir %t/okout
+# RUN: ls %t/okout/ns | FileCheck %s --check-prefix=OK
+# OK-DAG: Svc_1_0.hpp
+# OK-DAG: Other_1_0.hpp
+
+# Two versions of one service are the same DSDL type, which is D20's business and not this check's:
+# both sections repeat their names, and that must not be reported here.
+# RUN: rm -rf %t/twover && mkdir -p %t/twover/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/twover/ns/Dup.1.0.dsdl
+# RUN: printf 'uint8 a\nuint8 b\n@sealed\n---\nuint8 c\n@sealed\n' > %t/twover/ns/Dup.2.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/twover/ns --outdir %t/twoverout

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime
-from fixtures_snapshot_py.fixtures.vendor.delimited_1_0 import Delimited_1_0
+from fixtures_snapshot_py.fixtures.vendor.delimited_1_0 import Delimited
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited"
@@ -18,33 +18,33 @@ DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
 DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
 
 @dataclass(slots=True)
-class UsesDelimited_1_0:
-    nested: Delimited_1_0 = field(default_factory=Delimited_1_0)
+class UsesDelimited:
+    nested: Delimited = field(default_factory=Delimited)
 
     def serialize(self) -> bytes:
-        return _serialize_UsesDelimited_1_0(self)
+        return _serialize_UsesDelimited(self)
 
     @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UsesDelimited_1_0":
-        value, _consumed = _deserialize_UsesDelimited_1_0(bytes(data))
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UsesDelimited":
+        value, _consumed = _deserialize_UsesDelimited(bytes(data))
         return value
 
     def _serialize_to(self, writer: object) -> None:
         writer.write(self.serialize())
 
     @classmethod
-    def _deserialize_from(cls, reader: object) -> "UsesDelimited_1_0":
+    def _deserialize_from(cls, reader: object) -> "UsesDelimited":
         return cls.deserialize(reader.read())
 
-def _serialize_UsesDelimited_1_0(value: UsesDelimited_1_0) -> bytes:
+def _serialize_UsesDelimited(value: UsesDelimited) -> bytes:
     out = bytearray(12)
     offset_bits = 0
-    def mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(capacity_bits: int) -> bool:
+    def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(capacity_bits: int) -> bool:
         return 96 <= capacity_bits
-    def mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
         return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)
     
-    if not mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(len(out) * 8):
+    if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
     nested_aligned_offset_bits = ((offset_bits + 7) // 8) * 8
     for nested_align_bit in range(offset_bits, nested_aligned_offset_bits):
@@ -64,23 +64,23 @@ def _serialize_UsesDelimited_1_0(value: UsesDelimited_1_0) -> bytes:
     used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)
     return bytes(out[:used_bytes])
 
-def _deserialize_UsesDelimited_1_0(data: bytes | bytearray | memoryview) -> tuple[UsesDelimited_1_0, int]:
+def _deserialize_UsesDelimited(data: bytes | bytearray | memoryview) -> tuple[UsesDelimited, int]:
     data = bytes(data)
-    def mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
         return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)
     
-    value = UsesDelimited_1_0()
+    value = UsesDelimited()
     offset_bits = 0
     offset_bits = ((offset_bits + 7) // 8) * 8
     nested_size_bytes = int(dsdl_runtime.read_unsigned(data, offset_bits, 32))
     offset_bits += 32
     nested_remaining_bytes = len(data) - min(offset_bits // 8, len(data))
-    if not mlir___llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nested_size_bytes, nested_remaining_bytes):
+    if not mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nested_size_bytes, nested_remaining_bytes):
         raise ValueError("decoded payload size for composite field 'nested' exceeds remaining buffer space")
     nested_start_byte = min(offset_bits // 8, len(data))
     nested_end_byte = min(nested_start_byte + nested_size_bytes, len(data))
     nested_bytes = data[nested_start_byte:nested_end_byte]
-    value.nested = Delimited_1_0.deserialize(nested_bytes)
+    value.nested = Delimited.deserialize(nested_bytes)
     offset_bits += nested_size_bytes * 8
     consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))
     return value, consumed

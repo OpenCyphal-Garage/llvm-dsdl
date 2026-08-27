@@ -30,10 +30,24 @@ file(MAKE_DIRECTORY "${little_out}")
 file(MAKE_DIRECTORY "${big_out}")
 file(MAKE_DIRECTORY "${no_archive_out}")
 
+# The obj backend publishes the C and C++ headers a consumer writes against, so its naming scheme is
+# a user-visible choice like any other backend's. Registered under both.
+if(NOT DEFINED TYPE_NAME_SCHEME OR "${TYPE_NAME_SCHEME}" STREQUAL "")
+  set(TYPE_NAME_SCHEME "unversioned")
+endif()
+set(V1_0 "")
+set(scheme_args "")
+if(TYPE_NAME_SCHEME STREQUAL "versioned")
+  set(V1_0 "_1_0")
+  set(scheme_args --versioned-type-names)
+elseif(NOT TYPE_NAME_SCHEME STREQUAL "unversioned")
+  message(FATAL_ERROR "TYPE_NAME_SCHEME must be \"versioned\" or \"unversioned\", got \"${TYPE_NAME_SCHEME}\"")
+endif()
+
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
+      "${DSDLC}" --target-language obj ${scheme_args} --obj-abi-language cpp --target-endianness little
       --jobs 1 --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE little_result
   OUTPUT_VARIABLE little_stdout
@@ -48,7 +62,7 @@ endif()
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness big
+      "${DSDLC}" --target-language obj ${scheme_args} --obj-abi-language cpp --target-endianness big
       --jobs 2 --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE big_result
   OUTPUT_VARIABLE big_stdout
@@ -63,7 +77,7 @@ endif()
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
-      "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
+      "${DSDLC}" --target-language obj ${scheme_args} --obj-abi-language cpp --target-endianness little
       --jobs 4 --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE no_archive_result
   OUTPUT_VARIABLE no_archive_stdout
@@ -94,8 +108,35 @@ if(NOT EXISTS "${little_out}/c_shim/fixtures/vendor/Widget_1_0_c_shim.o")
   message(FATAL_ERROR "missing C shim object for Widget.1.0")
 endif()
 
+# The published layout, asserted rather than only compiled. In this lane the C output is staged under
+# `c/` and the generated ABI headers include it from there, so it has to be published under `c/` too.
+# The compile below would not catch a missing root forwarder on its own: a quoted include resolves
+# against the including file's own directory first, so `#include "dsdl_runtime.h"` from
+# `c/<ns>/X.h` finds `c/dsdl_runtime.h` whether or not the root one exists.
+if(NOT EXISTS "${little_out}/c/fixtures/vendor/Widget_1_0.h")
+  message(FATAL_ERROR
+    "the C header the published ABI headers include is missing from the published tree: "
+    "expected ${little_out}/c/fixtures/vendor/Widget_1_0.h")
+endif()
+if(NOT EXISTS "${little_out}/c/dsdl_runtime.h")
+  message(FATAL_ERROR "missing published C runtime header at ${little_out}/c/dsdl_runtime.h")
+endif()
+file(READ "${little_out}/c/dsdl_runtime.h" _c_runtime_text)
+if(_c_runtime_text MATCHES "LLVMDSDL_CPPABI_C_RUNTIME_FORWARD_H")
+  message(FATAL_ERROR
+    "${little_out}/c/dsdl_runtime.h is the forwarder, not the C runtime header it forwards to")
+endif()
+if(NOT EXISTS "${little_out}/dsdl_runtime.h")
+  message(FATAL_ERROR "missing root C runtime forwarder at ${little_out}/dsdl_runtime.h")
+endif()
+file(READ "${little_out}/dsdl_runtime.h" _root_runtime_text)
+if(NOT _root_runtime_text MATCHES "LLVMDSDL_CPPABI_C_RUNTIME_FORWARD_H")
+  message(FATAL_ERROR
+    "${little_out}/dsdl_runtime.h is not the forwarder; the real C runtime header overwrote it")
+endif()
+
 set(cpp_harness "${OUT_DIR}/obj_cpp_harness.cpp")
-file(WRITE "${cpp_harness}" [=[
+set(_body [=[
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -103,11 +144,11 @@ file(WRITE "${cpp_harness}" [=[
 #include "std/fixtures/vendor/Helpers_1_0.hpp"
 
 int main() {
-  fixtures::vendor::Widget obj{};
+  fixtures::vendor::Widget${V1_0} obj{};
   obj.foo = 0x12U;
   obj.bar = 0x3456U;
 
-  std::uint8_t buffer[fixtures::vendor::Widget::SERIALIZATION_BUFFER_SIZE_BYTES]{};
+  std::uint8_t buffer[fixtures::vendor::Widget${V1_0}::SERIALIZATION_BUFFER_SIZE_BYTES]{};
   std::size_t size = sizeof(buffer);
   const std::int8_t ser_rc = obj.serialize(buffer, &size);
   if (ser_rc != 0 || size != 3U || buffer[0] != 0x12U || buffer[1] != 0x56U || buffer[2] != 0x34U) {
@@ -115,7 +156,7 @@ int main() {
     return 1;
   }
 
-  fixtures::vendor::Widget out{};
+  fixtures::vendor::Widget${V1_0} out{};
   std::size_t in_size = size;
   const std::int8_t des_rc = out.deserialize(buffer, &in_size);
   if (des_rc != 0 || in_size != size || out.foo != obj.foo || out.bar != obj.bar) {
@@ -125,7 +166,7 @@ int main() {
 
   const std::uint8_t* view = nullptr;
   std::size_t view_size = size;
-  const std::int8_t view_rc = fixtures::vendor::Widget::try_deserialize_view(buffer, &view_size, &view);
+  const std::int8_t view_rc = fixtures::vendor::Widget${V1_0}::try_deserialize_view(buffer, &view_size, &view);
 #if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)
   if (view_rc != -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT || view_size != 0U || view != nullptr) {
     std::fprintf(stderr, "big-endian view behaviour mismatch rc=%d size=%zu\n", static_cast<int>(view_rc), view_size);
@@ -138,12 +179,12 @@ int main() {
   }
 #endif
 
-  if (fixtures::vendor::Helpers::ZOH_ALIAS_ELIGIBLE) {
+  if (fixtures::vendor::Helpers${V1_0}::ZOH_ALIAS_ELIGIBLE) {
     std::fprintf(stderr, "helpers should be ineligible\n");
     return 5;
   }
-  if (std::strcmp(fixtures::vendor::Helpers::ZOH_ALIAS_REASON, "sub-byte-field") != 0) {
-    std::fprintf(stderr, "unexpected Helpers ZOH reason: %s\n", fixtures::vendor::Helpers::ZOH_ALIAS_REASON);
+  if (std::strcmp(fixtures::vendor::Helpers${V1_0}::ZOH_ALIAS_REASON, "sub-byte-field") != 0) {
+    std::fprintf(stderr, "unexpected Helpers ZOH reason: %s\n", fixtures::vendor::Helpers${V1_0}::ZOH_ALIAS_REASON);
     return 6;
   }
 
@@ -151,16 +192,18 @@ int main() {
   return 0;
 }
 ]=])
+string(CONFIGURE "${_body}" _body)
+file(WRITE "${cpp_harness}" "${_body}")
 
 set(c_harness "${OUT_DIR}/obj_cpp_cshim_harness.c")
-file(WRITE "${c_harness}" [=[
+set(_body [=[
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
 #include "c_shim/fixtures/vendor/Widget_1_0_c_shim.h"
 
 int main(void) {
-  llvmdsdl_cppabi__fixtures__vendor__Widget obj = {0};
+  llvmdsdl_cppabi__fixtures__vendor__Widget${V1_0} obj = {0};
   obj.foo = 0x12U;
   obj.bar = 0x3456U;
   uint8_t buf[3] = {0};
@@ -170,7 +213,7 @@ int main(void) {
     fprintf(stderr, "shim serialize mismatch rc=%d size=%zu\n", (int)rc, size);
     return 1;
   }
-  llvmdsdl_cppabi__fixtures__vendor__Widget out = {0};
+  llvmdsdl_cppabi__fixtures__vendor__Widget${V1_0} out = {0};
   size_t in_size = size;
   rc = llvmdsdl_cppabi_fixtures_vendor_Widget_1_0__deserialize_(&out, buf, &in_size);
   if ((rc != 0) || (in_size != size) || (out.foo != obj.foo) || (out.bar != obj.bar)) {
@@ -181,18 +224,22 @@ int main(void) {
   return 0;
 }
 ]=])
+string(CONFIGURE "${_body}" _body)
+file(WRITE "${c_harness}" "${_body}")
 
 set(adapter_smoke "${OUT_DIR}/adapter_smoke.cpp")
-file(WRITE "${adapter_smoke}" [=[
+set(_body [=[
 #include "std/fixtures/vendor/Widget_1_0.hpp"
 #include "pmr/fixtures/vendor/Widget_1_0.hpp"
 #include "autosar/fixtures/vendor/Widget_1_0.hpp"
 int main() {
-  fixtures::vendor::Widget a{};
+  fixtures::vendor::Widget${V1_0} a{};
   (void)a;
   return 0;
 }
 ]=])
+string(CONFIGURE "${_body}" _body)
+file(WRITE "${adapter_smoke}" "${_body}")
 
 foreach(endian IN ITEMS little big)
   if(endian STREQUAL "little")
@@ -216,7 +263,7 @@ foreach(endian IN ITEMS little big)
   endif()
   list(APPEND cpp_compile_cmd
     -I
-    "${root}/.obj_stage_cpp"
+    "${root}"
     "${cpp_harness}"
     "${archive}"
     -o
@@ -240,7 +287,7 @@ foreach(endian IN ITEMS little big)
     COMMAND
       "${C_COMPILER}" -std=c11 -Wall -Wextra -Werror
       -I
-      "${root}/.obj_stage_cpp"
+      "${root}"
       -c "${c_harness}" -o "${OUT_DIR}/${endian}-c-harness.o"
     RESULT_VARIABLE c_compile_result
     OUTPUT_VARIABLE c_compile_stdout
@@ -324,7 +371,7 @@ execute_process(
   COMMAND
     "${CXX_COMPILER}" -std=c++17 -Wall -Wextra -Werror
     -I
-    "${no_archive_out}/.obj_stage_cpp"
+    "${no_archive_out}"
     "${cpp_harness}"
     ${no_archive_objects}
     -o
@@ -367,7 +414,7 @@ execute_process(
   COMMAND
     "${CXX_COMPILER}" -std=c++17 -Wall -Wextra -Werror
     -I
-    "${little_out}/.obj_stage_cpp"
+    "${little_out}"
     "${adapter_smoke}" -o "${adapter_exe}"
   RESULT_VARIABLE adapter_result
   OUTPUT_VARIABLE adapter_stdout

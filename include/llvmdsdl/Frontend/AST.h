@@ -446,6 +446,14 @@ struct DiscoveredDefinition
     /// @brief True if this definition was explicitly targeted by the CLI.
     bool isExplicitTarget{false};
 
+    /// @brief True if the CLI named this definition's file one at a time, rather than sweeping it in.
+    ///
+    /// A folder target makes @ref isExplicitTarget true for everything beneath it, so that flag
+    /// cannot distinguish `dsdlc ns/` from `dsdlc ns/Foo.1.0.dsdl`. This one can, which is what lets
+    /// a default that generates only the newest version of each type leave alone a version the user
+    /// asked for by name.
+    bool isNamedTarget{false};
+
     /// @brief Full source text.
     std::string text;
 };

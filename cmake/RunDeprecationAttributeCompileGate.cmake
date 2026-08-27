@@ -56,11 +56,17 @@ function(llvmdsdl_run_or_fail description)
   endif()
 endfunction()
 
+# Every invocation below asks for the whole corpus. A definition is deprecated because a newer
+# version replaced it, so the newest-version default -- which is what a user gets -- drops precisely
+# the types this gate is about. That the default drops them is worth knowing and is pinned in
+# test/lit/newest-version-only.txt; what this gate tests is that the attribute reaches user code when
+# such a type *is* generated, which needs the type to exist.
+
 # ---------------------------------------------------------------------------------------------------
 # C
 
 llvmdsdl_run_or_fail("dsdlc C generation"
-  "${DSDLC}" --target-language c "${UAVCAN_ROOT}" --outdir "${WORK_DIR}/c")
+  "${DSDLC}" --target-language c --all-type-versions "${UAVCAN_ROOT}" --outdir "${WORK_DIR}/c")
 
 # A deprecated service, a deprecated type embedded as a field by other definitions, and a
 # non-deprecated type, all in one translation unit.
@@ -117,7 +123,7 @@ endif()
 # use-probe against opted-out headers is what keeps that answer true.
 
 llvmdsdl_run_or_fail("dsdlc C generation with --no-deprecation-attributes"
-  "${DSDLC}" --target-language c "${UAVCAN_ROOT}"
+  "${DSDLC}" --target-language c --all-type-versions "${UAVCAN_ROOT}"
              --no-deprecation-attributes --outdir "${WORK_DIR}/c-noattr")
 
 llvmdsdl_run_or_fail("C use-probe compile under -Werror with --no-deprecation-attributes"
@@ -129,7 +135,7 @@ llvmdsdl_run_or_fail("C use-probe compile under -Werror with --no-deprecation-at
 # C++
 
 llvmdsdl_run_or_fail("dsdlc C++ generation"
-  "${DSDLC}" --target-language cpp "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
+  "${DSDLC}" --target-language cpp --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
 file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
@@ -145,7 +151,7 @@ llvmdsdl_run_or_fail("C++ include-only compile under -Werror"
 
 file(WRITE "${WORK_DIR}/cpp_use_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
-static uavcan::file::Read_1_0__Request req;
+static uavcan::file::Read_Request req;
 int main() { (void)req; return 0; }
 ")
 
@@ -171,7 +177,7 @@ endif()
 # unavailable rather than failing the gate.
 
 llvmdsdl_run_or_fail("dsdlc Rust generation"
-  "${DSDLC}" --target-language rust "${UAVCAN_ROOT}" --rust-profile std
+  "${DSDLC}" --target-language rust --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
              --rust-crate-name deprecation_gate --outdir "${WORK_DIR}/rust")
 
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE STREQUAL "CARGO_EXECUTABLE-NOTFOUND")

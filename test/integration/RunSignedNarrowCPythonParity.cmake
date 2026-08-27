@@ -73,7 +73,7 @@ endif()
 set(py_package "signed_narrow_c_python_parity")
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language python
+    "${DSDLC}" --target-language python --versioned-type-names
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${py_out}"

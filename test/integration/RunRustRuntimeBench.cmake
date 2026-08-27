@@ -81,6 +81,8 @@ foreach(mode IN LISTS mode_list)
   execute_process(
     COMMAND
       "${DSDLC}" --target-language rust
+        # The harness below is written against versioned type names.
+        --versioned-type-names
         "${RUST_BENCH_ROOT}"
         --outdir "${mode_out}"
         --rust-crate-name "llvmdsdl_runtime_bench"

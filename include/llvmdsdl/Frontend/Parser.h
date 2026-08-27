@@ -15,6 +15,7 @@
 #define LLVMDSDL_FRONTEND_PARSER_H
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 
 #include "llvm/Support/Error.h"
@@ -157,10 +158,15 @@ private:
 /// @param[in] rootNamespaceDirs Root namespace directories.
 /// @param[in] lookupDirs Additional lookup paths.
 /// @param[in,out] diagnostics Diagnostic sink for discovery/parse issues.
+/// @param[in] typeNameVersioning Whether generated type names carry the version; governs the
+///            service-section collision check, which is unreachable when they do.
 /// @return Parsed AST module or an error on unrecoverable failure.
 llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootNamespaceDirs,
                                            const std::vector<std::string>& lookupDirs,
-                                           DiagnosticEngine&               diagnostics);
+                                           DiagnosticEngine&               diagnostics,
+                                           llvm::ArrayRef<OutputLanguage>  outputLanguages = {},
+                                           TypeNameVersioning              typeNameVersioning =
+                                               TypeNameVersioning::Unversioned);
 
 }  // namespace llvmdsdl
 

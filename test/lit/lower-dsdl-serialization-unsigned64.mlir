@@ -10,11 +10,11 @@ module {
 
 // CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-exec"
 // CHECK-DAG: llvmdsdl.lowered_contract_version = 2 : i64
-// CHECK-DAG: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__deser"
-// CHECK-LABEL: func.func @__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser(
+// CHECK-DAG: lowered_ser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_deser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__deser"
+// CHECK-LABEL: func.func @llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser(
 // CHECK-SAME: %[[V:[^:]+]]: i64
 // CHECK: return %[[V]] : i64
-// CHECK-LABEL: func.func @__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__deser(
+// CHECK-LABEL: func.func @llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__deser(
 // CHECK-SAME: %[[DV:[^:]+]]: i64
 // CHECK: return %[[DV]] : i64

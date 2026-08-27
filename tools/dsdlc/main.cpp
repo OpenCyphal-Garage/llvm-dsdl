@@ -28,6 +28,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -38,6 +39,8 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/NamingManifest.h"
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
@@ -82,7 +85,7 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
         llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
         return;
     }
-    auto events = sink.events();
+    auto              events = sink.events();
     const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
     if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
     {
@@ -137,12 +140,29 @@ struct CliOptions final
     /// @brief Criteria selecting when support code is generated.
     llvmdsdl::SupportGeneration supportGeneration{llvmdsdl::SupportGeneration::AsNeeded};
     bool                        sawGenerateSupport{false};
-    bool optimizeLoweredSerDes{false};
-    bool emitDeprecationAttributes{true};
-    bool dryRun{false};
-    bool listOutputs{false};
-    bool listInputs{false};
-    bool emitDepfiles{false};
+    bool                        optimizeLoweredSerDes{false};
+    bool                        emitDeprecationAttributes{true};
+    bool                        dryRun{false};
+    bool                        listOutputs{false};
+    bool                        listInputs{false};
+    bool                        emitDepfiles{false};
+
+    /// @brief Accept names that land in a language's reserved namespace, encoding them.
+    bool encodeReservedIdentifiers{false};
+
+    // Unversioned by default: most code speaks one version of a type and reads better without the
+    // suffix. See --versioned-type-names.
+    llvmdsdl::TypeNameVersioning typeNameVersioning{llvmdsdl::TypeNameVersioning::Unversioned};
+
+    /// @brief Generate every version a target carries, rather than the newest of each type.
+    ///
+    /// Off by default. A corpus holding several versions of a type otherwise forces a choice on
+    /// every consumer of the output, and most consumers speak one version. See
+    /// --all-type-versions.
+    bool allTypeVersions{false};
+
+    /// @brief Where to write the DSDL-name to generated-identifier map, if requested.
+    std::string namingManifest;
 
     /// @brief Per-tranche manifest enabling removal of outputs this run no longer produces.
     std::string pruneManifest;
@@ -195,6 +215,61 @@ bool isHelpToken(llvm::StringRef arg)
 bool isVersionToken(llvm::StringRef arg)
 {
     return arg == "--version" || arg == "-V";
+}
+
+/// @brief Maps a `--target-language` value onto the naming policies whose output names are checked.
+///
+/// A source-emitting target names the language it emits, so a build never fails over a collision in
+/// output it was not going to produce; `obj` emits both a C++ header and a C shim, so it names both.
+/// `ast` and `mlir` emit no identifiers at all, so there is no build to fail and they check every
+/// language instead -- they are the analysis modes, and a namespace that would break a Go build is
+/// worth saying so about while the user is asking questions rather than generating. See the
+/// decisions section of docs/development/identifier-stropping.md.
+/// @brief The languages whose identifiers @p language names, under @p objAbiLanguage for the `obj`
+///        lane.
+///
+/// `obj` publishes headers rather than a source tree, and which headers depends on `--obj-abi-language`:
+/// C alone, or C alongside the C++ ABI and its C shim. Both are reported under their own names rather
+/// than under `obj`, so that a build rule reading the manifest for a C++ member name looks it up the
+/// same way whichever lane produced it.
+llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const llvm::StringRef language,
+                                                                        const llvm::StringRef objAbiLanguage)
+{
+    using llvmdsdl::CodegenNamingLanguage;
+    if (language == "c")
+    {
+        return {{CodegenNamingLanguage::C, "c"}};
+    }
+    if (language == "cpp")
+    {
+        return {{CodegenNamingLanguage::Cpp, "cpp"}};
+    }
+    if (language == "rust")
+    {
+        return {{CodegenNamingLanguage::Rust, "rust"}};
+    }
+    if (language == "go")
+    {
+        return {{CodegenNamingLanguage::Go, "go"}};
+    }
+    if (language == "ts")
+    {
+        return {{CodegenNamingLanguage::TypeScript, "ts"}};
+    }
+    if (language == "python")
+    {
+        return {{CodegenNamingLanguage::Python, "python"}};
+    }
+    if (language == "obj")
+    {
+        if (objAbiLanguage == "cpp")
+        {
+            return {{CodegenNamingLanguage::C, "c"}, {CodegenNamingLanguage::Cpp, "cpp"}};
+        }
+        return {{CodegenNamingLanguage::C, "c"}};
+    }
+    const auto all = llvmdsdl::allOutputLanguages();
+    return {all.begin(), all.end()};
 }
 
 bool isCodegenLanguage(llvm::StringRef language)
@@ -261,6 +336,31 @@ void printHelp()
                  << "        only                - only generate support code.\n"
                  << "      'always' and 'only' need no positional targets. Requires a\n"
                  << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
+                 << "  --encode-reserved-identifiers\n"
+                 << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
+                 << "      namespace, encoding the offending characters instead of rejecting the\n"
+                 << "      definition. Rejecting is the default because the encoding is not pleasant\n"
+                 << "      to read; this is the escape hatch when renaming the definition is not an\n"
+                 << "      option.\n"
+                 << "  --versioned-type-names\n"
+                 << "      Put each type's version in its generated type name, so code that handles\n"
+                 << "      two versions of one type can keep them apart. Off by default: most code\n"
+                 << "      speaks one version and reads better without the suffix. Output file names\n"
+                 << "      carry the version either way, so this changes what you write, not what\n"
+                 << "      you include.\n"
+                 << "  --all-type-versions\n"
+                 << "      Generate every version of a type that the targets carry. By default only\n"
+                 << "      the newest version of each type is generated, because a corpus holding\n"
+                 << "      several otherwise forces a choice on everything that consumes the output:\n"
+                 << "      Go cannot compile two versions of a type into one package, and C and C++\n"
+                 << "      share a scope across versions. Naming a version keeps it either way --\n"
+                 << "      as a file, with colon syntax, or as +<name>.<major>.<minor>.\n"
+                 << "  --naming-manifest <file>\n"
+                 << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
+                 << "      as, for every target language this invocation names. Answers 'what did\n"
+                 << "      my field become' without reading generated source, and lets a build\n"
+                 << "      reference a generated symbol without reimplementing the projection.\n"
+                 << "      Not written under --dry-run, --list-inputs or --list-outputs.\n"
                  << "  --prune-manifest <file>\n"
                  << "      Record this run's outputs in <file> and, on the next run, delete the\n"
                  << "      outputs it recorded that are no longer produced. One manifest per dsdlc\n"
@@ -511,6 +611,31 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.outDir = *value;
+            continue;
+        }
+        if (arg == "--encode-reserved-identifiers")
+        {
+            options.encodeReservedIdentifiers = true;
+            continue;
+        }
+        if (arg == "--versioned-type-names")
+        {
+            options.typeNameVersioning = llvmdsdl::TypeNameVersioning::Versioned;
+            continue;
+        }
+        if (arg == "--all-type-versions")
+        {
+            options.allTypeVersions = true;
+            continue;
+        }
+        if (arg == "--naming-manifest")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.namingManifest = *value;
             continue;
         }
         if (arg == "--prune-manifest")
@@ -1065,6 +1190,22 @@ std::unordered_set<std::string> collectExplicitKeys(const llvmdsdl::SemanticModu
     return out;
 }
 
+/// @brief Keys for definitions the user named one at a time, rather than sweeping in with a folder.
+///
+/// Naming a version is a request for that version, so the newest-version default leaves these alone.
+std::unordered_set<std::string> collectNamedKeys(const llvmdsdl::SemanticModule& semantic)
+{
+    std::unordered_set<std::string> out;
+    for (const auto& def : semantic.definitions)
+    {
+        if (def.info.isNamedTarget)
+        {
+            out.insert(llvmdsdl::definitionTypeKey(def.info));
+        }
+    }
+    return out;
+}
+
 std::string typeKeyFromRef(const llvmdsdl::SemanticTypeRef& ref)
 {
     return ref.fullName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
@@ -1362,7 +1503,13 @@ int main(int argc, char** argv)
     }
 
     logVerbose(1, "discovering and parsing definitions");
-    auto ast = llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics);
+    const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage);
+    auto       ast =
+        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
+                                                     resolved->lookupDirs,
+                                                     diagnostics,
+                                                     outputLanguages,
+                                                     options.typeNameVersioning);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());
@@ -1377,9 +1524,17 @@ int main(int argc, char** argv)
         {
             explicitFileSet.insert(normalizePathForCompare(file));
         }
+        std::unordered_set<std::string> namedFileSet;
+        namedFileSet.reserve(resolved->namedTargetFiles.size());
+        for (const auto& file : resolved->namedTargetFiles)
+        {
+            namedFileSet.insert(normalizePathForCompare(file));
+        }
         for (auto& def : ast->definitions)
         {
-            def.info.isExplicitTarget = explicitFileSet.contains(normalizePathForCompare(def.info.filePath));
+            const auto path           = normalizePathForCompare(def.info.filePath);
+            def.info.isExplicitTarget = explicitFileSet.contains(path);
+            def.info.isNamedTarget    = namedFileSet.contains(path);
         }
     }
 
@@ -1426,6 +1581,9 @@ int main(int argc, char** argv)
     // Resolve '+' targets before analysis so a typo fails here, loudly, rather than surviving as a
     // successful build that quietly generated nothing.
     std::unordered_set<std::string> builtinExplicitKeys;
+    // The subset selected by a `+<name>.<major>.<minor>` selector. The type and namespace spellings
+    // sweep, so what they bring in is a candidate for the newest-version default like any other.
+    std::unordered_set<std::string> builtinNamedKeys;
     if (!options.builtinTargets.empty() && !embeddedCatalog)
     {
         diagnostics.error({"<cli>", 1, 1}, "embedded targets were requested but no embedded catalog is loaded");
@@ -1453,6 +1611,10 @@ int main(int argc, char** argv)
             return 1;
         }
         builtinExplicitKeys.insert(expansion.typeKeys.begin(), expansion.typeKeys.end());
+        if (expansion.namesExactVersion)
+        {
+            builtinNamedKeys.insert(expansion.typeKeys.begin(), expansion.typeKeys.end());
+        }
     }
     if (!builtinExplicitKeys.empty())
     {
@@ -1493,8 +1655,62 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // Narrow to the newest version of each type before the closure runs, not after: a version that
+    // survives and still references an older one must keep it, and only the closure knows that.
+    // Applied to the seed, so what a surviving type needs comes back regardless.
+    std::vector<std::string> narrowedAwayKeys;
+    if (!options.allTypeVersions)
+    {
+        auto pinnedKeys = collectNamedKeys(localSemantic);
+        // determinism-ok: a set, so insertion order cannot survive.
+        pinnedKeys.insert(builtinNamedKeys.begin(), builtinNamedKeys.end());
+
+        auto selection   = llvmdsdl::selectNewestTypeVersions(mergedSemantic, explicitKeys, pinnedKeys);
+        narrowedAwayKeys = std::move(selection.dropped);
+        explicitKeys     = std::move(selection.selected);
+    }
+
     const auto closureKeys  = computeDependencyClosure(mergedSemantic, explicitKeys);
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
+
+    // Reported only now, because the closure has the last word: a version dropped from the seed
+    // comes back if something that survived still references it, and saying it was not generated
+    // when it was would be worse than saying nothing.
+    if (!narrowedAwayKeys.empty())
+    {
+        std::vector<std::string> absent;
+        std::vector<std::string> restored;
+        for (const auto& key : narrowedAwayKeys)
+        {
+            ((selectedKeys.contains(key)) ? restored : absent).push_back(key);
+        }
+        if (!absent.empty())
+        {
+            // One note rather than one per type: on the public regulated corpus this is 22 of them,
+            // and the reader's question is what happened and how to undo it, not which 22.
+            diagnostics.note({"<cli>", 1, 1},
+                             "generating the newest version of each type; " + std::to_string(absent.size()) +
+                                 " older version(s) were not generated. Pass --all-type-versions for all of "
+                                 "them, or name one to keep just it");
+            for (const auto& key : absent)
+            {
+                logVerbose(1, "not generating older version " + key);
+            }
+        }
+        if (!restored.empty())
+        {
+            // Worth its own note: this is why the output can still hold two versions of a type, and
+            // therefore why a backend that cannot express that may still refuse.
+            std::string list;
+            for (const auto& key : restored)
+            {
+                list += (list.empty() ? "" : ", ") + key;
+            }
+            diagnostics.note({"<cli>", 1, 1},
+                             "kept " + std::to_string(restored.size()) +
+                                 " older version(s) that a newer definition still references: " + list);
+        }
+    }
 
     const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
@@ -1538,6 +1754,156 @@ int main(int argc, char** argv)
                             std::chrono::steady_clock::now() - startTime);
             return (forceFailure || pruneFailed || diagnostics.hasErrors()) ? 1 : 0;
         };
+
+    // A DSDL name can land in a namespace the language reserves -- C reserves a leading `__` or `_`
+    // plus a capital, C++ any identifier containing `__` -- and no suffix repairs that, so the
+    // engine encodes the offending characters. The encoding is legal but unpleasant, so the default
+    // is to reject the definition and let the author rename it; --encode-reserved-identifiers is the
+    // escape hatch for when they cannot.
+    if (!options.encodeReservedIdentifiers && !outputLanguages.empty())
+    {
+        const auto reservedSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        for (const auto& def : reservedSemantic.definitions)
+        {
+            const auto report = [&](const llvmdsdl::OutputLanguage& language,
+                                    const char* const               what,
+                                    const std::string&              name,
+                                    const llvmdsdl::IdentifierRole  role) {
+                const auto projected = llvmdsdl::codegenProjectIdentifierDetailed(language.language, role, name);
+                if (!projected.reservedNamespaceEncoded)
+                {
+                    return;
+                }
+                diagnostics.error({def.info.filePath, 1, 1},
+                                  std::string(what) + " '" + name +
+                                      "' is a reserved identifier for target "
+                                      "language '" +
+                                      language.name.str() +
+                                      "'; rename it, or pass "
+                                      "--encode-reserved-identifiers to emit it as '" +
+                                      projected.identifier + "'");
+            };
+
+            for (const auto& language : outputLanguages)
+            {
+                report(language, "type name", def.info.shortName, llvmdsdl::IdentifierRole::TypeName);
+                for (const auto& component : def.info.namespaceComponents)
+                {
+                    report(language, "namespace component", component, llvmdsdl::IdentifierRole::NamespaceName);
+                }
+                const auto reportSection = [&](const llvmdsdl::SemanticSection& section) {
+                    for (const auto& field : section.fields)
+                    {
+                        if (!field.isPadding)
+                        {
+                            report(language, "field", field.name, llvmdsdl::IdentifierRole::FieldName);
+                        }
+                    }
+                    for (const auto& constant : section.constants)
+                    {
+                        report(language, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
+                    }
+                };
+                reportSection(def.request);
+                if (def.isService && def.response.has_value())
+                {
+                    reportSection(*def.response);
+                }
+            }
+        }
+        if (diagnostics.hasErrors())
+        {
+            return finish("stdout", {}, true);
+        }
+    }
+
+    // Two DSDL names can project onto one identifier -- `break` and `break_` both reach `break_` in
+    // C, C++ and Rust once the keyword strop runs -- and the scope repairs that by suffixing the
+    // second. The repair is correct and deterministic, but it changes a name the author wrote, so it
+    // is said out loud rather than discovered in the generated header.
+    if (!outputLanguages.empty())
+    {
+        const auto repairSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        for (const auto& def : repairSemantic.definitions)
+        {
+            for (const auto& language : outputLanguages)
+            {
+                const auto reportRepairs = [&](const llvmdsdl::SemanticSection& section) {
+                    const llvmdsdl::NamingScope fieldScope =
+                        llvmdsdl::makeSectionFieldScope(language.language, section);
+                    const llvmdsdl::NamingScope constScope =
+                        llvmdsdl::makeSectionConstantScope(language.language, section);
+
+                    const auto reportOne = [&](const llvmdsdl::NamingScope&   scope,
+                                               const char* const              what,
+                                               const std::string&             name,
+                                               const llvmdsdl::IdentifierRole role) {
+                        const std::string projected = llvmdsdl::codegenProjectIdentifier(language.language, role, name);
+                        const std::string assigned  = scope.get(role, name);
+                        if (assigned == projected)
+                        {
+                            return;
+                        }
+                        diagnostics.note({def.info.filePath, 1, 1},
+                                         std::string(what) + " '" + name + "' is emitted as '" + assigned +
+                                             "' for target language '" + language.name.str() +
+                                             "'; another name in the same scope already projects to '" + projected +
+                                             "'");
+                    };
+
+                    for (const auto& field : section.fields)
+                    {
+                        if (!field.isPadding)
+                        {
+                            reportOne(fieldScope, "field", field.name, llvmdsdl::IdentifierRole::FieldName);
+                        }
+                    }
+                    for (const auto& constant : section.constants)
+                    {
+                        reportOne(constScope, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
+                    }
+                };
+                reportRepairs(def.request);
+                if (def.isService && def.response.has_value())
+                {
+                    reportRepairs(*def.response);
+                }
+            }
+        }
+    }
+
+    // Written before the language dispatch so it is available for every target, including the
+    // analysis ones: asking what a name will be generated as is a question you ask *before*
+    // generating, and `ast` already checks every backend's output names for the same reason.
+    //
+    // Not on a dry run, though, and not while listing. `--list-outputs` implies a dry run and is what
+    // a build system calls at configure time to learn what will be produced; writing a file then puts
+    // one in a tree the caller was told nothing would be touched. The prune step below declines for
+    // the same reason.
+    if (!options.namingManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs)
+    {
+        const auto manifestSemantic  = filterSemanticModule(localSemantic, selectedKeys);
+        const auto manifestLanguages = outputLanguages.empty()
+                                           ? namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage)
+                                           : outputLanguages;
+        const std::string manifest =
+            llvmdsdl::renderNamingManifest(manifestSemantic,
+                                           manifestLanguages,
+                                           llvmdsdl::kVersionString,
+                                           options.typeNameVersioning);
+        std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
+        if (!stream.good())
+        {
+            llvm::errs() << "cannot write naming manifest: " << options.namingManifest << "\n";
+            return finish("stdout", {}, true);
+        }
+        stream << manifest;
+        if (!stream.good())
+        {
+            llvm::errs() << "failed writing naming manifest: " << options.namingManifest << "\n";
+            return finish("stdout", {}, true);
+        }
+    }
 
     if (options.targetLanguage == "ast")
     {
@@ -1674,19 +2040,20 @@ int main(int argc, char** argv)
 
     // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
     // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
-    const char* const              emitTraceEnv     = std::getenv("LLVMDSDL_EMIT_TRACE");
+    const char* const              emitTraceEnv = std::getenv("LLVMDSDL_EMIT_TRACE");
     llvmdsdl::EmitTraceSink        emitTraceSink;
     llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
 
     if (options.targetLanguage == "c")
     {
         llvmdsdl::CEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
@@ -1705,13 +2072,14 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "cpp")
     {
         llvmdsdl::CppEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.profile               = options.cppProfile;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.profile                   = options.cppProfile;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
@@ -1734,17 +2102,18 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "rust")
     {
         llvmdsdl::RustEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.crateName             = options.rustCrateName;
-        emitOptions.profile               = options.rustProfile;
-        emitOptions.runtimeSpecialization = options.rustRuntimeSpecialization;
-        emitOptions.memoryMode            = options.rustMemoryMode;
-        emitOptions.inlineThresholdBytes  = options.rustInlineThresholdBytes;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.outDir                    = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.crateName                 = options.rustCrateName;
+        emitOptions.profile                   = options.rustProfile;
+        emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
+        emitOptions.memoryMode                = options.rustMemoryMode;
+        emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
+        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.selectedTypeKeys          = selectedTypeKeys;
+        emitOptions.supportGeneration         = options.supportGeneration;
+        emitOptions.writePolicy               = writePolicy;
 
         if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
@@ -1768,6 +2137,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::GoEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.moduleName            = options.goModuleName;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
@@ -1796,6 +2166,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::TsEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -1825,6 +2196,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::PythonEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -1852,13 +2224,14 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "obj")
     {
         llvmdsdl::ObjectEmitOptions emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.targetEndianness      = options.objTargetEndianness;
-        emitOptions.targetTriple          = options.objTargetTriple;
-        emitOptions.archiveName           = options.objArchiveName;
-        emitOptions.noArchive             = options.objNoArchive;
-        emitOptions.abiLanguage           = (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp
-                                                                                : llvmdsdl::ObjectAbiLanguage::C;
+        emitOptions.outDir           = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.targetEndianness = options.objTargetEndianness;
+        emitOptions.targetTriple     = options.objTargetTriple;
+        emitOptions.archiveName      = options.objArchiveName;
+        emitOptions.noArchive        = options.objNoArchive;
+        emitOptions.abiLanguage =
+            (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp : llvmdsdl::ObjectAbiLanguage::C;
         emitOptions.compileJobs           = options.jobs;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;

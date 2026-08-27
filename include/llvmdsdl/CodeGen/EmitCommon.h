@@ -15,6 +15,7 @@
 #define LLVMDSDL_CODEGEN_EMITCOMMON_H
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -52,6 +53,41 @@ struct EmitWritePolicy final
 /// @param[in] info Definition metadata.
 /// @return Key in the form `fullName:major:minor`.
 std::string definitionTypeKey(const DiscoveredDefinition& info);
+
+/// @brief Result of narrowing a set of type keys to the newest version of each type.
+struct NewestVersionSelection final
+{
+    /// @brief The keys that survive.
+    std::unordered_set<std::string> selected;
+
+    /// @brief The keys removed, sorted, so a diagnostic can name them reproducibly.
+    std::vector<std::string> dropped;
+};
+
+/// @brief Narrows @p seedKeys to the newest version of each full name.
+///
+/// Most code speaks one version of a type, and a corpus that carries several forces a choice on
+/// every consumer of the output: Go cannot compile two versions of a type into one package at all,
+/// and C and C++ share a scope across versions. Generating the newest of each removes that choice
+/// where it is not wanted, and the version-precise selectors remain for where it is.
+///
+/// Newest is per *full name*, not per major version. Per-major would preserve Cyphal's compatibility
+/// story -- majors are incompatible, minors are not -- but it leaves a type that has two majors still
+/// carrying two versions, which is the thing this exists to prevent.
+///
+/// This narrows the *seed*, not the result. A dependency closure computed afterwards will pull an
+/// older version back in if something that survived still references it, which is correct: dropping
+/// a version nothing asked for is the point, and dropping one a surviving type needs would be a bug.
+/// It also means the result is not guaranteed single-version, so the backends' own guards stay.
+///
+/// @param[in] semantic Definitions to read names and versions from.
+/// @param[in] seedKeys Keys to narrow.
+/// @param[in] pinnedKeys Keys the user named precisely enough to mean it; never dropped, and never
+///            reported. Naming a version is a request for that version.
+/// @return The surviving keys and the dropped ones.
+[[nodiscard]] NewestVersionSelection selectNewestTypeVersions(const SemanticModule&                  semantic,
+                                                              const std::unordered_set<std::string>& seedKeys,
+                                                              const std::unordered_set<std::string>& pinnedKeys);
 
 /// @brief Renders the human-readable notice attached to a `@deprecated` definition.
 ///

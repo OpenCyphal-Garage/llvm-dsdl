@@ -113,12 +113,16 @@ LogicalResult SerializationPlanOp::verify()
         return value;
     };
 
-    FailureOr<std::int64_t> loweredMinBits;
-    FailureOr<std::int64_t> loweredMaxBits;
-    FailureOr<std::int64_t> loweredStepCount;
-    FailureOr<std::int64_t> loweredFieldCount;
-    FailureOr<std::int64_t> loweredPaddingCount;
-    FailureOr<std::int64_t> loweredAlignCount;
+    // Read under `loweredPlan` below and compared against the observed body further down. Plain
+    // integers rather than FailureOr because the branch is what establishes that the reads
+    // succeeded: carrying an empty optional out of the branch leaves the later dereferences
+    // provably-unreachable rather than ill-formed, which a compiler cannot see -- GCC reports the
+    // payload as maybe-uninitialized. Assigning only on the success path says the same thing in a
+    // form that needs no proof.
+    std::int64_t loweredStepCount    = 0;
+    std::int64_t loweredFieldCount   = 0;
+    std::int64_t loweredPaddingCount = 0;
+    std::int64_t loweredAlignCount   = 0;
     if (loweredPlan)
     {
         const auto loweredContractVersion = (*this)->getAttrOfType<IntegerAttr>("llvmdsdl.lowered_contract_version");
@@ -135,25 +139,31 @@ LogicalResult SerializationPlanOp::verify()
                                std::string(llvmdsdl::kLoweredSerDesContractProducer));
         }
 
-        loweredMinBits      = requireNonNegativePlanIntAttr("lowered_min_bits");
-        loweredMaxBits      = requireNonNegativePlanIntAttr("lowered_max_bits");
-        loweredStepCount    = requireNonNegativePlanIntAttr("lowered_step_count");
-        loweredFieldCount   = requireNonNegativePlanIntAttr("lowered_field_count");
-        loweredPaddingCount = requireNonNegativePlanIntAttr("lowered_padding_count");
-        loweredAlignCount   = requireNonNegativePlanIntAttr("lowered_align_count");
-        if (failed(loweredMinBits) || failed(loweredMaxBits) || failed(loweredStepCount) || failed(loweredFieldCount) ||
-            failed(loweredPaddingCount) || failed(loweredAlignCount))
+        // All six are read before any failure check so that a plan missing several of them reports
+        // every missing attribute in one pass, not just the first.
+        const auto minBits      = requireNonNegativePlanIntAttr("lowered_min_bits");
+        const auto maxBits      = requireNonNegativePlanIntAttr("lowered_max_bits");
+        const auto stepCount    = requireNonNegativePlanIntAttr("lowered_step_count");
+        const auto fieldCount   = requireNonNegativePlanIntAttr("lowered_field_count");
+        const auto paddingCount = requireNonNegativePlanIntAttr("lowered_padding_count");
+        const auto alignCount   = requireNonNegativePlanIntAttr("lowered_align_count");
+        if (failed(minBits) || failed(maxBits) || failed(stepCount) || failed(fieldCount) || failed(paddingCount) ||
+            failed(alignCount))
         {
             return failure();
         }
-        if (*loweredMaxBits < *loweredMinBits)
+        if (*maxBits < *minBits)
         {
             return emitOpError("invalid lowered_min_bits/lowered_max_bits plan metadata");
         }
-        if (*loweredMinBits != minBitsAttr.getInt() || *loweredMaxBits != maxBitsAttr.getInt())
+        if (*minBits != minBitsAttr.getInt() || *maxBits != maxBitsAttr.getInt())
         {
             return emitOpError("lowered_min_bits/lowered_max_bits must match min_bits/max_bits");
         }
+        loweredStepCount    = *stepCount;
+        loweredFieldCount   = *fieldCount;
+        loweredPaddingCount = *paddingCount;
+        loweredAlignCount   = *alignCount;
     }
 
     std::set<std::int64_t> unionOptionIndexes;
@@ -290,14 +300,14 @@ LogicalResult SerializationPlanOp::verify()
 
     if (loweredPlan)
     {
-        if (observedStepCount != *loweredStepCount || observedFieldCount != *loweredFieldCount ||
-            observedPaddingCount != *loweredPaddingCount || observedAlignCount != *loweredAlignCount)
+        if (observedStepCount != loweredStepCount || observedFieldCount != loweredFieldCount ||
+            observedPaddingCount != loweredPaddingCount || observedAlignCount != loweredAlignCount)
         {
             return emitOpError("lowered step counters do not match serialization plan body");
         }
         for (const auto stepIndex : seenStepIndexes)
         {
-            if (stepIndex >= *loweredStepCount)
+            if (stepIndex >= loweredStepCount)
             {
                 return emitOpError("step_index out of lowered_step_count bounds");
             }

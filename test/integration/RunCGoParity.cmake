@@ -69,16 +69,14 @@ if(DEFINED SANITIZE AND NOT "${SANITIZE}" STREQUAL "")
   message(STATUS "C/Go parity harness (C side) sanitized with: ${SANITIZE}")
 endif()
 
-file(MAKE_DIRECTORY "${OUT_DIR}")
+include("${SOURCE_ROOT}/cmake/HarnessRunScratch.cmake")
+llvmdsdl_harness_scratch_begin("${OUT_DIR}" run_out)
+# Layout left by the pre-run-directory version of this lane.
 foreach(stale_dir c go build harness .gocache .gomodcache)
   if(EXISTS "${OUT_DIR}/${stale_dir}")
     file(REMOVE_RECURSE "${OUT_DIR}/${stale_dir}")
   endif()
 endforeach()
-string(TIMESTAMP parity_run_timestamp "%Y%m%d%H%M%S")
-string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef parity_run_nonce)
-set(run_out "${OUT_DIR}/run-${parity_run_timestamp}-${parity_run_nonce}")
-file(MAKE_DIRECTORY "${run_out}")
 
 set(c_out "${run_out}/c")
 set(go_out "${run_out}/go")
@@ -89,9 +87,16 @@ file(MAKE_DIRECTORY "${go_out}")
 file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
+# Go used to have no choice here -- uavcan carries 20 types at more than one version and a DSDL
+# namespace is one Go package, so unversioned names could not be generated at all. The newest
+# version of each type is now the default, so this harness runs with no naming flags. The
+# harness names no version that the default drops, which is what makes that safe.
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -107,7 +112,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go
+    "${DSDLC}" --target-language go ${other_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${go_out}"
@@ -124,9 +129,9 @@ endif()
 
 set(GO_OUT "${go_out}")
 configure_file("${go_mod_template}" "${harness_out}/go.mod" @ONLY)
-configure_file("${main_go_template}" "${harness_out}/main.go" COPYONLY)
+configure_file("${main_go_template}" "${harness_out}/main.go" @ONLY)
 set(c_harness_src "${build_out}/c_harness.c")
-configure_file("${c_harness_template}" "${c_harness_src}" COPYONLY)
+configure_file("${c_harness_template}" "${c_harness_src}" @ONLY)
 
 # The harness round-trips every type in the corpus, deprecated ones included, so it trips the
 # deprecation attributes the C backend emits by default. That diagnostic is working as intended --
@@ -545,14 +550,11 @@ foreach(marker IN LISTS required_directed_markers)
 endforeach()
 
 set(summary_file "${OUT_DIR}/c-go-parity-summary.txt")
-set(summary_tmp "${summary_file}.tmp-${parity_run_nonce}")
+# Named for this run's scratch directory, which is already unique, so two lanes writing the same
+# summary cannot collide on the temporary.
+get_filename_component(_run_tag "${run_out}" NAME)
+set(summary_tmp "${summary_file}.tmp-${_run_tag}")
 file(WRITE "${summary_tmp}" "${run_stdout}\n")
 file(RENAME "${summary_tmp}" "${summary_file}")
-file(REMOVE_RECURSE "${run_out}")
-if(EXISTS "${run_out}")
-  execute_process(COMMAND "${CMAKE_COMMAND}" -E rm -rf "${run_out}")
-endif()
-if(EXISTS "${run_out}")
-  message(WARNING "unable to remove parity scratch directory: ${run_out}")
-endif()
+llvmdsdl_harness_scratch_finish("${run_out}" "C/Go parity")
 message(STATUS "C/Go parity summary:\n${run_stdout}")

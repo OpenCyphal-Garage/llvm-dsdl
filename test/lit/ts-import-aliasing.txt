@@ -16,15 +16,15 @@
 # functions -- they are all derived from the same local name, so they cannot disagree.
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED
 
-# ALIASED: import { deserializeVec_1_0 as deserializeVec_1_0__collide_alpha, serializeVec_1_0 as serializeVec_1_0__collide_alpha } from "./alpha/vec_1_0";
-# ALIASED: import { deserializeVec_1_0 as deserializeVec_1_0__collide_beta, serializeVec_1_0 as serializeVec_1_0__collide_beta } from "./beta/vec_1_0";
-# ALIASED: import type { Vec_1_0 as Vec_1_0__collide_alpha } from "./alpha/vec_1_0";
-# ALIASED: import type { Vec_1_0 as Vec_1_0__collide_beta } from "./beta/vec_1_0";
+# ALIASED: import { deserializeVec as deserializeVec__collide_alpha, serializeVec as serializeVec__collide_alpha } from "./alpha/vec_1_0";
+# ALIASED: import { deserializeVec as deserializeVec__collide_beta, serializeVec as serializeVec__collide_beta } from "./beta/vec_1_0";
+# ALIASED: import type { Vec as Vec__collide_alpha } from "./alpha/vec_1_0";
+# ALIASED: import type { Vec as Vec__collide_beta } from "./beta/vec_1_0";
 
 # The aliases are what the body refers to, not just what the import line says.
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED_USE
-# ALIASED_USE: from_alpha: Vec_1_0__collide_alpha;
-# ALIASED_USE: from_beta: Vec_1_0__collide_beta;
+# ALIASED_USE: from_alpha: Vec__collide_alpha;
+# ALIASED_USE: from_beta: Vec__collide_beta;
 
 # Aliasing is confined to the clash. A file whose referenced names are already unique imports them
 # plainly, so ordinary output is untouched by this.

@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvm/ADT/StringRef.h"
 

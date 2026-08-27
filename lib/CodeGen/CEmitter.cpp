@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
@@ -49,7 +50,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
@@ -62,6 +63,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
@@ -72,59 +74,16 @@ namespace llvmdsdl
 namespace
 {
 
-std::string sanitizeMacroToken(std::string token)
-{
-    for (char& c : token)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    if (!token.empty() && std::isdigit(static_cast<unsigned char>(token.front())))
-    {
-        token.insert(token.begin(), '_');
-    }
-    return token;
-}
-
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return llvm::formatv("{0}_{1}_{2}.h", info.shortName, info.majorVersion, info.minorVersion).str();
-}
-
-std::string mangleSymbol(std::string fullName, std::uint32_t major, std::uint32_t minor)
-{
-    for (char& c : fullName)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
-}
-
-std::string sectionSuffix(const std::string& sectionName)
-{
-    if (sectionName == "request")
-    {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
-    }
-    return "";
+    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
+           ".h";
 }
 
 std::string sectionIRFunctionStem(const SemanticDefinition& def, const std::string& sectionName)
 {
-    return mangleSymbol(def.info.fullName, def.info.majorVersion, def.info.minorVersion) + sectionSuffix(sectionName);
+    return renderDefinitionSymbolBase(def.info.fullName, def.info.majorVersion, def.info.minorVersion) +
+           renderSectionSymbolSuffix(sectionName);
 }
 
 std::string implFileName(const DiscoveredDefinition& info)
@@ -141,41 +100,24 @@ std::string implFileName(const DiscoveredDefinition& info)
     return name;
 }
 
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
+std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
-    std::string out;
-    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.shortName);
-    return out;
+    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    versioning);
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    std::string g = "LLVMDSDL_" + info.fullName + "_" + std::to_string(info.majorVersion) + "_" +
-                    std::to_string(info.minorVersion) + "_H";
-    for (char& c : g)
-    {
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            c = '_';
-        }
-        else
-        {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-    }
-    return g;
+    return renderIncludeGuard(CodegenNamingLanguage::C,
+                              "LLVMDSDL_",
+                              info.fullName,
+                              info.majorVersion,
+                              info.minorVersion,
+                              "_H");
 }
 
 std::string valueToCExpr(const TypeExprAST& type, const Value& value)
@@ -196,10 +138,19 @@ std::string signedStorageType(const std::uint32_t bitLength)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const bool emitDeprecationAttributes)
+    EmitterContext(const SemanticModule&    semantic,
+                   const bool               emitDeprecationAttributes,
+                   const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , typeNameVersioning_(typeNameVersioning)
     {
+    }
+
+    /// @brief Whether generated type names carry the definition's version.
+    TypeNameVersioning typeNameVersioning() const
+    {
+        return typeNameVersioning_;
     }
 
     /// @brief True when `@deprecated` definitions should carry a language-native attribute.
@@ -215,7 +166,7 @@ public:
 
     std::string cTypeName(const SemanticDefinition& def) const
     {
-        return cTypeNameFromInfo(def.info);
+        return cTypeNameFromInfo(def.info, typeNameVersioning_);
     }
 
     std::string cTypeName(const SemanticTypeRef& ref) const
@@ -231,7 +182,7 @@ public:
         tmp.namespaceComponents = ref.namespaceComponents;
         tmp.majorVersion        = ref.majorVersion;
         tmp.minorVersion        = ref.minorVersion;
-        return cTypeNameFromInfo(tmp);
+        return cTypeNameFromInfo(tmp, typeNameVersioning_);
     }
 
     std::string relativeHeaderPath(const SemanticDefinition& def) const
@@ -265,8 +216,9 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
-    bool            emitDeprecationAttributes_{false};
+    DefinitionIndex    index_;
+    bool               emitDeprecationAttributes_{false};
+    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -346,20 +298,24 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
 
 void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
         {
             continue;
         }
-        const auto fieldName = sanitizeMacroToken(field.name);
+        const auto named = [&](const ArrayMetadataKind kind) {
+            return constScope.get(IdentifierRole::MacroName,
+                                  arrayMetadataName(CodegenNamingLanguage::C, field.name, kind));
+        };
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + fieldName + "_ARRAY_CAPACITY_ " +
+                 "#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
                      std::to_string(field.resolvedType.arrayCapacity) + "U");
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + fieldName + "_ARRAY_IS_VARIABLE_LENGTH_ " +
+                 "#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
                      (isVariableArray(field.resolvedType.arrayKind) ? "true" : "false"));
     }
     if (!section.fields.empty())
@@ -374,6 +330,10 @@ void emitSectionTypedef(std::ostringstream&    out,
                         const EmitterContext&  ctx,
                         const bool             deprecatedAttribute)
 {
+    // One scope for the whole section: the keyword and claimed-name escapes make the projection
+    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serializer
+    // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     emitLine(out, 0, "typedef struct " + typeName + " {");
 
     std::size_t emitted = 0;
@@ -384,7 +344,7 @@ void emitSectionTypedef(std::ostringstream&    out,
             continue;
         }
 
-        const auto cMember  = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
+        const auto cMember  = fieldScope.get(IdentifierRole::FieldName, field.name);
         const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
@@ -480,12 +440,19 @@ void emitSectionTypedef(std::ostringstream&    out,
 
 void emitSectionConstants(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
+    // Two DSDL constants can project onto one macro token -- `foo_bar` and `FOO_BAR` both upper-case
+    // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
+    // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
+    // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
+    // the policy tables and escaped by the projection this reads back.
+    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(out, 0, c.doc);
         emitLine(out,
                  0,
-                 "#define " + typeName + "_" + sanitizeMacroToken(c.name) + " (" + valueToCExpr(c.type, c.value) + ")");
+                 "#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
+                     valueToCExpr(c.type, c.value) + ")");
     }
     if (!section.constants.empty())
     {
@@ -493,12 +460,12 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     }
 }
 
-void emitSectionMetadata(std::ostringstream&    out,
-                         const std::string&     typeName,
-                         const std::string&     fullName,
-                         std::uint32_t          majorVersion,
-                         std::uint32_t          minorVersion,
-                         const SemanticSection& section,
+void emitSectionMetadata(std::ostringstream&              out,
+                         const std::string&               typeName,
+                         const std::string&               fullName,
+                         std::uint32_t                    majorVersion,
+                         std::uint32_t                    minorVersion,
+                         const SemanticSection&           section,
                          const LoweredSectionFacts* const sectionFacts)
 {
     CHeaderTypeMetadata metadata;
@@ -512,32 +479,40 @@ void emitSectionMetadata(std::ostringstream&    out,
     {
         emitLine(out, 0, line);
     }
-    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason = zohAliasEligible
-                                           ? std::string("eligible")
-                                           : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                                  ? sectionFacts->zohAliasReason
-                                                  : std::string("not-proven"));
-    emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
+    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason =
+        zohAliasEligible
+            ? std::string("eligible")
+            : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason
+                                                                                  : std::string("not-proven"));
+    emitLine(out,
+             0,
+             "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
     emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
     emitLine(out, 0, "#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     out << "\n";
 }
 
-void emitSection(std::ostringstream&       out,
-                 const EmitterContext&     ctx,
-                 const SemanticDefinition& def,
-                 const std::string&        typeName,
-                 const std::string&        fullName,
-                 const std::string&        sectionName,
-                 const SemanticSection&    section,
-                 const AttachedDoc&        typeDoc,
+void emitSection(std::ostringstream&              out,
+                 const EmitterContext&            ctx,
+                 const SemanticDefinition&        def,
+                 const std::string&               typeName,
+                 const std::string&               fullName,
+                 const std::string&               sectionName,
+                 const SemanticSection&           section,
+                 const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
     emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
     emitSectionConstants(out, typeName, section);
     emitArrayMacros(out, typeName, section);
-    emitAttachedDocC(out, 0, docWithDeprecationNotice(typeDoc, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+    emitAttachedDocC(out,
+                     0,
+                     docWithDeprecationNotice(typeDoc,
+                                              section.deprecated,
+                                              def.info.fullName,
+                                              def.info.majorVersion,
+                                              def.info.minorVersion));
     emitSectionTypedef(out, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
 
     const auto irStem = sectionIRFunctionStem(def, sectionName);
@@ -644,8 +619,7 @@ llvm::Expected<std::string> loadRuntimeHeader()
     {
         return std::string(*data);
     }
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "embedded runtime source missing: dsdl_runtime.h");
+    return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: dsdl_runtime.h");
 }
 
 std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)
@@ -659,6 +633,24 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         << " */\n\n";
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
+
+    // Under the unversioned scheme this type's name carries no version, so two versions of it are
+    // one identifier. Generating both is fine -- they are separate headers -- but including both is
+    // not, and saying so here beats a cascade of redefinitions from inside generated code.
+    if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
+    {
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(CodegenNamingLanguage::C, def.info.fullName, def.info.majorVersion,
+                                        def.info.minorVersion);
+        out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
+        out << "#  error \"" << def.info.fullName
+            << ": two versions of one type in one translation unit, but generated type names are "
+               "unversioned. Regenerate with --versioned-type-names to use both.\"\n";
+        out << "#endif\n";
+        out << "#define " << anyVersion << "\n";
+        out << "#define " << thisVersion << "\n\n";
+    }
+
     out << "#include <stddef.h>\n";
     out << "#include <stdint.h>\n";
     out << "#include <stdbool.h>\n";
@@ -687,8 +679,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 
     if (def.isService)
     {
-        const auto requestType  = baseTypeName + "__Request";
-        const auto responseType = baseTypeName + "__Response";
+        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
+        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
 
         for (const auto& line : renderCServiceAliasIdentityMacros(baseTypeName,
                                                                   def.info.fullName,
@@ -753,6 +745,122 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     return out.str();
 }
 
+/// @brief Stamps the C member name for every field op in @p schema onto its `c_name` attribute.
+///
+/// The struct declaration in `emitSectionTypedef` and the member references in the generated
+/// serializer come from the same scope: the declaration reads it directly, the serializer reads it
+/// through this attribute, which `ConvertDSDLToEmitC` turns into `obj->`-qualified references. C
+/// naming is not a lowering decision, so lowering leaves the attribute unset and this is where it
+/// is filled in.
+/// @param[in] schema Cloned schema op for one definition.
+/// @param[in] def Semantic definition the schema was cloned from.
+/// @brief Rewrites, on the C backend's own clone, every C name lowering could only guess at.
+///
+/// Lowering writes the unversioned spelling because it does not know the backend's naming options
+/// and must produce one module the object and C backends share. The C backend clones the schema and
+/// restamps it here, which is the arrangement D18 settled on. Member names were the first thing that
+/// needed it; the type names beside them need it for the same reason, and leaving them out gave a
+/// header declaring `Foo_1_0` against an implementation defining `Foo`.
+void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
+{
+    const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
+    const NamingScope responseScope =
+        makeSectionFieldScope(CodegenNamingLanguage::C, def.response.has_value() ? *def.response : def.request);
+
+    const auto scopeFor = [&](mlir::Operation* const op) -> const NamingScope& {
+        const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section");
+        return (sectionAttr && sectionAttr.getValue() == "response") ? responseScope : requestScope;
+    };
+
+    schema.walk([&](mlir::Operation* const op) {
+        const llvm::StringRef opName = op->getName().getStringRef();
+        if ((opName != "dsdl.field") && (opName != "dsdl.io"))
+        {
+            return;
+        }
+        if (op->hasAttr("padding") || (op->getAttrOfType<mlir::StringAttr>("kind") &&
+                                       op->getAttrOfType<mlir::StringAttr>("kind").getValue() == "padding"))
+        {
+            return;
+        }
+        const auto nameAttr = op->getAttrOfType<mlir::StringAttr>("name");
+        if (!nameAttr)
+        {
+            return;
+        }
+        // An io op names no section of its own; the plan that encloses it does.
+        mlir::Operation* const sectionCarrier = (opName == "dsdl.io") ? op->getParentOp() : op;
+        op->setAttr("c_name",
+                    mlir::StringAttr::get(op->getContext(),
+                                          scopeFor(sectionCarrier)
+                                              .get(IdentifierRole::FieldName, nameAttr.getValue())));
+    });
+
+    mlir::MLIRContext* const context      = schema.getContext();
+    const std::string        baseTypeName = cTypeNameFromInfo(def.info, versioning);
+    schema.setAttr("c_type_name", mlir::StringAttr::get(context, baseTypeName));
+
+    schema.walk([&](mlir::Operation* const op) {
+        const llvm::StringRef opName = op->getName().getStringRef();
+        if (opName == "dsdl.serialization_plan")
+        {
+            // A service section appends its suffix to the *type* name, so the version sits before
+            // it rather than at the end. Composing from the base is what keeps that true.
+            std::string sectionTypeName = baseTypeName;
+            if (const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section"))
+            {
+                if (sectionAttr.getValue() == "request")
+                {
+                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
+                }
+                else if (sectionAttr.getValue() == "response")
+                {
+                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
+                }
+            }
+            op->setAttr("c_type_name", mlir::StringAttr::get(context, sectionTypeName));
+            op->setAttr("c_serialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
+            op->setAttr("c_deserialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
+            return;
+        }
+        if (opName != "dsdl.io")
+        {
+            return;
+        }
+        // A referenced composite is named by the same rule as the definition itself. The io op
+        // carries the reference's identity, so this re-renders rather than patching the string
+        // lowering left.
+        const auto fullNameAttr = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
+        const auto majorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
+        const auto minorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
+        if (!fullNameAttr || !majorAttr || !minorAttr)
+        {
+            return;
+        }
+        llvm::SmallVector<llvm::StringRef, 8> parts;
+        fullNameAttr.getValue().split(parts, '.');
+        if (parts.empty())
+        {
+            return;
+        }
+        const llvm::StringRef    shortName = parts.back();
+        std::vector<std::string> namespaceComponents;
+        namespaceComponents.reserve(parts.size() - 1U);
+        for (std::size_t i = 0; (i + 1U) < parts.size(); ++i)
+        {
+            namespaceComponents.emplace_back(parts[i].str());
+        }
+        op->setAttr("composite_c_type_name",
+                    mlir::StringAttr::get(context,
+                                          renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                                                   namespaceComponents,
+                                                                   shortName,
+                                                                   static_cast<std::uint32_t>(majorAttr.getInt()),
+                                                                   static_cast<std::uint32_t>(minorAttr.getInt()),
+                                                                   versioning)));
+    });
+}
+
 }  // namespace
 
 llvm::Error emitC(const SemanticModule& semantic,
@@ -766,7 +874,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    EmitterContext        ctx(semantic, options.emitDeprecationAttributes);
+    EmitterContext        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
@@ -828,7 +936,9 @@ llvm::Error emitC(const SemanticModule& semantic,
                               "failed to locate schema op for " + def.info.fullName + " (" + targetHeaderPath + ")");
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "schema selection failed");
         }
-        perDefModule.getBodyRegion().front().push_back(targetIt->second->clone());
+        mlir::Operation* const schemaClone = targetIt->second->clone();
+        perDefModule.getBodyRegion().front().push_back(schemaClone);
+        stampCNames(*schemaClone, def, options.typeNameVersioning);
 
         mlir::PassManager pm(perDefModule.getContext());
         pm.addPass(createLowerDSDLExecPass());

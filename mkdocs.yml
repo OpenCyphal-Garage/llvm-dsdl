@@ -36,6 +36,7 @@ nav:
           - dsdld: reference/commands/dsdld.md
       - Code Generation:
           - Backends: reference/codegen/backends.md
+          - Identifier Naming: reference/codegen/identifier-naming.md
           - Object Backend: reference/codegen/object.md
           - Emit Order: reference/codegen/emit-order.md
       - Language Server:
@@ -89,6 +90,7 @@ not_in_nav: |
   showroom/types/*.md
   showroom/recipes/*.md
   development/embedded-catalog-targets.md
+  development/identifier-stropping.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
 # browser) and its own light/dark handling, so the configuration below is mostly about not fighting

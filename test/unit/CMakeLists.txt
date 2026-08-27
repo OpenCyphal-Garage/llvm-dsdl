@@ -9,6 +9,7 @@ add_executable(llvmdsdl-unit-tests
   EvaluatorTests.cpp
   DepfileRenderTests.cpp
   DepfilePlannerTests.cpp
+  TargetResolutionTests.cpp
   SupportGenerationTests.cpp
   AnalyzerTests.cpp
   RuntimeTests.cpp
@@ -33,6 +34,7 @@ add_executable(llvmdsdl-unit-tests
   HelperBindingRenderTests.cpp
   RuntimeHelperBindingsTests.cpp
   NamingPolicyTests.cpp
+  NamingGoldenTests.cpp
   RuntimeLoweredPlanTests.cpp
   RuntimeLoweredOrderingTests.cpp
   HelperSymbolResolverTests.cpp
@@ -65,6 +67,14 @@ target_link_libraries(llvmdsdl-unit-tests
 target_include_directories(llvmdsdl-unit-tests
   PRIVATE
   ${LLVMDSDL_SOURCE_DIR}/runtime
+)
+
+# The naming golden map is compared against the checked-in copy in the source tree, not a staged
+# one, so that `LLVMDSDL_UPDATE_NAMING_GOLDEN=1` rewrites the file a reviewer reads in the diff.
+target_compile_definitions(llvmdsdl-unit-tests
+  PRIVATE
+  LLVMDSDL_NAMING_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-map.txt"
+  LLVMDSDL_NAMING_ROLES_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-roles.txt"
 )
 
 add_test(NAME llvmdsdl-unit-tests COMMAND llvmdsdl-unit-tests)

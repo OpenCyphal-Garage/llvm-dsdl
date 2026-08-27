@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Shared render template for section bodies (P2 Phase 2).
+/// Shared render template for section bodies.
 ///
 /// The canonical serialize/deserialize step order
 /// (docs/reference/codegen/emit-order.md, proven safe by
@@ -53,8 +53,8 @@ struct LoweredFieldFacts;
 ///
 /// The body closure renders option alignment plus the option field's
 /// serialize/deserialize ops (and any backend-specific guards, e.g. the
-/// scripted backends' option-missing checks). It is opaque to the template:
-/// Phase 2 shares the *prologue*; field rendering remains per backend until 2d.
+/// scripted backends' option-missing checks). It is opaque to the template,
+/// which shares the *prologue* only; field rendering is per backend.
 struct UnionCaseRender final
 {
     std::int64_t          optionIndex;
@@ -119,9 +119,9 @@ enum class UnionStepKind
     DeserializeValidateTag,
     AdvanceTag,
     BeginDispatch,
-    BeginCase,   ///< caseOrdinal identifies the option arm.
-    CaseBody,    ///< caseOrdinal identifies the option arm.
-    EndCase,     ///< caseOrdinal identifies the option arm.
+    BeginCase,  ///< caseOrdinal identifies the option arm.
+    CaseBody,   ///< caseOrdinal identifies the option arm.
+    EndCase,    ///< caseOrdinal identifies the option arm.
     BadTagDefault,
     EndDispatch,
 };
@@ -155,7 +155,7 @@ std::vector<UnionEmitStep> buildUnionSectionSteps(EmitTraceDirection direction, 
 /// @param[in] direction Serialize or deserialize.
 /// @param[in] cases Union option arms in lowered order.
 /// @param[in,out] spelling Backend spelling that renders each step.
-void renderUnionSection(EmitTraceDirection                 direction,
+void renderUnionSection(EmitTraceDirection                  direction,
                         const std::vector<UnionCaseRender>& cases,
                         UnionSectionSpelling&               spelling);
 
@@ -256,9 +256,9 @@ public:
     /// Invoked after the length-handling group in both directions. Return true
     /// to declare the loop replaced (the renderer then skips ELEM_LOOP and the
     /// element subtree). Only C++ implements it, for fixed bool arrays.
-    virtual bool trySpellArrayBulkFastPath(const FieldEmitStep&    step,
-                                           const std::string&      expr,
-                                           HelperBindingDirection  direction)
+    virtual bool trySpellArrayBulkFastPath(const FieldEmitStep&   step,
+                                           const std::string&     expr,
+                                           HelperBindingDirection direction)
     {
         (void) step;
         (void) expr;

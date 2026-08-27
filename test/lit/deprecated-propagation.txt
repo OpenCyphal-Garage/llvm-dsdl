@@ -73,7 +73,7 @@
 # CPP_DEP: #pragma GCC diagnostic push
 # CPP_DEP: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # CPP_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# CPP_DEP: struct {{\[\[}}deprecated{{\]\]}} Retired__Request {
+# CPP_DEP: struct {{\[\[}}deprecated{{\]\]}} Retired_Request {
 # CPP_DEP: IS_DEPRECATED = true
 # CPP_DEP: #pragma GCC diagnostic pop
 
@@ -84,7 +84,7 @@
 # RUST_DEP: #![allow(deprecated)]
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
 # RUST_DEP: #[deprecated]
-# RUST_DEP: pub struct dep_Retired_1_0_Request {
+# RUST_DEP: pub struct dep_Retired_Request {
 # RUST_DEP: IS_DEPRECATED: bool = true;
 
 # RUST_OK: IS_DEPRECATED: bool = false;

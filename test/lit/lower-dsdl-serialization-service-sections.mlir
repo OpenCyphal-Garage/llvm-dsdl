@@ -12,7 +12,7 @@ module {
 }
 
 // CHECK-DAG: module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64}
-// CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Service_1_0__request"
-// CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Service_1_0__response"
-// CHECK-LABEL: func.func @__llvmdsdl_plan_capacity_check__test_Service_1_0__request(
-// CHECK-LABEL: func.func @__llvmdsdl_plan_capacity_check__test_Service_1_0__response(
+// CHECK-DAG: lowered_capacity_check_helper = "llvmdsdl_plan_capacity_check__test_Service_1_0__request"
+// CHECK-DAG: lowered_capacity_check_helper = "llvmdsdl_plan_capacity_check__test_Service_1_0__response"
+// CHECK-LABEL: func.func @llvmdsdl_plan_capacity_check__test_Service_1_0__request(
+// CHECK-LABEL: func.func @llvmdsdl_plan_capacity_check__test_Service_1_0__response(

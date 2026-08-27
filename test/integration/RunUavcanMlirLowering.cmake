@@ -144,15 +144,15 @@ endif()
 file(READ "${converted_mlir}" converted_text)
 file(READ "${converted_optimized_mlir}" converted_optimized_text)
 foreach(required
-    "_err_capacity = __llvmdsdl_plan_capacity_check__"
-    "int8_t __llvmdsdl_plan_capacity_check__"
-    "int64_t __llvmdsdl_plan_union_tag__"
-    "int64_t __llvmdsdl_plan_scalar_unsigned__"
-    "int64_t __llvmdsdl_plan_scalar_signed__"
-    "double __llvmdsdl_plan_scalar_float__"
-    "int64_t __llvmdsdl_plan_array_length_prefix__"
-    "int8_t __llvmdsdl_plan_validate_array_length__"
-    "int8_t __llvmdsdl_plan_validate_delimiter_header__")
+    "_err_capacity = llvmdsdl_plan_capacity_check__"
+    "int8_t llvmdsdl_plan_capacity_check__"
+    "int64_t llvmdsdl_plan_union_tag__"
+    "int64_t llvmdsdl_plan_scalar_unsigned__"
+    "int64_t llvmdsdl_plan_scalar_signed__"
+    "double llvmdsdl_plan_scalar_float__"
+    "int64_t llvmdsdl_plan_array_length_prefix__"
+    "int8_t llvmdsdl_plan_validate_array_length__"
+    "int8_t llvmdsdl_plan_validate_delimiter_header__")
   string(FIND "${converted_text}" "${required}" hit_pos)
   if(hit_pos EQUAL -1)
     message(FATAL_ERROR
@@ -160,15 +160,15 @@ foreach(required
   endif()
 endforeach()
 foreach(required
-    "_err_capacity = __llvmdsdl_plan_capacity_check__"
-    "int8_t __llvmdsdl_plan_capacity_check__"
-    "int64_t __llvmdsdl_plan_union_tag__"
-    "int64_t __llvmdsdl_plan_scalar_unsigned__"
-    "int64_t __llvmdsdl_plan_scalar_signed__"
-    "double __llvmdsdl_plan_scalar_float__"
-    "int64_t __llvmdsdl_plan_array_length_prefix__"
-    "int8_t __llvmdsdl_plan_validate_array_length__"
-    "int8_t __llvmdsdl_plan_validate_delimiter_header__")
+    "_err_capacity = llvmdsdl_plan_capacity_check__"
+    "int8_t llvmdsdl_plan_capacity_check__"
+    "int64_t llvmdsdl_plan_union_tag__"
+    "int64_t llvmdsdl_plan_scalar_unsigned__"
+    "int64_t llvmdsdl_plan_scalar_signed__"
+    "double llvmdsdl_plan_scalar_float__"
+    "int64_t llvmdsdl_plan_array_length_prefix__"
+    "int8_t llvmdsdl_plan_validate_array_length__"
+    "int8_t llvmdsdl_plan_validate_delimiter_header__")
   string(FIND "${converted_optimized_text}" "${required}" hit_pos)
   if(hit_pos EQUAL -1)
     message(FATAL_ERROR

@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "budget_percent": 1,
+    "what": "Instructions executed inside the generated Rust serialize/deserialize, counted by cachegrind and attributed per function by cg_annotate.",
+    "why_this_unit": "Three idle runs and three on a 6x oversubscribed container reported identical counts to the digit, where a wall-clock sample of the same binary spread 1.41x across twenty runs. A deterministic measurement can carry a 1% budget; a wall-clock one cannot carry 15%.",
+    "iterations": "The gate's own counts (2000/1000/500), independent of the timing benchmark's, so tuning that one does not silently re-baseline this one. One run costs about a second under cachegrind.",
+    "rebaseline_when": "A deliberate codegen change, or a rustc upgrade. Both move the count, and both are visible events rather than flakes. Re-baseline in the commit that causes it.",
+    "arch_keys": "cmake_host_system_information OS_PLATFORM -- 'aarch64', 'x86_64'. Counts are per-architecture because the instruction streams differ. An architecture with no entry SKIPS and prints the value to paste; it never passes on another architecture's number.",
+    "measured": {
+      "aarch64": "toolshed ts26.4.3 arm64, cargo 1.93.1, 2026-08-25"
+    }
+  },
+  "counts": {
+    "aarch64": {
+      "deserialize": 298807000,
+      "serialize": 26219000
+    }
+  }
+}

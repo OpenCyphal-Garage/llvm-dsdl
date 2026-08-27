@@ -121,7 +121,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --versioned-type-names
       "${fixture_root}"
       ${dsdlc_extra_args}
       --outdir "${ts_out}"

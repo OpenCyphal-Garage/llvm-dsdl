@@ -21,6 +21,11 @@ endif()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+# Runs at the default -- unversioned type names, newest version of each type. That combination used
+# to be impossible for Go on this corpus: a DSDL namespace is one Go package, and uavcan carries 20
+# types at more than one version, so dsdlc refused. Generating only the newest of each removed the
+# collision, and this lane running with no naming flags at all is the most direct evidence of it.
+
 execute_process(
   COMMAND
     "${DSDLC}" --target-language go

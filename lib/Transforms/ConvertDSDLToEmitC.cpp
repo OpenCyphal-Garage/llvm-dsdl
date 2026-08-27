@@ -45,6 +45,7 @@
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -82,19 +83,6 @@ std::int64_t ioStepBits(mlir::Operation* ioOp)
         return nonNegative(bits.getInt());
     }
     return 0;
-}
-
-std::string sectionSuffix(llvm::StringRef sectionName)
-{
-    if (sectionName == "request")
-    {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
-    }
-    return "";
 }
 
 enum class PlanStepKind
@@ -1675,7 +1663,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                 }
                 const auto        sectionAttr = child.getAttrOfType<mlir::StringAttr>("section");
                 const std::string section     = sectionAttr ? sectionAttr.getValue().str() : std::string{};
-                const std::string fnStem      = symNameAttr.getValue().str() + sectionSuffix(section);
+                const std::string fnStem      = symNameAttr.getValue().str() + renderSectionSymbolSuffix(section);
                 const auto capacityCheckAttr  = child.getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
                 const std::string capacityCheckSymbol =
                     capacityCheckAttr ? capacityCheckAttr.getValue().str() : std::string{};
@@ -1694,6 +1682,17 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                 const auto steps = collectPlanSteps(&child);
                 for (const auto& step : steps)
                 {
+                    // C member names are the C backend's to decide, not lowering's: it stamps
+                    // `c_name` onto its own clone of the schema so that the struct declaration and
+                    // the references below cannot disagree. Reaching here without one means the
+                    // schema came from somewhere that did not, and every member reference this plan
+                    // emits would name nothing.
+                    if ((step.kind == PlanStepKind::Field) && step.cName.empty())
+                    {
+                        child.emitOpError("field step '" + step.name + "' has no 'c_name' attribute");
+                        signalPassFailure();
+                        return;
+                    }
                     if (!step.serUnsignedHelper.empty())
                     {
                         if (!module.lookupSymbol<mlir::func::FuncOp>(step.serUnsignedHelper))

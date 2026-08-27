@@ -33,6 +33,9 @@ foreach(path "${cargo_toml_template}" "${main_rs_template}")
   endif()
 endforeach()
 
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "versioned")
+
 execute_process(
   COMMAND "${DSDLC}" --version
   OUTPUT_VARIABLE dsdlc_version_stdout
@@ -51,7 +54,7 @@ file(MAKE_DIRECTORY "${harness_out}/src")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust ${other_scheme_args}
       "${UAVCAN_ROOT}"
       --rust-crate-name uavcan_dsdl_generated
       --outdir "${rust_out}"
@@ -66,8 +69,9 @@ if(NOT gen_result EQUAL 0)
 endif()
 
 set(RUST_OUT "${rust_out}")
+
 configure_file("${cargo_toml_template}" "${harness_out}/Cargo.toml" @ONLY)
-configure_file("${main_rs_template}" "${harness_out}/src/main.rs" COPYONLY)
+configure_file("${main_rs_template}" "${harness_out}/src/main.rs" @ONLY)
 
 execute_process(
   COMMAND

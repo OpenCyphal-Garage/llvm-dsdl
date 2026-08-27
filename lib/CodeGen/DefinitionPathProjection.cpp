@@ -17,6 +17,8 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 
+#include "llvmdsdl/Support/DefinitionNaming.h"
+
 namespace llvmdsdl
 {
 namespace
@@ -54,8 +56,8 @@ std::string renderVersionedTypeName(const CodegenNamingLanguage language,
                                     const std::uint32_t         majorVersion,
                                     const std::uint32_t         minorVersion)
 {
-    return codegenToPascalCaseIdentifier(language, shortName) + "_" + std::to_string(majorVersion) + "_" +
-           std::to_string(minorVersion);
+    return codegenProjectIdentifier(language, IdentifierRole::TypeName, shortName) + "_" +
+           std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
 }
 
 std::string renderVersionedFileStem(const CodegenNamingLanguage language,
@@ -63,8 +65,7 @@ std::string renderVersionedFileStem(const CodegenNamingLanguage language,
                                     const std::uint32_t         majorVersion,
                                     const std::uint32_t         minorVersion)
 {
-    return codegenToSnakeCaseIdentifier(language, shortName) + "_" + std::to_string(majorVersion) + "_" +
-           std::to_string(minorVersion);
+    return renderDefinitionFileStem(language, shortName, majorVersion, minorVersion);
 }
 
 std::filesystem::path renderNamespaceRelativePath(const CodegenNamingLanguage     language,
@@ -73,7 +74,7 @@ std::filesystem::path renderNamespaceRelativePath(const CodegenNamingLanguage   
     std::filesystem::path path;
     for (const auto& component : namespaceComponents)
     {
-        path /= codegenToSnakeCaseIdentifier(language, component);
+        path /= codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
     }
     return path;
 }

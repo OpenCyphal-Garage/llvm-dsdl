@@ -14,6 +14,7 @@
 #ifndef LLVMDSDL_CODEGEN_CPPOBJECTABIEMITTER_H
 #define LLVMDSDL_CODEGEN_CPPOBJECTABIEMITTER_H
 
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
@@ -30,6 +31,12 @@ struct SemanticModule;
 /// @brief Configuration options for canonical C++ ABI object staging.
 struct CppObjectAbiEmitOptions final
 {
+    /// @brief Whether generated type names carry the definition's version.
+    ///
+    /// Unversioned by default: most code speaks one version of a type and reads better without the
+    /// suffix. Set when the consuming code handles two versions of one type side by side and needs
+    /// them to be distinct identifiers in its own source.
+    TypeNameVersioning typeNameVersioning{TypeNameVersioning::Unversioned};
     /// @brief Root directory for generated C++ object-stage artifacts.
     std::filesystem::path stageRoot;
 

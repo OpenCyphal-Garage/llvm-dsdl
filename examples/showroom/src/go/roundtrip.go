@@ -13,7 +13,7 @@ package main
 // go generate does not type-check the package, so this works on a clean checkout where
 // ../../generated does not exist yet and the import below cannot resolve.
 //
-//go:generate $DSDLC --target-language go ../../dsdl/lanyard --go-module example.com/lanyard --outdir ../../generated
+//go:generate $DSDLC --target-language go --versioned-type-names ../../dsdl/lanyard --go-module example.com/lanyard --outdir ../../generated
 
 import (
 	"fmt"

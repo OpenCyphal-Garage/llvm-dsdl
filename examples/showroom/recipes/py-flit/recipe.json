@@ -22,6 +22,7 @@
         "{dsdlc}",
         "--target-language",
         "python",
+        "--versioned-type-names",
         "dsdl/lanyard",
         "--py-package",
         "lanyard",

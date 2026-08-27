@@ -17,97 +17,97 @@ DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
 DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
 
 @dataclass(slots=True)
-class Helpers_1_0:
+class Helpers:
     a: int = 0
     b: float = 0.0
     c: list[int] = field(default_factory=list)
 
     def serialize(self) -> bytes:
-        return _serialize_Helpers_1_0(self)
+        return _serialize_Helpers(self)
 
     @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "Helpers_1_0":
-        value, _consumed = _deserialize_Helpers_1_0(bytes(data))
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> "Helpers":
+        value, _consumed = _deserialize_Helpers(bytes(data))
         return value
 
     def _serialize_to(self, writer: object) -> None:
         writer.write(self.serialize())
 
     @classmethod
-    def _deserialize_from(cls, reader: object) -> "Helpers_1_0":
+    def _deserialize_from(cls, reader: object) -> "Helpers":
         return cls.deserialize(reader.read())
 
-def _serialize_Helpers_1_0(value: Helpers_1_0) -> bytes:
+def _serialize_Helpers(value: Helpers) -> bytes:
     out = bytearray(10)
     offset_bits = 0
-    def mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(capacity_bits: int) -> bool:
+    def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(capacity_bits: int) -> bool:
         return 80 <= capacity_bits
-    def mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(value: int) -> int:
         raw = int(value)
         if raw < -4096:
             return -4096
         if raw > 4095:
             return 4095
         return raw
-    def mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(value: float) -> float:
+    def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(value: float) -> float:
         return float(value)
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(value: int) -> int:
+    def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
         return (value >= 0) and (value <= 5)
     
-    if not mlir___llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(len(out) * 8):
+    if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
-    dsdl_runtime.write_signed(out, offset_bits, 13, int(mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(int(value.a))), True)
+    dsdl_runtime.write_signed(out, offset_bits, 13, int(mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(int(value.a))), True)
     offset_bits += 13
-    dsdl_runtime.write_float(out, offset_bits, 16, float(mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(float(value.b))))
+    dsdl_runtime.write_float(out, offset_bits, 16, float(mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(float(value.b))))
     offset_bits += 16
     c_arr = value.c
-    if not mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(len(c_arr)):
+    if not mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(len(c_arr)):
         raise ValueError("field 'c' exceeds max length 5")
-    dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(len(c_arr))), False)
+    dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(len(c_arr))), False)
     offset_bits += 8
     for c_item in c_arr:
-        dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(int(c_item))), False)
+        dsdl_runtime.write_unsigned(out, offset_bits, 8, int(mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(int(c_item))), False)
         offset_bits += 8
     used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)
     return bytes(out[:used_bytes])
 
-def _deserialize_Helpers_1_0(data: bytes | bytearray | memoryview) -> tuple[Helpers_1_0, int]:
+def _deserialize_Helpers(data: bytes | bytearray | memoryview) -> tuple[Helpers, int]:
     data = bytes(data)
-    def mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value: int) -> int:
         raw = int(value) & 8191
         if (raw & 4096) != 0:
             return raw | (~8191)
         return raw
-    def mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(value: float) -> float:
+    def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(value: float) -> float:
         return float(value)
-    def mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value: int) -> int:
+    def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value: int) -> int:
         return int(value) & 255
-    def mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
+    def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
         return (value >= 0) and (value <= 5)
     
-    value = Helpers_1_0()
+    value = Helpers()
     offset_bits = 0
     a_raw = dsdl_runtime.read_signed(data, offset_bits, 13)
-    value.a = mlir___llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(a_raw)
+    value.a = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(a_raw)
     offset_bits += 13
     b_raw = dsdl_runtime.read_float(data, offset_bits, 16)
-    value.b = mlir___llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(b_raw)
+    value.b = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(b_raw)
     offset_bits += 16
     c_len_raw = int(dsdl_runtime.read_unsigned(data, offset_bits, 8))
     offset_bits += 8
-    c_len = int(mlir___llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(c_len_raw))
-    if not mlir___llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(c_len):
+    c_len = int(mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(c_len_raw))
+    if not mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(c_len):
         raise ValueError("decoded length for field 'c' exceeds max length 5")
     c_arr = []
     for _ in range(c_len):
         c_raw = dsdl_runtime.read_unsigned(data, offset_bits, 8)
-        c_item = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(c_raw)
+        c_item = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(c_raw)
         offset_bits += 8
         c_arr.append(c_item)
     value.c = c_arr

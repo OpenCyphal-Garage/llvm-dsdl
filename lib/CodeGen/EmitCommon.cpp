@@ -20,7 +20,9 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <set>
+#include <utility>
 #include <system_error>
 
 namespace llvmdsdl
@@ -165,6 +167,67 @@ std::string renderMakeRuleFromPreparedDeps(llvm::StringRef target, const std::ve
 std::string definitionTypeKey(const DiscoveredDefinition& info)
 {
     return info.fullName + ":" + std::to_string(info.majorVersion) + ":" + std::to_string(info.minorVersion);
+}
+
+NewestVersionSelection selectNewestTypeVersions(const SemanticModule&                  semantic,
+                                                const std::unordered_set<std::string>& seedKeys,
+                                                const std::unordered_set<std::string>& pinnedKeys)
+{
+    // Highest version seen per full name, over the seed only. A definition outside the seed is not a
+    // candidate and must not raise the bar for the ones inside it.
+    std::map<std::string, std::pair<std::uint32_t, std::uint32_t>> newest;
+    for (const auto& def : semantic.definitions)
+    {
+        if (!seedKeys.contains(definitionTypeKey(def.info)))
+        {
+            continue;
+        }
+        const std::pair<std::uint32_t, std::uint32_t> version{def.info.majorVersion, def.info.minorVersion};
+        const auto                                    it = newest.find(def.info.fullName);
+        if ((it == newest.end()) || (version > it->second))
+        {
+            newest[def.info.fullName] = version;
+        }
+    }
+
+    NewestVersionSelection          out;
+    std::unordered_set<std::string> classified;
+    for (const auto& def : semantic.definitions)
+    {
+        const std::string key = definitionTypeKey(def.info);
+        if (!seedKeys.contains(key))
+        {
+            continue;
+        }
+        classified.insert(key);
+        const std::pair<std::uint32_t, std::uint32_t> version{def.info.majorVersion, def.info.minorVersion};
+        const auto                                    it = newest.find(def.info.fullName);
+        const bool isNewest = (it != newest.end()) && (version == it->second);
+        if (isNewest || pinnedKeys.contains(key))
+        {
+            out.selected.insert(key);
+        }
+        else
+        {
+            out.dropped.push_back(key);
+        }
+    }
+
+    // A key the seed carried but no definition matched cannot be classified, so it survives. The
+    // alternative is dropping something on the strength of not recognising it.
+    //
+    // determinism-ok: the destination is a set and the condition reads only this key, so the order
+    // these are visited in cannot reach the result, let alone emitted text.
+    for (const auto& key : seedKeys)
+    {
+        if (!classified.contains(key))
+        {
+            out.selected.insert(key);
+        }
+    }
+
+    std::sort(out.dropped.begin(), out.dropped.end());
+    return out;
 }
 
 std::string deprecationNotice(const std::string&  fullName,

@@ -83,6 +83,64 @@ Namespace matching is anchored at a dot boundary, so `+uavcan.n` selects nothing
 standing in for `+uavcan.node`. A selector matching nothing is an error with a did-you-mean; an
 unavailable version reports the versions the catalog carries.
 
+## Type versions
+
+Only the **newest version of each type** is generated, and the run reports what it left out:
+
+```
+note: generating the newest version of each type; 22 older version(s) were not generated.
+```
+
+A corpus holding several versions of a type forces a choice on everything downstream — Go compiles a
+namespace as one package and cannot hold two versions of a type at all, and C and C++ share a scope
+across versions — while most code speaks one version.
+
+Newest is per **full name**, not per major version: `Foo.1.0`, `Foo.1.1` and `Foo.2.0` leave only
+`Foo.2.0`. Per-major would match Cyphal's compatibility model, where majors are incompatible, but it
+leaves a type that has two majors still carrying two versions — the thing this exists to prevent.
+
+Naming a version keeps it, and affects no other type. Any of the version-precise target spellings
+does it; `dsdlc --help` gives their syntax.
+
+### Limits
+
+The narrowing applies to the set of types asked for, not to the finished output. A version that
+survives may still *reference* an older one — a field of type `Dep.1.0` in a definition that is
+itself the newest — and dependency resolution keeps what it needs:
+
+```
+note: kept 1 older version(s) that a newer definition still references: ns.Dep:1:0
+```
+
+So the output is usually single-version per type without being guaranteed to be, and the backends
+keep their own guards, described below.
+
+### Deprecated types
+
+A definition is deprecated because a newer version replaced it, so this default drops almost every
+`@deprecated` type as a side effect. Generating every version brings them back, with the deprecation
+attributes and notices described under [Deprecation](#deprecation).
+
+## Type-name versioning
+
+A generated type name does not carry the definition's version: `uavcan.node.Heartbeat.1.0` becomes
+`Heartbeat` in C++, Go, TypeScript and Python, `uavcan__node__Heartbeat` in C, and
+`uavcan_node_Heartbeat` in Rust. Code that handles two versions of one type at once needs them kept
+apart, and can ask for the version to be included.
+
+Output file names carry the version either way, so the choice changes what you *write*, not what you
+include or import. Under both, the name follows from the definition alone; it never depends on what
+else was in the invocation.
+
+What an unversioned name costs depends on what scopes the type, and arises only where a corpus
+carries two versions of one type — which the newest-version default prevents:
+
+| Language | Scope holding the type | Two versions, unversioned |
+|---|---|---|
+| Rust, TypeScript, Python | a module per type *and version* | no conflict |
+| C, C++ | a scope shared across versions | generates; a translation unit including both stops on an `#error` |
+| Go | a package per namespace, shared across versions | cannot be generated; `dsdlc` refuses, naming the type and its versions |
+
 ## Deprecation
 
 A definition marked `@deprecated` generates a `Deprecated: …` notice in its documentation comment and

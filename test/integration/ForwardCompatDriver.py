@@ -12,10 +12,10 @@ version that wrote it, so the delimited version-skew skip is never exercised. Th
 versions of a delimited composite (wire.nar.Inner has one field; wire.wid.Inner appends a second).
 """
 
-from dsdl_gen.wire.nar.holder_1_0 import Holder_1_0 as NarHolder
-from dsdl_gen.wire.nar.inner_1_0 import Inner_1_0 as NarInner
-from dsdl_gen.wire.wid.holder_1_0 import Holder_1_0 as WidHolder
-from dsdl_gen.wire.wid.inner_1_0 import Inner_1_0 as WidInner
+from dsdl_gen.wire.nar.holder_1_0 import Holder@V1_0@ as NarHolder
+from dsdl_gen.wire.nar.inner_1_0 import Inner@V1_0@ as NarInner
+from dsdl_gen.wire.wid.holder_1_0 import Holder@V1_0@ as WidHolder
+from dsdl_gen.wire.wid.inner_1_0 import Inner@V1_0@ as WidInner
 
 
 def main() -> None:

@@ -233,15 +233,15 @@ func runDirectedChecks() (int, map[string]int, error) {
 	}
 
 	int3SatSerialize := func(value int8, out []byte) (int8, int) {
-		obj := vendor.Int3Sat_1_0{Value: value}
+		obj := vendor.Int3Sat@V1_0@{Value: value}
 		return obj.Serialize(out)
 	}
 	int3TruncSerialize := func(value int8, out []byte) (int8, int) {
-		obj := vendor.Int3Trunc_1_0{Value: value}
+		obj := vendor.Int3Trunc@V1_0@{Value: value}
 		return obj.Serialize(out)
 	}
 	int3SatRoundtrip := func(input []byte, output []byte) (int8, int, int8, int) {
-		var obj vendor.Int3Sat_1_0
+		var obj vendor.Int3Sat@V1_0@
 		desRC, consumed := obj.Deserialize(input)
 		if desRC < 0 {
 			return desRC, consumed, 0, 0
@@ -250,7 +250,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 		return desRC, consumed, serRC, serSize
 	}
 	int3TruncRoundtrip := func(input []byte, output []byte) (int8, int, int8, int) {
-		var obj vendor.Int3Trunc_1_0
+		var obj vendor.Int3Trunc@V1_0@
 		desRC, consumed := obj.Deserialize(input)
 		if desRC < 0 {
 			return desRC, consumed, 0, 0
@@ -407,7 +407,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 		{
 			name:                   "int3sat_truncated_input",
 			input:                  []byte{},
-			outputCapacity:         vendor.INT3SAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+			outputCapacity:         vendor.INT3SAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			expectDeserializeError: false,
 			expectSerializeError:   false,
 			cFn: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -418,7 +418,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 		{
 			name:                   "int3trunc_truncated_input",
 			input:                  []byte{},
-			outputCapacity:         vendor.INT3TRUNC_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+			outputCapacity:         vendor.INT3TRUNC@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			expectDeserializeError: false,
 			expectSerializeError:   false,
 			cFn: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -484,7 +484,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 				return C.c_int3sat_deserialize_value(sample, out, result)
 			},
 			goValue: func(sample byte) (int8, int8, int) {
-				var obj vendor.Int3Sat_1_0
+				var obj vendor.Int3Sat@V1_0@
 				rc, consumed := obj.Deserialize([]byte{sample})
 				return rc, obj.Value, consumed
 			},
@@ -498,7 +498,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 				return C.c_int3sat_deserialize_value(sample, out, result)
 			},
 			goValue: func(sample byte) (int8, int8, int) {
-				var obj vendor.Int3Sat_1_0
+				var obj vendor.Int3Sat@V1_0@
 				rc, consumed := obj.Deserialize([]byte{sample})
 				return rc, obj.Value, consumed
 			},
@@ -512,7 +512,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 				return C.c_int3trunc_deserialize_value(sample, out, result)
 			},
 			goValue: func(sample byte) (int8, int8, int) {
-				var obj vendor.Int3Trunc_1_0
+				var obj vendor.Int3Trunc@V1_0@
 				rc, consumed := obj.Deserialize([]byte{sample})
 				return rc, obj.Value, consumed
 			},
@@ -526,7 +526,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 				return C.c_int3trunc_deserialize_value(sample, out, result)
 			},
 			goValue: func(sample byte) (int8, int8, int) {
-				var obj vendor.Int3Trunc_1_0
+				var obj vendor.Int3Trunc@V1_0@
 				rc, consumed := obj.Deserialize([]byte{sample})
 				return rc, obj.Value, consumed
 			},
@@ -576,12 +576,12 @@ func main() {
 	if err := runRandomCase(
 		"vendor.Int3Sat.1.0",
 		iterations,
-		vendor.INT3SAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+		vendor.INT3SAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 		func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 			return C.c_int3sat_roundtrip(input, inputSize, output, outputCapacity, result)
 		},
 		func(input []byte, output []byte) (int8, int, int8, int) {
-			var obj vendor.Int3Sat_1_0
+			var obj vendor.Int3Sat@V1_0@
 			desRC, consumed := obj.Deserialize(input)
 			if desRC < 0 {
 				return desRC, consumed, 0, 0
@@ -598,12 +598,12 @@ func main() {
 	if err := runRandomCase(
 		"vendor.Int3Trunc.1.0",
 		iterations,
-		vendor.INT3TRUNC_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
+		vendor.INT3TRUNC@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 		func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 			return C.c_int3trunc_roundtrip(input, inputSize, output, outputCapacity, result)
 		},
 		func(input []byte, output []byte) (int8, int, int8, int) {
-			var obj vendor.Int3Trunc_1_0
+			var obj vendor.Int3Trunc@V1_0@
 			desRC, consumed := obj.Deserialize(input)
 			if desRC < 0 {
 				return desRC, consumed, 0, 0

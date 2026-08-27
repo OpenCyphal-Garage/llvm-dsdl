@@ -43,7 +43,7 @@ file(WRITE
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --versioned-type-names
       "${fixture_root}"
       --outdir "${ts_out}"
       --ts-module "ts_runtime_union_empty_composite_smoke"

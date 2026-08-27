@@ -74,7 +74,11 @@ def _run_dsdlc(dsdlc: str, uavcan_root: Path) -> str:
     # --no-embedded-uavcan keeps this hermetic: the catalog is derived from uavcan_root alone, never
     # from the copy compiled into the dsdlc doing the deriving. It also means a dsdlc whose embedded
     # catalog is corrupt -- the one case where regeneration is the fix -- can still run this.
-    command = [dsdlc, "--target-language", "mlir", "--no-embedded-uavcan", str(uavcan_root)]
+    # The catalog is what `+uavcan.node.Heartbeat.1.0` selects out of, so it has to carry every
+    # version. The default generates only the newest of each type, which would make a version
+    # selector for anything older fail to resolve against a catalog that never held it.
+    command = [dsdlc, "--target-language", "mlir", "--no-embedded-uavcan",
+               "--all-type-versions", str(uavcan_root)]
     process = subprocess.run(command, capture_output=True, text=True, check=False)
     if process.returncode != 0:
         sys.stderr.write(process.stderr)

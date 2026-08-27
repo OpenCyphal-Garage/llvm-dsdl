@@ -13,8 +13,8 @@
 use std::fmt::Write as _;
 use std::os::raw::c_int;
 
-use signed_narrow_generated::vendor::int3sat_1_0::vendor_Int3Sat_1_0;
-use signed_narrow_generated::vendor::int3trunc_1_0::vendor_Int3Trunc_1_0;
+use signed_narrow_generated::vendor::int3sat_1_0::vendor_Int3Sat@V1_0@;
+use signed_narrow_generated::vendor::int3trunc_1_0::vendor_Int3Trunc@V1_0@;
 
 const MAX_IO_BUFFER: usize = 64;
 
@@ -181,19 +181,19 @@ where
     Ok(())
 }
 
-fn int3sat_deserialize(out: &mut vendor_Int3Sat_1_0, buffer: &[u8]) -> (i8, usize) {
+fn int3sat_deserialize(out: &mut vendor_Int3Sat@V1_0@, buffer: &[u8]) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
-fn int3sat_serialize(obj: &vendor_Int3Sat_1_0, buffer: &mut [u8]) -> Result<usize, i8> {
+fn int3sat_serialize(obj: &vendor_Int3Sat@V1_0@, buffer: &mut [u8]) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
-fn int3trunc_deserialize(out: &mut vendor_Int3Trunc_1_0, buffer: &[u8]) -> (i8, usize) {
+fn int3trunc_deserialize(out: &mut vendor_Int3Trunc@V1_0@, buffer: &[u8]) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
-fn int3trunc_serialize(obj: &vendor_Int3Trunc_1_0, buffer: &mut [u8]) -> Result<usize, i8> {
+fn int3trunc_serialize(obj: &vendor_Int3Trunc@V1_0@, buffer: &mut [u8]) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
@@ -238,11 +238,11 @@ fn run_directed_checks() -> Result<(), String> {
     };
 
     let sat_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, i8> {
-        let obj = vendor_Int3Sat_1_0 { value };
+        let obj = vendor_Int3Sat@V1_0@ { value };
         obj.serialize(buffer)
     };
     let trunc_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, i8> {
-        let obj = vendor_Int3Trunc_1_0 { value };
+        let obj = vendor_Int3Trunc@V1_0@ { value };
         obj.serialize(buffer)
     };
 
@@ -292,7 +292,7 @@ fn run_directed_checks() -> Result<(), String> {
             ));
         }
 
-        let mut rust_obj = vendor_Int3Sat_1_0::default();
+        let mut rust_obj = vendor_Int3Sat@V1_0@::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[sample]);
         if rust_rc != 0 || rust_consumed != 1 || rust_obj.value != c_value || rust_obj.value != expected {
             return Err(format!(
@@ -320,7 +320,7 @@ fn run_directed_checks() -> Result<(), String> {
             ));
         }
 
-        let mut rust_obj = vendor_Int3Trunc_1_0::default();
+        let mut rust_obj = vendor_Int3Trunc@V1_0@::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[sample]);
         if rust_rc != 0 || rust_consumed != 1 || rust_obj.value != c_value || rust_obj.value != expected {
             return Err(format!(
@@ -356,10 +356,10 @@ fn main() {
 
     let mut rng_state = 0x5A8D_1F2E_C3B4_9AA1u64;
 
-    run_case::<vendor_Int3Sat_1_0>(
+    run_case::<vendor_Int3Sat@V1_0@>(
         "vendor.Int3Sat.1.0",
         iterations,
-        vendor_Int3Sat_1_0::SERIALIZATION_BUFFER_SIZE_BYTES,
+        vendor_Int3Sat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
         c_int3sat_roundtrip,
         int3sat_deserialize,
         int3sat_serialize,
@@ -370,10 +370,10 @@ fn main() {
         std::process::exit(1);
     });
 
-    run_case::<vendor_Int3Trunc_1_0>(
+    run_case::<vendor_Int3Trunc@V1_0@>(
         "vendor.Int3Trunc.1.0",
         iterations,
-        vendor_Int3Trunc_1_0::SERIALIZATION_BUFFER_SIZE_BYTES,
+        vendor_Int3Trunc@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
         c_int3trunc_roundtrip,
         int3trunc_deserialize,
         int3trunc_serialize,

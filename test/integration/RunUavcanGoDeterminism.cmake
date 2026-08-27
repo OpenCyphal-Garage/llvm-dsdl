@@ -43,6 +43,11 @@ file(WRITE
   "wait \"$pid_b\"\n"
 )
 
+# Runs at the default -- unversioned type names, newest version of each type. That combination used
+# to be impossible for Go on this corpus: a DSDL namespace is one Go package, and uavcan carries 20
+# types at more than one version, so dsdlc refused. Generating only the newest of each removed the
+# collision, and this lane running with no naming flags at all is the most direct evidence of it.
+
 execute_process(
   COMMAND "/bin/sh" "${parallel_script}"
   RESULT_VARIABLE gen_result

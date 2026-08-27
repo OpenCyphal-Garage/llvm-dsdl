@@ -69,13 +69,17 @@ if(DEFINED SANITIZE AND NOT "${SANITIZE}" STREQUAL "")
   message(STATUS "C/C++ parity harness sanitized with: ${SANITIZE}")
 endif()
 
-set(parity_main "${SOURCE_ROOT}/test/integration/CppCParityMain.cpp")
-if(NOT EXISTS "${parity_main}")
-  message(FATAL_ERROR "parity harness source missing: ${parity_main}")
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+if(NOT EXISTS "${SOURCE_ROOT}/test/integration/CppCParityMain.cpp")
+  message(FATAL_ERROR "parity harness source missing")
 endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
+
+set(parity_main "${OUT_DIR}/CppCParityMain.cpp")
+configure_file("${SOURCE_ROOT}/test/integration/CppCParityMain.cpp" "${parity_main}" @ONLY)
 
 set(c_out "${OUT_DIR}/c")
 set(cpp_out "${OUT_DIR}/cpp")
@@ -86,7 +90,7 @@ file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language c
+    "${DSDLC}" --target-language c ${c_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${c_out}"
@@ -102,7 +106,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp
+    "${DSDLC}" --target-language cpp ${other_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"

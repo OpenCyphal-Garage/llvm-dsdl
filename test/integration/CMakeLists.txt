@@ -373,6 +373,67 @@ if(PYTHON_EXECUTABLE)
       "Skipping embedded UAVCAN catalog guard tests: ${LLVMDSDL_UAVCAN_ROOT} missing")
   endif()
 
+  # The adversarial naming corpus, compiled in every backend. lit asserts the identifiers that come
+  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Generating every one
+  # regardless of what this build targets is deliberate: the frontend's collision check is keyed to
+  # the languages an invocation emits, so a hazard confined to one backend would otherwise surface
+  # first to whoever selects it. The corpus ships with the tree, so this needs no external namespace.
+  find_program(CARGO_EXECUTABLE cargo QUIET)
+  find_program(GO_EXECUTABLE go QUIET)
+  find_program(TSC_EXECUTABLE tsc QUIET)
+
+  add_test(
+    NAME llvmdsdl-naming-corpus-compile-gate
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_naming
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/naming-corpus-gate
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DCXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunNamingCorpusCompileGate.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-naming-corpus-compile-gate
+    PROPERTIES
+      LABELS "integration;naming;release-blocking"
+  )
+
+  # The corpus is where a naming change should be pinned, so it runs under both spellings. Nothing in
+  # the gate names a type by hand -- every probe is assembled from a glob of what was generated -- so
+  # the second registration is one variable rather than a second corpus.
+  add_test(
+    NAME llvmdsdl-naming-corpus-compile-gate-versioned-names
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_naming
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/naming-corpus-gate-versioned-names
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DCXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DTYPE_NAME_SCHEME=versioned
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunNamingCorpusCompileGate.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-naming-corpus-compile-gate-versioned-names
+    PROPERTIES
+      LABELS "integration;naming;release-blocking"
+  )
+
   add_test(
     NAME llvmdsdl-parity-matrix-coverage
     COMMAND
@@ -472,6 +533,25 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
         LABELS "integration;fixtures;obj"
     )
 
+    # As with the obj-cpp lane: the published C headers under the other spelling.
+    add_test(
+      NAME llvmdsdl-obj-backend-smoke-versioned-names
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-backend-smoke-versioned-names-out
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DTYPE_NAME_SCHEME=versioned
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjBackendSmoke.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-obj-backend-smoke-versioned-names
+      PROPERTIES
+        LABELS "integration;fixtures;obj;naming"
+    )
+
     if(CMAKE_CXX_COMPILER)
       add_test(
         NAME llvmdsdl-obj-cpp-backend-smoke
@@ -489,6 +569,27 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
         llvmdsdl-obj-cpp-backend-smoke
         PROPERTIES
           LABELS "integration;fixtures;obj;obj-cpp;release-blocking"
+      )
+
+      # The obj backend publishes the headers a consumer writes against, so both spellings of them
+      # are compiled and run. Until this lane existed the backend silently ignored the flag.
+      add_test(
+        NAME llvmdsdl-obj-cpp-backend-smoke-versioned-names
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-cpp-backend-smoke-versioned-names-out
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DTYPE_NAME_SCHEME=versioned
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjCppBackendSmoke.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-obj-cpp-backend-smoke-versioned-names
+        PROPERTIES
+          LABELS "integration;fixtures;obj;obj-cpp;release-blocking;naming"
       )
     else()
       message(STATUS "Skipping obj-cpp backend smoke test: C++ compiler unavailable")
@@ -2386,6 +2487,13 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-uavcan-python-runtime-bench
     PROPERTIES
+      # A benchmark asserting absolute wall-clock seconds cannot share the machine with the rest of
+      # the suite. Its thresholds were calibrated from serial runs; co-scheduled with three cargo/go
+      # builds at -j 4 a single family has been measured 32% over its limit while the structurally
+      # identical family in the other memory mode came in 8% under, in the same process. Widening the
+      # budget to absorb that would cost the check the regressions it exists to catch, so serialise
+      # the measurement instead.
+      RUN_SERIAL TRUE
       LABELS "integration;uavcan;python;bench;slow;release-blocking"
   )
 
@@ -2629,9 +2737,40 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeBench.cmake
   )
 
+  # The deterministic half of the same question. The benchmark above answers "how fast", which is a
+  # property of the machine; this answers "did the emitted code change", which is a property of the
+  # code. Skips where valgrind is absent -- notably Apple Silicon, which it has never supported.
+  add_test(
+    NAME llvmdsdl-fixtures-rust-runtime-instructions
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-instructions-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_BENCH_ROOT=${LLVMDSDL_SOURCE_DIR}/test/benchmark/rust_runtime/benchrust
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/test/integration/rust_runtime_instruction_counts.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeInstructions.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-rust-runtime-instructions
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      # Not in the `bench` label: this one is deterministic, so it belongs in the ordinary suite
+      # where it can actually gate, rather than in the reporting-only lane.
+      LABELS "integration;fixtures;rust;runtime;instructions;slow;release-blocking"
+  )
+
   set_tests_properties(
     llvmdsdl-fixtures-rust-runtime-bench
     PROPERTIES
+      # A benchmark asserting absolute wall-clock seconds cannot share the machine with the rest of
+      # the suite. Its thresholds were calibrated from serial runs; co-scheduled with three cargo/go
+      # builds at -j 4 a single family has been measured 32% over its limit while the structurally
+      # identical family in the other memory mode came in 8% under, in the same process. Widening the
+      # budget to absorb that would cost the check the regressions it exists to catch, so serialise
+      # the measurement instead.
+      RUN_SERIAL TRUE
       LABELS "integration;fixtures;rust;runtime;bench;slow;rust-memory-mode;release-blocking"
   )
 
@@ -2900,6 +3039,22 @@ set_tests_properties(
 )
 
 add_test(
+  NAME llvmdsdl-uavcan-obj-determinism
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-obj-determinism-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanObjDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-obj-determinism
+  PROPERTIES
+    LABELS "integration;uavcan;obj;slow;determinism"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-cpp-generation
   COMMAND
     ${CMAKE_COMMAND}
@@ -2950,6 +3105,32 @@ set_tests_properties(
   llvmdsdl-uavcan-cpp-c-parity
   PROPERTIES
     LABELS "integration;uavcan;cpp;differential;slow"
+)
+
+# The same harness under versioned type names. One registration per language pair rather than a
+# second copy of every lane: what this covers is the *naming scheme*, and a scheme that survives one
+# full cross-language round trip is exercised. The wire checks these harnesses exist for are
+# unaffected by naming and stay at one run each.
+add_test(
+  NAME llvmdsdl-uavcan-cpp-c-parity-versioned-names
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-c-parity-versioned-names-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=std
+      -DC_TYPE_NAME_SCHEME=versioned
+      -DTYPE_NAME_SCHEME=versioned
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-c-parity-versioned-names
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow;naming"
 )
 
 # ASan/UBSan variant of the C/C++ decoder parity harness. Reuses the same
@@ -3105,6 +3286,29 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     llvmdsdl-uavcan-c-rust-parity
     PROPERTIES
       LABELS "integration;uavcan;rust;differential;slow"
+  )
+
+  # As above: the C and Rust halves under versioned names.
+  add_test(
+    NAME llvmdsdl-uavcan-c-rust-parity-versioned-names
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-rust-parity-versioned-names-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DC_TYPE_NAME_SCHEME=versioned
+        -DTYPE_NAME_SCHEME=versioned
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-c-rust-parity-versioned-names
+    PROPERTIES
+      LABELS "integration;uavcan;rust;differential;slow;naming"
   )
 
   add_test(

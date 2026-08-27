@@ -22,8 +22,8 @@
 // Error is the expected rejection of malformed input. A hang is caught by the
 // harness process timeout.
 
-import { deserializeUni_1_0, serializeUni_1_0 } from "./dsdl/vt/uni_1_0";
-import { deserializeOuter_1_0, serializeOuter_1_0 } from "./dsdl/vt/outer_1_0";
+import { deserializeUni@V1_0@, serializeUni@V1_0@ } from "./dsdl/vt/uni_1_0";
+import { deserializeOuter@V1_0@, serializeOuter@V1_0@ } from "./dsdl/vt/outer_1_0";
 
 // Deterministic xorshift128+ style PRNG (BigInt-free) for reproducible inputs.
 let s0 = 0x9e3779b9 >>> 0;
@@ -48,8 +48,8 @@ interface Target {
 }
 
 const targets: Target[] = [
-  { name: "Uni_1_0", deser: deserializeUni_1_0 as Deser, ser: serializeUni_1_0 as Ser },
-  { name: "Outer_1_0", deser: deserializeOuter_1_0 as Deser, ser: serializeOuter_1_0 as Ser },
+  { name: "Uni@V1_0@", deser: deserializeUni@V1_0@ as Deser, ser: serializeUni@V1_0@ as Ser },
+  { name: "Outer@V1_0@", deser: deserializeOuter@V1_0@ as Deser, ser: serializeOuter@V1_0@ as Ser },
 ];
 
 function runOne(target: Target, data: Uint8Array): void {

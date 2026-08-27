@@ -56,33 +56,33 @@ func decodeAndRoundTrip[T any](data []byte, bufSize int, deser func(*T, []byte) 
 }
 
 func fuzzOneInput(data []byte) {
-	decodeAndRoundTrip(data, node.HEARTBEAT_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *node.Heartbeat_1_0, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.Heartbeat_1_0, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, node.HEARTBEAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *node.Heartbeat@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *node.Heartbeat@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, node.HEALTH_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *node.Health_1_0, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.Health_1_0, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, node.HEALTH@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *node.Health@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *node.Health@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, scalar.INTEGER8_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *scalar.Integer8_1_0, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *scalar.Integer8_1_0, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, scalar.INTEGER8@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *scalar.Integer8@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *scalar.Integer8@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, metacan.FRAME_0_2_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *metacan.Frame_0_2, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *metacan.Frame_0_2, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, metacan.FRAME@V0_2@_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *metacan.Frame@V0_2@, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *metacan.Frame@V0_2@, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, node.EXECUTE_COMMAND_1_3_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *node.ExecuteCommand_1_3_Request, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.ExecuteCommand_1_3_Request, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, node.EXECUTE_COMMAND@V1_3@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *node.ExecuteCommand@V1_3@_Request, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *node.ExecuteCommand@V1_3@_Request, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, node.EXECUTE_COMMAND_1_3_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *node.ExecuteCommand_1_3_Response, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.ExecuteCommand_1_3_Response, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, node.EXECUTE_COMMAND@V1_3@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *node.ExecuteCommand@V1_3@_Response, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *node.ExecuteCommand@V1_3@_Response, b []byte) (int8, int) { return o.Serialize(b) })
 
-	decodeAndRoundTrip(data, nodeport.LIST_1_0_SERIALIZATION_BUFFER_SIZE_BYTES,
-		func(o *nodeport.List_1_0, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *nodeport.List_1_0, b []byte) (int8, int) { return o.Serialize(b) })
+	decodeAndRoundTrip(data, nodeport.LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+		func(o *nodeport.List@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
+		func(o *nodeport.List@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
 }
 
 func FuzzDecoders(f *testing.F) {

@@ -13,8 +13,8 @@ module {
 // CHECK: dsdl.serialization_plan attributes {
 // CHECK-DAG: lowered
 // CHECK-DAG: lowered_step_count = 1 : i64
-// CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Optimized_1_0"
-// CHECK-DAG: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Optimized_1_0__0__ser"
-// CHECK-DAG: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Optimized_1_0__0__deser"
+// CHECK-DAG: lowered_capacity_check_helper = "llvmdsdl_plan_capacity_check__test_Optimized_1_0"
+// CHECK-DAG: lowered_ser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Optimized_1_0__0__ser"
+// CHECK-DAG: lowered_deser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Optimized_1_0__0__deser"
 // CHECK-NOT: dsdl.align {bits = 1 : i32
-// CHECK: func.func @__llvmdsdl_plan_capacity_check__test_Optimized_1_0
+// CHECK: func.func @llvmdsdl_plan_capacity_check__test_Optimized_1_0

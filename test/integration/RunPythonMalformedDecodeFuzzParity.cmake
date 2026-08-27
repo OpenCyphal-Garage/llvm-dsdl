@@ -53,7 +53,7 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language python
+  COMMAND "${DSDLC}" --target-language python --versioned-type-names
     "${FIXTURES_ROOT}"
     --outdir "${portable_out}"
     --py-package "${portable_pkg}"
@@ -69,7 +69,7 @@ if(NOT portable_result EQUAL 0)
 endif()
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language python
+  COMMAND "${DSDLC}" --target-language python --versioned-type-names
     "${FIXTURES_ROOT}"
     --outdir "${fast_out}"
     --py-package "${fast_pkg}"

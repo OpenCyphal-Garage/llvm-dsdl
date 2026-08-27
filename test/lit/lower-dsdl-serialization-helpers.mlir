@@ -13,24 +13,24 @@ module {
 
 // CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-exec"
 // CHECK-DAG: llvmdsdl.lowered_contract_version = 2 : i64
-// CHECK-DAG: lowered_ser_signed_helper = "__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Helpers_1_0"
-// CHECK-DAG: lowered_deser_signed_helper = "__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__deser"
-// CHECK-DAG: lowered_ser_float_helper = "__llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_deser_float_helper = "__llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__deser"
-// CHECK-DAG: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__deser"
-// CHECK-DAG: lowered_ser_array_length_prefix_helper = "__llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__ser"
-// CHECK-DAG: lowered_deser_array_length_prefix_helper = "__llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__deser"
-// CHECK-DAG: lowered_array_length_validate_helper = "__llvmdsdl_plan_validate_array_length__test_Helpers_1_0__{{[0-9]+}}"
-// CHECK-DAG: lowered_delimiter_validate_helper = "__llvmdsdl_plan_validate_delimiter_header__test_Helpers_1_0__{{[0-9]+}}"
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__ser
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__deser
-// CHECK-DAG: func.func @__llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__ser(%{{[^:]+}}: i64) -> i64 attributes {llvmdsdl.array_length_prefix_helper
-// CHECK-DAG: func.func @__llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__deser(%{{[^:]+}}: i64) -> i64 attributes {llvmdsdl.array_length_prefix_helper
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__ser
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__deser
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__ser
-// CHECK-DAG: func.func @__llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__deser
-// CHECK-DAG: func.func @__llvmdsdl_plan_validate_array_length__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.array_length_validate
-// CHECK-DAG: func.func @__llvmdsdl_plan_validate_delimiter_header__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64, %{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.delimiter_header_validate
+// CHECK-DAG: lowered_ser_signed_helper = "llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_capacity_check_helper = "llvmdsdl_plan_capacity_check__test_Helpers_1_0"
+// CHECK-DAG: lowered_deser_signed_helper = "llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__deser"
+// CHECK-DAG: lowered_ser_float_helper = "llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_deser_float_helper = "llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__deser"
+// CHECK-DAG: lowered_ser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_deser_unsigned_helper = "llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__deser"
+// CHECK-DAG: lowered_ser_array_length_prefix_helper = "llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__ser"
+// CHECK-DAG: lowered_deser_array_length_prefix_helper = "llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__deser"
+// CHECK-DAG: lowered_array_length_validate_helper = "llvmdsdl_plan_validate_array_length__test_Helpers_1_0__{{[0-9]+}}"
+// CHECK-DAG: lowered_delimiter_validate_helper = "llvmdsdl_plan_validate_delimiter_header__test_Helpers_1_0__{{[0-9]+}}"
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__ser
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_unsigned__test_Helpers_1_0__{{[0-9]+}}__deser
+// CHECK-DAG: func.func @llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__ser(%{{[^:]+}}: i64) -> i64 attributes {llvmdsdl.array_length_prefix_helper
+// CHECK-DAG: func.func @llvmdsdl_plan_array_length_prefix__test_Helpers_1_0__{{[0-9]+}}__deser(%{{[^:]+}}: i64) -> i64 attributes {llvmdsdl.array_length_prefix_helper
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__ser
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__deser
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__ser
+// CHECK-DAG: func.func @llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__deser
+// CHECK-DAG: func.func @llvmdsdl_plan_validate_array_length__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.array_length_validate
+// CHECK-DAG: func.func @llvmdsdl_plan_validate_delimiter_header__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64, %{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.delimiter_header_validate

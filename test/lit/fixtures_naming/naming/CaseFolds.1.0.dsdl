@@ -1,0 +1,6 @@
+# Three distinct DSDL names whose case projections are identical. The per-scope identifier
+# allocator has to keep them apart; without it a struct would declare one field three times.
+uint8 fooBar
+uint8 foo_bar
+uint8 FooBar
+@sealed

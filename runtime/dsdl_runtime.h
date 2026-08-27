@@ -41,13 +41,16 @@ extern "C"
 #include <stdint.h>
 #include <assert.h>  // For _Static_assert (C11) static_assert (C23) and assert() if DSDL_RUNTIME_ASSERT is used.
 
+// `_Static_assert` is a C11 keyword, so defining a macro of that name for the C++ build declares a
+// reserved identifier -- which `-Wreserved-identifier` rejects in any translation unit that includes
+// this header. Both languages spell the assertion natively; this picks the spelling instead.
 #ifdef __cplusplus
-#    ifndef _Static_assert
-#        define _Static_assert(TERM, MESSAGE) static_assert(TERM, MESSAGE)
-#    endif
+#    define DSDL_RUNTIME_STATIC_ASSERT(TERM, MESSAGE) static_assert(TERM, MESSAGE)
+#else
+#    define DSDL_RUNTIME_STATIC_ASSERT(TERM, MESSAGE) _Static_assert(TERM, MESSAGE)
 #endif
 
-    _Static_assert(sizeof(size_t) >= sizeof(size_t), "Unexpected target size_t width");
+    DSDL_RUNTIME_STATIC_ASSERT(sizeof(size_t) >= sizeof(size_t), "Unexpected target size_t width");
 
 /// @brief Runtime success code.
 ///
@@ -289,7 +292,7 @@ extern "C"
                                               const uint64_t value,
                                               const uint8_t  len_bits)
     {
-        _Static_assert(64U == (sizeof(uint64_t) * 8U), "Unexpected size of uint64_t");
+        DSDL_RUNTIME_STATIC_ASSERT(64U == (sizeof(uint64_t) * 8U), "Unexpected size of uint64_t");
         DSDL_RUNTIME_ASSERT(buf != NULL);
         if ((buf_size_bytes * 8) < (off_bits + len_bits))
         {
@@ -521,9 +524,9 @@ extern "C"
 
     // ---------------------------------------------------- FLOAT16 ----------------------------------------------------
 
-    _Static_assert(DSDL_RUNTIME_PLATFORM_IEEE754_FLOAT,
-                   "The target platform does not support IEEE754 floating point operations.");
-    _Static_assert(32U == (sizeof(float) * 8U), "Unsupported floating point model");
+    DSDL_RUNTIME_STATIC_ASSERT(DSDL_RUNTIME_PLATFORM_IEEE754_FLOAT,
+                               "The target platform does not support IEEE754 floating point operations.");
+    DSDL_RUNTIME_STATIC_ASSERT(32U == (sizeof(float) * 8U), "Unsupported floating point model");
 
     /// @brief Converts a 32-bit float into IEEE-754 binary16 representation.
     /// @param[in] value Single-precision floating-point value.
@@ -632,9 +635,9 @@ extern "C"
 
     // ---------------------------------------------------- FLOAT32 ----------------------------------------------------
 
-    _Static_assert(DSDL_RUNTIME_PLATFORM_IEEE754_FLOAT,
-                   "The target platform does not support IEEE754 floating point operations.");
-    _Static_assert(32U == (sizeof(float) * 8U), "Unsupported floating point model");
+    DSDL_RUNTIME_STATIC_ASSERT(DSDL_RUNTIME_PLATFORM_IEEE754_FLOAT,
+                               "The target platform does not support IEEE754 floating point operations.");
+    DSDL_RUNTIME_STATIC_ASSERT(32U == (sizeof(float) * 8U), "Unsupported floating point model");
 
     /// @brief Serializes a 32-bit IEEE-754 floating-point value.
     /// @param[out] buf Destination serialized buffer.
@@ -680,9 +683,10 @@ extern "C"
 
     // ---------------------------------------------------- FLOAT64 ----------------------------------------------------
 
-    _Static_assert(DSDL_RUNTIME_PLATFORM_IEEE754_DOUBLE,
-                   "The target platform does not support IEEE754 double-precision floating point operations.");
-    _Static_assert(64U == (sizeof(double) * 8U), "Unsupported floating point model");
+    DSDL_RUNTIME_STATIC_ASSERT(
+        DSDL_RUNTIME_PLATFORM_IEEE754_DOUBLE,
+        "The target platform does not support IEEE754 double-precision floating point operations.");
+    DSDL_RUNTIME_STATIC_ASSERT(64U == (sizeof(double) * 8U), "Unsupported floating point model");
 
     /// @brief Serializes a 64-bit IEEE-754 floating-point value.
     /// @param[out] buf Destination serialized buffer.

@@ -85,12 +85,13 @@ add_library(llvmdsdlCodeGen
   NativeHelperContract.cpp
   NativeEmitterTraversal.cpp
   NativeFunctionSkeleton.cpp
-  NamingPolicy.cpp
   MlirLoweredFacts.cpp
   ObjectEmitter.cpp
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp
+  NamingManifest.cpp
+  SectionNaming.cpp
   ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
   PythonEmitter.cpp
