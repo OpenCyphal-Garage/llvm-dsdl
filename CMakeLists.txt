@@ -146,9 +146,19 @@ endif()
 # HandleLLVMOptions already gives every target LLVM's warning set (-Wall -Wextra
 # plus the -W flags LLVM curates), but it only appends -Werror when
 # LLVM_ENABLE_WERROR is set, and that option lives in LLVM's own top-level
-# CMakeLists -- it is undefined in a standalone project like this one. So the
-# warnings were being printed and ignored. Turn them back into build failures.
+# CMakeLists -- it is undefined in a standalone project like this one.
 #
+# Deliberately not behind a project option: a warning here is a defect report,
+# and the answer to one is to fix the code. The warning set is not uniform
+# across compilers -- CI builds the primary lane with GCC and the sanitizer lane
+# with Clang -- so this fires on diagnostics a single local toolchain never
+# shows.
+#
+# CMAKE_COMPILE_WARNING_AS_ERROR (CMake 3.24+, which this project already
+# requires) rather than appending -Werror to CMAKE_CXX_FLAGS: it spells itself
+# /WX on MSVC without a second branch here, and leaves
+# try_compile/check_*_compiler_flag probes alone, so a probe for an unsupported
+# flag still fails for the right reason.
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
 set(LLVMDSDL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})

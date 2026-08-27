@@ -39,10 +39,8 @@ set(obj_dir "${build_out}/obj")
 set(work_corpus "${OUT_DIR}/corpus")
 set(artifacts "${OUT_DIR}/artifacts")
 
-# Wipe before anything is written into OUT_DIR, not after. The harness below is generated into this
-# same directory, so a wipe further down deletes it and the compile fails looking for a file that
-# was written seconds earlier -- which is exactly what happened when the harness stopped being
-# compiled straight from the source tree and became a configure_file output.
+# Wipe before anything is written into OUT_DIR: the harness below is generated into this same
+# directory, and a wipe placed after that point deletes it.
 file(REMOVE_RECURSE "${OUT_DIR}")
 foreach(d "${c_out}" "${build_out}" "${obj_dir}" "${work_corpus}" "${artifacts}")
   file(MAKE_DIRECTORY "${d}")

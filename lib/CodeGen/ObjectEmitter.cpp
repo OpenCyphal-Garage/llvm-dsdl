@@ -36,9 +36,8 @@
 #include <thread>
 #include <vector>
 
-// For the process environment block, which the archiver invocation copies and extends. Apple's
-// _NSGetEnviron() rather than the `environ` symbol: the latter is unavailable to anything but a main
-// executable there, and this is library code.
+// For the process environment block. Apple exposes it to library code only through
+// _NSGetEnviron(); the `environ` symbol is available to a main executable alone.
 #if defined(__APPLE__)
 #    include <crt_externs.h>
 #else
@@ -292,11 +291,9 @@ std::optional<std::string> environmentValue(const char* name)
 
 /// @brief Resolves the tool named by @p envVar, falling back to @p fallbackProgramName on PATH.
 ///
-/// A value carrying no directory separator is looked up on PATH rather than used as given.
-/// `CC=clang-22` is the ordinary way to name a compiler, but these tools are spawned through
-/// llvm::sys::ExecuteAndWait, which goes to posix_spawn -- not posix_spawnp -- so a bare name never
-/// resolves and the run dies with "posix_spawn failed: No such file or directory" naming nothing the
-/// user set. Resolving here means the error, when there is one, names the tool that is missing.
+/// A value with no directory separator is looked up on PATH. These tools are spawned through
+/// llvm::sys::ExecuteAndWait, which reaches posix_spawn rather than posix_spawnp, so the path it is
+/// given must already be complete.
 llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallbackProgramName)
 {
     if (const auto env = environmentValue(envVar))
@@ -325,9 +322,8 @@ llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallb
     return *found;
 }
 
-/// @param quiet Disconnects all three of the child's standard descriptors instead of passing ours
-///              through. For probes: their failure is an answer rather than something the user
-///              should read, and they must not consume the parent's stdin.
+/// @param quiet Disconnects all three of the child's standard descriptors rather than passing ours
+///              through.
 /// @param env   The child's complete environment. Empty (the default) inherits ours.
 llvm::Error executeCommand(llvm::StringRef                 program,
                            const std::vector<std::string>& args,
@@ -345,9 +341,7 @@ llvm::Error executeCommand(llvm::StringRef                 program,
         argv.push_back(saver.save(arg));
     }
 
-    // An empty path in this array disconnects that descriptor portably; nullopt inherits ours. A
-    // disconnected stdin reads as end-of-file, which is what lets a probe compile the empty
-    // translation unit `-` without naming a null device this code would have to spell per platform.
+    // An empty path in this array disconnects that descriptor portably; nullopt inherits ours.
     const std::optional<llvm::StringRef> silenced[3] = {llvm::StringRef(""), llvm::StringRef(""), llvm::StringRef("")};
     const llvm::ArrayRef<std::optional<llvm::StringRef>> redirects =
         quiet ? llvm::ArrayRef<std::optional<llvm::StringRef>>(silenced)
@@ -376,12 +370,6 @@ llvm::Error executeCommand(llvm::StringRef                 program,
 }
 
 /// @brief This process's environment with @p name set to @p value, replacing any inherited entry.
-///
-/// Built for one child rather than applied to this process with setenv(). ExecuteAndWait takes the
-/// child's environment explicitly, so there is no reason to reach for a process-wide mutation to
-/// talk to a child -- and doing it from library code is unsound in ways the call site cannot see:
-/// setenv() races any concurrent getenv() elsewhere in the process, and the value outlives the call
-/// in a host that is not a short-lived CLI. Copying the block costs a few microseconds, once.
 std::vector<std::string> environmentWith(const llvm::StringRef name, const llvm::StringRef value)
 {
 #if defined(__APPLE__)
@@ -411,23 +399,14 @@ bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 
 /// @brief Probes whether @p compilerProgram accepts `-ffile-prefix-map`.
 ///
-/// Compiles the empty translation unit on a stdin that quiet mode has already disconnected, so the
-/// probe creates no file, writes nothing, and has nothing to clean up -- there is no failure here
-/// that is not the answer itself. A driver that does not know the flag rejects it before reading any
-/// input, so an empty unit is enough to ask the question.
-///
-/// Deliberately not one of the staged sources: those need the include roots and endianness define
-/// that the real invocation passes, so using one would test the flags around the probe as much as
-/// the flag under it, and answer "unsupported" whenever the setup was wrong.
-///
-/// One process spawn per compiler for a whole run, against the hundreds of translation units that
-/// follow it.
+/// Reads the empty translation unit from the stdin that quiet mode disconnects. A driver rejects an
+/// unknown flag before reading any input, so an empty unit is enough to ask.
 bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
 {
     const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.", "-fsyntax-only", "-x", "c", "-"};
     if (auto err = executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true))
     {
-        // The only thing a failure can mean here is that the flag was refused, which is the answer.
+        // A failure here means the flag was refused, which is the answer.
         llvm::consumeError(std::move(err));
         return false;
     }
@@ -437,18 +416,12 @@ bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
 /// @brief The `-ffile-prefix-map` argument that makes object output independent of @p outRoot, or
 ///        nullopt when the mapping cannot be expressed or the compiler will not take it.
 ///
-/// The staged sources this backend compiles live under the output directory, and it passes them --
-/// and their include roots -- to the compiler as absolute paths. `__FILE__` therefore expands to an
-/// absolute path, and `assert()` puts that string in .rodata, so two runs writing to different
-/// directories produced different objects from identical sources. glibc's assert.h uses `__FILE__`
-/// directly; Apple's prefers `__FILE_NAME__` where the compiler defines it, which is why this never
-/// showed on macOS. Mapping the output root to `.` collapses the difference at its source, and does
-/// so for debug paths too should this backend ever emit them.
+/// The staged sources are compiled by absolute path, so `__FILE__` expands to one and `assert()`
+/// puts it in .rodata, which makes each object depend on the directory it was generated into.
+/// Mapping the output root to `.` keeps them independent of it.
 ///
-/// Skipped rather than guessed when the root contains `=`: the flag's own syntax is
-/// `-ffile-prefix-map=OLD=NEW` with no escape for a literal `=`, so such a root would silently map
-/// something other than what was asked. Non-reproducible output beats wrongly-rewritten paths, and
-/// the determinism gate is what catches the former.
+/// A root containing `=` is skipped: the flag's syntax is `-ffile-prefix-map=OLD=NEW` with no escape
+/// for a literal `=`, so such a root would map something other than what was asked.
 std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& outRoot, llvm::StringRef compilerProgram)
 {
     const std::string root = outRoot.string();
@@ -702,9 +675,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     std::vector<CompileTask> compileTasks;
     compileTasks.reserve(sources.size());
 
-    // Gated on the same condition as runCompileTasks below, which does nothing when there is nothing
-    // to compile or the run is a dry one -- probing would otherwise spawn a compiler for a run whose
-    // whole point is that it spawns none.
+    // runCompileTasks below does nothing when there is nothing to compile or the run is dry; the
+    // probe follows the same condition so that a dry run spawns no compiler.
     const std::optional<std::string> cFilePrefixMap = (sources.empty() || options.writePolicy.dryRun)
                                                           ? std::optional<std::string>{}
                                                           : filePrefixMapArgument(outRoot, cCompiler);
@@ -927,9 +899,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
         if (!options.writePolicy.dryRun)
         {
-            // Handed to the archiver child alone. Both attempts get it: which of them runs is
-            // decided by the archiver family, and ZERO_AR_DATE is what makes the second one -- the
-            // one cctools takes -- reproducible.
+            // Both attempts get it: which one runs is decided by the archiver family.
             const std::vector<std::string> archiverEnv = environmentWith("ZERO_AR_DATE", "1");
 
             std::vector<std::string> args;
