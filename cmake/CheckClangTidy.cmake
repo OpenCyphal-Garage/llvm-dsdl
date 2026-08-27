@@ -79,6 +79,13 @@ foreach(_index RANGE 0 ${_llvmdsdl_last_index})
     continue()
   endif()
 
+  # runtime/ is the C runtime and the Python accelerator: snake_case names, macros, unions for
+  # punning, C casts. The C++ ruleset in .clang-tidy describes none of it, and the header filter
+  # below leaves those headers out for the same reason. Linting them needs a C ruleset of its own.
+  if(_abs_file MATCHES "^${_llvmdsdl_source_dir_regex}/runtime/")
+    continue()
+  endif()
+
   list(FIND _llvmdsdl_tidy_excluded_files "${_abs_file}" _llvmdsdl_excluded_index)
   if(NOT _llvmdsdl_excluded_index EQUAL -1)
     continue()
