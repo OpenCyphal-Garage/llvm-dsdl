@@ -32,25 +32,30 @@ if(NOT DEFINED MAX_LEN OR "${MAX_LEN}" STREQUAL "")
   set(MAX_LEN "4096")
 endif()
 
-# The harness names generated types, so it takes the token substitution rather than being compiled
-# straight from the source tree.
-include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
-llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 set(harness_src "${OUT_DIR}/NativeDecoderFuzz.c")
-configure_file("${SOURCE_ROOT}/test/integration/NativeDecoderFuzz.c" "${harness_src}" @ONLY)
-if(NOT EXISTS "${harness_src}")
-  message(FATAL_ERROR "fuzz harness source missing: ${harness_src}")
-endif()
-
 set(c_out "${OUT_DIR}/c")
 set(build_out "${OUT_DIR}/build")
 set(obj_dir "${build_out}/obj")
 set(work_corpus "${OUT_DIR}/corpus")
 set(artifacts "${OUT_DIR}/artifacts")
+
+# Wipe before anything is written into OUT_DIR, not after. The harness below is generated into this
+# same directory, so a wipe further down deletes it and the compile fails looking for a file that
+# was written seconds earlier -- which is exactly what happened when the harness stopped being
+# compiled straight from the source tree and became a configure_file output.
 file(REMOVE_RECURSE "${OUT_DIR}")
 foreach(d "${c_out}" "${build_out}" "${obj_dir}" "${work_corpus}" "${artifacts}")
   file(MAKE_DIRECTORY "${d}")
 endforeach()
+
+# The harness names generated types, so it takes the token substitution rather than being compiled
+# straight from the source tree.
+include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
+llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
+configure_file("${SOURCE_ROOT}/test/integration/NativeDecoderFuzz.c" "${harness_src}" @ONLY)
+if(NOT EXISTS "${harness_src}")
+  message(FATAL_ERROR "fuzz harness source missing: ${harness_src}")
+endif()
 
 set(san_base
     "-fsanitize=${SANITIZE}"

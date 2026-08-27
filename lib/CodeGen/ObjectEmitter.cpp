@@ -283,11 +283,30 @@ std::optional<std::string> environmentValue(const char* name)
     return std::nullopt;
 }
 
+/// @brief Resolves the tool named by @p envVar, falling back to @p fallbackProgramName on PATH.
+///
+/// A value carrying no directory separator is looked up on PATH rather than used as given.
+/// `CC=clang-22` is the ordinary way to name a compiler, but these tools are spawned through
+/// llvm::sys::ExecuteAndWait, which goes to posix_spawn -- not posix_spawnp -- so a bare name never
+/// resolves and the run dies with "posix_spawn failed: No such file or directory" naming nothing the
+/// user set. Resolving here means the error, when there is one, names the tool that is missing.
 llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallbackProgramName)
 {
     if (const auto env = environmentValue(envVar))
     {
-        return *env;
+        if (std::filesystem::path(*env).has_parent_path())
+        {
+            return *env;
+        }
+        auto found = llvm::sys::findProgramByName(*env);
+        if (!found)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "%s is set to '%s', which was not found on PATH",
+                                           envVar,
+                                           env->c_str());
+        }
+        return *found;
     }
     auto found = llvm::sys::findProgramByName(fallbackProgramName);
     if (!found)
