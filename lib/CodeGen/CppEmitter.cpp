@@ -46,7 +46,6 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
@@ -242,7 +241,7 @@ public:
 private:
     static std::string mask(const std::uint32_t bits)
     {
-        return renderU64MaskLiteral(HelperBindingRenderLanguage::Cpp, bits);
+        return renderMaskLiteral(HelperSpellingLanguage::Cpp, bits);
     }
 
     static std::string floatType(const HelperSignature signature)
@@ -699,10 +698,10 @@ private:
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, helperSymbol);
     }
 
-    static void emitMlirHelperBindings(SourceWriter&                      w,
-                                       const SectionHelperBindingPlan&    plan,
-                                       const ScalarBindingRenderDirection direction,
-                                       const bool                         emitCapacityCheck)
+    static void emitMlirHelperBindings(SourceWriter&                   w,
+                                       const SectionHelperBindingPlan& plan,
+                                       const HelperDirection           direction,
+                                       const bool                      emitCapacityCheck)
     {
         CppHelperBodySpelling spelling(w);
         for (const auto& body : buildSectionHelperBodies(
@@ -717,12 +716,12 @@ private:
 
     static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Serialize, /*emitCapacityCheck=*/true);
+        emitMlirHelperBindings(w, plan, HelperDirection::Serialize, /*emitCapacityCheck=*/true);
     }
 
     static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Deserialize, /*emitCapacityCheck=*/false);
+        emitMlirHelperBindings(w, plan, HelperDirection::Deserialize, /*emitCapacityCheck=*/false);
     }
 
     std::string containerElementType(const SemanticFieldType& type) const

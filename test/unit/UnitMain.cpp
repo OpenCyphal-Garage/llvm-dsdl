@@ -44,7 +44,7 @@ int main()
     ok      = runSerDesStatementPlanTests() && ok;
     ok      = runScriptedBodyPlanTests() && ok;
     ok      = runScriptedOperationPlanTests() && ok;
-    ok      = runHelperBindingRenderTests() && ok;
+    ok      = runHelperBodyPlanTests() && ok;
     ok      = runHelperBindingNamingTests() && ok;
     ok      = runRuntimeHelperBindingsTests() && ok;
     ok      = runNamingPolicyTests() && ok;

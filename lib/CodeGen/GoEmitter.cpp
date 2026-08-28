@@ -46,7 +46,6 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
@@ -285,7 +284,7 @@ private:
 
     static std::string mask(const std::uint32_t bits)
     {
-        return renderU64MaskLiteral(HelperBindingRenderLanguage::Go, bits);
+        return renderMaskLiteral(HelperSpellingLanguage::Go, bits);
     }
 
     /// @brief The closure's parameter list and return type, e.g. "(value uint64) uint64".
@@ -722,10 +721,10 @@ private:
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, helperSymbol);
     }
 
-    static void emitMlirHelperBindings(SourceWriter&                      w,
-                                       const SectionHelperBindingPlan&    plan,
-                                       const ScalarBindingRenderDirection direction,
-                                       const bool                         emitCapacityCheck)
+    static void emitMlirHelperBindings(SourceWriter&                   w,
+                                       const SectionHelperBindingPlan& plan,
+                                       const HelperDirection           direction,
+                                       const bool                      emitCapacityCheck)
     {
         GoHelperBodySpelling spelling(w);
         for (const auto& body : buildSectionHelperBodies(
@@ -740,12 +739,12 @@ private:
 
     static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Serialize, /*emitCapacityCheck=*/true);
+        emitMlirHelperBindings(w, plan, HelperDirection::Serialize, /*emitCapacityCheck=*/true);
     }
 
     static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Deserialize, /*emitCapacityCheck=*/false);
+        emitMlirHelperBindings(w, plan, HelperDirection::Deserialize, /*emitCapacityCheck=*/false);
     }
 
     void emitAlignSerialize(SourceWriter& w, std::int64_t alignmentBits)

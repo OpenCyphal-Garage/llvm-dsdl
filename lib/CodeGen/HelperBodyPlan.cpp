@@ -11,12 +11,70 @@
 #include <string>
 #include <vector>
 
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 
 namespace llvmdsdl
 {
+
+std::string renderMaskLiteral(const HelperSpellingLanguage language, const std::uint32_t bits)
+{
+    switch (language)
+    {
+    case HelperSpellingLanguage::Cpp:
+        if (bits == 0U)
+        {
+            return "0ULL";
+        }
+        if (bits >= 64U)
+        {
+            return "18446744073709551615ULL";
+        }
+        return std::to_string((1ULL << bits) - 1ULL) + "ULL";
+    case HelperSpellingLanguage::Rust:
+        if (bits == 0U)
+        {
+            return "0u64";
+        }
+        if (bits >= 64U)
+        {
+            return "u64::MAX";
+        }
+        return std::to_string((1ULL << bits) - 1ULL) + "u64";
+    case HelperSpellingLanguage::Go:
+        if (bits == 0U)
+        {
+            return "uint64(0)";
+        }
+        if (bits >= 64U)
+        {
+            return "^uint64(0)";
+        }
+        return "uint64(" + std::to_string((1ULL << bits) - 1ULL) + ")";
+    case HelperSpellingLanguage::TypeScript:
+        if (bits == 0U)
+        {
+            return "0n";
+        }
+        if (bits >= 64U)
+        {
+            return "18446744073709551615n";
+        }
+        return std::to_string((1ULL << bits) - 1ULL) + "n";
+    case HelperSpellingLanguage::Python:
+        if (bits == 0U)
+        {
+            return "0";
+        }
+        if (bits >= 64U)
+        {
+            return "18446744073709551615";
+        }
+        return std::to_string((1ULL << bits) - 1ULL);
+    }
+    return "0";
+}
+
 namespace
 {
 
@@ -27,15 +85,15 @@ namespace
 /// both identities. Below that, serialisation saturates only when the field asked
 /// for it and otherwise truncates by masking, while deserialisation of a signed
 /// field has to put the sign bit back.
-HelperBody buildScalarBody(const std::string&                 symbol,
-                           const ScalarHelperDescriptor&      descriptor,
-                           const ScalarBindingRenderDirection direction)
+HelperBody buildScalarBody(const std::string&            symbol,
+                           const ScalarHelperDescriptor& descriptor,
+                           const HelperDirection         direction)
 {
     HelperBody body;
     body.symbol = symbol;
     body.bits   = descriptor.bitLength;
 
-    const bool serialize = direction == ScalarBindingRenderDirection::Serialize;
+    const bool serialize = direction == HelperDirection::Serialize;
     const bool saturated = descriptor.castMode == CastMode::Saturated;
     const bool narrow    = descriptor.bitLength < 64U;
 
@@ -115,7 +173,7 @@ void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling)
 
 std::vector<HelperBody> buildSectionHelperBodies(
     const SectionHelperBindingPlan&                       plan,
-    const ScalarBindingRenderDirection                    scalarDirection,
+    const HelperDirection                                 scalarDirection,
     const std::function<std::string(const std::string&)>& helperNameResolver,
     const bool                                            emitCapacityCheck)
 {

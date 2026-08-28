@@ -52,7 +52,6 @@
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
@@ -291,7 +290,7 @@ private:
 
     static std::string mask(const std::uint32_t bits)
     {
-        return renderU64MaskLiteral(HelperBindingRenderLanguage::Python, bits);
+        return renderMaskLiteral(HelperSpellingLanguage::Python, bits);
     }
 
     /// @brief Names the parameter after what the helper asks about.
@@ -1367,7 +1366,7 @@ llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto           bodies = buildSectionHelperBodies(serializeHelpers,
-                                                               ScalarBindingRenderDirection::Serialize,
+                                                               HelperDirection::Serialize,
                                                                helperNameResolver,
                                                                /*emitCapacityCheck=*/true);
         PyHelperBodySpelling spelling(w);
@@ -1383,7 +1382,7 @@ llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
 
     const auto emitDeserializeHelperBindings = [&]() {
         const auto           bodies = buildSectionHelperBodies(deserializeHelpers,
-                                                               ScalarBindingRenderDirection::Deserialize,
+                                                               HelperDirection::Deserialize,
                                                                helperNameResolver,
                                                                /*emitCapacityCheck=*/false);
         PyHelperBodySpelling spelling(w);

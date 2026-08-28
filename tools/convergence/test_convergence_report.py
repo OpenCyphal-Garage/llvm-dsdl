@@ -61,7 +61,7 @@ class ConvergenceReportRegressionTest(unittest.TestCase):
         "lib/CodeGen/RuntimeLoweredPlan.cpp",
         "lib/CodeGen/ScriptedOperationPlan.cpp",
         "test/unit/NativeHelperContractTests.cpp",
-        "test/unit/HelperBindingRenderTests.cpp",
+        "test/unit/HelperBodyPlanTests.cpp",
         "test/unit/UnitMain.cpp",
         "test/unit/CMakeLists.txt",
     ]

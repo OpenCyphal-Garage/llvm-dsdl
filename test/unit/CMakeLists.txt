@@ -33,7 +33,7 @@ add_executable(llvmdsdl-unit-tests
   ScriptedBodyPlanTests.cpp
   ScriptedOperationPlanTests.cpp
   HelperBindingNamingTests.cpp
-  HelperBindingRenderTests.cpp
+  HelperBodyPlanTests.cpp
   RuntimeHelperBindingsTests.cpp
   NamingPolicyTests.cpp
   NamingGoldenTests.cpp

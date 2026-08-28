@@ -240,9 +240,7 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         # Two spellings of the same thing: a backend either renders the shared
         # helper-binding lines directly, or builds the shared helper bodies and
         # spells each shape itself. Both take the shape decision from shared code.
-        traits["helper_binding_render"] = _has_any(
-            text, [r"renderSectionHelperBindings\(", r"buildSectionHelperBodies\("]
-        )
+        traits["helper_binding_render"] = _has_any(text, [r"buildSectionHelperBodies\("])
         traits["union_helper_usage"] = _has_any(text, [r"unionTagValidate"])
         traits["capacity_helper_usage"] = _has_any(text, [r"capacityCheck"])
         traits["shared_pipeline"] = traits["native_function_skeleton"] or _has_all(
@@ -251,7 +249,7 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
                 r"collectLoweredFactsFromMlir\(",
                 r"forEachNativeEmitterRenderStep\(",
                 r"renderIR\.helperBindings",
-                r"renderSectionHelperBindings\(",
+                r"buildSectionHelperBodies\(",
                 r"unionTagValidate",
                 r"capacityCheck",
             ],
@@ -268,9 +266,7 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         # Two spellings of the same thing: a backend either renders the shared
         # helper-binding lines directly, or builds the shared helper bodies and
         # spells each shape itself. Both take the shape decision from shared code.
-        traits["helper_binding_render"] = _has_any(
-            text, [r"renderSectionHelperBindings\(", r"buildSectionHelperBodies\("]
-        )
+        traits["helper_binding_render"] = _has_any(text, [r"buildSectionHelperBodies\("])
         # The shared union render template (EmitStep.h) holds the helper names via its
         # spelling-class member (helperNames_); the pre-template inline form used
         # sectionHelperNames directly. Either spelling references the shared helpers.
@@ -291,7 +287,7 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
                 r"collectLoweredFactsFromMlir\(",
                 r"buildRuntimeSectionPlan\(",
                 r"buildSectionHelperBindingPlan\(",
-                r"renderSectionHelperBindings\(",
+                r"buildSectionHelperBodies\(",
             ],
         ) and traits["scripted_body_plan"]
         return traits
@@ -396,7 +392,7 @@ def _detect_global_traits(repo_root: Path) -> Dict[str, bool]:
     )
 
     native_helper_contract_tests = _load_text(repo_root, "test/unit/NativeHelperContractTests.cpp")
-    helper_binding_render_tests = _load_text(repo_root, "test/unit/HelperBindingRenderTests.cpp")
+    helper_binding_render_tests = _load_text(repo_root, "test/unit/HelperBodyPlanTests.cpp")
     unit_main_text = _load_text(repo_root, "test/unit/UnitMain.cpp")
     unit_cmake_text = _load_text(repo_root, "test/unit/CMakeLists.txt")
     traits["helper_binding_unit_contract_coverage"] = _has_all(
@@ -411,23 +407,23 @@ def _detect_global_traits(repo_root: Path) -> Dict[str, bool]:
     traits["helper_binding_render_coverage"] = _has_all(
         helper_binding_render_tests,
         [
-            r"runHelperBindingRenderTests\(\)",
-            r"renderSectionHelperBindings\(",
-            r"go section helper binding render mismatch",
-            r"section helper binding render mismatch",
+            r"runHelperBodyPlanTests\(\)",
+            r"buildSectionHelperBodies\(",
+            r"helper body shape mismatch",
+            r"section helper body ",
         ],
     )
     traits["helper_binding_unit_wiring"] = _has_all(
         unit_main_text,
         [
             r"runNativeHelperContractTests\(\)",
-            r"runHelperBindingRenderTests\(\)",
+            r"runHelperBodyPlanTests\(\)",
         ],
     ) and _has_all(
         unit_cmake_text,
         [
             r"NativeHelperContractTests\.cpp",
-            r"HelperBindingRenderTests\.cpp",
+            r"HelperBodyPlanTests\.cpp",
         ],
     )
     traits["helper_binding_completeness_checks"] = (

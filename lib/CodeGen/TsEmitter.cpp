@@ -50,7 +50,6 @@
 #include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
@@ -187,7 +186,7 @@ public:
 private:
     static std::string mask(const std::uint32_t bits)
     {
-        return renderU64MaskLiteral(HelperBindingRenderLanguage::TypeScript, bits);
+        return renderMaskLiteral(HelperSpellingLanguage::TypeScript, bits);
     }
 
     static std::string signature(const HelperBody& body)
@@ -1351,7 +1350,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto           bodies = buildSectionHelperBodies(serializeHelpers,
-                                                               ScalarBindingRenderDirection::Serialize,
+                                                               HelperDirection::Serialize,
                                                                helperNameResolver,
                                                                /*emitCapacityCheck=*/true);
         TsHelperBodySpelling spelling(w);
@@ -1367,7 +1366,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
 
     const auto emitDeserializeHelperBindings = [&]() {
         const auto           bodies = buildSectionHelperBodies(deserializeHelpers,
-                                                               ScalarBindingRenderDirection::Deserialize,
+                                                               HelperDirection::Deserialize,
                                                                helperNameResolver,
                                                                /*emitCapacityCheck=*/false);
         TsHelperBodySpelling spelling(w);

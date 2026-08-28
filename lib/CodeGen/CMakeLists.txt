@@ -77,7 +77,6 @@ add_library(llvmdsdlCodeGen
   GoEmitter.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
-  HelperBindingRender.cpp
   HelperBodyPlan.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp

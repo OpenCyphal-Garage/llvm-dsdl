@@ -33,7 +33,44 @@
 namespace llvmdsdl
 {
 struct SectionHelperBindingPlan;
-enum class ScalarBindingRenderDirection;
+
+/// @brief Target language, for the literals a spelling needs.
+enum class HelperSpellingLanguage
+{
+    /// @brief C++ target.
+    Cpp,
+
+    /// @brief Rust target.
+    Rust,
+
+    /// @brief Go target.
+    Go,
+
+    /// @brief TypeScript target.
+    TypeScript,
+
+    /// @brief Python target.
+    Python,
+};
+
+/// @brief Which direction a section's helpers are built for.
+///
+/// Scalar shapes differ by direction: serialisation saturates or truncates a value
+/// on its way to the wire, deserialisation puts a signed field's sign bit back.
+enum class HelperDirection
+{
+    /// @brief Helpers used on the way to the wire.
+    Serialize,
+
+    /// @brief Helpers used on the way back.
+    Deserialize,
+};
+
+/// @brief Renders the all-ones literal for a @p bits-wide field.
+/// @param[in] language Target language.
+/// @param[in] bits Wire width; zero and widths at or above 64 have their own spellings.
+/// @return The literal.
+std::string renderMaskLiteral(HelperSpellingLanguage language, std::uint32_t bits);
 
 /// @brief What a helper body does.
 enum class HelperBodyKind
@@ -196,7 +233,7 @@ void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling);
 /// @return The bodies, in the order they are emitted.
 std::vector<HelperBody> buildSectionHelperBodies(
     const SectionHelperBindingPlan&                       plan,
-    ScalarBindingRenderDirection                          scalarDirection,
+    HelperDirection                                       scalarDirection,
     const std::function<std::string(const std::string&)>& helperNameResolver,
     bool                                                  emitCapacityCheck);
 
