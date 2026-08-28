@@ -99,6 +99,7 @@ add_library(llvmdsdlCodeGen
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
+  SourceWriter.cpp
   TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp
