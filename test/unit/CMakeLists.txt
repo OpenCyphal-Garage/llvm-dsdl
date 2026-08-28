@@ -6,6 +6,7 @@ add_executable(llvmdsdl-unit-tests
   BitLengthSetTests.cpp
   IntegerMathTests.cpp
   FlatSetTests.cpp
+  TargetLanguagesTests.cpp
   EvaluatorTests.cpp
   DepfileRenderTests.cpp
   DepfilePlannerTests.cpp
@@ -67,6 +68,8 @@ target_link_libraries(llvmdsdl-unit-tests
 target_include_directories(llvmdsdl-unit-tests
   PRIVATE
   ${LLVMDSDL_SOURCE_DIR}/runtime
+  # TargetLanguages.h is dsdlc's own vocabulary; the suite holds it against the library's.
+  ${LLVMDSDL_SOURCE_DIR}/tools/dsdlc
 )
 
 # The naming golden map is compared against the checked-in copy in the source tree, not a staged

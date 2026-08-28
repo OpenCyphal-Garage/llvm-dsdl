@@ -39,6 +39,10 @@ bool runBitLengthSetTests();
 /// @return True when every case in the suite passed.
 bool runIntegerMathTests();
 
+/// @brief Runs the TargetLanguagesTests suite.
+/// @return True when every case in the suite passed.
+bool runTargetLanguagesTests();
+
 /// @brief Runs the FlatSetTests suite.
 /// @return True when every case in the suite passed.
 bool runFlatSetTests();
