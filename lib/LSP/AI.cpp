@@ -307,7 +307,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
         redacted += "...[truncated]";
     }
 
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     records_.push_back(AiAuditRecord{
         std::move(category),
         std::move(redacted),
@@ -320,7 +320,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
 
 std::vector<AiAuditRecord> AiAuditLogger::snapshot() const
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return records_;
 }
 

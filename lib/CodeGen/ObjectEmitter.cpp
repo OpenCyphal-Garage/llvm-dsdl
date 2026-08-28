@@ -482,7 +482,7 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
         {
             std::size_t taskIndex = 0U;
             {
-                std::scoped_lock const lock(stateMutex);
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (stopScheduling || nextTaskIndex >= tasks.size())
                 {
                     return;
@@ -493,8 +493,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             const auto& task = tasks[taskIndex];
             if (auto err = executeCommand(task.compiler, task.args, task.failContext))
             {
-                const std::string      message = llvm::toString(std::move(err));
-                std::scoped_lock const lock(stateMutex);
+                const std::string                  message = llvm::toString(std::move(err));
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;
@@ -504,8 +504,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             }
             if (auto err = setPathMode(task.objectPath, options.writePolicy.fileMode))
             {
-                const std::string      message = llvm::toString(std::move(err));
-                std::scoped_lock const lock(stateMutex);
+                const std::string                  message = llvm::toString(std::move(err));
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;

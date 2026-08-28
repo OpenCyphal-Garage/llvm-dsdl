@@ -68,13 +68,13 @@ StructuredLogger::StructuredLogger(LogSink sink)
 
 void StructuredLogger::setTraceLevel(const TraceLevel level)
 {
-    const std::scoped_lock lock(mutex_);
+    const std::scoped_lock<std::mutex> lock(mutex_);
     level_ = level;
 }
 
 TraceLevel StructuredLogger::traceLevel() const
 {
-    const std::scoped_lock lock(mutex_);
+    const std::scoped_lock<std::mutex> lock(mutex_);
     return level_;
 }
 
@@ -84,7 +84,7 @@ bool StructuredLogger::enabled(const LogLevel level) const
     {
         return false;
     }
-    const std::scoped_lock lock(mutex_);
+    const std::scoped_lock<std::mutex> lock(mutex_);
     return passes(level_, level);
 }
 
@@ -96,7 +96,7 @@ void StructuredLogger::log(const LogLevel level, const llvm::StringRef event, ll
     }
     // Serialise formatting and the sink write: records are emitted from both the main thread and the
     // request-scheduler worker, and an interleaved line would defeat the point of a post-mortem log.
-    const std::scoped_lock lock(mutex_);
+    const std::scoped_lock<std::mutex> lock(mutex_);
     if (!passes(level_, level))
     {
         return;

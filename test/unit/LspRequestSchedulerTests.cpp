@@ -48,7 +48,7 @@ bool runLspRequestSchedulerTests()
         [&mutex, &cv, &sawCallback, &completionResult, &completionLatency](llvmdsdl::lsp::RequestTaskResult result,
                                                                            const std::uint64_t latencyMicros) {
             {
-                std::scoped_lock const lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 sawCallback       = true;
                 completionResult  = std::move(result);
                 completionLatency = latencyMicros;
@@ -123,7 +123,7 @@ bool runLspRequestSchedulerTests()
         {
             std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap << ")\n";
             {
-                std::scoped_lock const lock(gateMutex);
+                std::scoped_lock<std::mutex> const lock(gateMutex);
                 release = true;
             }
             gateCv.notify_all();
@@ -132,7 +132,7 @@ bool runLspRequestSchedulerTests()
         }
 
         {
-            std::scoped_lock const lock(gateMutex);
+            std::scoped_lock<std::mutex> const lock(gateMutex);
             release = true;
         }
         gateCv.notify_all();

@@ -25,7 +25,7 @@ namespace llvmdsdl::lsp
 
 void Telemetry::setSink(RequestMetricSink sink)
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     sink_ = std::move(sink);
 }
 
@@ -34,7 +34,7 @@ void Telemetry::record(const std::string& method, const std::uint64_t latencyMic
     RequestMetricSink   sink;
     RequestMetric const metric{method, latencyMicros, cancelled};
     {
-        std::scoped_lock const lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         // The `method` string is attacker-controlled (any JSON-RPC request, including
         // unknown/garbage methods, reaches here). Bound the number of distinct keys so a
         // client streaming distinct method names cannot grow this map without limit
@@ -59,8 +59,8 @@ void Telemetry::record(const std::string& method, const std::uint64_t latencyMic
 
 std::uint64_t Telemetry::requestCount(const std::string_view method) const
 {
-    std::scoped_lock const lock(mutex_);
-    const auto             it = requestCounts_.find(std::string(method));
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = requestCounts_.find(std::string(method));
     return it == requestCounts_.end() ? 0U : it->second;
 }
 

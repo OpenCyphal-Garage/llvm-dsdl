@@ -94,7 +94,7 @@ bool runLspRobustnessTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::scoped_lock const lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();
@@ -189,7 +189,7 @@ bool runLspRobustnessTests()
 
     int cancelledCount = 0;
     {
-        std::scoped_lock const lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         for (int index = 0; index < kStormRequests; ++index)
         {
             const auto* response = findResponseByStringId(outgoing, "storm-" + std::to_string(index));
@@ -257,12 +257,12 @@ bool runLspStructuredLoggingTests()
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server(
             [&mutex, &outgoing](llvm::json::Value message) {
-                std::scoped_lock const lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 outgoing.push_back(std::move(message));
             },
             {},
             [&mutex, &logLines](const std::string& line) {
-                std::scoped_lock const lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 logLines.push_back(line);
             });
         server.handleMessage(
@@ -271,7 +271,7 @@ bool runLspStructuredLoggingTests()
         {
             server.handleMessage(message);
         }
-        std::scoped_lock const lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         return logLines;
     };
 
@@ -380,13 +380,13 @@ bool runLspPositionEncodingTests()
         std::mutex                     mutex;
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server([&mutex, &outgoing](llvm::json::Value message) {
-            std::scoped_lock const lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         });
         server.handleMessage(
             llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
-        std::scoped_lock const lock(mutex);
-        const auto*            response = findResponseByIntegerId(outgoing, 1);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        response = findResponseByIntegerId(outgoing, 1);
         if (response == nullptr)
         {
             return std::nullopt;
@@ -453,7 +453,7 @@ bool runLspAdversarialRequestTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::scoped_lock const lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();

@@ -202,7 +202,7 @@ bool JsonRpcStdioTransport::writeMessage(const llvm::json::Value& message)
     payloadStream << message;
     payloadStream.flush();
 
-    std::scoped_lock const lock(writeMutex_);
+    std::scoped_lock<std::mutex> const lock(writeMutex_);
     output_ << "Content-Length: " << payload.size() << "\r\n\r\n" << payload;
     output_.flush();
     return static_cast<bool>(output_);

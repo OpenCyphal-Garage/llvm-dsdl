@@ -62,6 +62,13 @@
 #     Recursive descent in the parser, and recursive composite traversal in the
 #     analyser and every backend.
 #
+# modernize-return-braced-init-list
+#     Chooses the constructor by overload resolution on a braced list, which is
+#     not always the one the explicit spelling names. `return {x}` for a
+#     `llvm::json::Value` selects `Value(std::initializer_list<Value>)` and yields
+#     a one-element array, silently: an id of `7` comes back as `[7]` and no
+#     JSON-RPC response matches its request.
+#
 # modernize-use-designated-initializers
 #     Dense tables and small aggregates are initialised positionally.
 #
@@ -124,6 +131,7 @@ Checks: >
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
   -modernize-avoid-c-arrays,
+  -modernize-return-braced-init-list,
   -modernize-use-designated-initializers,
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,

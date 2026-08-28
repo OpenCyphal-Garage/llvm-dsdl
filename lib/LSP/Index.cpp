@@ -949,7 +949,7 @@ public:
 
     void scheduleRebuild(const std::uint64_t snapshotVersion, std::vector<IndexFileShard> shards)
     {
-        std::scoped_lock const lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
 
         if (pendingJob_.has_value())
         {
@@ -982,7 +982,7 @@ public:
 
     std::vector<WorkspaceSymbolResult> workspaceSymbols(const std::string& query, const std::size_t limit) const
     {
-        std::scoped_lock const lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         return index_.querySymbols(query, limit);
     }
 
@@ -990,10 +990,10 @@ public:
     {
         waitForIdle();
 
-        std::scoped_lock const      lock(mutex_);
-        IndexRepairReport           report = storage_.verifyAndRepair(removeInvalidShards);
-        std::vector<std::string>    invalidShardPaths;
-        std::vector<IndexFileShard> loadedShards = storage_.loadAllShards(&invalidShardPaths);
+        std::scoped_lock<std::mutex> const lock(mutex_);
+        IndexRepairReport                  report = storage_.verifyAndRepair(removeInvalidShards);
+        std::vector<std::string>           invalidShardPaths;
+        std::vector<IndexFileShard>        loadedShards = storage_.loadAllShards(&invalidShardPaths);
         index_.replaceAll(std::move(loadedShards));
         indexedPaths_.clear();
         for (const std::string& path : index_.indexedPaths())
@@ -1007,7 +1007,7 @@ public:
 
     IndexManagerStats stats() const
     {
-        std::scoped_lock const lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         return stats_;
     }
 
@@ -1019,7 +1019,7 @@ public:
     void shutdown()
     {
         {
-            std::scoped_lock const lock(mutex_);
+            std::scoped_lock<std::mutex> const lock(mutex_);
             if (stopping_)
             {
                 return;
@@ -1106,7 +1106,7 @@ private:
             const bool completed = applyJob(job);
 
             {
-                std::scoped_lock const lock(mutex_);
+                std::scoped_lock<std::mutex> const lock(mutex_);
                 if (!completed)
                 {
                     ++stats_.cancelledJobs;
@@ -1165,7 +1165,7 @@ private:
 
         std::vector<std::string> stalePaths;
         {
-            std::scoped_lock const lock(mutex_);
+            std::scoped_lock<std::mutex> const lock(mutex_);
             for (const std::string& indexedPath : indexedPaths_)
             {
                 if (!desiredPaths.contains(indexedPath))
@@ -1191,7 +1191,7 @@ private:
         }
 
         {
-            std::scoped_lock const lock(mutex_);
+            std::scoped_lock<std::mutex> const lock(mutex_);
             index_.replaceAll(std::move(sortedShards));
             indexedPaths_ = std::move(desiredPaths);
         }

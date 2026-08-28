@@ -550,25 +550,30 @@ llvm::json::Value analysisLocationToLsp(const AnalysisLocation& location)
     };
 }
 
+/// @brief Copies a request id for use in the matching response.
+///
+/// Every return here names llvm::json::Value explicitly. The braced form selects
+/// `Value(std::initializer_list<Value>)` instead, which builds a one-element ARRAY: an id of `7`
+/// comes back as `[7]`, no response ever matches its request, and the server looks hung.
 llvm::json::Value cloneJsonId(const llvm::json::Value& id)
 {
     if (const auto text = id.getAsString())
     {
-        return {text->str()};
+        return llvm::json::Value(text->str());
     }
     if (const auto integer = id.getAsInteger())
     {
-        return {*integer};
+        return llvm::json::Value(*integer);
     }
     if (const auto number = id.getAsNumber())
     {
-        return {*number};
+        return llvm::json::Value(*number);
     }
     if (const auto boolean = id.getAsBoolean())
     {
-        return {*boolean};
+        return llvm::json::Value(*boolean);
     }
-    return {nullptr};
+    return llvm::json::Value(nullptr);
 }
 
 int diagnosticSeverityToLsp(const DiagnosticLevel level)

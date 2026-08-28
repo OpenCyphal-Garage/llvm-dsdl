@@ -222,20 +222,20 @@ AdaptiveSignalStore::AdaptiveSignalStore(std::string persistencePath, const std:
     : persistencePath_(std::move(persistencePath))
     , maxEntries_(std::max<std::size_t>(1, maxEntries))
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     loadLocked();
 }
 
 std::uint64_t AdaptiveSignalStore::currentTick() const
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return nextTick_;
 }
 
 std::optional<RankingSignal> AdaptiveSignalStore::signalFor(const std::string& key) const
 {
-    std::scoped_lock const lock(mutex_);
-    const auto             it = signals_.find(key);
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = signals_.find(key);
     if (it == signals_.end())
     {
         return std::nullopt;
@@ -264,7 +264,7 @@ void AdaptiveSignalStore::noteTopExposures(const std::vector<std::string>& keys,
 
 bool AdaptiveSignalStore::flush()
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     if (!dirty_)
     {
         return true;
@@ -343,7 +343,7 @@ bool AdaptiveSignalStore::flush()
 
 std::size_t AdaptiveSignalStore::size() const
 {
-    std::scoped_lock const lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return signals_.size();
 }
 
@@ -354,8 +354,8 @@ void AdaptiveSignalStore::noteEvent(const std::string& key, const bool selection
         return;
     }
 
-    std::scoped_lock const lock(mutex_);
-    RankingSignal&         signal = signals_[key];
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    RankingSignal&                     signal = signals_[key];
     signal.exposureCount =
         selection ? signal.exposureCount : std::min<std::uint32_t>(signal.exposureCount + 1U, 100000U);
     signal.selectionCount =

@@ -62,7 +62,7 @@ public:
 
     bool enqueue(std::string requestKey, std::string method, RequestTask task, RequestCompletion completion)
     {
-        std::scoped_lock const lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         if (stopping_)
         {
             return false;
@@ -93,8 +93,8 @@ public:
 
     bool cancel(const std::string& requestKey)
     {
-        std::scoped_lock const lock(mutex_);
-        const auto             it = requestStates_.find(requestKey);
+        std::scoped_lock<std::mutex> const lock(mutex_);
+        const auto                         it = requestStates_.find(requestKey);
         if (it == requestStates_.end())
         {
             return false;
@@ -107,7 +107,7 @@ public:
     void shutdown()
     {
         {
-            std::scoped_lock const lock(mutex_);
+            std::scoped_lock<std::mutex> const lock(mutex_);
             if (stopping_)
             {
                 return;
@@ -179,7 +179,7 @@ private:
             const auto finish = std::chrono::steady_clock::now();
 
             {
-                std::scoped_lock const lock(mutex_);
+                std::scoped_lock<std::mutex> const lock(mutex_);
                 requestStates_.erase(item.requestKey);
             }
 
