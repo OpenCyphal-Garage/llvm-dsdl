@@ -18,6 +18,7 @@ int main()
     ok      = runBitLengthSetTests() && ok;
     ok      = runIntegerMathTests() && ok;
     ok      = runTargetLanguagesTests() && ok;
+    ok      = runCliPathTests() && ok;
     ok      = runFlatSetTests() && ok;
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;

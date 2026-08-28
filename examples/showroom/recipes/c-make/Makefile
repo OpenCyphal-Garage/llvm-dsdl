@@ -89,6 +89,10 @@ liblanyard.a: $(TYPES_OBJS) $(TYPES_SIG)
 # survives in $(GEN), still on the include path, and code that includes a type nobody defines any
 # more keeps compiling. One manifest per tranche, never one per directory -- a tranche owns only the
 # files it emits, and one that swept $(GEN) would delete the other two tranches' work.
+#
+# dsdlc measures a relative manifest path from --outdir, so `--prune-manifest $(MANIFESTS)/types`
+# writes $(GEN)/$(MANIFESTS)/types. The signature file below is Make's own and is named the long way
+# to land in that same directory.
 MANIFESTS := .dsdlc
 
 # Pruning only happens when dsdlc runs, so deleting a definition has to make it run -- and on its
@@ -100,8 +104,8 @@ MANIFESTS := .dsdlc
 # So the input list is itself made an input. This rewrites the file only when the list changes,
 # which makes adding or removing a definition a timestamp change the rule can see, while editing one
 # leaves it alone (that case is already covered by $(TYPES_IN)).
-TYPES_SIG := $(MANIFESTS)/types.inputs
-$(shell mkdir -p $(MANIFESTS) && printf '%s\n' $(TYPES_IN) >$(TYPES_SIG).tmp && \
+TYPES_SIG := $(GEN)/$(MANIFESTS)/types.inputs
+$(shell mkdir -p $(GEN)/$(MANIFESTS) && printf '%s\n' $(TYPES_IN) >$(TYPES_SIG).tmp && \
         { cmp -s $(TYPES_SIG).tmp $(TYPES_SIG) || mv $(TYPES_SIG).tmp $(TYPES_SIG); } ; \
         rm -f $(TYPES_SIG).tmp)
 
@@ -139,6 +143,6 @@ $(BUILTIN_OBJS) $(TYPES_OBJS) src/c/roundtrip.o: | $(GEN_HDRS)
 -include $(patsubst %.o,%.d,$(BUILTIN_OBJS) $(TYPES_OBJS) src/c/roundtrip.o)
 
 clean:
-	rm -rf $(GEN) $(MANIFESTS) roundtrip liblanyard.a libdsdlbuiltin.a src/c/roundtrip.o src/c/roundtrip.d
+	rm -rf $(GEN) roundtrip liblanyard.a libdsdlbuiltin.a src/c/roundtrip.o src/c/roundtrip.d
 
 .PHONY: all clean

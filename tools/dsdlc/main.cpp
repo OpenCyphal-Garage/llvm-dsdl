@@ -63,6 +63,7 @@
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/CliPath.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -396,6 +397,12 @@ void printHelp()
                  << "      namespace, encoding the offending characters instead of rejecting the\n"
                  << "      definition. Note, this can get ugly even if it's valid.\n"
                  << "\n"
+                 << "PATH ARGUMENTS\n"
+                 << "  A leading '~' is the invoking user's home directory, and '.' and '..' fold away.\n"
+                 << "  An absolute path is used as given. A relative path naming a file this run writes\n"
+                 << "  (--naming-manifest, --prune-manifest) is measured from --outdir; one naming a file\n"
+                 << "  it reads is measured from the working directory.\n"
+                 << "\n"
                  << "ENVIRONMENT\n"
                  << "   DSDL_INCLUDE_PATH\n"
                  << "       Lookup roots, listed like PATH (':' separated, ';' on Windows). Each entry\n"
@@ -539,6 +546,57 @@ llvm::Expected<std::uint32_t> parseFileMode(llvm::StringRef text)
                                        text.str().c_str());
     }
     return static_cast<std::uint32_t>(parsed);
+}
+
+/// @brief Resolves every filesystem path the command line carried.
+///
+/// Runs once the whole command line has been read, so an option is anchored on the `--outdir` the
+/// run ends up with rather than on whichever one had been seen by the time the option was parsed.
+///
+/// A path naming something this run writes is measured from `--outdir`; a path naming something it
+/// reads is measured from the working directory. Targets and lookup roots take home expansion alone:
+/// both accept a `<root>:<relative/path>` token, which folding as one path would misread, and both
+/// are folded and made absolute by the resolver that consumes them.
+llvm::Error normalizePathOptions(CliOptions& options)
+{
+    const auto assign = [](std::string& slot, llvm::Expected<std::string> resolved) -> llvm::Error {
+        if (!resolved)
+        {
+            return resolved.takeError();
+        }
+        slot = std::move(*resolved);
+        return llvm::Error::success();
+    };
+
+    if (auto err = assign(options.outDir, llvmdsdl::normalizeCliPath(options.outDir)))
+    {
+        return err;
+    }
+    if (auto err =
+            assign(options.namingManifest, llvmdsdl::normalizeCliOutputPath(options.namingManifest, options.outDir)))
+    {
+        return err;
+    }
+    if (auto err =
+            assign(options.pruneManifest, llvmdsdl::normalizeCliOutputPath(options.pruneManifest, options.outDir)))
+    {
+        return err;
+    }
+    for (auto& lookupDir : options.lookupDirs)
+    {
+        if (auto err = assign(lookupDir, llvmdsdl::expandHomeDirectory(lookupDir)))
+        {
+            return err;
+        }
+    }
+    for (auto& target : options.positionalTargets)
+    {
+        if (auto err = assign(target, llvmdsdl::expandHomeDirectory(target)))
+        {
+            return err;
+        }
+    }
+    return llvm::Error::success();
 }
 
 llvm::Expected<CliOptions> parseCli(int argc, char** argv)
@@ -1062,6 +1120,10 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         addTargetToken(arg);
     }
 
+    if (auto err = normalizePathOptions(options))
+    {
+        return err;
+    }
     return options;
 }
 
@@ -1904,7 +1966,22 @@ int runDsdlc(int argc, char** argv)
                                                                       manifestLanguages,
                                                                       llvmdsdl::kVersionString,
                                                                       options.typeNameVersioning);
-        std::ofstream     stream(options.namingManifest, std::ios::binary | std::ios::trunc);
+
+        // A relative manifest path is measured from --outdir, which nothing has had reason to
+        // create yet at this point in the run.
+        const auto manifestParent = std::filesystem::path(options.namingManifest).parent_path();
+        if (!manifestParent.empty())
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(manifestParent, ec);
+            if (ec)
+            {
+                llvm::errs() << "cannot create naming manifest directory: " << manifestParent.string() << "\n";
+                return finish("stdout", {}, true);
+            }
+        }
+
+        std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
         if (!stream.good())
         {
             llvm::errs() << "cannot write naming manifest: " << options.namingManifest << "\n";

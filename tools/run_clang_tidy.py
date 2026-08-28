@@ -26,6 +26,17 @@ import subprocess
 import sys
 
 
+def _job_count(text: str) -> int:
+    """Reject a worker count the pool would refuse, so the message names the flag."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {text!r}") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or more, got {value}")
+    return value
+
+
 def _check_one(clang_tidy: str, args: list[str], path: str) -> tuple[str, int, str]:
     finished = subprocess.run([clang_tidy, *args, path], capture_output=True, text=True, check=False)
     output = finished.stdout
@@ -39,7 +50,7 @@ def main() -> int:
     parser.add_argument("--clang-tidy", required=True)
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--file-list", required=True, type=pathlib.Path)
-    parser.add_argument("--jobs", type=int, default=0, help="0 selects one per available CPU.")
+    parser.add_argument("--jobs", type=_job_count, default=0, help="0 selects one per available CPU.")
     parser.add_argument("--extra-arg-before", action="append", default=[])
     parser.add_argument("--header-filter", default=None)
     parser.add_argument("--exclude-header-filter", default=None)

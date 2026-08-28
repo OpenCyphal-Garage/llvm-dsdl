@@ -43,6 +43,10 @@ bool runIntegerMathTests();
 /// @return True when every case in the suite passed.
 bool runTargetLanguagesTests();
 
+/// @brief Runs the CliPathTests suite.
+/// @return True when every case in the suite passed.
+bool runCliPathTests();
+
 /// @brief Runs the FlatSetTests suite.
 /// @return True when every case in the suite passed.
 bool runFlatSetTests();
