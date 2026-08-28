@@ -83,6 +83,13 @@ public:
     /// @param[in] text The block-closing line.
     void close(const std::string& text);
 
+    /// @brief Emits @p text one level out, then descends again.
+    ///
+    /// For the line that ends one arm of a construct and begins the next, which is at
+    /// the depth of neither: a preprocessor @c \#elif, a @c "} else {".
+    /// @param[in] text The arm-separating line.
+    void midway(const std::string& text);
+
     /// @brief Descends one level without emitting anything.
     ///
     /// For blocks a language delimits by keyword rather than by a token of their

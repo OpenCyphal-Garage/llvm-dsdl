@@ -54,6 +54,7 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
@@ -223,9 +224,9 @@ private:
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
-void emitLine(std::ostringstream& out, const int indent, const std::string& line)
+SourceWriter makeCWriter(std::ostringstream& out)
 {
-    out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
+    return SourceWriter{out, IndentPolicy::spaces(2)};
 }
 
 std::string generatedCommentLine(llvm::StringRef detail)
@@ -260,11 +261,11 @@ std::string sanitizeCCommentText(std::string text)
     return text;
 }
 
-void emitAttachedDocC(std::ostringstream& out, const int indent, const AttachedDoc& doc)
+void emitAttachedDocC(SourceWriter& w, const AttachedDoc& doc)
 {
     for (const auto& line : doc.lines)
     {
-        emitLine(out, indent, "/* " + sanitizeCCommentText(line.text) + " */");
+        w.line("/* " + sanitizeCCommentText(line.text) + " */");
     }
 }
 
@@ -298,7 +299,7 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
     return "uint8_t";
 }
 
-void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
+void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
     const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& field : section.fields)
@@ -311,22 +312,18 @@ void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const
             return constScope.get(IdentifierRole::MacroName,
                                   arrayMetadataName(CodegenNamingLanguage::C, field.name, kind));
         };
-        emitLine(out,
-                 0,
-                 "#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
-                     std::to_string(field.resolvedType.arrayCapacity) + "U");
-        emitLine(out,
-                 0,
-                 "#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
-                     (isVariableArray(field.resolvedType.arrayKind) ? "true" : "false"));
+        w.line("#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
+               std::to_string(field.resolvedType.arrayCapacity) + "U");
+        w.line("#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
+               (isVariableArray(field.resolvedType.arrayKind) ? "true" : "false"));
     }
     if (!section.fields.empty())
     {
-        out << "\n";
+        w.blank();
     }
 }
 
-void emitSectionTypedef(std::ostringstream&    out,
+void emitSectionTypedef(SourceWriter&          w,
                         const std::string&     typeName,
                         const SemanticSection& section,
                         const EmitterContext&  ctx,
@@ -336,7 +333,7 @@ void emitSectionTypedef(std::ostringstream&    out,
     // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serializer
     // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    emitLine(out, 0, "typedef struct " + typeName + " {");
+    w.open("typedef struct " + typeName + " {");
 
     std::size_t emitted = 0;
     for (const auto& field : section.fields)
@@ -351,49 +348,43 @@ void emitSectionTypedef(std::ostringstream&    out,
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
-            emitAttachedDocC(out, 1, field.doc);
+            emitAttachedDocC(w, field.doc);
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, baseType + " " + cMember + ";");
+            w.line(baseType + " " + cMember + ";");
             ++emitted;
             continue;
         }
 
         if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
-            emitAttachedDocC(out, 1, field.doc);
+            emitAttachedDocC(w, field.doc);
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
-                emitLine(out,
-                         1,
-                         "uint8_t " + cMember + "[(" + std::to_string(field.resolvedType.arrayCapacity) +
-                             "U + 7U) / 8U];");
+                w.line("uint8_t " + cMember + "[(" + std::to_string(field.resolvedType.arrayCapacity) +
+                       "U + 7U) / 8U];");
             }
             else
             {
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         1,
-                         baseType + " " + cMember + "[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
+                w.line(baseType + " " + cMember + "[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
                 // NOLINTEND(performance-inefficient-string-concatenation)
             }
             ++emitted;
             continue;
         }
 
-        emitAttachedDocC(out, 1, field.doc);
-        emitLine(out, 1, "struct {");
+        emitAttachedDocC(w, field.doc);
+        w.open("struct {");
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
-            emitLine(out,
-                     2,
-                     "uint8_t bitpacked[(" + std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U];");
+            w.line("uint8_t bitpacked[(" + std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U];");
         }
         else
         {
-            emitLine(out, 2, baseType + " elements[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
+            w.line(baseType + " elements[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
         }
-        emitLine(out, 2, "size_t count;");
-        emitLine(out, 1, "} " + cMember + ";");
+        w.line("size_t count;");
+        w.close("} " + cMember + ";");
         ++emitted;
     }
 
@@ -403,13 +394,13 @@ void emitSectionTypedef(std::ostringstream&    out,
         // 257..65536, etc.); a hardcoded uint8_t truncates a wide tag and mis-dispatches.
         // sectionFacts isn't threaded here; resolveUnionTagBits falls back to the
         // analyzer-set per-field width, which is authoritative.
-        emitLine(out, 1, unsignedStorageType(resolveUnionTagBits(section, nullptr)) + " _tag_;");
+        w.line(unsignedStorageType(resolveUnionTagBits(section, nullptr)) + " _tag_;");
         ++emitted;
     }
 
     if (emitted == 0)
     {
-        emitLine(out, 1, "uint8_t _dummy_;");
+        w.line("uint8_t _dummy_;");
     }
 
     if (deprecatedAttribute)
@@ -420,13 +411,13 @@ void emitSectionTypedef(std::ostringstream&    out,
         // `#pragma GCC diagnostic ignored`, so user code naming the typedef is told nothing at all.
         // Placed after the name it deprecates the typedef, and the diagnostic lands where it is
         // useful: on the code that uses it. Clang warns either way, so this only shows up on GCC.
-        emitLine(out, 0, "} " + typeName + " __attribute__((deprecated));");
+        w.close("} " + typeName + " __attribute__((deprecated));");
     }
     else
     {
-        emitLine(out, 0, "} " + typeName + ";");
+        w.close("} " + typeName + ";");
     }
-    out << "\n";
+    w.blank();
 
     if (section.isUnion)
     {
@@ -438,12 +429,12 @@ void emitSectionTypedef(std::ostringstream&    out,
                 ++optionCount;
             }
         }
-        emitLine(out, 0, "#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(optionCount) + "U");
-        out << "\n";
+        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(optionCount) + "U");
+        w.blank();
     }
 }
 
-void emitSectionConstants(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
+void emitSectionConstants(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
     // Two DSDL constants can project onto one macro token -- `foo_bar` and `FOO_BAR` both upper-case
     // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
@@ -453,19 +444,17 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {
-        emitAttachedDocC(out, 0, c.doc);
-        emitLine(out,
-                 0,
-                 "#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
-                     valueToCExpr(c.type, c.value) + ")");
+        emitAttachedDocC(w, c.doc);
+        w.line("#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
+               valueToCExpr(c.type, c.value) + ")");
     }
     if (!section.constants.empty())
     {
-        out << "\n";
+        w.blank();
     }
 }
 
-void emitSectionMetadata(std::ostringstream&              out,
+void emitSectionMetadata(SourceWriter&                    w,
                          const std::string&               typeName,
                          const std::string&               fullName,
                          std::uint32_t                    majorVersion,
@@ -482,7 +471,7 @@ void emitSectionMetadata(std::ostringstream&              out,
     metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
     for (const auto& line : renderCTypeMetadataMacros(metadata))
     {
-        emitLine(out, 0, line);
+        w.line(line);
     }
     const bool  zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
     std::string zohAliasReason   = "not-proven";
@@ -494,15 +483,13 @@ void emitSectionMetadata(std::ostringstream&              out,
     {
         zohAliasReason = sectionFacts->zohAliasReason;
     }
-    emitLine(out,
-             0,
-             "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
-    emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
-    emitLine(out, 0, "#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
-    out << "\n";
+    w.line("#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
+    w.line("#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
+    w.line("#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
+    w.blank();
 }
 
-void emitSection(std::ostringstream&              out,
+void emitSection(SourceWriter&                    w,
                  const EmitterContext&            ctx,
                  const SemanticDefinition&        def,
                  const std::string&               typeName,
@@ -512,114 +499,101 @@ void emitSection(std::ostringstream&              out,
                  const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
-    emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
-    emitSectionConstants(out, typeName, section);
-    emitArrayMacros(out, typeName, section);
-    emitAttachedDocC(out,
-                     0,
+    emitSectionMetadata(w, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
+    emitSectionConstants(w, typeName, section);
+    emitArrayMacros(w, typeName, section);
+    emitAttachedDocC(w,
                      docWithDeprecationNotice(typeDoc,
                                               section.deprecated,
                                               def.info.fullName,
                                               def.info.majorVersion,
                                               def.info.minorVersion));
-    emitSectionTypedef(out, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
+    emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
 
     const auto irStem = sectionIRFunctionStem(def, sectionName);
-    emitLine(out,
-             0,
-             "int8_t " + irStem + "__serialize_ir_(const " + typeName +
-                 "* const obj, uint8_t* buffer, size_t* const "
-                 "inout_buffer_size_bytes);");
-    emitLine(out,
-             0,
-             "int8_t " + irStem + "__deserialize_ir_(" + typeName +
-                 "* const out_obj, const uint8_t* buffer, size_t* const "
-                 "inout_buffer_size_bytes);");
-    out << "\n";
+    w.line("int8_t " + irStem + "__serialize_ir_(const " + typeName +
+           "* const obj, uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes);");
+    w.line("int8_t " + irStem + "__deserialize_ir_(" + typeName +
+           "* const out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes);");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "static inline int8_t " + typeName + "__serialize_(const " + typeName +
-                 "* const obj, uint8_t* const buffer, size_t* const "
-                 "inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << "\n";
+    w.line("static inline int8_t " + typeName + "__serialize_(const " + typeName +
+           "* const obj, uint8_t* const buffer, size_t* const "
+           "inout_buffer_size_bytes)");
+    w.open("{");
+    w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "static inline int8_t " + typeName + "__deserialize_(" + typeName +
-                 "* const out_obj, const uint8_t* buffer, size_t* const "
-                 "inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << "\n";
+    w.line("static inline int8_t " + typeName + "__deserialize_(" + typeName +
+           "* const out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)");
+    w.open("{");
+    w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "static inline int8_t " + typeName +
-                 "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-                 "const uint8_t** const out_view_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((buffer == NULL) || (inout_buffer_size_bytes == NULL) || (out_view_bytes == NULL)) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "*out_view_bytes = NULL;");
-    emitLine(out, 1, "const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    emitLine(out, 1, "if (*inout_buffer_size_bytes < _required) {");
-    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    emitLine(out, 2, "(void)buffer;");
-    emitLine(out, 2, "(void)_required;");
-    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    emitLine(out, 2, "*out_view_bytes = buffer;");
-    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
-    emitLine(out, 2, "return DSDL_RUNTIME_SUCCESS;");
-    emitLine(out, 1, "#else");
-    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "#endif");
-    emitLine(out, 0, "}");
-    out << "\n";
+    w.line("static inline int8_t " + typeName +
+           "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
+           "const uint8_t** const out_view_bytes)");
+    w.open("{");
+    w.open("if ((buffer == NULL) || (inout_buffer_size_bytes == NULL) || (out_view_bytes == NULL)) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line("*out_view_bytes = NULL;");
+    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
+    w.open("if (*inout_buffer_size_bytes < _required) {");
+    w.line("*inout_buffer_size_bytes = _required;");
+    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    w.close("}");
+    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    w.line("(void)buffer;");
+    w.line("(void)_required;");
+    w.line("*inout_buffer_size_bytes = 0U;");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
+    w.line("*out_view_bytes = buffer;");
+    w.line("*inout_buffer_size_bytes = _required;");
+    w.line("return DSDL_RUNTIME_SUCCESS;");
+    w.midway("#else");
+    w.line("*inout_buffer_size_bytes = 0U;");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("#endif");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "static inline int8_t " + typeName +
-                 "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-                 "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((view_bytes == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    emitLine(out, 1, "if (view_size_bytes != _required) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "if (*inout_buffer_size_bytes < _required) {");
-    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    emitLine(out, 2, "(void)buffer;");
-    emitLine(out, 2, "(void)view_bytes;");
-    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    emitLine(out, 2, "(void)memcpy(buffer, view_bytes, _required);");
-    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
-    emitLine(out, 2, "return DSDL_RUNTIME_SUCCESS;");
-    emitLine(out, 1, "#else");
-    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "#endif");
-    emitLine(out, 0, "}");
-    out << "\n";
+    w.line("static inline int8_t " + typeName +
+           "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
+           "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.open("if ((view_bytes == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
+    w.open("if (view_size_bytes != _required) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.open("if (*inout_buffer_size_bytes < _required) {");
+    w.line("*inout_buffer_size_bytes = _required;");
+    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    w.close("}");
+    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    w.line("(void)buffer;");
+    w.line("(void)view_bytes;");
+    w.line("*inout_buffer_size_bytes = 0U;");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
+    w.line("(void)memcpy(buffer, view_bytes, _required);");
+    w.line("*inout_buffer_size_bytes = _required;");
+    w.line("return DSDL_RUNTIME_SUCCESS;");
+    w.midway("#else");
+    w.line("*inout_buffer_size_bytes = 0U;");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("#endif");
+    w.close("}");
+    w.blank();
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -634,6 +608,7 @@ llvm::Expected<std::string> loadRuntimeHeader()
 std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)
 {
     std::ostringstream out;
+    SourceWriter       w            = makeCWriter(out);
     const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cTypeName(def);
 
@@ -674,7 +649,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
             out << "#include \"" << llvmdsdl::EmitterContext::relativeHeaderPath(*dep) << "\"\n";
         }
     }
-    out << "\n";
+    w.blank();
 
     // Generated code must never warn about itself. A deprecated typedef is referenced by this very
     // header -- in its own declaration, in its serializer signatures, and, when a deprecated type is
@@ -697,11 +672,11 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                                                                   def.info.majorVersion,
                                                                   def.info.minorVersion))
         {
-            emitLine(out, 0, line);
+            w.line(line);
         }
-        out << "\n";
+        w.blank();
 
-        emitSection(out,
+        emitSection(w,
                     ctx,
                     def,
                     requestType,
@@ -712,7 +687,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                     lookupLoweredSectionFacts(loweredFacts, def, "request"));
         if (def.response)
         {
-            emitSection(out,
+            emitSection(w,
                         ctx,
                         def,
                         responseType,
@@ -724,18 +699,18 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         }
         for (const auto& line : renderCServiceAliasBridgeLines(baseTypeName, requestType))
         {
-            emitLine(out, 0, line);
+            w.line(line);
         }
-        out << "\n";
+        w.blank();
 
         for (const auto& line : renderCServiceAliasWrapperLines(baseTypeName, requestType))
         {
-            emitLine(out, 0, line);
+            w.line(line);
         }
     }
     else
     {
-        emitSection(out,
+        emitSection(w,
                     ctx,
                     def,
                     baseTypeName,

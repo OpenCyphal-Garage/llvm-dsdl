@@ -74,4 +74,11 @@ void SourceWriter::close(const std::string& text)
     line(text);
 }
 
+void SourceWriter::midway(const std::string& text)
+{
+    dedent();
+    line(text);
+    indent();
+}
+
 }  // namespace llvmdsdl
