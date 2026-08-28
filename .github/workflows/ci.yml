@@ -79,6 +79,64 @@ jobs:
         # It also fails on a committed /Users/<somebody>/ path, which is wrong for every other reader.
         run: python3 tools/repo_identity.py
 
+  lint:
+    name: Lint (clang-format + clang-tidy)
+    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+    # clang-tidy needs the generated headers -- TableGen output and the configured Version.h --
+    # so this lane configures and builds before it can analyse anything. The walk itself is a
+    # couple of minutes across the pool.
+    timeout-minutes: 60
+    env:
+      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
+      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
+      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Restore the LLVM toolchain
+        uses: ./.github/actions/restore-llvm-toolchain
+
+      - name: Report the tool versions this run is pinned to
+        # The ruleset is written against a major version: check names, their options, and what
+        # clang-format does with a line all move between majors. Printing them means a lane that
+        # goes red after an image bump says so in its own log.
+        run: |
+          clang-format --version
+          clang-tidy --version
+
+      - name: Check that .clang-tidy says what it appears to say
+        # clang-tidy globs the Checks scalar and silently drops whatever fails to match, so a
+        # mistyped check name disables nothing and a comment containing a comma can re-enable a
+        # whole family. Neither is an error to clang-tidy. This makes both an error here.
+        run: python3 tools/check_clang_tidy_config.py
+
+      - name: Check formatting
+        # Runs before the configure: this is the same script the check-format target drives, and it
+        # needs only the source tree, so a misformatted patch fails in seconds rather than after the
+        # build below.
+        run: |
+          cmake -DCLANG_FORMAT="$(command -v clang-format)" \
+                -DLLVMDSDL_SOURCE_DIR="${GITHUB_WORKSPACE}" \
+                -P cmake/CheckClangFormat.cmake
+
+      - name: Configure (ci preset)
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
+
+      - name: Build (Debug)
+        # clang-tidy parses each translation unit itself, but only after TableGen and configure_file
+        # have produced the headers those units include.
+        run: cmake --build --preset build-ci
+
+      - name: Check source diagnostics
+        run: cmake --build build/matrix/ci --config Debug --target check-clang-tidy
+
   linux:
     name: Full suite (linux / toolshed)
     # A label change proves nothing about the code; see the `labeled` note on the trigger.

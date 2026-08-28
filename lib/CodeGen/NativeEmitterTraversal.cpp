@@ -17,6 +17,8 @@
 
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl

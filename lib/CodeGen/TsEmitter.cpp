@@ -12,11 +12,17 @@
 ///
 /// This file emits TypeScript models, codec entry points, and runtime wiring from lowering contracts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
+#include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
 #include <cctype>
@@ -25,13 +31,11 @@
 #include <optional>
 #include <set>
 #include <sstream>
-#include <unordered_map>
+#include <string>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
-#include <system_error>
 #include <utility>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
@@ -55,7 +59,6 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
@@ -132,11 +135,7 @@ public:
         return index_.find(ref);
     }
 
-    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable for the same
-    /// reason `trace` is const: the free render functions are handed a `const EmitterContext&`.
-    mutable std::map<std::string, std::string> importAliases_;
-
-    std::string namespacePath(const DiscoveredDefinition& info) const
+    static std::string namespacePath(const DiscoveredDefinition& info)
     {
         return renderNamespaceRelativePath(CodegenNamingLanguage::TypeScript, info.namespaceComponents)
             .generic_string();
@@ -193,7 +192,7 @@ public:
         importAliases_ = std::move(aliases);
     }
 
-    std::string fileStem(const DiscoveredDefinition& info) const
+    static std::string fileStem(const DiscoveredDefinition& info)
     {
         return renderVersionedFileStem(CodegenNamingLanguage::TypeScript,
                                        info.shortName,
@@ -201,7 +200,7 @@ public:
                                        info.minorVersion);
     }
 
-    std::filesystem::path relativeFilePath(const DiscoveredDefinition& info) const
+    static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
     {
         return renderRelativeTypeFilePath(CodegenNamingLanguage::TypeScript, info, "ts");
     }
@@ -217,9 +216,13 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
+    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable for the same
+    /// reason `trace` is const: the free render functions are handed a `const EmitterContext&`.
+    mutable std::map<std::string, std::string> importAliases_;
+
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*  traceSink_ = nullptr;
+    EmitTraceSink*     traceSink_ = nullptr;
 };
 
 std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -253,7 +256,7 @@ std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext&
 
 std::string tsFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    const auto base = tsFieldBaseType(type, ctx);
+    auto base = tsFieldBaseType(type, ctx);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -281,7 +284,7 @@ std::string moduleAliasFromPath(const std::string& modulePath)
 {
     std::string alias;
     alias.reserve(modulePath.size() + 8);
-    for (char c : modulePath)
+    for (char const c : modulePath)
     {
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
         {
@@ -305,8 +308,8 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section);
-    const auto  prefixupper =
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section);
+    const auto        prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {
@@ -348,7 +351,7 @@ void emitDeprecationJsDocTs(std::ostringstream& out,
     // the JSDoc tag, so it is dropped here.
     const std::string notice = deprecationNotice(fullName, majorVersion, minorVersion);
     const std::string prefix = "Deprecated: ";
-    const std::string body   = notice.rfind(prefix, 0) == 0 ? notice.substr(prefix.size()) : notice;
+    const std::string body   = notice.starts_with(prefix) ? notice.substr(prefix.size()) : notice;
 
     // Wrapped and split across lines for the same reason the notice itself is: a single-line JSDoc
     // block would be twice the width of the code around it. Budget allows for the " * " continuation.
@@ -427,7 +430,7 @@ void emitUnionSectionType(std::ostringstream&    out,
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
                 << tsFieldType(field->resolvedType, ctx) << "; }";
-        const auto prefix = i == 0 ? "  | " : "  | ";
+        const auto* const prefix = "  | ";
         emitLine(out, 0, prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
     }
 }
@@ -487,7 +490,7 @@ std::string normalizeTsDeserScalarExpr(const RuntimeFieldPlan&        field,
     {
         return rawExpr;
     }
-    const auto helperCall = helpers.deserScalar + "(" + rawExpr + ")";
+    auto helperCall = helpers.deserScalar + "(" + rawExpr + ")";
     if (field.kind == RuntimeFieldKind::Unsigned || field.kind == RuntimeFieldKind::Signed)
     {
         return field.useBigInt ? ("BigInt(" + helperCall + ")") : ("Number(" + helperCall + ")");
@@ -844,10 +847,10 @@ public:
 
     void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
     {
-        const auto& field      = operation_.body.field;
-        const auto& helpers    = operation_.body.helpers;
-        const auto  bits       = std::to_string(field.bitLength);
-        const auto  saturating = field.castMode == CastMode::Saturated ? "true" : "false";
+        const auto&       field      = operation_.body.field;
+        const auto&       helpers    = operation_.body.helpers;
+        const auto        bits       = std::to_string(field.bitLength);
+        const auto* const saturating = field.castMode == CastMode::Saturated ? "true" : "false";
         switch (step.kind)
         {
         case FieldStepKind::ScalarBool:
@@ -1163,10 +1166,15 @@ private:
     std::string arrayElemType() const
     {
         const auto& field = operation_.body.field;
-        return field.kind == RuntimeFieldKind::Bool
-                   ? "boolean"
-                   : (field.kind == RuntimeFieldKind::Composite ? compositeTypeName(field, ctx_)
-                                                                : (field.useBigInt ? "bigint" : "number"));
+        if (field.kind == RuntimeFieldKind::Bool)
+        {
+            return "boolean";
+        }
+        if (field.kind == RuntimeFieldKind::Composite)
+        {
+            return compositeTypeName(field, ctx_);
+        }
+        return field.useBigInt ? "bigint" : "number";
     }
 
     std::ostringstream&               out_;
@@ -1321,7 +1329,6 @@ llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
 
     if (operationPlan->isUnion)
     {
-        const auto tagBits = std::to_string(operationPlan->unionTagBits);
         ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
         emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
         emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
@@ -1482,7 +1489,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         responseRuntimePlan        = &(*responseRuntimePlanStorage);
     }
 
-    const auto ownerPath = ctx.relativeFilePath(def.info);
+    const auto ownerPath = llvmdsdl::EmitterContext::relativeFilePath(def.info);
 
     // Disambiguate before anything is rendered.
     //
@@ -1502,7 +1509,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                 {
                     auto&      bucket = byShortName[ctx.typeName(referenced->info)];
                     const auto key    = EmitterContext::importAliasKey(referenced->info);
-                    const bool seen   = std::any_of(bucket.begin(), bucket.end(), [&](const auto* other) {
+                    const bool seen   = std::ranges::any_of(bucket, [&](const auto* other) {
                         return EmitterContext::importAliasKey(*other) == key;
                     });
                     if (!seen)
@@ -1616,6 +1623,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             {
                 rendered += ", ";
             }
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             rendered += (original == local) ? original : (original + " as " + local);
         }
         return rendered;
@@ -1753,16 +1761,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
 std::string renderPackageJson(const TsEmitOptions& options)
 {
-    const auto runtimeSpecialization =
+    const auto* const runtimeSpecialization =
         options.runtimeSpecialization == TsRuntimeSpecialization::Fast ? "fast" : "portable";
     std::ostringstream out;
     out << "{\n";
-    out << "  \"name\": \"" << options.moduleName << "\",\n";
-    out << "  \"version\": \"" << llvmdsdl::kVersionString << "\",\n";
+    out << R"(  "name": ")" << options.moduleName << "\",\n";
+    out << R"(  "version": ")" << llvmdsdl::kVersionString << "\",\n";
     out << "  \"type\": \"module\",\n";
     out << "  \"llvmdsdl\": {\n";
-    out << "    \"generatorVersion\": \"" << llvmdsdl::kVersionString << "\",\n";
-    out << "    \"tsRuntimeSpecialization\": \"" << runtimeSpecialization << "\"\n";
+    out << R"(    "generatorVersion": ")" << llvmdsdl::kVersionString << "\",\n";
+    out << R"(    "tsRuntimeSpecialization": ")" << runtimeSpecialization << "\"\n";
     out << "  }\n";
     out << "}\n";
     return out.str();
@@ -2132,8 +2140,8 @@ llvm::Error emitTs(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
-    std::filesystem::path outRoot(options.outDir);
-    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    std::filesystem::path const outRoot(options.outDir);
+    const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
     // them is independent of which definitions were selected -- except under `as-needed`, which
@@ -2180,7 +2188,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         }
         ordered.push_back(&def);
     }
-    std::sort(ordered.begin(), ordered.end(), [](const auto* lhs, const auto* rhs) {
+    std::ranges::sort(ordered, [](const auto* lhs, const auto* rhs) {
         if (lhs->info.fullName != rhs->info.fullName)
         {
             return lhs->info.fullName < rhs->info.fullName;
@@ -2198,7 +2206,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath = ctx.relativeFilePath(def->info);
+        const auto                     relPath = llvmdsdl::EmitterContext::relativeFilePath(def->info);
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
@@ -2232,6 +2240,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         }
         ++useCount;
 
+        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
         emitLine(index, 0, "export * as " + alias + " from \"./" + modulePath + "\";");
     }
 

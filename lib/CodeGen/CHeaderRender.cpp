@@ -16,6 +16,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CHeaderRender.h"
+#include <cstdint>
+#include <string>
+#include <vector>
 
 namespace llvmdsdl
 {

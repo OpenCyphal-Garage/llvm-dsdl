@@ -17,7 +17,15 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
+#include <cstdint>
+#include <filesystem>
+#include <llvm/ADT/StringRef.h>
+#include <string>
+#include <vector>
 
 namespace llvmdsdl
 {

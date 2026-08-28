@@ -18,10 +18,23 @@
 #include "llvm/Support/JSON.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
+#include <iterator>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <system_error>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {
@@ -32,7 +45,7 @@ constexpr std::uint32_t RankingSignalSchemaVersion = 1;
 
 std::string toLower(std::string text)
 {
-    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
+    std::ranges::transform(text, text.begin(), [](const unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
     return text;
@@ -40,12 +53,12 @@ std::string toLower(std::string text)
 
 bool startsWith(const std::string& text, const std::string& prefix)
 {
-    return text.size() >= prefix.size() && text.rfind(prefix, 0U) == 0U;
+    return text.size() >= prefix.size() && text.starts_with(prefix);
 }
 
 bool contains(const std::string& text, const std::string& needle)
 {
-    return needle.empty() || text.find(needle) != std::string::npos;
+    return needle.empty() || text.contains(needle);
 }
 
 double subsequenceScore(const std::string& text, const std::string& pattern)
@@ -99,8 +112,7 @@ double kindBoostSymbol(const std::int64_t kind)
     {
     case 23:  // Struct
         return 2.0;
-    case 8:  // Field
-        return 1.0;
+    case 8:   // Field
     case 14:  // Constant
         return 1.0;
     default:
@@ -159,10 +171,10 @@ RankingBreakdown scoreCommon(const std::string&                  query,
 
     if (signal.has_value())
     {
-        const double exposure = static_cast<double>(signal->exposureCount);
-        const double selected = static_cast<double>(signal->selectionCount);
+        const auto exposure = static_cast<double>(signal->exposureCount);
+        const auto selected = static_cast<double>(signal->selectionCount);
 
-        out.frequencyBoost = std::log1p(exposure * 0.25 + selected * 2.0) * 2.5;
+        out.frequencyBoost = std::log1p((exposure * 0.25) + (selected * 2.0)) * 2.5;
         out.frequencyBoost = std::min(10.0, out.frequencyBoost);
 
         const std::uint64_t age   = nowTick > signal->lastTick ? (nowTick - signal->lastTick) : 0U;
@@ -172,7 +184,7 @@ RankingBreakdown scoreCommon(const std::string&                  query,
 
     out.lengthPenalty = -std::min(4.0, static_cast<double>(primary.size()) / 64.0);
     out.totalScore    = out.lexicalBase + out.matchQuality + out.fuzzyBoost + out.frequencyBoost + out.recencyBoost +
-                     out.kindBoost + out.lengthPenalty;
+                        out.kindBoost + out.lengthPenalty;
     return out;
 }
 
@@ -210,20 +222,20 @@ AdaptiveSignalStore::AdaptiveSignalStore(std::string persistencePath, const std:
     : persistencePath_(std::move(persistencePath))
     , maxEntries_(std::max<std::size_t>(1, maxEntries))
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     loadLocked();
 }
 
 std::uint64_t AdaptiveSignalStore::currentTick() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return nextTick_;
 }
 
 std::optional<RankingSignal> AdaptiveSignalStore::signalFor(const std::string& key) const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto                  it = signals_.find(key);
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = signals_.find(key);
     if (it == signals_.end())
     {
         return std::nullopt;
@@ -252,7 +264,7 @@ void AdaptiveSignalStore::noteTopExposures(const std::vector<std::string>& keys,
 
 bool AdaptiveSignalStore::flush()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     if (!dirty_)
     {
         return true;
@@ -272,7 +284,7 @@ bool AdaptiveSignalStore::flush()
     }
 
     std::vector<std::pair<std::string, RankingSignal>> ordered(signals_.begin(), signals_.end());
-    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+    std::ranges::sort(ordered, [](const auto& lhs, const auto& rhs) {
         return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
     });
 
@@ -331,7 +343,7 @@ bool AdaptiveSignalStore::flush()
 
 std::size_t AdaptiveSignalStore::size() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return signals_.size();
 }
 
@@ -342,8 +354,8 @@ void AdaptiveSignalStore::noteEvent(const std::string& key, const bool selection
         return;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    RankingSignal&              signal = signals_[key];
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    RankingSignal&                     signal = signals_[key];
     signal.exposureCount =
         selection ? signal.exposureCount : std::min<std::uint32_t>(signal.exposureCount + 1U, 100000U);
     signal.selectionCount =
@@ -362,7 +374,7 @@ void AdaptiveSignalStore::pruneLocked()
     }
 
     std::vector<std::pair<std::string, RankingSignal>> ordered(signals_.begin(), signals_.end());
-    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+    std::ranges::sort(ordered, [](const auto& lhs, const auto& rhs) {
         return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
     });
 
@@ -406,7 +418,7 @@ void AdaptiveSignalStore::loadLocked()
     }
 
     const auto schema = object->getInteger("schema_version");
-    if (!schema.has_value() || *schema != RankingSignalSchemaVersion)
+    if (!schema.has_value() || std::cmp_not_equal(*schema, RankingSignalSchemaVersion))
     {
         return;
     }

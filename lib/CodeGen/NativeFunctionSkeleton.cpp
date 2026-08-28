@@ -19,8 +19,11 @@
 #include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
 #include "llvm/Support/Error.h"
+#include <string>
+#include <utility>
 
 namespace llvmdsdl
 {

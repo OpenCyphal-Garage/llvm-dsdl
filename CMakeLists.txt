@@ -146,9 +146,19 @@ endif()
 # HandleLLVMOptions already gives every target LLVM's warning set (-Wall -Wextra
 # plus the -W flags LLVM curates), but it only appends -Werror when
 # LLVM_ENABLE_WERROR is set, and that option lives in LLVM's own top-level
-# CMakeLists -- it is undefined in a standalone project like this one. So the
-# warnings were being printed and ignored. Turn them back into build failures.
+# CMakeLists -- it is undefined in a standalone project like this one.
 #
+# Deliberately not behind a project option: a warning here is a defect report,
+# and the answer to one is to fix the code. The warning set is not uniform
+# across compilers -- CI builds the primary lane with GCC and the sanitizer lane
+# with Clang -- so this fires on diagnostics a single local toolchain never
+# shows.
+#
+# CMAKE_COMPILE_WARNING_AS_ERROR (CMake 3.24+, which this project already
+# requires) rather than appending -Werror to CMAKE_CXX_FLAGS: it spells itself
+# /WX on MSVC without a second branch here, and leaves
+# try_compile/check_*_compiler_flag probes alone, so a probe for an unsupported
+# flag still fails for the right reason.
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
 set(LLVMDSDL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
@@ -162,13 +172,6 @@ find_program(LLVMDSDL_CLANG_FORMAT_EXE
 find_program(LLVMDSDL_CLANG_TIDY_EXE
   NAMES clang-tidy clang-tidy-21 clang-tidy-20 clang-tidy-19
         clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy-15
-)
-
-find_program(LLVMDSDL_IWYU_EXE
-  NAMES include-what-you-use iwyu include-what-you-use-21
-        include-what-you-use-20 include-what-you-use-19
-        include-what-you-use-18 include-what-you-use-17
-        include-what-you-use-16 include-what-you-use-15
 )
 
 find_program(LLVMDSDL_PYTHON3_EXE
@@ -400,12 +403,6 @@ if(NOT LLVMDSDL_CLANG_TIDY_EXE)
     "until it is installed.")
 endif()
 
-if(NOT LLVMDSDL_IWYU_EXE)
-  message(WARNING
-    "include-what-you-use not found; check-iwyu target will fail "
-    "until it is installed.")
-endif()
-
 if(NOT LLVMDSDL_PYTHON3_EXE)
   message(WARNING
     "python3 not found; Python wheel staging targets will fail "
@@ -448,22 +445,6 @@ add_custom_target(check-clang-tidy
   USES_TERMINAL
   VERBATIM
   COMMENT "Checking source diagnostics with clang-tidy"
-)
-
-add_custom_target(check-iwyu
-  COMMAND
-    ${CMAKE_COMMAND}
-      -DINCLUDE_WHAT_YOU_USE=${LLVMDSDL_IWYU_EXE}
-      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
-      -DLLVMDSDL_BINARY_DIR=${LLVMDSDL_BINARY_DIR}
-      -P ${LLVMDSDL_SOURCE_DIR}/cmake/CheckIncludeWhatYouUse.cmake
-  USES_TERMINAL
-  VERBATIM
-  COMMENT "Checking source includes with include-what-you-use"
-)
-
-add_custom_target(check-include-what-you-use
-  DEPENDS check-iwyu
 )
 
 add_custom_target(distclean

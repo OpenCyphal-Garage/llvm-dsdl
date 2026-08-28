@@ -44,9 +44,7 @@ public:
     /// @param[in] out Output stream.
     /// @param[in] maxContentLength Largest `Content-Length` accepted before the
     /// frame is rejected without allocating the payload buffer.
-    JsonRpcStdioTransport(std::istream& in,
-                          std::ostream& out,
-                          std::size_t   maxContentLength = kDefaultMaxContentLength);
+    JsonRpcStdioTransport(std::istream& in, std::ostream& out, std::size_t maxContentLength = kDefaultMaxContentLength);
 
     /// @brief Reads one framed JSON-RPC message.
     /// @param[out] message Parsed JSON payload.

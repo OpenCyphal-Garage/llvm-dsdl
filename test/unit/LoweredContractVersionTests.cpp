@@ -9,6 +9,8 @@
 
 #include <iostream>
 
+#include "UnitTests.h"
+
 bool runLoweredContractVersionTests()
 {
     bool ok = true;

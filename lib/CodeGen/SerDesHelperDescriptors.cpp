@@ -17,9 +17,13 @@
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <set>
+#include <string>
 #include <utility>
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl

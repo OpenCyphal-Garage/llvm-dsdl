@@ -5,10 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <llvm/ADT/STLExtras.h>
+#include <algorithm>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -42,6 +40,8 @@
 #include "llvm/Support/Error.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -129,14 +129,7 @@ std::optional<mlir::OwningOpRef<mlir::ModuleOp>> lowerFixture(llvmdsdl::Diagnost
 
 bool hasDiagnosticContaining(const llvmdsdl::DiagnosticEngine& diagnostics, const std::string& needle)
 {
-    for (const auto& d : diagnostics.diagnostics())
-    {
-        if (d.message.find(needle) != std::string::npos)
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diagnostics.diagnostics(), [&](const auto& d) { return d.message.contains(needle); });
 }
 
 bool removeFirstIoAttribute(mlir::ModuleOp module, const std::string& attrName)
@@ -273,20 +266,14 @@ bool runLoweringMetadataFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend +
-                                              " backend validation"))
+                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
         {
             return false;
         }
     }
 
     auto cModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>((*malformed)->clone()));
-    if (!expectCEmitterFailure(*semantic, *cModule, "MLIR schema coverage validation failed for C emission"))
-    {
-        return false;
-    }
-
-    return true;
+    return expectCEmitterFailure(*semantic, *cModule, "MLIR schema coverage validation failed for C emission");
 }
 
 bool runSchemaIdentityFamilyTests(mlir::MLIRContext& context)
@@ -320,8 +307,7 @@ bool runSchemaIdentityFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend +
-                                              " backend validation"))
+                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
         {
             return false;
         }

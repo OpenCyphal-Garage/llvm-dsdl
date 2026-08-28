@@ -10,6 +10,8 @@
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 
+#include "UnitTests.h"
+
 bool runCodegenDiagnosticTextTests()
 {
     namespace text = llvmdsdl::codegen_diagnostic_text;

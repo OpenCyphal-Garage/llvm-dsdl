@@ -7,65 +7,7 @@
 
 #include <iostream>
 
-bool runLexerTests();
-bool runParserTests();
-bool runConformanceTests();
-bool runBitLengthSetTests();
-bool runIntegerMathTests();
-bool runFlatSetTests();
-bool runEvaluatorTests();
-bool runDepfileRenderTests();
-bool runDepfilePlannerTests();
-bool runTargetResolutionTests();
-bool runSupportGenerationTests();
-bool runAnalyzerTests();
-bool runRuntimeTests();
-bool runArrayWirePlanTests();
-bool runCHeaderRenderTests();
-bool runCodegenDiagnosticTextTests();
-bool runConstantLiteralRenderTests();
-bool runCompositeImportGraphTests();
-bool runDefinitionDependenciesTests();
-bool runDefinitionIndexTests();
-bool runDefinitionPathProjectionTests();
-bool runNativeHelperContractTests();
-bool runLoweredBodyPlanTests();
-bool runLoweredFactsLookupTests();
-bool runLoweredRenderIRTests();
-bool runNativeEmitterTraversalTests();
-bool runSectionHelperBindingPlanTests();
-bool runSerDesStatementPlanTests();
-bool runScriptedBodyPlanTests();
-bool runScriptedOperationPlanTests();
-bool runHelperBindingRenderTests();
-bool runHelperBindingNamingTests();
-bool runRuntimeHelperBindingsTests();
-bool runNamingPolicyTests();
-bool runNamingGoldenTests();
-bool runRuntimeLoweredPlanTests();
-bool runRuntimeLoweredOrderingTests();
-bool runHelperSymbolResolverTests();
-bool runWireLayoutFactsTests();
-bool runTypeStorageTests();
-bool runStorageTypeTokensTests();
-bool runLoweredContractVersionTests();
-bool runLoweredMetadataHardeningTests();
-bool runUavcanEmbeddedCatalogTests();
-bool runLspDocumentStoreTests();
-bool runLspRequestSchedulerTests();
-bool runLspAnalysisTests();
-bool runLspIndexTests();
-bool runLspLintTests();
-bool runLspRankingTests();
-bool runLspServerTests();
-bool runLspTelemetryAuditTests();
-bool runLspRobustnessTests();
-bool runLspPositionEncodingTests();
-bool runLspStructuredLoggingTests();
-bool runLspAdversarialRequestTests();
-bool runLspJsonRpcFuzzTests();
-bool runLexerFuzzTests();
-bool runParserFuzzTests();
+#include "UnitTests.h"
 
 int main()
 {
@@ -75,6 +17,8 @@ int main()
     ok      = runConformanceTests() && ok;
     ok      = runBitLengthSetTests() && ok;
     ok      = runIntegerMathTests() && ok;
+    ok      = runTargetLanguagesTests() && ok;
+    ok      = runCliPathTests() && ok;
     ok      = runFlatSetTests() && ok;
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;

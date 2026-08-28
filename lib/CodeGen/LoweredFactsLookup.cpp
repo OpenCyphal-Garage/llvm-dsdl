@@ -15,6 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include <llvm/ADT/StringRef.h>
 
 namespace llvmdsdl
 {

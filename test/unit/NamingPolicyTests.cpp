@@ -19,6 +19,8 @@
 
 #include "llvmdsdl/Support/NamingPolicy.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -77,7 +79,7 @@ std::string emitterMacroToken(std::string token)
 {
     for (char& c : token)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             c = '_';
         }
@@ -127,9 +129,15 @@ bool runNamingRoleTests()
             // Fields: C/C++/Rust keep the DSDL spelling (CEmitter.cpp, CppEmitter.cpp, RustEmitter.cpp
             // all call codegenSanitizeIdentifier); Go exports PascalCase (GoEmitter.cpp
             // toExportedIdent); TypeScript and Python fold to snake_case.
-            const std::string fieldOracle = (cLike || rustLike) ? codegenSanitizeIdentifier(language, name)
-                                            : goLike            ? codegenToPascalCaseIdentifier(language, name)
-                                                                : codegenToSnakeCaseIdentifier(language, name);
+            std::string fieldOracle = codegenToSnakeCaseIdentifier(language, name);
+            if (cLike || rustLike)
+            {
+                fieldOracle = codegenSanitizeIdentifier(language, name);
+            }
+            else if (goLike)
+            {
+                fieldOracle = codegenToPascalCaseIdentifier(language, name);
+            }
             ok = expectRole(language, IdentifierRole::FieldName, name, fieldOracle, "the field call site") && ok;
 
             // Constants: C and C++ build macro tokens, the other four use the shared UPPER_SNAKE
@@ -370,6 +378,7 @@ bool runNamingInjectivityTests()
 {
     // A deterministic sequence: a fixed seed makes a failure reproducible, and nothing here depends
     // on the values being unpredictable.
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
     std::mt19937 rng(20260820U);
 
     static const std::array<llvm::StringRef, 12> kPieces =

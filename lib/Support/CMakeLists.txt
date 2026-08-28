@@ -8,6 +8,7 @@
 #===----------------------------------------------------------------------===#
 
 add_library(llvmdsdlSupport
+  CliPath.cpp
   DefinitionNaming.cpp
   Diagnostics.cpp
   NameCanonicalization.cpp

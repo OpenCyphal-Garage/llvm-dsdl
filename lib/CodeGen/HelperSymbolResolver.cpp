@@ -18,6 +18,10 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include <cstdint>
+#include <optional>
+#include <string>
 
 namespace llvmdsdl
 {
@@ -82,10 +86,7 @@ std::optional<ArrayLengthHelperDescriptor> resolveArrayLengthHelperDescriptor(
 {
     return buildArrayLengthHelperDescriptor(type,
                                             prefixBitsOverride,
-                                            (direction == HelperBindingDirection::Serialize)
-                                                ? (fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{})
-                                                : (fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper
-                                                              : std::string{}),
+                                            arrayLengthPrefixHelper(direction, fieldFacts),
                                             fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
 }
 

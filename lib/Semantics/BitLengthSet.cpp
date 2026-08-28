@@ -22,15 +22,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 #include "llvmdsdl/Support/IntegerMath.h"
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <limits>
 #include <map>
-#include <numeric>
+#include <memory>
 #include <optional>
+#include <set>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -71,7 +77,7 @@ struct ResidueSet final
     explicit ResidueSet(const std::int64_t m)
         : modulus(m)
     {
-        const std::size_t words = static_cast<std::size_t>((m + 63) / 64);
+        const auto words = static_cast<std::size_t>((m + 63) / 64);
         if (words > 1)
         {
             high.assign(words - 1, 0ULL);
@@ -112,7 +118,10 @@ struct ResidueSet final
     }
 
     /// @brief Applies `fn(residue)` to each present residue in ascending order.
+    // fn is invoked once per element, so forwarding it would hand the first call an object the
+    // rest still need.
     template <typename Fn>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     void forEach(Fn&& fn) const
     {
         for (std::size_t wi = 0; wi < wordCount(); ++wi)
@@ -197,7 +206,7 @@ ResidueSet exactlyKSumMod(const ResidueSet& r, const std::int64_t count, const s
         {
             const std::int64_t j      = it->second;
             const std::int64_t period = i - j;
-            const std::int64_t idx    = j + (count - j) % period;
+            const std::int64_t idx    = j + ((count - j) % period);
             return seq[static_cast<std::size_t>(idx)];
         }
         seen.emplace(cur, i);
@@ -277,6 +286,11 @@ struct BitLengthSet::Node final
 
     Node() = default;
 
+    Node(const Node&)            = delete;
+    Node& operator=(const Node&) = delete;
+    Node(Node&&)                 = delete;
+    Node& operator=(Node&&)      = delete;
+
     /// @brief Iterative teardown so destroying a deep chain does not recurse.
     ///
     /// The default destructor would release `lhs`/`rhs` recursively: freeing the head of an
@@ -285,6 +299,8 @@ struct BitLengthSet::Node final
     /// reference to a node, steal ITS children first so its own destruction finds nothing to
     /// recurse into. The `const_cast` is safe: `use_count() == 1` means we are the sole owner of a
     /// node that is about to be destroyed, so mutating it is unobservable.
+    // Only the worklist allocation can throw, and an OOM during teardown has nowhere to report to.
+    // NOLINTNEXTLINE(bugprone-exception-escape)
     ~Node()
     {
         std::vector<std::shared_ptr<const Node>> pending;
@@ -298,10 +314,11 @@ struct BitLengthSet::Node final
         }
         while (!pending.empty())
         {
-            std::shared_ptr<const Node> node = std::move(pending.back());
+            std::shared_ptr<const Node> const node = std::move(pending.back());
             pending.pop_back();
             if (node.use_count() == 1)
             {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) -- sole owner; see the ~Node comment.
                 Node* const owned = const_cast<Node*>(node.get());
                 if (owned->lhs)
                 {
@@ -802,7 +819,7 @@ struct BitLengthSet::Node final
             {
                 continue;
             }
-            stack.push_back({item.first, true});
+            stack.emplace_back(item.first, true);
             switch (node->kind)
             {
             case Kind::Leaf:
@@ -972,7 +989,7 @@ BitLengthSet::BitLengthSet(std::int64_t value)
 {
 }
 
-BitLengthSet::BitLengthSet(std::set<std::int64_t> values)
+BitLengthSet::BitLengthSet(const std::set<std::int64_t>& values)
 {
     auto leaf  = std::make_shared<Node>();
     leaf->kind = Node::Kind::Leaf;
@@ -1013,24 +1030,26 @@ const std::shared_ptr<const BitLengthSet::Node>& BitLengthSet::zeroLeaf()
     return leaf;
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) -- only zeroLeaf()'s one-time init can throw.
 BitLengthSet::BitLengthSet(BitLengthSet&& other) noexcept
     : root_(std::move(other.root_))
     , runSetCache_(std::move(other.runSetCache_))
 {
     // Leave the source denoting {0} rather than null, so any later use is well-defined. The
     // cache must not outlive the root it was computed for.
-    other.root_ = zeroLeaf();
-    other.runSetCache_.reset();
+    other.root_        = zeroLeaf();
+    other.runSetCache_ = nullptr;
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) -- only zeroLeaf()'s one-time init can throw.
 BitLengthSet& BitLengthSet::operator=(BitLengthSet&& other) noexcept
 {
     if (this != &other)
     {
-        root_        = std::move(other.root_);
-        runSetCache_ = std::move(other.runSetCache_);
-        other.root_  = zeroLeaf();
-        other.runSetCache_.reset();
+        root_              = std::move(other.root_);
+        runSetCache_       = std::move(other.runSetCache_);
+        other.root_        = zeroLeaf();
+        other.runSetCache_ = nullptr;
     }
     return *this;
 }
@@ -1187,10 +1206,9 @@ std::optional<bool> BitLengthSet::isSubsetOfExact(const BitLengthSet& other) con
     const auto rhsExpansion = other.expandChecked();
     if (lhsExpansion.exact && rhsExpansion.exact)
     {
-        return std::includes(rhsExpansion.values.begin(),
-                             rhsExpansion.values.end(),
-                             lhsExpansion.values.begin(),
-                             lhsExpansion.values.end());
+        return std::ranges::includes(rhsExpansion.values,
+
+                                     lhsExpansion.values);
     }
     return std::nullopt;
 }

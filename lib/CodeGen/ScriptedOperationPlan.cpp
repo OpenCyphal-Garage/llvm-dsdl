@@ -17,10 +17,19 @@
 
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 
+#include <cstdint>
+#include <llvm/Support/Error.h>
+#include <string>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
+#include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {
@@ -119,13 +128,13 @@ llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
         {
             const auto* const fieldFacts = findLoweredFieldFacts(sectionFacts, semanticField->name);
             operation.serializeSteps     = buildFieldEmitSteps(semanticField->resolvedType,
-                                                           fieldFacts,
-                                                           bodyField.arrayPrefixOverride,
-                                                           HelperBindingDirection::Serialize);
+                                                               fieldFacts,
+                                                               bodyField.arrayPrefixOverride,
+                                                               HelperBindingDirection::Serialize);
             operation.deserializeSteps   = buildFieldEmitSteps(semanticField->resolvedType,
-                                                             fieldFacts,
-                                                             bodyField.arrayPrefixOverride,
-                                                             HelperBindingDirection::Deserialize);
+                                                               fieldFacts,
+                                                               bodyField.arrayPrefixOverride,
+                                                               HelperBindingDirection::Deserialize);
         }
         else if (operation.valueKind == ScriptedFieldValueKind::Padding)
         {
@@ -138,7 +147,7 @@ llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
     {
         return std::move(contractErr);
     }
-    return llvm::Expected<ScriptedSectionOperationPlan>(std::move(out));
+    return {std::move(out)};
 }
 
 llvm::Error validateScriptedSectionOperationPlanContract(const ScriptedSectionOperationPlan& plan,

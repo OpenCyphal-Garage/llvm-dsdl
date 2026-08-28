@@ -1,13 +1,25 @@
 {
     "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
     "C_Cpp.intelliSenseEngine": "disabled",
-    "cSpell.language": "en-GB",
+    "cSpell.language": "en-GB,en-US",
+    "cSpell.ignoreRegExpList": [
+        "Compiler_Defines"
+    ],
+    "cSpell.patterns": [
+        {
+            "name": "Compiler_Defines",
+            "pattern": "/-D[a-zA-Z_][a-zA-Z0-9_]*/g"
+        }
+    ],
     "cSpell.words": [
+        "Aliasability",
         "appendable",
         "asan",
         "BITLENGTHSET",
+        "bugprone",
         "CEMITTER",
         "CODEGEN",
+        "cppcoreguidelines",
         "CPPEMITTER",
         "cstdint",
         "ctest",

@@ -15,8 +15,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
 
 namespace llvmdsdl
@@ -81,14 +85,7 @@ void DiagnosticEngine::error(const SourceLocation&             location,
 
 bool DiagnosticEngine::hasErrors() const
 {
-    for (const Diagnostic& d : diagnostics_)
-    {
-        if (d.level == DiagnosticLevel::Error)
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diagnostics_, [](const Diagnostic& d) { return d.level == DiagnosticLevel::Error; });
 }
 
 }  // namespace llvmdsdl

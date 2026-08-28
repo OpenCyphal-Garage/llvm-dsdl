@@ -16,9 +16,11 @@
 
 #include "llvmdsdl/Frontend/Parser.h"
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 
@@ -26,13 +28,19 @@
 #include "llvm/Support/Error.h"
 
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <llvm/ADT/ArrayRef.h>
+#include <memory>
 #include <optional>
 #include <regex>
+#include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace llvmdsdl
 {
@@ -57,7 +65,7 @@ std::string removeUnderscores(const std::string& s)
 {
     std::string out;
     out.reserve(s.size());
-    for (char c : s)
+    for (char const c : s)
     {
         if (c != '_')
         {
@@ -119,7 +127,7 @@ std::optional<__int128> parseIntegerLiteral(const std::string& in)
         {
             return std::nullopt;
         }
-        out = out * static_cast<unsigned __int128>(base) + static_cast<unsigned __int128>(v);
+        out = (out * static_cast<unsigned __int128>(base)) + static_cast<unsigned __int128>(v);
     }
     return static_cast<__int128>(out);
 }
@@ -130,9 +138,8 @@ std::optional<__int128> parseIntegerLiteral(const std::string& in)
 /// `.5` / `3.` real-literal reassembly performed by the expression parser.
 bool isDecimalIntegerLiteral(const std::string& text)
 {
-    return !(
-        text.size() >= 2 && text[0] == '0' &&
-        (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B' || text[1] == 'o' || text[1] == 'O'));
+    return text.size() < 2 || text[0] != '0' ||
+           (text[1] != 'x' && text[1] != 'X' && text[1] != 'b' && text[1] != 'B' && text[1] != 'o' && text[1] != 'O');
 }
 
 /// @brief True when @p text exactly matches `literal_integer_decimal`
@@ -157,8 +164,8 @@ bool tokensAdjacent(const Token& a, const Token& b)
 
 std::optional<Rational> parseRealLiteral(const std::string& in)
 {
-    std::string s    = removeUnderscores(in);
-    const auto  ePos = s.find_first_of("eE");
+    std::string const s    = removeUnderscores(in);
+    const auto        ePos = s.find_first_of("eE");
 
     std::string significand = s;
     int         exp         = 0;
@@ -198,7 +205,7 @@ std::optional<Rational> parseRealLiteral(const std::string& in)
     }
 
     std::int64_t num = 0;
-    for (char c : digits)
+    for (char const c : digits)
     {
         if (!std::isdigit(static_cast<unsigned char>(c)))
         {
@@ -208,7 +215,7 @@ std::optional<Rational> parseRealLiteral(const std::string& in)
         {
             return std::nullopt;
         }
-        num = num * 10 + (c - '0');
+        num = (num * 10) + (c - '0');
     }
     if (neg)
     {
@@ -308,8 +315,14 @@ void attachDocToStatement(StatementAST& statement, AttachedDoc doc)
     std::visit([&](auto& node) { node.doc = std::move(doc); }, statement);
 }
 
+// The lines are moved out individually and the source is cleared below; the && states that
+// contract to the caller.
+// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
 void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
 {
+    // Only the elements are moved out; doc.lines itself is never moved, so reading and clearing
+    // it below is well defined.
+    // NOLINTBEGIN(clang-analyzer-cplusplus.Move)
     std::visit(
         [&](auto& node) {
             node.doc.lines.insert(node.doc.lines.end(),
@@ -322,6 +335,7 @@ void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
     // *next* statement's doc -- so a stale size here prefixes every subsequent field's documentation
     // with one blank line per line of the preceding field's comment block.
     doc.lines.clear();
+    // NOLINTEND(clang-analyzer-cplusplus.Move)
 }
 
 struct CollectedDocTrivia final
@@ -373,7 +387,9 @@ bool Parser::match(TokenKind kind)
 
 bool Parser::matchAny(std::initializer_list<TokenKind> kinds)
 {
-    for (TokenKind k : kinds)
+    // This consumes the matched token, so it is not a predicate; any_of would hide the advance().
+    // NOLINTNEXTLINE(readability-use-anyofallof)
+    for (TokenKind const k : kinds)
     {
         if (check(k))
         {
@@ -741,7 +757,9 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
             {
                 return static_cast<std::uint32_t>(value);
             }
-        } catch (...)
+        }
+        // NOLINTNEXTLINE(bugprone-empty-catch) -- the failure is reported by the diagnostic below.
+        catch (...)
         {
         }
         if (!silent)
@@ -844,7 +862,7 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
         std::regex_match(name, std::regex(R"(^float[1-9][0-9]*$)")) ||
         std::regex_match(name, std::regex(R"(^void[1-9][0-9]*$)")))
     {
-        if (name.rfind("void", 0) == 0)
+        if (name.starts_with("void"))
         {
             VoidTypeExprAST v;
             const auto      bits = parseBitLength(name.substr(4));
@@ -881,7 +899,7 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 p.castMode  = CastMode::Truncated;
                 p.bitLength = 8;
             }
-            else if (name.rfind("uint", 0) == 0)
+            else if (name.starts_with("uint"))
             {
                 p.kind          = PrimitiveKind::UnsignedInt;
                 const auto bits = parseBitLength(name.substr(4));
@@ -895,7 +913,7 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 }
                 p.bitLength = *bits;
             }
-            else if (name.rfind("int", 0) == 0)
+            else if (name.starts_with("int"))
             {
                 p.kind          = PrimitiveKind::SignedInt;
                 const auto bits = parseBitLength(name.substr(3));
@@ -909,7 +927,7 @@ std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent)
                 }
                 p.bitLength = *bits;
             }
-            else if (name.rfind("float", 0) == 0)
+            else if (name.starts_with("float"))
             {
                 p.kind          = PrimitiveKind::Float;
                 const auto bits = parseBitLength(name.substr(5));

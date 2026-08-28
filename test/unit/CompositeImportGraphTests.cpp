@@ -5,12 +5,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+
+#include "UnitTests.h"
 
 namespace
 {

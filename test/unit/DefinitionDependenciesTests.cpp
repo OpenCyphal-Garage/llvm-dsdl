@@ -5,10 +5,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
+
+#include "UnitTests.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace
 {

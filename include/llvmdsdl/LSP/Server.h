@@ -59,6 +59,8 @@ public:
 
     Server(const Server&)            = delete;
     Server& operator=(const Server&) = delete;
+    Server(Server&&)                 = delete;
+    Server& operator=(Server&&)      = delete;
 
     /// @brief Handles one incoming JSON-RPC message.
     /// @param[in] message Parsed message object.
@@ -169,7 +171,6 @@ private:
     std::unique_ptr<AdaptiveSignalStore>                    signalStore_;
     std::string                                             signalStorePath_;
     std::unique_ptr<AiProvider>                             aiProvider_;
-    AiContextPacker                                         aiContextPacker_;
     mutable AiAuditLogger                                   aiAuditLogger_;
     std::unordered_map<std::string, AiCodeActionSuggestion> aiSuggestionsById_;
     std::unordered_set<std::string>                         publishedDiagnosticUris_;

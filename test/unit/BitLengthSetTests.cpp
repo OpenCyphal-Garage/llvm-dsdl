@@ -25,8 +25,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -34,6 +36,10 @@
 #include <vector>
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+
+#include "UnitTests.h"
+#include "llvmdsdl/Semantics/RunSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace
 {
@@ -111,14 +117,7 @@ ValueSet refModulo(const ValueSet& a, std::int64_t divisor)
 template <typename Range>
 bool isSubset(const Range& sub, const ValueSet& super)
 {
-    for (const auto v : sub)
-    {
-        if (super.count(v) == 0)
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(sub, [&](const auto v) { return super.count(v) != 0; });
 }
 
 template <typename Range>
@@ -300,6 +299,7 @@ void testUnionSemantics(TestContext& t)
     const BitLengthSet c(ValueSet{8});
 
     t.expectSetEq((a | b).expand(), {1, 2, 3}, "operator| denotes set union");
+    // NOLINTNEXTLINE(misc-redundant-expression) -- both sides equal is what idempotence means.
     t.expectSetEq((a | a).expand(), a.expand(), "| is idempotent");
     t.expectSetEq((a | b).expand(), (b | a).expand(), "| commutes");
     t.expectSetEq(((a | b) | c).expand(), (a | (b | c)).expand(), "| associates");
@@ -395,7 +395,7 @@ void testModulo(TestContext& t)
     {
         aligned.insert(16 * i);
     }
-    const auto residues = (BitLengthSet(aligned) | BitLengthSet(16 * 20000 + 7)).modulo(8);
+    const auto residues = (BitLengthSet(aligned) | BitLengthSet((16 * 20000) + 7)).modulo(8);
     t.expectSetEq(residues, {0, 7}, "modulo(8) is complete and sound for a ~20000-element set");
 
     // Symbolic residues compose exactly across the whole algebra, without enumerating S, and
@@ -561,7 +561,7 @@ void testValueDomainSafety(TestContext& t)
     t.expect(huge.padToAlignment(8).min() >= huge.min(), "saturated pad stays monotone (no wrap to negative)");
     t.expect((huge + BitLengthSet(10)).max() == kMax, "sum past INT64_MAX saturates");
     t.expect((huge + BitLengthSet(10)).min() >= 0, "saturated sum never wraps negative");
-    t.expect(BitLengthSet(kMax / 2 + 1).repeat(4).max() == kMax, "product past INT64_MAX saturates");
+    t.expect(BitLengthSet((kMax / 2) + 1).repeat(4).max() == kMax, "product past INT64_MAX saturates");
     t.expect(BitLengthSet(kMax).repeat(1000000).max() == kMax, "large repeat product saturates, no UB");
     // Saturated expansion is still a well-formed, non-empty set of non-negative values.
     const auto sat = (huge + BitLengthSet(ValueSet{0, 10})).expand();
@@ -701,6 +701,8 @@ void testPersistence(TestContext& t)
 
     // A moved-from object is left denoting {0} — every call on it is well-defined, not a
     // null-root crash. Both move-construction and move-assignment reset the source.
+    // Reading the moved-from source is the assertion.
+    // NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
     BitLengthSet       movedFromCtor(ValueSet{8, 16, 24});
     const BitLengthSet movedIntoCtor = std::move(movedFromCtor);
     t.expectSetEq(movedIntoCtor.expand(), {8, 16, 24}, "move-constructed target keeps the value");
@@ -715,6 +717,7 @@ void testPersistence(TestContext& t)
     assignTarget = std::move(movedFromAssign);
     t.expectSetEq(assignTarget.expand(), {40}, "move-assigned target keeps the value");
     t.expectSetEq(movedFromAssign.expand(), {0}, "move-assigned source is left denoting {0}");
+    // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 }
 
 // Spec examples: the composition patterns the semantic analyzer builds (structs, unions,
@@ -756,6 +759,8 @@ void testDsdlCompositionPatterns(TestContext& t)
 // verified differentially against the reference model over a composed-operation battery — and
 // its count/membership/subset/equality closed forms agree with enumeration. Exact relations work
 // beyond the expand() limit, and huge structured sets evaluate in closed form without enumeration.
+namespace
+{
 void testRunSet(TestContext& t)
 {
     using llvmdsdl::RunSet;
@@ -825,7 +830,7 @@ void testRunSet(TestContext& t)
         t.expect(rs->min() == *c.ref.begin() && rs->max() == *c.ref.rbegin(), "runSet bounds for " + c.name);
         for (const std::int64_t probe : {0LL, 1LL, 7LL, 8LL, 16LL, 23LL, 100LL})
         {
-            t.expect(rs->contains(probe) == (c.ref.count(probe) != 0),
+            t.expect(rs->contains(probe) == (c.ref.contains(probe)),
                      "runSet membership(" + std::to_string(probe) + ") for " + c.name);
         }
         // modulo: exact for divisors below AND above the symbolic-residue cap (the
@@ -850,7 +855,7 @@ void testRunSet(TestContext& t)
         if (rs)
         {
             t.expect(rs->count().value_or(0) == 9001, "vla offset count exact (9001)");
-            t.expect(rs->min() == 16 && rs->max() == 16 + 9000 * 8, "vla offset bounds");
+            t.expect(rs->min() == 16 && rs->max() == 16 + (9000 * 8), "vla offset bounds");
             t.expect(rs->contains(16) && rs->contains(24) && !rs->contains(17), "vla offset membership");
         }
         const auto huge = BitLengthSet(8).repeatRange(1000000000).runSet();
@@ -964,7 +969,7 @@ void testRunSet(TestContext& t)
             nearMax.reserve(200001);
             for (std::int64_t k = 200000; k >= 0; --k)
             {
-                nearMax.push_back(maxV - 8 * k);
+                nearMax.push_back(maxV - (8 * k));
             }
             llvmdsdl::FlatSet<std::int64_t> nearMaxSet;
             nearMaxSet.insert(nearMax.begin(), nearMax.end());
@@ -995,6 +1000,7 @@ void testRunSet(TestContext& t)
         t.expect(a.equalsExact(d) == std::optional<bool>{false}, "equalsExact rejects off-by-one-count huge set");
     }
 }
+}  // namespace
 
 bool runBitLengthSetTests()
 {

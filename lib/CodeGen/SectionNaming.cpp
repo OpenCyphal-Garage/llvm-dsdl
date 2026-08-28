@@ -13,6 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
+#include <string>
 
 namespace llvmdsdl
 {

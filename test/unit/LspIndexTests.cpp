@@ -6,13 +6,18 @@
 //===----------------------------------------------------------------------===//
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
-#include <thread>
+#include <system_error>
+#include <vector>
 
 #include "llvmdsdl/LSP/Index.h"
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -82,7 +87,7 @@ bool runLspIndexTests()
         return false;
     }
 
-    llvmdsdl::lsp::IndexStorage storage(cacheDir.string());
+    llvmdsdl::lsp::IndexStorage const storage(cacheDir.string());
 
     const std::string filePathA = (tmpRoot / "demo" / "TypeA.1.0.dsdl").lexically_normal().string();
     const std::string fileUriA  = std::string("file://") + filePathA;

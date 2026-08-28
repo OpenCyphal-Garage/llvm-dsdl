@@ -36,13 +36,13 @@ inline constexpr std::int64_t kLoweredSerDesContractVersion = kLoweredSerDesCont
 
 /// @brief Extracts the contract major version from encoded form.
 /// @details Version 1 encoding stores major directly.
-inline constexpr std::int64_t loweredSerDesContractMajorFromEncoded(const std::int64_t encodedVersion)
+constexpr std::int64_t loweredSerDesContractMajorFromEncoded(const std::int64_t encodedVersion)
 {
     return encodedVersion;
 }
 
 /// @brief True when the encoded contract version is supported by this build.
-inline constexpr bool isSupportedLoweredSerDesContractVersion(const std::int64_t encodedVersion)
+constexpr bool isSupportedLoweredSerDesContractVersion(const std::int64_t encodedVersion)
 {
     return loweredSerDesContractMajorFromEncoded(encodedVersion) == kLoweredSerDesContractMajor;
 }

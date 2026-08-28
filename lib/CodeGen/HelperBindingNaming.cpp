@@ -15,6 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
+#include <llvm/ADT/StringRef.h>
+#include <string>
 
 namespace llvmdsdl
 {
@@ -28,7 +31,7 @@ std::string renderHelperBindingIdentifier(const CodegenNamingLanguage language, 
     // two symbols there differ by helper kind and operand index, neither of which the collapse
     // touches. No other language reserves an interior double underscore, and none of them carry a
     // leading one here, so they keep the symbol as it is.
-    const std::string joined = "mlir_" + codegenSanitizeIdentifier(language, helperSymbol);
+    std::string joined = "mlir_" + codegenSanitizeIdentifier(language, helperSymbol);
     if (language != CodegenNamingLanguage::Cpp)
     {
         return joined;

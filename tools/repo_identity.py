@@ -88,6 +88,31 @@ SKIP_FILES = (IDENTITY_FILE,)
 # reader is meant to substitute -- /Users/<you>/, /home/$USER/ -- are not reported as defects.
 HOME_PATH = re.compile(r"/(?:Users|home)/[a-z][A-Za-z0-9._-]*/")
 
+# One path as written, used to decide what a HOME_PATH match is part of. Stops at whitespace and at
+# the characters that hold two paths in one word -- `PATH=a:b`, `--flag=path`, a quoted list -- so
+# that a substitution next to a literal path does not vouch for it.
+PATH_WORD = re.compile(r"""[^\s:=,;'"]+""")
+
+
+def commits_home_path(line: str) -> bool:
+    """Whether @p line writes an absolute path into somebody's home directory.
+
+    A match inside a word carrying a `%` is not one. That is a lit substitution -- `%t`, `%S` --
+    which lit expands to the run's own temporary directory, so `%t.home/home/manifests` is a
+    directory the test makes and throws away rather than a path off this machine. The
+    lit-substitution test for `~` expansion has to name a directory called `home` to have anything
+    for `~` to expand to.
+
+    The word has to carry the `%`. A literal name is still a defect wherever it sits, whether it
+    stands alone or arrives inside a URL -- the placeholders here are only so this sentence does
+    not trip its own rule.
+    """
+    for match in HOME_PATH.finditer(line):
+        word = next((w.group(0) for w in PATH_WORD.finditer(line) if w.start() <= match.start() < w.end()), "")
+        if "%" not in word:
+            return True
+    return False
+
 
 @dataclass(frozen=True)
 class Identity:
@@ -252,7 +277,7 @@ def scan(root: Path, identity: Identity, fix: bool) -> tuple[list[str], list[str
                 path.write_text(updated, encoding="utf-8")
 
         for number, line in enumerate(original.splitlines(), start=1):
-            if HOME_PATH.search(line):
+            if commits_home_path(line):
                 home_findings.append(f"{rel}:{number}: {line.strip()}")
             for url in unrecognised_hosts(line, identity):
                 host_findings.append(f"{rel}:{number}: {url}")

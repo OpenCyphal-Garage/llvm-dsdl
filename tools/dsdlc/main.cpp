@@ -12,6 +12,9 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <exception>
+#include <ios>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -19,6 +22,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -28,14 +32,15 @@
 #include <memory>
 #include <optional>
 #include <queue>
-#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <system_error>
 
+#include "TargetLanguages.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -50,6 +55,7 @@
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/DepfilePlanner.h"
+#include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Frontend/TargetResolution.h"
@@ -57,7 +63,10 @@
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/CliPath.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -85,7 +94,8 @@ void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink
         llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
         return;
     }
-    auto              events = sink.events();
+    auto events = sink.events();
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
     if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
     {
@@ -272,41 +282,30 @@ llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const ll
     return {all.begin(), all.end()};
 }
 
-bool isCodegenLanguage(llvm::StringRef language)
-{
-    return language == "c" || language == "cpp" || language == "rust" || language == "go" || language == "ts" ||
-           language == "python" || language == "obj";
-}
-
-// Languages whose output is source the caller then builds. The `obj` lane is excluded: it stages and
-// compiles its own sources, so its support code is an internal detail of a `.o`/`.a` artifact.
-bool emitsSourceTree(llvm::StringRef language)
-{
-    return isCodegenLanguage(language) && language != "obj";
-}
-
-bool isKnownLanguage(llvm::StringRef language)
-{
-    return isCodegenLanguage(language) || language == "ast" || language == "mlir";
-}
+using llvmdsdl::dsdlc::emitsSourceTree;
+using llvmdsdl::dsdlc::isCodegenLanguage;
+using llvmdsdl::dsdlc::isKnownLanguage;
 
 void printUsage()
 {
-    llvm::errs() << "Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] "
-                    "[target_files_or_root_namespace ...]\n"
+    llvm::errs() << "Usage: dsdlc --target-language <" << llvmdsdl::dsdlc::renderTargetLanguages("|")
+                 << "> [options] [target_files_or_root_namespace ...]\n"
                  << "Try: dsdlc --help\n";
 }
 
 void printHelp()
 {
     llvm::errs() << "NAME\n"
-                 << "  dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator\n\n"
+                 << "  dsdlc - DSDL multi-language code generator\n"
+                 << "\n"
                  << "SYNOPSIS\n"
                  << "  dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]\n"
                  << "  dsdlc --help\n"
-                 << "  dsdlc --version\n\n"
+                 << "  dsdlc --version\n"
+                 << "\n"
                  << "LANGUAGES\n"
-                 << "  ast | mlir | c | cpp | rust | go | ts | python | obj\n\n"
+                 << "  " << llvmdsdl::dsdlc::renderTargetLanguages(" | ") << "\n"
+                 << "\n"
                  << "TARGET OPTIONS\n"
                  << "  target_files_or_root_namespace\n"
                  << "      One or more DSDL files or root-namespace folders.\n"
@@ -316,16 +315,42 @@ void printHelp()
                  << "      Target the embedded uavcan catalog: a namespace (+uavcan.node), a type\n"
                  << "      (+uavcan.node.Heartbeat), or a version (+uavcan.node.Heartbeat.1.0).\n"
                  << "      Requires --target-language 'mlir' or a codegen language.\n"
-                 << "  --no-target-namespaces\n"
-                 << "      Reject folder positional targets.\n"
                  << "  --lookup-dir, -I <dir>\n"
                  << "      Repeatable lookup roots for dependency resolution and target root inference.\n"
-                 << "      Also merges DSDL_INCLUDE_PATH and CYPHAL_PATH.\n\n"
-                 << "COMMON OPTIONS\n"
                  << "  --target-language, -l <lang>\n"
-                 << "      Required output mode selector.\n"
+                 << "      (required) output mode selector.\n"
+                 << "\n"
+                 << "COMMON OPTIONS\n"
+                 << "  --help, -h\n"
+                 << "      Print this help text.\n"
+                 << "  --version, -V\n"
+                 << "      Print tool version and exit.\n"
+                 << "  --verbose, -v\n"
+                 << "      Increase verbosity (-v, -vv).\n"
+                 << "  --dry-run, -d\n"
+                 << "      Run full planning/validation without filesystem writes.\n"
                  << "  --outdir, -O <dir>\n"
                  << "      Output directory root for codegen languages (default: dsdl_out).\n"
+                 << "  --allow-unregulated-fixed-port-id\n"
+                 << "      Allow fixed port IDs outside regulated ranges.\n"
+                 << "\n"
+                 << "TYPE VERSIONING\n"
+                 << "  --versioned-type-names\n"
+                 << "      Put each type's version in its generated type name, so code that handles\n"
+                 << "      two versions of one type can keep them apart. Off by default: most code\n"
+                 << "      speaks one version and reads better without the suffix. Output file names\n"
+                 << "      carry the version either way, so this changes what you write, not what\n"
+                 << "      you include.\n"
+                 << "  --all-type-versions\n"
+                 << "      Generate every available version of each target type. By default, only\n"
+                 << "      the newest version of each type is generated.\n"
+                 << "  --no-deprecation-attributes\n"
+                 << "      Suppress the language-native deprecation attributes that @deprecated\n"
+                 << "      definitions carry by default in C, C++, and Rust. Use this when a\n"
+                 << "      -Werror build must keep using deprecated definitions. The deprecation\n"
+                 << "      notice and metadata constant are emitted regardless.\n"
+                 << "\n"
+                 << "BUILD SYSTEM INTEGRATION OPTIONS\n"
                  << "  --generate-support {always,never,as-needed,only}\n"
                  << "      Change the criteria used to enable or disable support code generation.\n"
                  << "      Support code is everything not derived from a definition: runtime\n"
@@ -334,62 +359,24 @@ void printHelp()
                  << "        always              - always generate support code.\n"
                  << "        never               - never generate support code.\n"
                  << "        only                - only generate support code.\n"
-                 << "      'always' and 'only' need no positional targets. Requires a\n"
-                 << "      source-emitting --target-language (c, cpp, rust, go, ts, python).\n"
-                 << "  --encode-reserved-identifiers\n"
-                 << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
-                 << "      namespace, encoding the offending characters instead of rejecting the\n"
-                 << "      definition. Rejecting is the default because the encoding is not pleasant\n"
-                 << "      to read; this is the escape hatch when renaming the definition is not an\n"
-                 << "      option.\n"
-                 << "  --versioned-type-names\n"
-                 << "      Put each type's version in its generated type name, so code that handles\n"
-                 << "      two versions of one type can keep them apart. Off by default: most code\n"
-                 << "      speaks one version and reads better without the suffix. Output file names\n"
-                 << "      carry the version either way, so this changes what you write, not what\n"
-                 << "      you include.\n"
-                 << "  --all-type-versions\n"
-                 << "      Generate every version of a type that the targets carry. By default only\n"
-                 << "      the newest version of each type is generated, because a corpus holding\n"
-                 << "      several otherwise forces a choice on everything that consumes the output:\n"
-                 << "      Go cannot compile two versions of a type into one package, and C and C++\n"
-                 << "      share a scope across versions. Naming a version keeps it either way --\n"
-                 << "      as a file, with colon syntax, or as +<name>.<major>.<minor>.\n"
+                 << "  --omit-dependencies\n"
+                 << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
-                 << "      as, for every target language this invocation names. Answers 'what did\n"
-                 << "      my field become' without reading generated source, and lets a build\n"
-                 << "      reference a generated symbol without reimplementing the projection.\n"
+                 << "      as, for every target language this invocation names.\n"
                  << "      Not written under --dry-run, --list-inputs or --list-outputs.\n"
                  << "  --prune-manifest <file>\n"
                  << "      Record this run's outputs in <file> and, on the next run, delete the\n"
                  << "      outputs it recorded that are no longer produced. One manifest per dsdlc\n"
-                 << "      invocation: a build that splits a namespace into tranches gives each\n"
-                 << "      tranche its own, so a tranche prunes only what it owns. Removals are\n"
-                 << "      confined to --outdir. Ignored under --dry-run and the --list-* modes.\n"
-                 << "  --optimize-lowered-serdes\n"
-                 << "      Enable optional MLIR optimization for lowered serialization plans.\n"
-                 << "  --no-deprecation-attributes\n"
-                 << "      Suppress the language-native deprecation attributes that @deprecated\n"
-                 << "      definitions carry by default in C, C++, and Rust. Use this when a\n"
-                 << "      -Werror build must keep using deprecated definitions. The deprecation\n"
-                 << "      notice and metadata constant are emitted regardless.\n"
+                 << "      invocation. Removals are confined to --outdir. Ignored under --dry-run \n"
+                 << "      and the --list-* modes.\n"
                  << "  --no-overwrite\n"
                  << "      Fail if an output file already exists.\n"
                  << "  --file-mode <mode>\n"
                  << "      File mode for generated files using auto-base parsing (default: 0o444).\n"
-                 << "  --allow-unregulated-fixed-port-id\n"
-                 << "      Allow fixed port IDs outside regulated ranges.\n"
-                 << "  --omit-dependencies\n"
-                 << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
-                 << "  --no-embedded-uavcan\n"
-                 << "      Disable automatic embedded uavcan dependency catalog for mlir/codegen targets.\n"
-                 << "  --verbose, -v\n"
-                 << "      Increase verbosity (-v, -vv).\n"
-                 << "  --dry-run, -d\n"
-                 << "      Run full planning/validation without filesystem writes.\n"
                  << "  --jobs, -j <N>\n"
-                 << "      Worker parallelism hint (N>=1). Currently used by the obj backend compile stage.\n"
+                 << "      Worker parallelism hint (N>=1). -j1 ensures no parallelism, however, the inverse\n"
+                 << "      does not hold: not all backends utilize parallel processing.\n"
                  << "  -MD\n"
                  << "      Emit make-style .d dependency files alongside generated outputs.\n"
                  << "  --list-inputs\n"
@@ -397,10 +384,33 @@ void printHelp()
                  << "  --list-outputs\n"
                  << "      Emit semicolon-separated output file list (implies --dry-run).\n"
                  << "      When combined with --list-inputs, emits inputs first then one empty separator value.\n"
-                 << "  --help, -h\n"
-                 << "      Print this help text.\n"
-                 << "  --version, -V\n"
-                 << "      Print tool version and exit.\n\n"
+                 << "\n"
+                 << "EXTENDED OPTIONS\n"
+                 << "  --no-target-namespaces\n"
+                 << "      Reject folder positional targets.\n"
+                 << "  --no-embedded-uavcan\n"
+                 << "      Disable automatic embedded uavcan dependency catalog for mlir/codegen targets.\n"
+                 << "  --optimize-lowered-serdes\n"
+                 << "      Enable optional MLIR optimization for lowered serialization plans.\n"
+                 << "  --encode-reserved-identifiers\n"
+                 << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
+                 << "      namespace, encoding the offending characters instead of rejecting the\n"
+                 << "      definition. Note, this can get ugly even if it's valid.\n"
+                 << "\n"
+                 << "PATH ARGUMENTS\n"
+                 << "  A leading '~' is the invoking user's home directory, and '.' and '..' fold away.\n"
+                 << "  An absolute path is used as given. A relative path naming a file this run writes\n"
+                 << "  (--naming-manifest, --prune-manifest) is measured from --outdir; one naming a file\n"
+                 << "  it reads is measured from the working directory.\n"
+                 << "\n"
+                 << "ENVIRONMENT\n"
+                 << "   DSDL_INCLUDE_PATH\n"
+                 << "       Lookup roots, listed like PATH (':' separated, ';' on Windows). Each entry\n"
+                 << "       is a root namespace, as if passed to --lookup-dir.\n"
+                 << "  CYPHAL_PATH\n"
+                 << "       Root namespace parents, listed like PATH. Every immediate subdirectory of\n"
+                 << "       each entry becomes a lookup root.\n"
+                 << "\n"
                  << "BACKEND OPTIONS\n"
                  << "  C++:    --cpp-profile <std|pmr|both|autosar>\n"
                  << "  Rust:   --rust-crate-name <name>\n"
@@ -538,6 +548,57 @@ llvm::Expected<std::uint32_t> parseFileMode(llvm::StringRef text)
     return static_cast<std::uint32_t>(parsed);
 }
 
+/// @brief Resolves every filesystem path the command line carried.
+///
+/// Runs once the whole command line has been read, so an option is anchored on the `--outdir` the
+/// run ends up with rather than on whichever one had been seen by the time the option was parsed.
+///
+/// A path naming something this run writes is measured from `--outdir`; a path naming something it
+/// reads is measured from the working directory. Targets and lookup roots take home expansion alone:
+/// both accept a `<root>:<relative/path>` token, which folding as one path would misread, and both
+/// are folded and made absolute by the resolver that consumes them.
+llvm::Error normalizePathOptions(CliOptions& options)
+{
+    const auto assign = [](std::string& slot, llvm::Expected<std::string> resolved) -> llvm::Error {
+        if (!resolved)
+        {
+            return resolved.takeError();
+        }
+        slot = std::move(*resolved);
+        return llvm::Error::success();
+    };
+
+    if (auto err = assign(options.outDir, llvmdsdl::normalizeCliPath(options.outDir)))
+    {
+        return err;
+    }
+    if (auto err =
+            assign(options.namingManifest, llvmdsdl::normalizeCliOutputPath(options.namingManifest, options.outDir)))
+    {
+        return err;
+    }
+    if (auto err =
+            assign(options.pruneManifest, llvmdsdl::normalizeCliOutputPath(options.pruneManifest, options.outDir)))
+    {
+        return err;
+    }
+    for (auto& lookupDir : options.lookupDirs)
+    {
+        if (auto err = assign(lookupDir, llvmdsdl::expandHomeDirectory(lookupDir)))
+        {
+            return err;
+        }
+    }
+    for (auto& target : options.positionalTargets)
+    {
+        if (auto err = assign(target, llvmdsdl::expandHomeDirectory(target)))
+        {
+            return err;
+        }
+    }
+    return llvm::Error::success();
+}
+
 llvm::Expected<CliOptions> parseCli(int argc, char** argv)
 {
     CliOptions options;
@@ -566,7 +627,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
 
     for (int i = 1; i < argc; ++i)
     {
-        llvm::StringRef arg(argv[i]);
+        llvm::StringRef const arg(argv[i]);
 
         if (arg == "--")
         {
@@ -1059,12 +1120,16 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         addTargetToken(arg);
     }
 
+    if (auto err = normalizePathOptions(options))
+    {
+        return err;
+    }
     return options;
 }
 
 llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
 {
-    llvm::StringRef language(options.targetLanguage);
+    llvm::StringRef const language(options.targetLanguage);
 
     auto failIf = [&](bool condition, llvm::StringRef optionName, llvm::StringRef expectedLang) -> llvm::Expected<int> {
         if (!condition)
@@ -1341,8 +1406,8 @@ std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticMod
         out.push_back(normalizePathForCompare(def.info.filePath));
     }
 
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+    std::ranges::sort(out);
+    out.erase(std::ranges::unique(out).begin(), out.end());
     return out;
 }
 
@@ -1377,8 +1442,8 @@ llvmdsdl::SemanticModule mergeSemanticModulesPreferPrimary(const llvmdsdl::Seman
 
 std::vector<std::string> dedupSorted(std::vector<std::string> values)
 {
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
+    std::ranges::sort(values);
+    values.erase(std::ranges::unique(values).begin(), values.end());
     return values;
 }
 
@@ -1394,7 +1459,7 @@ void emitScsvLists(const std::vector<std::string>& inputs,
     }
     if (listInputs && listOutputs)
     {
-        cells.push_back("");
+        cells.emplace_back("");
     }
     if (listOutputs)
     {
@@ -1413,9 +1478,11 @@ void emitScsvLists(const std::vector<std::string>& inputs,
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
 {
-    llvm::InitLLVM y(argc, argv);
+int runDsdlc(int argc, char** argv)
+{
+    llvm::InitLLVM const y(argc, argv);
 
     const auto startTime = std::chrono::steady_clock::now();
 
@@ -1504,12 +1571,11 @@ int main(int argc, char** argv)
 
     logVerbose(1, "discovering and parsing definitions");
     const auto outputLanguages = namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage);
-    auto       ast =
-        llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
-                                                     resolved->lookupDirs,
-                                                     diagnostics,
-                                                     outputLanguages,
-                                                     options.typeNameVersioning);
+    auto       ast             = llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs,
+                                                            resolved->lookupDirs,
+                                                            diagnostics,
+                                                            outputLanguages,
+                                                            options.typeNameVersioning);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());
@@ -1601,7 +1667,10 @@ int main(int argc, char** argv)
                 message += "; did you mean ";
                 for (std::size_t i = 0; i < expansion.suggestions.size(); ++i)
                 {
-                    message += (i > 0) ? ((i + 1U == expansion.suggestions.size()) ? " or " : ", ") : "";
+                    if (i > 0)
+                    {
+                        message += (i + 1U == expansion.suggestions.size()) ? " or " : ", ";
+                    }
                     message += "'+" + expansion.suggestions[i] + "'";
                 }
                 message += "?";
@@ -1844,11 +1913,18 @@ int main(int argc, char** argv)
                         {
                             return;
                         }
-                        diagnostics.note({def.info.filePath, 1, 1},
-                                         std::string(what) + " '" + name + "' is emitted as '" + assigned +
-                                             "' for target language '" + language.name.str() +
-                                             "'; another name in the same scope already projects to '" + projected +
-                                             "'");
+                        std::string note;
+                        note.append(what)
+                            .append(" '")
+                            .append(name)
+                            .append("' is emitted as '")
+                            .append(assigned)
+                            .append("' for target language '")
+                            .append(language.name.str())
+                            .append("'; another name in the same scope already projects to '")
+                            .append(projected)
+                            .append("'");
+                        diagnostics.note({def.info.filePath, 1, 1}, note);
                     };
 
                     for (const auto& field : section.fields)
@@ -1886,11 +1962,25 @@ int main(int argc, char** argv)
         const auto manifestLanguages = outputLanguages.empty()
                                            ? namingLanguagesForTarget(options.targetLanguage, options.objAbiLanguage)
                                            : outputLanguages;
-        const std::string manifest =
-            llvmdsdl::renderNamingManifest(manifestSemantic,
-                                           manifestLanguages,
-                                           llvmdsdl::kVersionString,
-                                           options.typeNameVersioning);
+        const std::string manifest   = llvmdsdl::renderNamingManifest(manifestSemantic,
+                                                                      manifestLanguages,
+                                                                      llvmdsdl::kVersionString,
+                                                                      options.typeNameVersioning);
+
+        // A relative manifest path is measured from --outdir, which nothing has had reason to
+        // create yet at this point in the run.
+        const auto manifestParent = std::filesystem::path(options.namingManifest).parent_path();
+        if (!manifestParent.empty())
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(manifestParent, ec);
+            if (ec)
+            {
+                llvm::errs() << "cannot create naming manifest directory: " << manifestParent.string() << "\n";
+                return finish("stdout", {}, true);
+            }
+        }
+
         std::ofstream stream(options.namingManifest, std::ios::binary | std::ios::trunc);
         if (!stream.good())
         {
@@ -1962,7 +2052,7 @@ int main(int argc, char** argv)
 
     // determinism-ok: sorted on the next line, before anything reads it.
     std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());
-    std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
+    std::ranges::sort(selectedTypeKeys);
 
     std::vector<std::string>                                  generatedOutputs;
     std::unordered_map<std::string, std::vector<std::string>> generatedOutputRequiredTypeKeys;
@@ -2040,6 +2130,7 @@ int main(int argc, char** argv)
 
     // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
     // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const              emitTraceEnv = std::getenv("LLVMDSDL_EMIT_TRACE");
     llvmdsdl::EmitTraceSink        emitTraceSink;
     llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
@@ -2048,7 +2139,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
@@ -2073,7 +2164,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::CppEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
@@ -2103,7 +2194,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::RustEmitOptions emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.crateName                 = options.rustCrateName;
         emitOptions.profile                   = options.rustProfile;
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
@@ -2137,7 +2228,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::GoEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.goModuleName;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
@@ -2166,7 +2257,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::TsEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2196,7 +2287,7 @@ int main(int argc, char** argv)
     {
         llvmdsdl::PythonEmitOptions emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
@@ -2224,12 +2315,12 @@ int main(int argc, char** argv)
     if (options.targetLanguage == "obj")
     {
         llvmdsdl::ObjectEmitOptions emitOptions;
-        emitOptions.outDir           = options.outDir;
+        emitOptions.outDir             = options.outDir;
         emitOptions.typeNameVersioning = options.typeNameVersioning;
-        emitOptions.targetEndianness = options.objTargetEndianness;
-        emitOptions.targetTriple     = options.objTargetTriple;
-        emitOptions.archiveName      = options.objArchiveName;
-        emitOptions.noArchive        = options.objNoArchive;
+        emitOptions.targetEndianness   = options.objTargetEndianness;
+        emitOptions.targetTriple       = options.objTargetTriple;
+        emitOptions.archiveName        = options.objArchiveName;
+        emitOptions.noArchive          = options.objNoArchive;
         emitOptions.abiLanguage =
             (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp : llvmdsdl::ObjectAbiLanguage::C;
         emitOptions.compileJobs           = options.jobs;
@@ -2253,4 +2344,25 @@ int main(int argc, char** argv)
 
     llvm::errs() << "Unhandled language path: " << options.targetLanguage << "\n";
     return 1;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runDsdlc(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "dsdlc: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "dsdlc: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

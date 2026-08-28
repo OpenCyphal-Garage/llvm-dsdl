@@ -10,10 +10,14 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <system_error>
 
 #include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/DocumentStore.h"
 #include "llvmdsdl/LSP/ServerConfig.h"
+
+#include "UnitTests.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 
 namespace
 {
@@ -141,7 +145,7 @@ bool runLspAnalysisTests()
 
     config.enableMlirSnapshot                  = true;
     const llvmdsdl::lsp::AnalysisResult fourth = pipeline.run(config, documents);
-    if (!fourth.mlirSnapshot.has_value() || fourth.mlirSnapshot->find("module") == std::string::npos)
+    if (!fourth.mlirSnapshot.has_value() || !fourth.mlirSnapshot->contains("module"))
     {
         std::cerr << "expected optional MLIR snapshot when enabled\n";
         std::filesystem::remove_all(tmpRoot, ec);

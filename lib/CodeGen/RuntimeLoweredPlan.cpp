@@ -18,16 +18,22 @@
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvm/Support/Error.h"
 
 namespace llvmdsdl
@@ -168,8 +174,8 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "lowered runtime section plan contains null field");
         }
-        const auto&  field     = *orderedStep.field;
-        std::int64_t fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
+        const auto& field     = *orderedStep.field;
+        auto        fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
         if (fieldBits < 0)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -367,7 +373,7 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "union runtime plan metadata is incomplete or inconsistent");
         }
-        std::sort(plan.fields.begin(), plan.fields.end(), [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
+        std::ranges::sort(plan.fields, [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
             return lhs.unionOptionIndex < rhs.unionOptionIndex;
         });
         plan.unionTagBits          = *unionTagBits;

@@ -20,6 +20,8 @@
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include <cstdint>
+#include <optional>
 
 namespace llvmdsdl
 {

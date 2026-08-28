@@ -13,13 +13,23 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <mutex>
+#include <optional>
+#include <ranges>
 #include <string>
+#include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/Server.h"
 #include "llvm/Support/JSON.h"
+
+#include "UnitTests.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/LSP/Telemetry.h"
 
 namespace
 {
@@ -74,9 +84,9 @@ const llvm::json::Object* findResponseByStringId(const std::vector<llvm::json::V
 const llvm::json::Object* findLatestNotificationByMethod(const std::vector<llvm::json::Value>& outgoing,
                                                          llvm::StringRef                       method)
 {
-    for (auto it = outgoing.rbegin(); it != outgoing.rend(); ++it)
+    for (const auto& it : std::views::reverse(outgoing))
     {
-        const auto* object = it->getAsObject();
+        const auto* object = it.getAsObject();
         if (!object)
         {
             continue;
@@ -93,9 +103,9 @@ const llvm::json::Object* findLatestNotificationByMethod(const std::vector<llvm:
 const llvm::json::Object* findLatestDiagnosticsForUri(const std::vector<llvm::json::Value>& outgoing,
                                                       llvm::StringRef                       uri)
 {
-    for (auto it = outgoing.rbegin(); it != outgoing.rend(); ++it)
+    for (const auto& it : std::views::reverse(outgoing))
     {
-        const auto* object = it->getAsObject();
+        const auto* object = it.getAsObject();
         if (!object)
         {
             continue;
@@ -144,13 +154,13 @@ bool runLspServerTests()
     llvmdsdl::lsp::Server server(
         [&mutex, &cv, &outgoing](llvm::json::Value message) {
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 outgoing.push_back(std::move(message));
             }
             cv.notify_all();
         },
         [&mutex, &metrics](const llvmdsdl::lsp::RequestMetric& metric) {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             metrics.push_back(metric);
         });
 
@@ -166,8 +176,8 @@ bool runLspServerTests()
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 initializeResponse = findResponseByIntegerId(outgoing, 1);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        initializeResponse = findResponseByIntegerId(outgoing, 1);
         if (!initializeResponse || !initializeResponse->getObject("result"))
         {
             std::cerr << "missing initialize result payload\n";
@@ -186,8 +196,8 @@ bool runLspServerTests()
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 diagnosticsNotification =
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        diagnosticsNotification =
             findLatestNotificationByMethod(outgoing, "textDocument/publishDiagnostics");
         if (!diagnosticsNotification)
         {
@@ -245,7 +255,7 @@ bool runLspServerTests()
         R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/bad.dsdl","version":1,"text":"demo.DoesNotExist.1.0 field\n@sealed\n"}}})"));
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         // Look up diagnostics by URI: publishDiagnosticsFromAnalysis emits one
         // notification per URI in unordered_map order, so the last-by-method
         // notification is not necessarily this document's on every platform.
@@ -267,7 +277,7 @@ bool runLspServerTests()
     server.handleMessage(parseJson(
         R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/extent_bad.dsdl","version":1,"text":"uint16 sample\n@extent 13\n"}}})"));
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         const auto* diagnosticsNotification = findLatestDiagnosticsForUri(outgoing, "file:///tmp/extent_bad.dsdl");
         if (!diagnosticsNotification)
         {
@@ -341,9 +351,9 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 actionsResponse = findResponseByIntegerId(outgoing, 54);
-        const auto*                 result          = actionsResponse ? actionsResponse->getArray("result") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        actionsResponse = findResponseByIntegerId(outgoing, 54);
+        const auto*                        result = actionsResponse ? actionsResponse->getArray("result") : nullptr;
         if (!result || result->empty())
         {
             std::cerr << "expected codeAction quickfix for invalid extent\n";
@@ -396,8 +406,8 @@ bool runLspServerTests()
     server.handleMessage(parseJson(
         R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/bad.dsdl"}}})"));
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 semanticTokensResponse = findResponseByIntegerId(outgoing, 3);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        semanticTokensResponse = findResponseByIntegerId(outgoing, 3);
         if (!semanticTokensResponse)
         {
             std::cerr << "missing semantic tokens response\n";
@@ -474,8 +484,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 hoverResponse = findResponseByIntegerId(outgoing, 40);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        hoverResponse = findResponseByIntegerId(outgoing, 40);
         if (!hoverResponse)
         {
             std::cerr << "missing hover response\n";
@@ -484,7 +494,7 @@ bool runLspServerTests()
         const auto* result   = hoverResponse->getObject("result");
         const auto* contents = result ? result->getObject("contents") : nullptr;
         const auto  value    = contents ? contents->getString("value") : std::nullopt;
-        if (!value || value->find("demo.TypeA.1.0") == std::string::npos)
+        if (!value || !value->contains("demo.TypeA.1.0"))
         {
             std::cerr << "hover payload missing referenced type details\n";
             return false;
@@ -505,8 +515,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 fieldHover = findResponseByIntegerId(outgoing, 148);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        fieldHover = findResponseByIntegerId(outgoing, 148);
         if (!fieldHover)
         {
             std::cerr << "missing field hover response\n";
@@ -515,12 +525,12 @@ bool runLspServerTests()
         const auto* result   = fieldHover->getObject("result");
         const auto* contents = result ? result->getObject("contents") : nullptr;
         const auto  value    = contents ? contents->getString("value") : std::nullopt;
-        if (!value || value->find("emits as") == std::string::npos)
+        if (!value || !value->contains("emits as"))
         {
             std::cerr << "field hover payload missing the generated-name summary\n";
             return false;
         }
-        if (value->find("`Count` (go)") == std::string::npos)
+        if (!value->contains("`Count` (go)"))
         {
             std::cerr << "field hover did not report the Go identifier: "
                       << (value ? value->str() : std::string("<none>")) << "\n";
@@ -539,8 +549,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 definitionResponse = findResponseByIntegerId(outgoing, 41);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        definitionResponse = findResponseByIntegerId(outgoing, 41);
         if (!definitionResponse)
         {
             std::cerr << "missing definition response\n";
@@ -567,8 +577,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 referencesResponse = findResponseByIntegerId(outgoing, 42);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        referencesResponse = findResponseByIntegerId(outgoing, 42);
         if (!referencesResponse)
         {
             std::cerr << "missing references response\n";
@@ -608,8 +618,8 @@ bool runLspServerTests()
         {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", typeBUri}}}}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 symbolsResponse = findResponseByIntegerId(outgoing, 43);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        symbolsResponse = findResponseByIntegerId(outgoing, 43);
         if (!symbolsResponse)
         {
             std::cerr << "missing documentSymbol response\n";
@@ -646,8 +656,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 completionResponse = findResponseByIntegerId(outgoing, 44);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        completionResponse = findResponseByIntegerId(outgoing, 44);
         if (!completionResponse)
         {
             std::cerr << "missing completion response\n";
@@ -676,10 +686,10 @@ bool runLspServerTests()
 
     llvm::json::Object resolveItem;
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 completionResponse = findResponseByIntegerId(outgoing, 44);
-        const auto*                 result = completionResponse ? completionResponse->getObject("result") : nullptr;
-        const auto*                 items  = result ? result->getArray("items") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        completionResponse = findResponseByIntegerId(outgoing, 44);
+        const auto* result = completionResponse ? completionResponse->getObject("result") : nullptr;
+        const auto* items  = result ? result->getArray("items") : nullptr;
         if (!items || items->empty())
         {
             std::cerr << "missing completion payload for resolve test\n";
@@ -701,8 +711,8 @@ bool runLspServerTests()
         {"params", llvm::json::Value(std::move(resolveItem))},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 46);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        resolveResponse = findResponseByIntegerId(outgoing, 46);
         if (!resolveResponse || !resolveResponse->getObject("result"))
         {
             std::cerr << "missing completionItem/resolve response payload\n";
@@ -717,8 +727,8 @@ bool runLspServerTests()
         {"params", llvm::json::Object{{"query", "TypeA"}}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 symbolsResponse = findResponseByIntegerId(outgoing, 45);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        symbolsResponse = findResponseByIntegerId(outgoing, 45);
         if (!symbolsResponse)
         {
             std::cerr << "missing workspace/symbol response\n";
@@ -758,10 +768,10 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 prepareResponse = findResponseByIntegerId(outgoing, 49);
-        const auto*                 result          = prepareResponse ? prepareResponse->getObject("result") : nullptr;
-        const auto                  placeholder     = result ? result->getString("placeholder") : std::nullopt;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        prepareResponse = findResponseByIntegerId(outgoing, 49);
+        const auto*                        result = prepareResponse ? prepareResponse->getObject("result") : nullptr;
+        const auto                         placeholder = result ? result->getString("placeholder") : std::nullopt;
         if (!placeholder || *placeholder != "TypeA")
         {
             std::cerr << "prepareRename did not return expected placeholder\n";
@@ -781,10 +791,10 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 renameResponse  = findResponseByIntegerId(outgoing, 50);
-        const auto*                 result          = renameResponse ? renameResponse->getObject("result") : nullptr;
-        const auto*                 documentChanges = result ? result->getArray("documentChanges") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        renameResponse = findResponseByIntegerId(outgoing, 50);
+        const auto*                        result = renameResponse ? renameResponse->getObject("result") : nullptr;
+        const auto*                        documentChanges = result ? result->getArray("documentChanges") : nullptr;
         if (!documentChanges || documentChanges->empty())
         {
             std::cerr << "rename response missing documentChanges payload\n";
@@ -804,11 +814,11 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 previewResponse = findResponseByIntegerId(outgoing, 51);
-        const auto*                 result          = previewResponse ? previewResponse->getObject("result") : nullptr;
-        const auto                  ok              = result ? result->getBoolean("ok") : std::nullopt;
-        const auto*                 conflicts       = result ? result->getArray("conflicts") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        previewResponse = findResponseByIntegerId(outgoing, 51);
+        const auto*                        result    = previewResponse ? previewResponse->getObject("result") : nullptr;
+        const auto                         ok        = result ? result->getBoolean("ok") : std::nullopt;
+        const auto*                        conflicts = result ? result->getArray("conflicts") : nullptr;
         if (!ok.has_value() || *ok || !conflicts || conflicts->empty())
         {
             std::cerr << "rename preview expected conflict when renaming TypeA to existing TypeB\n";
@@ -838,9 +848,9 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 actionsResponse = findResponseByIntegerId(outgoing, 52);
-        const auto*                 result          = actionsResponse ? actionsResponse->getArray("result") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        actionsResponse = findResponseByIntegerId(outgoing, 52);
+        const auto*                        result = actionsResponse ? actionsResponse->getArray("result") : nullptr;
         if (!result || result->empty())
         {
             std::cerr << "codeAction expected at least one quickfix for unresolved composite\n";
@@ -877,9 +887,9 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 actionsResponse = findResponseByIntegerId(outgoing, 53);
-        const auto*                 result          = actionsResponse ? actionsResponse->getArray("result") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        actionsResponse = findResponseByIntegerId(outgoing, 53);
+        const auto*                        result = actionsResponse ? actionsResponse->getArray("result") : nullptr;
         if (!result || result->empty())
         {
             std::cerr << "expected refactor code actions for valid file\n";
@@ -953,9 +963,9 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 actionsResponse = findResponseByIntegerId(outgoing, 60);
-        const auto*                 result          = actionsResponse ? actionsResponse->getArray("result") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        actionsResponse = findResponseByIntegerId(outgoing, 60);
+        const auto*                        result = actionsResponse ? actionsResponse->getArray("result") : nullptr;
         if (!result || result->empty())
         {
             std::cerr << "expected AI code actions when ai mode is assist\n";
@@ -993,9 +1003,9 @@ bool runLspServerTests()
         {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", true}}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 61);
-        const auto*                 error           = resolveResponse ? resolveResponse->getObject("error") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        resolveResponse = findResponseByIntegerId(outgoing, 61);
+        const auto*                        error = resolveResponse ? resolveResponse->getObject("error") : nullptr;
         if (!error)
         {
             std::cerr << "expected resolve failure when ai mode is assist\n";
@@ -1030,12 +1040,12 @@ bool runLspServerTests()
         {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", false}}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 62);
-        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
-        const auto                  message         = result ? result->getString("message") : std::nullopt;
-        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
-        if (!result || !message || message->find("requires explicit confirmation") == std::string::npos || edit)
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        resolveResponse = findResponseByIntegerId(outgoing, 62);
+        const auto*                        result  = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto                         message = result ? result->getString("message") : std::nullopt;
+        const auto*                        edit    = result ? result->getObject("edit") : nullptr;
+        if (!result || !message || !message->contains("requires explicit confirmation") || edit)
         {
             std::cerr << "expected confirmation message and no edit when confirmed=false\n";
             return false;
@@ -1049,12 +1059,12 @@ bool runLspServerTests()
         {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", true}}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 63);
-        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
-        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
-        const auto*                 changes         = edit ? edit->getObject("changes") : nullptr;
-        const auto*                 edits           = changes ? changes->getArray(aiUri) : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        resolveResponse = findResponseByIntegerId(outgoing, 63);
+        const auto*                        result  = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto*                        edit    = result ? result->getObject("edit") : nullptr;
+        const auto*                        changes = edit ? edit->getObject("changes") : nullptr;
+        const auto*                        edits   = changes ? changes->getArray(aiUri) : nullptr;
         if (!result || !edits || edits->empty())
         {
             std::cerr << "expected resolved AI edit after confirmation\n";
@@ -1081,10 +1091,10 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 64);
-        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
-        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        resolveResponse = findResponseByIntegerId(outgoing, 64);
+        const auto*                        result = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto*                        edit   = result ? result->getObject("edit") : nullptr;
         if (!result || !edit)
         {
             std::cerr << "expected codeAction/resolve to materialize confirmed AI edit\n";
@@ -1107,8 +1117,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 toolResponse = findResponseByIntegerId(outgoing, 66);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        toolResponse = findResponseByIntegerId(outgoing, 66);
         if (!toolResponse || !toolResponse->get("result"))
         {
             std::cerr << "expected successful AI tool-use response\n";
@@ -1123,9 +1133,9 @@ bool runLspServerTests()
         {"params", llvm::json::Object{}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 auditResponse = findResponseByIntegerId(outgoing, 67);
-        const auto*                 result        = auditResponse ? auditResponse->getArray("result") : nullptr;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        auditResponse = findResponseByIntegerId(outgoing, 67);
+        const auto*                        result        = auditResponse ? auditResponse->getArray("result") : nullptr;
         if (!result || result->empty())
         {
             std::cerr << "expected non-empty AI audit log\n";
@@ -1140,12 +1150,12 @@ bool runLspServerTests()
             {
                 continue;
             }
-            if (detail->find("supersecret") != std::string::npos)
+            if (detail->contains("supersecret"))
             {
                 std::cerr << "AI audit log leaked unredacted secret\n";
                 return false;
             }
-            sawRedaction = sawRedaction || detail->find("[REDACTED]") != std::string::npos;
+            sawRedaction = sawRedaction || detail->contains("[REDACTED]");
         }
         if (!sawRedaction)
         {
@@ -1184,7 +1194,7 @@ bool runLspServerTests()
               llvm::json::Object{
                   {"uri", lintUri},
                   {"version", 1},
-                  {"text", "uint8 BadField\\t\\n@sealed\\n"},
+                  {"text", R"(uint8 BadField\t\n@sealed\n)"},
               }},
          }},
     });
@@ -1201,8 +1211,8 @@ bool runLspServerTests()
          }},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 explainResponse = findResponseByIntegerId(outgoing, 47);
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        explainResponse = findResponseByIntegerId(outgoing, 47);
         if (!explainResponse)
         {
             std::cerr << "missing workspaceSymbol scoreExplain response\n";
@@ -1230,10 +1240,10 @@ bool runLspServerTests()
         {"params", llvm::json::Object{}},
     });
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 statsResponse = findResponseByIntegerId(outgoing, 48);
-        const auto*                 result        = statsResponse ? statsResponse->getObject("result") : nullptr;
-        const auto                  signalEntries = result ? result->getInteger("signal_entries") : std::nullopt;
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        statsResponse = findResponseByIntegerId(outgoing, 48);
+        const auto*                        result        = statsResponse ? statsResponse->getObject("result") : nullptr;
+        const auto                         signalEntries = result ? result->getInteger("signal_entries") : std::nullopt;
         if (!signalEntries.has_value() || *signalEntries <= 0)
         {
             std::cerr << "expected adaptive signal entries after completion/symbol requests\n";
@@ -1260,8 +1270,8 @@ bool runLspServerTests()
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 sleepResponse = findResponseByStringId(outgoing, "sleep-1");
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        sleepResponse = findResponseByStringId(outgoing, "sleep-1");
         if (!sleepResponse)
         {
             std::cerr << "missing async request response\n";
@@ -1285,17 +1295,16 @@ bool runLspServerTests()
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         if (!findResponseByIntegerId(outgoing, 2))
         {
             std::cerr << "missing shutdown response\n";
             return false;
         }
 
-        const bool sawInitializeMetric =
-            std::any_of(metrics.begin(), metrics.end(), [](const llvmdsdl::lsp::RequestMetric& metric) {
-                return metric.method == "initialize";
-            });
+        const bool sawInitializeMetric = std::ranges::any_of(metrics, [](const llvmdsdl::lsp::RequestMetric& metric) {
+            return metric.method == "initialize";
+        });
         if (!sawInitializeMetric)
         {
             std::cerr << "missing initialize request telemetry sample\n";

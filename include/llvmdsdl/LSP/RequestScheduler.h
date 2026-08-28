@@ -91,6 +91,8 @@ public:
 
     RequestScheduler(const RequestScheduler&)            = delete;
     RequestScheduler& operator=(const RequestScheduler&) = delete;
+    RequestScheduler(RequestScheduler&&)                 = delete;
+    RequestScheduler& operator=(RequestScheduler&&)      = delete;
 
     /// @brief Enqueues request work for execution.
     /// @param[in] requestKey Stable request key (typically serialized LSP id).

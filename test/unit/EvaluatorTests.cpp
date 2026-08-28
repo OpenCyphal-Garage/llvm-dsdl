@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -23,6 +24,8 @@
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/Rational.h"
+
+#include "UnitTests.h"
 
 namespace llvmdsdl
 {
@@ -44,7 +47,7 @@ std::shared_ptr<llvmdsdl::ExprAST> parseAssertExpression(const std::string&     
     {
         return nullptr;
     }
-    const auto* directive = std::get_if<llvmdsdl::DirectiveAST>(&def->statements[0]);
+    const auto* directive = std::get_if<llvmdsdl::DirectiveAST>(def->statements.data());
     if (!directive)
     {
         return nullptr;
@@ -54,14 +57,9 @@ std::shared_ptr<llvmdsdl::ExprAST> parseAssertExpression(const std::string&     
 
 bool hasErrorContaining(const llvmdsdl::DiagnosticEngine& diag, std::string_view needle)
 {
-    for (const auto& d : diag.diagnostics())
-    {
-        if (d.level == llvmdsdl::DiagnosticLevel::Error && d.message.find(needle) != std::string::npos)
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diag.diagnostics(), [&](const auto& d) {
+        return d.level == llvmdsdl::DiagnosticLevel::Error && d.message.contains(needle);
+    });
 }
 
 std::optional<llvmdsdl::Value> evaluateAssertExpression(const std::string&                     expression,
@@ -106,7 +104,7 @@ bool runEvaluatorTests()
 {
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, nullptr);
         if (value)
         {
@@ -121,9 +119,9 @@ bool runEvaluatorTests()
     }
 
     {
-        llvmdsdl::DiagnosticEngine      diag;
-        bool                            resolverCalled = false;
-        llvmdsdl::TypeAttributeResolver resolver =
+        llvmdsdl::DiagnosticEngine            diag;
+        bool                                  resolverCalled = false;
+        llvmdsdl::TypeAttributeResolver const resolver =
             [&](const llvmdsdl::TypeExprAST& type,
                 const std::string&           attribute,
                 const llvmdsdl::SourceLocation&) -> std::optional<llvmdsdl::Value> {
@@ -136,8 +134,8 @@ bool runEvaluatorTests()
             return llvmdsdl::Value{llvmdsdl::Rational(42, 1)};
         };
 
-        llvmdsdl::ValueEnv env;
-        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
+        llvmdsdl::ValueEnv const env;
+        auto                     value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
         if (!expectRational(value, llvmdsdl::Rational(42, 1)))
         {
             std::cerr << "resolver-based evaluation produced unexpected result\n";
@@ -151,16 +149,16 @@ bool runEvaluatorTests()
     }
 
     {
-        llvmdsdl::DiagnosticEngine      diag;
-        bool                            resolverCalled = false;
-        llvmdsdl::TypeAttributeResolver resolver =
+        llvmdsdl::DiagnosticEngine            diag;
+        bool                                  resolverCalled = false;
+        llvmdsdl::TypeAttributeResolver const resolver =
             [&](const llvmdsdl::TypeExprAST&, const std::string&, const llvmdsdl::SourceLocation&) {
                 resolverCalled = true;
                 return std::optional<llvmdsdl::Value>{};
             };
 
-        llvmdsdl::ValueEnv env;
-        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
+        llvmdsdl::ValueEnv const env;
+        auto                     value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
         if (value)
         {
             std::cerr << "expected resolver nullopt response to fail evaluation\n";
@@ -261,7 +259,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       value = evaluateAssertExpression("Foo.1.0._extent_", diag, env, nullptr);
         if (!expectRational(value, llvmdsdl::Rational(0, 1)))
         {
@@ -273,7 +271,7 @@ bool runEvaluatorTests()
     {
         llvmdsdl::DiagnosticEngine diag;
 
-        llvmdsdl::TypeAttributeResolver resolver =
+        llvmdsdl::TypeAttributeResolver const resolver =
             [&](const llvmdsdl::TypeExprAST&,
                 const std::string& attribute,
                 const llvmdsdl::SourceLocation&) -> std::optional<llvmdsdl::Value> {
@@ -284,8 +282,8 @@ bool runEvaluatorTests()
             return std::nullopt;
         };
 
-        llvmdsdl::ValueEnv env;
-        auto               value = evaluateAssertExpression("Foo.1.0._extent_", diag, env, &resolver);
+        llvmdsdl::ValueEnv const env;
+        auto                     value = evaluateAssertExpression("Foo.1.0._extent_", diag, env, &resolver);
         if (!expectRational(value, llvmdsdl::Rational(128, 1)))
         {
             std::cerr << "_extent_ resolver evaluation produced unexpected result\n";
@@ -295,7 +293,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       product = evaluateAssertExpression("2 + 3 * 4", diag, env, nullptr);
         if (!expectRational(product, llvmdsdl::Rational(14, 1)))
         {
@@ -331,7 +329,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       conjunction = evaluateAssertExpression("true && false", diag, env, nullptr);
         if (!expectBool(conjunction, false))
         {
@@ -367,14 +365,14 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
-        auto                       concat = evaluateAssertExpression("\"ab\" + \"cd\"", diag, env, nullptr);
+        llvmdsdl::ValueEnv const   env;
+        auto                       concat = evaluateAssertExpression(R"("ab" + "cd")", diag, env, nullptr);
         if (!expectString(concat, "abcd"))
         {
             std::cerr << "string concatenation produced unexpected result\n";
             return false;
         }
-        auto equal = evaluateAssertExpression("\"ab\" == \"ab\"", diag, env, nullptr);
+        auto equal = evaluateAssertExpression(R"("ab" == "ab")", diag, env, nullptr);
         if (!expectBool(equal, true))
         {
             std::cerr << "string equality produced unexpected result\n";
@@ -391,7 +389,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       setUnion = evaluateAssertExpression("{1, 2} | {2, 3}", diag, env, nullptr);
         if (!expectSet(setUnion, {llvmdsdl::Rational(1, 1), llvmdsdl::Rational(2, 1), llvmdsdl::Rational(3, 1)}))
         {
@@ -451,7 +449,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       setCount = evaluateAssertExpression("{1, 4, 2}.count", diag, env, nullptr);
         if (!expectRational(setCount, llvmdsdl::Rational(3, 1)))
         {
@@ -591,7 +589,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
 
         auto unaryTypeError = evaluateAssertExpression("-true", diag, env, nullptr);
         if (unaryTypeError || !hasErrorContaining(diag, "unary +/- requires rational operand"))
@@ -622,7 +620,7 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv         env;
+        llvmdsdl::ValueEnv const   env;
         auto                       boolValue     = evaluateAssertExpression("true", diag, env, nullptr);
         auto                       rationalValue = evaluateAssertExpression("5", diag, env, nullptr);
         auto                       stringValue   = evaluateAssertExpression("\"text\"", diag, env, nullptr);

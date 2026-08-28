@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/CodeGen/CHeaderRender.h"
 
+#include "UnitTests.h"
+
 bool runCHeaderRenderTests()
 {
     llvmdsdl::CHeaderTypeMetadata metadata;
@@ -69,12 +71,12 @@ bool runCHeaderRenderTests()
         std::cerr << "renderCServiceAliasWrapperLines expected 16 lines\n";
         return false;
     }
-    if (wrappers[0].find("uavcan__srv__NodeInfo__serialize_") == std::string::npos)
+    if (!wrappers[0].contains("uavcan__srv__NodeInfo__serialize_"))
     {
         std::cerr << "renderCServiceAliasWrapperLines serialize signature mismatch\n";
         return false;
     }
-    if (wrappers[6].find("uavcan__srv__NodeInfo__Request") == std::string::npos)
+    if (!wrappers[6].contains("uavcan__srv__NodeInfo__Request"))
     {
         std::cerr << "renderCServiceAliasWrapperLines deserialize body mismatch\n";
         return false;

@@ -36,11 +36,11 @@ bool isReservedIdentifier(const std::string& identifier)
     // without a category pattern, future-use keywords, and the MS-DOS device
     // names that some filesystems reserve).
     static const std::unordered_set<std::string> kExactWords = {
-        "truncated", "saturated", "true", "false", "bool",   "byte", "utf8", "optional", "aligned",
-        "const",     "struct",    "super", "template", "enum", "self", "and",  "or",       "not",
-        "auto",      "type",      "con",   "prn",      "aux",  "nul",
+        "truncated", "saturated", "true",   "false", "bool",     "byte", "utf8", "optional",
+        "aligned",   "const",     "struct", "super", "template", "enum", "self", "and",
+        "or",        "not",       "auto",   "type",  "con",      "prn",  "aux",  "nul",
     };
-    if (kExactWords.find(lowered) != kExactWords.end())
+    if (kExactWords.contains(lowered))
     {
         return true;
     }
@@ -48,8 +48,7 @@ bool isReservedIdentifier(const std::string& identifier)
     // Pattern-based reserved names: primitive/void/fixed-point type categories,
     // the MS-DOS numbered device names, and intrinsic entities of the form
     // `_<anything>_` (e.g. `_offset_`).
-    static const std::regex kPatterns(
-        "^(?:u?int[0-9]*|float[0-9]*|void[0-9]*|q[0-9]+_[0-9]+|com[0-9]|lpt[0-9]|_.*_)$");
+    static const std::regex kPatterns("^(?:u?int[0-9]*|float[0-9]*|void[0-9]*|q[0-9]+_[0-9]+|com[0-9]|lpt[0-9]|_.*_)$");
     return std::regex_match(lowered, kPatterns);
 }
 

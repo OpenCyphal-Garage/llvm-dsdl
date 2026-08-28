@@ -11,12 +11,16 @@
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+
+#include "UnitTests.h"
 
 bool runNativeHelperContractTests()
 {
     {
-        llvmdsdl::SemanticSection          section;
+        llvmdsdl::SemanticSection const    section;
         llvmdsdl::SectionHelperBindingPlan helpers;
         helpers.capacityCheck = llvmdsdl::CapacityCheckHelperDescriptor{"helper_capacity", 32};
 
@@ -33,8 +37,8 @@ bool runNativeHelperContractTests()
     }
 
     {
-        llvmdsdl::SemanticSection          section;
-        llvmdsdl::SectionHelperBindingPlan helpers;
+        llvmdsdl::SemanticSection const          section;
+        llvmdsdl::SectionHelperBindingPlan const helpers;
 
         std::string missing;
         if (llvmdsdl::validateNativeSectionHelperContract(section,

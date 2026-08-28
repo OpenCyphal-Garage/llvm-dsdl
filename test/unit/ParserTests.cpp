@@ -5,10 +5,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstddef>
 #include <llvm/Support/Error.h>
 #include <algorithm>
 #include <iostream>
-#include <memory>
+#include <memory>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <string>
 #include <utility>
 #include <variant>
@@ -18,6 +19,8 @@
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Frontend/AST.h"
+
+#include "UnitTests.h"
 
 bool runParserTests()
 {
@@ -72,7 +75,7 @@ bool runParserTests()
         return false;
     }
 
-    const auto* field = std::get_if<llvmdsdl::FieldDeclAST>(&typeLiteralDef->statements[0]);
+    const auto* field = std::get_if<llvmdsdl::FieldDeclAST>(typeLiteralDef->statements.data());
     if (!field)
     {
         std::cerr << "expected first statement to be field declaration\n";
@@ -129,7 +132,7 @@ bool runParserTests()
     llvmdsdl::DiagnosticEngine commentDiag;
     llvmdsdl::Lexer            commentLexer("comments.dsdl", commentText);
     auto                       commentTokens     = commentLexer.lex();
-    const std::size_t          commentTokenCount = static_cast<std::size_t>(
+    const auto                 commentTokenCount = static_cast<std::size_t>(
         std::count_if(commentTokens.begin(), commentTokens.end(), [](const llvmdsdl::Token& token) {
             return token.kind == llvmdsdl::TokenKind::Comment;
         }));
@@ -152,7 +155,7 @@ bool runParserTests()
         return false;
     }
 
-    const auto* commentField = std::get_if<llvmdsdl::FieldDeclAST>(&commentDef->statements[0]);
+    const auto* commentField = std::get_if<llvmdsdl::FieldDeclAST>(commentDef->statements.data());
     if (!commentField || commentField->nameLocation.line != 2 || commentField->nameLocation.column != 7)
     {
         std::cerr << "field symbol location was not captured correctly\n";
@@ -205,7 +208,7 @@ bool runParserTests()
         std::cerr << "unexpected statement count in attachment fixture: " << attachmentDef->statements.size() << "\n";
         return false;
     }
-    const auto* firstField  = std::get_if<llvmdsdl::FieldDeclAST>(&attachmentDef->statements[0]);
+    const auto* firstField  = std::get_if<llvmdsdl::FieldDeclAST>(attachmentDef->statements.data());
     const auto* secondField = std::get_if<llvmdsdl::FieldDeclAST>(&attachmentDef->statements[1]);
     if (!firstField || !secondField)
     {
@@ -213,7 +216,7 @@ bool runParserTests()
         return false;
     }
     if (attachmentDef->doc.lines.size() != 4 || attachmentDef->doc.lines[0].text != "orphaned before blank line" ||
-        attachmentDef->doc.lines[1].text != "" || attachmentDef->doc.lines[2].text != "first field docs line 1" ||
+        !attachmentDef->doc.lines[1].text.empty() || attachmentDef->doc.lines[2].text != "first field docs line 1" ||
         attachmentDef->doc.lines[3].text != "first field docs line 2")
     {
         std::cerr << "expected definition docs to preserve comment lines and blank separators\n";
@@ -225,7 +228,7 @@ bool runParserTests()
         return false;
     }
     if (secondField->doc.lines.size() != 4 || secondField->doc.lines[0].text != "split block old" ||
-        secondField->doc.lines[1].text != "" || secondField->doc.lines[2].text != "second field docs" ||
+        !secondField->doc.lines[1].text.empty() || secondField->doc.lines[2].text != "second field docs" ||
         secondField->doc.lines[3].text != "second trailing")
     {
         std::cerr << "expected second field docs to preserve split block and trailing comment\n";
@@ -250,7 +253,7 @@ bool runParserTests()
         std::cerr << "unexpected definition docs from orphan trailing comment\n";
         return false;
     }
-    const auto* orphanField = std::get_if<llvmdsdl::FieldDeclAST>(&orphanDef->statements[0]);
+    const auto* orphanField = std::get_if<llvmdsdl::FieldDeclAST>(orphanDef->statements.data());
     if (!orphanField || !orphanField->doc.empty())
     {
         std::cerr << "unexpected field docs from orphan trailing comment\n";
@@ -260,8 +263,8 @@ bool runParserTests()
     const std::string          windowsText = "uint8 a # windows comment\r\n@sealed\r\n";
     llvmdsdl::DiagnosticEngine windowsDiag;
     llvmdsdl::Lexer            windowsLexer("windows.dsdl", windowsText);
-    auto                       windowsTokens = windowsLexer.lex();
-    auto windowsCommentIt = std::find_if(windowsTokens.begin(), windowsTokens.end(), [](const llvmdsdl::Token& token) {
+    auto                       windowsTokens    = windowsLexer.lex();
+    auto                       windowsCommentIt = std::ranges::find_if(windowsTokens, [](const llvmdsdl::Token& token) {
         return token.kind == llvmdsdl::TokenKind::Comment;
     });
     if (windowsCommentIt == windowsTokens.end())
@@ -282,7 +285,7 @@ bool runParserTests()
         std::cerr << "windows fixture parse failed unexpectedly\n";
         return false;
     }
-    const auto* windowsField = std::get_if<llvmdsdl::FieldDeclAST>(&windowsDef->statements[0]);
+    const auto* windowsField = std::get_if<llvmdsdl::FieldDeclAST>(windowsDef->statements.data());
     if (!windowsField || windowsField->doc.lines.size() != 1 || windowsField->doc.lines[0].text != "windows comment")
     {
         std::cerr << "windows fixture failed to preserve trailing comment text\n";
@@ -322,15 +325,15 @@ bool runParserTests()
             {
                 return "";
             }
-            const auto* constant = std::get_if<llvmdsdl::ConstantDeclAST>(&def->statements[0]);
+            const auto* constant = std::get_if<llvmdsdl::ConstantDeclAST>(def->statements.data());
             return (constant && constant->value) ? constant->value->str() : "";
         };
 
         const std::pair<std::string, std::string> realCases[] = {
-            {"float32 A = .5", "1/2"},     // leading point
-            {"float32 B = 3.", "3"},       // trailing point
-            {"float32 C = .5e3", "500"},   // leading point with exponent
-            {"float32 D = 1.5", "3/2"},    // unchanged single-token form
+            {"float32 A = .5", "1/2"},    // leading point
+            {"float32 B = 3.", "3"},      // trailing point
+            {"float32 C = .5e3", "500"},  // leading point with exponent
+            {"float32 D = 1.5", "3/2"},   // unchanged single-token form
         };
         for (const auto& realCase : realCases)
         {
@@ -372,7 +375,7 @@ bool runParserTests()
             {
                 return "<parse-failed>";
             }
-            const auto* directive = std::get_if<llvmdsdl::DirectiveAST>(&def->statements[0]);
+            const auto* directive = std::get_if<llvmdsdl::DirectiveAST>(def->statements.data());
             return (directive && directive->expression) ? directive->expression->str() : "<no-expr>";
         };
 
@@ -426,8 +429,20 @@ bool runParserTests()
         };
 
         const char* const rejectedTypes[] = {
-            "uint0",   "uint65",   "uint100", "int0",  "int1",   "int65", "int128",
-            "float8",  "float17",  "float0",  "float128", "void0", "void65", "void100",
+            "uint0",
+            "uint65",
+            "uint100",
+            "int0",
+            "int1",
+            "int65",
+            "int128",
+            "float8",
+            "float17",
+            "float0",
+            "float128",
+            "void0",
+            "void65",
+            "void100",
         };
         for (const char* rejected : rejectedTypes)
         {
@@ -439,7 +454,15 @@ bool runParserTests()
         }
 
         const char* const acceptedTypes[] = {
-            "uint1", "uint64", "int2", "int64", "float16", "float32", "float64", "void1", "void64",
+            "uint1",
+            "uint64",
+            "int2",
+            "int64",
+            "float16",
+            "float32",
+            "float64",
+            "void1",
+            "void64",
         };
         for (const char* accepted : acceptedTypes)
         {

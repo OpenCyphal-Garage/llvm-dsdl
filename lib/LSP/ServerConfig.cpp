@@ -16,9 +16,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/JSON.h>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {
@@ -117,7 +122,7 @@ void applyNestedBoolean(const llvm::json::Object& settings, llvm::StringRef key,
 std::optional<AiMode> parseAiModeString(llvm::StringRef rawMode)
 {
     std::string normalized(rawMode.str());
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](const unsigned char value) {
+    std::ranges::transform(normalized, normalized.begin(), [](const unsigned char value) {
         return static_cast<char>(std::tolower(value));
     });
 

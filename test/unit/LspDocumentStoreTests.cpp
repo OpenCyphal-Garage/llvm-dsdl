@@ -6,12 +6,15 @@
 //===----------------------------------------------------------------------===//
 
 #include <atomic>
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "llvmdsdl/LSP/DocumentStore.h"
+
+#include "UnitTests.h"
 
 bool runLspDocumentStoreTests()
 {
@@ -68,9 +71,9 @@ bool runLspDocumentStoreTests()
     // raw-pointer API allowed). Exercised for real under the ASan/UBSan sanitizer lanes.
     {
         llvmdsdl::lsp::DocumentStore shared;
-        constexpr int                kThreads       = 8;
-        constexpr int                kIterations    = 4000;
-        constexpr int                kDistinctDocs  = 4;
+        constexpr int                kThreads      = 8;
+        constexpr int                kIterations   = 4000;
+        constexpr int                kDistinctDocs = 4;
         std::atomic<bool>            start{false};
         std::vector<std::thread>     threads;
         threads.reserve(kThreads);

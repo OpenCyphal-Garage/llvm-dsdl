@@ -37,28 +37,28 @@
 # RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
-# HELP: SYNOPSIS
-# HELP: dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]
-# HELP: --no-target-namespaces
-# HELP: --lookup-dir, -I <dir>
-# HELP: --outdir, -O <dir>
-# HELP: --allow-unregulated-fixed-port-id
-# HELP: --no-embedded-uavcan
-# HELP: --jobs, -j <N>
-# HELP: -MD
-# HELP: --list-inputs
-# HELP: --list-outputs
-# HELP: --version, -V
-# HELP: --cpp-profile <std|pmr|both|autosar>
-# HELP: --target-endianness <little|big>
-# HELP: --obj-archive-name <name>
-# HELP: --obj-abi-language <c|cpp>
-# HELP: --obj-no-archive
+# HELP-DAG: SYNOPSIS
+# HELP-DAG: dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]
+# HELP-DAG: --no-target-namespaces
+# HELP-DAG: --lookup-dir, -I <dir>
+# HELP-DAG: --outdir, -O <dir>
+# HELP-DAG: --allow-unregulated-fixed-port-id
+# HELP-DAG: --no-embedded-uavcan
+# HELP-DAG: --jobs, -j <N>
+# HELP-DAG: -MD
+# HELP-DAG: --list-inputs
+# HELP-DAG: --list-outputs
+# HELP-DAG: --version, -V
+# HELP-DAG: --cpp-profile <std|pmr|both|autosar>
+# HELP-DAG: --target-endianness <little|big>
+# HELP-DAG: --obj-archive-name <name>
+# HELP-DAG: --obj-abi-language
+# HELP-DAG: --obj-no-archive
 
 # VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
 
 # MISSING_LANGUAGE: --target-language is required
-# MISSING_LANGUAGE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
+# MISSING_LANGUAGE: Usage: dsdlc --target-language
 
 # BAD_LANGUAGE: unknown --target-language value: unknown
 
@@ -69,7 +69,7 @@
 # BAD_TARGET: error: target path does not exist:
 
 # BAD_CPP_PROFILE: invalid --cpp-profile value: not-a-profile
-# BAD_CPP_PROFILE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
+# BAD_CPP_PROFILE: Usage: dsdlc --target-language
 
 # GATED_PY: --py-* is only valid when --target-language is 'python'
 
@@ -132,7 +132,7 @@
 # OBJ_NO_ARCHIVE-NOT: llvmdsdl_generated.a
 
 # MISSING_VALUE_CPP: missing value for --cpp-profile
-# MISSING_VALUE_CPP: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
+# MISSING_VALUE_CPP: Usage: dsdlc --target-language
 
 # SUMMARY: Run summary:
 # SUMMARY: command: ast

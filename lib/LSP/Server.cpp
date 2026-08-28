@@ -13,22 +13,38 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Server.h"
+#include "llvmdsdl/LSP/AI.h"
+#include "llvmdsdl/LSP/Analysis.h"
+#include "llvmdsdl/LSP/DocumentStore.h"
+#include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/Logging.h"
+#include "llvmdsdl/LSP/Ranking.h"
+#include "llvmdsdl/LSP/RequestScheduler.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/LSP/Telemetry.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Version.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iomanip>
+#include <llvm/Support/JSON.h>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -534,6 +550,11 @@ llvm::json::Value analysisLocationToLsp(const AnalysisLocation& location)
     };
 }
 
+/// @brief Copies a request id for use in the matching response.
+///
+/// Every return here names llvm::json::Value explicitly. The braced form selects
+/// `Value(std::initializer_list<Value>)` instead, which builds a one-element ARRAY: an id of `7`
+/// comes back as `[7]`, no response ever matches its request, and the server looks hung.
 llvm::json::Value cloneJsonId(const llvm::json::Value& id)
 {
     if (const auto text = id.getAsString())
@@ -683,7 +704,7 @@ std::vector<RankedCompletion> rerankCompletions(const std::vector<CompletionData
         ranked.push_back(RankedCompletion{completion, breakdown});
     }
 
-    std::sort(ranked.begin(), ranked.end(), [](const RankedCompletion& lhs, const RankedCompletion& rhs) {
+    std::ranges::sort(ranked, [](const RankedCompletion& lhs, const RankedCompletion& rhs) {
         if (lhs.breakdown.totalScore != rhs.breakdown.totalScore)
         {
             return lhs.breakdown.totalScore > rhs.breakdown.totalScore;
@@ -720,7 +741,7 @@ std::vector<RankedSymbol> rerankSymbols(const std::vector<WorkspaceSymbolResult>
         ranked.push_back(RankedSymbol{symbol, breakdown});
     }
 
-    std::sort(ranked.begin(), ranked.end(), [](const RankedSymbol& lhs, const RankedSymbol& rhs) {
+    std::ranges::sort(ranked, [](const RankedSymbol& lhs, const RankedSymbol& rhs) {
         if (lhs.breakdown.totalScore != rhs.breakdown.totalScore)
         {
             return lhs.breakdown.totalScore > rhs.breakdown.totalScore;
@@ -839,7 +860,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 }
             }
         }
-        const std::string positionEncoding = negotiatePositionEncoding(message.get("params"));
+        const std::string  positionEncoding = negotiatePositionEncoding(message.get("params"));
         llvm::json::Object result;
         result["capabilities"] = llvm::json::Object{
             {"positionEncoding", positionEncoding},
@@ -1125,11 +1146,11 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         (void) ensureAnalysisSnapshot(false, false);
         const std::vector<std::string>    diagnosticMessages = parseCodeActionDiagnosticMessages(message.get("params"));
         const std::vector<CodeActionData> actions            = analysis_.codeActions(range->uri,
-                                                                          range->startLine,
-                                                                          range->startCharacter,
-                                                                          range->endLine,
-                                                                          range->endCharacter,
-                                                                          diagnosticMessages);
+                                                                                     range->startLine,
+                                                                                     range->startCharacter,
+                                                                                     range->endLine,
+                                                                                     range->endCharacter,
+                                                                                     diagnosticMessages);
         llvm::json::Array                 payload;
         for (const CodeActionData& action : actions)
         {
@@ -1347,11 +1368,11 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         const llvm::json::Object* arguments = paramsObject->getObject("arguments");
         const llvm::json::Object  emptyArguments;
         const AiToolResult        result = runAiTool(*tool,
-                                              arguments ? *arguments : emptyArguments,
-                                              analysis_,
-                                              config_,
-                                              documents_,
-                                              indexManager_.get());
+                                                     arguments ? *arguments : emptyArguments,
+                                                     analysis_,
+                                                     config_,
+                                                     documents_,
+                                                     indexManager_.get());
         std::string               argumentsText;
         llvm::raw_string_ostream  argumentsStream(argumentsText);
         llvm::json::Object        argumentsObject = arguments ? *arguments : emptyArguments;
@@ -1596,7 +1617,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         const bool        queued     = scheduler_.enqueue(
             requestKey,
             method.str(),
-            [sleepMilliseconds](CancellationToken token) {
+            [sleepMilliseconds](const CancellationToken& token) {
                 const auto start = std::chrono::steady_clock::now();
                 while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(sleepMilliseconds))
                 {
@@ -1608,7 +1629,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 }
                 return RequestTaskResult{RequestTaskStatus::Completed,
                                          llvm::json::Object{{"slept_ms", sleepMilliseconds}},
-                                                    {}};
+                                         {}};
             },
             [this, requestId = cloneJsonId(id), requestMethod = method.str()](RequestTaskResult   result,
                                                                               const std::uint64_t latencyMicros) {
@@ -2016,18 +2037,18 @@ void Server::appendAiCodeActions(const std::string&              uri,
         return;
     }
 
-    const std::optional<DocumentSnapshot> snapshot   = documents_.lookup(uri);
-    const std::string                     sourceText = snapshot ? snapshot->text : std::string{};
-    const std::vector<std::string> symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
+    const std::optional<DocumentSnapshot> snapshot    = documents_.lookup(uri);
+    const std::string                     sourceText  = snapshot ? snapshot->text : std::string{};
+    const std::vector<std::string>        symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
 
-    const AiCodeActionContext                 context     = aiContextPacker_.buildCodeActionContext(uri,
-                                                                                sourceText,
-                                                                                startLine,
-                                                                                startCharacter,
-                                                                                endLine,
-                                                                                endCharacter,
-                                                                                diagnosticMessages,
-                                                                                symbolHints);
+    const AiCodeActionContext context = llvmdsdl::lsp::AiContextPacker::buildCodeActionContext(uri,
+                                                                                               sourceText,
+                                                                                               startLine,
+                                                                                               startCharacter,
+                                                                                               endLine,
+                                                                                               endCharacter,
+                                                                                               diagnosticMessages,
+                                                                                               symbolHints);
     const std::vector<AiCodeActionSuggestion> suggestions = aiProvider_->suggestCodeActions(config_.aiMode, context);
 
     aiAuditLogger_.record("code_action",

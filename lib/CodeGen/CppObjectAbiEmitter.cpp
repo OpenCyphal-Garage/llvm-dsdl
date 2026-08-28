@@ -10,13 +10,20 @@
 /// @file
 /// Canonical profile-agnostic C++ ABI staging for object emission.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CppObjectAbiEmitter.h"
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
@@ -26,12 +33,13 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -216,12 +224,12 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
 
 void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>& components)
 {
-    for (auto it = components.rbegin(); it != components.rend(); ++it)
+    for (const auto& component : std::views::reverse(components))
     {
         emitLine(out,
                  0,
                  "} // namespace " +
-                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, *it));
+                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component));
     }
 }
 
@@ -279,7 +287,7 @@ public:
     }
 
 private:
-    DefinitionIndex index_;
+    DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
@@ -340,8 +348,7 @@ std::string shimScalarType(const SemanticFieldType& type, const EmitterContext& 
     return cScalarType(type);
 }
 
-std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def,
-                                                   const TypeNameVersioning  versioning)
+std::vector<SectionPlan> sectionPlansForDefinition(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::vector<SectionPlan> out;
     if (def.isService)
@@ -445,14 +452,17 @@ void emitCanonicalStruct(std::ostringstream&        out,
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, elemType + " " + member + "{};");
         }
         else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, "std::array<" + elemType + ", " + cap + "> " + member + "{};");
         }
         else
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, "::llvmdsdl::cppabi::BoundedSequence<" + elemType + ", " + cap + "> " + member + "{};");
         }
         ++emittedFields;
@@ -550,14 +560,17 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
                 emitLine(out, 1, cppMember + ".to_c(&out->" + cMember + ");");
             }
             else
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          "out->" + cMember + " = static_cast<std::remove_reference_t<decltype(out->" + cMember +
                              ")>>(" + cppMember + ");");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             continue;
         }
@@ -571,36 +584,43 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
                 emitLine(out, 1, "}");
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 emitLine(out, 2, "if (" + cppMember + "[i]) {");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          3,
                          "out->" + cMember + "[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
                              "[i / 8U] | (1U << (i % 8U)));");
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 emitLine(out, 2, "}");
                 emitLine(out, 1, "}");
             }
             else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
                 emitLine(out, 2, cppMember + "[i].to_c(&out->" + cMember + "[i]);");
                 emitLine(out, 1, "}");
             }
             else
             {
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          2,
                          "out->" + cMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
                              "[i])>>(" + cppMember + "[i]);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 emitLine(out, 1, "}");
             }
             continue;
         }
 
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
         emitLine(out, 1, "out->" + cMember + ".count = " + cppMember + ".count;");
         emitLine(out,
                  1,
                  "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(" + cppMember + ".count, " +
                      cap + ");");
+        // NOLINTEND(performance-inefficient-string-concatenation)
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
@@ -608,26 +628,31 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
             emitLine(out, 1, "}");
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             emitLine(out, 2, "if (" + cppMember + ".elements[i]) {");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out,
                      3,
                      "out->" + cMember + ".bitpacked[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
                          ".bitpacked[i / 8U] | (1U << (i % 8U)));");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 2, "}");
             emitLine(out, 1, "}");
         }
         else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 2, cppMember + ".elements[i].to_c(&out->" + cMember + ".elements[i]);");
             emitLine(out, 1, "}");
         }
         else
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out,
                      2,
                      "out->" + cMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
                          ".elements[i])>>(" + cppMember + ".elements[i]);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 1, "}");
         }
     }
@@ -671,16 +696,20 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          "decltype(out->" + cppMember + ")::from_c(&out->" + cppMember + ", &in->" + cMember + ");");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             else
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          "out->" + cppMember + " = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
                              ")>>(in->" + cMember + ");");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             continue;
         }
@@ -690,38 +719,46 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          2,
                          "out->" + cppMember + "[i] = ((in->" + cMember +
                              "[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 emitLine(out, 1, "}");
             }
             else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          2,
                          "decltype(out->" + cppMember + "[i])::from_c(&out->" + cppMember + "[i], &in->" + cMember +
                              "[i]);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 emitLine(out, 1, "}");
             }
             else
             {
                 emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          2,
                          "out->" + cppMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
                              "[i])>>(in->" + cMember + "[i]);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 emitLine(out, 1, "}");
             }
             continue;
         }
 
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
         emitLine(out, 1, "out->" + cppMember + ".count = in->" + cMember + ".count;");
         emitLine(out,
                  1,
                  "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(in->" + cMember + ".count, " +
                      cap + ");");
+        // NOLINTEND(performance-inefficient-string-concatenation)
 
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
@@ -729,28 +766,34 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
             emitLine(out, 2, "out->" + cppMember + ".elements[i] = false;");
             emitLine(out, 1, "}");
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out,
                      2,
                      "out->" + cppMember + ".elements[i] = ((in->" + cMember +
                          ".bitpacked[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 1, "}");
         }
         else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out,
                      2,
                      "decltype(out->" + cppMember + ".elements[i])::from_c(&out->" + cppMember + ".elements[i], &in->" +
                          cMember + ".elements[i]);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 1, "}");
         }
         else
         {
             emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             emitLine(out,
                      2,
                      "out->" + cppMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" +
                          cppMember + ".elements[i])>>(in->" + cMember + ".elements[i]);");
+            // NOLINTEND(performance-inefficient-string-concatenation)
             emitLine(out, 1, "}");
         }
     }
@@ -986,15 +1029,18 @@ void emitShimStruct(std::ostringstream&    out,
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, elemType + " " + member + ";");
         }
         else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, elemType + " " + member + "[" + cap + "];");
         }
         else
         {
             emitLine(out, 1, "struct {");
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 2, elemType + " elements[" + cap + "];");
             emitLine(out, 2, "size_t count;");
             emitLine(out, 1, "} " + member + ";");
@@ -1396,8 +1442,8 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "null outCppSources sink");
     }
 
-    const auto     selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
-    EmitterContext ctx(semantic, options.typeNameVersioning);
+    const auto           selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    EmitterContext const ctx(semantic, options.typeNameVersioning);
 
     if (auto err = emitRuntimeHeader(options))
     {
@@ -1431,8 +1477,10 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             return err;
         }
-        if (auto err =
-                writeGeneratedFile(canonicalSource, renderCanonicalSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(canonicalSource,
+                                          renderCanonicalSource(def, options.typeNameVersioning),
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
@@ -1441,7 +1489,10 @@ llvm::Error emitCppObjectAbiStage(const SemanticModule&                     sema
         {
             return err;
         }
-        if (auto err = writeGeneratedFile(shimSource, renderShimSource(def, options.typeNameVersioning), options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(shimSource,
+                                          renderShimSource(def, options.typeNameVersioning),
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }

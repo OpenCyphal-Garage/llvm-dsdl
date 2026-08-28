@@ -79,6 +79,13 @@ foreach(_index RANGE 0 ${_llvmdsdl_last_index})
     continue()
   endif()
 
+  # runtime/ is the C runtime and the Python accelerator: snake_case names, macros, unions for
+  # punning, C casts. The C++ ruleset in .clang-tidy describes none of it, and the header filter
+  # below leaves those headers out for the same reason. Linting them needs a C ruleset of its own.
+  if(_abs_file MATCHES "^${_llvmdsdl_source_dir_regex}/runtime/")
+    continue()
+  endif()
+
   list(FIND _llvmdsdl_tidy_excluded_files "${_abs_file}" _llvmdsdl_excluded_index)
   if(NOT _llvmdsdl_excluded_index EQUAL -1)
     continue()
@@ -100,11 +107,9 @@ if(NOT _llvmdsdl_tidy_files)
   return()
 endif()
 
-set(_llvmdsdl_tidy_args
-  -p "${LLVMDSDL_BINARY_DIR}"
-  --warnings-as-errors=*
-  "--header-filter=^${_llvmdsdl_source_dir_regex}/"
-)
+# Everything clang-tidy needs beyond the compile database. `-p`, --warnings-as-errors and the
+# header filters are supplied by the driver.
+set(_llvmdsdl_tidy_extra_args_before)
 
 if(APPLE)
   execute_process(
@@ -115,47 +120,40 @@ if(APPLE)
     ERROR_QUIET
   )
   if(_sdk_result EQUAL 0 AND NOT _sdk_path STREQUAL "")
-    list(APPEND _llvmdsdl_tidy_args
-      --extra-arg-before=-isysroot
-      --extra-arg-before=${_sdk_path}
-    )
+    list(APPEND _llvmdsdl_tidy_extra_args_before -isysroot "${_sdk_path}")
   endif()
 endif()
 
-set(_failed_files)
-foreach(_file IN LISTS _llvmdsdl_tidy_files)
-  execute_process(
-    COMMAND "${CLANG_TIDY}" ${_llvmdsdl_tidy_args} "${_file}"
-    RESULT_VARIABLE _result
-    OUTPUT_VARIABLE _stdout
-    ERROR_VARIABLE _stderr
-  )
-  if(NOT _result EQUAL 0)
-    list(APPEND _failed_files "${_file}")
-    if(NOT DEFINED _first_error)
-      set(_combined_output "${_stdout}")
-      if(NOT _stderr STREQUAL "")
-        if(NOT _combined_output STREQUAL "")
-          string(APPEND _combined_output "\n")
-        endif()
-        string(APPEND _combined_output "${_stderr}")
-      endif()
-      if(NOT _combined_output STREQUAL "")
-        set(_first_error "${_combined_output}")
-      endif()
-    endif()
-  endif()
+# CMake script mode runs execute_process calls one at a time, so the walk is handed to a driver
+# that can use every core. The selection above stays here; the driver only executes it.
+set(_llvmdsdl_tidy_file_list "${LLVMDSDL_BINARY_DIR}/clang-tidy-files.txt")
+string(JOIN "\n" _llvmdsdl_tidy_file_lines ${_llvmdsdl_tidy_files})
+file(WRITE "${_llvmdsdl_tidy_file_list}" "${_llvmdsdl_tidy_file_lines}\n")
+
+find_program(LLVMDSDL_PYTHON3_FOR_TIDY NAMES python3 python)
+if(NOT LLVMDSDL_PYTHON3_FOR_TIDY)
+  message(FATAL_ERROR "python3 was not found; it drives the parallel clang-tidy walk.")
+endif()
+
+# runtime/ is deliberately absent from the header filter. Those headers are the C runtime API --
+# snake_case names, macros, unions for punning, C casts -- and the C++ ruleset in .clang-tidy
+# describes none of it. Linting them needs a C-appropriate ruleset of its own.
+set(_llvmdsdl_tidy_driver_args
+  "${LLVMDSDL_SOURCE_DIR}/tools/run_clang_tidy.py"
+  --clang-tidy "${CLANG_TIDY}"
+  --build-dir "${LLVMDSDL_BINARY_DIR}"
+  --file-list "${_llvmdsdl_tidy_file_list}"
+  "--header-filter=^${_llvmdsdl_source_dir_regex}/(include|lib|test|tools)/"
+  "--exclude-header-filter=^${_llvmdsdl_source_dir_regex}/(submodules|examples|build)/"
+)
+foreach(_extra IN LISTS _llvmdsdl_tidy_extra_args_before)
+  list(APPEND _llvmdsdl_tidy_driver_args "--extra-arg-before=${_extra}")
 endforeach()
 
-if(_failed_files)
-  list(LENGTH _failed_files _failed_count)
-  list(JOIN _failed_files "\n  " _failed_list)
-  message(FATAL_ERROR
-    "clang-tidy check failed for ${_failed_count} file(s):\n"
-    "  ${_failed_list}\n"
-    "First clang-tidy diagnostic:\n${_first_error}")
+execute_process(
+  COMMAND "${LLVMDSDL_PYTHON3_FOR_TIDY}" ${_llvmdsdl_tidy_driver_args}
+  RESULT_VARIABLE _llvmdsdl_tidy_result
+)
+if(NOT _llvmdsdl_tidy_result EQUAL 0)
+  message(FATAL_ERROR "clang-tidy check failed.")
 endif()
-
-list(LENGTH _llvmdsdl_tidy_files _checked_count)
-message(STATUS
-  "clang-tidy check passed for ${_checked_count} file(s).")

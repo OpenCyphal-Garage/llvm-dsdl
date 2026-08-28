@@ -14,12 +14,17 @@
 #include "llvmdsdl/CodeGen/EmitStep.h"
 
 #include <cassert>
-#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {
@@ -193,7 +198,7 @@ void renderFieldSteps(const FieldEmitStep&         step,
         assert(step.children.size() == 1U);
         if (serialize)
         {
-            spelling.spellFixedArrayLenCheck(step, expr);  // D2 interface point
+            spelling.spellFixedArrayLenCheck(step, expr);                   // D2 interface point
             if (spelling.trySpellArrayBulkFastPath(step, expr, direction))  // D3 interface point
             {
                 return;

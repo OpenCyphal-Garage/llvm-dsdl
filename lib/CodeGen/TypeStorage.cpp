@@ -17,6 +17,10 @@
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 namespace llvmdsdl
 {

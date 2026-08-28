@@ -6,7 +6,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
+#include <cstddef>
+#include <llvm/Support/raw_ostream.h>
+#include <exception>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -14,7 +18,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace
@@ -52,7 +55,7 @@ Case leaf(std::mt19937& random)
     constexpr std::int64_t          maximum = std::numeric_limits<std::int64_t>::max();
     const std::vector<std::int64_t> domain{0, 1, 2, 7, 8, 9, maximum - 9, maximum - 2, maximum - 1, maximum};
     std::set<std::int64_t>          values;
-    const std::size_t               count = 1 + random() % 3;
+    const std::size_t               count = 1 + (random() % 3);
     for (std::size_t i = 0; i < count; ++i)
     {
         values.insert(domain[random() % domain.size()]);
@@ -77,37 +80,37 @@ Case randomCase(std::uint32_t seed)
 {
     std::mt19937      random(seed);
     Case              result     = leaf(random);
-    const std::size_t operations = 2 + random() % 5;
+    const std::size_t operations = 2 + (random() % 5);
     for (std::size_t operation = 0; operation < operations; ++operation)
     {
         switch (random() % 5)
         {
         case 0: {
-            Case rhs      = leaf(random);
-            result.recipe = result.recipe + ' ' + rhs.recipe + " A";
-            result.value  = result.value + rhs.value;
+            Case const rhs = leaf(random);
+            result.recipe  = result.recipe + ' ' + rhs.recipe + " A";
+            result.value   = result.value + rhs.value;
             break;
         }
         case 1: {
-            Case rhs      = leaf(random);
-            result.recipe = result.recipe + ' ' + rhs.recipe + " U";
-            result.value  = result.value | rhs.value;
+            Case const rhs = leaf(random);
+            result.recipe  = result.recipe + ' ' + rhs.recipe + " U";
+            result.value   = result.value | rhs.value;
             break;
         }
         case 2: {
-            const std::int64_t alignment = 1 + random() % 16;
+            const std::int64_t alignment = 1 + static_cast<std::int64_t>(random() % 16);
             result.recipe += " P" + std::to_string(alignment);
             result.value = result.value.padToAlignment(alignment);
             break;
         }
         case 3: {
-            const std::int64_t count = random() % 5;
+            const auto count = static_cast<std::int64_t>(random() % 5);
             result.recipe += " R" + std::to_string(count);
             result.value = result.value.repeat(count);
             break;
         }
         default: {
-            const std::int64_t count = random() % 5;
+            const auto count = static_cast<std::int64_t>(random() % 5);
             result.recipe += " Q" + std::to_string(count);
             result.value = result.value.repeatRange(count);
             break;
@@ -153,7 +156,9 @@ void emit(std::size_t id, const Case& testCase)
 
 }  // namespace
 
-int main()
+namespace
+{
+int runBlsInt64Differential()
 {
     std::size_t id = 0;
     for (const auto& testCase : directedCases())
@@ -165,4 +170,25 @@ int main()
         emit(id++, randomCase(seed));
     }
     return 0;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main()
+{
+    try
+    {
+        return runBlsInt64Differential();
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "bls-int64-differential: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "bls-int64-differential: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

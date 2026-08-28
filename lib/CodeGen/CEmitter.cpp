@@ -12,18 +12,23 @@
 ///
 /// This file orchestrates pass pipelines, helper synthesis, and translation-unit rendering for generated C artifacts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/LogicalResult.h>
+#include <mlir/Conversion/ArithToEmitC/ArithToEmitCPass.h>
+#include <mlir/Conversion/FuncToEmitC/FuncToEmitCPass.h>
+#include <mlir/Conversion/SCFToEmitC/SCFToEmitC.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
@@ -31,17 +36,15 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/Support/LLVM.h>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <fstream>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <system_error>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/CHeaderRender.h"
@@ -65,7 +68,6 @@
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
@@ -185,7 +187,7 @@ public:
         return cTypeNameFromInfo(tmp, typeNameVersioning_);
     }
 
-    std::string relativeHeaderPath(const SemanticDefinition& def) const
+    static std::string relativeHeaderPath(const SemanticDefinition& def)
     {
         std::filesystem::path p;
         for (const auto& ns : def.info.namespaceComponents)
@@ -350,6 +352,7 @@ void emitSectionTypedef(std::ostringstream&    out,
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             emitAttachedDocC(out, 1, field.doc);
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             emitLine(out, 1, baseType + " " + cMember + ";");
             ++emitted;
             continue;
@@ -367,9 +370,11 @@ void emitSectionTypedef(std::ostringstream&    out,
             }
             else
             {
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 emitLine(out,
                          1,
                          baseType + " " + cMember + "[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
+                // NOLINTEND(performance-inefficient-string-concatenation)
             }
             ++emitted;
             continue;
@@ -445,7 +450,7 @@ void emitSectionConstants(std::ostringstream& out, const std::string& typeName, 
     // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
     // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
     // the policy tables and escaped by the projection this reads back.
-    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(out, 0, c.doc);
@@ -479,12 +484,16 @@ void emitSectionMetadata(std::ostringstream&              out,
     {
         emitLine(out, 0, line);
     }
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason =
-        zohAliasEligible
-            ? std::string("eligible")
-            : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason
-                                                                                  : std::string("not-proven"));
+    const bool  zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    std::string zohAliasReason   = "not-proven";
+    if (zohAliasEligible)
+    {
+        zohAliasReason = "eligible";
+    }
+    else if (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+    {
+        zohAliasReason = sectionFacts->zohAliasReason;
+    }
     emitLine(out,
              0,
              "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
@@ -639,9 +648,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     // not, and saying so here beats a cascade of redefinitions from inside generated code.
     if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
     {
-        const auto [anyVersion, thisVersion] =
-            renderVersionSentinelMacros(CodegenNamingLanguage::C, def.info.fullName, def.info.majorVersion,
-                                        def.info.minorVersion);
+        const auto [anyVersion, thisVersion] = renderVersionSentinelMacros(CodegenNamingLanguage::C,
+                                                                           def.info.fullName,
+                                                                           def.info.majorVersion,
+                                                                           def.info.minorVersion);
         out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
         out << "#  error \"" << def.info.fullName
             << ": two versions of one type in one translation unit, but generated type names are "
@@ -661,7 +671,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     {
         if (const auto* dep = ctx.find(depRef))
         {
-            out << "#include \"" << ctx.relativeHeaderPath(*dep) << "\"\n";
+            out << "#include \"" << llvmdsdl::EmitterContext::relativeHeaderPath(*dep) << "\"\n";
         }
     }
     out << "\n";
@@ -873,9 +883,9 @@ llvm::Error emitC(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    std::filesystem::path outRoot(options.outDir);
-    EmitterContext        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
-    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    std::filesystem::path const outRoot(options.outDir);
+    EmitterContext const        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
     // them is independent of which definitions were selected -- except under `as-needed`, which
@@ -928,7 +938,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.require_typed_lowering", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string targetHeaderPath = ctx.relativeHeaderPath(def);
+        const std::string targetHeaderPath = llvmdsdl::EmitterContext::relativeHeaderPath(def);
         const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
         if (targetIt == schemaByHeaderPath.end())
         {
@@ -987,8 +997,11 @@ llvm::Error emitC(const SemanticModule& semantic,
                 : std::string();
         const std::string implGuardClose =
             options.emitDeprecationAttributes ? std::string("\n#pragma GCC diagnostic pop\n") : std::string();
+        std::string implContents;
+        implContents.reserve(implPreamble.size() + implGuardOpen.size() + emitted.size() + implGuardClose.size());
+        implContents.append(implPreamble).append(implGuardOpen).append(emitted).append(implGuardClose);
         if (auto err = writeGeneratedFile(implDir / implFileName(def.info),
-                                          implPreamble + implGuardOpen + emitted + implGuardClose,
+                                          implContents,
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

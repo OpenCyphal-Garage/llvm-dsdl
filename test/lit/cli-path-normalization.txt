@@ -1,0 +1,64 @@
+# Path arguments given to the CLI, and where they land.
+#
+# Every option taking a path reads it the same way: a leading `~` is the invoking user's home
+# directory, `.` and `..` fold away, an absolute path is taken as given, and a relative path naming
+# something the run writes is measured from --outdir. Measuring from --outdir is what makes a
+# generated tree relocatable by changing one flag: without it, moving --outdir leaves the manifests
+# behind in the working directory the build happened to start in.
+
+# A bare file name is a file in the output directory.
+# RUN: rm -rf %t.bare && mkdir -p %t.bare
+# RUN: (cd %t.bare && %dsdlc --target-language c --outdir gen --prune-manifest manifest.txt %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.bare/gen/manifest.txt
+
+# A relative path keeps its shape under the output directory.
+# RUN: rm -rf %t.rel && mkdir -p %t.rel
+# RUN: (cd %t.rel && %dsdlc --target-language c --outdir gen --prune-manifest path/to/manifest.txt %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.rel/gen/path/to/manifest.txt
+
+# `..` folds after rooting, so it walks the output directory rather than the working directory.
+# RUN: rm -rf %t.dots && mkdir -p %t.dots
+# RUN: (cd %t.dots && %dsdlc --target-language c --outdir gen --prune-manifest path/../to/manifest.txt %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.dots/gen/to/manifest.txt
+# RUN: not test -e %t.dots/gen/path
+
+# An absolute path is how a caller writes outside the output directory.
+# RUN: rm -rf %t.abs && mkdir -p %t.abs
+# RUN: (cd %t.abs && %dsdlc --target-language c --outdir gen --prune-manifest %t.abs/beside/manifest.txt %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.abs/beside/manifest.txt
+# RUN: not test -e %t.abs/gen/beside
+
+# A leading `~` is expanded here rather than by the shell, so a path from a build system or a
+# configuration file resolves the same way one typed at a prompt does.
+# RUN: rm -rf %t.home && mkdir -p %t.home/home
+# RUN: (cd %t.home && env HOME=%t.home/home %dsdlc --target-language c --outdir gen --prune-manifest '~/manifests/types' %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.home/home/manifests/types
+# RUN: env HOME=%t.home/home %dsdlc --target-language c --outdir '~/out' %S/fixtures_prune/ns >/dev/null 2>&1
+# RUN: test -f %t.home/home/out/ns/Kept_1_0.h
+
+# The whole command line is read before any of it is resolved, so an option is measured from the
+# --outdir the run ends up with rather than the one in force where the option happened to sit.
+# RUN: rm -rf %t.order && mkdir -p %t.order
+# RUN: (cd %t.order && %dsdlc --target-language c --prune-manifest manifest.txt --outdir gen %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.order/gen/manifest.txt
+
+# --naming-manifest reads its path the same way, and the directory it names is created: nothing has
+# had reason to create --outdir yet when the manifest is written.
+# RUN: rm -rf %t.naming && mkdir -p %t.naming
+# RUN: (cd %t.naming && %dsdlc --target-language c --outdir gen --naming-manifest meta/names.json %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: test -f %t.naming/gen/meta/names.json
+
+# A dry run still writes nothing, so anchoring did not turn either manifest into an output.
+# RUN: rm -rf %t.dry && mkdir -p %t.dry
+# RUN: (cd %t.dry && %dsdlc --target-language c --outdir gen --dry-run --naming-manifest names.json --prune-manifest manifest.txt %S/fixtures_prune/ns >/dev/null 2>&1)
+# RUN: not test -e %t.dry/gen
+
+# Targets and lookup roots are read for the same `~`, and are otherwise resolved against the working
+# directory: they name what the run reads, and --outdir has no claim on that.
+# RUN: rm -rf %t.in && mkdir -p %t.in/home/dsdl
+# RUN: cp -R %S/fixtures_prune/ns %t.in/home/dsdl/ns
+# RUN: env HOME=%t.in/home %dsdlc --target-language c --outdir %t.in/out '~/dsdl/ns' >/dev/null 2>&1
+# RUN: test -f %t.in/out/ns/Kept_1_0.h
+# RUN: env HOME=%t.in/home %dsdlc --target-language ast --list-inputs -I '~/dsdl/ns' '~/dsdl/ns/Kept.1.0.dsdl' 2>/dev/null | FileCheck %s --check-prefix=LOOKUP
+
+# LOOKUP: Kept.1.0.dsdl

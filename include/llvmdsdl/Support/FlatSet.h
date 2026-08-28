@@ -46,6 +46,10 @@
 namespace llvmdsdl
 {
 
+// NOLINTBEGIN(readability-identifier-naming)
+// The names below are the standard container interface this type models. Spelling them in the
+// project's CamelCase would stop generic code, and range-for, from seeing a container at all.
+
 /// @brief Tag selecting the constructor that trusts its input to be sorted and unique.
 /// @details Mirrors `std::sorted_unique_t`; kept separate so this header does not
 ///   depend on `<flat_set>` being present at all.
@@ -63,17 +67,18 @@ template <typename T, typename Compare = std::less<T>>
 class FlatSet final
 {
 public:
-    using value_type             = T;
-    using key_type               = T;
-    using key_compare            = Compare;
-    using container_type         = std::vector<T>;
-    using size_type              = typename container_type::size_type;
+    using value_type     = T;
+    using key_type       = T;
+    using key_compare    = Compare;
+    using container_type = std::vector<T>;
+    using size_type      = container_type::size_type;
     // Elements are keys, so they are immutable in place: mutating one through an
     // iterator could break the sorted invariant the whole class rests on.
-    using const_iterator         = typename container_type::const_iterator;
+    using const_iterator         = container_type::const_iterator;
     using iterator               = const_iterator;
-    using const_reverse_iterator = typename container_type::const_reverse_iterator;
+    using const_reverse_iterator = container_type::const_reverse_iterator;
     using reverse_iterator       = const_reverse_iterator;
+    // NOLINTEND(readability-identifier-naming)
 
     FlatSet() = default;
 
@@ -88,27 +93,56 @@ public:
     ///   precondition violation that silently breaks lookup -- exactly as it would
     ///   with `std::flat_set`.
     template <typename InputIt>
-    FlatSet(sorted_unique_t, InputIt first, InputIt last) : data_(first, last)
+    FlatSet(sorted_unique_t /*unused*/, InputIt first, InputIt last)
+        : data_(first, last)
     {
     }
 
     /// @brief Adopts a vector's storage, sorting and de-duplicating it in place.
-    explicit FlatSet(container_type&& values) : data_(std::move(values))
+    explicit FlatSet(container_type&& values)
+        : data_(std::move(values))
     {
         sortAndUnique();
     }
 
-    [[nodiscard]] const_iterator begin() const noexcept { return data_.begin(); }
-    [[nodiscard]] const_iterator end() const noexcept { return data_.end(); }
-    [[nodiscard]] const_iterator cbegin() const noexcept { return data_.cbegin(); }
-    [[nodiscard]] const_iterator cend() const noexcept { return data_.cend(); }
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept { return data_.rbegin(); }
-    [[nodiscard]] const_reverse_iterator rend() const noexcept { return data_.rend(); }
+    [[nodiscard]] const_iterator begin() const noexcept
+    {
+        return data_.begin();
+    }
+    [[nodiscard]] const_iterator end() const noexcept
+    {
+        return data_.end();
+    }
+    [[nodiscard]] const_iterator cbegin() const noexcept
+    {
+        return data_.cbegin();
+    }
+    [[nodiscard]] const_iterator cend() const noexcept
+    {
+        return data_.cend();
+    }
+    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    {
+        return data_.rbegin();
+    }
+    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    {
+        return data_.rend();
+    }
 
-    [[nodiscard]] bool      empty() const noexcept { return data_.empty(); }
-    [[nodiscard]] size_type size() const noexcept { return data_.size(); }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return data_.empty();
+    }
+    [[nodiscard]] size_type size() const noexcept
+    {
+        return data_.size();
+    }
 
-    void clear() noexcept { data_.clear(); }
+    void clear() noexcept
+    {
+        data_.clear();
+    }
 
     /// @brief Inserts @p value if absent.
     /// @return The position of the element, and whether this call inserted it.
@@ -141,10 +175,7 @@ public:
         const size_type pivot = data_.size();
         data_.insert(data_.end(), first, last);
         std::sort(data_.begin() + static_cast<std::ptrdiff_t>(pivot), data_.end(), Compare{});
-        std::inplace_merge(data_.begin(),
-                           data_.begin() + static_cast<std::ptrdiff_t>(pivot),
-                           data_.end(),
-                           Compare{});
+        std::inplace_merge(data_.begin(), data_.begin() + static_cast<std::ptrdiff_t>(pivot), data_.end(), Compare{});
         eraseAdjacentDuplicates();
     }
 
@@ -167,7 +198,10 @@ public:
         return data_.end();
     }
 
-    [[nodiscard]] bool contains(const T& value) const { return find(value) != data_.end(); }
+    [[nodiscard]] bool contains(const T& value) const
+    {
+        return find(value) != data_.end();
+    }
 
     /// @brief Number of elements equal to @p value; always 0 or 1, the keys being unique.
     [[nodiscard]] size_type count(const T& value) const

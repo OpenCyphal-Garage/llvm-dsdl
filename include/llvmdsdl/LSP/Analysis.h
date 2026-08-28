@@ -504,7 +504,7 @@ private:
         std::optional<SectionExtentInfo> response;
     };
 
-    void populateCachedDefinitionMetadata(CachedDefinition& cached) const;
+    static void populateCachedDefinitionMetadata(CachedDefinition& cached);
 
     std::unordered_map<std::string, CachedDefinition>         cachedDefinitionsByPath_;
     std::unordered_map<std::string, std::vector<Diagnostic>>  parseDiagnosticsByPath_;

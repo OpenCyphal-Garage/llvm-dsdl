@@ -16,6 +16,8 @@
 
 #include <cctype>
 #include <cstddef>
+#include <llvm/ADT/StringRef.h>
+#include <string>
 
 namespace llvmdsdl
 {

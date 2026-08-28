@@ -17,10 +17,7 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/IR/Block.h>
+#include <cstdint>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
@@ -28,6 +25,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -154,8 +152,8 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
         }
 
         const auto key      = loweredTypeKey(fullName.getValue().str(),
-                                        static_cast<std::uint32_t>(major.getInt()),
-                                        static_cast<std::uint32_t>(minor.getInt()));
+                                             static_cast<std::uint32_t>(major.getInt()),
+                                             static_cast<std::uint32_t>(minor.getInt()));
         auto&      sections = keyToSections[key];
 
         if (op.getNumRegions() == 0 || op.getRegion(0).empty())

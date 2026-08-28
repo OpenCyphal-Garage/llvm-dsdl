@@ -9,11 +9,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "llvmdsdl/LSP/Ranking.h"
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -84,7 +88,7 @@ bool runLspRankingTests()
         return fail("failed to flush signal store");
     }
 
-    llvmdsdl::lsp::AdaptiveSignalStore reloaded(signalPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const reloaded(signalPath.string(), 4);
     if (reloaded.size() > 4)
     {
         return fail("signal store did not respect bounded size");
@@ -132,7 +136,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write invalid json fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore invalidJsonStore(invalidJsonPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const invalidJsonStore(invalidJsonPath.string(), 4);
     if (invalidJsonStore.size() != 0)
     {
         return fail("invalid json should be ignored during load");
@@ -145,7 +149,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write wrong-schema fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore wrongSchemaStore(wrongSchemaPath.string(), 4);
+    llvmdsdl::lsp::AdaptiveSignalStore const wrongSchemaStore(wrongSchemaPath.string(), 4);
     if (wrongSchemaStore.size() != 0)
     {
         return fail("wrong schema version should be ignored");
@@ -158,7 +162,7 @@ bool runLspRankingTests()
     {
         return fail("failed to write clamping/pruning fixture");
     }
-    llvmdsdl::lsp::AdaptiveSignalStore clampedStore(negativeFixturePath.string(), 2);
+    llvmdsdl::lsp::AdaptiveSignalStore const clampedStore(negativeFixturePath.string(), 2);
     if (clampedStore.size() != 2 || clampedStore.currentTick() != 42)
     {
         return fail("clamped/pruned store did not load expected shape");
@@ -261,15 +265,15 @@ bool runLspRankingTests()
     }
 
     const auto detailMatched    = llvmdsdl::lsp::RankingModel::scoreCompletion("meta",
-                                                                            llvmdsdl::lsp::CompletionRankingInput{
-                                                                                "completion:demo.MatchInDetail.1.0",
-                                                                                "symbol",
-                                                                                "meta_serializable",
-                                                                                7,
-                                                                                0.0,
-                                                                            },
-                                                                            std::nullopt,
-                                                                            1);
+                                                                               llvmdsdl::lsp::CompletionRankingInput{
+                                                                                   "completion:demo.MatchInDetail.1.0",
+                                                                                   "symbol",
+                                                                                   "meta_serializable",
+                                                                                   7,
+                                                                                   0.0,
+                                                                               },
+                                                                               std::nullopt,
+                                                                               1);
     const auto detailMismatched = llvmdsdl::lsp::RankingModel::scoreCompletion("meta",
                                                                                llvmdsdl::lsp::CompletionRankingInput{
                                                                                    "completion:demo.NoDetailMatch.1.0",
@@ -286,7 +290,7 @@ bool runLspRankingTests()
     }
 
     const std::string longLabel(512, 'x');
-    const auto        shortLabelScore = llvmdsdl::lsp::RankingModel::scoreCompletion("",
+    const auto shortLabelScore = llvmdsdl::lsp::RankingModel::scoreCompletion("",
                                                                               llvmdsdl::lsp::CompletionRankingInput{
                                                                                   "completion:demo.Short.1.0",
                                                                                   "short",
@@ -296,16 +300,16 @@ bool runLspRankingTests()
                                                                               },
                                                                               std::nullopt,
                                                                               1);
-    const auto        longLabelScore  = llvmdsdl::lsp::RankingModel::scoreCompletion("",
-                                                                             llvmdsdl::lsp::CompletionRankingInput{
-                                                                                 "completion:demo.Long.1.0",
-                                                                                 longLabel,
-                                                                                 "",
-                                                                                 7,
-                                                                                 4.0,
-                                                                             },
-                                                                             std::nullopt,
-                                                                             1);
+    const auto longLabelScore  = llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                                              llvmdsdl::lsp::CompletionRankingInput{
+                                                                                  "completion:demo.Long.1.0",
+                                                                                  longLabel,
+                                                                                  "",
+                                                                                  7,
+                                                                                  4.0,
+                                                                              },
+                                                                              std::nullopt,
+                                                                              1);
     if (longLabelScore.lengthPenalty >= shortLabelScore.lengthPenalty ||
         longLabelScore.totalScore >= shortLabelScore.totalScore)
     {
@@ -344,17 +348,17 @@ bool runLspRankingTests()
     }
 
     const auto symbolStructKind  = llvmdsdl::lsp::RankingModel::scoreSymbol("",
-                                                                           llvmdsdl::lsp::SymbolRankingInput{
-                                                                               "symbol:type:demo.StructType.1.0",
-                                                                               "StructType",
-                                                                               "demo.StructType.1.0",
-                                                                               "demo",
-                                                                               "message",
-                                                                               23,
-                                                                               0.0,
-                                                                           },
-                                                                           std::nullopt,
-                                                                           1);
+                                                                            llvmdsdl::lsp::SymbolRankingInput{
+                                                                                "symbol:type:demo.StructType.1.0",
+                                                                                "StructType",
+                                                                                "demo.StructType.1.0",
+                                                                                "demo",
+                                                                                "message",
+                                                                                23,
+                                                                                0.0,
+                                                                            },
+                                                                            std::nullopt,
+                                                                            1);
     const auto symbolDefaultKind = llvmdsdl::lsp::RankingModel::scoreSymbol("",
                                                                             llvmdsdl::lsp::SymbolRankingInput{
                                                                                 "symbol:type:demo.UnknownKind.1.0",

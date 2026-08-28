@@ -8,8 +8,12 @@
 #include <iostream>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+
+#include "UnitTests.h"
 
 bool runScriptedBodyPlanTests()
 {

@@ -25,6 +25,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -36,11 +37,16 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -51,12 +57,15 @@ using llvmdsdl::Parser;
 using llvmdsdl::Token;
 
 /// @brief Heartbeat incremented after each parse; watched for stalls (hangs).
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::atomic<std::uint64_t> gHeartbeat{0};
 
 /// @brief Signals the watchdog thread to stop once fuzzing is complete.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::atomic<bool> gFinished{false};
 
 /// @brief Snapshot of the input currently being parsed, for hang diagnostics.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) -- shared with the watchdog thread.
 std::string gCurrentInput;
 
 /// @brief Renders bytes as hex for reproducible failure reports.
@@ -84,10 +93,10 @@ bool parseAndCheck(std::string_view context, std::string_view input)
 
     DiagnosticEngine   diagnostics;
     Lexer              lexer("fuzz.dsdl", std::string(input));
-    std::vector<Token> tokens = lexer.lex();
+    std::vector<Token> tokens     = lexer.lex();
     const std::size_t  tokenCount = tokens.size();
 
-    Parser                                 parser("fuzz.dsdl", std::move(tokens), diagnostics);
+    Parser                                  parser("fuzz.dsdl", std::move(tokens), diagnostics);
     llvm::Expected<llvmdsdl::DefinitionAST> definition = parser.parseDefinition();
 
     const bool succeeded = static_cast<bool>(definition);
@@ -130,19 +139,58 @@ bool parseAndCheck(std::string_view context, std::string_view input)
 /// @brief DSDL-like fragments spanning the parser's statement and expression forms.
 constexpr auto kFragments = std::to_array<std::string_view>({
     // Primitive and composite type references.
-    "uint8", "int16", "float32", "float64", "bool", "void3", "truncated uint7", "saturated int4",
-    "uavcan.node.Heartbeat.1.0", "uavcan.file.Path.2.0",
+    "uint8",
+    "int16",
+    "float32",
+    "float64",
+    "bool",
+    "void3",
+    "truncated uint7",
+    "saturated int4",
+    "uavcan.node.Heartbeat.1.0",
+    "uavcan.file.Path.2.0",
     // Field and constant declarations.
-    " field\n", " value = 42\n", " X = 0x1F\n", " name\n",
+    " field\n",
+    " value = 42\n",
+    " X = 0x1F\n",
+    " name\n",
     // Array specifiers.
-    "[4]", "[<=4]", "[<8]", "[>=1]", "[]",
+    "[4]",
+    "[<=4]",
+    "[<8]",
+    "[>=1]",
+    "[]",
     // Directives.
-    "@union\n", "@sealed\n", "@extent 64\n", "@deprecated\n", "@assert ", "@print ",
+    "@union\n",
+    "@sealed\n",
+    "@extent 64\n",
+    "@deprecated\n",
+    "@assert ",
+    "@print ",
     // Expressions and operators.
-    "_offset_", "% 8", "== {0}", "<= 7", "&& true", "|| false", "+ 1", "- 2", "* 3", "/ 4",
-    "** 2", "( 1 + 2 )", "{ 0, 8, 16 }", ".MAX_LENGTH", "!x", "1.5", "'str'", "\"dq\"",
+    "_offset_",
+    "% 8",
+    "== {0}",
+    "<= 7",
+    "&& true",
+    "|| false",
+    "+ 1",
+    "- 2",
+    "* 3",
+    "/ 4",
+    "** 2",
+    "( 1 + 2 )",
+    "{ 0, 8, 16 }",
+    ".MAX_LENGTH",
+    "!x",
+    "1.5",
+    "'str'",
+    "\"dq\"",
     // Structural tokens.
-    "---\n", "\n", "# comment\n", "@",
+    "---\n",
+    "\n",
+    "# comment\n",
+    "@",
 });
 
 /// @brief Appends a random fragment, whitespace, or raw byte to @p out.
@@ -156,8 +204,7 @@ void appendRandomPiece(Rng& rng, std::string& out)
     case 1:
     case 2:
     case 3:
-    case 4:
-    {
+    case 4: {
         std::uniform_int_distribution<std::size_t> pick(0, kFragments.size() - 1);
         out.append(kFragments[pick(rng)]);
         break;
@@ -168,15 +215,13 @@ void appendRandomPiece(Rng& rng, std::string& out)
     case 6:
         out.push_back('\n');
         break;
-    case 7:
-    {
-        static constexpr std::string_view kPunct = "@()[]{},.=+-*/%|^&!<>#'\"\\";
+    case 7: {
+        static constexpr std::string_view          kPunct = "@()[]{},.=+-*/%|^&!<>#'\"\\";
         std::uniform_int_distribution<std::size_t> pick(0, kPunct.size() - 1);
         out.push_back(kPunct[pick(rng)]);
         break;
     }
-    default:
-    {
+    default: {
         std::uniform_int_distribution<int> byte(0, 255);
         out.push_back(static_cast<char>(byte(rng)));
         break;
@@ -216,40 +261,41 @@ void mutate(Rng& rng, std::string& data)
 bool runEdgeCaseCorpus()
 {
     static const auto kCorpus = std::to_array<std::string_view>({
-        std::string_view("", 0),                       // Empty definition.
-        "\n\n\n",                                       // Only newlines.
-        "# just a comment\n",                           // Only a comment.
-        "@",                                            // Bare directive introducer.
-        "@union",                                       // Directive, no newline, at EOF.
-        "@extent",                                      // Directive missing its operand.
-        "uint8",                                        // Type with no field name, at EOF.
-        "uint8 ",                                       // Type then trailing space.
-        "uint8 field",                                  // Field, no newline terminator.
-        "uint8[ field\n",                               // Unterminated array specifier.
-        "uint8[<=] field\n",                            // Array bound with no expression.
-        "x = \n",                                       // Constant with no value expression.
-        "x = (((((\n",                                  // Deeply unbalanced parentheses.
-        "x = {\n",                                      // Unterminated set literal.
-        "x = 1 + + + + 2\n",                            // Repeated binary operators.
-        "x = ----------\n",                             // Run of minus signs (unary stack).
-        "@assert _offset_ % 8 == {0}\n",                // Valid assertion expression.
-        "---\n---\n---\n",                              // Multiple service markers.
-        "uint8 a\n---\nbool b\n@sealed\n",              // Minimal valid service.
-        "uavcan.node.Heartbeat.1.0 h\n@sealed\n",       // Composite-type field.
-        ".5\n",                                         // Leading-dot real (see conformance gap).
-        "@union\nuint99999999999999999999 a\n@sealed\n", // Oversized bit length (regression: was an abort).
-        "int999999999999999999999 a\n@sealed\n",        // Oversized signed-int bit length.
-        "float88888888888888888888 a\n@sealed\n",       // Oversized float bit length.
-        "void77777777777777777777\n@sealed\n",          // Oversized void bit length.
-        "@@@@@@\n",                                     // Run of directive introducers.
-        std::string_view("uint8\0field\n", 12),         // Embedded NUL.
-        "\xff\xfe identifier\n",                         // High-bit bytes before a statement.
+        // NOLINTNEXTLINE(bugprone-string-constructor) -- spelled (bytes, length) like its neighbours.
+        std::string_view("", 0),                          // Empty definition.
+        "\n\n\n",                                         // Only newlines.
+        "# just a comment\n",                             // Only a comment.
+        "@",                                              // Bare directive introducer.
+        "@union",                                         // Directive, no newline, at EOF.
+        "@extent",                                        // Directive missing its operand.
+        "uint8",                                          // Type with no field name, at EOF.
+        "uint8 ",                                         // Type then trailing space.
+        "uint8 field",                                    // Field, no newline terminator.
+        "uint8[ field\n",                                 // Unterminated array specifier.
+        "uint8[<=] field\n",                              // Array bound with no expression.
+        "x = \n",                                         // Constant with no value expression.
+        "x = (((((\n",                                    // Deeply unbalanced parentheses.
+        "x = {\n",                                        // Unterminated set literal.
+        "x = 1 + + + + 2\n",                              // Repeated binary operators.
+        "x = ----------\n",                               // Run of minus signs (unary stack).
+        "@assert _offset_ % 8 == {0}\n",                  // Valid assertion expression.
+        "---\n---\n---\n",                                // Multiple service markers.
+        "uint8 a\n---\nbool b\n@sealed\n",                // Minimal valid service.
+        "uavcan.node.Heartbeat.1.0 h\n@sealed\n",         // Composite-type field.
+        ".5\n",                                           // Leading-dot real (see conformance gap).
+        "@union\nuint99999999999999999999 a\n@sealed\n",  // Oversized bit length (regression: was an abort).
+        "int999999999999999999999 a\n@sealed\n",          // Oversized signed-int bit length.
+        "float88888888888888888888 a\n@sealed\n",         // Oversized float bit length.
+        "void77777777777777777777\n@sealed\n",            // Oversized void bit length.
+        "@@@@@@\n",                                       // Run of directive introducers.
+        std::string_view("uint8\0field\n", 12),           // Embedded NUL.
+        "\xff\xfe identifier\n",                          // High-bit bytes before a statement.
     });
 
     bool ok = true;
-    for (std::size_t i = 0; i < kCorpus.size(); ++i)
+    for (auto kCorpu : kCorpus)
     {
-        ok = parseAndCheck("edge-case", kCorpus[i]) && ok;
+        ok = parseAndCheck("edge-case", kCorpu) && ok;
     }
     return ok;
 }
@@ -257,7 +303,8 @@ bool runEdgeCaseCorpus()
 /// @brief Streams of fully random bytes of varied lengths.
 bool runRandomByteFuzz()
 {
-    std::mt19937                       rng(0x0B5E55EDu);
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
+    std::mt19937                       rng(0x0B5E55EDU);
     std::uniform_int_distribution<int> byte(0, 255);
     bool                               ok = true;
 
@@ -279,7 +326,8 @@ bool runRandomByteFuzz()
 /// @brief Token-aware inputs assembled from DSDL-like fragments.
 bool runStructuredFuzz()
 {
-    std::mt19937 rng(0xDEFEC8EDu);
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
+    std::mt19937 rng(0xDEFEC8EDU);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)
@@ -299,7 +347,8 @@ bool runStructuredFuzz()
 /// @brief Mutational fuzzing seeded from valid-looking fragments.
 bool runMutationalFuzz()
 {
-    std::mt19937 rng(0xF0CACC1Au);
+    // NOLINTNEXTLINE(bugprone-random-generator-seed) -- fixed so a failure reproduces.
+    std::mt19937 rng(0xF0CACC1AU);
     bool         ok = true;
 
     for (int iteration = 0; iteration < 20000; ++iteration)
@@ -334,7 +383,7 @@ bool runParserFuzzTests()
     // the parser is hung -- report the offending input and abort hard so CI
     // surfaces an actionable bug instead of an opaque timeout.
     std::thread watchdog([] {
-        std::uint64_t last = gHeartbeat.load(std::memory_order_relaxed);
+        std::uint64_t last   = gHeartbeat.load(std::memory_order_relaxed);
         int           stalls = 0;
         while (!gFinished.load(std::memory_order_relaxed))
         {
@@ -345,8 +394,7 @@ bool runParserFuzzTests()
                 if (++stalls >= 10)
                 {
                     std::cerr << "parser fuzz: watchdog detected a hang (>10s on one input)\n";
-                    std::cerr << "  input (" << gCurrentInput.size() << " bytes): " << toHex(gCurrentInput)
-                              << "\n";
+                    std::cerr << "  input (" << gCurrentInput.size() << " bytes): " << toHex(gCurrentInput) << "\n";
                     std::abort();
                 }
             }

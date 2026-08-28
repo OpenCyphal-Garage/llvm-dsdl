@@ -12,16 +12,14 @@
 ///
 /// The pass lowers dialect-specific control flow and bit operations into EmitC-compatible forms for C code emission.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/Twine.h>
-#include <llvm/ADT/ilist_iterator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/LogicalResult.h>
-#include <llvm/Support/TypeName.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -625,11 +623,7 @@ bool supportsTypedLowering(const std::vector<PlanStep>& steps, const bool isUnio
             unionOptions.insert(step.unionOptionIndex);
         }
     }
-    if (isUnion && unionOptions.empty())
-    {
-        return false;
-    }
-    return true;
+    return !(isUnion && unionOptions.empty());
 }
 
 void emitDeserializeAlign(std::ostringstream& out, const int indent, const std::int64_t alignmentBits)
@@ -748,13 +742,13 @@ void emitSerializePadding(std::ostringstream& out, const std::size_t index, cons
 bool emitSerializeField(std::ostringstream& out,
                         const PlanStep&     step,
                         const std::string&  expr,
-                        const std::size_t   index,
-                        const int           indent);
+                        std::size_t         index,
+                        int                 indent);
 bool emitDeserializeField(std::ostringstream& out,
                           const PlanStep&     step,
                           const std::string&  expr,
-                          const std::size_t   index,
-                          const int           indent);
+                          std::size_t         index,
+                          int                 indent);
 
 bool emitSerializeArrayField(std::ostringstream& out,
                              const PlanStep&     step,
@@ -1077,7 +1071,7 @@ bool emitSerializeField(std::ostringstream& out,
                  indent,
                  "const " + castType + " " + normName + " = " + step.serFloatHelper + "((" + castType + ")(" + expr +
                      "));");
-        std::string valueExpr = normName;
+        std::string const& valueExpr = normName;
         emitLine(out,
                  indent,
                  "const int8_t _err_" + std::to_string(index) + " = " + setter +
@@ -1138,8 +1132,8 @@ bool emitDeserializeField(std::ostringstream& out,
             // would misplace every subsequent field, breaking delimited forward compatibility.
             emitLine(out,
                      indent,
-                     "size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" +
-                         std::to_string(index) + ";");
+                     "size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" + std::to_string(index) +
+                         ";");
             emitLine(out,
                      indent,
                      "const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName +
@@ -1230,8 +1224,8 @@ bool emitDeserializeField(std::ostringstream& out,
         {
             return false;
         }
-        std::string castType = (step.bitLength == 64) ? "double" : "float";
-        const auto  rawName  = "_rawf_" + std::to_string(index);
+        std::string const castType = (step.bitLength == 64) ? "double" : "float";
+        const auto        rawName  = "_rawf_" + std::to_string(index);
         // Read into the native storage width (get_f16/get_f32 return float,
         // get_f64 returns double) and run the identity normalization helper at
         // that width, so a NaN payload survives without float->double->float
@@ -1335,7 +1329,7 @@ std::string renderTypedSerializeFunction(llvm::StringRef              functionNa
                 unionFields.push_back(&step);
             }
         }
-        std::sort(unionFields.begin(), unionFields.end(), [](const PlanStep* lhs, const PlanStep* rhs) {
+        std::ranges::sort(unionFields, [](const PlanStep* lhs, const PlanStep* rhs) {
             return lhs->unionOptionIndex < rhs->unionOptionIndex;
         });
 
@@ -1472,7 +1466,7 @@ std::string renderTypedDeserializeFunction(llvm::StringRef              function
                 unionFields.push_back(&step);
             }
         }
-        std::sort(unionFields.begin(), unionFields.end(), [](const PlanStep* lhs, const PlanStep* rhs) {
+        std::ranges::sort(unionFields, [](const PlanStep* lhs, const PlanStep* rhs) {
             return lhs->unionOptionIndex < rhs->unionOptionIndex;
         });
 
@@ -1544,6 +1538,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         registry.insert<mlir::emitc::EmitCDialect>();
     }
 
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
         auto       module               = getOperation();
@@ -2014,6 +2009,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::emitc::VerbatimOp::create(builder, loc, "/* Generated from DSDL IR by convert-dsdl-to-emitc. */");
         for (const auto& typeName : forwardDeclaredTypes)
         {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             mlir::emitc::VerbatimOp::create(builder, loc, "typedef struct " + typeName + " " + typeName + ";");
         }
         for (const auto& symbol : capacityCheckSymbols)
@@ -2049,6 +2045,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     ctype = "float";
                 }
             }
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             mlir::emitc::VerbatimOp::create(builder, loc, ctype + " " + symbol + "(" + ctype + ");");
         }
         for (const auto& symbol : arrayLengthPrefixHelperSymbols)
@@ -2090,7 +2087,7 @@ void registerDSDLConvertPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<ConvertDSDLToEmitCPass> reg;
+    static mlir::PassRegistration<ConvertDSDLToEmitCPass> const reg;
 }
 
 }  // namespace llvmdsdl

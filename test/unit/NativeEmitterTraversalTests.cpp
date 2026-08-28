@@ -5,6 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -15,7 +16,11 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
+
+#include "UnitTests.h"
 
 bool runNativeEmitterTraversalTests()
 {
@@ -47,7 +52,7 @@ bool runNativeEmitterTraversalTests()
         std::vector<std::string>                  events;
         llvmdsdl::NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch = [&events](const std::vector<llvmdsdl::PlannedFieldStep>&) {
-            events.push_back("union");
+            events.emplace_back("union");
         };
         callbacks.onFieldAlignment = [&events](const std::int64_t alignmentBits) {
             events.push_back("field-align:" + std::to_string(alignmentBits));
@@ -103,7 +108,7 @@ bool runNativeEmitterTraversalTests()
         std::vector<std::string>                  events;
         llvmdsdl::NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch = [&events](const std::vector<llvmdsdl::PlannedFieldStep>& branches) {
-            events.push_back("union");
+            events.emplace_back("union");
             for (const auto& branch : branches)
             {
                 events.push_back("branch:" + branch.field->name);

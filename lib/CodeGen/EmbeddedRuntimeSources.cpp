@@ -14,6 +14,7 @@
 
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
+#include <optional>
 #include <string_view>
 
 // Generated at build time from the files under runtime/ by

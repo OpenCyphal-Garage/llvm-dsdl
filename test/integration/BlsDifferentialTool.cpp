@@ -33,6 +33,9 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <cstddef>
+#include <llvm/Support/raw_ostream.h>
+#include <exception>
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -40,9 +43,11 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/FlatSet.h"
 
 namespace
 {
@@ -113,7 +118,7 @@ Case makeRandomCase(std::mt19937& rng)
     std::vector<double>       cost;  // parallel pydsdl-enumeration cost estimate per stack slot
 
     const auto pushLeaf = [&]() {
-        const std::size_t      n = 1 + rng() % 4;
+        const std::size_t      n = 1 + (rng() % 4);
         std::set<std::int64_t> values;
         for (std::size_t i = 0; i < n; ++i)
         {
@@ -131,12 +136,12 @@ Case makeRandomCase(std::mt19937& rng)
             first = false;
         }
         recipe << '}';
-        stack.push_back(BitLengthSet(values));
+        stack.emplace_back(values);
         cost.push_back(static_cast<double>(values.size()));
     };
 
     pushLeaf();
-    const std::size_t operations = 2 + rng() % 5;
+    const std::size_t operations = 2 + (rng() % 5);
     for (std::size_t i = 0; i < operations; ++i)
     {
         switch (rng() % 5)
@@ -146,7 +151,7 @@ Case makeRandomCase(std::mt19937& rng)
             recipe << " A";
             const auto rhs = stack.back();
             stack.pop_back();
-            stack.back() = stack.back() + rhs;
+            stack.back()         = stack.back() + rhs;
             const double rhsCost = cost.back();
             cost.pop_back();
             cost.back() = std::min(kPyEnumCostCap + 1.0, cost.back() * rhsCost);  // cartesian product
@@ -157,7 +162,7 @@ Case makeRandomCase(std::mt19937& rng)
             recipe << " U";
             const auto rhs = stack.back();
             stack.pop_back();
-            stack.back() = stack.back() | rhs;
+            stack.back()         = stack.back() | rhs;
             const double rhsCost = cost.back();
             cost.pop_back();
             cost.back() = cost.back() + rhsCost;
@@ -170,18 +175,18 @@ Case makeRandomCase(std::mt19937& rng)
             break;
         }
         case 3: {
-            const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
+            const auto k = static_cast<std::int64_t>(rng() % 5);
             recipe << " R" << k;
             stack.back() = stack.back().repeat(k);
-            cost.back() = multicombinations(cost.back(), k);
+            cost.back()  = multicombinations(cost.back(), k);
             break;
         }
         default: {
-            const std::int64_t k = static_cast<std::int64_t>(rng() % 5);
+            const auto k = static_cast<std::int64_t>(rng() % 5);
             recipe << " Q" << k;
             stack.back() = stack.back().repeatRange(k);
-            cost.back() = std::min(kPyEnumCostCap + 1.0,
-                                   static_cast<double>(k + 1) * multicombinations(cost.back(), k));
+            cost.back() =
+                std::min(kPyEnumCostCap + 1.0, static_cast<double>(k + 1) * multicombinations(cost.back(), k));
             break;
         }
         }
@@ -201,9 +206,7 @@ std::vector<Case> directedCases()
     // Huge-count cases are extrema/residue parity only: pydsdl cannot ENUMERATE them cheaply
     // (its expansion is combinatorial in repeat counts), but its lazy min/max/fixed/% answer
     // instantly — which is exactly the comparison that matters in the closed-form regime.
-    add("L{8} Q9000 L{16} A P8",
-        (BitLengthSet(8).repeatRange(9000) + BitLengthSet(16)).padToAlignment(8),
-        false);
+    add("L{8} Q9000 L{16} A P8", (BitLengthSet(8).repeatRange(9000) + BitLengthSet(16)).padToAlignment(8), false);
     add("L{8} Q20000 L{16} A", BitLengthSet(8).repeatRange(20000) + BitLengthSet(16), false);
     add("L{8} R100000", BitLengthSet(8).repeat(100000), false);
     add("L{8,24} Q50000", BitLengthSet(std::set<std::int64_t>{8, 24}).repeatRange(50000), false);
@@ -266,7 +269,9 @@ void emitCase(std::size_t id, const Case& c)
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
+{
+int runBlsDifferential(int argc, char** argv)
 {
     std::size_t randomCases = 500;
     if (argc > 1)
@@ -285,4 +290,25 @@ int main(int argc, char** argv)
         emitCase(id++, makeRandomCase(rng));
     }
     return 0;
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runBlsDifferential(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "bls-differential: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "bls-differential: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

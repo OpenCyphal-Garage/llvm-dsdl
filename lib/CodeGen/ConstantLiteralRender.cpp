@@ -19,8 +19,11 @@
 
 #include <cstdint>
 #include <sstream>
+#include <string>
+#include <variant>
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/Rational.h"
 
 namespace llvmdsdl
@@ -40,10 +43,10 @@ constexpr __int128 kInt64Max = static_cast<__int128>(INT64_MAX);
 /// suffix even for small values. Go and Python integer literals are arbitrary precision, so the bare
 /// decimal is always correct.
 std::string renderIntegerConstant(const ConstantLiteralLanguage language,
-                                  const __int128             wide,
-                                  const ConstantTypeInfo     typeInfo)
+                                  const __int128                wide,
+                                  const ConstantTypeInfo        typeInfo)
 {
-    const std::string dec = wideToString(wide);
+    std::string dec = wideToString(wide);
     switch (language)
     {
     case ConstantLiteralLanguage::Go:
@@ -108,7 +111,7 @@ std::string quoteCharLiteral(const char value)
 ///        `2.0` is not emitted as the integer `2`, which fails to type-check as `f64` in Rust).
 std::string renderIntegerValuedFloat(const ConstantLiteralLanguage language, const __int128 wide)
 {
-    const std::string dec = wideToString(wide);
+    std::string dec = wideToString(wide);
     switch (language)
     {
     case ConstantLiteralLanguage::TypeScript:
@@ -175,8 +178,8 @@ std::string renderConstantLiteral(const ConstantLiteralLanguage language,
             return floatTarget ? renderIntegerValuedFloat(language, wide)
                                : renderIntegerConstant(language, wide, typeInfo);
         }
-        const std::string num = wideToString(rationalValue->numerator());
-        const std::string den = wideToString(rationalValue->denominator());
+        const std::string  num = wideToString(rationalValue->numerator());
+        const std::string  den = wideToString(rationalValue->denominator());
         std::ostringstream out;
         switch (language)
         {

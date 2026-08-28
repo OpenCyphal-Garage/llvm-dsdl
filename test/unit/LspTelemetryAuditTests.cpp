@@ -22,6 +22,9 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -87,11 +90,11 @@ bool auditDetailCapAndRedactionTest()
     {
         return fail("audit detail was not capped (unbounded audit memory)");
     }
-    if (detail.find("supersecret") != std::string::npos)
+    if (detail.contains("supersecret"))
     {
         return fail("audit detail leaked an unredacted secret");
     }
-    if (detail.find("[truncated]") == std::string::npos)
+    if (!detail.contains("[truncated]"))
     {
         return fail("oversized audit detail was not marked truncated");
     }

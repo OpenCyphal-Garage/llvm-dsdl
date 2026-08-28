@@ -16,6 +16,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <utility>
 
@@ -36,10 +38,10 @@ ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&     
         fieldPlan.field               = field;
         fieldPlan.arrayPrefixOverride = runtimeArrayPrefixOverride(fieldPlan.field);
         fieldPlan.helpers             = resolveRuntimeFieldHelperNames(section,
-                                                           sectionFacts,
-                                                           fieldPlan.field,
-                                                           fieldPlan.arrayPrefixOverride,
-                                                           helperNameResolver);
+                                                                       sectionFacts,
+                                                                       fieldPlan.field,
+                                                                       fieldPlan.arrayPrefixOverride,
+                                                                       helperNameResolver);
         out.fields.push_back(std::move(fieldPlan));
     }
     return out;

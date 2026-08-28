@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
+#include <string>
 
 namespace llvmdsdl::codegen_diagnostic_text
 {

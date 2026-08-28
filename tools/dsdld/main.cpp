@@ -22,8 +22,10 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <cstdint>
+#include <exception>
 #include <iostream>
+#include <llvm/Support/JSON.h>
+#include <string>
 
 namespace
 {
@@ -61,9 +63,11 @@ OPTIONS
 
 }  // namespace
 
-int main(int argc, char** argv)
+namespace
 {
-    llvm::InitLLVM y(argc, argv);
+int runDsdld(int argc, char** argv)
+{
+    llvm::InitLLVM const y(argc, argv);
     for (int i = 1; i < argc; ++i)
     {
         const llvm::StringRef arg(argv[i]);
@@ -83,7 +87,7 @@ int main(int argc, char** argv)
 
     llvmdsdl::lsp::JsonRpcStdioTransport transport(std::cin, std::cout);
     llvmdsdl::lsp::Server                server(
-        [&transport](llvm::json::Value message) {
+        [&transport](const llvm::json::Value& message) {
             if (!transport.writeMessage(message))
             {
                 llvm::errs() << "[dsdld] failed to write JSON-RPC message\n";
@@ -127,4 +131,25 @@ int main(int argc, char** argv)
 
     server.shutdown();
     return server.exitCode();
+}
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runDsdld(argc, argv);
+    } catch (const std::exception& e)
+    {
+        llvm::errs() << "dsdld: unhandled exception: " << e.what() << "\n";
+        return 1;
+    } catch (...)
+    {
+        llvm::errs() << "dsdld: unhandled exception of unknown type\n";
+        return 1;
+    }
 }

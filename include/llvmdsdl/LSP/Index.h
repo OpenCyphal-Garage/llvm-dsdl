@@ -191,7 +191,7 @@ class IndexStorage final
 public:
     /// @brief Constructs storage bound to a cache directory.
     /// @param[in] cacheDirectory Absolute or relative cache directory.
-    explicit IndexStorage(std::string cacheDirectory = {});
+    explicit IndexStorage(const std::string& cacheDirectory = {});
 
     /// @brief Returns configured cache directory.
     /// @return Cache directory path string.
@@ -314,11 +314,13 @@ class IndexManager final
 public:
     /// @brief Constructs manager bound to a cache directory.
     /// @param[in] cacheDirectory Cache directory path.
-    explicit IndexManager(std::string cacheDirectory);
+    explicit IndexManager(const std::string& cacheDirectory);
     ~IndexManager();
 
     IndexManager(const IndexManager&)            = delete;
     IndexManager& operator=(const IndexManager&) = delete;
+    IndexManager(IndexManager&&)                 = delete;
+    IndexManager& operator=(IndexManager&&)      = delete;
 
     /// @brief Returns cache directory in use.
     /// @return Cache directory path string.

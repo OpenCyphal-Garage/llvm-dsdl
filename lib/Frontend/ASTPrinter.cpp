@@ -16,9 +16,11 @@
 
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 
+#include <algorithm>
 #include <sstream>
 #include <cstddef>
-#include <memory>
+#include <memory>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <string>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -265,14 +267,8 @@ std::string ExprAST::str() const
 
 bool DefinitionAST::isService() const
 {
-    for (const auto& stmt : statements)
-    {
-        if (std::holds_alternative<ServiceResponseMarkerAST>(stmt))
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(statements,
+                               [](const auto& stmt) { return std::holds_alternative<ServiceResponseMarkerAST>(stmt); });
 }
 
 std::string printAST(const ASTModule& module)

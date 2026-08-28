@@ -16,11 +16,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {
@@ -67,7 +73,7 @@ std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&
         }
     }
 
-    std::sort(out.begin(), out.end(), [](const SemanticTypeRef& lhs, const SemanticTypeRef& rhs) {
+    std::ranges::sort(out, [](const SemanticTypeRef& lhs, const SemanticTypeRef& rhs) {
         return dependencyKey(lhs) < dependencyKey(rhs);
     });
     return out;

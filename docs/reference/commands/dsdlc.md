@@ -5,6 +5,18 @@ and the full option set.
 
 This page covers behaviour that switch descriptions do not carry.
 
+## Path arguments
+
+Every option taking a filesystem path reads it the same way. A leading `~` is the invoking user's
+home directory, expanded by `dsdlc` rather than by the shell, so a path built by a build system or
+read from a configuration file resolves the way one typed at a prompt does. `.` and `..` fold away
+lexically, before anything is opened. An absolute path is used as given.
+
+A relative path is measured from `--outdir` when it names a file the run writes, and from the
+working directory when it names one the run reads. So `--outdir gen --prune-manifest .dsdlc/types`
+writes `gen/.dsdlc/types`, and moving the generated tree is one flag rather than several. Write
+outside `--outdir` by giving an absolute path.
+
 ## Support code
 
 Support code is everything a backend emits that is not derived from a definition. It is rendered

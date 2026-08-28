@@ -20,7 +20,6 @@
 #include <set>
 #include <string>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/LogicalResult.h>
 #include <cstdint>
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
@@ -113,12 +112,9 @@ LogicalResult SerializationPlanOp::verify()
         return value;
     };
 
-    // Read under `loweredPlan` below and compared against the observed body further down. Plain
-    // integers rather than FailureOr because the branch is what establishes that the reads
-    // succeeded: carrying an empty optional out of the branch leaves the later dereferences
-    // provably-unreachable rather than ill-formed, which a compiler cannot see -- GCC reports the
-    // payload as maybe-uninitialized. Assigning only on the success path says the same thing in a
-    // form that needs no proof.
+    // Assigned only on the success path under `loweredPlan`, and read again further down. Plain
+    // integers rather than FailureOr: an empty optional carried out of that branch leaves the later
+    // dereferences unreachable rather than ill-formed, which GCC reports as maybe-uninitialized.
     std::int64_t loweredStepCount    = 0;
     std::int64_t loweredFieldCount   = 0;
     std::int64_t loweredPaddingCount = 0;
@@ -132,15 +128,14 @@ LogicalResult SerializationPlanOp::verify()
             return emitOpError("lowered plan requires supported llvmdsdl.lowered_contract_version");
         }
         const auto loweredContractProducer = (*this)->getAttrOfType<StringAttr>("llvmdsdl.lowered_contract_producer");
-        if (!loweredContractProducer ||
-            loweredContractProducer.getValue() != llvmdsdl::kLoweredSerDesContractProducer)
+        if (!loweredContractProducer || loweredContractProducer.getValue() != llvmdsdl::kLoweredSerDesContractProducer)
         {
             return emitOpError("lowered plan requires llvmdsdl.lowered_contract_producer=" +
                                std::string(llvmdsdl::kLoweredSerDesContractProducer));
         }
 
         // All six are read before any failure check so that a plan missing several of them reports
-        // every missing attribute in one pass, not just the first.
+        // every missing attribute in one pass.
         const auto minBits      = requireNonNegativePlanIntAttr("lowered_min_bits");
         const auto maxBits      = requireNonNegativePlanIntAttr("lowered_max_bits");
         const auto stepCount    = requireNonNegativePlanIntAttr("lowered_step_count");

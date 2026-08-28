@@ -38,6 +38,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
@@ -116,19 +117,19 @@ bool exprContainsOffset(const std::shared_ptr<ExprAST>& expr)
         return false;
     }
 
-    if (auto id = std::get_if<ExprAST::Identifier>(&expr->value))
+    if (auto* id = std::get_if<ExprAST::Identifier>(&expr->value))
     {
         return id->name == "_offset_";
     }
-    if (auto u = std::get_if<ExprAST::Unary>(&expr->value))
+    if (auto* u = std::get_if<ExprAST::Unary>(&expr->value))
     {
         return exprContainsOffset(u->operand);
     }
-    if (auto b = std::get_if<ExprAST::Binary>(&expr->value))
+    if (auto* b = std::get_if<ExprAST::Binary>(&expr->value))
     {
         return exprContainsOffset(b->lhs) || exprContainsOffset(b->rhs);
     }
-    if (auto s = std::get_if<ExprAST::SetLiteral>(&expr->value))
+    if (auto* s = std::get_if<ExprAST::SetLiteral>(&expr->value))
     {
         for (const auto& e : s->elements)
         {
@@ -273,7 +274,7 @@ private:
     AnalyzeOptions                                             options_;
     std::vector<State>                                         state_;
     std::vector<std::optional<SemanticDefinition>>             results_;
-    std::size_t                                               analysisDepth_ = 0;
+    std::size_t                                                analysisDepth_ = 0;
     std::unordered_map<std::string, std::size_t>               indexByKey_;
     std::unordered_map<std::string, const SemanticDefinition*> externalByKey_;
 
@@ -350,7 +351,7 @@ private:
             auto idx = resolveDefinitionIndex(candidate, type.major, type.minor);
             if (idx)
             {
-                return ResolvedCompositeDefinition{candidate, nullptr, *idx};
+                return ResolvedCompositeDefinition{candidate, nullptr, idx};
             }
 
             const auto extIt = externalByKey_.find(typeKey(candidate, type.major, type.minor));
@@ -385,8 +386,8 @@ private:
             // A deep-but-finite chain of composite references (T0 -> T1 -> ... -> Tn) would otherwise
             // recurse until the stack overflows; reject it instead. Mark Done so it is not retried.
             diagnostics_.error(module_.definitions[idx].ast.location,
-                               "composite type nesting is too deep (exceeds " +
-                                   std::to_string(kMaxAnalysisDepth) + " levels)");
+                               "composite type nesting is too deep (exceeds " + std::to_string(kMaxAnalysisDepth) +
+                                   " levels)");
             state_[idx] = State::Done;
             return &results_[idx];
         }
@@ -394,7 +395,7 @@ private:
         state_[idx] = State::Visiting;
         ++analysisDepth_;
         const llvm::scope_exit depthGuard([this]() { --analysisDepth_; });
-        const auto& parsed    = module_.definitions[idx];
+        const auto&            parsed = module_.definitions[idx];
 
         SemanticDefinition sem;
         sem.info      = parsed.info;
@@ -462,7 +463,7 @@ private:
         out.resolved.bitLengthSet = out.bls;
 
         auto baseFromScalar = [&]() -> TypeLayout {
-            if (auto p = std::get_if<PrimitiveTypeExprAST>(&type.scalar))
+            if (const auto* p = std::get_if<PrimitiveTypeExprAST>(&type.scalar))
             {
                 TypeLayout layout;
                 layout.bls                    = BitLengthSet(static_cast<std::int64_t>(p->bitLength));
@@ -494,7 +495,7 @@ private:
                 }
                 return layout;
             }
-            if (auto p = std::get_if<VoidTypeExprAST>(&type.scalar))
+            if (const auto* p = std::get_if<VoidTypeExprAST>(&type.scalar))
             {
                 TypeLayout layout;
                 layout.bls                     = BitLengthSet(static_cast<std::int64_t>(p->bitLength));
@@ -548,10 +549,10 @@ private:
             layout.resolved.scalarCategory = SemanticScalarCategory::Composite;
             layout.resolved.alignmentBits  = 8;
             layout.resolved.compositeType  = SemanticTypeRef{def->info.fullName,
-                                                            def->info.namespaceComponents,
-                                                            def->info.shortName,
-                                                            def->info.majorVersion,
-                                                            def->info.minorVersion};
+                                                             def->info.namespaceComponents,
+                                                             def->info.shortName,
+                                                             def->info.majorVersion,
+                                                             def->info.minorVersion};
 
             const auto& sec                     = def->request;
             layout.resolved.compositeSealed     = sec.sealed;
@@ -599,7 +600,7 @@ private:
             diagnostics_.error(type.location, "array capacity expression must yield integer rational");
             return out;
         }
-        else if (const auto fitted = std::get<Rational>(capValue->data).asInteger())
+        if (const auto fitted = std::get<Rational>(capValue->data).asInteger())
         {
             capacity = *fitted;
         }
@@ -673,7 +674,7 @@ private:
 
     bool checkConstantCompatibility(const ConstantDeclAST& decl, const Value& value)
     {
-        auto prim = std::get_if<PrimitiveTypeExprAST>(&decl.type.scalar);
+        const auto* prim = std::get_if<PrimitiveTypeExprAST>(&decl.type.scalar);
         if (!prim)
         {
             diagnostics_.error(decl.location, "constant attributes must be primitive-typed");
@@ -692,7 +693,7 @@ private:
 
         if (prim->kind == PrimitiveKind::UnsignedInt || prim->kind == PrimitiveKind::SignedInt)
         {
-            if (auto r = std::get_if<Rational>(&value.data))
+            if (const auto* r = std::get_if<Rational>(&value.data))
             {
                 if (!r->isInteger())
                 {
@@ -709,11 +710,11 @@ private:
                 // (unsigned `[0, 2^n-1]`, signed two's-complement `[-2^(n-1), 2^(n-1)-1]`); `n <= 64`
                 // so every bound fits the 128-bit constant value type. Enforced here because the
                 // Rational core deliberately no longer poisons at 64-bit range.
-                const std::uint32_t bits = prim->bitLength;
+                const std::uint32_t bits     = prim->bitLength;
                 const bool          isSigned = prim->kind == PrimitiveKind::SignedInt;
                 const __int128      minValue = isSigned ? -(static_cast<__int128>(1) << (bits - 1U)) : __int128{0};
-                const __int128      maxValue = isSigned ? (static_cast<__int128>(1) << (bits - 1U)) - 1
-                                                        : (static_cast<__int128>(1) << bits) - 1;
+                const __int128      maxValue =
+                    isSigned ? (static_cast<__int128>(1) << (bits - 1U)) - 1 : (static_cast<__int128>(1) << bits) - 1;
                 if (*wide < minValue || *wide > maxValue)
                 {
                     diagnostics_.error(decl.location,
@@ -723,7 +724,7 @@ private:
                 }
                 return true;
             }
-            if (auto s = std::get_if<std::string>(&value.data))
+            if (const auto* s = std::get_if<std::string>(&value.data))
             {
                 if (prim->kind == PrimitiveKind::UnsignedInt && prim->bitLength == 8 && s->size() == 1 &&
                     static_cast<unsigned char>((*s)[0]) <= 127)
@@ -789,9 +790,9 @@ private:
             return std::visit([](const auto& node) -> SourceLocation { return node.location; }, statement);
         };
 
-        TypeAttributeResolver typeAttrResolver = [&](const TypeExprAST&    typeExpr,
-                                                     const std::string&    attributeName,
-                                                     const SourceLocation& location) -> std::optional<Value> {
+        TypeAttributeResolver const typeAttrResolver = [&](const TypeExprAST&    typeExpr,
+                                                           const std::string&    attributeName,
+                                                           const SourceLocation& location) -> std::optional<Value> {
             const auto unsupported = [&](const std::string& message) -> std::optional<Value> {
                 diagnostics_.error(location, message);
                 return std::nullopt;
@@ -900,15 +901,15 @@ private:
         };
 
         auto stmtNeedsOffset = [&](const StatementAST& statement) -> bool {
-            if (auto c = std::get_if<ConstantDeclAST>(&statement))
+            if (const auto* c = std::get_if<ConstantDeclAST>(&statement))
             {
                 return exprContainsOffset(c->value);
             }
-            if (auto f = std::get_if<FieldDeclAST>(&statement))
+            if (const auto* f = std::get_if<FieldDeclAST>(&statement))
             {
                 return exprContainsOffset(f->type.arrayCapacity);
             }
-            if (auto d = std::get_if<DirectiveAST>(&statement))
+            if (const auto* d = std::get_if<DirectiveAST>(&statement))
             {
                 return exprContainsOffset(d->expression);
             }
@@ -1283,9 +1284,8 @@ private:
 
         for (auto& [_, defs] : groups)
         {
-            std::sort(defs.begin(), defs.end(), [](const auto* a, const auto* b) {
-                return a->info.minorVersion < b->info.minorVersion;
-            });
+            std::ranges::sort(defs,
+                              [](const auto* a, const auto* b) { return a->info.minorVersion < b->info.minorVersion; });
 
             if (defs.empty())
             {

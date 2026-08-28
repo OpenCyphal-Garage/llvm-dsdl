@@ -19,6 +19,8 @@
 #include <limits>
 #include <string>
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -77,7 +79,7 @@ void testSaturatingArithmetic(TestContext& t)
 
     t.expectEq(llvmdsdl::saturatingMultiplyNonNegative(7, 6), 42, "saturatingMultiplyNonNegative in range");
     t.expectEq(llvmdsdl::saturatingMultiplyNonNegative(0, max), 0, "saturatingMultiplyNonNegative by zero");
-    t.expectEq(llvmdsdl::saturatingMultiplyNonNegative(max / 2 + 1, 2),
+    t.expectEq(llvmdsdl::saturatingMultiplyNonNegative((max / 2) + 1, 2),
                max,
                "saturatingMultiplyNonNegative clamps overflow");
 

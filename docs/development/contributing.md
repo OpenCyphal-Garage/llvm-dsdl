@@ -22,7 +22,6 @@ ctest --preset test-ci-smoke
 
 - `check-format`
 - `check-clang-tidy`
-- `check-iwyu`
 - integration and release-blocking presets
 
 Keep behavioral parity and matrix CI green before merge.

@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -22,10 +23,11 @@
 
 #include <algorithm>
 #include <array>
+#include <ios>
+#include <llvm/ADT/ArrayRef.h>
 #include <map>
 #include <set>
 #include <cctype>
-#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -33,8 +35,10 @@
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {
@@ -43,7 +47,7 @@ namespace
 
 std::string toLower(std::string s)
 {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(s, s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
 
@@ -55,7 +59,7 @@ bool isValidNameComponent(const std::string& s)
 
 bool readTextFile(const std::filesystem::path& path, std::string& out)
 {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream const in(path, std::ios::binary);
     if (!in.good())
     {
         return false;
@@ -107,7 +111,7 @@ void discoverInRoot(const std::filesystem::path&       root,
         {
             continue;
         }
-        const auto path = entry.path();
+        const auto& path = entry.path();
         if (path.extension() != ".dsdl")
         {
             continue;
@@ -208,7 +212,6 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages()
     return kAll;
 }
 
-
 namespace
 {
 
@@ -277,9 +280,8 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
         // check's; the guard above lets them through. This is two *different* types.
         diagnostics.error({origin.filePath, 1, 1},
                           "type name collision in generated output: " + describeOrigin(origin) + " and " +
-                              describeOrigin(it->second) + " both emit '" + name +
-                              "' for target language '" + std::string(language.name) +
-                              "'; pass --versioned-type-names, or rename one of them");
+                              describeOrigin(it->second) + " both emit '" + name + "' for target language '" +
+                              std::string(language.name) + "'; pass --versioned-type-names, or rename one of them");
     };
 
     for (const auto& parsed : definitions)
@@ -338,7 +340,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         discoverInRoot(lookup, false, definitions, diagnostics);
     }
 
-    std::sort(definitions.begin(), definitions.end(), [](const DiscoveredDefinition& a, const DiscoveredDefinition& b) {
+    std::ranges::sort(definitions, [](const DiscoveredDefinition& a, const DiscoveredDefinition& b) {
         if (a.fullName != b.fullName)
         {
             return a.fullName < b.fullName;
@@ -419,8 +421,14 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                     renameNotes.emplace(std::string(languageName) + ":" + def.shortName + ":" +
                                         projectedName.identifier);
                 }
-                const std::string key = std::string(languageName) + ":" + std::to_string(static_cast<int>(role)) + ":" +
-                                        namespacePath + projectedName.identifier + versionSuffix;
+                std::string key;
+                key.append(languageName)
+                    .append(":")
+                    .append(std::to_string(static_cast<int>(role)))
+                    .append(":")
+                    .append(namespacePath)
+                    .append(projectedName.identifier)
+                    .append(versionSuffix);
                 const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
                 if (!inserted && it->second != def.fullName)
                 {
@@ -438,10 +446,17 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                 {
                     languageList += (i > 0 ? ", " : "") + ("'" + languages[i] + "'");
                 }
-                diagnostics.error({def.filePath, 1, 1},
-                                  "type name collision in generated output: " + def.fullName + " and " + other +
-                                      " map to the same " + what + " for target language" +
-                                      (languages.size() > 1U ? "s " : " ") + languageList);
+                std::string collision;
+                collision.append("type name collision in generated output: ")
+                    .append(def.fullName)
+                    .append(" and ")
+                    .append(other)
+                    .append(" map to the same ")
+                    .append(what)
+                    .append(" for target language")
+                    .append(languages.size() > 1U ? "s " : " ")
+                    .append(languageList);
+                diagnostics.error({def.filePath, 1, 1}, collision);
             }
         }
 

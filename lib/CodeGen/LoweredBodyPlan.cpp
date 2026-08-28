@@ -15,6 +15,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/LoweredBodyPlan.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 
 namespace llvmdsdl
 {

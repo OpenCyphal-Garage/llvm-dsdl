@@ -13,6 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
+#include <cstdint>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringRef.h>
+#include <string>
+#include <utility>
 
 namespace llvmdsdl
 {

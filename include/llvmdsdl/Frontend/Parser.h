@@ -165,8 +165,7 @@ llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootN
                                            const std::vector<std::string>& lookupDirs,
                                            DiagnosticEngine&               diagnostics,
                                            llvm::ArrayRef<OutputLanguage>  outputLanguages = {},
-                                           TypeNameVersioning              typeNameVersioning =
-                                               TypeNameVersioning::Unversioned);
+                                           TypeNameVersioning typeNameVersioning = TypeNameVersioning::Unversioned);
 
 }  // namespace llvmdsdl
 

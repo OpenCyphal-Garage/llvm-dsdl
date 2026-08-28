@@ -14,6 +14,10 @@
 
 #include "llvmdsdl/LSP/Telemetry.h"
 
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace llvmdsdl::lsp
@@ -21,23 +25,23 @@ namespace llvmdsdl::lsp
 
 void Telemetry::setSink(RequestMetricSink sink)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     sink_ = std::move(sink);
 }
 
-void Telemetry::record(std::string method, const std::uint64_t latencyMicros, const bool cancelled)
+void Telemetry::record(const std::string& method, const std::uint64_t latencyMicros, const bool cancelled)
 {
-    RequestMetricSink sink;
-    RequestMetric     metric{method, latencyMicros, cancelled};
+    RequestMetricSink   sink;
+    RequestMetric const metric{method, latencyMicros, cancelled};
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         // The `method` string is attacker-controlled (any JSON-RPC request, including
         // unknown/garbage methods, reaches here). Bound the number of distinct keys so a
         // client streaming distinct method names cannot grow this map without limit
         // (memory-exhaustion DoS). Overflow methods bucket into a single sentinel key,
         // preserving useful aggregate telemetry while capping memory. `kMaxDistinctMethods`
         // is far above the fixed set of real LSP methods this server handles.
-        if (requestCounts_.find(method) == requestCounts_.end() && requestCounts_.size() >= kMaxDistinctMethods)
+        if (!requestCounts_.contains(method) && requestCounts_.size() >= kMaxDistinctMethods)
         {
             ++requestCounts_[std::string(kOverflowMethodKey)];
         }
@@ -55,8 +59,8 @@ void Telemetry::record(std::string method, const std::uint64_t latencyMicros, co
 
 std::uint64_t Telemetry::requestCount(const std::string_view method) const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto                  it = requestCounts_.find(std::string(method));
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = requestCounts_.find(std::string(method));
     return it == requestCounts_.end() ? 0U : it->second;
 }
 

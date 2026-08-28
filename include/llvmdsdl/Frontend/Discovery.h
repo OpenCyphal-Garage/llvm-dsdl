@@ -38,7 +38,7 @@ class DiagnosticEngine;
 struct OutputLanguage
 {
     /// @brief Naming policy to project names with.
-    CodegenNamingLanguage language;
+    CodegenNamingLanguage language{};
 
     /// @brief The `--target-language` spelling, for diagnostics.
     llvm::StringRef name;
@@ -72,9 +72,9 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages();
 ///            @ref TypeNameVersioning::Versioned the two names differ and nothing is reported.
 /// @param[in,out] diagnostics Diagnostic sink.
 void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
-                                           llvm::ArrayRef<OutputLanguage>  outputLanguages,
-                                           TypeNameVersioning              versioning,
-                                           DiagnosticEngine&               diagnostics);
+                                           llvm::ArrayRef<OutputLanguage>   outputLanguages,
+                                           TypeNameVersioning               versioning,
+                                           DiagnosticEngine&                diagnostics);
 
 /// @brief Discovers and loads every DSDL definition reachable from the given roots.
 ///

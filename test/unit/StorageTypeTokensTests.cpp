@@ -6,9 +6,10 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
-#include <string>
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
+
+#include "UnitTests.h"
 
 bool runStorageTypeTokensTests()
 {

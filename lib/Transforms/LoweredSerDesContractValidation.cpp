@@ -15,6 +15,7 @@
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 

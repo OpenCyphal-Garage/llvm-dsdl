@@ -16,19 +16,28 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/AI.h"
+#include "llvmdsdl/LSP/Analysis.h"
+#include "llvmdsdl/LSP/DocumentStore.h"
+#include "llvmdsdl/LSP/Index.h"
+#include "llvmdsdl/LSP/ServerConfig.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 
 #include "llvm/ADT/StringRef.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iosfwd>
+#include <llvm/Support/JSON.h>
+#include <mutex>
 #include <optional>
 #include <regex>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace llvmdsdl::lsp
@@ -94,7 +103,7 @@ AiDocumentFacts collectDocumentFacts(const std::string& text)
 {
     AiDocumentFacts facts;
     facts.endsWithNewline    = !text.empty() && text.back() == '\n';
-    facts.hasSealedDirective = text.find("@sealed") != std::string::npos;
+    facts.hasSealedDirective = text.contains("@sealed");
 
     std::uint32_t lineIndex     = 0;
     std::uint32_t lineLength    = 0;
@@ -202,7 +211,7 @@ AiCodeActionContext AiContextPacker::buildCodeActionContext(const std::string&  
                                                             const std::uint32_t             endLine,
                                                             const std::uint32_t             endCharacter,
                                                             const std::vector<std::string>& diagnostics,
-                                                            const std::vector<std::string>& symbolHints) const
+                                                            const std::vector<std::string>& symbolHints)
 {
     AiCodeActionContext context;
     context.uri              = uri;
@@ -298,7 +307,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
         redacted += "...[truncated]";
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     records_.push_back(AiAuditRecord{
         std::move(category),
         std::move(redacted),
@@ -311,7 +320,7 @@ void AiAuditLogger::record(std::string category, std::string detail)
 
 std::vector<AiAuditRecord> AiAuditLogger::snapshot() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return records_;
 }
 
@@ -350,10 +359,10 @@ AiToolResult runAiTool(const llvm::StringRef     tool,
         const AnalysisStats& stats          = analysis.stats();
         result.ok                           = true;
         result.value                        = llvm::json::Object{
-                                   {"snapshot_version", static_cast<std::int64_t>(analysisResult.snapshotVersion)},
-                                   {"has_errors", analysisResult.hasErrors},
-                                   {"full_rebuilds", static_cast<std::int64_t>(stats.fullRebuildCount)},
-                                   {"incremental_rebuilds", static_cast<std::int64_t>(stats.incrementalRebuildCount)},
+            {"snapshot_version", static_cast<std::int64_t>(analysisResult.snapshotVersion)},
+            {"has_errors", analysisResult.hasErrors},
+            {"full_rebuilds", static_cast<std::int64_t>(stats.fullRebuildCount)},
+            {"incremental_rebuilds", static_cast<std::int64_t>(stats.incrementalRebuildCount)},
         };
         return result;
     }

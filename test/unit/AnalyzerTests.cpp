@@ -19,6 +19,8 @@
 #include "llvm/Support/Error.h"
 #include "llvmdsdl/Frontend/AST.h"
 
+#include "UnitTests.h"
+
 bool runAnalyzerTests()
 {
     const std::string text = "@union\n"
@@ -431,7 +433,7 @@ bool runAnalyzerTests()
             outcome.succeeded = true;
             for (const llvmdsdl::Diagnostic& d : sem.diagnostics())
             {
-                if (d.level == llvmdsdl::DiagnosticLevel::Warning && d.message.find("_offset_") != std::string::npos)
+                if (d.level == llvmdsdl::DiagnosticLevel::Warning && d.message.contains("_offset_"))
                 {
                     outcome.anyOffsetWarning = true;
                 }
@@ -467,7 +469,7 @@ bool runAnalyzerTests()
         const std::string stale = "uint8[<=5000] payload\n@assert _offset_.max == 16 + 4095 * 8\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(stale);
-            if (outcome.succeeded || outcome.errors.find("assertion failed") == std::string::npos)
+            if (outcome.succeeded || !outcome.errors.contains("assertion failed"))
             {
                 std::cerr << "the formerly-truncated .max answer must now fail its assertion\n";
                 return false;
@@ -503,7 +505,7 @@ bool runAnalyzerTests()
         const std::string unequal = "uint8[<=20000] payload\n@assert _offset_ == {0}\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(unequal);
-            if (outcome.succeeded || outcome.errors.find("assertion failed") == std::string::npos)
+            if (outcome.succeeded || !outcome.errors.contains("assertion failed"))
             {
                 std::cerr << "singleton offset comparison must be disproved exactly, not deferred "
                              "to materialization\n";
@@ -532,7 +534,7 @@ bool runAnalyzerTests()
             "uint8[<=20000] payload\n@assert (_offset_ * 2).max == 2 * (16 + 20000 * 8)\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(unmaterializable);
-            if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)
+            if (outcome.succeeded || !outcome.errors.contains("cannot be materialized exactly"))
             {
                 std::cerr << "an elementwise offset transform beyond exact capacity must hard-fail; errors: "
                           << outcome.errors << "\n";
@@ -546,7 +548,7 @@ bool runAnalyzerTests()
         const std::string hugeMod = "uint8[<=70000] payload\n@assert (_offset_ % 1000000007).count == 70001\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(hugeMod);
-            if (outcome.succeeded || outcome.errors.find("cannot be materialized exactly") == std::string::npos)
+            if (outcome.succeeded || !outcome.errors.contains("cannot be materialized exactly"))
             {
                 std::cerr << "a beyond-budget modulo must hard-fail, never truncate; errors: " << outcome.errors
                           << "\n";

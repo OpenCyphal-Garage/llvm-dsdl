@@ -13,6 +13,8 @@
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Semantics/Model.h"
 
+#include "UnitTests.h"
+
 bool runWireLayoutFactsTests()
 {
     {

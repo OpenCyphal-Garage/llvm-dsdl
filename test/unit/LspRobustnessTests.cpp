@@ -19,16 +19,20 @@
 #include "llvmdsdl/LSP/Server.h"
 #include "llvm/Support/JSON.h"
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -90,7 +94,7 @@ bool runLspRobustnessTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();
@@ -130,16 +134,16 @@ bool runLspRobustnessTests()
             const std::string text =
                 (index % 2 == 0) ? "uint8 value\n@sealed\n" : "demo.DoesNotExist.1.0 value\n@sealed\n";
             server.handleMessage(llvm::json::Object{
-                  {"jsonrpc", "2.0"},
-                  {"method", "textDocument/didChange"},
-                  {"params",
+                {"jsonrpc", "2.0"},
+                {"method", "textDocument/didChange"},
+                {"params",
                  llvm::json::Object{
-                       {"textDocument",
+                     {"textDocument",
                       llvm::json::Object{
-                            {"uri", uri},
-                            {"version", index + 2},
+                          {"uri", uri},
+                          {"version", index + 2},
                       }},
-                       {"contentChanges", llvm::json::Array{llvm::json::Object{{"text", text}}}},
+                     {"contentChanges", llvm::json::Array{llvm::json::Object{{"text", text}}}},
                  }},
             });
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -185,7 +189,7 @@ bool runLspRobustnessTests()
 
     int cancelledCount = 0;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         for (int index = 0; index < kStormRequests; ++index)
         {
             const auto* response = findResponseByStringId(outgoing, "storm-" + std::to_string(index));
@@ -246,38 +250,39 @@ bool runLspRobustnessTests()
 // and records must never reach the JSON-RPC channel.
 bool runLspStructuredLoggingTests()
 {
-    const auto collect = [](const llvm::json::Value& initializeParams,
+    const auto collect = [](const llvm::json::Value&              initializeParams,
                             const std::vector<llvm::json::Value>& extra) -> std::vector<std::string> {
-        std::mutex               mutex;
-        std::vector<std::string> logLines;
+        std::mutex                     mutex;
+        std::vector<std::string>       logLines;
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server(
             [&mutex, &outgoing](llvm::json::Value message) {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 outgoing.push_back(std::move(message));
             },
             {},
             [&mutex, &logLines](const std::string& line) {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 logLines.push_back(line);
             });
-        server.handleMessage(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
+        server.handleMessage(
+            llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
         for (const auto& message : extra)
         {
             server.handleMessage(message);
         }
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock<std::mutex> const lock(mutex);
         return logLines;
     };
 
     // Built fresh per use: llvm::json::Value is constructed from an Object rvalue.
     const auto symbolRequest = []() {
-        return llvm::json::Value(llvm::json::Object{
-            {"jsonrpc", "2.0"},
-            {"id", 2},
-            {"method", "textDocument/documentSymbol"},
-            {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///x.dsdl"}}}}}});
+        return llvm::json::Value(
+            llvm::json::Object{{"jsonrpc", "2.0"},
+                               {"id", 2},
+                               {"method", "textDocument/documentSymbol"},
+                               {"params",
+                                llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///x.dsdl"}}}}}});
     };
 
     // trace=off from initialize: the handshake and everything after it stay silent.
@@ -328,14 +333,15 @@ bool runLspStructuredLoggingTests()
     }
 
     // $/setTrace must take effect at runtime: silence after switching off.
-    const auto afterOff = collect(llvm::json::Object{{"trace", "messages"}},
-                                  {llvm::json::Value(llvm::json::Object{{"jsonrpc", "2.0"},
-                                                                        {"method", "$/setTrace"},
-                                                                        {"params", llvm::json::Object{{"value", "off"}}}}),
-                                   symbolRequest()});
+    const auto afterOff =
+        collect(llvm::json::Object{{"trace", "messages"}},
+                {llvm::json::Value(llvm::json::Object{{"jsonrpc", "2.0"},
+                                                      {"method", "$/setTrace"},
+                                                      {"params", llvm::json::Object{{"value", "off"}}}}),
+                 symbolRequest()});
     for (const std::string& line : afterOff)
     {
-        if (line.find("documentSymbol") != std::string::npos)
+        if (line.contains("documentSymbol"))
         {
             std::cerr << "request logged after $/setTrace off: " << line << "\n";
             return false;
@@ -343,14 +349,15 @@ bool runLspStructuredLoggingTests()
     }
 
     // A failed request is recorded as a warning so a post-mortem can find it.
-    const auto errors = collect(llvm::json::Object{{"trace", "messages"}},
-                                {llvm::json::Value(llvm::json::Object{
-                                    {"jsonrpc", "2.0"}, {"id", 3}, {"method", "nope/bogus"}, {"params", llvm::json::Object{}}})});
-    bool sawError = false;
+    const auto errors   = collect(llvm::json::Object{{"trace", "messages"}},
+                                  {llvm::json::Value(llvm::json::Object{{"jsonrpc", "2.0"},
+                                                                        {"id", 3},
+                                                                        {"method", "nope/bogus"},
+                                                                        {"params", llvm::json::Object{}}})});
+    bool       sawError = false;
     for (const std::string& line : errors)
     {
-        if (line.find("\"event\":\"error_response\"") != std::string::npos &&
-            line.find("\"level\":\"warn\"") != std::string::npos)
+        if (line.contains(R"("event":"error_response")") && line.contains(R"("level":"warn")"))
         {
             sawError = true;
         }
@@ -373,13 +380,13 @@ bool runLspPositionEncodingTests()
         std::mutex                     mutex;
         std::vector<llvm::json::Value> outgoing;
         llvmdsdl::lsp::Server          server([&mutex, &outgoing](llvm::json::Value message) {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         });
-        server.handleMessage(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
-        std::lock_guard<std::mutex> lock(mutex);
-        const auto*                 response = findResponseByIntegerId(outgoing, 1);
+        server.handleMessage(
+            llvm::json::Object{{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}, {"params", initializeParams}});
+        std::scoped_lock<std::mutex> const lock(mutex);
+        const auto*                        response = findResponseByIntegerId(outgoing, 1);
         if (response == nullptr)
         {
             return std::nullopt;
@@ -404,8 +411,9 @@ bool runLspPositionEncodingTests()
 
     // Client advertises utf-8 support -> server negotiates utf-8.
     const auto utf8 = negotiatedEncoding(llvm::json::Object{
-        {"capabilities", llvm::json::Object{{"general", llvm::json::Object{{"positionEncodings",
-                                                                            llvm::json::Array{"utf-16", "utf-8"}}}}}}});
+        {"capabilities",
+         llvm::json::Object{
+             {"general", llvm::json::Object{{"positionEncodings", llvm::json::Array{"utf-16", "utf-8"}}}}}}});
     if (utf8 != "utf-8")
     {
         std::cerr << "expected utf-8 negotiation, got " << utf8.value_or("<none>") << "\n";
@@ -426,7 +434,8 @@ bool runLspPositionEncodingTests()
     const auto legacy = negotiatedEncoding(llvm::json::Object{{"capabilities", llvm::json::Object{}}});
     if (legacy != "utf-16")
     {
-        std::cerr << "expected utf-16 for a client without positionEncodings, got " << legacy.value_or("<none>") << "\n";
+        std::cerr << "expected utf-16 for a client without positionEncodings, got " << legacy.value_or("<none>")
+                  << "\n";
         return false;
     }
 
@@ -444,7 +453,7 @@ bool runLspAdversarialRequestTests()
 
     llvmdsdl::lsp::Server server([&mutex, &cv, &outgoing](llvm::json::Value message) {
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::scoped_lock<std::mutex> const lock(mutex);
             outgoing.push_back(std::move(message));
         }
         cv.notify_all();
@@ -474,35 +483,53 @@ bool runLspAdversarialRequestTests()
                                                        "textDocument/definition",
                                                        "textDocument/references",
                                                        "textDocument/completion"};
-    std::int64_t                    nextId           = 100;
+    std::int64_t                   nextId           = 100;
     for (const char* method : featureMethods)
     {
         // Position far beyond the document (max uint32) on an open document.
-        hostileRequests.push_back(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}, {"params", positionParams(uri, 4294967295LL, 4294967295LL)}});
+        hostileRequests.emplace_back(llvm::json::Object{{"jsonrpc", "2.0"},
+                                                        {"id", nextId++},
+                                                        {"method", method},
+                                                        {"params", positionParams(uri, 4294967295LL, 4294967295LL)}});
         // A document that was never opened.
-        hostileRequests.push_back(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}, {"params", positionParams("file:///tmp/never-opened.dsdl", 0, 0)}});
+        hostileRequests.emplace_back(
+            llvm::json::Object{{"jsonrpc", "2.0"},
+                               {"id", nextId++},
+                               {"method", method},
+                               {"params", positionParams("file:///tmp/never-opened.dsdl", 0, 0)}});
         // Missing position object entirely.
-        hostileRequests.push_back(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method},
-            {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+        hostileRequests.emplace_back(
+            llvm::json::Object{{"jsonrpc", "2.0"},
+                               {"id", nextId++},
+                               {"method", method},
+                               {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
         // Position fields present but the wrong JSON type.
-        hostileRequests.push_back(llvm::json::Object{
-            {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method},
-            {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}},
-                                          {"position", llvm::json::Object{{"line", "nan"}, {"character", true}}}}}});
+        hostileRequests.emplace_back(
+            llvm::json::Object{{"jsonrpc", "2.0"},
+                               {"id", nextId++},
+                               {"method", method},
+                               {"params",
+                                llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}},
+                                                   {"position",
+                                                    llvm::json::Object{{"line", "nan"}, {"character", true}}}}}});
         // Params missing altogether.
-        hostileRequests.push_back(
-            llvm::json::Object{{"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}});
+        hostileRequests.emplace_back(llvm::json::Object{{"jsonrpc", "2.0"}, {"id", nextId++}, {"method", method}});
     }
     // Structural requests on a never-opened document.
-    hostileRequests.push_back(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/documentSymbol"},
-        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
-    hostileRequests.push_back(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/semanticTokens/full"},
-        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
+    hostileRequests.emplace_back(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"id", nextId++},
+                           {"method", "textDocument/documentSymbol"},
+                           {"params",
+                            llvm::json::Object{
+                                {"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
+    hostileRequests.emplace_back(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"id", nextId++},
+                           {"method", "textDocument/semanticTokens/full"},
+                           {"params",
+                            llvm::json::Object{
+                                {"textDocument", llvm::json::Object{{"uri", "file:///tmp/never-opened.dsdl"}}}}}});
 
     for (const auto& request : hostileRequests)
     {
@@ -510,31 +537,46 @@ bool runLspAdversarialRequestTests()
     }
 
     // Degenerate document contents, then feature requests over them.
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
-        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}, {"version", 2}}},
-                                      {"contentChanges", llvm::json::Array{llvm::json::Object{{"text", ""}}}}}}});
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/hover"}, {"params", positionParams(uri, 0, 0)}});
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/completion"}, {"params", positionParams(uri, 100, 100)}});
+    server.handleMessage(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"method", "textDocument/didChange"},
+                           {"params",
+                            llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}, {"version", 2}}},
+                                               {"contentChanges",
+                                                llvm::json::Array{llvm::json::Object{{"text", ""}}}}}}});
+    server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"},
+                                            {"id", nextId++},
+                                            {"method", "textDocument/hover"},
+                                            {"params", positionParams(uri, 0, 0)}});
+    server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"},
+                                            {"id", nextId++},
+                                            {"method", "textDocument/completion"},
+                                            {"params", positionParams(uri, 100, 100)}});
 
     // Close the document, then request against it.
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"method", "textDocument/didClose"},
-        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", nextId++}, {"method", "textDocument/definition"}, {"params", positionParams(uri, 0, 0)}});
+    server.handleMessage(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"method", "textDocument/didClose"},
+                           {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+    server.handleMessage(llvm::json::Object{{"jsonrpc", "2.0"},
+                                            {"id", nextId++},
+                                            {"method", "textDocument/definition"},
+                                            {"params", positionParams(uri, 0, 0)}});
 
     // Sentinel: after the barrage the server must still answer a well-formed request.
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", 999999}, {"method", "textDocument/didOpen"},
-        {"params",
-         llvm::json::Object{
-             {"textDocument", llvm::json::Object{{"uri", uri}, {"version", 3}, {"text", "uint8 ok\n@sealed\n"}}}}}});
-    server.handleMessage(llvm::json::Object{
-        {"jsonrpc", "2.0"}, {"id", 999999}, {"method", "textDocument/documentSymbol"},
-        {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
+    server.handleMessage(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"id", 999999},
+                           {"method", "textDocument/didOpen"},
+                           {"params",
+                            llvm::json::Object{
+                                {"textDocument",
+                                 llvm::json::Object{{"uri", uri}, {"version", 3}, {"text", "uint8 ok\n@sealed\n"}}}}}});
+    server.handleMessage(
+        llvm::json::Object{{"jsonrpc", "2.0"},
+                           {"id", 999999},
+                           {"method", "textDocument/documentSymbol"},
+                           {"params", llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", uri}}}}}});
     {
         std::unique_lock<std::mutex> lock(mutex);
         if (!cv.wait_for(lock, std::chrono::seconds(5), [&outgoing]() {

@@ -43,15 +43,15 @@ SectionStatementPlan buildSectionStatementPlan(const SemanticSection& section, c
     std::size_t sequence = 0;
     for (const auto& field : section.fields)
     {
-        const auto* const fieldFacts = findLoweredFieldFacts(sectionFacts, field.name);
-        const auto        prefixBits = loweredFieldArrayPrefixBits(sectionFacts, field.name);
-        PlannedFieldStep  step{&field, prefixBits, fieldFacts};
-        const auto        orderKey = (fieldFacts && fieldFacts->stepIndex) ? *fieldFacts->stepIndex
-                                                                           : (std::numeric_limits<std::int64_t>::max() / 2);
+        const auto* const      fieldFacts = findLoweredFieldFacts(sectionFacts, field.name);
+        const auto             prefixBits = loweredFieldArrayPrefixBits(sectionFacts, field.name);
+        PlannedFieldStep const step{&field, prefixBits, fieldFacts};
+        const auto orderKey = (fieldFacts && fieldFacts->stepIndex) ? *fieldFacts->stepIndex
+                                                                    : (std::numeric_limits<std::int64_t>::max() / 2);
         ordered.push_back(OrderedStep{step, sequence++, orderKey});
     }
 
-    std::sort(ordered.begin(), ordered.end(), [](const OrderedStep& lhs, const OrderedStep& rhs) {
+    std::ranges::sort(ordered, [](const OrderedStep& lhs, const OrderedStep& rhs) {
         if (lhs.orderKey != rhs.orderKey)
         {
             return lhs.orderKey < rhs.orderKey;

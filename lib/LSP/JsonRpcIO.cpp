@@ -17,11 +17,15 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstddef>
+#include <ios>
 #include <istream>
 #include <limits>
+#include <llvm/Support/JSON.h>
+#include <mutex>
 #include <ostream>
-#include <sstream>
 #include <string>
+#include <utility>
 
 namespace llvmdsdl::lsp
 {
@@ -58,7 +62,7 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
             overflow = true;
             break;
         }
-        value = value * 10U + digit;
+        value = (value * 10U) + digit;
     }
     contentLength = overflow ? std::numeric_limits<std::size_t>::max() : value;
     return true;
@@ -68,8 +72,8 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
 // (the payload cap does nothing for a hostile header that never terminates a line
 // or streams unlimited header lines — both would balloon memory in the read loop).
 // Real LSP headers are a few dozen bytes; these limits are generous.
-constexpr std::size_t kMaxHeaderLineBytes = 8U * 1024U;
-constexpr std::size_t kMaxHeaderBytes     = 64U * 1024U;
+constexpr std::size_t kMaxHeaderLineBytes = std::size_t{8} * 1024;
+constexpr std::size_t kMaxHeaderBytes     = std::size_t{64} * 1024;
 
 // Reads one CRLF/LF-terminated header line into `line`, bounded to kMaxHeaderLineBytes
 // so a line without a terminator cannot grow without limit. Returns false on stream end
@@ -78,7 +82,7 @@ bool readBoundedHeaderLine(std::istream& input, std::string& line, bool& overflo
 {
     line.clear();
     overflowed = false;
-    int ch = 0;
+    int ch     = 0;
     while ((ch = input.get()) != std::char_traits<char>::eof())
     {
         if (ch == '\n')
@@ -198,7 +202,7 @@ bool JsonRpcStdioTransport::writeMessage(const llvm::json::Value& message)
     payloadStream << message;
     payloadStream.flush();
 
-    std::lock_guard<std::mutex> lock(writeMutex_);
+    std::scoped_lock<std::mutex> const lock(writeMutex_);
     output_ << "Content-Length: " << payload.size() << "\r\n\r\n" << payload;
     output_.flush();
     return static_cast<bool>(output_);

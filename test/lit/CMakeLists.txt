@@ -39,3 +39,17 @@ file(GENERATE
 
 add_test(NAME llvmdsdl-lit
   COMMAND ${LLVM_LIT_COMMAND} -sv ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>)
+
+# The help text and the --target-language parser are both read out of the built binary and held
+# against each other, so a new lane needs no edit here. See the script's docstring for why this is
+# not a check on the help text itself.
+find_program(LLVMDSDL_PYTHON3_FOR_CLI_CONTRACT NAMES python3 python)
+if(LLVMDSDL_PYTHON3_FOR_CLI_CONTRACT)
+  add_test(NAME llvmdsdl-cli-language-contract
+    COMMAND "${LLVMDSDL_PYTHON3_FOR_CLI_CONTRACT}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/dsdlc/check_language_contract.py"
+            --dsdlc $<TARGET_FILE:dsdlc>)
+  set_tests_properties(llvmdsdl-cli-language-contract PROPERTIES LABELS "cli;contract")
+else()
+  message(STATUS "Skipping CLI language contract test: python3 unavailable")
+endif()

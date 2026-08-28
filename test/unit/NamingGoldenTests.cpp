@@ -39,6 +39,8 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
+#include "UnitTests.h"
+
 namespace
 {
 
@@ -154,6 +156,7 @@ const std::vector<std::string>& corpus()
         // Rejected by the DSDL charset -- these pin defensive behavior only.
         "9AxisIMU",
         "foo bar",
+        // NOLINTNEXTLINE(bugprone-suspicious-missing-comma) -- split so \xa4 does not swallow the 'c'.
         "I\xe2\x9d\xa4"
         "c",
     };
@@ -171,13 +174,13 @@ bool isDsdlReachable(const std::string& name)
         return false;
     }
     const auto first = static_cast<unsigned char>(name.front());
-    if (!(std::isalpha(first) || name.front() == '_'))
+    if (!std::isalpha(first) && name.front() != '_')
     {
         return false;
     }
     for (const char c : name)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             return false;
         }
@@ -192,7 +195,7 @@ std::string quoted(const std::string& text)
     bool bare = !text.empty();
     for (const char c : text)
     {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
         {
             bare = false;
             break;
@@ -623,6 +626,7 @@ std::string renderGolden()
 
 bool wantsUpdate()
 {
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     const char* const value = std::getenv("LLVMDSDL_UPDATE_NAMING_GOLDEN");
     return value != nullptr && value[0] != '\0' && std::string(value) != "0";
 }
@@ -691,7 +695,7 @@ bool checkGolden(const std::string& path, const std::string& produced)
         return true;
     }
 
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream const in(path, std::ios::binary);
     if (!in.good())
     {
         std::cerr << "naming golden map: cannot read " << path << "\n";

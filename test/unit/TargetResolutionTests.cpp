@@ -22,11 +22,16 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <llvm/Support/Error.h>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -47,7 +52,7 @@ void writeDefinition(const std::filesystem::path& path)
 /// @brief True when @p files contains an entry whose filename is @p name.
 bool containsFileNamed(const std::vector<std::string>& files, const std::string& name)
 {
-    return std::any_of(files.begin(), files.end(), [&name](const std::string& file) {
+    return std::ranges::any_of(files, [&name](const std::string& file) {
         return std::filesystem::path(file).filename().string() == name;
     });
 }
@@ -59,21 +64,31 @@ bool runTargetResolutionTests()
     const auto root = makeUniqueTempDir();
     struct Cleanup final
     {
+        explicit Cleanup(std::filesystem::path removeAtScopeExit)
+            : path(std::move(removeAtScopeExit))
+        {
+        }
+
         std::filesystem::path path;
         ~Cleanup()
         {
             std::error_code ec;
             std::filesystem::remove_all(path, ec);
         }
-    } cleanup{root};
+
+        Cleanup(const Cleanup&)            = delete;
+        Cleanup& operator=(const Cleanup&) = delete;
+        Cleanup(Cleanup&&)                 = delete;
+        Cleanup& operator=(Cleanup&&)      = delete;
+    } const cleanup{root};
 
     const auto nsDir = root / "ns";
     writeDefinition(nsDir / "Alpha.1.0.dsdl");
     writeDefinition(nsDir / "Alpha.2.0.dsdl");
     writeDefinition(nsDir / "Beta.1.0.dsdl");
 
-    llvmdsdl::DiagnosticEngine   diagnostics;
-    llvmdsdl::TargetResolveOptions options;
+    llvmdsdl::DiagnosticEngine           diagnostics;
+    llvmdsdl::TargetResolveOptions const options;
 
     // A folder target sweeps. Everything under it is targeted, and nothing under it was named.
     {
@@ -112,8 +127,7 @@ bool runTargetResolutionTests()
             std::cerr << "file target should resolve\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "a file target should name exactly itself\n";
             return false;
@@ -135,8 +149,7 @@ bool runTargetResolutionTests()
             std::cerr << "colon-syntax target should resolve\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "colon syntax should name exactly the file after the colon\n";
             return false;
@@ -160,8 +173,7 @@ bool runTargetResolutionTests()
                       << resolved->explicitTargetFiles.size() << "\n";
             return false;
         }
-        if (resolved->namedTargetFiles.size() != 1U ||
-            !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
+        if (resolved->namedTargetFiles.size() != 1U || !containsFileNamed(resolved->namedTargetFiles, "Alpha.1.0.dsdl"))
         {
             std::cerr << "only the file named alongside the folder should be named\n";
             return false;

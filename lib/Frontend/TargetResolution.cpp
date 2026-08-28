@@ -14,7 +14,6 @@
 
 #include "llvmdsdl/Frontend/TargetResolution.h"
 
-#include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -23,9 +22,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <optional>
 #include <set>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace llvmdsdl
@@ -109,7 +109,7 @@ bool isUnderRoot(const std::filesystem::path& file, const std::filesystem::path&
 
 char envPathSeparator()
 {
-#if defined(_WIN32)
+#ifdef _WIN32
     return ';';
 #else
     return ':';
@@ -150,6 +150,7 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
 {
     std::set<std::filesystem::path> out;
 
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     for (const auto& includePath : splitEnvPaths(std::getenv("DSDL_INCLUDE_PATH")))
     {
         if (includePath.empty())
@@ -159,6 +160,7 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
         out.insert(normalizePath(includePath));
     }
 
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     for (const auto& cyphalRoot : splitEnvPaths(std::getenv("CYPHAL_PATH")))
     {
         if (cyphalRoot.empty())
@@ -191,11 +193,11 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
 
 llvm::Error expandRootTargets(const std::filesystem::path& root, std::set<std::filesystem::path>& explicitTargets)
 {
-    std::error_code                               ec;
-    std::filesystem::recursive_directory_iterator it(root,
-                                                     std::filesystem::directory_options::skip_permission_denied,
-                                                     ec);
-    std::filesystem::recursive_directory_iterator end;
+    std::error_code                                     ec;
+    std::filesystem::recursive_directory_iterator       it(root,
+                                                           std::filesystem::directory_options::skip_permission_denied,
+                                                           ec);
+    std::filesystem::recursive_directory_iterator const end;
     if (ec)
     {
         return llvm::createStringError(ec, "failed to enumerate root namespace directory %s", root.string().c_str());
@@ -249,9 +251,9 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
                                                const TargetResolveOptions&     options,
                                                DiagnosticEngine&               diagnostics)
 {
-    std::set<std::filesystem::path>    roots;
-    std::set<std::filesystem::path>    lookupRoots;
-    std::set<std::filesystem::path>    explicitTargets;
+    std::set<std::filesystem::path> roots;
+    std::set<std::filesystem::path> lookupRoots;
+    std::set<std::filesystem::path> explicitTargets;
     // The subset of explicitTargets the user named one at a time, rather than swept in by pointing
     // at a folder. Everything that generates cares only about the first set; a rule about what may
     // be dropped by default has to be able to see the difference.
@@ -453,17 +455,14 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
         out.namedTargetFiles.push_back(target.string());
     }
 
-    std::sort(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end());
-    std::sort(out.lookupDirs.begin(), out.lookupDirs.end());
-    std::sort(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end());
-    std::sort(out.namedTargetFiles.begin(), out.namedTargetFiles.end());
-    out.rootNamespaceDirs.erase(std::unique(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end()),
-                                out.rootNamespaceDirs.end());
-    out.lookupDirs.erase(std::unique(out.lookupDirs.begin(), out.lookupDirs.end()), out.lookupDirs.end());
-    out.explicitTargetFiles.erase(std::unique(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end()),
-                                  out.explicitTargetFiles.end());
-    out.namedTargetFiles.erase(std::unique(out.namedTargetFiles.begin(), out.namedTargetFiles.end()),
-                               out.namedTargetFiles.end());
+    std::ranges::sort(out.rootNamespaceDirs);
+    std::ranges::sort(out.lookupDirs);
+    std::ranges::sort(out.explicitTargetFiles);
+    std::ranges::sort(out.namedTargetFiles);
+    out.rootNamespaceDirs.erase(std::ranges::unique(out.rootNamespaceDirs).begin(), out.rootNamespaceDirs.end());
+    out.lookupDirs.erase(std::ranges::unique(out.lookupDirs).begin(), out.lookupDirs.end());
+    out.explicitTargetFiles.erase(std::ranges::unique(out.explicitTargetFiles).begin(), out.explicitTargetFiles.end());
+    out.namedTargetFiles.erase(std::ranges::unique(out.namedTargetFiles).begin(), out.namedTargetFiles.end());
     return out;
 }
 

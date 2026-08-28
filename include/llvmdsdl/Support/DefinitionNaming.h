@@ -70,7 +70,7 @@ struct DefinitionNamePolicy final
     ///
     /// Rust flattens the namespace into the identifier and then re-projects, so that the joined
     /// result is checked against the language a second time rather than only its parts.
-    bool reprojectComposed;
+    bool reprojectComposed{};
 };
 
 /// @brief Returns how @p language composes a definition's type name.

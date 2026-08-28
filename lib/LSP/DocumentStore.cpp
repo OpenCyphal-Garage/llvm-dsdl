@@ -14,23 +14,28 @@
 
 #include "llvmdsdl/LSP/DocumentStore.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl::lsp
 {
 
 void DocumentStore::open(std::string uri, std::string text, const std::int64_t version)
 {
-    DocumentSnapshot            snapshot{uri, std::move(text), version};
-    std::lock_guard<std::mutex> lock(mutex_);
+    DocumentSnapshot                   snapshot{uri, std::move(text), version};
+    std::scoped_lock<std::mutex> const lock(mutex_);
     documents_.insert_or_assign(std::move(uri), std::move(snapshot));
 }
 
 bool DocumentStore::applyFullTextChange(const std::string& uri, std::string text, const std::int64_t version)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto                  it = documents_.find(uri);
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = documents_.find(uri);
     if (it == documents_.end())
     {
         return false;
@@ -42,14 +47,14 @@ bool DocumentStore::applyFullTextChange(const std::string& uri, std::string text
 
 bool DocumentStore::close(const std::string& uri)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return documents_.erase(uri) > 0U;
 }
 
 std::optional<DocumentSnapshot> DocumentStore::lookup(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto                  it = documents_.find(uri);
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    const auto                         it = documents_.find(uri);
     if (it == documents_.end())
     {
         return std::nullopt;
@@ -59,8 +64,8 @@ std::optional<DocumentSnapshot> DocumentStore::lookup(const std::string& uri) co
 
 std::vector<DocumentSnapshot> DocumentStore::snapshots() const
 {
-    std::lock_guard<std::mutex>   lock(mutex_);
-    std::vector<DocumentSnapshot> out;
+    std::scoped_lock<std::mutex> const lock(mutex_);
+    std::vector<DocumentSnapshot>      out;
     out.reserve(documents_.size());
     for (const auto& [_, snapshot] : documents_)
     {
@@ -71,7 +76,7 @@ std::vector<DocumentSnapshot> DocumentStore::snapshots() const
 
 std::size_t DocumentStore::size() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock<std::mutex> const lock(mutex_);
     return documents_.size();
 }
 

@@ -15,28 +15,42 @@
 #include "llvmdsdl/CodeGen/ObjectEmitter.h"
 
 #include "llvmdsdl/CodeGen/CppObjectAbiEmitter.h"
+#include "llvmdsdl/CodeGen/EmitCommon.h"
+#include <algorithm>
+#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Allocator.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/StringSaver.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/Pass/Pass.h>
+#include <mlir/IR/OwningOpRef.h>
+// mlir::Pass must be complete where the unique_ptr<mlir::Pass> members are destroyed.
+#include <mlir/Pass/Pass.h>  // IWYU pragma: keep
 #include <mlir/Pass/PassManager.h>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <mlir/Support/LLVM.h>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
+
+// For the process environment block. Apple exposes it to library code only through
+// _NSGetEnviron(); the `environ` symbol is available to a main executable alone.
+#ifdef __APPLE__
+#    include <crt_externs.h>
+#else
+#    include <unistd.h>
+#endif
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
@@ -69,14 +83,8 @@ bool isSafeTargetTriple(llvm::StringRef triple)
     {
         return false;
     }
-    for (const char c : triple)
-    {
-        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(triple,
+                               [](const char c) { return llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'; });
 }
 
 /// @brief Accepts only a single safe filename component (used for the archive name): non-empty,
@@ -87,14 +95,7 @@ bool isSafePathComponent(llvm::StringRef name)
     {
         return false;
     }
-    for (const char c : name)
-    {
-        if (!(llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'))
-        {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(name, [](const char c) { return llvm::isAlnum(c) || c == '-' || c == '_' || c == '.'; });
 }
 
 /// @brief True when `candidate` normalizes to a location at or under `root` (no `..` traversal escape).
@@ -202,11 +203,11 @@ llvm::Error setPathMode(const std::filesystem::path& path, const std::uint32_t m
 /// Recording happens whether or not anything is written, matching `writeGeneratedFile`: under
 /// `--dry-run` (which `--list-outputs` implies) the staged files do not exist on disk, and a listing
 /// that omitted them would describe an output tree the real run does not produce.
-llvm::Error publishStagedHeaders(const std::vector<std::string>&    staged,
-                                 const std::filesystem::path&       stageRoot,
-                                 const std::filesystem::path&       outRoot,
-                                 const EmitWritePolicy&             policy,
-                                 const std::vector<std::string>&    selectedTypeKeys)
+llvm::Error publishStagedHeaders(const std::vector<std::string>& staged,
+                                 const std::filesystem::path&    stageRoot,
+                                 const std::filesystem::path&    outRoot,
+                                 const EmitWritePolicy&          policy,
+                                 const std::vector<std::string>& selectedTypeKeys)
 {
     for (const auto& entry : staged)
     {
@@ -273,6 +274,7 @@ std::optional<std::string> environmentValue(const char* name)
     {
         return std::nullopt;
     }
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
     if (const char* value = std::getenv(name))
     {
         if (*value != '\0')
@@ -285,11 +287,9 @@ std::optional<std::string> environmentValue(const char* name)
 
 /// @brief Resolves the tool named by @p envVar, falling back to @p fallbackProgramName on PATH.
 ///
-/// A value carrying no directory separator is looked up on PATH rather than used as given.
-/// `CC=clang-22` is the ordinary way to name a compiler, but these tools are spawned through
-/// llvm::sys::ExecuteAndWait, which goes to posix_spawn -- not posix_spawnp -- so a bare name never
-/// resolves and the run dies with "posix_spawn failed: No such file or directory" naming nothing the
-/// user set. Resolving here means the error, when there is one, names the tool that is missing.
+/// A value with no directory separator is looked up on PATH. These tools are spawned through
+/// llvm::sys::ExecuteAndWait, which reaches posix_spawn rather than posix_spawnp, so the path it is
+/// given must already be complete.
 llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallbackProgramName)
 {
     if (const auto env = environmentValue(envVar))
@@ -318,12 +318,14 @@ llvm::Expected<std::string> resolveProgram(const char* envVar, const char* fallb
     return *found;
 }
 
-/// @param quiet Disconnects the child's stdout and stderr instead of letting them through. For
-///              probes, whose failure is an answer rather than something the user should read.
+/// @param quiet Disconnects all three of the child's standard descriptors rather than passing ours
+///              through.
+/// @param env   The child's complete environment. Empty (the default) inherits ours.
 llvm::Error executeCommand(llvm::StringRef                 program,
                            const std::vector<std::string>& args,
                            llvm::StringRef                 failContext,
-                           const bool                      quiet = false)
+                           const bool                      quiet = false,
+                           llvm::ArrayRef<std::string>     env   = {})
 {
     llvm::BumpPtrAllocator                 allocator;
     llvm::StringSaver                      saver(allocator);
@@ -336,13 +338,22 @@ llvm::Error executeCommand(llvm::StringRef                 program,
     }
 
     // An empty path in this array disconnects that descriptor portably; nullopt inherits ours.
-    const std::optional<llvm::StringRef> silenced[3] = {std::nullopt, llvm::StringRef(""), llvm::StringRef("")};
+    const std::optional<llvm::StringRef> silenced[3] = {llvm::StringRef(""), llvm::StringRef(""), llvm::StringRef("")};
     const llvm::ArrayRef<std::optional<llvm::StringRef>> redirects =
         quiet ? llvm::ArrayRef<std::optional<llvm::StringRef>>(silenced)
               : llvm::ArrayRef<std::optional<llvm::StringRef>>();
 
+    llvm::SmallVector<llvm::StringRef, 64> envRefs;
+    envRefs.reserve(env.size());
+    for (const auto& entry : env)
+    {
+        envRefs.push_back(entry);
+    }
+    const std::optional<llvm::ArrayRef<llvm::StringRef>> childEnv =
+        env.empty() ? std::nullopt : std::make_optional(llvm::ArrayRef<llvm::StringRef>(envRefs));
+
     std::string errMsg;
-    const int   rc = llvm::sys::ExecuteAndWait(program, argv, std::nullopt, redirects, 0, 0, &errMsg);
+    const int   rc = llvm::sys::ExecuteAndWait(program, argv, childEnv, redirects, 0, 0, &errMsg);
     if (rc != 0)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -354,6 +365,28 @@ llvm::Error executeCommand(llvm::StringRef                 program,
     return llvm::Error::success();
 }
 
+/// @brief This process's environment with @p name set to @p value, replacing any inherited entry.
+std::vector<std::string> environmentWith(const llvm::StringRef name, const llvm::StringRef value)
+{
+#ifdef __APPLE__
+    char* const* const block = *::_NSGetEnviron();
+#else
+    char* const* const block = ::environ;
+#endif
+
+    const std::string        prefix = name.str() + "=";
+    std::vector<std::string> entries;
+    for (char* const* entry = block; (entry != nullptr) && (*entry != nullptr); ++entry)
+    {
+        if (!llvm::StringRef(*entry).starts_with(prefix))
+        {
+            entries.emplace_back(*entry);
+        }
+    }
+    entries.emplace_back(prefix + value.str());
+    return entries;
+}
+
 bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 {
     const std::string basename = std::filesystem::path(compilerProgram.str()).filename().string();
@@ -362,58 +395,33 @@ bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
 
 /// @brief Probes whether @p compilerProgram accepts `-ffile-prefix-map`.
 ///
-/// The input is a throwaway source holding a single declaration, rather than one of the staged
-/// sources: those need the include roots and endianness define that the real invocation passes, so
-/// using one would test the flags around the probe as much as the flag under it, and answer
-/// "unsupported" whenever the setup was wrong. A self-contained witness leaves only the flag.
-///
-/// `-fsyntax-only` so nothing is written and no output path is needed, and quiet so that a driver
-/// which does not know the flag answers the question without printing an error the user cannot act
-/// on. One process spawn per compiler for a whole run, against the hundreds of translation units
-/// that follow it.
+/// Reads the empty translation unit from the stdin that quiet mode disconnects. A driver rejects an
+/// unknown flag before reading any input, so an empty unit is enough to ask.
 bool compilerAcceptsFilePrefixMap(llvm::StringRef compilerProgram)
 {
-    llvm::SmallString<128> probePath;
-    int                    probeFd = -1;
-    if (llvm::sys::fs::createTemporaryFile("llvmdsdl-file-prefix-map-probe", "c", probeFd, probePath))
+    const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.", "-fsyntax-only", "-x", "c", "-"};
+    if (auto err = executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true))
     {
+        // A failure here means the flag was refused, which is the answer.
+        llvm::consumeError(std::move(err));
         return false;
     }
-    {
-        // Takes the descriptor and closes it on the way out. A declaration rather than an empty
-        // file because an empty translation unit is not strictly valid C.
-        llvm::raw_fd_ostream probe(probeFd, /*shouldClose=*/true);
-        probe << "int llvmdsdl_file_prefix_map_probe;\n";
-    }
-
-    const std::vector<std::string> args{"-ffile-prefix-map=/llvmdsdl-probe=.",
-                                        "-fsyntax-only",
-                                        std::string(probePath.str())};
-    const bool                     accepted =
-        !static_cast<bool>(executeCommand(compilerProgram, args, "file-prefix-map probe", /*quiet=*/true));
-    llvm::sys::fs::remove(probePath);
-    return accepted;
+    return true;
 }
 
 /// @brief The `-ffile-prefix-map` argument that makes object output independent of @p outRoot, or
 ///        nullopt when the mapping cannot be expressed or the compiler will not take it.
 ///
-/// The staged sources this backend compiles live under the output directory, and it passes them --
-/// and their include roots -- to the compiler as absolute paths. `__FILE__` therefore expands to an
-/// absolute path, and `assert()` puts that string in .rodata, so two runs writing to different
-/// directories produced different objects from identical sources. glibc's assert.h uses `__FILE__`
-/// directly; Apple's prefers `__FILE_NAME__` where the compiler defines it, which is why this never
-/// showed on macOS. Mapping the output root to `.` collapses the difference at its source, and does
-/// so for debug paths too should this backend ever emit them.
+/// The staged sources are compiled by absolute path, so `__FILE__` expands to one and `assert()`
+/// puts it in .rodata, which makes each object depend on the directory it was generated into.
+/// Mapping the output root to `.` keeps them independent of it.
 ///
-/// Skipped rather than guessed when the root contains `=`: the flag's own syntax is
-/// `-ffile-prefix-map=OLD=NEW` with no escape for a literal `=`, so such a root would silently map
-/// something other than what was asked. Non-reproducible output beats wrongly-rewritten paths, and
-/// the determinism gate is what catches the former.
+/// A root containing `=` is skipped: the flag's syntax is `-ffile-prefix-map=OLD=NEW` with no escape
+/// for a literal `=`, so such a root would map something other than what was asked.
 std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& outRoot, llvm::StringRef compilerProgram)
 {
     const std::string root = outRoot.string();
-    if (root.empty() || root.find('=') != std::string::npos)
+    if (root.empty() || root.contains('='))
     {
         return std::nullopt;
     }
@@ -426,10 +434,10 @@ std::optional<std::string> filePrefixMapArgument(const std::filesystem::path& ou
 
 struct CompileTask final
 {
-    std::string                 compiler;
-    std::vector<std::string>    args;
-    std::string                 failContext;
-    std::filesystem::path       objectPath;
+    std::string              compiler;
+    std::vector<std::string> args;
+    std::string              failContext;
+    std::filesystem::path    objectPath;
 };
 
 std::size_t resolveCompileJobCount(const ObjectEmitOptions& options, const std::size_t taskCount)
@@ -464,9 +472,9 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
         return llvm::Error::success();
     }
 
-    std::mutex                stateMutex;
-    std::size_t               nextTaskIndex = 0U;
-    bool                      stopScheduling{false};
+    std::mutex                 stateMutex;
+    std::size_t                nextTaskIndex = 0U;
+    bool                       stopScheduling{false};
     std::optional<std::string> firstFailure;
 
     auto worker = [&]() {
@@ -474,7 +482,7 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
         {
             std::size_t taskIndex = 0U;
             {
-                std::lock_guard<std::mutex> lock(stateMutex);
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (stopScheduling || nextTaskIndex >= tasks.size())
                 {
                     return;
@@ -485,8 +493,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             const auto& task = tasks[taskIndex];
             if (auto err = executeCommand(task.compiler, task.args, task.failContext))
             {
-                const std::string message = llvm::toString(std::move(err));
-                std::lock_guard<std::mutex> lock(stateMutex);
+                const std::string                  message = llvm::toString(std::move(err));
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;
@@ -496,8 +504,8 @@ llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectE
             }
             if (auto err = setPathMode(task.objectPath, options.writePolicy.fileMode))
             {
-                const std::string message = llvm::toString(std::move(err));
-                std::lock_guard<std::mutex> lock(stateMutex);
+                const std::string                  message = llvm::toString(std::move(err));
+                std::scoped_lock<std::mutex> const lock(stateMutex);
                 if (!firstFailure)
                 {
                     firstFailure = message;
@@ -560,7 +568,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     const std::filesystem::path cppStageRoot = outRoot / ".obj_stage_cpp";
     const std::filesystem::path cStageRoot =
         (options.abiLanguage == ObjectAbiLanguage::Cpp) ? (cppStageRoot / "c") : (outRoot / ".obj_stage_c");
-    std::error_code             ec;
+    std::error_code ec;
     std::filesystem::create_directories(outRoot, ec);
     if (ec)
     {
@@ -592,11 +600,11 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     // Opted out of the default deliberately. The C emitted here is an intermediate that this backend
     // compiles itself and the user never sees, so a deprecation diagnostic on it has no audience.
     cOptions.emitDeprecationAttributes = false;
-    cOptions.selectedTypeKeys      = options.selectedTypeKeys;
+    cOptions.selectedTypeKeys          = options.selectedTypeKeys;
     // Not opted out, unlike the deprecation attributes above: the headers this produces are
     // published as the archive's interface, so a caller writes these names.
-    cOptions.typeNameVersioning    = options.typeNameVersioning;
-    cOptions.writePolicy           = options.writePolicy;
+    cOptions.typeNameVersioning                         = options.typeNameVersioning;
+    cOptions.writePolicy                                = options.writePolicy;
     cOptions.writePolicy.recordedOutputs                = nullptr;
     cOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
 
@@ -619,11 +627,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     // Relative to the C++ stage root, the `c/` prefix survives and both stop being true.
     const std::filesystem::path cPublishStageRoot =
         (options.abiLanguage == ObjectAbiLanguage::Cpp) ? cppStageRoot : cStageRoot;
-    if (auto err = publishStagedHeaders(cGenerated,
-                                        cPublishStageRoot,
-                                        outRoot,
-                                        options.writePolicy,
-                                        options.selectedTypeKeys))
+    if (auto err =
+            publishStagedHeaders(cGenerated, cPublishStageRoot, outRoot, options.writePolicy, options.selectedTypeKeys))
     {
         return err;
     }
@@ -663,9 +668,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     std::vector<CompileTask> compileTasks;
     compileTasks.reserve(sources.size());
 
-    // Gated on the same condition as runCompileTasks below, which does nothing when there is nothing
-    // to compile or the run is a dry one -- probing would otherwise spawn a compiler for a run whose
-    // whole point is that it spawns none.
+    // runCompileTasks below does nothing when there is nothing to compile or the run is dry; the
+    // probe follows the same condition so that a dry run spawns no compiler.
     const std::optional<std::string> cFilePrefixMap = (sources.empty() || options.writePolicy.dryRun)
                                                           ? std::optional<std::string>{}
                                                           : filePrefixMapArgument(outRoot, cCompiler);
@@ -674,7 +678,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
     {
         std::filesystem::path relative = source.filename();
         std::error_code       relEc;
-        const auto maybeRel = std::filesystem::relative(source, cStageRoot, relEc);
+        const auto            maybeRel = std::filesystem::relative(source, cStageRoot, relEc);
         if (!relEc && !maybeRel.empty())
         {
             relative = maybeRel;
@@ -690,12 +694,14 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         std::filesystem::create_directories(objectPath.parent_path(), ec);
         if (ec)
         {
-            return llvm::createStringError(ec, "failed to create object output directory %s", objectPath.string().c_str());
+            return llvm::createStringError(ec,
+                                           "failed to create object output directory %s",
+                                           objectPath.string().c_str());
         }
 
         std::vector<std::string> args;
-        args.push_back("-c");
-        args.push_back("-O2");
+        args.emplace_back("-c");
+        args.emplace_back("-O2");
         args.push_back("-I" + cStageRoot.string());
         args.push_back("-DLLVMDSDL_TARGET_ENDIANNESS_" +
                        (targetEndianness == "big" ? std::string("BIG=1") : std::string("LITTLE=1")));
@@ -708,7 +714,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             args.push_back("--target=" + options.targetTriple);
         }
         args.push_back(source.string());
-        args.push_back("-o");
+        args.emplace_back("-o");
         args.push_back(objectPath.string());
 
         compileTasks.push_back(CompileTask{cCompiler, std::move(args), "C compiler invocation", objectPath});
@@ -739,11 +745,11 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         }
 
         CppObjectAbiEmitOptions cppStageOptions;
-        cppStageOptions.stageRoot         = cppStageRoot;
-        cppStageOptions.cStageRoot        = cStageRoot;
-        cppStageOptions.selectedTypeKeys  = options.selectedTypeKeys;
+        cppStageOptions.stageRoot          = cppStageRoot;
+        cppStageOptions.cStageRoot         = cStageRoot;
+        cppStageOptions.selectedTypeKeys   = options.selectedTypeKeys;
         cppStageOptions.typeNameVersioning = options.typeNameVersioning;
-        cppStageOptions.writePolicy       = options.writePolicy;
+        cppStageOptions.writePolicy        = options.writePolicy;
         std::vector<std::string> cppGenerated;
         cppStageOptions.writePolicy.recordedOutputs                = &cppGenerated;
         cppStageOptions.writePolicy.recordedOutputRequiredTypeKeys = nullptr;
@@ -773,11 +779,10 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         const std::string cxxCompiler = *cxxCompilerOrErr;
         if (!options.targetTriple.empty() && !hasClangStyleTargetFlag(cxxCompiler))
         {
-            return llvm::createStringError(
-                llvm::inconvertibleErrorCode(),
-                "compiler '%s' does not support explicit target triples in object backend; "
-                "set CXX to clang++ or omit --target-triple",
-                cxxCompiler.c_str());
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "compiler '%s' does not support explicit target triples in object backend; "
+                                           "set CXX to clang++ or omit --target-triple",
+                                           cxxCompiler.c_str());
         }
 
         objectOutputs.reserve(objectOutputs.size() + cppSources.size());
@@ -794,7 +799,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         {
             std::filesystem::path relative = source.filename();
             std::error_code       relEc;
-            const auto maybeRel = std::filesystem::relative(source, cppStageRoot, relEc);
+            const auto            maybeRel = std::filesystem::relative(source, cppStageRoot, relEc);
             if (!relEc && !maybeRel.empty())
             {
                 relative = maybeRel;
@@ -817,9 +822,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             }
 
             std::vector<std::string> args;
-            args.push_back("-c");
-            args.push_back("-O2");
-            args.push_back("-std=c++17");
+            args.emplace_back("-c");
+            args.emplace_back("-O2");
+            args.emplace_back("-std=c++17");
             args.push_back("-I" + cppStageRoot.string());
             args.push_back("-I" + cStageRoot.string());
             args.push_back("-I" + outRoot.string());
@@ -834,11 +839,10 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                 args.push_back("--target=" + options.targetTriple);
             }
             args.push_back(source.string());
-            args.push_back("-o");
+            args.emplace_back("-o");
             args.push_back(objectPath.string());
 
-            cppCompileTasks.push_back(
-                CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
+            cppCompileTasks.push_back(CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
         }
 
         if (auto err = runCompileTasks(cppCompileTasks, options))
@@ -859,7 +863,7 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         {
             return arOrErr.takeError();
         }
-        std::filesystem::path archivePath = outRoot / (options.archiveName + ".a");
+        std::filesystem::path const archivePath = outRoot / (options.archiveName + ".a");
         if (!isPathWithinRoot(outRoot, archivePath))
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -888,16 +892,15 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
         if (!options.writePolicy.dryRun)
         {
-            // Set on this process so the archiver child inherits it. dsdlc is a short-lived tool and
-            // the value is constant, so there is nothing to restore.
-            ::setenv("ZERO_AR_DATE", "1", 1);
+            // Both attempts get it: which one runs is decided by the archiver family.
+            const std::vector<std::string> archiverEnv = environmentWith("ZERO_AR_DATE", "1");
 
             std::vector<std::string> args;
             args.reserve(objectArgs.size() + 1U);
-            args.push_back("rcsD");
+            args.emplace_back("rcsD");
             args.insert(args.end(), objectArgs.begin(), objectArgs.end());
 
-            if (auto err = executeCommand(*arOrErr, args, "archive invocation"))
+            if (auto err = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
             {
                 // An archiver that will not take `D` leaves nothing usable behind, so start clean
                 // rather than risk appending to a partial archive on the second attempt.
@@ -906,9 +909,9 @@ llvm::Error emitObject(const SemanticModule&    semantic,
                 std::filesystem::remove(archivePath, removeError);
 
                 args.clear();
-                args.push_back("rcs");
+                args.emplace_back("rcs");
                 args.insert(args.end(), objectArgs.begin(), objectArgs.end());
-                if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation"))
+                if (auto retryErr = executeCommand(*arOrErr, args, "archive invocation", /*quiet=*/false, archiverEnv))
                 {
                     return retryErr;
                 }

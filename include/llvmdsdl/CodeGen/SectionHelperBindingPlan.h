@@ -23,6 +23,7 @@
 
 namespace llvmdsdl
 {
+struct LoweredFieldFacts;
 struct LoweredSectionFacts;
 struct SemanticSection;
 
@@ -120,6 +121,13 @@ struct SectionHelperBindingPlan final
 SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&     section,
                                                        const LoweredSectionFacts* sectionFacts,
                                                        HelperBindingDirection     direction);
+
+/// @brief Returns the array-length prefix helper symbol for one direction.
+/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] fieldFacts Lowered field metadata, or `nullptr` when the field has none.
+/// @return Helper symbol, empty when there are no facts for the field.
+[[nodiscard]] std::string arrayLengthPrefixHelper(HelperBindingDirection   direction,
+                                                  const LoweredFieldFacts* fieldFacts);
 
 }  // namespace llvmdsdl
 

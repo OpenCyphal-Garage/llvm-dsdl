@@ -1,0 +1,185 @@
+#===----------------------------------------------------------------------===#
+#
+# Part of the OpenCyphal project, under the MIT licence
+# SPDX-License-Identifier: MIT
+#
+#===----------------------------------------------------------------------===#
+#
+# Static-analysis ruleset for llvm-dsdl.
+#
+# Read by the `check-clang-tidy` target in cmake/CheckClangTidy.cmake, by the
+# Lint job in .github/workflows/ci.yml, and by any editor speaking clangd. The
+# target supplies `--warnings-as-errors=*`; keeping that off this file lets an
+# editor surface findings as warnings while you type.
+#
+# Whole families are enabled, and individual checks are subtracted for a stated
+# reason. A subtraction records a conflict with this project's style, domain, or
+# design, or a question another gate already owns.
+#
+# Subtractions
+# ------------
+#
+# bugprone-easily-swappable-parameters
+#     Fires on every adjacent (StringRef, StringRef) pair, which is most of the
+#     naming and rendering surface.
+#
+# bugprone-unchecked-optional-access
+#     Reads a dereference as unchecked unless the guard is a direct `has_value`
+#     on the same expression, which is not how this tree establishes engagement:
+#     MLIR's `FailureOr` behind `failed()`, paired predicates such as `isInteger`
+#     before `asWideInteger`, and preconditions held by the only caller.
+#     Satisfying it means writing branches that cannot be taken.
+#
+# cert-msc32-c, cert-msc51-cpp
+#     Aliases of bugprone-random-generator-seed, which is enabled.
+#
+# cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays
+#     Fixed lookup tables and the emitted C ABI surfaces are C arrays.
+#
+# cppcoreguidelines-avoid-const-or-ref-data-members
+#     Holding `DiagnosticEngine&` is how the emitters and the analyser reach the
+#     diagnostic sink.
+#
+# cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers
+#     Bit widths, field offsets, and wire-format constants are the subject
+#     matter.
+#
+# cppcoreguidelines-non-private-member-variables-in-classes,
+# misc-non-private-member-variables-in-classes
+#     The `*Options` aggregates are plain data, initialised by their callers.
+#
+# cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+# cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+# cppcoreguidelines-pro-bounds-constant-array-index,
+# cppcoreguidelines-pro-bounds-pointer-arithmetic
+#     Serialisation walks buffers by pointer and indexes them unchecked. The
+#     bounds come from the BitLengthSet algebra.
+#
+# cppcoreguidelines-pro-type-reinterpret-cast
+#     Type punning is intrinsic to reading and writing a wire format.
+#
+# misc-no-recursion
+#     Recursive descent in the parser, and recursive composite traversal in the
+#     analyser and every backend.
+#
+# modernize-return-braced-init-list
+#     Chooses the constructor by overload resolution on a braced list, which is
+#     not always the one the explicit spelling names. `return {x}` for a
+#     `llvm::json::Value` selects `Value(std::initializer_list<Value>)` and yields
+#     a one-element array, silently: an id of `7` comes back as `[7]` and no
+#     JSON-RPC response matches its request.
+#
+# modernize-use-designated-initializers
+#     Dense tables and small aggregates are initialised positionally.
+#
+# modernize-use-nodiscard
+#     [[nodiscard]] is applied to query APIs where dropping the result is a bug.
+#
+# modernize-use-trailing-return-type
+#     The tree writes leading return types.
+#
+# performance-enum-size
+#     These enums are compiler-internal descriptors, never stored in bulk.
+#
+# readability-function-cognitive-complexity
+#     Recursive-descent parsing and backend emission are branchy by nature.
+#     Function shape is settled in review.
+#
+# readability-identifier-length
+#     `ec`, `os`, and loop `i` are idiomatic here.
+#
+# readability-implicit-bool-conversion
+#     Testing llvm::Error, llvm::StringRef, std::optional, and raw pointers
+#     directly in a condition is the surrounding LLVM idiom.
+#
+# Editing
+# -------
+#
+# Keep `#` out of the `Checks:` scalar. clang-tidy splits that scalar on commas
+# and globs each fragment, so a comment containing a comma turns its tail into a
+# live pattern: a line reading `# disabled, modernize-*` enables all 47
+# modernize checks. A mistyped check name is dropped just as quietly.
+# tools/check_clang_tidy_config.py runs in the Lint job and fails on either.
+#
+#===----------------------------------------------------------------------===#
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
+  -cert-msc32-c,
+  -cert-msc51-cpp,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-avoid-c-arrays,
+  -modernize-return-braced-init-list,
+  -modernize-use-designated-initializers,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  -performance-enum-size,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers
+
+# The `check-clang-tidy` target passes a path-anchored `--header-filter` that
+# supersedes this. The value here is what makes a bare `clang-tidy` run, or
+# clangd in an editor, reach the same set of headers.
+HeaderFilterRegex: '(^|/)(include/llvmdsdl|lib|runtime|test|tools)/'
+ExcludeHeaderFilterRegex: '(^|/)(submodules|examples|build)/'
+
+# Applies .clang-format to whatever --fix rewrites.
+FormatStyle: file
+
+CheckOptions:
+  # Pinned where the tree is unanimous. Constants and local variables are left
+  # unpinned: clang-tidy resolves an unset constant category through the
+  # variable category, so pinning VariableCase would police constants too, and
+  # the tree carries both `kMaxOpBudget` and `MaxRecords`.
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.InlineNamespaceCase: lower_case
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  readability-identifier-naming.FunctionCase: camelBack
+  readability-identifier-naming.MethodCase: camelBack
+  readability-identifier-naming.ParameterCase: camelBack
+  readability-identifier-naming.PublicMemberCase: camelBack
+  readability-identifier-naming.ProtectedMemberCase: camelBack
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
+  readability-identifier-naming.PrivateMemberCase: camelBack
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+
+  # A virtual destructor as the sole special member is the intended shape for
+  # the interfaces here.
+  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+
+  # A random distribution draws through a non-const operator(), so the check's
+  # advice does not compile. It reads only the declaration, not the call.
+  misc-const-correctness.AllowedTypes: '::std::[a-z_]*_distribution'
+ 

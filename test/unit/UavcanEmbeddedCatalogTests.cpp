@@ -6,7 +6,10 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
+#include <mlir/IR/Location.h>
+#include <string>
 #include <unordered_set>
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -17,10 +20,14 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <llvm/Support/Error.h>
+#include <utility>
 
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+
+#include "UnitTests.h"
 
 namespace
 {
@@ -53,15 +60,15 @@ bool runUavcanEmbeddedCatalogTests()
         return false;
     }
     // (2) The verifier must compute SHA-256 correctly: the empty string has a well-known digest.
-    if (!llvmdsdl::verifyEmbeddedCatalogIntegrity(
-            "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+    if (!llvmdsdl::verifyEmbeddedCatalogIntegrity("",
+                                                  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
     {
         std::cerr << "verifyEmbeddedCatalogIntegrity rejected the known empty-string digest\n";
         return false;
     }
     // (3) A mismatched hash must be rejected (the check is not a no-op).
-    if (llvmdsdl::verifyEmbeddedCatalogIntegrity(
-            "dsdl.schema @tampered {}", "0000000000000000000000000000000000000000000000000000000000000000"))
+    if (llvmdsdl::verifyEmbeddedCatalogIntegrity("dsdl.schema @tampered {}",
+                                                 "0000000000000000000000000000000000000000000000000000000000000000"))
     {
         std::cerr << "verifyEmbeddedCatalogIntegrity accepted a mismatched hash\n";
         return false;
@@ -224,7 +231,7 @@ bool runUavcanEmbeddedCatalogTests()
     }
     for (const auto& key : byTypeName.typeKeys)
     {
-        if (key.rfind("uavcan.node.Heartbeat:", 0U) != 0U)
+        if (!key.starts_with("uavcan.node.Heartbeat:"))
         {
             std::cerr << "unversioned type selector leaked an unrelated key: " << key << "\n";
             return false;
@@ -257,7 +264,7 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "root namespace selector should select the whole catalog\n";
         return false;
     }
-    if (!std::is_sorted(rootKeys.typeKeys.begin(), rootKeys.typeKeys.end()))
+    if (!std::ranges::is_sorted(rootKeys.typeKeys))
     {
         std::cerr << "selector expansion should return sorted keys\n";
         return false;
@@ -289,16 +296,14 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "an unavailable version must not resolve\n";
         return false;
     }
-    if (std::find(badVersion.suggestions.begin(), badVersion.suggestions.end(), "uavcan.node.Heartbeat.1.0") ==
-        badVersion.suggestions.end())
+    if (std::ranges::find(badVersion.suggestions, "uavcan.node.Heartbeat.1.0") == badVersion.suggestions.end())
     {
         std::cerr << "an unavailable version should suggest the versions the catalog carries\n";
         return false;
     }
 
     const auto typo = llvmdsdl::expandEmbeddedCatalogSelector(catalog, "uavcna");
-    if (!typo.typeKeys.empty() ||
-        std::find(typo.suggestions.begin(), typo.suggestions.end(), "uavcan") == typo.suggestions.end())
+    if (!typo.typeKeys.empty() || std::ranges::find(typo.suggestions, "uavcan") == typo.suggestions.end())
     {
         std::cerr << "a transposed namespace should suggest the namespace it was reaching for\n";
         return false;

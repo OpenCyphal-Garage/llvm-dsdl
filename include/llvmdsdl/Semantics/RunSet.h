@@ -45,7 +45,7 @@ struct Run final
     ///       128-bit arithmetic.
     [[nodiscard]] std::int64_t last() const
     {
-        return start + (count - 1) * stride;
+        return start + ((count - 1) * stride);
     }
 };
 

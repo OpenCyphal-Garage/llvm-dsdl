@@ -14,11 +14,16 @@
 
 #include "llvmdsdl/LSP/RequestScheduler.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <exception>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -45,6 +50,11 @@ public:
     {
     }
 
+    Impl(const Impl&)            = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&)                 = delete;
+    Impl& operator=(Impl&&)      = delete;
+
     ~Impl()
     {
         shutdown();
@@ -52,7 +62,7 @@ public:
 
     bool enqueue(std::string requestKey, std::string method, RequestTask task, RequestCompletion completion)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock<std::mutex> const lock(mutex_);
         if (stopping_)
         {
             return false;
@@ -83,8 +93,8 @@ public:
 
     bool cancel(const std::string& requestKey)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const auto                  it = requestStates_.find(requestKey);
+        std::scoped_lock<std::mutex> const lock(mutex_);
+        const auto                         it = requestStates_.find(requestKey);
         if (it == requestStates_.end())
         {
             return false;
@@ -97,7 +107,7 @@ public:
     void shutdown()
     {
         {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::scoped_lock<std::mutex> const lock(mutex_);
             if (stopping_)
             {
                 return;
@@ -169,7 +179,7 @@ private:
             const auto finish = std::chrono::steady_clock::now();
 
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock<std::mutex> const lock(mutex_);
                 requestStates_.erase(item.requestKey);
             }
 

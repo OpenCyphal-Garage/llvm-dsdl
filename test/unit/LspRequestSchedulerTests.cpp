@@ -7,12 +7,18 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <llvm/Support/JSON.h>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <utility>
 
 #include "llvmdsdl/LSP/RequestScheduler.h"
+
+#include "UnitTests.h"
 
 bool runLspRequestSchedulerTests()
 {
@@ -27,7 +33,7 @@ bool runLspRequestSchedulerTests()
     const bool queued = scheduler.enqueue(
         "i:7",
         "test/sleep",
-        [](llvmdsdl::lsp::CancellationToken token) -> llvmdsdl::lsp::RequestTaskResult {
+        [](const llvmdsdl::lsp::CancellationToken& token) -> llvmdsdl::lsp::RequestTaskResult {
             const auto start = std::chrono::steady_clock::now();
             while (std::chrono::steady_clock::now() - start < std::chrono::seconds(1))
             {
@@ -42,7 +48,7 @@ bool runLspRequestSchedulerTests()
         [&mutex, &cv, &sawCallback, &completionResult, &completionLatency](llvmdsdl::lsp::RequestTaskResult result,
                                                                            const std::uint64_t latencyMicros) {
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::scoped_lock<std::mutex> const lock(mutex);
                 sawCallback       = true;
                 completionResult  = std::move(result);
                 completionLatency = latencyMicros;
@@ -91,13 +97,13 @@ bool runLspRequestSchedulerTests()
     // released, the queue + in-flight set fills to the cap and further enqueues are
     // rejected (return false), rather than growing without limit.
     {
-        constexpr std::size_t             cap = 4;
-        llvmdsdl::lsp::RequestScheduler   bounded(cap);
-        std::mutex                        gateMutex;
-        std::condition_variable           gateCv;
-        bool                              release = false;
+        constexpr std::size_t           cap = 4;
+        llvmdsdl::lsp::RequestScheduler bounded(cap);
+        std::mutex                      gateMutex;
+        std::condition_variable         gateCv;
+        bool                            release = false;
 
-        auto blockingTask = [&](llvmdsdl::lsp::CancellationToken) {
+        auto blockingTask = [&](const llvmdsdl::lsp::CancellationToken&) {
             std::unique_lock<std::mutex> lock(gateMutex);
             gateCv.wait(lock, [&release]() { return release; });
             return llvmdsdl::lsp::RequestTaskResult{llvmdsdl::lsp::RequestTaskStatus::Completed,
@@ -115,10 +121,9 @@ bool runLspRequestSchedulerTests()
         }
         if (accepted > cap)
         {
-            std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap
-                      << ")\n";
+            std::cerr << "scheduler accepted more than the pending-request cap (" << accepted << " > " << cap << ")\n";
             {
-                std::lock_guard<std::mutex> lock(gateMutex);
+                std::scoped_lock<std::mutex> const lock(gateMutex);
                 release = true;
             }
             gateCv.notify_all();
@@ -127,7 +132,7 @@ bool runLspRequestSchedulerTests()
         }
 
         {
-            std::lock_guard<std::mutex> lock(gateMutex);
+            std::scoped_lock<std::mutex> const lock(gateMutex);
             release = true;
         }
         gateCv.notify_all();

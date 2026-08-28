@@ -13,29 +13,32 @@
 /// This file emits Python dataclass models, serializer/deserializer methods,
 /// and runtime wiring from lowering contracts.
 ///
+/// The line-building concatenations here carry NOLINT for
+/// performance-inefficient-string-concatenation. Each one spells out a line of generated
+/// source, and an append sequence would cost the reader the line itself.
+///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 
+#include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
-#include <array>
-#include <cctype>
+#include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <optional>
 #include <set>
 #include <sstream>
-#include <unordered_map>
+#include <string>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <system_error>
 #include <utility>
-#include <variant>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
@@ -43,6 +46,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitStep.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
@@ -58,7 +62,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Rational.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
@@ -142,7 +145,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
 {
     std::vector<std::string> out;
     std::string              current;
-    for (char c : packageName)
+    for (char const c : packageName)
     {
         if (c == '.')
         {
@@ -162,7 +165,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     }
     if (out.empty())
     {
-        out.push_back("dsdl_gen");
+        out.emplace_back("dsdl_gen");
     }
     return out;
 }
@@ -207,7 +210,7 @@ public:
         return index_.find(ref);
     }
 
-    std::string namespacePath(const DiscoveredDefinition& info) const
+    static std::string namespacePath(const DiscoveredDefinition& info)
     {
         return renderNamespaceRelativePath(CodegenNamingLanguage::Python, info.namespaceComponents).generic_string();
     }
@@ -236,7 +239,7 @@ public:
         return typeName(tmp);
     }
 
-    std::string fileStem(const DiscoveredDefinition& info) const
+    static std::string fileStem(const DiscoveredDefinition& info)
     {
         return renderVersionedFileStem(CodegenNamingLanguage::Python,
                                        info.shortName,
@@ -244,7 +247,7 @@ public:
                                        info.minorVersion);
     }
 
-    std::filesystem::path relativeFilePath(const DiscoveredDefinition& info) const
+    static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
     {
         return renderRelativeTypeFilePath(CodegenNamingLanguage::Python, info, "py");
     }
@@ -342,7 +345,7 @@ std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext&
 
 std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    const auto base = pyFieldBaseType(type, ctx);
+    auto base = pyFieldBaseType(type, ctx);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -387,8 +390,8 @@ void emitSectionConstants(std::ostringstream& out, const std::string& prefix, co
     {
         constNames.push_back(constant.name);
     }
-    NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
-    const auto  prefixupper =
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
+    const auto        prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
     for (const auto& constant : section.constants)
     {
@@ -687,10 +690,10 @@ void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
                                        const std::string&                valueExpr,
                                        const EmitterContext&             ctx)
 {
-    const auto& field      = operation.body.field;
-    const auto& helpers    = operation.body.helpers;
-    const auto  bits       = std::to_string(field.bitLength);
-    const auto  saturating = field.castMode == CastMode::Saturated ? "True" : "False";
+    const auto&       field      = operation.body.field;
+    const auto&       helpers    = operation.body.helpers;
+    const auto        bits       = std::to_string(field.bitLength);
+    const auto* const saturating = field.castMode == CastMode::Saturated ? "True" : "False";
 
     switch (operation.valueKind)
     {
@@ -1464,6 +1467,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             }
             importNames += name;
         }
+        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
         emitLine(out, 0, "from " + modulePath + " import " + importNames);
     }
 
@@ -1615,8 +1619,8 @@ std::string renderPackageMetadata(const PythonEmitOptions& options)
     std::ostringstream out;
     out << "{\n";
     out << "  \"llvmdsdl\": {\n";
-    out << "    \"generatorVersion\": \"" << llvmdsdl::kVersionString << "\",\n";
-    out << "    \"pythonRuntimeSpecialization\": \"";
+    out << R"(    "generatorVersion": ")" << llvmdsdl::kVersionString << "\",\n";
+    out << R"(    "pythonRuntimeSpecialization": ")";
     out << (options.runtimeSpecialization == PythonRuntimeSpecialization::Fast ? "fast" : "portable");
     out << "\"\n";
     out << "  }\n";
@@ -1649,7 +1653,7 @@ std::string renderPyProjectToml(llvm::StringRef packageName, llvm::StringRef roo
     out << "include = [\"" << rootPackageName.str() << "*\"]\n\n";
 
     out << "[tool.setuptools.package-data]\n";
-    out << "\"" << packageName.str() << "\" = [\"py.typed\", \"_dsdl_runtime_accel*.so\", "
+    out << "\"" << packageName.str() << R"(" = ["py.typed", "_dsdl_runtime_accel*.so", )"
         << "\"_dsdl_runtime_accel*.dylib\", \"_dsdl_runtime_accel*.pyd\"]\n";
     return out.str();
 }
@@ -1671,13 +1675,13 @@ std::string renderInitFile(llvm::StringRef dottedName, const bool isPackageRoot)
     out << generatedCommentLine("Python backend") << "\n";
     if (isPackageRoot)
     {
-        out << "\"\"\"Generated DSDL types, rooted at the `" << dottedName.str() << "` package.\"\"\"\n";
+        out << R"("""Generated DSDL types, rooted at the `)" << dottedName.str() << "` package.\"\"\"\n";
         out << "\n";
         out << "__version__ = \"" << llvmdsdl::kVersionString << "\"\n";
     }
     else
     {
-        out << "\"\"\"Generated DSDL types under `" << dottedName.str() << "`.\"\"\"\n";
+        out << R"("""Generated DSDL types under `)" << dottedName.str() << "`.\"\"\"\n";
     }
     return out.str();
 }
@@ -1692,8 +1696,8 @@ llvm::Error ensureInitFile(const std::filesystem::path&     dir,
     {
         return llvm::Error::success();
     }
-    std::filesystem::path initPath = dir / "__init__.py";
-    std::error_code       ec;
+    std::filesystem::path const initPath = dir / "__init__.py";
+    std::error_code             ec;
     if (!std::filesystem::exists(initPath, ec))
     {
         if (auto err = writeGeneratedFile(initPath, renderInitFile(dottedName, isPackageRoot), writePolicy))
@@ -1765,8 +1769,8 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
     ctx.setTraceSink(traceSink);
 
-    std::filesystem::path outRoot(options.outDir);
-    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    std::filesystem::path const outRoot(options.outDir);
+    const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
     // them is independent of which definitions were selected -- except under `as-needed`, which
@@ -1853,7 +1857,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         }
         ordered.push_back(&def);
     }
-    std::sort(ordered.begin(), ordered.end(), [](const auto* lhs, const auto* rhs) {
+    std::ranges::sort(ordered, [](const auto* lhs, const auto* rhs) {
         if (lhs->info.fullName != rhs->info.fullName)
         {
             return lhs->info.fullName < rhs->info.fullName;
@@ -1868,7 +1872,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath  = ctx.relativeFilePath(def->info);
+        const auto                     relPath  = llvmdsdl::EmitterContext::relativeFilePath(def->info);
         const auto                     fullPath = packageRoot / relPath;
 
         if (auto err = ensurePackageInitChain(packageRoot,
