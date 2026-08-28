@@ -22,8 +22,8 @@
 /// @ref SourceWriter that owns the block depth.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_HELPER_BODY_PLAN_H
-#define LLVMDSDL_CODEGEN_HELPER_BODY_PLAN_H
+#ifndef LLVMDSDL_SERDES_HELPER_BODY_PLAN_H
+#define LLVMDSDL_SERDES_HELPER_BODY_PLAN_H
 
 #include <cstdint>
 #include <functional>
@@ -71,6 +71,23 @@ enum class HelperDirection
 /// @param[in] bits Wire width; zero and widths at or above 64 have their own spellings.
 /// @return The literal.
 std::string renderMaskLiteral(HelperSpellingLanguage language, std::uint32_t bits);
+
+/// @brief The wire category of a scalar field, in terms the shape decision needs.
+///
+/// Deliberately not @c SemanticScalarCategory: the decision has to be reachable from
+/// the MLIR lowering, which knows a field's category only as a string attribute and
+/// cannot see the semantic model.
+enum class HelperScalarKind
+{
+    /// @brief Unsigned, byte, or UTF-8.
+    Unsigned,
+
+    /// @brief Signed.
+    Signed,
+
+    /// @brief IEEE 754 binary16, binary32, or binary64.
+    Float,
+};
 
 /// @brief What a helper body does.
 enum class HelperBodyKind
@@ -220,6 +237,24 @@ public:
 /// @param[in,out] spelling Backend spelling.
 void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling);
 
+/// @brief The body shape a scalar field's helper takes.
+///
+/// THE single statement of the decision, and the reason this lives below both the
+/// MLIR lowering and the string backends: each has to answer the same question about
+/// the same field, and answering it twice is how the two drift apart.
+///
+/// A width of 64 leaves nothing to do -- the value already occupies the whole
+/// register, so masking and saturation are both identities. Below that, serialisation
+/// saturates when the field asked for it and otherwise truncates by masking, while
+/// deserialisation of a signed field has to put the sign bit back.
+///
+/// @param[in] kind Wire category of the field.
+/// @param[in] bits Wire width; a width of zero or above 64 has no helper.
+/// @param[in] saturated Whether the field's cast mode is saturated.
+/// @param[in] direction Which way the helper runs.
+/// @return The shape, with the operands it needs. The symbol is left empty.
+HelperBody helperBodyForScalar(HelperScalarKind kind, std::uint32_t bits, bool saturated, HelperDirection direction);
+
 /// @brief Builds the helper bodies a section needs, in emission order.
 ///
 /// THE single in-code decision of which shape each descriptor calls for: masking
@@ -239,4 +274,4 @@ std::vector<HelperBody> buildSectionHelperBodies(
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_CODEGEN_HELPER_BODY_PLAN_H
+#endif  // LLVMDSDL_SERDES_HELPER_BODY_PLAN_H

@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
+#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 

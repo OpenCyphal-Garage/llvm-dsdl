@@ -56,7 +56,7 @@
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
+#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"

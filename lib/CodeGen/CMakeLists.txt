@@ -77,7 +77,7 @@ add_library(llvmdsdlCodeGen
   GoEmitter.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
-  HelperBodyPlan.cpp
+  SectionHelperBodies.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
   LoweredFactsLookup.cpp
@@ -110,6 +110,7 @@ target_link_libraries(llvmdsdlCodeGen
   PUBLIC
   llvmdsdlLowering
   llvmdsdlTransforms
+  llvmdsdlSerDes
   MLIRFuncToEmitC
   MLIRArithToEmitC
   MLIRSCFToEmitC

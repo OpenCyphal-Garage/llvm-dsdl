@@ -58,7 +58,7 @@
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
+#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Frontend/AST.h"

@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -201,6 +202,74 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
     }
 
     return mlir::success();
+}
+
+/// @brief Lowers one scalar helper shape into arith ops.
+///
+/// The shape comes from @ref llvmdsdl::helperBodyForScalar, which the language
+/// emitters also call: this pass and those backends have to agree about what a
+/// given field's helper does, and the way to guarantee that is for neither of them
+/// to decide it.
+///
+/// @param[in] body The shape, as decided for this field and direction.
+/// @param[in] value The helper's argument.
+/// @param[in,out] builder Positioned at the helper's entry block.
+/// @param[in] loc Location to attribute the emitted ops to.
+/// @return The value the helper returns.
+mlir::Value lowerScalarHelperBody(const llvmdsdl::HelperBody& body,
+                                  mlir::Value                 value,
+                                  mlir::OpBuilder&            builder,
+                                  const mlir::Location        loc)
+{
+    const auto bits = static_cast<unsigned>(body.bits);
+    switch (body.kind)
+    {
+    case llvmdsdl::HelperBodyKind::Identity:
+        return value;
+
+    case llvmdsdl::HelperBodyKind::Mask: {
+        const auto mask      = static_cast<std::int64_t>((UINT64_C(1) << bits) - UINT64_C(1));
+        auto       maskConst = mlir::arith::ConstantIntOp::create(builder, loc, mask, 64);
+        return mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+    }
+
+    case llvmdsdl::HelperBodyKind::SaturateUnsigned: {
+        const auto mask      = static_cast<std::int64_t>((UINT64_C(1) << bits) - UINT64_C(1));
+        auto       maskConst = mlir::arith::ConstantIntOp::create(builder, loc, mask, 64);
+        auto       over = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
+        return mlir::arith::SelectOp::create(builder, loc, over, maskConst, value).getResult();
+    }
+
+    case llvmdsdl::HelperBodyKind::SaturateSigned: {
+        auto minConst   = mlir::arith::ConstantIntOp::create(builder, loc, body.minValue, 64);
+        auto maxConst   = mlir::arith::ConstantIntOp::create(builder, loc, body.maxValue, 64);
+        auto below      = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, value, minConst);
+        auto above      = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
+        auto clampedLow = mlir::arith::SelectOp::create(builder, loc, below, minConst, value);
+        return mlir::arith::SelectOp::create(builder, loc, above, maxConst, clampedLow).getResult();
+    }
+
+    case llvmdsdl::HelperBodyKind::SignExtend: {
+        const std::uint64_t maskU       = (UINT64_C(1) << bits) - UINT64_C(1);
+        const std::uint64_t signU       = UINT64_C(1) << (bits - 1U);
+        const std::uint64_t extendMaskU = ~maskU;
+        auto maskConst   = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(maskU), 64);
+        auto signConst   = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(signU), 64);
+        auto extendConst = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(extendMaskU), 64);
+        auto zeroConst   = mlir::arith::ConstantIntOp::create(builder, loc, 0, 64);
+        auto masked      = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
+        auto signPart    = mlir::arith::AndIOp::create(builder, loc, masked, signConst).getResult();
+        auto isNegative =
+            mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
+        auto negExtended = mlir::arith::OrIOp::create(builder, loc, masked, extendConst).getResult();
+        return mlir::arith::SelectOp::create(builder, loc, isNegative, negExtended, masked).getResult();
+    }
+
+    case llvmdsdl::HelperBodyKind::StatusGuard:
+    case llvmdsdl::HelperBodyKind::TagMembership:
+        break;
+    }
+    return value;
 }
 
 mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
@@ -430,10 +499,14 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
         op.setAttr("lowered_ser_unsigned_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_unsigned_helper", builder.getStringAttr(deserName));
 
-        const bool          fullWidth = (bitLength == 64);
-        const std::uint64_t mask =
-            fullWidth ? UINT64_MAX : ((UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1));
-        const auto maskSigned = fullWidth ? INT64_C(-1) : static_cast<std::int64_t>(mask);
+        const auto serShape   = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Unsigned,
+                                                              static_cast<std::uint32_t>(bitLength),
+                                                              castMode == "saturated",
+                                                              llvmdsdl::HelperDirection::Serialize);
+        const auto deserShape = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Unsigned,
+                                                              static_cast<std::uint32_t>(bitLength),
+                                                              castMode == "saturated",
+                                                              llvmdsdl::HelperDirection::Deserialize);
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
@@ -452,24 +525,8 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             }
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
-            auto        value  = entry->getArgument(0);
-            mlir::Value result = value;
-            if (fullWidth)
-            {
-                result = value;
-            }
-            else if (castMode == "saturated")
-            {
-                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
-                auto over =
-                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
-                result = mlir::arith::SelectOp::create(builder, loc, over, maskConst, value).getResult();
-            }
-            else
-            {
-                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
-                result         = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
-            }
+            auto       value  = entry->getArgument(0);
+            const auto result = lowerScalarHelperBody(serShape, value, builder, loc);
             mlir::func::ReturnOp::create(builder, loc, result);
         }
 
@@ -490,17 +547,9 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
             }
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
-            auto value = entry->getArgument(0);
-            if (fullWidth)
-            {
-                mlir::func::ReturnOp::create(builder, loc, value);
-            }
-            else
-            {
-                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, maskSigned, 64);
-                auto masked    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
-                mlir::func::ReturnOp::create(builder, loc, masked);
-            }
+            auto       value  = entry->getArgument(0);
+            const auto result = lowerScalarHelperBody(deserShape, value, builder, loc);
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
     }
 
@@ -563,13 +612,14 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
         op.setAttr("lowered_ser_signed_helper", builder.getStringAttr(serName));
         op.setAttr("lowered_deser_signed_helper", builder.getStringAttr(deserName));
 
-        std::int64_t minValue = std::numeric_limits<std::int64_t>::min();
-        std::int64_t maxValue = std::numeric_limits<std::int64_t>::max();
-        if (bitLength < 64)
-        {
-            maxValue = (INT64_C(1) << static_cast<unsigned>(bitLength - 1)) - INT64_C(1);
-            minValue = -(INT64_C(1) << static_cast<unsigned>(bitLength - 1));
-        }
+        const auto serShape   = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Signed,
+                                                              static_cast<std::uint32_t>(bitLength),
+                                                              castMode == "saturated",
+                                                              llvmdsdl::HelperDirection::Serialize);
+        const auto deserShape = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Signed,
+                                                              static_cast<std::uint32_t>(bitLength),
+                                                              castMode == "saturated",
+                                                              llvmdsdl::HelperDirection::Deserialize);
 
         if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
         {
@@ -588,19 +638,8 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             }
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
-            auto        value  = entry->getArgument(0);
-            mlir::Value result = value;
-            if (castMode == "saturated" && bitLength < 64)
-            {
-                auto minConst = mlir::arith::ConstantIntOp::create(builder, loc, minValue, 64);
-                auto maxConst = mlir::arith::ConstantIntOp::create(builder, loc, maxValue, 64);
-                auto below =
-                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, value, minConst);
-                auto above =
-                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
-                auto clampedLow = mlir::arith::SelectOp::create(builder, loc, below, minConst, value);
-                result          = mlir::arith::SelectOp::create(builder, loc, above, maxConst, clampedLow).getResult();
-            }
+            auto       value  = entry->getArgument(0);
+            const auto result = lowerScalarHelperBody(serShape, value, builder, loc);
             mlir::func::ReturnOp::create(builder, loc, result);
         }
 
@@ -621,30 +660,9 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
             }
             auto* entry = fn.addEntryBlock();
             builder.setInsertionPointToStart(entry);
-            auto value = entry->getArgument(0);
-
-            if (bitLength >= 64)
-            {
-                mlir::func::ReturnOp::create(builder, loc, value);
-            }
-            else
-            {
-                const std::uint64_t maskU       = (UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1);
-                const std::uint64_t signU       = UINT64_C(1) << static_cast<unsigned>(bitLength - 1);
-                const std::uint64_t extendMaskU = ~maskU;
-                auto maskConst = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(maskU), 64);
-                auto signConst = mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(signU), 64);
-                auto extendConst =
-                    mlir::arith::ConstantIntOp::create(builder, loc, static_cast<std::int64_t>(extendMaskU), 64);
-                auto zeroConst = mlir::arith::ConstantIntOp::create(builder, loc, 0, 64);
-                auto masked    = mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
-                auto signPart  = mlir::arith::AndIOp::create(builder, loc, masked, signConst).getResult();
-                auto isNegative =
-                    mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
-                auto negExtended = mlir::arith::OrIOp::create(builder, loc, masked, extendConst).getResult();
-                auto result = mlir::arith::SelectOp::create(builder, loc, isNegative, negExtended, masked).getResult();
-                mlir::func::ReturnOp::create(builder, loc, result);
-            }
+            auto       value  = entry->getArgument(0);
+            const auto result = lowerScalarHelperBody(deserShape, value, builder, loc);
+            mlir::func::ReturnOp::create(builder, loc, result);
         }
     }
 
