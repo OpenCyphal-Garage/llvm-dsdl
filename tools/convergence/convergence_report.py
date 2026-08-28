@@ -237,7 +237,12 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         traits["native_traversal"] = _has_any(text, [r"forEachNativeEmitterRenderStep\("])
         traits["native_function_skeleton"] = _has_any(text, [r"emitNativeFunctionSkeleton\("])
         traits["render_ir_helper_usage"] = _has_any(text, [r"renderIR\.helperBindings"])
-        traits["helper_binding_render"] = _has_any(text, [r"renderSectionHelperBindings\("])
+        # Two spellings of the same thing: a backend either renders the shared
+        # helper-binding lines directly, or builds the shared helper bodies and
+        # spells each shape itself. Both take the shape decision from shared code.
+        traits["helper_binding_render"] = _has_any(
+            text, [r"renderSectionHelperBindings\(", r"buildSectionHelperBodies\("]
+        )
         traits["union_helper_usage"] = _has_any(text, [r"unionTagValidate"])
         traits["capacity_helper_usage"] = _has_any(text, [r"capacityCheck"])
         traits["shared_pipeline"] = traits["native_function_skeleton"] or _has_all(
@@ -260,7 +265,12 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
             text, [r"buildScriptedSectionBodyPlan\(", r"buildScriptedSectionOperationPlan\("]
         )
         traits["helper_plan_builder"] = _has_any(text, [r"buildSectionHelperBindingPlan\("])
-        traits["helper_binding_render"] = _has_any(text, [r"renderSectionHelperBindings\("])
+        # Two spellings of the same thing: a backend either renders the shared
+        # helper-binding lines directly, or builds the shared helper bodies and
+        # spells each shape itself. Both take the shape decision from shared code.
+        traits["helper_binding_render"] = _has_any(
+            text, [r"renderSectionHelperBindings\(", r"buildSectionHelperBodies\("]
+        )
         # The shared union render template (EmitStep.h) holds the helper names via its
         # spelling-class member (helperNames_); the pre-template inline form used
         # sectionHelperNames directly. Either spelling references the shared helpers.

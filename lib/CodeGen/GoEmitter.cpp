@@ -65,6 +65,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
@@ -167,6 +168,173 @@ void emitAttachedDocGo(SourceWriter& w, const AttachedDoc& doc)
         w.line("// " + line.text);
     }
 }
+
+/// @brief Go spelling of the helper body shapes (see HelperBodyPlan.h).
+///
+/// Guards rather than conditional expressions throughout, which is how the rest of
+/// the generated Go reads. The float identity is the one single-line form: a
+/// `func(value float32) float32 { return value }` on its own line, matching what a
+/// reader would write.
+class GoHelperBodySpelling final : public HelperBodySpelling
+{
+public:
+    explicit GoHelperBodySpelling(SourceWriter& w)
+        : w_(w)
+    {
+    }
+
+    void spellIdentity(const HelperBody& body) override
+    {
+        oneLiner(body, "return value");
+    }
+
+    void spellMask(const HelperBody& body) override
+    {
+        oneLiner(body, "return value & " + mask(body.bits));
+    }
+
+    void spellSaturateUnsigned(const HelperBody& body) override
+    {
+        open(body);
+        w_.open("if value > " + mask(body.bits) + " {");
+        w_.line("return " + mask(body.bits));
+        w_.close("}");
+        w_.line("return value");
+        w_.close("}");
+    }
+
+    void spellSaturateSigned(const HelperBody& body) override
+    {
+        open(body);
+        w_.open("if value < " + std::to_string(body.minValue) + " {");
+        w_.line("return " + std::to_string(body.minValue));
+        w_.close("}");
+        w_.open("if value > " + std::to_string(body.maxValue) + " {");
+        w_.line("return " + std::to_string(body.maxValue));
+        w_.close("}");
+        w_.line("return value");
+        w_.close("}");
+    }
+
+    void spellSignExtend(const HelperBody& body) override
+    {
+        const auto bitMask = mask(body.bits);
+        const auto signBit = "uint64(" + std::to_string(std::uint64_t{1} << (body.bits - 1U)) + ")";
+        open(body);
+        w_.line("raw := uint64(value) & " + bitMask);
+        w_.open("if (raw & " + signBit + ") != 0 {");
+        w_.line("return int64(raw | (^" + bitMask + "))");
+        w_.close("}");
+        w_.line("return int64(raw)");
+        w_.close("}");
+    }
+
+    void spellStatusGuard(const HelperBody& body) override
+    {
+        open(body);
+        switch (body.guard)
+        {
+        case HelperGuardKind::CapacityTooSmall:
+            w_.open("if " + std::to_string(body.requiredBits) + " > capacityBits {");
+            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL");
+            break;
+        case HelperGuardKind::ArrayLengthOutOfRange:
+            w_.open("if (value < 0) || (value > " + std::to_string(body.capacity) + ") {");
+            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH");
+            break;
+        case HelperGuardKind::DelimiterOutOfRange:
+            w_.open("if (payloadBytes < 0) || (payloadBytes > remainingBytes) {");
+            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER");
+            break;
+        }
+        w_.close("}");
+        w_.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS");
+        w_.close("}");
+    }
+
+    void spellTagMembership(const HelperBody& body) override
+    {
+        open(body);
+        if (body.allowedTags.empty())
+        {
+            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
+            w_.close("}");
+            return;
+        }
+        std::string condition;
+        for (const auto tag : body.allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " || ";
+            }
+            condition += "(tagValue == " + std::to_string(tag) + ")";
+        }
+        w_.open("if " + condition + " {");
+        w_.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS");
+        w_.close("}");
+        w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
+        w_.close("}");
+    }
+
+private:
+    static std::string floatType(const HelperSignature signature)
+    {
+        return signature == HelperSignature::Float64 ? "float64" : "float32";
+    }
+
+    static std::string mask(const std::uint32_t bits)
+    {
+        return renderU64MaskLiteral(HelperBindingRenderLanguage::Go, bits);
+    }
+
+    /// @brief The closure's parameter list and return type, e.g. "(value uint64) uint64".
+    static std::string signature(const HelperBody& body)
+    {
+        switch (body.signature)
+        {
+        case HelperSignature::UnsignedToUnsigned:
+            return "(value uint64) uint64";
+        case HelperSignature::SignedToSigned:
+            return "(value int64) int64";
+        case HelperSignature::ValueToStatus:
+            return "(" + statusParamName(body) + " int64) int8";
+        case HelperSignature::PairToStatus:
+            return "(payloadBytes int64, remainingBytes int64) int8";
+        case HelperSignature::Float32:
+        case HelperSignature::Float64:
+            return "(value " + floatType(body.signature) + ") " + floatType(body.signature);
+        }
+        return "(value uint64) uint64";
+    }
+
+    /// @brief Names the parameter after what the helper asks about.
+    static std::string statusParamName(const HelperBody& body)
+    {
+        if (body.kind == HelperBodyKind::TagMembership)
+        {
+            return "tagValue";
+        }
+        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacityBits" : "value";
+    }
+
+    /// @brief Emits a whole-body-in-one-statement helper on a single line.
+    ///
+    /// Go reads a trivial closure better inline than spread over three lines, and
+    /// every helper whose body is one `return` gets the same treatment.
+    void oneLiner(const HelperBody& body, const std::string& statement)
+    {
+        w_.line(body.symbol + " := func" + signature(body) + " { " + statement + " }");
+    }
+
+    /// @brief Emits the closure's opening line and descends into its body.
+    void open(const HelperBody& body)
+    {
+        w_.open(body.symbol + " := func" + signature(body) + " {");
+    }
+
+    SourceWriter& w_;
+};
 
 class EmitterContext final
 {
@@ -554,30 +722,30 @@ private:
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, helperSymbol);
     }
 
+    static void emitMlirHelperBindings(SourceWriter&                      w,
+                                       const SectionHelperBindingPlan&    plan,
+                                       const ScalarBindingRenderDirection direction,
+                                       const bool                         emitCapacityCheck)
+    {
+        GoHelperBodySpelling spelling(w);
+        for (const auto& body : buildSectionHelperBodies(
+                 plan,
+                 direction,
+                 [](const std::string& symbol) { return helperBindingName(symbol); },
+                 emitCapacityCheck))
+        {
+            renderHelperBody(body, spelling);
+        }
+    }
+
     static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Go,
-                 ScalarBindingRenderDirection::Serialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/true))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Serialize, /*emitCapacityCheck=*/true);
     }
 
     static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Go,
-                 ScalarBindingRenderDirection::Deserialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/false))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Deserialize, /*emitCapacityCheck=*/false);
     }
 
     void emitAlignSerialize(SourceWriter& w, std::int64_t alignmentBits)

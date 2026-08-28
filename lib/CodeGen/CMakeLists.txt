@@ -78,6 +78,7 @@ add_library(llvmdsdlCodeGen
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
   HelperBindingRender.cpp
+  HelperBodyPlan.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
   LoweredFactsLookup.cpp

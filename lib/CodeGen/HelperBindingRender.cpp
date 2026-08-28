@@ -32,6 +32,8 @@ namespace llvmdsdl
 namespace
 {
 
+}  // namespace
+
 std::string renderU64MaskLiteral(const HelperBindingRenderLanguage language, const std::uint32_t bits)
 {
     switch (language)
@@ -89,6 +91,9 @@ std::string renderU64MaskLiteral(const HelperBindingRenderLanguage language, con
     }
     return "0";
 }
+
+namespace
+{
 
 void appendLines(std::vector<std::string>& out, const std::vector<std::string>& in)
 {

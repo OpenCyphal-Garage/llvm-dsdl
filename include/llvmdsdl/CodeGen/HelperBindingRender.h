@@ -58,6 +58,12 @@ enum class ScalarBindingRenderDirection
     Deserialize,
 };
 
+/// @brief Renders the all-ones literal for a @p bits-wide field.
+/// @param[in] language Target language.
+/// @param[in] bits Wire width; 0 and widths at or above 64 have their own spellings.
+/// @return The literal.
+std::string renderU64MaskLiteral(HelperBindingRenderLanguage language, std::uint32_t bits);
+
 /// @brief Renders capacity-check helper binding code.
 /// @param[in] language Target language.
 /// @param[in] helperName Helper symbol.
