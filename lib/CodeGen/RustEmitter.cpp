@@ -59,6 +59,7 @@
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -116,6 +117,170 @@ void emitAttachedDocRust(SourceWriter& w, const AttachedDoc& doc)
         w.line("/// " + line.text);
     }
 }
+
+/// @brief Rust spelling of the helper body shapes (see HelperBodyPlan.h).
+///
+/// Bodies are expressions rather than statements, so a guard is an `if`/`else` that
+/// evaluates to the answer and there is no `return` anywhere.
+class RustHelperBodySpelling final : public HelperBodySpelling
+{
+public:
+    explicit RustHelperBodySpelling(SourceWriter& w)
+        : w_(w)
+    {
+    }
+
+    void spellIdentity(const HelperBody& body) override
+    {
+        oneLiner(body, "value");
+    }
+
+    void spellMask(const HelperBody& body) override
+    {
+        oneLiner(body, "value & " + mask(body.bits));
+    }
+
+    void spellSaturateUnsigned(const HelperBody& body) override
+    {
+        oneLiner(body, "if value > " + mask(body.bits) + " { " + mask(body.bits) + " } else { value }");
+    }
+
+    void spellSaturateSigned(const HelperBody& body) override
+    {
+        const auto lo = std::to_string(body.minValue) + "i64";
+        const auto hi = std::to_string(body.maxValue) + "i64";
+        open(body);
+        w_.open("if value < " + lo + " {");
+        w_.line(lo);
+        w_.midway("} else if value > " + hi + " {");
+        w_.line(hi);
+        w_.midway("} else {");
+        w_.line("value");
+        w_.close("}");
+        w_.close("};");
+    }
+
+    void spellSignExtend(const HelperBody& body) override
+    {
+        const auto bitMask = mask(body.bits);
+        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U)) + "u64";
+        open(body);
+        w_.line("let raw = (value as u64) & " + bitMask + ";");
+        w_.open("if (raw & " + signBit + ") != 0u64 {");
+        w_.line("(raw | (!" + bitMask + ")) as i64");
+        w_.midway("} else {");
+        w_.line("raw as i64");
+        w_.close("}");
+        w_.close("};");
+    }
+
+    void spellStatusGuard(const HelperBody& body) override
+    {
+        std::string condition;
+        std::string error;
+        switch (body.guard)
+        {
+        case HelperGuardKind::CapacityTooSmall:
+            condition = std::to_string(body.requiredBits) + "i64 > capacity_bits";
+            error     = "DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL";
+            break;
+        case HelperGuardKind::ArrayLengthOutOfRange:
+            condition = "(value < 0i64) || (value > " + std::to_string(body.capacity) + "i64)";
+            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH";
+            break;
+        case HelperGuardKind::DelimiterOutOfRange:
+            condition = "(payload_bytes < 0i64) || (payload_bytes > remaining_bytes)";
+            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER";
+            break;
+        }
+        open(body);
+        w_.open("if " + condition + " {");
+        w_.line("-crate::dsdl_runtime::" + error);
+        w_.midway("} else {");
+        w_.line("crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS");
+        w_.close("}");
+        w_.close("};");
+    }
+
+    void spellTagMembership(const HelperBody& body) override
+    {
+        if (body.allowedTags.empty())
+        {
+            open(body);
+            w_.line("-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
+            w_.close("};");
+            return;
+        }
+        std::string condition;
+        for (const auto tag : body.allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " || ";
+            }
+            condition += "(tag_value == " + std::to_string(tag) + "i64)";
+        }
+        open(body);
+        w_.open("if " + condition + " {");
+        w_.line("crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS");
+        w_.midway("} else {");
+        w_.line("-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
+        w_.close("}");
+        w_.close("};");
+    }
+
+private:
+    static std::string mask(const std::uint32_t bits)
+    {
+        return renderU64MaskLiteral(HelperBindingRenderLanguage::Rust, bits);
+    }
+
+    static std::string floatType(const HelperSignature signature)
+    {
+        return signature == HelperSignature::Float64 ? "f64" : "f32";
+    }
+
+    /// @brief Names the parameter after what the helper asks about.
+    static std::string statusParamName(const HelperBody& body)
+    {
+        if (body.kind == HelperBodyKind::TagMembership)
+        {
+            return "tag_value";
+        }
+        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacity_bits" : "value";
+    }
+
+    static std::string signature(const HelperBody& body)
+    {
+        switch (body.signature)
+        {
+        case HelperSignature::UnsignedToUnsigned:
+            return "|value: u64| -> u64";
+        case HelperSignature::SignedToSigned:
+            return "|value: i64| -> i64";
+        case HelperSignature::ValueToStatus:
+            return "|" + statusParamName(body) + ": i64| -> i8";
+        case HelperSignature::PairToStatus:
+            return "|payload_bytes: i64, remaining_bytes: i64| -> i8";
+        case HelperSignature::Float32:
+        case HelperSignature::Float64:
+            return "|value: " + floatType(body.signature) + "| -> " + floatType(body.signature);
+        }
+        return "|value: u64| -> u64";
+    }
+
+    void oneLiner(const HelperBody& body, const std::string& expression)
+    {
+        w_.line("let " + body.symbol + " = " + signature(body) + " { " + expression + " };");
+    }
+
+    void open(const HelperBody& body)
+    {
+        w_.open("let " + body.symbol + " = " + signature(body) + " {");
+    }
+
+    SourceWriter& w_;
+};
 
 class EmitterContext final
 {
@@ -497,30 +662,30 @@ private:
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, helperSymbol);
     }
 
+    static void emitMlirHelperBindings(SourceWriter&                      w,
+                                       const SectionHelperBindingPlan&    plan,
+                                       const ScalarBindingRenderDirection direction,
+                                       const bool                         emitCapacityCheck)
+    {
+        RustHelperBodySpelling spelling(w);
+        for (const auto& body : buildSectionHelperBodies(
+                 plan,
+                 direction,
+                 [](const std::string& symbol) { return helperBindingName(symbol); },
+                 emitCapacityCheck))
+        {
+            renderHelperBody(body, spelling);
+        }
+    }
+
     static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Rust,
-                 ScalarBindingRenderDirection::Serialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/true))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Serialize, /*emitCapacityCheck=*/true);
     }
 
     static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Rust,
-                 ScalarBindingRenderDirection::Deserialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/false))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Deserialize, /*emitCapacityCheck=*/false);
     }
 
     void emitAlignSerialize(SourceWriter& w, const std::int64_t alignmentBits)

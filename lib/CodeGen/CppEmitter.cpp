@@ -63,6 +63,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -141,6 +142,155 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
     }
     return out;
 }
+
+/// @brief C++ spelling of the helper body shapes (see HelperBodyPlan.h).
+///
+/// Conditional expressions where a body is one `return`, which is how the rest of
+/// the generated headers read, and a block only where a body genuinely has several
+/// statements.
+class CppHelperBodySpelling final : public HelperBodySpelling
+{
+public:
+    explicit CppHelperBodySpelling(SourceWriter& w)
+        : w_(w)
+    {
+    }
+
+    void spellIdentity(const HelperBody& body) override
+    {
+        oneLiner(body, "return value;");
+    }
+
+    void spellMask(const HelperBody& body) override
+    {
+        oneLiner(body, "return value & " + mask(body.bits) + ";");
+    }
+
+    void spellSaturateUnsigned(const HelperBody& body) override
+    {
+        oneLiner(body, "return (value > " + mask(body.bits) + ") ? " + mask(body.bits) + " : value;");
+    }
+
+    void spellSaturateSigned(const HelperBody& body) override
+    {
+        open(body);
+        w_.line("if (value < " + std::to_string(body.minValue) + "LL) { return " + std::to_string(body.minValue) +
+                "LL; }");
+        w_.line("if (value > " + std::to_string(body.maxValue) + "LL) { return " + std::to_string(body.maxValue) +
+                "LL; }");
+        w_.line("return value;");
+        w_.close("};");
+    }
+
+    void spellSignExtend(const HelperBody& body) override
+    {
+        const auto bitMask = mask(body.bits);
+        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U)) + "ULL";
+        open(body);
+        w_.line("const std::uint64_t raw = static_cast<std::uint64_t>(value) & " + bitMask + ";");
+        w_.open("if ((raw & " + signBit + ") != 0ULL) {");
+        w_.line("return static_cast<std::int64_t>(raw | (~" + bitMask + "));");
+        w_.close("}");
+        w_.line("return static_cast<std::int64_t>(raw);");
+        w_.close("};");
+    }
+
+    void spellStatusGuard(const HelperBody& body) override
+    {
+        std::string condition;
+        std::string error;
+        switch (body.guard)
+        {
+        case HelperGuardKind::CapacityTooSmall:
+            condition = std::to_string(body.requiredBits) + "LL > capacity_bits";
+            error     = "DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL";
+            break;
+        case HelperGuardKind::ArrayLengthOutOfRange:
+            condition = "(value < 0LL) || (value > " + std::to_string(body.capacity) + "LL)";
+            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH";
+            break;
+        case HelperGuardKind::DelimiterOutOfRange:
+            condition = "(payload_bytes < 0LL) || (payload_bytes > remaining_bytes)";
+            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER";
+            break;
+        }
+        oneLiner(body,
+                 "return (" + condition + ") ? static_cast<std::int8_t>(-" + error +
+                     ") : static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
+    }
+
+    void spellTagMembership(const HelperBody& body) override
+    {
+        const auto badTag = std::string("static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG)");
+        if (body.allowedTags.empty())
+        {
+            oneLiner(body, "return " + badTag + ";");
+            return;
+        }
+        std::string condition;
+        for (const auto tag : body.allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " || ";
+            }
+            condition += "(tag_value == " + std::to_string(tag) + "LL)";
+        }
+        oneLiner(body, "return (" + condition + ") ? static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS) : " + badTag + ";");
+    }
+
+private:
+    static std::string mask(const std::uint32_t bits)
+    {
+        return renderU64MaskLiteral(HelperBindingRenderLanguage::Cpp, bits);
+    }
+
+    static std::string floatType(const HelperSignature signature)
+    {
+        return signature == HelperSignature::Float64 ? "double" : "float";
+    }
+
+    /// @brief Names the parameter after what the helper asks about.
+    static std::string statusParamName(const HelperBody& body)
+    {
+        if (body.kind == HelperBodyKind::TagMembership)
+        {
+            return "tag_value";
+        }
+        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacity_bits" : "value";
+    }
+
+    static std::string signature(const HelperBody& body)
+    {
+        switch (body.signature)
+        {
+        case HelperSignature::UnsignedToUnsigned:
+            return "[](const std::uint64_t value) -> std::uint64_t";
+        case HelperSignature::SignedToSigned:
+            return "[](const std::int64_t value) -> std::int64_t";
+        case HelperSignature::ValueToStatus:
+            return "[](const std::int64_t " + statusParamName(body) + ") -> std::int8_t";
+        case HelperSignature::PairToStatus:
+            return "[](const std::int64_t payload_bytes, const std::int64_t remaining_bytes) -> std::int8_t";
+        case HelperSignature::Float32:
+        case HelperSignature::Float64:
+            return "[](const " + floatType(body.signature) + " value) -> " + floatType(body.signature);
+        }
+        return "[](const std::uint64_t value) -> std::uint64_t";
+    }
+
+    void oneLiner(const HelperBody& body, const std::string& statement)
+    {
+        w_.line("const auto " + body.symbol + " = " + signature(body) + " { " + statement + " };");
+    }
+
+    void open(const HelperBody& body)
+    {
+        w_.open("const auto " + body.symbol + " = " + signature(body) + " {");
+    }
+
+    SourceWriter& w_;
+};
 
 void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& components)
 {
@@ -549,30 +699,30 @@ private:
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, helperSymbol);
     }
 
+    static void emitMlirHelperBindings(SourceWriter&                      w,
+                                       const SectionHelperBindingPlan&    plan,
+                                       const ScalarBindingRenderDirection direction,
+                                       const bool                         emitCapacityCheck)
+    {
+        CppHelperBodySpelling spelling(w);
+        for (const auto& body : buildSectionHelperBodies(
+                 plan,
+                 direction,
+                 [](const std::string& symbol) { return helperBindingName(symbol); },
+                 emitCapacityCheck))
+        {
+            renderHelperBody(body, spelling);
+        }
+    }
+
     static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Cpp,
-                 ScalarBindingRenderDirection::Serialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/true))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Serialize, /*emitCapacityCheck=*/true);
     }
 
     static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
     {
-        for (const auto& line : renderSectionHelperBindings(
-                 plan,
-                 HelperBindingRenderLanguage::Cpp,
-                 ScalarBindingRenderDirection::Deserialize,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 /*emitCapacityCheck=*/false))
-        {
-            w.line(line);
-        }
+        emitMlirHelperBindings(w, plan, ScalarBindingRenderDirection::Deserialize, /*emitCapacityCheck=*/false);
     }
 
     std::string containerElementType(const SemanticFieldType& type) const

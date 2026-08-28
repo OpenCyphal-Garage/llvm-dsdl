@@ -24,20 +24,20 @@ export function serializeHelpers(value: Helpers): Uint8Array {
   let offsetBits = 0;
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0 = (capacityBits: number): boolean => 80 <= capacityBits;
   const mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const clamped = raw < -4096n ? -4096n : (raw > 4095n ? 4095n : raw);
-  return (typeof value === "bigint") ? clamped : Number(clamped);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const clamped = raw < -4096n ? -4096n : (raw > 4095n ? 4095n : raw);
+    return (typeof value === "bigint") ? clamped : Number(clamped);
   };
   const mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser = (value: number): number => value;
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
   
@@ -67,20 +67,20 @@ export function serializeHelpers(value: Helpers): Uint8Array {
 
 export function deserializeHelpers(bytes: Uint8Array): { value: Helpers; consumed: number } {
   const mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser = (value: number | bigint): number | bigint => {
-  const raw = ((typeof value === "bigint") ? value : BigInt(Math.trunc(value))) & 8191n;
-  const signed = (raw & 4096n) !== 0n ? (raw | (~8191n)) : raw;
-  return (typeof value === "bigint") ? signed : Number(signed);
+    const raw = ((typeof value === "bigint") ? value : BigInt(Math.trunc(value))) & 8191n;
+    const signed = (raw & 4096n) !== 0n ? (raw | (~8191n)) : raw;
+    return (typeof value === "bigint") ? signed : Number(signed);
   };
   const mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser = (value: number): number => value;
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
   

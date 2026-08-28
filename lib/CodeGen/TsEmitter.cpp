@@ -20,6 +20,7 @@
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
@@ -92,6 +93,132 @@ void emitAttachedDocTs(SourceWriter& w, const AttachedDoc& doc)
         w.line("// " + line.text);
     }
 }
+
+/// @brief TypeScript spelling of the helper body shapes (see HelperBodyPlan.h).
+///
+/// Guards answer with a boolean rather than a status code, which is what the
+/// generated call sites test. Integer helpers marshal through `bigint` because a
+/// `number` cannot hold a 64-bit wire value, and hand back whichever of the two the
+/// caller passed in.
+class TsHelperBodySpelling final : public HelperBodySpelling
+{
+public:
+    explicit TsHelperBodySpelling(SourceWriter& w)
+        : w_(w)
+    {
+    }
+
+    void spellIdentity(const HelperBody& body) override
+    {
+        w_.line("const " + body.symbol + " = " + signature(body) + " => value;");
+    }
+
+    void spellMask(const HelperBody& body) override
+    {
+        marshalled(body, "const masked = raw & " + mask(body.bits) + ";", "masked");
+    }
+
+    void spellSaturateUnsigned(const HelperBody& body) override
+    {
+        marshalled(body,
+                   "const clamped = raw < 0n ? 0n : (raw > " + mask(body.bits) + " ? " + mask(body.bits) + " : raw);",
+                   "clamped");
+    }
+
+    void spellSaturateSigned(const HelperBody& body) override
+    {
+        const auto lo = std::to_string(body.minValue) + "n";
+        const auto hi = std::to_string(body.maxValue) + "n";
+        marshalled(body,
+                   "const clamped = raw < " + lo + " ? " + lo + " : (raw > " + hi + " ? " + hi + " : raw);",
+                   "clamped");
+    }
+
+    void spellSignExtend(const HelperBody& body) override
+    {
+        const auto bitMask = mask(body.bits);
+        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U)) + "n";
+        w_.open("const " + body.symbol + " = " + signature(body) + " => {");
+        w_.line("const raw = ((typeof value === \"bigint\") ? value : BigInt(Math.trunc(value))) & " + bitMask + ";");
+        w_.line("const signed = (raw & " + signBit + ") !== 0n ? (raw | (~" + bitMask + ")) : raw;");
+        w_.line("return (typeof value === \"bigint\") ? signed : Number(signed);");
+        w_.close("};");
+    }
+
+    void spellStatusGuard(const HelperBody& body) override
+    {
+        switch (body.guard)
+        {
+        case HelperGuardKind::CapacityTooSmall:
+            w_.line("const " + body.symbol + " = (capacityBits: number): boolean => " +
+                    std::to_string(body.requiredBits) + " <= capacityBits;");
+            break;
+        case HelperGuardKind::ArrayLengthOutOfRange:
+            w_.line("const " + body.symbol +
+                    " = (value: number): boolean => (value >= 0) && (value <= " + std::to_string(body.capacity) + ");");
+            break;
+        case HelperGuardKind::DelimiterOutOfRange:
+            w_.line("const " + body.symbol +
+                    " = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && "
+                    "(payloadBytes <= remainingBytes);");
+            break;
+        }
+    }
+
+    void spellTagMembership(const HelperBody& body) override
+    {
+        if (body.allowedTags.empty())
+        {
+            w_.line("const " + body.symbol + " = (_tagValue: number): boolean => false;");
+            return;
+        }
+        std::string condition;
+        for (const auto tag : body.allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " || ";
+            }
+            condition += "(tagValue === " + std::to_string(tag) + ")";
+        }
+        w_.line("const " + body.symbol + " = (tagValue: number): boolean => " + condition + ";");
+    }
+
+private:
+    static std::string mask(const std::uint32_t bits)
+    {
+        return renderU64MaskLiteral(HelperBindingRenderLanguage::TypeScript, bits);
+    }
+
+    static std::string signature(const HelperBody& body)
+    {
+        switch (body.signature)
+        {
+        case HelperSignature::UnsignedToUnsigned:
+        case HelperSignature::SignedToSigned:
+            return "(value: number | bigint): number | bigint";
+        case HelperSignature::Float32:
+        case HelperSignature::Float64:
+            return "(value: number): number";
+        case HelperSignature::ValueToStatus:
+        case HelperSignature::PairToStatus:
+            break;
+        }
+        return "(value: number): boolean";
+    }
+
+    /// @brief A body that converts to bigint, computes, and converts back.
+    void marshalled(const HelperBody& body, const std::string& compute, const std::string& result)
+    {
+        w_.open("const " + body.symbol + " = " + signature(body) + " => {");
+        w_.line("const raw = (typeof value === \"bigint\") ? value : BigInt(Math.trunc(value));");
+        w_.line(compute);
+        w_.line("return (typeof value === \"bigint\") ? " + result + " : Number(" + result + ");");
+        w_.close("};");
+    }
+
+    SourceWriter& w_;
+};
 
 class EmitterContext final
 {
@@ -1223,32 +1350,32 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
-        const auto lines = renderSectionHelperBindings(serializeHelpers,
-                                                       HelperBindingRenderLanguage::TypeScript,
-                                                       ScalarBindingRenderDirection::Serialize,
-                                                       helperNameResolver,
-                                                       /*emitCapacityCheck=*/true);
-        for (const auto& line : lines)
+        const auto           bodies = buildSectionHelperBodies(serializeHelpers,
+                                                               ScalarBindingRenderDirection::Serialize,
+                                                               helperNameResolver,
+                                                               /*emitCapacityCheck=*/true);
+        TsHelperBodySpelling spelling(w);
+        for (const auto& body : bodies)
         {
-            w.line(line);
+            renderHelperBody(body, spelling);
         }
-        if (!lines.empty())
+        if (!bodies.empty())
         {
             w.line("");
         }
     };
 
     const auto emitDeserializeHelperBindings = [&]() {
-        const auto lines = renderSectionHelperBindings(deserializeHelpers,
-                                                       HelperBindingRenderLanguage::TypeScript,
-                                                       ScalarBindingRenderDirection::Deserialize,
-                                                       helperNameResolver,
-                                                       /*emitCapacityCheck=*/false);
-        for (const auto& line : lines)
+        const auto           bodies = buildSectionHelperBodies(deserializeHelpers,
+                                                               ScalarBindingRenderDirection::Deserialize,
+                                                               helperNameResolver,
+                                                               /*emitCapacityCheck=*/false);
+        TsHelperBodySpelling spelling(w);
+        for (const auto& body : bodies)
         {
-            w.line(line);
+            renderHelperBody(body, spelling);
         }
-        if (!lines.empty())
+        if (!bodies.empty())
         {
             w.line("");
         }

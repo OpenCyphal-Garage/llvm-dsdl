@@ -57,6 +57,7 @@
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"
@@ -170,6 +171,165 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     }
     return out;
 }
+
+/// @brief Python spelling of the helper body shapes (see HelperBodyPlan.h).
+///
+/// The suites here get their depth from the writer like any other Python this
+/// backend emits. The shared renderer used to bake four spaces into the strings
+/// themselves, because indentation is semantic in Python and there was nowhere else
+/// to put it.
+class PyHelperBodySpelling final : public HelperBodySpelling
+{
+public:
+    explicit PyHelperBodySpelling(SourceWriter& w)
+        : w_(w)
+    {
+    }
+
+    void spellIdentity(const HelperBody& body) override
+    {
+        open(body);
+        w_.line(isFloat(body.signature) ? "return float(value)" : "return int(value)");
+        w_.dedent();
+    }
+
+    void spellMask(const HelperBody& body) override
+    {
+        open(body);
+        w_.line("return int(value) & " + mask(body.bits));
+        w_.dedent();
+    }
+
+    void spellSaturateUnsigned(const HelperBody& body) override
+    {
+        open(body);
+        w_.line("raw = int(value)");
+        w_.open("if raw < 0:");
+        w_.line("return 0");
+        w_.dedent();
+        w_.open("if raw > " + mask(body.bits) + ":");
+        w_.line("return " + mask(body.bits));
+        w_.dedent();
+        w_.line("return raw");
+        w_.dedent();
+    }
+
+    void spellSaturateSigned(const HelperBody& body) override
+    {
+        const auto lo = std::to_string(body.minValue);
+        const auto hi = std::to_string(body.maxValue);
+        open(body);
+        w_.line("raw = int(value)");
+        w_.open("if raw < " + lo + ":");
+        w_.line("return " + lo);
+        w_.dedent();
+        w_.open("if raw > " + hi + ":");
+        w_.line("return " + hi);
+        w_.dedent();
+        w_.line("return raw");
+        w_.dedent();
+    }
+
+    void spellSignExtend(const HelperBody& body) override
+    {
+        const auto bitMask = mask(body.bits);
+        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U));
+        open(body);
+        w_.line("raw = int(value) & " + bitMask);
+        w_.open("if (raw & " + signBit + ") != 0:");
+        w_.line("return raw | (~" + bitMask + ")");
+        w_.dedent();
+        w_.line("return raw");
+        w_.dedent();
+    }
+
+    void spellStatusGuard(const HelperBody& body) override
+    {
+        open(body);
+        switch (body.guard)
+        {
+        case HelperGuardKind::CapacityTooSmall:
+            w_.line("return " + std::to_string(body.requiredBits) + " <= capacity_bits");
+            break;
+        case HelperGuardKind::ArrayLengthOutOfRange:
+            w_.line("return (value >= 0) and (value <= " + std::to_string(body.capacity) + ")");
+            break;
+        case HelperGuardKind::DelimiterOutOfRange:
+            w_.line("return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)");
+            break;
+        }
+        w_.dedent();
+    }
+
+    void spellTagMembership(const HelperBody& body) override
+    {
+        open(body);
+        if (body.allowedTags.empty())
+        {
+            w_.line("return False");
+            w_.dedent();
+            return;
+        }
+        std::string condition;
+        for (const auto tag : body.allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " or ";
+            }
+            condition += "(tag_value == " + std::to_string(tag) + ")";
+        }
+        w_.line("return " + condition);
+        w_.dedent();
+    }
+
+private:
+    static bool isFloat(const HelperSignature signature)
+    {
+        return signature == HelperSignature::Float32 || signature == HelperSignature::Float64;
+    }
+
+    static std::string mask(const std::uint32_t bits)
+    {
+        return renderU64MaskLiteral(HelperBindingRenderLanguage::Python, bits);
+    }
+
+    /// @brief Names the parameter after what the helper asks about.
+    static std::string statusParamName(const HelperBody& body)
+    {
+        if (body.kind == HelperBodyKind::TagMembership)
+        {
+            return "tag_value";
+        }
+        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacity_bits" : "value";
+    }
+
+    static std::string signature(const HelperBody& body)
+    {
+        switch (body.signature)
+        {
+        case HelperSignature::UnsignedToUnsigned:
+        case HelperSignature::SignedToSigned:
+            return "(value: int) -> int";
+        case HelperSignature::Float32:
+        case HelperSignature::Float64:
+            return "(value: float) -> float";
+        case HelperSignature::ValueToStatus:
+            return "(" + statusParamName(body) + ": int) -> bool";
+        case HelperSignature::PairToStatus:
+            return "(payload_bytes: int, remaining_bytes: int) -> bool";
+        }
+        return "(value: int) -> int";
+    }
+
+    /// @brief Emits the `def` line and descends into its suite.
+    void open(const HelperBody& body)
+    {
+        w_.open("def " + body.symbol + signature(body) + ":");
+    }
+
+    SourceWriter& w_;
+};
 
 class EmitterContext final
 {
@@ -1206,32 +1366,32 @@ llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
     const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
-        const auto lines = renderSectionHelperBindings(serializeHelpers,
-                                                       HelperBindingRenderLanguage::Python,
-                                                       ScalarBindingRenderDirection::Serialize,
-                                                       helperNameResolver,
-                                                       /*emitCapacityCheck=*/true);
-        for (const auto& line : lines)
+        const auto           bodies = buildSectionHelperBodies(serializeHelpers,
+                                                               ScalarBindingRenderDirection::Serialize,
+                                                               helperNameResolver,
+                                                               /*emitCapacityCheck=*/true);
+        PyHelperBodySpelling spelling(w);
+        for (const auto& body : bodies)
         {
-            w.line(line);
+            renderHelperBody(body, spelling);
         }
-        if (!lines.empty())
+        if (!bodies.empty())
         {
             w.line("");
         }
     };
 
     const auto emitDeserializeHelperBindings = [&]() {
-        const auto lines = renderSectionHelperBindings(deserializeHelpers,
-                                                       HelperBindingRenderLanguage::Python,
-                                                       ScalarBindingRenderDirection::Deserialize,
-                                                       helperNameResolver,
-                                                       /*emitCapacityCheck=*/false);
-        for (const auto& line : lines)
+        const auto           bodies = buildSectionHelperBodies(deserializeHelpers,
+                                                               ScalarBindingRenderDirection::Deserialize,
+                                                               helperNameResolver,
+                                                               /*emitCapacityCheck=*/false);
+        PyHelperBodySpelling spelling(w);
+        for (const auto& body : bodies)
         {
-            w.line(line);
+            renderHelperBody(body, spelling);
         }
-        if (!lines.empty())
+        if (!bodies.empty())
         {
             w.line("");
         }
