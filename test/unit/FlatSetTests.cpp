@@ -146,10 +146,14 @@ void testEraseAndLookup(TestContext& t)
 
     t.expect(s.contains(2), "contains finds a present element");
     t.expect(!s.contains(99), "contains rejects an absent element");
+    // These name count() and find() on purpose: this suite is what says those two work, so
+    // readability-container-contains must not fold them into the contains() checks above.
+    // NOLINTBEGIN(readability-container-contains)
     t.expect(s.count(2) == 1, "count is 1 for a present element");
-    t.expect(!s.contains(99), "count is 0 for an absent element");
-    t.expect(s.contains(3), "find locates a present element");
-    t.expect(!s.contains(99), "find returns end for an absent element");
+    t.expect(s.count(99) == 0, "count is 0 for an absent element");
+    t.expect(s.find(3) != s.end(), "find locates a present element");
+    t.expect(s.find(99) == s.end(), "find returns end for an absent element");
+    // NOLINTEND(readability-container-contains)
 
     s.clear();
     t.expect(s.empty(), "clear empties the set");
