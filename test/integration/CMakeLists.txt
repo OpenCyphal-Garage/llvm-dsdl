@@ -927,6 +927,10 @@ endif()
 find_program(CARGO_EXECUTABLE cargo QUIET)
 find_program(RUSTC_EXECUTABLE rustc QUIET)
 find_program(GO_EXECUTABLE go QUIET)
+# gofmt ships beside the go binary rather than being reached through it, so it is
+# probed separately; the Go generation lane checks its output against it and skips
+# that assertion when there is no gofmt to check against.
+find_program(GOFMT_EXECUTABLE gofmt QUIET)
 find_program(TSC_EXECUTABLE tsc QUIET)
 find_program(NODE_EXECUTABLE node QUIET)
 
@@ -2650,6 +2654,7 @@ add_test(
       -DDSDLC=$<TARGET_FILE:dsdlc>
       -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
       -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-go-out
+      -DGOFMT_EXECUTABLE=${GOFMT_EXECUTABLE}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGoGeneration.cmake
 )
 

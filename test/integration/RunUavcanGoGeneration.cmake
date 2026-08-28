@@ -231,5 +231,41 @@ if(NOT dsdl_count EQUAL type_go_count)
     "Go type file count mismatch: dsdl=${dsdl_count}, generated=${type_go_count}")
 endif()
 
+# Formatting is a property of the emitter, not of whoever consumes the output. A Go
+# project that runs gofmt in its own CI -- which is most of them -- would otherwise see
+# this generator's files rewritten under it on the first format-on-save. Every
+# indentation, alignment and comment defect this lane now guards against was found by
+# running gofmt by hand and reading the diff; the point of asserting it here is that
+# the next one is found by the build instead.
+if(GOFMT_EXECUTABLE AND EXISTS "${GOFMT_EXECUTABLE}")
+  execute_process(
+    COMMAND "${GOFMT_EXECUTABLE}" -l .
+    WORKING_DIRECTORY "${OUT_DIR}"
+    RESULT_VARIABLE gofmt_result
+    OUTPUT_VARIABLE gofmt_stdout
+    ERROR_VARIABLE gofmt_stderr
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT gofmt_result EQUAL 0)
+    message(STATUS "gofmt stderr:\n${gofmt_stderr}")
+    message(FATAL_ERROR "gofmt failed to inspect the generated Go sources")
+  endif()
+  if(NOT "${gofmt_stdout}" STREQUAL "")
+    string(REPLACE "\n" "\n  " gofmt_listing "  ${gofmt_stdout}")
+    execute_process(
+      COMMAND "${GOFMT_EXECUTABLE}" -d .
+      WORKING_DIRECTORY "${OUT_DIR}"
+      OUTPUT_VARIABLE gofmt_diff
+    )
+    message(STATUS "gofmt diff:\n${gofmt_diff}")
+    message(FATAL_ERROR
+      "Generated Go is not gofmt-clean; the emitter, not the listed files, is what needs "
+      "changing:\n${gofmt_listing}")
+  endif()
+  message(STATUS "uavcan Go generation check passed: gofmt reports no differences")
+else()
+  message(STATUS "uavcan Go generation check: gofmt not found, formatting assertion skipped")
+endif()
+
 message(STATUS
   "uavcan Go generation check passed: ${dsdl_count} DSDL -> ${type_go_count} Go type files")
