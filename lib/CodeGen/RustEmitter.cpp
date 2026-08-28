@@ -113,7 +113,7 @@ void emitAttachedDocRust(SourceWriter& w, const AttachedDoc& doc)
 {
     for (const auto& line : doc.lines)
     {
-        w.line("/// " + line.text);
+        w.line(line.text.empty() ? std::string{"///"} : "/// " + line.text);
     }
 }
 

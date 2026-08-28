@@ -40,7 +40,7 @@ export function serializeHelpers(value: Helpers): Uint8Array {
     return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
-  
+
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
@@ -83,7 +83,7 @@ export function deserializeHelpers(bytes: Uint8Array): { value: Helpers; consume
     return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
-  
+
   const value = {} as Helpers;
   let offsetBits = 0;
   const aRaw = dsdlRuntime.readSigned(bytes, offsetBits, 13);

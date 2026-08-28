@@ -37,7 +37,7 @@ export function serializeUnionTag(value: UnionTag): Uint8Array {
     const clamped = raw < 0n ? 0n : (raw > 65535n ? 65535n : raw);
     return (typeof value === "bigint") ? clamped : Number(clamped);
   };
-  
+
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
@@ -96,7 +96,7 @@ export function deserializeUnionTag(bytes: Uint8Array): { value: UnionTag; consu
     const masked = raw & 65535n;
     return (typeof value === "bigint") ? masked : Number(masked);
   };
-  
+
   let offsetBits = 0;
   let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 8));
   tag = Number(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag));

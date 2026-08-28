@@ -112,7 +112,7 @@ void emitAttachedDocPy(SourceWriter& w, const AttachedDoc& doc)
 {
     for (const auto& line : doc.lines)
     {
-        w.line("# " + line.text);
+        w.line(line.text.empty() ? std::string{"#"} : "# " + line.text);
     }
 }
 
@@ -1376,7 +1376,7 @@ llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
         }
         if (!bodies.empty())
         {
-            w.line("");
+            w.blank();
         }
     };
 
@@ -1392,7 +1392,7 @@ llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
         }
         if (!bodies.empty())
         {
-            w.line("");
+            w.blank();
         }
     };
 
@@ -1521,9 +1521,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("# Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
            std::to_string(def.info.minorVersion));
     w.line("from __future__ import annotations");
-    w.line("");
+    w.blank();
     w.line("from dataclasses import dataclass, field");
-    w.line("");
+    w.blank();
 
     const llvm::StringRef      requestSectionKey   = def.isService ? "request" : "";
     const LoweredSectionFacts* requestSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, requestSectionKey);
@@ -1587,7 +1587,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line("from " + modulePath + " import " + importNames);
     }
 
-    w.line("");
+    w.blank();
     const auto baseType = ctx.typeName(def.info);
     w.line("LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\"");
     w.line("DSDL_FULL_NAME = \"" + def.info.fullName + "\"");
@@ -1617,7 +1617,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line("DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False");
         w.line("DSDL_RESPONSE_ZOH_ALIAS_REASON = \"not-applicable\"");
     }
-    w.line("");
+    w.blank();
 
     if (!def.isService)
     {
@@ -1629,11 +1629,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.line("");
+        w.blank();
         emitSectionConstants(w, baseType, def.request);
         if (!def.request.constants.empty())
         {
-            w.line("");
+            w.blank();
         }
         if (auto err = emitPyRuntimeFunctions(w,
                                               baseType,
@@ -1659,9 +1659,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                     def.info.fullName,
                     def.info.majorVersion,
                     def.info.minorVersion);
-    w.line("");
+    w.blank();
     emitSectionConstants(w, reqType, def.request);
-    w.line("");
+    w.blank();
     if (auto err = emitPyRuntimeFunctions(w,
                                           reqType,
                                           canonicalDefinitionName(def.info, ".Request"),
@@ -1672,7 +1672,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         return std::move(err);
     }
-    w.line("");
+    w.blank();
 
     if (def.response)
     {
@@ -1684,9 +1684,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.line("");
+        w.blank();
         emitSectionConstants(w, respType, *def.response);
-        w.line("");
+        w.blank();
         if (auto err = emitPyRuntimeFunctions(w,
                                               respType,
                                               canonicalDefinitionName(def.info, ".Response"),
@@ -1697,7 +1697,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        w.line("");
+        w.blank();
     }
 
     w.line(baseType + " = " + reqType);

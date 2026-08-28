@@ -164,7 +164,7 @@ void emitAttachedDocGo(SourceWriter& w, const AttachedDoc& doc)
 {
     for (const auto& line : doc.lines)
     {
-        w.line("// " + line.text);
+        w.line(line.text.empty() ? std::string{"//"} : "// " + line.text);
     }
 }
 
@@ -334,6 +334,49 @@ private:
 
     SourceWriter& w_;
 };
+
+/// @brief One member of a generated Go struct, with whatever documents it.
+struct GoStructMember final
+{
+    /// @brief Field name, already projected.
+    std::string name;
+
+    /// @brief Field type, already rendered.
+    std::string type;
+
+    /// @brief Doc comment attached to the field, if any.
+    AttachedDoc doc;
+};
+
+/// @brief Emits struct members with their types aligned the way gofmt aligns them.
+///
+/// gofmt pads each name so a run of members shares one type column, and a run ends
+/// wherever a comment interrupts it. Emitting a member at a time cannot do that: the
+/// width belongs to the run, so the run has to be measured before any of it is
+/// written.
+///
+/// @param[in,out] w Destination writer, positioned inside the struct body.
+/// @param[in] members Members in declaration order.
+void emitAlignedStructMembers(SourceWriter& w, const std::vector<GoStructMember>& members)
+{
+    for (std::size_t i = 0; i < members.size();)
+    {
+        // A documented member begins a run; the run continues while members are undocumented.
+        std::size_t end   = i + 1;
+        std::size_t width = members[i].name.size();
+        while (end < members.size() && members[end].doc.lines.empty())
+        {
+            width = std::max(width, members[end].name.size());
+            ++end;
+        }
+        for (std::size_t k = i; k < end; ++k)
+        {
+            emitAttachedDocGo(w, members[k].doc);
+            w.line(members[k].name + std::string(width - members[k].name.size() + 1U, ' ') + members[k].type);
+        }
+        i = end;
+    }
+}
 
 class EmitterContext final
 {
@@ -1413,6 +1456,12 @@ void emitSectionType(SourceWriter&                             w,
     NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
     for (const auto& c : section.constants)
     {
+        // gofmt separates a documented declaration from whatever precedes it, so a doc
+        // comment landing directly under another constant needs the blank line first.
+        if (!c.doc.lines.empty())
+        {
+            w.blank();
+        }
         emitAttachedDocGo(w, c.doc);
         w.line("const " + typeConstPrefix + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
                goConstValue(c.type, c.value));
@@ -1427,26 +1476,32 @@ void emitSectionType(SourceWriter&                             w,
                                                minorVersion));
     w.open("type " + typeName + " struct {");
     const NamingScope fieldIdents = makeExportedFieldIdents(section);
+
+    // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
+    // one: the members are collected first so each run's width is known before any of
+    // it is written.
+    std::vector<GoStructMember> members;
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
         {
             continue;
         }
-        emitAttachedDocGo(w, field.doc);
-        w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + " " +
-               goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+        members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+                                         goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
+                                         field.doc});
     }
     if (section.isUnion)
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        w.line("Tag " + unsignedStorageType(resolveUnionTagBits(section, sectionFacts)));
+        members.push_back(GoStructMember{"Tag", unsignedStorageType(resolveUnionTagBits(section, sectionFacts)), {}});
     }
     if (section.fields.empty())
     {
-        w.line("_ uint8");
+        members.push_back(GoStructMember{"_", "uint8", {}});
     }
+    emitAlignedStructMembers(w, members);
     w.close("}");
     w.blank();
 
@@ -1538,6 +1593,9 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         w.blank();
     }
     w.line("type " + baseType + " = " + reqType);
+    // gofmt separates top-level declarations of different kinds, so the alias and the
+    // constants that follow it do not sit together.
+    w.blank();
     const auto baseConstPrefix =
         codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
     const auto reqConstPrefix =

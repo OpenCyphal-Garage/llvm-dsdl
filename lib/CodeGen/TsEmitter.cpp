@@ -89,7 +89,7 @@ void emitAttachedDocTs(SourceWriter& w, const AttachedDoc& doc)
 {
     for (const auto& line : doc.lines)
     {
-        w.line("// " + line.text);
+        w.line(line.text.empty() ? std::string{"//"} : "// " + line.text);
     }
 }
 
@@ -1360,7 +1360,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
         }
         if (!bodies.empty())
         {
-            w.line("");
+            w.blank();
         }
     };
 
@@ -1376,7 +1376,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
         }
         if (!bodies.empty())
         {
-            w.line("");
+            w.blank();
         }
     };
 
@@ -1416,7 +1416,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
         w.line("const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);");
         w.line("return out.subarray(0, usedBytes);");
         w.close("}");
-        w.line("");
+        w.blank();
 
         ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
         w.open("export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName +
@@ -1474,7 +1474,7 @@ llvm::Error emitTsRuntimeFunctions(SourceWriter&              w,
     w.line("const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);");
     w.line("return out.subarray(0, usedBytes);");
     w.close("}");
-    w.line("");
+    w.blank();
 
     ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
     w.open("export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName + "; consumed: number } {");
@@ -1658,7 +1658,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto runtimePath = relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
     w.line("import * as dsdlRuntime from \"" + runtimePath + "\";");
-    w.line("");
+    w.blank();
 
     // `Original as Local`, collapsing to plain `Original` when nothing had to be renamed -- so a
     // file that references no clashing names looks exactly as it did before aliasing existed.
@@ -1716,7 +1716,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line("export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;");
         w.line("export const DSDL_RESPONSE_ZOH_ALIAS_REASON = \"not-applicable\";");
     }
-    w.line("");
+    w.blank();
 
     if (!def.isService)
     {
@@ -1728,9 +1728,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.line("");
+        w.blank();
         emitSectionConstants(w, baseType, def.request);
-        w.line("");
+        w.blank();
         if (auto err = emitTsRuntimeFunctions(w,
                                               baseType,
                                               canonicalDefinitionName(def.info, ""),
@@ -1755,9 +1755,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                     def.info.fullName,
                     def.info.majorVersion,
                     def.info.minorVersion);
-    w.line("");
+    w.blank();
     emitSectionConstants(w, reqType, def.request);
-    w.line("");
+    w.blank();
     if (auto err = emitTsRuntimeFunctions(w,
                                           reqType,
                                           canonicalDefinitionName(def.info, ".Request"),
@@ -1768,7 +1768,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         return std::move(err);
     }
-    w.line("");
+    w.blank();
 
     if (def.response)
     {
@@ -1780,9 +1780,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.line("");
+        w.blank();
         emitSectionConstants(w, respType, *def.response);
-        w.line("");
+        w.blank();
         if (auto err = emitTsRuntimeFunctions(w,
                                               respType,
                                               canonicalDefinitionName(def.info, ".Response"),
@@ -1793,7 +1793,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        w.line("");
+        w.blank();
     }
 
     w.line("export type " + baseType + " = " + reqType + ";");
@@ -1823,7 +1823,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     std::ostringstream out;
     SourceWriter       w = makeTsWriter(out);
     w.line(generatedCommentLine("TypeScript runtime scaffold"));
-    w.line("");
+    w.blank();
     w.open("function toBigIntValue(value: number | bigint): bigint {");
     w.open("if (typeof value === \"bigint\") {");
     w.line("return value;");
@@ -1833,21 +1833,21 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return BigInt(Math.trunc(value));");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function maskBits(lenBits: number): bigint {");
     w.open("if (lenBits <= 0) {");
     w.line("return 0n;");
     w.close("}");
     w.line("return (1n << BigInt(lenBits)) - 1n;");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function byteLengthForBits(totalBits: number): number {");
     w.open("if (totalBits <= 0) {");
     w.line("return 0;");
     w.close("}");
     w.line("return Math.floor((totalBits + 7) / 8);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function setRawBit(buf: Uint8Array, offBits: number, bit: boolean): void {");
     w.line("const byteIndex = Math.floor(offBits / 8);");
     w.line("const bitIndex = offBits % 8;");
@@ -1861,7 +1861,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.line("buf[byteIndex] = (buf[byteIndex] & (~mask)) & 0xff;");
     w.close("}");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function getRawBit(buf: Uint8Array, offBits: number): boolean {");
     w.line("const byteIndex = Math.floor(offBits / 8);");
     w.line("const bitIndex = offBits % 8;");
@@ -1870,7 +1870,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return ((buf[byteIndex] >> bitIndex) & 1) === 1;");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function writeUnsignedBits(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -1882,7 +1882,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.line("setRawBit(buf, offBits + i, bit);");
     w.close("}");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function readUnsignedBits(buf: Uint8Array, offBits: number, lenBits: number): bigint {");
     w.line("let out = 0n;");
     w.open("for (let i = 0; i < lenBits; ++i) {");
@@ -1892,15 +1892,15 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return out;");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function setBit(buf: Uint8Array, offBits: number, value: boolean): void {");
     w.line("setRawBit(buf, offBits, !!value);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function getBit(buf: Uint8Array, offBits: number): boolean {");
     w.line("return getRawBit(buf, offBits);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function copyBits(");
     w.line("dst: Uint8Array,");
     w.line("dstOffBits: number,");
@@ -1928,7 +1928,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.line("setRawBit(dst, dstOffBits + i, getRawBit(src, srcOffBits + i));");
     w.close("}");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function extractBits(");
     w.line("src: Uint8Array,");
     w.line("srcOffBits: number,");
@@ -1948,7 +1948,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.line("copyBits(out, 0, src, srcOffBits, lenBits);");
     w.line("return out;");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function writeUnsigned(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -1972,7 +1972,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("writeUnsignedBits(buf, offBits, lenBits, inValue);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function writeSigned(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -1995,35 +1995,35 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("writeUnsignedBits(buf, offBits, lenBits, BigInt.asUintN(lenBits, inValue));");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function float32ToBits(value: number): number {");
     w.line("const bytes = new ArrayBuffer(4);");
     w.line("const view = new DataView(bytes);");
     w.line("view.setFloat32(0, value, true);");
     w.line("return view.getUint32(0, true);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function bitsToFloat32(bits: number): number {");
     w.line("const bytes = new ArrayBuffer(4);");
     w.line("const view = new DataView(bytes);");
     w.line("view.setUint32(0, bits >>> 0, true);");
     w.line("return view.getFloat32(0, true);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function float64ToBits(value: number): bigint {");
     w.line("const bytes = new ArrayBuffer(8);");
     w.line("const view = new DataView(bytes);");
     w.line("view.setFloat64(0, value, true);");
     w.line("return view.getBigUint64(0, true);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function bitsToFloat64(bits: bigint): number {");
     w.line("const bytes = new ArrayBuffer(8);");
     w.line("const view = new DataView(bytes);");
     w.line("view.setBigUint64(0, bits, true);");
     w.line("return view.getFloat64(0, true);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function float16ToBits(value: number): number {");
     w.open("if (Number.isNaN(value)) {");
     w.line("return 0x7e00;");
@@ -2063,7 +2063,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return sign | (exp << 10) | (mant >>> 13);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("function bitsToFloat16(bits: number): number {");
     w.line("const sign = (bits & 0x8000) !== 0 ? -1 : 1;");
     w.line("const exp = (bits >>> 10) & 0x1f;");
@@ -2079,7 +2079,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return sign * Math.pow(2, exp - 15) * (1 + (mant / 1024));");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function writeFloat(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -2100,7 +2100,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("throw new Error(\"unsupported float bit length \" + lenBits);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function readFloat(buf: Uint8Array, offBits: number, lenBits: number): number {");
     w.open("if (lenBits === 16) {");
     w.line("return bitsToFloat16(Number(readUnsignedBits(buf, offBits, lenBits)));");
@@ -2113,7 +2113,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("throw new Error(\"unsupported float bit length \" + lenBits);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function readUnsignedBigInt(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -2124,7 +2124,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return readUnsignedBits(buf, offBits, lenBits);");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function readSignedBigInt(");
     w.line("buf: Uint8Array,");
     w.line("offBits: number,");
@@ -2140,14 +2140,14 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.close("}");
     w.line("return raw;");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function readUnsigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
     w.open("if (lenBits <= 0) {");
     w.line("return 0;");
     w.close("}");
     w.line("return Number(readUnsignedBigInt(buf, offBits, lenBits));");
     w.close("}");
-    w.line("");
+    w.blank();
     w.open("export function readSigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
     w.open("if (lenBits <= 0) {");
     w.line("return 0;");
