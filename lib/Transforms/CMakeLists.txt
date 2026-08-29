@@ -16,6 +16,7 @@ add_library(llvmdsdlTransforms
 target_link_libraries(llvmdsdlTransforms
   PUBLIC
   llvmdsdlIR
+  llvmdsdlSerDes
   MLIRIR
   MLIRPass
   MLIRTransforms

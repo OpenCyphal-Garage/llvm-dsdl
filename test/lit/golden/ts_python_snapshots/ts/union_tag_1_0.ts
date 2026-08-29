@@ -23,21 +23,21 @@ export function serializeUnionTag(value: UnionTag): Uint8Array {
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0 = (capacityBits: number): boolean => 24 <= capacityBits;
   const mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
   const mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const clamped = raw < 0n ? 0n : (raw > 255n ? 255n : raw);
-  return (typeof value === "bigint") ? clamped : Number(clamped);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const clamped = raw < 0n ? 0n : (raw > 255n ? 255n : raw);
+    return (typeof value === "bigint") ? clamped : Number(clamped);
   };
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const clamped = raw < 0n ? 0n : (raw > 65535n ? 65535n : raw);
-  return (typeof value === "bigint") ? clamped : Number(clamped);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const clamped = raw < 0n ? 0n : (raw > 65535n ? 65535n : raw);
+    return (typeof value === "bigint") ? clamped : Number(clamped);
   };
-  
+
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
@@ -82,21 +82,21 @@ export function serializeUnionTag(value: UnionTag): Uint8Array {
 export function deserializeUnionTag(bytes: Uint8Array): { value: UnionTag; consumed: number } {
   const mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0 = (tagValue: number): boolean => (tagValue === 0) || (tagValue === 1);
   const mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 255n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 255n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
   const mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser = (value: number | bigint): number | bigint => {
-  const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
-  const masked = raw & 65535n;
-  return (typeof value === "bigint") ? masked : Number(masked);
+    const raw = (typeof value === "bigint") ? value : BigInt(Math.trunc(value));
+    const masked = raw & 65535n;
+    return (typeof value === "bigint") ? masked : Number(masked);
   };
-  
+
   let offsetBits = 0;
   let tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 8));
   tag = Number(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag));

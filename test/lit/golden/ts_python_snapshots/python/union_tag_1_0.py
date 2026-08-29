@@ -60,7 +60,7 @@ def _serialize_UnionTag(value: UnionTag) -> bytes:
         if raw > 65535:
             return 65535
         return raw
-    
+
     if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
     tag = int(value._tag)
@@ -98,7 +98,7 @@ def _deserialize_UnionTag(data: bytes | bytearray | memoryview) -> tuple[UnionTa
         return int(value) & 255
     def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value: int) -> int:
         return int(value) & 65535
-    
+
     offset_bits = 0
     tag = int(dsdl_runtime.read_unsigned(data, offset_bits, 8))
     tag = int(mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(tag))

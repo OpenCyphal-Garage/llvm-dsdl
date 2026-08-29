@@ -28,6 +28,7 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
+#include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Version.h"
 
@@ -201,35 +202,26 @@ std::string sizeLiteral(const std::int64_t v)
     return std::to_string(static_cast<std::uint64_t>(nonNegative)) + "U";
 }
 
-void emitLine(std::ostringstream& out, const std::size_t indent, const std::string& line)
+SourceWriter makeObjectAbiWriter(std::ostringstream& out)
 {
-    for (std::size_t i = 0; i < indent; ++i)
-    {
-        out << "  ";
-    }
-    out << line << '\n';
+    return SourceWriter{out, IndentPolicy::spaces(2)};
 }
 
-void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& components)
+void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& components)
 {
     for (const auto& component : components)
     {
-        emitLine(out,
-                 0,
-                 "namespace " +
-                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) +
-                     " {");
+        w.line("namespace " +
+               codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) + " {");
     }
 }
 
-void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>& components)
+void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& components)
 {
     for (const auto& component : std::views::reverse(components))
     {
-        emitLine(out,
-                 0,
-                 "} // namespace " +
-                     codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component));
+        w.line("} // namespace " +
+               codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component));
     }
 }
 
@@ -408,35 +400,27 @@ const LoweredSectionFacts* lookupSectionFacts(const LoweredFactsMap&    loweredF
     return &sectionIt->second;
 }
 
-void emitCanonicalStruct(std::ostringstream&        out,
+void emitCanonicalStruct(SourceWriter&              w,
                          const SectionPlan&         plan,
                          const SemanticSection&     section,
                          const EmitterContext&      ctx,
                          const LoweredSectionFacts* sectionFacts)
 {
     const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
-    emitLine(out, 0, "struct " + plan.cppTypeName + ";");
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
-                 "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
-                 "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName +
-                 "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
-                 "const std::uint8_t** out_view_bytes);");
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName +
-                 "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
-                 "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
-    out << '\n';
+    w.line("struct " + plan.cppTypeName + ";");
+    w.line("std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
+           "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
+    w.line("std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
+           "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
+    w.line("std::int8_t " + plan.cppTypeName +
+           "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+           "const std::uint8_t** out_view_bytes);");
+    w.line("std::int8_t " + plan.cppTypeName +
+           "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+           "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
+    w.blank();
 
-    emitLine(out, 0, "struct " + plan.cppTypeName + " {");
+    w.open("struct " + plan.cppTypeName + " {");
 
     std::size_t emittedFields = 0;
     for (const auto& field : section.fields)
@@ -453,17 +437,17 @@ void emitCanonicalStruct(std::ostringstream&        out,
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, elemType + " " + member + "{};");
+            w.line(elemType + " " + member + "{};");
         }
         else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "std::array<" + elemType + ", " + cap + "> " + member + "{};");
+            w.line("std::array<" + elemType + ", " + cap + "> " + member + "{};");
         }
         else
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "::llvmdsdl::cppabi::BoundedSequence<" + elemType + ", " + cap + "> " + member + "{};");
+            w.line("::llvmdsdl::cppabi::BoundedSequence<" + elemType + ", " + cap + "> " + member + "{};");
         }
         ++emittedFields;
     }
@@ -472,15 +456,13 @@ void emitCanonicalStruct(std::ostringstream&        out,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        emitLine(out,
-                 1,
-                 renderUnsignedStorageToken(StorageTokenLanguage::Cpp, resolveUnionTagBits(section, sectionFacts)) +
-                     " _tag_{0U};");
+        w.line(renderUnsignedStorageToken(StorageTokenLanguage::Cpp, resolveUnionTagBits(section, sectionFacts)) +
+               " _tag_{0U};");
         ++emittedFields;
     }
     if (emittedFields == 0)
     {
-        emitLine(out, 1, "std::uint8_t _dummy_{0U};");
+        w.line("std::uint8_t _dummy_{0U};");
     }
 
     const bool        zohEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
@@ -488,63 +470,51 @@ void emitCanonicalStruct(std::ostringstream&        out,
                                         ? sectionFacts->zohAliasReason
                                         : std::string("not-proven");
 
-    emitLine(out,
-             1,
-             "static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
-                 sizeLiteral((section.serializationBufferSizeBits + 7) / 8) + ";");
-    emitLine(out,
-             1,
-             "static constexpr std::size_t EXTENT_BYTES = " +
-                 sizeLiteral(section.extentBits.has_value() ? (section.extentBits.value() / 8) : 0) + ";");
-    emitLine(out, 1, std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohEligible ? "true;" : "false;"));
-    emitLine(out, 1, "static constexpr const char* ZOH_ALIAS_REASON = \"" + zohReason + "\";");
+    w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
+           sizeLiteral((section.serializationBufferSizeBits + 7) / 8) + ";");
+    w.line("static constexpr std::size_t EXTENT_BYTES = " +
+           sizeLiteral(section.extentBits.has_value() ? (section.extentBits.value() / 8) : 0) + ";");
+    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohEligible ? "true;" : "false;"));
+    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + zohReason + "\";");
 
-    emitLine(out, 1, "void to_c(" + plan.cTypeName + "* out) const;");
-    emitLine(out, 1, "static void from_c(" + plan.cppTypeName + "* out, const " + plan.cTypeName + "* in);");
-    out << '\n';
+    w.line("void to_c(" + plan.cTypeName + "* out) const;");
+    w.line("static void from_c(" + plan.cppTypeName + "* out, const " + plan.cTypeName + "* in);");
+    w.blank();
 
-    emitLine(out, 1, "std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) const {");
-    emitLine(out, 2, "return " + plan.cppTypeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
-    emitLine(out, 2, "return " + plan.cppTypeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 1, "}");
-    emitLine(out,
-             1,
-             "static std::int8_t try_deserialize_view(const std::uint8_t* buffer, std::size_t* "
-             "inout_buffer_size_bytes, "
-             "const std::uint8_t** out_view_bytes) {");
-    emitLine(out,
-             2,
-             "return " + plan.cppTypeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-    emitLine(out, 1, "}");
-    emitLine(out,
-             1,
-             "static std::int8_t try_serialize_view(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
-             "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
-    emitLine(out,
-             2,
-             "return " + plan.cppTypeName +
-                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 1, "}");
+    w.open("std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) const {");
+    w.line("return " + plan.cppTypeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.open("std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
+    w.line("return " + plan.cppTypeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.open("static std::int8_t try_deserialize_view(const std::uint8_t* buffer, std::size_t* "
+           "inout_buffer_size_bytes, "
+           "const std::uint8_t** out_view_bytes) {");
+    w.line("return " + plan.cppTypeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    w.close("}");
+    w.open("static std::int8_t try_serialize_view(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+           "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
+    w.line("return " + plan.cppTypeName +
+           "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+    w.close("}");
 
-    emitLine(out, 0, "};");
-    out << '\n';
+    w.close("};");
+    w.blank();
 }
 
-void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
+void emitCanonicalConversionBodyToC(SourceWriter& w, const SectionPlan& plan, const SemanticSection& section)
 {
     // The canonical struct and the C struct it converts to are named by two different
     // emitters, so both scopes are rebuilt here from the same section rather than a member
     // name being invented locally: what this writes has to be what each of them declared.
     const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     const NamingScope cScope   = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    emitLine(out, 0, "void " + plan.cppTypeName + "::to_c(" + plan.cTypeName + "* const out) const");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if (out == nullptr) {");
-    emitLine(out, 2, "return;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "*out = " + plan.cTypeName + "{};");
+    w.line("void " + plan.cppTypeName + "::to_c(" + plan.cTypeName + "* const out) const");
+    w.open("{");
+    w.open("if (out == nullptr) {");
+    w.line("return;");
+    w.close("}");
+    w.line("*out = " + plan.cTypeName + "{};");
 
     for (const auto& field : section.fields)
     {
@@ -561,15 +531,13 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                emitLine(out, 1, cppMember + ".to_c(&out->" + cMember + ");");
+                w.line(cppMember + ".to_c(&out->" + cMember + ");");
             }
             else
             {
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         1,
-                         "out->" + cMember + " = static_cast<std::remove_reference_t<decltype(out->" + cMember +
-                             ")>>(" + cppMember + ");");
+                w.line("out->" + cMember + " = static_cast<std::remove_reference_t<decltype(out->" + cMember + ")>>(" +
+                       cppMember + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
             }
             continue;
@@ -579,108 +547,96 @@ void emitCanonicalConversionBodyToC(std::ostringstream& out, const SectionPlan& 
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
-                emitLine(out, 2, "out->" + cMember + "[i] = 0U;");
-                emitLine(out, 1, "}");
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
-                emitLine(out, 2, "if (" + cppMember + "[i]) {");
+                w.open("for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
+                w.line("out->" + cMember + "[i] = 0U;");
+                w.close("}");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("if (" + cppMember + "[i]) {");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         3,
-                         "out->" + cMember + "[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
-                             "[i / 8U] | (1U << (i % 8U)));");
+                w.line("out->" + cMember + "[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
+                       "[i / 8U] | (1U << (i % 8U)));");
                 // NOLINTEND(performance-inefficient-string-concatenation)
-                emitLine(out, 2, "}");
-                emitLine(out, 1, "}");
+                w.close("}");
+                w.close("}");
             }
             else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                emitLine(out, 2, cppMember + "[i].to_c(&out->" + cMember + "[i]);");
-                emitLine(out, 1, "}");
+                w.line(cppMember + "[i].to_c(&out->" + cMember + "[i]);");
+                w.close("}");
             }
             else
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         2,
-                         "out->" + cMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
-                             "[i])>>(" + cppMember + "[i]);");
+                w.line("out->" + cMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
+                       "[i])>>(" + cppMember + "[i]);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
-                emitLine(out, 1, "}");
+                w.close("}");
             }
             continue;
         }
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        emitLine(out, 1, "out->" + cMember + ".count = " + cppMember + ".count;");
-        emitLine(out,
-                 1,
-                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(" + cppMember + ".count, " +
-                     cap + ");");
+        w.line("out->" + cMember + ".count = " + cppMember + ".count;");
+        w.line("const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(" + cppMember + ".count, " +
+               cap + ");");
         // NOLINTEND(performance-inefficient-string-concatenation)
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
-            emitLine(out, 2, "out->" + cMember + ".bitpacked[i] = 0U;");
-            emitLine(out, 1, "}");
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
-            emitLine(out, 2, "if (" + cppMember + ".elements[i]) {");
+            w.open("for (std::size_t i = 0U; i < " + bytesForBitsExpr(cap) + "; ++i) {");
+            w.line("out->" + cMember + ".bitpacked[i] = 0U;");
+            w.close("}");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("if (" + cppMember + ".elements[i]) {");
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            emitLine(out,
-                     3,
-                     "out->" + cMember + ".bitpacked[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
-                         ".bitpacked[i / 8U] | (1U << (i % 8U)));");
+            w.line("out->" + cMember + ".bitpacked[i / 8U] = static_cast<std::uint8_t>(out->" + cMember +
+                   ".bitpacked[i / 8U] | (1U << (i % 8U)));");
             // NOLINTEND(performance-inefficient-string-concatenation)
-            emitLine(out, 2, "}");
-            emitLine(out, 1, "}");
+            w.close("}");
+            w.close("}");
         }
         else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 2, cppMember + ".elements[i].to_c(&out->" + cMember + ".elements[i]);");
-            emitLine(out, 1, "}");
+            w.line(cppMember + ".elements[i].to_c(&out->" + cMember + ".elements[i]);");
+            w.close("}");
         }
         else
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            emitLine(out,
-                     2,
-                     "out->" + cMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
-                         ".elements[i])>>(" + cppMember + ".elements[i]);");
+            w.line("out->" + cMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" + cMember +
+                   ".elements[i])>>(" + cppMember + ".elements[i]);");
             // NOLINTEND(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "}");
+            w.close("}");
         }
     }
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "out->_tag_ = _tag_;");
+        w.line("out->_tag_ = _tag_;");
     }
 
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.close("}");
+    w.blank();
 }
 
-void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan& plan, const SemanticSection& section)
+void emitCanonicalConversionBodyFromC(SourceWriter& w, const SectionPlan& plan, const SemanticSection& section)
 {
     // The canonical struct and the C struct it converts to are named by two different
     // emitters, so both scopes are rebuilt here from the same section rather than a member
     // name being invented locally: what this writes has to be what each of them declared.
     const NamingScope cppScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     const NamingScope cScope   = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    emitLine(out,
-             0,
-             "void " + plan.cppTypeName + "::from_c(" + plan.cppTypeName + "* const out, const " + plan.cTypeName +
-                 "* const in)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((out == nullptr) || (in == nullptr)) {");
-    emitLine(out, 2, "return;");
-    emitLine(out, 1, "}");
+    w.line("void " + plan.cppTypeName + "::from_c(" + plan.cppTypeName + "* const out, const " + plan.cTypeName +
+           "* const in)");
+    w.open("{");
+    w.open("if ((out == nullptr) || (in == nullptr)) {");
+    w.line("return;");
+    w.close("}");
 
     for (const auto& field : section.fields)
     {
@@ -697,18 +653,14 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         1,
-                         "decltype(out->" + cppMember + ")::from_c(&out->" + cppMember + ", &in->" + cMember + ");");
+                w.line("decltype(out->" + cppMember + ")::from_c(&out->" + cppMember + ", &in->" + cMember + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
             }
             else
             {
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         1,
-                         "out->" + cppMember + " = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
-                             ")>>(in->" + cMember + ");");
+                w.line("out->" + cppMember + " = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
+                       ")>>(in->" + cMember + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
             }
             continue;
@@ -718,155 +670,127 @@ void emitCanonicalConversionBodyFromC(std::ostringstream& out, const SectionPlan
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         2,
-                         "out->" + cppMember + "[i] = ((in->" + cMember +
-                             "[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+                w.line("out->" + cppMember + "[i] = ((in->" + cMember +
+                       "[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
-                emitLine(out, 1, "}");
+                w.close("}");
             }
             else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         2,
-                         "decltype(out->" + cppMember + "[i])::from_c(&out->" + cppMember + "[i], &in->" + cMember +
-                             "[i]);");
+                w.line("decltype(out->" + cppMember + "[i])::from_c(&out->" + cppMember + "[i], &in->" + cMember +
+                       "[i]);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
-                emitLine(out, 1, "}");
+                w.close("}");
             }
             else
             {
-                emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+                w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                emitLine(out,
-                         2,
-                         "out->" + cppMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
-                             "[i])>>(in->" + cMember + "[i]);");
+                w.line("out->" + cppMember + "[i] = static_cast<std::remove_reference_t<decltype(out->" + cppMember +
+                       "[i])>>(in->" + cMember + "[i]);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
-                emitLine(out, 1, "}");
+                w.close("}");
             }
             continue;
         }
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        emitLine(out, 1, "out->" + cppMember + ".count = in->" + cMember + ".count;");
-        emitLine(out,
-                 1,
-                 "const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(in->" + cMember + ".count, " +
-                     cap + ");");
+        w.line("out->" + cppMember + ".count = in->" + cMember + ".count;");
+        w.line("const std::size_t " + cppMember + "_copy_count = std::min<std::size_t>(in->" + cMember + ".count, " +
+               cap + ");");
         // NOLINTEND(performance-inefficient-string-concatenation)
 
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cap + "; ++i) {");
-            emitLine(out, 2, "out->" + cppMember + ".elements[i] = false;");
-            emitLine(out, 1, "}");
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("for (std::size_t i = 0U; i < " + cap + "; ++i) {");
+            w.line("out->" + cppMember + ".elements[i] = false;");
+            w.close("}");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            emitLine(out,
-                     2,
-                     "out->" + cppMember + ".elements[i] = ((in->" + cMember +
-                         ".bitpacked[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
+            w.line("out->" + cppMember + ".elements[i] = ((in->" + cMember +
+                   ".bitpacked[i / 8U] & static_cast<std::uint8_t>(1U << (i % 8U))) != 0U);");
             // NOLINTEND(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "}");
+            w.close("}");
         }
         else if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            emitLine(out,
-                     2,
-                     "decltype(out->" + cppMember + ".elements[i])::from_c(&out->" + cppMember + ".elements[i], &in->" +
-                         cMember + ".elements[i]);");
+            w.line("decltype(out->" + cppMember + ".elements[i])::from_c(&out->" + cppMember + ".elements[i], &in->" +
+                   cMember + ".elements[i]);");
             // NOLINTEND(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "}");
+            w.close("}");
         }
         else
         {
-            emitLine(out, 1, "for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
+            w.open("for (std::size_t i = 0U; i < " + cppMember + "_copy_count; ++i) {");
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            emitLine(out,
-                     2,
-                     "out->" + cppMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" +
-                         cppMember + ".elements[i])>>(in->" + cMember + ".elements[i]);");
+            w.line("out->" + cppMember + ".elements[i] = static_cast<std::remove_reference_t<decltype(out->" +
+                   cppMember + ".elements[i])>>(in->" + cMember + ".elements[i]);");
             // NOLINTEND(performance-inefficient-string-concatenation)
-            emitLine(out, 1, "}");
+            w.close("}");
         }
     }
 
     if (section.isUnion)
     {
-        emitLine(out, 1, "out->_tag_ = in->_tag_;");
+        w.line("out->_tag_ = in->_tag_;");
     }
 
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.close("}");
+    w.blank();
 }
 
-void emitCanonicalWireFns(std::ostringstream& out, const SectionPlan& plan)
+void emitCanonicalWireFns(SourceWriter& w, const SectionPlan& plan)
 {
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
-                 "* const obj, std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if (obj == nullptr) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, plan.cTypeName + " c_obj{};");
-    emitLine(out, 1, "obj->to_c(&c_obj);");
-    emitLine(out, 1, "return " + plan.cTypeName + "__serialize_(&c_obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("std::int8_t " + plan.cppTypeName + "_serialize_(const " + plan.cppTypeName +
+           "* const obj, std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.open("if (obj == nullptr) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line(plan.cTypeName + " c_obj{};");
+    w.line("obj->to_c(&c_obj);");
+    w.line("return " + plan.cTypeName + "__serialize_(&c_obj, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
-                 "* const out_obj, const std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if (out_obj == nullptr) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, plan.cTypeName + " c_obj{};");
-    emitLine(out,
-             1,
-             "const std::int8_t rc = " + plan.cTypeName + "__deserialize_(&c_obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 1, "if (rc >= 0) {");
-    emitLine(out, 2, plan.cppTypeName + "::from_c(out_obj, &c_obj);");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "return rc;");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("std::int8_t " + plan.cppTypeName + "_deserialize_(" + plan.cppTypeName +
+           "* const out_obj, const std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.open("if (out_obj == nullptr) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line(plan.cTypeName + " c_obj{};");
+    w.line("const std::int8_t rc = " + plan.cTypeName + "__deserialize_(&c_obj, buffer, inout_buffer_size_bytes);");
+    w.open("if (rc >= 0) {");
+    w.line(plan.cppTypeName + "::from_c(out_obj, &c_obj);");
+    w.close("}");
+    w.line("return rc;");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName +
-                 "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-                 "inout_buffer_size_bytes, "
-                 "const std::uint8_t** const out_view_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out,
-             1,
-             "return " + plan.cTypeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("std::int8_t " + plan.cppTypeName +
+           "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+           "inout_buffer_size_bytes, "
+           "const std::uint8_t** const out_view_bytes)");
+    w.open("{");
+    w.line("return " + plan.cTypeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "std::int8_t " + plan.cppTypeName +
-                 "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-                 "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out,
-             1,
-             "return " + plan.cTypeName +
-                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("std::int8_t " + plan.cppTypeName +
+           "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+           "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.line("return " + plan.cTypeName +
+           "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 }
 
 std::string renderCanonicalHeader(const SemanticDefinition& def,
@@ -874,6 +798,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
                                   const EmitterContext&     ctx)
 {
     std::ostringstream out;
+    SourceWriter       w     = makeObjectAbiWriter(out);
     const std::string  guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
                                                   "LLVMDSDL_CPPABI_",
                                                   def.info.fullName,
@@ -910,70 +835,54 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
             out << "#include \"" << canonicalHeaderPath(dep->info).generic_string() << "\"\n";
         }
     }
-    out << "\n";
+    w.blank();
 
-    emitNamespaceOpen(out, def.info.namespaceComponents);
-    emitLine(out, 0, "namespace abi {");
-    out << '\n';
+    emitNamespaceOpen(w, def.info.namespaceComponents);
+    w.line("namespace abi {");
+    w.blank();
 
     const auto plans = sectionPlansForDefinition(def, ctx.typeNameVersioning());
     for (const auto& plan : plans)
     {
-        emitCanonicalStruct(out, plan, *plan.section, ctx, lookupSectionFacts(loweredFacts, def, plan.sectionName));
+        emitCanonicalStruct(w, plan, *plan.section, ctx, lookupSectionFacts(loweredFacts, def, plan.sectionName));
     }
 
     if (def.isService)
     {
         const auto baseName = cppTypeNameFromInfo(def.info, ctx.typeNameVersioning());
-        emitLine(out, 0, "using " + baseName + " = " + baseName + "_Request;");
-        emitLine(out,
-                 0,
-                 "inline std::int8_t " + baseName + "_serialize_(const " + baseName +
-                     "* const obj, std::uint8_t* const buffer, "
-                     "std::size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + baseName + "_Request_serialize_(reinterpret_cast<const " + baseName +
-                     "_Request*>(obj), buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        emitLine(out,
-                 0,
-                 "inline std::int8_t " + baseName + "_deserialize_(" + baseName +
-                     "* const out_obj, const std::uint8_t* const buffer, "
-                     "std::size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + baseName + "_Request_deserialize_(reinterpret_cast<" + baseName +
-                     "_Request*>(out_obj), buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        emitLine(out,
-                 0,
-                 "inline std::int8_t " + baseName +
-                     "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-                     "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + baseName +
-                     "_Request_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-        emitLine(out, 0, "}");
-        emitLine(out,
-                 0,
-                 "inline std::int8_t " + baseName +
-                     "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-                     "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + baseName +
-                     "_Request_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
+        w.line("using " + baseName + " = " + baseName + "_Request;");
+        w.line("inline std::int8_t " + baseName + "_serialize_(const " + baseName +
+               "* const obj, std::uint8_t* const buffer, "
+               "std::size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + baseName + "_Request_serialize_(reinterpret_cast<const " + baseName +
+               "_Request*>(obj), buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.line("inline std::int8_t " + baseName + "_deserialize_(" + baseName +
+               "* const out_obj, const std::uint8_t* const buffer, "
+               "std::size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + baseName + "_Request_deserialize_(reinterpret_cast<" + baseName +
+               "_Request*>(out_obj), buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.line("inline std::int8_t " + baseName +
+               "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+               "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
+        w.open("{");
+        w.line("return " + baseName +
+               "_Request_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+        w.close("}");
+        w.line("inline std::int8_t " + baseName +
+               "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+               "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + baseName +
+               "_Request_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+        w.close("}");
     }
 
-    emitLine(out, 0, "} // namespace abi");
-    emitNamespaceClose(out, def.info.namespaceComponents);
+    w.line("} // namespace abi");
+    emitNamespaceClose(w, def.info.namespaceComponents);
 
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
@@ -982,6 +891,7 @@ std::string renderCanonicalHeader(const SemanticDefinition& def,
 std::string renderCanonicalSource(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::ostringstream out;
+    SourceWriter       w = makeObjectAbiWriter(out);
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp canonical ABI) */\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -990,31 +900,28 @@ std::string renderCanonicalSource(const SemanticDefinition& def, const TypeNameV
     out << "#include <algorithm>\n\n";
     out << "#include <type_traits>\n\n";
 
-    emitNamespaceOpen(out, def.info.namespaceComponents);
-    emitLine(out, 0, "namespace abi {");
-    out << '\n';
+    emitNamespaceOpen(w, def.info.namespaceComponents);
+    w.line("namespace abi {");
+    w.blank();
 
     const auto plans = sectionPlansForDefinition(def, versioning);
     for (const auto& plan : plans)
     {
-        emitCanonicalConversionBodyToC(out, plan, *plan.section);
-        emitCanonicalConversionBodyFromC(out, plan, *plan.section);
-        emitCanonicalWireFns(out, plan);
+        emitCanonicalConversionBodyToC(w, plan, *plan.section);
+        emitCanonicalConversionBodyFromC(w, plan, *plan.section);
+        emitCanonicalWireFns(w, plan);
     }
 
-    emitLine(out, 0, "} // namespace abi");
-    emitNamespaceClose(out, def.info.namespaceComponents);
+    w.line("} // namespace abi");
+    emitNamespaceClose(w, def.info.namespaceComponents);
 
     return out.str();
 }
 
-void emitShimStruct(std::ostringstream&    out,
-                    const SectionPlan&     plan,
-                    const SemanticSection& section,
-                    const EmitterContext&  ctx)
+void emitShimStruct(SourceWriter& w, const SectionPlan& plan, const SemanticSection& section, const EmitterContext& ctx)
 {
     const NamingScope cScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    emitLine(out, 0, "typedef struct " + plan.shimTypeName + " {");
+    w.open("typedef struct " + plan.shimTypeName + " {");
 
     std::size_t emittedFields = 0;
     for (const auto& field : section.fields)
@@ -1030,20 +937,20 @@ void emitShimStruct(std::ostringstream&    out,
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, elemType + " " + member + ";");
+            w.line(elemType + " " + member + ";");
         }
         else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 1, elemType + " " + member + "[" + cap + "];");
+            w.line(elemType + " " + member + "[" + cap + "];");
         }
         else
         {
-            emitLine(out, 1, "struct {");
+            w.open("struct {");
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            emitLine(out, 2, elemType + " elements[" + cap + "];");
-            emitLine(out, 2, "size_t count;");
-            emitLine(out, 1, "} " + member + ";");
+            w.line(elemType + " elements[" + cap + "];");
+            w.line("size_t count;");
+            w.close("} " + member + ";");
         }
         ++emittedFields;
     }
@@ -1053,48 +960,38 @@ void emitShimStruct(std::ostringstream&    out,
         // Tag storage must match the wire tag width; a hardcoded uint8_t truncates a wide
         // tag (>256-option unions get a 16-bit tag). sectionFacts isn't threaded to the
         // shim struct; resolveUnionTagBits falls back to the authoritative per-field width.
-        emitLine(out,
-                 1,
-                 renderUnsignedStorageToken(StorageTokenLanguage::C, resolveUnionTagBits(section, nullptr)) +
-                     " _tag_;");
+        w.line(renderUnsignedStorageToken(StorageTokenLanguage::C, resolveUnionTagBits(section, nullptr)) + " _tag_;");
         ++emittedFields;
     }
     if (emittedFields == 0)
     {
-        emitLine(out, 1, "uint8_t _dummy_;");
+        w.line("uint8_t _dummy_;");
     }
 
-    emitLine(out, 0, "} " + plan.shimTypeName + ";");
-    out << '\n';
+    w.close("} " + plan.shimTypeName + ";");
+    w.blank();
 }
 
-void emitShimPrototypes(std::ostringstream& out, const SemanticDefinition& def, const SectionPlan& plan)
+void emitShimPrototypes(SourceWriter& w, const SemanticDefinition& def, const SectionPlan& plan)
 {
     const auto symbolStem = shimSymbolStem(def, plan.sectionName);
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem + "__serialize_(const " + plan.shimTypeName +
-                 "* obj, uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem + "__deserialize_(" + plan.shimTypeName +
-                 "* out_obj, const uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem +
-                 "__try_deserialize_view_(const uint8_t* buffer, size_t* inout_buffer_size_bytes, "
-                 "const uint8_t** out_view_bytes);");
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem +
-                 "__try_serialize_view_(const uint8_t* view_bytes, size_t view_size_bytes, "
-                 "uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-    out << '\n';
+    w.line("int8_t " + symbolStem + "__serialize_(const " + plan.shimTypeName +
+           "* obj, uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+    w.line("int8_t " + symbolStem + "__deserialize_(" + plan.shimTypeName +
+           "* out_obj, const uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+    w.line("int8_t " + symbolStem +
+           "__try_deserialize_view_(const uint8_t* buffer, size_t* inout_buffer_size_bytes, "
+           "const uint8_t** out_view_bytes);");
+    w.line("int8_t " + symbolStem +
+           "__try_serialize_view_(const uint8_t* view_bytes, size_t view_size_bytes, "
+           "uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+    w.blank();
 }
 
 std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext& ctx)
 {
     std::ostringstream out;
+    SourceWriter       w = makeObjectAbiWriter(out);
 
     const std::string guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
                                                  "LLVMDSDL_CPPABI_C_SHIM_",
@@ -1130,18 +1027,18 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
     const auto plans = sectionPlansForDefinition(def, ctx.typeNameVersioning());
     for (const auto& plan : plans)
     {
-        emitShimStruct(out, plan, *plan.section, ctx);
+        emitShimStruct(w, plan, *plan.section, ctx);
     }
     if (def.isService)
     {
         const auto base = shimTypeNameFromInfo(def.info, ctx.typeNameVersioning());
-        emitLine(out, 0, "typedef " + base + "__Request " + base + ";");
-        out << '\n';
+        w.line("typedef " + base + "__Request " + base + ";");
+        w.blank();
     }
 
     for (const auto& plan : plans)
     {
-        emitShimPrototypes(out, def, plan);
+        emitShimPrototypes(w, def, plan);
     }
 
     if (def.isService)
@@ -1149,25 +1046,17 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
         const auto base        = shimTypeNameFromInfo(def.info, ctx.typeNameVersioning());
         const auto requestStem = shimSymbolStem(def, "request");
         const auto baseStem    = shimSymbolStem(def, "");
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem + "__serialize_(const " + base +
-                     "* obj, uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem + "__deserialize_(" + base +
-                     "* out_obj, const uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem +
-                     "__try_deserialize_view_(const uint8_t* buffer, size_t* inout_buffer_size_bytes, "
-                     "const uint8_t** out_view_bytes);");
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem +
-                     "__try_serialize_view_(const uint8_t* view_bytes, size_t view_size_bytes, "
-                     "uint8_t* buffer, size_t* inout_buffer_size_bytes);");
-        out << '\n';
+        w.line("int8_t " + baseStem + "__serialize_(const " + base +
+               "* obj, uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+        w.line("int8_t " + baseStem + "__deserialize_(" + base +
+               "* out_obj, const uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+        w.line("int8_t " + baseStem +
+               "__try_deserialize_view_(const uint8_t* buffer, size_t* inout_buffer_size_bytes, "
+               "const uint8_t** out_view_bytes);");
+        w.line("int8_t " + baseStem +
+               "__try_serialize_view_(const uint8_t* view_bytes, size_t view_size_bytes, "
+               "uint8_t* buffer, size_t* inout_buffer_size_bytes);");
+        w.blank();
         (void) requestStem;
     }
 
@@ -1176,7 +1065,7 @@ std::string renderShimHeader(const SemanticDefinition& def, const EmitterContext
     return out.str();
 }
 
-void emitShimDefinition(std::ostringstream&       out,
+void emitShimDefinition(SourceWriter&             w,
                         const SemanticDefinition& def,
                         const SectionPlan&        plan,
                         const std::string&        canonicalPrefix)
@@ -1184,90 +1073,69 @@ void emitShimDefinition(std::ostringstream&       out,
     const std::string canonicalType = canonicalPrefix + plan.cppTypeName;
     const std::string symbolStem    = shimSymbolStem(def, plan.sectionName);
 
-    emitLine(out,
-             0,
-             "static_assert(sizeof(" + canonicalType + ") == sizeof(" + plan.shimTypeName +
-                 "), "
-                 "\"shim/canonical size mismatch\");");
-    emitLine(out,
-             0,
-             "static_assert(alignof(" + canonicalType + ") == alignof(" + plan.shimTypeName +
-                 "), "
-                 "\"shim/canonical alignment mismatch\");");
-    emitLine(out,
-             0,
-             "static_assert(std::is_trivially_copyable<" + canonicalType +
-                 ">::value, "
-                 "\"canonical ABI type must be trivially copyable\");");
-    emitLine(out,
-             0,
-             "static_assert(std::is_trivially_copyable<" + plan.shimTypeName +
-                 ">::value, "
-                 "\"shim type must be trivially copyable\");");
-    out << '\n';
+    w.line("static_assert(sizeof(" + canonicalType + ") == sizeof(" + plan.shimTypeName +
+           "), "
+           "\"shim/canonical size mismatch\");");
+    w.line("static_assert(alignof(" + canonicalType + ") == alignof(" + plan.shimTypeName +
+           "), "
+           "\"shim/canonical alignment mismatch\");");
+    w.line("static_assert(std::is_trivially_copyable<" + canonicalType +
+           ">::value, "
+           "\"canonical ABI type must be trivially copyable\");");
+    w.line("static_assert(std::is_trivially_copyable<" + plan.shimTypeName +
+           ">::value, "
+           "\"shim type must be trivially copyable\");");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem + "__serialize_(const " + plan.shimTypeName +
-                 "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if (obj == nullptr) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, canonicalType + " abi_obj{};");
-    emitLine(out, 1, "std::memcpy(&abi_obj, obj, sizeof(abi_obj));");
-    emitLine(out, 1, "return " + canonicalType + "_serialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("int8_t " + symbolStem + "__serialize_(const " + plan.shimTypeName +
+           "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.open("if (obj == nullptr) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line(canonicalType + " abi_obj{};");
+    w.line("std::memcpy(&abi_obj, obj, sizeof(abi_obj));");
+    w.line("return " + canonicalType + "_serialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem + "__deserialize_(" + plan.shimTypeName +
-                 "* const out_obj, const uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if (out_obj == nullptr) {");
-    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, canonicalType + " abi_obj{};");
-    emitLine(out,
-             1,
-             "const int8_t rc = " + canonicalType + "_deserialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 1, "if (rc >= 0) {");
-    emitLine(out, 2, "std::memcpy(out_obj, &abi_obj, sizeof(abi_obj));");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "return rc;");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("int8_t " + symbolStem + "__deserialize_(" + plan.shimTypeName +
+           "* const out_obj, const uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.open("if (out_obj == nullptr) {");
+    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    w.close("}");
+    w.line(canonicalType + " abi_obj{};");
+    w.line("const int8_t rc = " + canonicalType + "_deserialize_(&abi_obj, buffer, inout_buffer_size_bytes);");
+    w.open("if (rc >= 0) {");
+    w.line("std::memcpy(out_obj, &abi_obj, sizeof(abi_obj));");
+    w.close("}");
+    w.line("return rc;");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem +
-                 "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-                 "const uint8_t** const out_view_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out,
-             1,
-             "return " + canonicalType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("int8_t " + symbolStem +
+           "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
+           "const uint8_t** const out_view_bytes)");
+    w.open("{");
+    w.line("return " + canonicalType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    w.close("}");
+    w.blank();
 
-    emitLine(out,
-             0,
-             "int8_t " + symbolStem +
-                 "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-                 "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out,
-             1,
-             "return " + canonicalType +
-                 "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-    emitLine(out, 0, "}");
-    out << '\n';
+    w.line("int8_t " + symbolStem +
+           "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
+           "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+    w.open("{");
+    w.line("return " + canonicalType +
+           "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
 }
 
 std::string renderShimSource(const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     std::ostringstream out;
+    SourceWriter       w               = makeObjectAbiWriter(out);
     const std::string  canonicalPrefix = canonicalQualifiedPrefix(def.info);
 
     out << "/* Generated by llvmdsdl " << kVersionString << " (obj-cpp C shim) */\n";
@@ -1282,7 +1150,7 @@ std::string renderShimSource(const SemanticDefinition& def, const TypeNameVersio
     const auto plans = sectionPlansForDefinition(def, versioning);
     for (const auto& plan : plans)
     {
-        emitShimDefinition(out, def, plan, canonicalPrefix);
+        emitShimDefinition(w, def, plan, canonicalPrefix);
     }
 
     if (def.isService)
@@ -1291,56 +1159,40 @@ std::string renderShimSource(const SemanticDefinition& def, const TypeNameVersio
         const auto baseStem = shimSymbolStem(def, "");
         const auto reqStem  = shimSymbolStem(def, "request");
 
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem + "__serialize_(const " + shimBase +
-                     "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + reqStem + "__serialize_(reinterpret_cast<const " + shimBase +
-                     "__Request*>(obj), "
-                     "buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        out << '\n';
+        w.line("int8_t " + baseStem + "__serialize_(const " + shimBase +
+               "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + reqStem + "__serialize_(reinterpret_cast<const " + shimBase +
+               "__Request*>(obj), "
+               "buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem + "__deserialize_(" + shimBase +
-                     "* const out_obj, const uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + reqStem + "__deserialize_(reinterpret_cast<" + shimBase +
-                     "__Request*>(out_obj), "
-                     "buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        out << '\n';
+        w.line("int8_t " + baseStem + "__deserialize_(" + shimBase +
+               "* const out_obj, const uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + reqStem + "__deserialize_(reinterpret_cast<" + shimBase +
+               "__Request*>(out_obj), "
+               "buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem +
-                     "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-                     "const uint8_t** const out_view_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + reqStem + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-        emitLine(out, 0, "}");
-        out << '\n';
+        w.line("int8_t " + baseStem +
+               "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
+               "const uint8_t** const out_view_bytes)");
+        w.open("{");
+        w.line("return " + reqStem + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+        w.close("}");
+        w.blank();
 
-        emitLine(out,
-                 0,
-                 "int8_t " + baseStem +
-                     "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-                     "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + reqStem +
-                     "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        out << '\n';
+        w.line("int8_t " + baseStem +
+               "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
+               "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + reqStem +
+               "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
     }
 
     out << "} // extern \"C\"\n";
@@ -1352,6 +1204,7 @@ std::string renderAdapterHeader(const SemanticDefinition& def,
                                 const TypeNameVersioning  versioning)
 {
     std::ostringstream out;
+    SourceWriter       w = makeObjectAbiWriter(out);
 
     const std::string guard = renderIncludeGuard(CodegenNamingLanguage::Cpp,
                                                  "LLVMDSDL_CPPABI_ADAPTER_" + profile.str() + "_",
@@ -1367,26 +1220,26 @@ std::string renderAdapterHeader(const SemanticDefinition& def,
     out << "#define " << guard << "\n\n";
     out << "#include \"" << canonicalHeaderPath(def.info).generic_string() << "\"\n\n";
 
-    emitNamespaceOpen(out, def.info.namespaceComponents);
+    emitNamespaceOpen(w, def.info.namespaceComponents);
 
     const auto        baseName        = cppTypeNameFromInfo(def.info, versioning);
     const auto        cppNs           = cppNamespacePath(def.info.namespaceComponents);
     const std::string canonicalPrefix = cppNs.empty() ? "::abi::" : ("::" + cppNs + "::abi::");
     if (def.isService)
     {
-        emitLine(out, 0, "using " + baseName + "_Request = " + canonicalPrefix + baseName + "_Request;");
+        w.line("using " + baseName + "_Request = " + canonicalPrefix + baseName + "_Request;");
         if (def.response)
         {
-            emitLine(out, 0, "using " + baseName + "_Response = " + canonicalPrefix + baseName + "_Response;");
+            w.line("using " + baseName + "_Response = " + canonicalPrefix + baseName + "_Response;");
         }
-        emitLine(out, 0, "using " + baseName + " = " + baseName + "_Request;");
+        w.line("using " + baseName + " = " + baseName + "_Request;");
     }
     else
     {
-        emitLine(out, 0, "using " + baseName + " = " + canonicalPrefix + baseName + ";");
+        w.line("using " + baseName + " = " + canonicalPrefix + baseName + ";");
     }
 
-    emitNamespaceClose(out, def.info.namespaceComponents);
+    emitNamespaceClose(w, def.info.namespaceComponents);
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
 }

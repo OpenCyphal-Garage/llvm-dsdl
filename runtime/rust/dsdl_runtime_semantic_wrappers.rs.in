@@ -1,6 +1,3 @@
-// Template source for tools/runtime/generate_runtime_semantic_wrappers.py.
-// Edit this file, then regenerate `dsdl_runtime_semantic_wrappers.rs`.
-
 #[cfg(feature = "std")]
 type DsdlBackingVec<T> = std::vec::Vec<T>;
 

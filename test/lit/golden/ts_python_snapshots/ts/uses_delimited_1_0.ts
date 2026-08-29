@@ -24,7 +24,7 @@ export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
   let offsetBits = 0;
   const mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0 = (capacityBits: number): boolean => 96 <= capacityBits;
   const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
-  
+
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(out.length * 8)) {
     throw new Error("serialization buffer too small");
   }
@@ -52,7 +52,7 @@ export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
 
 export function deserializeUsesDelimited(bytes: Uint8Array): { value: UsesDelimited; consumed: number } {
   const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
-  
+
   const value = {} as UsesDelimited;
   let offsetBits = 0;
   offsetBits = Math.trunc((offsetBits + 7) / 8) * 8;

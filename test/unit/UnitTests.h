@@ -147,9 +147,9 @@ bool runScriptedBodyPlanTests();
 /// @return True when every case in the suite passed.
 bool runScriptedOperationPlanTests();
 
-/// @brief Runs the HelperBindingRenderTests suite.
+/// @brief Runs the HelperBodyPlanTests suite.
 /// @return True when every case in the suite passed.
-bool runHelperBindingRenderTests();
+bool runHelperBodyPlanTests();
 
 /// @brief Runs the HelperBindingNamingTests suite.
 /// @return True when every case in the suite passed.

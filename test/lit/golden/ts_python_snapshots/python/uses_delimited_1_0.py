@@ -43,7 +43,7 @@ def _serialize_UsesDelimited(value: UsesDelimited) -> bytes:
         return 96 <= capacity_bits
     def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
         return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)
-    
+
     if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
     nested_aligned_offset_bits = ((offset_bits + 7) // 8) * 8
@@ -68,7 +68,7 @@ def _deserialize_UsesDelimited(data: bytes | bytearray | memoryview) -> tuple[Us
     data = bytes(data)
     def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(payload_bytes: int, remaining_bytes: int) -> bool:
         return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)
-    
+
     value = UsesDelimited()
     offset_bits = 0
     offset_bits = ((offset_bits + 7) // 8) * 8

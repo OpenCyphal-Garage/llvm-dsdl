@@ -57,7 +57,7 @@ def _serialize_Helpers(value: Helpers) -> bytes:
         return int(value) & 255
     def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
         return (value >= 0) and (value <= 5)
-    
+
     if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(len(out) * 8):
         raise ValueError("serialization buffer too small")
     dsdl_runtime.write_signed(out, offset_bits, 13, int(mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(int(value.a))), True)
@@ -90,7 +90,7 @@ def _deserialize_Helpers(data: bytes | bytearray | memoryview) -> tuple[Helpers,
         return int(value) & 255
     def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(value: int) -> bool:
         return (value >= 0) and (value <= 5)
-    
+
     value = Helpers()
     offset_bits = 0
     a_raw = dsdl_runtime.read_signed(data, offset_bits, 13)
