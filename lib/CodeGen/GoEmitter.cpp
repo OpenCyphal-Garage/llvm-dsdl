@@ -25,6 +25,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>

@@ -7,12 +7,13 @@
 
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 
-#include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 
 namespace llvmdsdl
