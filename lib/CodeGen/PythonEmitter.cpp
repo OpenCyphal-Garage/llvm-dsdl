@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 
+#include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.

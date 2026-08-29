@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
+#include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
 #include <cctype>
