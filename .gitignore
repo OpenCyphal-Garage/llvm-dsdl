@@ -43,6 +43,7 @@ nunavut_out
 
 #dsdlc
 dsdl_out
+dsdl_out_*
 
 # MkDocs output
 site/

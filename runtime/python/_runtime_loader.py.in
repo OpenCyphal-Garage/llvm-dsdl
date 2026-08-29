@@ -5,9 +5,6 @@
 #
 #===----------------------------------------------------------------------===#
 
-# Template source for tools/runtime/generate_runtime_semantic_wrappers.py.
-# Edit this file, then regenerate `_runtime_loader.py`.
-
 #===----------------------------------------------------------------------===#
 #
 # @file
