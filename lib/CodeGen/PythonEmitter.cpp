@@ -26,7 +26,6 @@
 
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
-#include <algorithm>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
 #include <map>
@@ -35,7 +34,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <cstddef>
 #include <cstdint>
 #include <system_error>
 #include <utility>

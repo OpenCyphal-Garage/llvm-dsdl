@@ -26,7 +26,6 @@
 
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
-#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <map>

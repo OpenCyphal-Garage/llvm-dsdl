@@ -44,7 +44,6 @@
 #include <vector>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/CHeaderRender.h"

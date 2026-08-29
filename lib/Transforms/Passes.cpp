@@ -39,7 +39,6 @@
 #include <set>
 #include <string>
 #include <vector>
-#include <functional>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>

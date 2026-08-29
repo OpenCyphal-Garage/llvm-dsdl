@@ -37,7 +37,6 @@
 #include <vector>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
