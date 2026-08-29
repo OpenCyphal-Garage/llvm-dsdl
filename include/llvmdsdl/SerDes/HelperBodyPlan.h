@@ -249,7 +249,8 @@ void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling);
 /// deserialisation of a signed field has to put the sign bit back.
 ///
 /// @param[in] kind Wire category of the field.
-/// @param[in] bits Wire width; a width of zero or above 64 has no helper.
+/// @param[in] bits Wire width. A width of 64 leaves nothing to normalise, so every
+///            kind answers @ref HelperBodyKind::Identity there.
 /// @param[in] saturated Whether the field's cast mode is saturated.
 /// @param[in] direction Which way the helper runs.
 /// @return The shape, with the operands it needs. The symbol is left empty.

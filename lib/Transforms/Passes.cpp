@@ -34,6 +34,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <set>
@@ -228,12 +229,16 @@ mlir::Value lowerScalarHelperBody(const llvmdsdl::HelperBody& body,
         return value;
 
     case llvmdsdl::HelperBodyKind::Mask: {
+        // helperBodyForScalar only asks for a mask below the full width; at 64 it answers
+        // Identity, because the shift that would build the mask has no defined result.
+        assert(bits < 64U);
         const auto mask      = static_cast<std::int64_t>((UINT64_C(1) << bits) - UINT64_C(1));
         auto       maskConst = mlir::arith::ConstantIntOp::create(builder, loc, mask, 64);
         return mlir::arith::AndIOp::create(builder, loc, value, maskConst).getResult();
     }
 
     case llvmdsdl::HelperBodyKind::SaturateUnsigned: {
+        assert(bits < 64U);
         const auto mask      = static_cast<std::int64_t>((UINT64_C(1) << bits) - UINT64_C(1));
         auto       maskConst = mlir::arith::ConstantIntOp::create(builder, loc, mask, 64);
         auto       over = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
@@ -250,6 +255,9 @@ mlir::Value lowerScalarHelperBody(const llvmdsdl::HelperBody& body,
     }
 
     case llvmdsdl::HelperBodyKind::SignExtend: {
+        // Sign extension needs a sign bit to propagate and a width to propagate it into,
+        // so helperBodyForScalar asks for it only strictly between those bounds.
+        assert(bits > 0U && bits < 64U);
         const std::uint64_t maskU       = (UINT64_C(1) << bits) - UINT64_C(1);
         const std::uint64_t signU       = UINT64_C(1) << (bits - 1U);
         const std::uint64_t extendMaskU = ~maskU;
@@ -267,6 +275,10 @@ mlir::Value lowerScalarHelperBody(const llvmdsdl::HelperBody& body,
 
     case llvmdsdl::HelperBodyKind::StatusGuard:
     case llvmdsdl::HelperBodyKind::TagMembership:
+        // Neither is a scalar helper: they answer a status rather than normalising a value,
+        // and the C backend builds them elsewhere. Returning the argument would look like a
+        // helper that does nothing rather than like the mistake it is.
+        assert(false && "helper body shape is not a scalar normalisation");
         break;
     }
     return value;

@@ -1,0 +1,19 @@
+[package]
+name = "llvmdsdl_generated"
+version = "0.2.3"
+edition = "2021"
+
+[package.metadata.llvmdsdl]
+generator-version = "0.2.3"
+rust-profile = "std"
+rust-runtime-specialization = "portable"
+rust-memory-mode = "max-inline"
+rust-inline-threshold-bytes = 256
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+runtime-fast = []
