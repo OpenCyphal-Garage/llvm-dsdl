@@ -1805,7 +1805,6 @@ std::string renderPackageJson(const TsEmitOptions& options)
     const auto* const runtimeSpecialization =
         options.runtimeSpecialization == TsRuntimeSpecialization::Fast ? "fast" : "portable";
     std::ostringstream out;
-    SourceWriter       w = makeTsWriter(out);
     out << "{\n";
     out << R"(  "name": ")" << options.moduleName << "\",\n";
     out << R"(  "version": ")" << llvmdsdl::kVersionString << "\",\n";

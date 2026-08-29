@@ -248,7 +248,6 @@ public:
     std::string abiQualifiedTypeName(const SemanticTypeRef& ref) const
     {
         std::ostringstream out;
-        SourceWriter       w = makeObjectAbiWriter(out);
         out << "::";
         for (const auto& ns : ref.namespaceComponents)
         {

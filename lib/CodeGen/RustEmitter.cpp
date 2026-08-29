@@ -357,7 +357,6 @@ public:
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
         std::ostringstream out;
-        SourceWriter       w = makeRustWriter(out);
         out << "crate";
         for (const auto& ns : ref.namespaceComponents)
         {
@@ -1703,7 +1702,6 @@ std::string renderCargoToml(const RustEmitOptions& options)
     };
 
     std::ostringstream out;
-    SourceWriter       w = makeRustWriter(out);
     out << "[package]\n";
     out << "name = \"" << options.crateName << "\"\n";
     out << "version = \"" << llvmdsdl::kVersionString << "\"\n";
