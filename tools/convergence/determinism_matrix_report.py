@@ -29,11 +29,8 @@ MATRIX: Dict[str, List[str]] = {
     "go": [r"^llvmdsdl-uavcan-go-determinism$"],
     "ts": [r"^llvmdsdl-uavcan-ts-determinism$"],
     "python": [r"^llvmdsdl-uavcan-python-determinism$"],
-    # The obj backend was absent from this table until its archive turned out to be
-    # nondeterministic, which the report could not have reported: a backend that is not listed
-    # here is not "covered", it is invisible, and the summary said "Missing Backends: None"
-    # throughout. Adding a backend to dsdlc means adding it here.
-    "obj": [r"^llvmdsdl-uavcan-obj-determinism$"],
+    # A backend that is not listed here is not "covered", it is invisible, and the summary reports
+    # "Missing Backends: None" throughout. Adding a backend to dsdlc means adding it here.
 }
 
 

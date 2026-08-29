@@ -56,7 +56,6 @@ def _dsdlc_extension_impl(module_ctx):
                 root = namespace.root,
                 language = namespace.language,
                 library_name = namespace.library_name or namespace.name,
-                archive_name = namespace.archive_name,
                 options = namespace.options,
             )
 
@@ -67,7 +66,6 @@ _namespace = tag_class(
         "anchor": attr.label(default = Label("@@//:MODULE.bazel")),
         "language": attr.string(default = "c"),
         "library_name": attr.string(),
-        "archive_name": attr.string(default = "llvmdsdl_generated"),
         "options": attr.string_list(),
     },
     doc = "Generates one root namespace at fetch time; see repositories.bzl for why fetch time.",

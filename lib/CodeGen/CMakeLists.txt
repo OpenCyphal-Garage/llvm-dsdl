@@ -73,7 +73,6 @@ add_library(llvmdsdlCodeGen
   EmitStepRender.cpp
   CEmitter.cpp
   CppEmitter.cpp
-  CppObjectAbiEmitter.cpp
   GoEmitter.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
@@ -86,11 +85,11 @@ add_library(llvmdsdlCodeGen
   NativeEmitterTraversal.cpp
   NativeFunctionSkeleton.cpp
   MlirLoweredFacts.cpp
-  ObjectEmitter.cpp
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp
   NamingManifest.cpp
+  SchemaNaming.cpp
   SectionNaming.cpp
   ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
@@ -114,10 +113,34 @@ target_link_libraries(llvmdsdlCodeGen
   MLIRFuncToEmitC
   MLIRArithToEmitC
   MLIRSCFToEmitC
+  MLIRReconcileUnrealizedCasts
   MLIRParser
   MLIRTargetCpp
   MLIRTransforms
+  # The object lane finishes the lowering the C lane hands to EmitC, then assembles it. The
+  # target backends are linked whole so that emitting for a target is a matter of naming it.
+  MLIRSCFToControlFlow
+  MLIRControlFlowToLLVM
+  MLIRArithToLLVM
+  MLIRFuncToLLVM
+  MLIRTargetLLVMIRExport
+  MLIRBuiltinToLLVMIRTranslation
+  MLIRLLVMToLLVMIRTranslation
 )
+
+# The object lane needs the target backends and the optimisation pipeline. Where the build
+# provides a single shared LLVM, that is what to link: adding the static component archives beside
+# it puts two copies of LLVM in one binary, and analysis keys are per-copy statics -- the pass
+# manager then looks up an analysis registered in the other copy and follows a null.
+if(LLVM_LINK_LLVM_DYLIB)
+  target_link_libraries(llvmdsdlCodeGen PUBLIC LLVM)
+else()
+  llvm_map_components_to_libnames(LLVMDSDL_OBJECT_COMPONENTS
+    AllTargetsCodeGens AllTargetsAsmParsers AllTargetsDescs AllTargetsInfos
+    Target CodeGen MC Core Support Passes
+  )
+  target_link_libraries(llvmdsdlCodeGen PUBLIC ${LLVMDSDL_OBJECT_COMPONENTS})
+endif()
 
 # The generated EmbeddedRuntimeSources.inc lands in the build tree; the compiler
 # depfile then makes EmbeddedRuntimeSources.cpp recompile whenever a runtime

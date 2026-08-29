@@ -12,12 +12,11 @@ dsdlc = use_extension("@rules_dsdl//:extensions.bzl", "dsdlc")
 # no list of transitive dependencies to maintain and no way to leave one out.
 dsdlc.namespace(name = "lanyard", root = "dsdl/lanyard")
 
-# The same definitions as a prebuilt archive. Same one line, different backend.
+# The same definitions already assembled. Same one line, different backend.
 dsdlc.namespace(
     name = "lanyard_prebuilt",
     root = "dsdl/lanyard",
     language = "obj",
-    options = ["--target-endianness", "little"],
 )
 
 use_repo(dsdlc, "dsdlc", "lanyard", "lanyard_prebuilt")

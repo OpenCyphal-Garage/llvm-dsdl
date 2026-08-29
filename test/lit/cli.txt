@@ -8,32 +8,10 @@
 # RUN: not %dsdlc --target-language cpp --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc --target-language c --py-package bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_PY
 # RUN: not %dsdlc --target-language ast -MD %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_MD
-# RUN: not %dsdlc --target-language obj %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_ENDIAN_REQUIRED
-# RUN: not %dsdlc --target-language c --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ENDIAN
-# RUN: %dsdlc --target-language obj --target-endianness little --jobs 3 --dry-run --list-outputs --outdir %t.obj-jobs %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
 # RUN: %dsdlc --target-language ast --jobs 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: %dsdlc --target-language ast -j 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
-# RUN: not %dsdlc --target-language obj --target-endianness little --jobs 0 %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_JOBS
-# RUN: not %dsdlc --target-language obj --target-endianness little --jobs nope %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_JOBS
-# RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
-# RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_HEADERS
+# RUN: %dsdlc --target-language obj --outdir %t.obj %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ
 
-# ...and a real run puts them where the listing said, in the layout the c backend uses, so that
-# -I<outdir> plus the archive is a complete interface from one invocation.
-# RUN: rm -rf %t.objreal && %dsdlc --target-language obj --target-endianness little --outdir %t.objreal %S/fixtures >/dev/null 2>&1
-# RUN: test -f %t.objreal/dsdl_runtime.h
-# RUN: test -f %t.objreal/llvmdsdl_generated.a
-# RUN: test -f %t.objreal/fixtures/vendor/Widget_1_0.h
-
-# The staging directory stays private: nothing there is a declared output.
-# RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_NO_STAGE
-# OBJ_NO_STAGE-NOT: .obj_stage_c
-# RUN: %dsdlc --target-language obj --obj-abi-language cpp --target-endianness little --dry-run --list-outputs --outdir %t.obj-cpp %S/fixtures | FileCheck %s --check-prefix=OBJ_CPP_OUTPUTS
-# RUN: not %dsdlc --target-language obj --obj-abi-language bad --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ABI_LANG
-# RUN: not %dsdlc --target-language obj --target-endianness little --target-triple 'x;rm -rf /' --outdir %t.obj-bad-triple %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_TRIPLE
-# RUN: not %dsdlc --target-language obj --target-endianness little --obj-archive-name ../../evil --outdir %t.obj-bad-archive %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ARCHIVE
-# RUN: not %dsdlc --target-language c --obj-abi-language cpp %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ABI_LANG
-# RUN: %dsdlc --target-language obj --target-endianness little --obj-no-archive --dry-run --list-outputs --outdir %t.obj-no-archive %S/fixtures | FileCheck %s --check-prefix=OBJ_NO_ARCHIVE
 # RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
@@ -50,12 +28,11 @@
 # HELP-DAG: --list-outputs
 # HELP-DAG: --version, -V
 # HELP-DAG: --cpp-profile <std|pmr|both|autosar>
-# HELP-DAG: --target-endianness <little|big>
-# HELP-DAG: --obj-archive-name <name>
-# HELP-DAG: --obj-abi-language
-# HELP-DAG: --obj-no-archive
 
 # VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
+
+# The lane publishes headers beside objects, and writes no C.
+# OBJ: files generated:
 
 # MISSING_LANGUAGE: --target-language is required
 # MISSING_LANGUAGE: Usage: dsdlc --target-language
@@ -73,63 +50,22 @@
 
 # GATED_PY: --py-* is only valid when --target-language is 'python'
 
-# GATED_MD: -MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python, obj
+# GATED_MD: -MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python
 
-# OBJ_ENDIAN_REQUIRED: --target-endianness is required when --target-language is 'obj'
 
-# OBJ_GATED_ENDIAN: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
 
-# OBJ_GATED_ABI_LANG: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
 
 # BAD_JOBS: invalid --jobs value:
 
-# OBJ_BAD_ABI_LANG: invalid --obj-abi-language value: bad
 
-# OBJ_BAD_TRIPLE: invalid --target-triple 'x;rm -rf /'
 
-# OBJ_BAD_ARCHIVE: invalid --obj-archive-name '../../evil'
 
-# OBJ_CPP_OUTPUTS: Delimited_1_0_abi.o
-# OBJ_CPP_OUTPUTS: EmptyService_1_0_abi.o
-# OBJ_CPP_OUTPUTS: Helpers_1_0_abi.o
-# OBJ_CPP_OUTPUTS: UnionTag_1_0_abi.o
-# OBJ_CPP_OUTPUTS: UsesDelimited_1_0_abi.o
-# OBJ_CPP_OUTPUTS: Widget_1_0_abi.o
-# OBJ_CPP_OUTPUTS: Delimited_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: EmptyService_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: Helpers_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: UnionTag_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: UsesDelimited_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: Widget_1_0_c_shim.o
-# OBJ_CPP_OUTPUTS: Delimited_1_0.o
-# OBJ_CPP_OUTPUTS: EmptyService_1_0.o
-# OBJ_CPP_OUTPUTS: Helpers_1_0.o
-# OBJ_CPP_OUTPUTS: UnionTag_1_0.o
-# OBJ_CPP_OUTPUTS: UsesDelimited_1_0.o
-# OBJ_CPP_OUTPUTS: Widget_1_0.o
-# OBJ_CPP_OUTPUTS: llvmdsdl_generated.a
 
-# OBJ_OUTPUTS: Delimited_1_0.o
-# OBJ_OUTPUTS: EmptyService_1_0.o
-# OBJ_OUTPUTS: Helpers_1_0.o
-# OBJ_OUTPUTS: UnionTag_1_0.o
-# OBJ_OUTPUTS: UsesDelimited_1_0.o
-# OBJ_OUTPUTS: Widget_1_0.o
-# OBJ_OUTPUTS: llvmdsdl_generated.a
 
 # The headers are declared outputs too. An archive is only linkable; the headers are the only way to
 # call what is in it, so a build system that could not discover them would have to run a second
 # backend purely to get them -- and keep two invocations' options in agreement.
-# OBJ_HEADERS: dsdl_runtime.h
-# OBJ_HEADERS: Widget_1_0.h
 
-# OBJ_NO_ARCHIVE: Delimited_1_0.o
-# OBJ_NO_ARCHIVE: EmptyService_1_0.o
-# OBJ_NO_ARCHIVE: Helpers_1_0.o
-# OBJ_NO_ARCHIVE: UnionTag_1_0.o
-# OBJ_NO_ARCHIVE: UsesDelimited_1_0.o
-# OBJ_NO_ARCHIVE: Widget_1_0.o
-# OBJ_NO_ARCHIVE-NOT: llvmdsdl_generated.a
 
 # MISSING_VALUE_CPP: missing value for --cpp-profile
 # MISSING_VALUE_CPP: Usage: dsdlc --target-language

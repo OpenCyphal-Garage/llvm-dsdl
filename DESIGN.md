@@ -16,7 +16,9 @@ This repo ships three user-facing tools:
 - [`dsdl-opt`](tools/dsdl-opt/main.cpp): pass-driver over the custom dialect.
 - [`dsdld`](tools/dsdld/main.cpp): language server for editor workflows.
 
-Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`, and `obj`.
+Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, and `python`.
+`obj` is recognised and unimplemented; see
+[Direct Object Lowering](docs/development/direct-object-lowering.md).
 
 ## 2. Realized Architecture
 
@@ -35,11 +37,9 @@ flowchart LR
   I --> K{"Backend path"}
   K --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
   K --> O["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
-  K --> N["Obj: compile generated C\n=> .o (+ optional .a)"]
   E --> L["Header/type/model emission"]
   J --> M["Generated sources"]
   O --> M
-  N --> M
 ```
 
 A useful way to read this diagram is: syntax and semantics happen once, wire-layout intent is normalized once, then that normalized intent is reused broadly.
@@ -203,22 +203,11 @@ Key file:
 
 - [`lib/CodeGen/PythonEmitter.cpp`](lib/CodeGen/PythonEmitter.cpp)
 
-### 4.7 Object backend (`emitObject`)
+### 4.7 Object backend (`obj`)
 
-The object backend emits static `.o` artifacts and optional `.a` archives using an executable-contract pass lane with explicit target-endianness selection.
-
-Key files:
-
-- [`include/llvmdsdl/CodeGen/ObjectEmitter.h`](include/llvmdsdl/CodeGen/ObjectEmitter.h)
-- [`lib/CodeGen/ObjectEmitter.cpp`](lib/CodeGen/ObjectEmitter.cpp)
-
-Current path:
-
-1. Clone MLIR module and stamp `llvmdsdl.target_endianness`.
-2. Run `lower-dsdl-exec`, `dsdl-annotate-aliasability`, `dsdl-legalize-endianness`, optional optimize.
-3. For `--obj-abi-language c` (default), stage C artifacts and invoke host C compiler to produce `.o`.
-4. For `--obj-abi-language cpp`, stage canonical profile-agnostic C++ ABI artifacts under `.obj_stage_cpp`, emit C shim wrappers with distinct shim symbols, compile with host C++ compiler, and include C-lane objects.
-5. Optionally invoke archiver to produce `.a`.
+`--target-language obj` is recognised and exits with `not implemented`. The design for lowering
+the DSDL dialect through LLVM IR to object code, its three phases and its acceptance gates, is in
+[Direct Object Lowering](docs/development/direct-object-lowering.md).
 
 ## 5. Runtime Design
 
@@ -317,7 +306,8 @@ The architecture is intentionally hard-cut and single-path: shared lowering cont
 Current tradeoffs:
 
 - C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
-- The `obj` lane is staged through generated C and toolchain compilation; direct LLVM object emission is tracked in the roadmap.
+- Direct LLVM object emission is designed but unbuilt, and gated on five acceptance properties;
+  see [Direct Object Lowering](docs/development/direct-object-lowering.md).
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
 - Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.

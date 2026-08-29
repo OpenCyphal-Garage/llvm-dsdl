@@ -515,89 +515,6 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
       LABELS "integration;tools;mlir"
   )
 
-  if(CMAKE_C_COMPILER)
-    add_test(
-      NAME llvmdsdl-obj-backend-smoke
-      COMMAND
-        ${CMAKE_COMMAND}
-          -DDSDLC=$<TARGET_FILE:dsdlc>
-          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
-          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-backend-smoke-out
-          -DC_COMPILER=${CMAKE_C_COMPILER}
-          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjBackendSmoke.cmake
-    )
-
-    set_tests_properties(
-      llvmdsdl-obj-backend-smoke
-      PROPERTIES
-        LABELS "integration;fixtures;obj"
-    )
-
-    # As with the obj-cpp lane: the published C headers under the other spelling.
-    add_test(
-      NAME llvmdsdl-obj-backend-smoke-versioned-names
-      COMMAND
-        ${CMAKE_COMMAND}
-          -DDSDLC=$<TARGET_FILE:dsdlc>
-          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
-          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-backend-smoke-versioned-names-out
-          -DC_COMPILER=${CMAKE_C_COMPILER}
-          -DTYPE_NAME_SCHEME=versioned
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjBackendSmoke.cmake
-    )
-
-    set_tests_properties(
-      llvmdsdl-obj-backend-smoke-versioned-names
-      PROPERTIES
-        LABELS "integration;fixtures;obj;naming"
-    )
-
-    if(CMAKE_CXX_COMPILER)
-      add_test(
-        NAME llvmdsdl-obj-cpp-backend-smoke
-        COMMAND
-          ${CMAKE_COMMAND}
-            -DDSDLC=$<TARGET_FILE:dsdlc>
-            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
-            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-cpp-backend-smoke-out
-            -DC_COMPILER=${CMAKE_C_COMPILER}
-            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjCppBackendSmoke.cmake
-      )
-
-      set_tests_properties(
-        llvmdsdl-obj-cpp-backend-smoke
-        PROPERTIES
-          LABELS "integration;fixtures;obj;obj-cpp;release-blocking"
-      )
-
-      # The obj backend publishes the headers a consumer writes against, so both spellings of them
-      # are compiled and run. Until this lane existed the backend silently ignored the flag.
-      add_test(
-        NAME llvmdsdl-obj-cpp-backend-smoke-versioned-names
-        COMMAND
-          ${CMAKE_COMMAND}
-            -DDSDLC=$<TARGET_FILE:dsdlc>
-            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
-            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-cpp-backend-smoke-versioned-names-out
-            -DC_COMPILER=${CMAKE_C_COMPILER}
-            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
-            -DTYPE_NAME_SCHEME=versioned
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjCppBackendSmoke.cmake
-      )
-
-      set_tests_properties(
-        llvmdsdl-obj-cpp-backend-smoke-versioned-names
-        PROPERTIES
-          LABELS "integration;fixtures;obj;obj-cpp;release-blocking;naming"
-      )
-    else()
-      message(STATUS "Skipping obj-cpp backend smoke test: C++ compiler unavailable")
-    endif()
-  else()
-    message(STATUS "Skipping obj backend smoke test: C compiler unavailable")
-  endif()
-
   add_test(
     NAME llvmdsdl-fixtures-ts-generation-hardening
     COMMAND
@@ -3044,22 +2961,6 @@ set_tests_properties(
 )
 
 add_test(
-  NAME llvmdsdl-uavcan-obj-determinism
-  COMMAND
-    ${CMAKE_COMMAND}
-      -DDSDLC=$<TARGET_FILE:dsdlc>
-      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
-      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-obj-determinism-out
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanObjDeterminism.cmake
-)
-
-set_tests_properties(
-  llvmdsdl-uavcan-obj-determinism
-  PROPERTIES
-    LABELS "integration;uavcan;obj;slow;determinism"
-)
-
-add_test(
   NAME llvmdsdl-uavcan-cpp-generation
   COMMAND
     ${CMAKE_COMMAND}
@@ -3623,4 +3524,249 @@ if(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
       LABELS "integration;uavcan;fuzz;sanitizer;slow"
       TIMEOUT 2400
   )
+endif()
+
+# Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
+# through LLVM IR has and a generator that writes C and drives a host compiler does not. All five
+# hold, so a gate reporting the lowering absent is a regression rather than a gap.
+option(LLVMDSDL_DIRECT_LOWERING_STRICT
+       "Treat an absent direct lowering as a failure rather than as a gap."
+       ON)
+
+if(PYTHON_EXECUTABLE)
+  set(llvmdsdl_direct_lowering_gates
+      1 ir-has-no-emitc
+      2 emits-without-c-compiler
+      3 writes-no-c-intermediates
+      4 cross-target-without-toolchain
+      5 object-matches-c-lane)
+
+  list(LENGTH llvmdsdl_direct_lowering_gates llvmdsdl_direct_lowering_gate_entries)
+  math(EXPR llvmdsdl_direct_lowering_last "${llvmdsdl_direct_lowering_gate_entries} - 1")
+
+  foreach(index RANGE 0 ${llvmdsdl_direct_lowering_last} 2)
+    list(GET llvmdsdl_direct_lowering_gates ${index} gate_number)
+    math(EXPR name_index "${index} + 1")
+    list(GET llvmdsdl_direct_lowering_gates ${name_index} gate_name)
+
+    add_test(
+      NAME llvmdsdl-direct-lowering-gate-${gate_number}-${gate_name}
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DGATE=${gate_number}
+          -DGATE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/direct_lowering_gates.py
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DDSDL_OPT=$<TARGET_FILE:dsdl-opt>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DCC_COMPILER=${CMAKE_C_COMPILER}
+          -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/direct-lowering-gate-${gate_number}
+          -DSTRICT=${LLVMDSDL_DIRECT_LOWERING_STRICT}
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunDirectLoweringGate.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-direct-lowering-gate-${gate_number}-${gate_name}
+      PROPERTIES
+        LABELS "integration;direct-lowering-gate"
+    )
+  endforeach()
+
+  # Gate 5 cannot run until the obj lane exists, so its harness is proven against the C lane on
+  # both sides. This is what stops it being written wrong while it cannot be exercised.
+  add_test(
+    NAME llvmdsdl-direct-lowering-gate-harness-selftest
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/gates/direct_lowering_gates.py
+        --selftest
+        --dsdlc $<TARGET_FILE:dsdlc>
+        --fixtures ${LLVMDSDL_FIXTURES_ROOT}
+        --cc ${CMAKE_C_COMPILER}
+  )
+
+  set_tests_properties(
+    llvmdsdl-direct-lowering-gate-harness-selftest
+    PROPERTIES
+      LABELS "integration;direct-lowering-gate"
+  )
+endif()
+
+# The generated-C assertions in RunUavcanGeneration match by substring, and the two renderers
+# spell the same call differently. This holds them to matching both and to rejecting a body
+# with the call removed, reading the patterns out of the checker so it cannot drift.
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-generation-assertion-selftest
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/gates/generation_assertion_selftest.py
+        --checker ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGeneration.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-generation-assertion-selftest
+    PROPERTIES
+      LABELS "integration;uavcan;selftest"
+  )
+endif()
+
+# The delimited forward-compatibility skip, checked by decoding rather than by reading the
+# generated text: the outer offset must advance by the declared header length even when the
+# nested decode understood less than that.
+if(CMAKE_C_COMPILER)
+  add_test(
+    NAME llvmdsdl-delimited-forward-compat-skip
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/delimited-forward-compat-skip-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunDelimitedForwardCompatSkip.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-delimited-forward-compat-skip
+    PROPERTIES
+      LABELS "integration;delimited;release-blocking"
+  )
+endif()
+
+# An object lowering addresses a member by position, and the struct it must agree with is
+# emitted by different code from different information. This holds the two against each other
+# and then asks the compiler what the layout really is.
+if(PYTHON_EXECUTABLE AND CMAKE_C_COMPILER)
+  add_test(
+    NAME llvmdsdl-member-layout-crosscheck
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCROSSCHECK_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/member_layout_crosscheck.py
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/member-layout-crosscheck-out
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMemberLayoutCrosscheck.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-member-layout-crosscheck
+    PROPERTIES
+      LABELS "integration;uavcan;abi;release-blocking"
+  )
+endif()
+
+# The struct an object addresses members within is derived for the target it is emitted for, and
+# the host is only one target. A variable-length array holds its count in a `size_t`, so on a
+# 32-bit target the count is half the width it is here and every member after it moves. The probe
+# is `_Static_assert`s so that it needs a compiler for the target and nothing more.
+find_program(LLVMDSDL_CLANG NAMES clang HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+if(PYTHON_EXECUTABLE AND LLVMDSDL_CLANG)
+  set(llvmdsdl_layout_targets host "" riscv32 riscv32-unknown-elf armv7m thumbv7m-none-eabi)
+  list(LENGTH llvmdsdl_layout_targets _count)
+  math(EXPR _last "${_count} / 2 - 1")
+  foreach(_i RANGE ${_last})
+    math(EXPR _n "${_i} * 2")
+    math(EXPR _t "${_n} + 1")
+    list(GET llvmdsdl_layout_targets ${_n} _label)
+    list(GET llvmdsdl_layout_targets ${_t} _triple)
+    set(_probe "${_triple}")
+    if(NOT _probe)
+      set(_probe "${CMAKE_C_COMPILER_TARGET}")
+    endif()
+    if(NOT _probe)
+      execute_process(COMMAND ${LLVMDSDL_CLANG} -dumpmachine OUTPUT_VARIABLE _probe
+                      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+    add_test(
+      NAME llvmdsdl-target-layout-crosscheck-${_label}
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DDSDL_OPT=$<TARGET_FILE:dsdl-opt>
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DCLANG=${LLVMDSDL_CLANG}
+          -DTARGET_TRIPLE=${_triple}
+          -DPROBE_TRIPLE=${_probe}
+          -DFIXTURES=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures
+          -DCROSSCHECK_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/target_layout_crosscheck.py
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/target-layout-${_label}-out
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunTargetLayoutCrosscheck.cmake
+    )
+    set_tests_properties(
+      llvmdsdl-target-layout-crosscheck-${_label}
+      PROPERTIES
+        LABELS "integration;object;abi;release-blocking"
+    )
+  endforeach()
+endif()
+
+# The serialisation primitives are `static inline` in the runtime header, so an object has no
+# symbol to link against and builds its own. Two implementations of one wire format.
+find_program(LLVMDSDL_MLIR_OPT NAMES mlir-opt HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+find_program(LLVMDSDL_MLIR_TRANSLATE NAMES mlir-translate HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+find_program(LLVMDSDL_LLC NAMES llc HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+if(CMAKE_C_COMPILER AND LLVMDSDL_MLIR_OPT AND LLVMDSDL_MLIR_TRANSLATE AND LLVMDSDL_LLC)
+  add_test(
+    NAME llvmdsdl-runtime-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDL_OPT=$<TARGET_FILE:dsdl-opt>
+        -DMLIR_OPT=${LLVMDSDL_MLIR_OPT}
+        -DMLIR_TRANSLATE=${LLVMDSDL_MLIR_TRANSLATE}
+        -DLLC=${LLVMDSDL_LLC}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DRUNTIME_DIR=${LLVMDSDL_SOURCE_DIR}/runtime
+        -DDRIVER_DIR=${CMAKE_CURRENT_SOURCE_DIR}/runtime-parity
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/runtime-parity-out
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunRuntimeParity.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-runtime-parity
+    PROPERTIES
+      LABELS "integration;object;release-blocking"
+  )
+endif()
+
+# Prose is not compiled, linted or read by any other test, so a page that has been overwritten
+# with copies of itself builds and publishes like any other.
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-docs-page-repetition
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/docs/check_page_repetition.py
+        --docs-dir ${LLVMDSDL_SOURCE_DIR}/docs
+  )
+  set_tests_properties(
+    llvmdsdl-docs-page-repetition
+    PROPERTIES
+      LABELS "integration;docs;release-blocking"
+  )
+endif()
+
+# The names an object lowering emits under are stamped by a backend, and the header it links
+# against is emitted separately. Versioning moves both, so both spellings are checked.
+if(PYTHON_EXECUTABLE)
+  foreach(naming_mode unversioned versioned)
+    set(versioned_flag OFF)
+    if(naming_mode STREQUAL versioned)
+      set(versioned_flag ON)
+    endif()
+    add_test(
+      NAME llvmdsdl-schema-symbol-parity-${naming_mode}
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DVERSIONED_TYPE_NAMES=${versioned_flag}
+          -DPARITY_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/schema_symbol_parity.py
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/schema-symbol-parity-${naming_mode}-out
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunSchemaSymbolParity.cmake
+    )
+    set_tests_properties(
+      llvmdsdl-schema-symbol-parity-${naming_mode}
+      PROPERTIES
+        LABELS "integration;uavcan;abi;release-blocking"
+    )
+  endforeach()
 endif()

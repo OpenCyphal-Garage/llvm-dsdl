@@ -41,7 +41,7 @@
       ]
     },
     {
-      "name": "round-trip (prebuilt archive)",
+      "name": "round-trip (prebuilt objects)",
       "run": [
         "./bazel-bin/roundtrip_prebuilt"
       ]

@@ -15,10 +15,14 @@
 # RUN: printf 'dl.Inner.1.0 inner\nuint8 tail\n@sealed\n' > %t/dsdl/dl/Outer.1.0.dsdl
 # RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c
 
-# The nested deserialize must receive a SEPARATE consumed variable (not the header size)...
+# The structural facts that survive either renderer: a 32-bit header is read, and the nested
+# type is decoded through its own entry point.
 # RUN: cat %t/c/dsdl/dl/Outer_1_0.c | FileCheck %s
-# CHECK: size_t _size_bytes_[[N:[0-9]+]] = (size_t)dsdl_runtime_get_u32(
-# CHECK: size_t _consumed_bytes_[[N]] = _size_bytes_[[N]];
-# CHECK: dl__dl__Inner__deserialize_({{.*}}&_consumed_bytes_[[N]]);
-# ...and the outer offset must advance by the header size, not the consumed count.
-# CHECK: offset_bits += _size_bytes_[[N]] * 8U;
+# CHECK: dsdl_runtime_get_u32(
+# CHECK: dl__dl__Inner__deserialize_(
+
+# Advancing by the header rather than by the consumed count cannot be read off the text
+# without naming one renderer's variables. It is checked by decoding instead, in
+# llvmdsdl-delimited-forward-compat-skip, which feeds a buffer where the two outcomes
+# differ by a whole byte and was confirmed to fail when the advance is taken from the
+# nested consumed count.

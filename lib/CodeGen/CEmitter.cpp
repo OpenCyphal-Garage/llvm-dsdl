@@ -19,6 +19,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
@@ -38,6 +39,7 @@
 #include <mlir/Support/LLVM.h>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -60,7 +62,20 @@
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Export.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -88,6 +103,18 @@ std::string sectionIRFunctionStem(const SemanticDefinition& def, const std::stri
            renderSectionSymbolSuffix(sectionName);
 }
 
+/// @brief The object a definition's serialisation is assembled into, beside its header.
+std::string objectFileName(const DiscoveredDefinition& info)
+{
+    auto name = headerFileName(info);
+    if ((name.size() >= 2U) && (name.substr(name.size() - 2U) == ".h"))
+    {
+        name.replace(name.size() - 2U, 2U, ".o");
+        return name;
+    }
+    return name + ".o";
+}
+
 std::string implFileName(const DiscoveredDefinition& info)
 {
     auto name = headerFileName(info);
@@ -100,16 +127,6 @@ std::string implFileName(const DiscoveredDefinition& info)
         name += ".c";
     }
     return name;
-}
-
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
-{
-    return renderDefinitionTypeName(CodegenNamingLanguage::C,
-                                    info.namespaceComponents,
-                                    info.shortName,
-                                    info.majorVersion,
-                                    info.minorVersion,
-                                    versioning);
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
@@ -729,123 +746,137 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     return out.str();
 }
 
-/// @brief Stamps the C member name for every field op in @p schema onto its `c_name` attribute.
-///
-/// The struct declaration in `emitSectionTypedef` and the member references in the generated
-/// serializer come from the same scope: the declaration reads it directly, the serializer reads it
-/// through this attribute, which `ConvertDSDLToEmitC` turns into `obj->`-qualified references. C
-/// naming is not a lowering decision, so lowering leaves the attribute unset and this is where it
-/// is filled in.
-/// @param[in] schema Cloned schema op for one definition.
-/// @param[in] def Semantic definition the schema was cloned from.
-/// @brief Rewrites, on the C backend's own clone, every C name lowering could only guess at.
-///
-/// Lowering writes the unversioned spelling because it does not know the backend's naming options
-/// and must produce one module the object and C backends share. The C backend clones the schema and
-/// restamps it here, which is the arrangement D18 settled on. Member names were the first thing that
-/// needed it; the type names beside them need it for the same reason, and leaving them out gave a
-/// header declaring `Foo_1_0` against an implementation defining `Foo`.
-void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
-{
-    const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
-    const NamingScope responseScope =
-        makeSectionFieldScope(CodegenNamingLanguage::C, def.response.has_value() ? *def.response : def.request);
-
-    const auto scopeFor = [&](mlir::Operation* const op) -> const NamingScope& {
-        const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section");
-        return (sectionAttr && sectionAttr.getValue() == "response") ? responseScope : requestScope;
-    };
-
-    schema.walk([&](mlir::Operation* const op) {
-        const llvm::StringRef opName = op->getName().getStringRef();
-        if ((opName != "dsdl.field") && (opName != "dsdl.io"))
-        {
-            return;
-        }
-        if (op->hasAttr("padding") || (op->getAttrOfType<mlir::StringAttr>("kind") &&
-                                       op->getAttrOfType<mlir::StringAttr>("kind").getValue() == "padding"))
-        {
-            return;
-        }
-        const auto nameAttr = op->getAttrOfType<mlir::StringAttr>("name");
-        if (!nameAttr)
-        {
-            return;
-        }
-        // An io op names no section of its own; the plan that encloses it does.
-        mlir::Operation* const sectionCarrier = (opName == "dsdl.io") ? op->getParentOp() : op;
-        op->setAttr("c_name",
-                    mlir::StringAttr::get(op->getContext(),
-                                          scopeFor(sectionCarrier)
-                                              .get(IdentifierRole::FieldName, nameAttr.getValue())));
-    });
-
-    mlir::MLIRContext* const context      = schema.getContext();
-    const std::string        baseTypeName = cTypeNameFromInfo(def.info, versioning);
-    schema.setAttr("c_type_name", mlir::StringAttr::get(context, baseTypeName));
-
-    schema.walk([&](mlir::Operation* const op) {
-        const llvm::StringRef opName = op->getName().getStringRef();
-        if (opName == "dsdl.serialization_plan")
-        {
-            // A service section appends its suffix to the *type* name, so the version sits before
-            // it rather than at the end. Composing from the base is what keeps that true.
-            std::string sectionTypeName = baseTypeName;
-            if (const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section"))
-            {
-                if (sectionAttr.getValue() == "request")
-                {
-                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
-                }
-                else if (sectionAttr.getValue() == "response")
-                {
-                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
-                }
-            }
-            op->setAttr("c_type_name", mlir::StringAttr::get(context, sectionTypeName));
-            op->setAttr("c_serialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
-            op->setAttr("c_deserialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
-            return;
-        }
-        if (opName != "dsdl.io")
-        {
-            return;
-        }
-        // A referenced composite is named by the same rule as the definition itself. The io op
-        // carries the reference's identity, so this re-renders rather than patching the string
-        // lowering left.
-        const auto fullNameAttr = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
-        const auto majorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
-        const auto minorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
-        if (!fullNameAttr || !majorAttr || !minorAttr)
-        {
-            return;
-        }
-        llvm::SmallVector<llvm::StringRef, 8> parts;
-        fullNameAttr.getValue().split(parts, '.');
-        if (parts.empty())
-        {
-            return;
-        }
-        const llvm::StringRef    shortName = parts.back();
-        std::vector<std::string> namespaceComponents;
-        namespaceComponents.reserve(parts.size() - 1U);
-        for (std::size_t i = 0; (i + 1U) < parts.size(); ++i)
-        {
-            namespaceComponents.emplace_back(parts[i].str());
-        }
-        op->setAttr("composite_c_type_name",
-                    mlir::StringAttr::get(context,
-                                          renderDefinitionTypeName(CodegenNamingLanguage::C,
-                                                                   namespaceComponents,
-                                                                   shortName,
-                                                                   static_cast<std::uint32_t>(majorAttr.getInt()),
-                                                                   static_cast<std::uint32_t>(minorAttr.getInt()),
-                                                                   versioning)));
-    });
-}
 
 }  // namespace
+
+/// @brief Clones the schemas @p target reaches, for their layout alone.
+///
+/// A C translation unit needs only the nested type's name, which its header supplies. An object
+/// addresses members by position, so it needs the nested type's layout, and that lives in the
+/// nested type's own schema. They are marked so that the body builder passes over them: the
+/// serialisation of a nested type belongs to the nested type's object, and a second copy here
+/// would be a duplicate symbol and a second thing to keep right.
+void cloneReachableSchemas(mlir::Operation*                                     target,
+                           mlir::ModuleOp                                       destination,
+                           const llvm::StringMap<mlir::Operation*>&             byKey)
+{
+    llvm::SmallVector<mlir::Operation*, 8> pending{target};
+    llvm::StringSet<>                      seen;
+    while (!pending.empty())
+    {
+        mlir::Operation* const at = pending.pop_back_val();
+        at->walk([&](mlir::Operation* const op) {
+            if (op->getName().getStringRef() != "dsdl.io")
+            {
+                return;
+            }
+            const auto name  = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
+            const auto major = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
+            const auto minor = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
+            if (!name || !major || !minor)
+            {
+                return;
+            }
+            const std::string key = name.getValue().str() + "." + std::to_string(major.getInt()) + "." +
+                                    std::to_string(minor.getInt());
+            if (!seen.insert(key).second)
+            {
+                return;
+            }
+            const auto found = byKey.find(key);
+            if (found == byKey.end())
+            {
+                return;
+            }
+            mlir::Operation* const clone = found->second->clone();
+            clone->setAttr("llvmdsdl.layout_only", mlir::UnitAttr::get(clone->getContext()));
+            destination.getBodyRegion().front().push_back(clone);
+            pending.push_back(clone);
+        });
+    }
+}
+
+/// @brief Lowers a per-definition module the rest of the way and assembles it.
+///
+/// `convert-dsdl-to-llvm` leaves func, arith and scf standing; the upstream conversions finish
+/// the job, and what comes out is translated to LLVM IR and handed to the target's own
+/// assembler. No C is written and no compiler is invoked.
+/// @param[in] module The per-definition module, already converted out of the DSDL dialect.
+/// @param[in] triple The target to assemble for; the host's own when empty.
+/// @param[out] object Receives the object file's bytes.
+/// @return Success or a description of what failed.
+llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std::string& object)
+{
+    mlir::PassManager pm(module.getContext());
+    pm.addPass(mlir::createSCFToControlFlowPass());
+    pm.addPass(mlir::createArithToLLVMConversionPass());
+    pm.addPass(mlir::createConvertControlFlowToLLVMPass());
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+    if (mlir::failed(pm.run(module)))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "LLVM lowering pipeline failed");
+    }
+
+    mlir::DialectRegistry registry;
+    mlir::registerBuiltinDialectTranslation(registry);
+    mlir::registerLLVMDialectTranslation(registry);
+    module.getContext()->appendDialectRegistry(registry);
+
+    llvm::LLVMContext llvmContext;
+    auto              ir = mlir::translateModuleToLLVMIR(module, llvmContext);
+    if (!ir)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "translation to LLVM IR failed");
+    }
+
+    const llvm::Triple resolved(triple.empty() ? llvm::sys::getDefaultTargetTriple() : triple);
+    std::string        lookupError;
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(resolved, lookupError);
+    if (target == nullptr)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no backend for target '" + resolved.str() + "': " + lookupError);
+    }
+    std::unique_ptr<llvm::TargetMachine> machine(
+        target->createTargetMachine(resolved, "generic", "", {}, llvm::Reloc::PIC_));
+    if (!machine)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "could not create a target machine for '" + resolved.str() + "'");
+    }
+    ir->setTargetTriple(resolved);
+    ir->setDataLayout(machine->createDataLayout());
+
+    // The plan is emitted as it is written: a primitive per field, each with its own stack slot
+    // and its own loop. Codegen alone does not inline across those calls, so the module is run
+    // through the ordinary optimisation pipeline first -- the same one a C compiler would apply
+    // to the sources the other lane emits.
+    llvm::LoopAnalysisManager     loopAnalyses;
+    llvm::FunctionAnalysisManager functionAnalyses;
+    llvm::CGSCCAnalysisManager    cgsccAnalyses;
+    llvm::ModuleAnalysisManager   moduleAnalyses;
+    llvm::PassBuilder             builder(machine.get());
+    builder.registerModuleAnalyses(moduleAnalyses);
+    builder.registerCGSCCAnalyses(cgsccAnalyses);
+    builder.registerFunctionAnalyses(functionAnalyses);
+    builder.registerLoopAnalyses(loopAnalyses);
+    builder.crossRegisterProxies(loopAnalyses, functionAnalyses, cgsccAnalyses, moduleAnalyses);
+    llvm::ModulePassManager optimize = builder.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2);
+    optimize.run(*ir, moduleAnalyses);
+
+    llvm::SmallVector<char, 0>  buffer;
+    llvm::raw_svector_ostream   stream(buffer);
+    llvm::legacy::PassManager   emit;
+    if (machine->addPassesToEmitFile(emit, stream, nullptr, llvm::CodeGenFileType::ObjectFile))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "the target cannot emit object files for '" + resolved.str() + "'");
+    }
+    emit.run(*ir);
+    object.assign(buffer.begin(), buffer.end());
+    return llvm::Error::success();
+}
 
 llvm::Error emitC(const SemanticModule& semantic,
                   mlir::ModuleOp        module,
@@ -885,6 +916,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
+    llvm::StringMap<mlir::Operation*>                schemaByKey;
     for (mlir::Operation& op : module.getBodyRegion().front())
     {
         if (op.getName().getStringRef() != "dsdl.schema")
@@ -897,7 +929,18 @@ llvm::Error emitC(const SemanticModule& semantic,
             continue;
         }
         schemaByHeaderPath.emplace(headerPathAttr.str(), &op);
+        const auto fullName = op.getAttrOfType<mlir::StringAttr>("full_name");
+        const auto major    = op.getAttrOfType<mlir::IntegerAttr>("major");
+        const auto minor    = op.getAttrOfType<mlir::IntegerAttr>("minor");
+        if (fullName && major && minor)
+        {
+            schemaByKey[fullName.getValue().str() + "." + std::to_string(major.getInt()) + "." +
+                        std::to_string(minor.getInt())] = &op;
+        }
     }
+
+    const unsigned objectSizeBits =
+        (options.artifact == CEmitArtifact::Object) ? targetSizeBits(options.targetTriple) : 64U;
 
     for (const auto& def : semantic.definitions)
     {
@@ -909,6 +952,7 @@ llvm::Error emitC(const SemanticModule& semantic,
 
         auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
         auto perDefModule    = *perDefModuleRef;
+        perDefModule->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.require_typed_lowering", mlir::UnitAttr::get(perDefModule.getContext()));
 
@@ -923,6 +967,13 @@ llvm::Error emitC(const SemanticModule& semantic,
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
         stampCNames(*schemaClone, def, options.typeNameVersioning);
+        if (options.artifact == CEmitArtifact::Object)
+        {
+            cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
+            // The clones carry lowering's guesses; the module overload matches each to its own
+            // definition, so a nested type's members are named the way its own object named them.
+            (void) stampCNames(perDefModule, semantic, options.typeNameVersioning);
+        }
 
         mlir::PassManager pm(perDefModule.getContext());
         pm.addPass(createLowerDSDLExecPass());
@@ -930,12 +981,45 @@ llvm::Error emitC(const SemanticModule& semantic,
         {
             addOptimizeLoweredSerDesPipeline(pm);
         }
+        pm.addPass(createBuildDSDLPlanBodiesPass());
+        if (options.artifact == CEmitArtifact::Object)
+        {
+            pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));
+            pm.addPass(createEmitDSDLRuntimePass());
+            if (mlir::failed(pm.run(perDefModule)))
+            {
+                diagnostics.error({"<mlir>", 1, 1}, "LLVM conversion failed");
+                return llvm::createStringError(llvm::inconvertibleErrorCode(), "LLVM conversion failed");
+            }
+            std::string object;
+            if (auto err = assembleModule(perDefModule, options.targetTriple, object))
+            {
+                return err;
+            }
+            std::filesystem::path objectDir = outRoot;
+            for (const auto& ns : def.info.namespaceComponents)
+            {
+                objectDir /= ns;
+            }
+            if (auto err = writeGeneratedFile(objectDir / objectFileName(def.info),
+                                              object,
+                                              options.writePolicy,
+                                              requiredTypeKeys))
+            {
+                return err;
+            }
+            continue;
+        }
         pm.addPass(createConvertDSDLToEmitCPass());
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::createCSEPass());
         pm.addPass(mlir::createSCFToEmitC());
         pm.addPass(mlir::createConvertArithToEmitC());
         pm.addPass(mlir::createConvertFuncToEmitC());
+        // A counted loop's bound arrives as an index and leaves as a size_t; the two
+        // conversions meet in the middle and this drops the cast between them, which
+        // translateToCpp has no spelling for.
+        pm.addPass(mlir::createReconcileUnrealizedCastsPass());
 
         if (mlir::failed(pm.run(perDefModule)))
         {
@@ -1021,6 +1105,54 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     return llvm::Error::success();
+}
+
+
+/// @brief What @p triple spells `size_t` at, in bits.
+///
+/// A variable-length array holds its count in one, so the struct a member is addressed within
+/// depends on it. The per-definition module carries no data layout of its own, which is why this
+/// is asked of the target rather than read off the module.
+/// @param[in] triple The target, or empty for the host's own.
+/// @return The width in bits, or 64 when the target is unknown.
+/// @brief Makes every target the build carries available to look up.
+///
+/// Emitting for a target is then a matter of naming it, rather than of having a toolchain for it
+/// installed. Asking about a target before this has run answers about no target at all.
+void registerTargets()
+{
+    static std::once_flag once;
+    std::call_once(once, [] {
+        llvm::InitializeAllTargetInfos();
+        llvm::InitializeAllTargets();
+        llvm::InitializeAllTargetMCs();
+        llvm::InitializeAllAsmPrinters();
+    });
+}
+
+unsigned targetSizeBits(const std::string& triple)
+{
+    registerTargets();
+    const llvm::Triple  resolved(triple.empty() ? llvm::sys::getDefaultTargetTriple() : triple);
+    std::string         lookupError;
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(resolved, lookupError);
+    if (target == nullptr)
+    {
+        return 64;
+    }
+    std::unique_ptr<llvm::TargetMachine> machine(
+        target->createTargetMachine(resolved, "generic", "", {}, llvm::Reloc::PIC_));
+    return machine ? machine->createDataLayout().getPointerSizeInBits() : 64U;
+}
+
+llvm::Error emitObject(const SemanticModule& semantic,
+                       mlir::ModuleOp        module,
+                       CEmitOptions          options,
+                       DiagnosticEngine&     diagnostics)
+{
+    registerTargets();
+    options.artifact = CEmitArtifact::Object;
+    return emitC(semantic, module, options, diagnostics);
 }
 
 }  // namespace llvmdsdl

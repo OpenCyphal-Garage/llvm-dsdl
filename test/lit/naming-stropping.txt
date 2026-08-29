@@ -80,9 +80,8 @@
 # SUMMARY: files generated:
 
 # C escapes against C++'s keywords as well as its own, because generated C is compiled as C++ more
-# often than not -- the object backend does it to its own headers. So `class`, `operator` and
-# `export` are escaped here even though C reserves none of them; `func` and `impl` belong to neither
-# language and are left alone.
+# often than not. So `class`, `operator` and `export` are escaped here even though C reserves none of
+# them; `func` and `impl` belong to neither language and are left alone.
 # C_KEYWORDS: uint8_t break_;
 # C_KEYWORDS: uint8_t func;
 # C_KEYWORDS: uint8_t impl;
@@ -292,20 +291,6 @@
 # RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
 # RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note
 
-# The obj lane publishes headers rather than a source tree, and reports the languages of the headers
-# it publishes: C alone, or C and C++ when the C++ ABI is asked for. Reporting them under `obj` gave
-# one entry holding the other's names.
-# RUN: %dsdlc --target-language obj --target-endianness little %S/fixtures_naming_obj --outdir %t/obj_c --naming-manifest %t/obj_c.json
-# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c'], sorted(d['languages'])" %t/obj_c.json
-# RUN: %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_obj --outdir %t/obj_cpp --naming-manifest %t/obj_cpp.json
-# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d['languages'])==['c','cpp'], sorted(d['languages'])" %t/obj_cpp.json
-# The C++ entry has to be the C++ names: `serialize` is a member function there and a plain field in C.
-# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['cpp']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize_', f" %t/obj_cpp.json
-# RUN: %{python} -c "import json,sys; d=json.load(open(sys.argv[1])); f=d['languages']['c']['fixtures_naming_obj.objnaming.Both.1.0']['message']['fields']; assert f['serialize']=='serialize', f" %t/obj_cpp.json
-
-# A reserved name is reported once per language rather than twice under one name.
-# RUN: not %dsdlc --target-language obj --target-endianness little --obj-abi-language cpp %S/fixtures_naming_reserved --outdir %t/obj_res 2>&1 | FileCheck %s --check-prefix=OBJ_RESERVED
-
 # Asking what a name will become is not asking for a file: --list-outputs is what a build system runs
 # at configure time, and it implies a dry run.
 # RUN: %dsdlc --target-language c %S/fixtures_naming --outdir %t/dry --dry-run --naming-manifest %t/dry.json
@@ -315,8 +300,10 @@
 
 # C_STROPPED: uint8_t break_;
 # C_STROPPED: uint8_t break_2;
-# C_STROPPED_BODY: obj->break_
-# C_STROPPED_BODY: obj->break_2
+# Anchored on the member access rather than the pointer's name: the name belongs to
+# whichever path rendered the body, and the stropped identifier is what is under test.
+# C_STROPPED_BODY: ->break_;
+# C_STROPPED_BODY: ->break_2;
 # CPP_STROPPED: std::uint8_t break_{};
 # CPP_STROPPED: std::uint8_t break_2{};
 # RUST_STROPPED: pub break_: u8,
@@ -376,5 +363,3 @@
 # C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT__ (9)
 # C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT_ 2U
 
-# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'c'
-# OBJ_RESERVED: error: {{.*}} is a reserved identifier for target language 'cpp'

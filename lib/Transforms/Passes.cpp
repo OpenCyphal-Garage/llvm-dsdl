@@ -1209,6 +1209,12 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
         {
             continue;
         }
+        if (op.hasAttr("llvmdsdl.layout_only"))
+        {
+            // Present so that a member of this type can be addressed. Its helpers belong to its
+            // own object, which is where a caller resolves them.
+            continue;
+        }
         for (mlir::Operation& child : op.getRegion(0).front())
         {
             if (child.getName().getStringRef() != "dsdl.serialization_plan")
@@ -1347,6 +1353,12 @@ struct AnnotateDSDLAliasabilityPass
         {
             if (op.getName().getStringRef() != "dsdl.schema" || op.getNumRegions() == 0 || op.getRegion(0).empty())
             {
+                continue;
+            }
+            if (op.hasAttr("llvmdsdl.layout_only"))
+            {
+                // Present so that a member of this type can be addressed. Its helpers belong to
+                // its own object, which is where a caller resolves them.
                 continue;
             }
             for (mlir::Operation& child : op.getRegion(0).front())
@@ -1550,6 +1562,8 @@ void registerDSDLPasses()
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
     registerDSDLConvertPasses();
+    registerEmitDSDLRuntimePass();
+    registerDSDLToLLVMPasses();
 }
 
 }  // namespace llvmdsdl

@@ -103,7 +103,10 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT hit_pos EQUAL -1)
     list(APPEND generic_lowering_hits "${c_file}")
   endif()
-  string(FIND "${impl_text}" "_err_capacity = llvmdsdl_plan_capacity_check__"
+  # Matched as an assignment from the call rather than by the variable's name: the name is
+  # the text renderer's, and a body built as operations is named by the emitter. Keeping the
+  # `= ` anchors this to the call, so the helper's own declaration cannot satisfy it.
+  string(FIND "${impl_text}" "= llvmdsdl_plan_capacity_check__"
          capacity_call_pos)
   if(capacity_call_pos EQUAL -1)
     list(APPEND missing_capacity_call_hits "${c_file}")
@@ -113,7 +116,7 @@ foreach(c_file IN LISTS generated_impls)
   if(capacity_helper_pos EQUAL -1)
     list(APPEND missing_capacity_helper_hits "${c_file}")
   endif()
-  string(FIND "${impl_text}" "_err_union_tag = llvmdsdl_plan_validate_union_tag__"
+  string(FIND "${impl_text}" "= llvmdsdl_plan_validate_union_tag__"
          union_tag_call_pos)
   if(NOT union_tag_call_pos EQUAL -1)
     set(found_union_tag_call 1)
@@ -123,9 +126,9 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT union_tag_helper_pos EQUAL -1)
     set(found_union_tag_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (uint64_t)llvmdsdl_plan_union_tag__"
-         union_tag_io_call_pos)
-  if(NOT union_tag_io_call_pos EQUAL -1)
+  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_union_tag__"
+         union_tag_io_call_match "${impl_text}")
+  if(NOT union_tag_io_call_match STREQUAL "")
     set(found_union_tag_io_call 1)
   endif()
   string(FIND "${impl_text}" "int64_t llvmdsdl_plan_union_tag__"
@@ -133,9 +136,9 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT union_tag_io_helper_pos EQUAL -1)
     set(found_union_tag_io_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (uint64_t)llvmdsdl_plan_scalar_unsigned__"
-         scalar_call_pos)
-  if(NOT scalar_call_pos EQUAL -1)
+  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_scalar_unsigned__"
+         scalar_call_match "${impl_text}")
+  if(NOT scalar_call_match STREQUAL "")
     set(found_scalar_unsigned_call 1)
   endif()
   string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_unsigned__"
@@ -143,9 +146,9 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT scalar_helper_pos EQUAL -1)
     set(found_scalar_unsigned_helper 1)
   endif()
-  string(FIND "${impl_text}" "= (int64_t)llvmdsdl_plan_scalar_signed__"
-         scalar_signed_call_pos)
-  if(NOT scalar_signed_call_pos EQUAL -1)
+  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_scalar_signed__"
+         scalar_signed_call_match "${impl_text}")
+  if(NOT scalar_signed_call_match STREQUAL "")
     set(found_scalar_signed_call 1)
   endif()
   string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_signed__"
@@ -173,7 +176,7 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT array_len_prefix_helper_pos EQUAL -1)
     set(found_array_len_prefix_helper 1)
   endif()
-  string(FIND "${impl_text}" "_err_lenchk_"
+  string(FIND "${impl_text}" "= llvmdsdl_plan_validate_array_length__"
          array_lenchk_call_pos)
   if(NOT array_lenchk_call_pos EQUAL -1)
     set(found_array_len_validate_call 1)
@@ -183,23 +186,24 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT array_lenchk_helper_pos EQUAL -1)
     set(found_array_len_validate_helper 1)
   endif()
+  # The validate call names the helper, which both renderers spell the same way; the header
+  # read and write are then required of the same body rather than matched by the variable
+  # names one renderer happens to use. What the header must *mean* -- skip by the declared
+  # length, reject a malformed one -- is held by llvmdsdl-forward-compat and the delimited
+  # parity suites, not by these.
   string(FIND "${impl_text}"
-         "dsdl_runtime_get_u32(buffer, capacity_bytes, offset_bits, 32U)"
-         delimiter_get_pos)
-  if(NOT delimiter_get_pos EQUAL -1)
-    set(found_delimiter_header_io 1)
-  endif()
-  string(FIND "${impl_text}"
-         "dsdl_runtime_set_uxx(buffer, capacity_bytes, _delim_start_bytes_"
-         delimiter_set_pos)
-  if(NOT delimiter_set_pos EQUAL -1)
-    set(found_delimiter_header_write 1)
-  endif()
-  string(FIND "${impl_text}"
-         "_delim_chk_"
-         delimiter_chk_var_pos)
-  if(NOT delimiter_chk_var_pos EQUAL -1)
+         "= llvmdsdl_plan_validate_delimiter_header__"
+         delimiter_chk_call_pos)
+  if(NOT delimiter_chk_call_pos EQUAL -1)
     set(found_delimiter_validate_call 1)
+    string(FIND "${impl_text}" "dsdl_runtime_get_u32(" delimiter_get_pos)
+    if(NOT delimiter_get_pos EQUAL -1)
+      set(found_delimiter_header_io 1)
+    endif()
+    string(FIND "${impl_text}" "dsdl_runtime_set_uxx(" delimiter_set_pos)
+    if(NOT delimiter_set_pos EQUAL -1)
+      set(found_delimiter_header_write 1)
+    endif()
   endif()
   string(FIND "${impl_text}"
          "int8_t llvmdsdl_plan_validate_delimiter_header__"

@@ -1,0 +1,6 @@
+void4
+shapes.Nested.1.0 a
+uint8[<=3] b
+shapes.Nested.1.0[<=2] c
+bool[<=9] d
+@sealed

@@ -32,7 +32,7 @@
 # the same file and Bazel's duplicate-output error never arises here. The division of labour is
 # driven by `--omit-dependencies`, not by that.
 
-load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 _DSDLC = "@dsdlc//:dsdlc"
 
@@ -170,76 +170,64 @@ def dsdl_obj_library(
         srcs,
         root,
         builtin_types = [],
-        endianness = "little",
-        archive_name = "llvmdsdl_generated",
         options = [],
         deps = [],
         visibility = None):
-    """The same definitions as a prebuilt archive rather than as sources.
+    """The same definitions already assembled rather than as sources.
 
-    The `obj` backend runs the C backend and then compiles it, handing back the headers, the objects,
-    and a `.a`. That is what you want when the generated code should be built once -- for a target
-    triple that is not this host, or by a party who ships the archive rather than the schema.
+    The `obj` backend lowers the schema to LLVM IR and assembles it, handing back the headers and
+    the objects. No C is written and no compiler is invoked, which is what you want when the
+    generated code should be built once -- for a target that is not this host, or by a party who
+    ships the objects rather than the schema.
 
-    The archive is self-contained: `--omit-dependencies` is not passed, so everything the definitions
-    reach is compiled into it and there is nothing else to link. Its *headers* still have to be
-    declared during analysis, though, and the dependency closure is not derivable from filenames --
-    so list any standard types the definitions reach in `builtin_types`, exactly as for
-    dsdl_builtin_library. A missing one is a missing include at compile time, not a silent gap.
+    What the definitions reach is assembled too: `--omit-dependencies` is not passed, so there is
+    nothing else to link. Both the headers and the objects still have to be declared during
+    analysis, and the dependency closure is not derivable from filenames -- so list any standard
+    types the definitions reach in `builtin_types`, exactly as for dsdl_builtin_library. A missing
+    one is a missing include at compile time, not a silent gap.
 
-    `endianness` selects the codegen strategy, not the wire format -- DSDL is little-endian on every
-    target either way. Pass `--target-triple` through `options` to build for a different target than
-    the host; the result then only links into a build using that same toolchain.
+    Pass `--target-triple` through `options` to assemble for a target other than the host; the
+    objects then only link into a build using that same target.
     """
     if not srcs:
         fail("dsdl_obj_library({}) needs at least one source".format(name))
 
     outdir = name + ".gen"
-    archive = "{}/{}.a".format(outdir, archive_name)
 
-    # The support header is published by this backend too, so it is declared here rather than coming
-    # from a dsdl_support_library -- an obj target owns its whole interface.
-    outs = [archive, outdir + "/dsdl_runtime.h"]
+    # The support header is published by this backend too, so it is declared here rather than
+    # coming from a dsdl_support_library -- an obj target owns its whole interface.
+    outs = [outdir + "/dsdl_runtime.h"]
     for src in srcs:
-        outs += [out for out in _namespace_relative_outputs(src, root, outdir) if out.endswith(".h")]
+        for out in _namespace_relative_outputs(src, root, outdir):
+            outs += [out[:-2] + ".o"] if out.endswith(".c") else [out]
     for type_name in builtin_types:
-        outs += [out for out in _builtin_outputs(type_name, outdir) if out.endswith(".h")]
+        for out in _builtin_outputs(type_name, outdir):
+            outs += [out[:-2] + ".o"] if out.endswith(".c") else [out]
 
     targets = " ".join([
         "{}:{}".format(_package_path(root), src[len(root) + 1:])
         for src in srcs
     ])
 
-    # The per-translation-unit .o files are produced but not declared: nothing here consumes them,
-    # Bazel ignores undeclared files an action leaves behind, and naming them would put a dozen
-    # artifacts in the graph to link none of them.
-    #
-    # No --generate-support either: the obj backend emits no support code of its own and dsdlc
-    # rejects the flag for it.
+    # No --generate-support: the obj backend publishes its own support header and dsdlc rejects
+    # the flag for it.
     _generate(
-        name + "_archive",
+        name + "_objects",
         outdir,
         outs = outs,
-        arguments = "--target-endianness {} --obj-archive-name {} {} {}".format(
-            endianness,
-            archive_name,
-            " ".join(options),
-            targets,
-        ),
+        arguments = "{} {}".format(" ".join(options), targets),
         srcs = srcs,
         language = "obj",
     )
 
-    cc_import(
-        name = name + "_import",
-        static_library = archive,
-        visibility = visibility,
-    )
+    # A precompiled object is a source as far as cc_library is concerned, which is what lets the
+    # objects be linked without an archive to wrap them.
     cc_library(
         name = name,
+        srcs = [out for out in outs if out.endswith(".o")],
         hdrs = [out for out in outs if out.endswith(".h")],
         includes = [outdir],
-        deps = deps + [":" + name + "_import"],
+        deps = deps,
         visibility = visibility,
     )
 

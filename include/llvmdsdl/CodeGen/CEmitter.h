@@ -32,9 +32,25 @@ struct SemanticModule;
 /// @file
 /// @brief C backend emission entry points.
 
+/// @brief What the C backend delivers.
+///
+/// The API is the same either way -- the same headers, declaring the same symbols. What differs
+/// is whether the definitions arrive as C to be compiled or as objects already compiled.
+enum class CEmitArtifact : std::uint8_t
+{
+    Source,
+    Object,
+};
+
 /// @brief Configuration options for C code generation.
 struct CEmitOptions final
 {
+    /// @brief Whether the definitions are delivered as sources or as objects.
+    CEmitArtifact artifact{CEmitArtifact::Source};
+
+    /// @brief The target an object is emitted for; the host's own when empty.
+    std::string targetTriple;
+
     /// @brief Whether generated type names carry the definition's version.
     ///
     /// Unversioned by default: most code speaks one version of a type and reads better without the
@@ -45,7 +61,7 @@ struct CEmitOptions final
     std::string outDir;
 
     /// @brief Emits C89-style top-of-block variable declarations when true.
-    bool declareVariablesAtTop{true};
+    bool declareVariablesAtTop{false};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
@@ -81,6 +97,28 @@ llvm::Error emitC(const SemanticModule& semantic,
                   mlir::ModuleOp        module,
                   const CEmitOptions&   options,
                   DiagnosticEngine&     diagnostics);
+
+/// @brief What @p triple spells `size_t` at, in bits.
+///
+/// A variable-length array holds its count in one, so the struct an object addresses a member
+/// within depends on it. Answered from the target's own data layout.
+/// @param[in] triple The target, or empty for the host's own.
+/// @return The width in bits.
+[[nodiscard]] unsigned targetSizeBits(const std::string& triple);
+
+/// @brief Emits the C API's headers beside objects holding its definitions.
+///
+/// The same entry points a C consumer calls, with the serialisation compiled rather than handed
+/// over as source. No C is written and no compiler is invoked.
+/// @param[in] semantic Resolved semantic module.
+/// @param[in] module Lowered MLIR module.
+/// @param[in] options Backend configuration; the artifact is set here.
+/// @param[in,out] diagnostics Diagnostic sink.
+/// @return Success or detailed failure.
+llvm::Error emitObject(const SemanticModule& semantic,
+                       mlir::ModuleOp        module,
+                       CEmitOptions          options,
+                       DiagnosticEngine&     diagnostics);
 
 }  // namespace llvmdsdl
 
