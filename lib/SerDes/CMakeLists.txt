@@ -3,9 +3,7 @@
 ## @file
 ## Build rules for the serialisation helper shape vocabulary.
 ##
-## Sits below both the MLIR lowering and the language emitters: each has to answer
-## the same question about the same field, so the answer lives where both can reach
-## it. Depends on nothing but the standard library.
+## The target sits below the MLIR lowering and the language emitters, which share its shape decisions.
 ##
 #===----------------------------------------------------------------------===#
 

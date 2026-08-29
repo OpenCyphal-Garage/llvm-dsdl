@@ -50,8 +50,8 @@ private:
 /// @brief Writes generated source one line at a time, tracking block depth itself.
 ///
 /// Callers name blocks, never columns: @ref open and @ref close move the depth and
-/// @ref line emits at whatever depth the writer currently holds. Because no emission
-/// site can state a column, a body cannot be written at its enclosing block's depth.
+/// @ref line emits at whatever depth the writer currently holds. Indentation follows
+/// the block structure, so a body sits one level inside the line that opened it.
 ///
 /// @ref open and @ref close are separate calls rather than a scope guard because the
 /// backends open and close a block from different methods -- an element loop begins in

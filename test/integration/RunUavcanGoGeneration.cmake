@@ -231,12 +231,8 @@ if(NOT dsdl_count EQUAL type_go_count)
     "Go type file count mismatch: dsdl=${dsdl_count}, generated=${type_go_count}")
 endif()
 
-# Formatting is a property of the emitter, not of whoever consumes the output. A Go
-# project that runs gofmt in its own CI -- which is most of them -- would otherwise see
-# this generator's files rewritten under it on the first format-on-save. Every
-# indentation, alignment and comment defect this lane now guards against was found by
-# running gofmt by hand and reading the diff; the point of asserting it here is that
-# the next one is found by the build instead.
+# Formatting belongs to the emitter, so a formatting regression fails here rather than
+# reaching a consumer that runs gofmt of its own.
 if(GOFMT_EXECUTABLE AND EXISTS "${GOFMT_EXECUTABLE}")
   execute_process(
     COMMAND "${GOFMT_EXECUTABLE}" -l .
