@@ -152,24 +152,13 @@ dsdlc --target-language python path/to/root_namespace \
   --outdir out/python
 ```
 
-Generate object/archive output:
+Generate objects, assembled inside `dsdlc` for the host or for a named target, with the C headers
+beside them:
 
 ```bash
 dsdlc --target-language obj path/to/root_namespace \
-  --target-endianness little \
-  --target-triple x86_64-unknown-linux-gnu \
-  --obj-archive-name my_dsdl_objects \
+  --target-triple riscv32-unknown-elf \
   --outdir out/obj
-```
-
-Generate profile-agnostic canonical C++ ABI object/archive output with C shim exports:
-
-```bash
-dsdlc --target-language obj path/to/root_namespace \
-  --obj-abi-language cpp \
-  --target-endianness little \
-  --obj-archive-name my_dsdl_cppabi_objects \
-  --outdir out/obj-cpp
 ```
 
 ### Dependency lookup

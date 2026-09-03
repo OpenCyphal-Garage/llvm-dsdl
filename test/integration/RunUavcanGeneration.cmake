@@ -103,9 +103,9 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT hit_pos EQUAL -1)
     list(APPEND generic_lowering_hits "${c_file}")
   endif()
-  # Matched as an assignment from the call rather than by the variable's name: the name is
-  # the text renderer's, and a body built as operations is named by the emitter. Keeping the
-  # `= ` anchors this to the call, so the helper's own declaration cannot satisfy it.
+  # Matched as an assignment from the call rather than by the variable's name, which EmitC
+  # assigns. Keeping the `= ` anchors this to the call, so the helper's own declaration cannot
+  # satisfy it.
   string(FIND "${impl_text}" "= llvmdsdl_plan_capacity_check__"
          capacity_call_pos)
   if(capacity_call_pos EQUAL -1)
@@ -186,9 +186,9 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT array_lenchk_helper_pos EQUAL -1)
     set(found_array_len_validate_helper 1)
   endif()
-  # The validate call names the helper, which both renderers spell the same way; the header
-  # read and write are then required of the same body rather than matched by the variable
-  # names one renderer happens to use. What the header must *mean* -- skip by the declared
+  # The validate call names the helper; the header read and write are then required of the
+  # same body rather than matched by variable names, which EmitC assigns. What the header
+  # must *mean* -- skip by the declared
   # length, reject a malformed one -- is held by llvmdsdl-forward-compat and the delimited
   # parity suites, not by these.
   string(FIND "${impl_text}"

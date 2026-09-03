@@ -1857,14 +1857,13 @@ int runDsdlc(int argc, char** argv)
     // the same reason.
     if (!options.namingManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs)
     {
-        const auto manifestSemantic  = filterSemanticModule(localSemantic, selectedKeys);
-        const auto manifestLanguages = outputLanguages.empty()
-                                           ? namingLanguagesForTarget(options.targetLanguage)
-                                           : outputLanguages;
-        const std::string manifest   = llvmdsdl::renderNamingManifest(manifestSemantic,
-                                                                      manifestLanguages,
-                                                                      llvmdsdl::kVersionString,
-                                                                      options.typeNameVersioning);
+        const auto manifestSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        const auto manifestLanguages =
+            outputLanguages.empty() ? namingLanguagesForTarget(options.targetLanguage) : outputLanguages;
+        const std::string manifest = llvmdsdl::renderNamingManifest(manifestSemantic,
+                                                                    manifestLanguages,
+                                                                    llvmdsdl::kVersionString,
+                                                                    options.typeNameVersioning);
 
         // A relative manifest path is measured from --outdir, which nothing has had reason to
         // create yet at this point in the run.
@@ -1932,8 +1931,8 @@ int runDsdlc(int argc, char** argv)
         // module stamped over only some of them names both what a backend emits and what it
         // does not.
         const auto        stampSemantic = filterSemanticModule(mergedSemantic, selectedKeys);
-        const std::size_t stamped = llvmdsdl::stampCNames(*mlirModule, stampSemantic, options.typeNameVersioning);
-        std::size_t       schemaCount = 0;
+        const std::size_t stamped       = llvmdsdl::stampCNames(*mlirModule, stampSemantic, options.typeNameVersioning);
+        std::size_t       schemaCount   = 0;
         for (mlir::Operation& op : mlirModule->getBodyRegion().front())
         {
             if (op.getName().getStringRef() == "dsdl.schema")
@@ -2094,9 +2093,13 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
         emitOptions.targetTriple              = options.targetTriple;
-        logVerbose(1,
-                   "target size_t: " + std::to_string(llvmdsdl::targetSizeBits(options.targetTriple)) +
-                       " bits");
+        auto sizeBits                         = llvmdsdl::targetSizeBits(options.targetTriple);
+        if (!sizeBits)
+        {
+            llvm::errs() << llvm::toString(sizeBits.takeError()) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        logVerbose(1, "target size_t: " + std::to_string(*sizeBits) + " bits");
 
         if (auto err = llvmdsdl::emitObject(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {

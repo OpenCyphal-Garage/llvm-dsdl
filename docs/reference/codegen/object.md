@@ -1,14 +1,13 @@
 # Object Backend (`-l obj`)
 
-`--target-language obj` is recognised and exits with `not implemented`.
+`--target-language obj` lowers each definition through LLVM IR and assembles it inside `dsdlc`,
+publishing the headers `-l c` generates beside one object per definition. No C is written and no
+compiler is invoked. `--target-triple` names the target; the host's own is used when it is
+omitted, and every target the build's LLVM carries is available.
 
-The design for lowering the DSDL dialect through LLVM IR to object code — the three phases, the
-ABI boundary, and the five acceptance gates that define done — is in
-[Direct Object Lowering](../../development/direct-object-lowering.md).
-
-To compile generated sources into objects today, generate them with `-l c` or `-l cpp` and build
-them with your own toolchain. `dsdlc --list-outputs` reports the source set, and
-the [Showroom](../../showroom/index.md) recipes cover wiring that into a build.
+The design, the ABI boundary and the acceptance gates are in
+[Direct Object Lowering](../../development/direct-object-lowering.md). The
+[Showroom](../../showroom/index.md) c-cmake recipe links the objects through `dsdlc_generate()`.
 
 ## Endianness
 

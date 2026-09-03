@@ -19,7 +19,7 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 ## Code generation
 
 - [Backends](codegen/backends.md) — the target languages and what each produces
-- [Object Backend](codegen/object.md) — the unimplemented `obj` lane and where its design lives
+- [Object Backend](codegen/object.md) — the `obj` lane: C headers beside objects assembled inside `dsdlc`
 - [Emit Order](codegen/emit-order.md) — the canonical serialize/deserialize step order every backend renders
 
 ## Language server

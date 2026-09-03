@@ -48,17 +48,6 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass();
 
-/// @brief Creates the pass that validates and stamps the module's
-///        target-endianness metadata.
-/// @details Validation-only: it checks the `llvmdsdl.target_endianness` attribute
-///          and stamps `llvmdsdl.target_endianness_legalized`. It performs no byte
-///          reordering. The DSDL wire format is always little-endian, so per-target
-///          endianness handling lives entirely in the emitted code (the
-///          `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy
-///          view helpers; `serialize_`/`deserialize_` are host-endianness-agnostic).
-/// @return Newly constructed pass instance.
-std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass();
-
 /// @brief Creates the pass that converts lowered DSDL IR to EmitC-oriented IR.
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();
@@ -96,6 +85,8 @@ void registerDSDLToLLVMPasses();
 /// @param[in,out] pm Pass manager receiving the optimization pipeline.
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm);
 
+/// @brief Registers the plan-body builder with the pass registry.
+void registerBuildDSDLPlanBodiesPass();
 /// @brief Registers conversion-oriented DSDL passes.
 void registerDSDLConvertPasses();
 

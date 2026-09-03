@@ -3527,8 +3527,8 @@ if(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
 endif()
 
 # Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
-# through LLVM IR has and a generator that writes C and drives a host compiler does not. All five
-# hold, so a gate reporting the lowering absent is a regression rather than a gap.
+# through LLVM IR has and a generator that writes C and drives a host compiler does not. All of
+# them hold, so a gate reporting the lowering absent is a regression rather than a gap.
 option(LLVMDSDL_DIRECT_LOWERING_STRICT
        "Treat an absent direct lowering as a failure rather than as a gap."
        ON)
@@ -3539,7 +3539,8 @@ if(PYTHON_EXECUTABLE)
       2 emits-without-c-compiler
       3 writes-no-c-intermediates
       4 cross-target-without-toolchain
-      5 object-matches-c-lane)
+      5 object-matches-c-lane
+      6 object-defines-every-entry-point)
 
   list(LENGTH llvmdsdl_direct_lowering_gates llvmdsdl_direct_lowering_gate_entries)
   math(EXPR llvmdsdl_direct_lowering_last "${llvmdsdl_direct_lowering_gate_entries} - 1")
@@ -3572,8 +3573,8 @@ if(PYTHON_EXECUTABLE)
     )
   endforeach()
 
-  # Gate 5 cannot run until the obj lane exists, so its harness is proven against the C lane on
-  # both sides. This is what stops it being written wrong while it cannot be exercised.
+  # Gate 5's harness is proven against the C lane on both sides, independently of the lane it
+  # measures.
   add_test(
     NAME llvmdsdl-direct-lowering-gate-harness-selftest
     COMMAND
@@ -3592,9 +3593,9 @@ if(PYTHON_EXECUTABLE)
   )
 endif()
 
-# The generated-C assertions in RunUavcanGeneration match by substring, and the two renderers
-# spell the same call differently. This holds them to matching both and to rejecting a body
-# with the call removed, reading the patterns out of the checker so it cannot drift.
+# The generated-C assertions in RunUavcanGeneration match by substring. This holds them to
+# matching a body as the builder produces it and to rejecting one with the call removed, reading
+# the patterns out of the checker so it cannot drift.
 if(PYTHON_EXECUTABLE)
   add_test(
     NAME llvmdsdl-generation-assertion-selftest

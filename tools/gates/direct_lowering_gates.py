@@ -359,6 +359,101 @@ def gate_object_matches_c_lane(args: argparse.Namespace, workdir: Path) -> str:
 
 
 # ---------------------------------------------------------------------------------------
+# Gate 6 -- every entry point a published header declares, its object defines.
+# ---------------------------------------------------------------------------------------
+
+# `int8_t <type>__serialize_ir_(` as the header declares the body the object must define.
+ENTRY_POINT = re.compile(r"^int8_t\s+(\w+_ir_)\s*\(", re.M)
+
+SHT_SYMTAB = 2
+SHN_UNDEF = 0
+
+
+def elf_defined_symbols(path: Path) -> set:
+    """The names an ELF relocatable object defines, read from its symbol table.
+
+    A symbol with a section index is defined here; one at SHN_UNDEF is a reference to
+    something another object has to supply.
+    """
+    data = path.read_bytes()
+    if data[:4] != b"\x7fELF":
+        raise GateFailure(f"{path.name} is not an ELF object")
+    is_32 = data[4] == ELFCLASS32
+    order = "<" if data[5] == 1 else ">"
+    if is_32:
+        (shoff, ) = struct.unpack(order + "I", data[32:36])
+        shentsize, shnum = struct.unpack(order + "HH", data[46:50])
+    else:
+        (shoff, ) = struct.unpack(order + "Q", data[40:48])
+        shentsize, shnum = struct.unpack(order + "HH", data[58:62])
+
+    sections = []
+    for index in range(shnum):
+        at = shoff + index * shentsize
+        if is_32:
+            _, kind, _, _, offset, size, link, _, _, entsize = struct.unpack(order + "IIIIIIIIII", data[at:at + 40])
+        else:
+            _, kind, _, _, offset, size, link, _, _, entsize = struct.unpack(order + "IIQQQQIIQQ", data[at:at + 64])
+        sections.append((kind, offset, size, link, entsize))
+
+    defined = set()
+    for kind, offset, size, link, entsize in sections:
+        if kind != SHT_SYMTAB or entsize == 0:
+            continue
+        _, names_at, names_size, _, _ = sections[link]
+        names = data[names_at:names_at + names_size]
+        for index in range(size // entsize):
+            at = offset + index * entsize
+            if is_32:
+                st_name, _, _, _, _, st_shndx = struct.unpack(order + "IIIBBH", data[at:at + 16])
+            else:
+                st_name, _, _, st_shndx, _, _ = struct.unpack(order + "IBBHQQ", data[at:at + 24])
+            if st_shndx == SHN_UNDEF:
+                continue
+            end = names.index(b"\0", st_name)
+            if end > st_name:
+                defined.add(names[st_name:end].decode("ascii", "replace"))
+    return defined
+
+
+def gate_object_defines_every_entry_point(args: argparse.Namespace, workdir: Path) -> str:
+    """A header's `_ir_` prototypes are promises its object has to keep.
+
+    An object that lacks one links nowhere, and dsdlc reporting success over it is the
+    failure this gate exists to catch. The target is ELF on every host, so one symbol-table
+    reader covers them all.
+    """
+    require_obj_lane(args, workdir)
+
+    triple = "riscv32-unknown-elf"
+    outdir = workdir / "out"
+    result = run(obj_command(args, outdir, ["--target-triple", triple]))
+    if result.code != 0:
+        raise GateFailure(f"emission for {triple} failed (exit {result.code}):\n{result.out.strip()}")
+
+    objects = object_files(outdir)
+    if not objects:
+        raise GateFailure("emission wrote no object files")
+
+    checked = 0
+    for obj in objects:
+        header = obj.with_suffix(".h")
+        if not header.is_file():
+            raise GateFailure(f"{obj.relative_to(outdir)} has no header beside it")
+        declared = set(ENTRY_POINT.findall(header.read_text(encoding="utf-8")))
+        if not declared:
+            raise GateFailure(f"{header.relative_to(outdir)} declares no entry points")
+        missing = sorted(declared - elf_defined_symbols(obj))
+        if missing:
+            more = f" and {len(missing) - 1} more" if len(missing) > 1 else ""
+            raise GateFailure(
+                f"{obj.relative_to(outdir)} does not define {missing[0]}{more}, which "
+                f"{header.name} declares; the object would fail to link")
+        checked += len(declared)
+    return f"{checked} entry point(s) across {len(objects)} object(s) are defined where their headers declare them"
+
+
+# ---------------------------------------------------------------------------------------
 
 GATES = {
     1: ("ir-has-no-emitc", gate_ir_has_no_emitc),
@@ -366,15 +461,15 @@ GATES = {
     3: ("writes-no-c-intermediates", gate_writes_no_c_intermediates),
     4: ("cross-target-without-toolchain", gate_cross_target_without_toolchain),
     5: ("object-matches-c-lane", gate_object_matches_c_lane),
+    6: ("object-defines-every-entry-point", gate_object_defines_every_entry_point),
 }
 
 
 def selftest(args: argparse.Namespace, workdir: Path) -> int:
     """Exercise gate 5's harness against the C lane on both sides.
 
-    Gate 5 cannot run until the obj lane exists, which leaves its machinery -- generate,
-    compile, link, run, compare -- unproven exactly when it is being written. Running the
-    reference against itself proves everything but the substitution.
+    Running the reference against itself proves the machinery -- generate, compile, link,
+    run, compare -- independently of the lane it measures.
     """
     first = _build_reference(args, workdir / "a")
     second = _build_reference(args, workdir / "b")

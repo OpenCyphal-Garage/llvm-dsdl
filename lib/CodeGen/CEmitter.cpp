@@ -39,6 +39,7 @@
 #include <mlir/Support/LLVM.h>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -60,13 +61,23 @@
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -746,9 +757,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     return out.str();
 }
 
-
-}  // namespace
-
 /// @brief Clones the schemas @p target reaches, for their layout alone.
 ///
 /// A C translation unit needs only the nested type's name, which its header supplies. An object
@@ -756,9 +764,9 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 /// nested type's own schema. They are marked so that the body builder passes over them: the
 /// serialisation of a nested type belongs to the nested type's object, and a second copy here
 /// would be a duplicate symbol and a second thing to keep right.
-void cloneReachableSchemas(mlir::Operation*                                     target,
-                           mlir::ModuleOp                                       destination,
-                           const llvm::StringMap<mlir::Operation*>&             byKey)
+void cloneReachableSchemas(mlir::Operation*                         target,
+                           mlir::ModuleOp                           destination,
+                           const llvm::StringMap<mlir::Operation*>& byKey)
 {
     llvm::SmallVector<mlir::Operation*, 8> pending{target};
     llvm::StringSet<>                      seen;
@@ -777,8 +785,8 @@ void cloneReachableSchemas(mlir::Operation*                                     
             {
                 return;
             }
-            const std::string key = name.getValue().str() + "." + std::to_string(major.getInt()) + "." +
-                                    std::to_string(minor.getInt());
+            const std::string key =
+                name.getValue().str() + "." + std::to_string(major.getInt()) + "." + std::to_string(minor.getInt());
             if (!seen.insert(key).second)
             {
                 return;
@@ -830,8 +838,8 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "translation to LLVM IR failed");
     }
 
-    const llvm::Triple resolved(triple.empty() ? llvm::sys::getDefaultTargetTriple() : triple);
-    std::string        lookupError;
+    const llvm::Triple  resolved(triple.empty() ? llvm::sys::getDefaultTargetTriple() : triple);
+    std::string         lookupError;
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(resolved, lookupError);
     if (target == nullptr)
     {
@@ -865,9 +873,9 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
     llvm::ModulePassManager optimize = builder.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2);
     optimize.run(*ir, moduleAnalyses);
 
-    llvm::SmallVector<char, 0>  buffer;
-    llvm::raw_svector_ostream   stream(buffer);
-    llvm::legacy::PassManager   emit;
+    llvm::SmallVector<char, 0> buffer;
+    llvm::raw_svector_ostream  stream(buffer);
+    llvm::legacy::PassManager  emit;
     if (machine->addPassesToEmitFile(emit, stream, nullptr, llvm::CodeGenFileType::ObjectFile))
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -877,6 +885,8 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
     object.assign(buffer.begin(), buffer.end());
     return llvm::Error::success();
 }
+
+}  // namespace
 
 llvm::Error emitC(const SemanticModule& semantic,
                   mlir::ModuleOp        module,
@@ -916,7 +926,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
-    llvm::StringMap<mlir::Operation*>                schemaByKey;
+    llvm::StringMap<mlir::Operation*>                 schemaByKey;
     for (mlir::Operation& op : module.getBodyRegion().front())
     {
         if (op.getName().getStringRef() != "dsdl.schema")
@@ -939,8 +949,16 @@ llvm::Error emitC(const SemanticModule& semantic,
         }
     }
 
-    const unsigned objectSizeBits =
-        (options.artifact == CEmitArtifact::Object) ? targetSizeBits(options.targetTriple) : 64U;
+    unsigned objectSizeBits = 64U;
+    if (options.artifact == CEmitArtifact::Object)
+    {
+        auto width = targetSizeBits(options.targetTriple);
+        if (!width)
+        {
+            return width.takeError();
+        }
+        objectSizeBits = *width;
+    }
 
     for (const auto& def : semantic.definitions)
     {
@@ -954,7 +972,6 @@ llvm::Error emitC(const SemanticModule& semantic,
         auto perDefModule    = *perDefModuleRef;
         perDefModule->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
-        perDefModule->setAttr("llvmdsdl.require_typed_lowering", mlir::UnitAttr::get(perDefModule.getContext()));
 
         const std::string targetHeaderPath = llvmdsdl::EmitterContext::relativeHeaderPath(def);
         const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
@@ -1107,14 +1124,9 @@ llvm::Error emitC(const SemanticModule& semantic,
     return llvm::Error::success();
 }
 
+namespace
+{
 
-/// @brief What @p triple spells `size_t` at, in bits.
-///
-/// A variable-length array holds its count in one, so the struct a member is addressed within
-/// depends on it. The per-definition module carries no data layout of its own, which is why this
-/// is asked of the target rather than read off the module.
-/// @param[in] triple The target, or empty for the host's own.
-/// @return The width in bits, or 64 when the target is unknown.
 /// @brief Makes every target the build carries available to look up.
 ///
 /// Emitting for a target is then a matter of naming it, rather than of having a toolchain for it
@@ -1130,7 +1142,16 @@ void registerTargets()
     });
 }
 
-unsigned targetSizeBits(const std::string& triple)
+}  // namespace
+
+/// @brief What @p triple spells `size_t` at, in bits.
+///
+/// A variable-length array holds its count in one, so the struct a member is addressed within
+/// depends on it. The per-definition module carries no data layout of its own, which is why this
+/// is asked of the target rather than read off the module.
+/// @param[in] triple The target, or empty for the host's own.
+/// @return The width in bits, or an error naming the target when no backend knows it.
+llvm::Expected<unsigned> targetSizeBits(const std::string& triple)
 {
     registerTargets();
     const llvm::Triple  resolved(triple.empty() ? llvm::sys::getDefaultTargetTriple() : triple);
@@ -1138,11 +1159,17 @@ unsigned targetSizeBits(const std::string& triple)
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(resolved, lookupError);
     if (target == nullptr)
     {
-        return 64;
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no backend for target '" + resolved.str() + "': " + lookupError);
     }
     std::unique_ptr<llvm::TargetMachine> machine(
         target->createTargetMachine(resolved, "generic", "", {}, llvm::Reloc::PIC_));
-    return machine ? machine->createDataLayout().getPointerSizeInBits() : 64U;
+    if (!machine)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "could not create a target machine for '" + resolved.str() + "'");
+    }
+    return machine->createDataLayout().getPointerSizeInBits();
 }
 
 llvm::Error emitObject(const SemanticModule& semantic,

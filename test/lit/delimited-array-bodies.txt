@@ -1,0 +1,24 @@
+# An array of delimited composites is built as operations like every other shape: a header per
+# element inside the counted loop, and the nested type's own entry point for the payload.
+#
+# RUN: rm -rf %t && %dsdlc --target-language c --outdir %t %S/fixtures > /dev/null 2>&1
+# RUN: FileCheck %s --check-prefix=C < %t/fixtures/vendor/DelimitedList_1_0.c
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --lower-dsdl-exec --build-dsdl-plan-bodies %t.mlir | FileCheck %s --check-prefix=IR
+
+# C: int8_t fixtures_vendor_DelimitedList_1_0__serialize_ir_(
+# C: fixtures__vendor__Delimited__serialize_(
+# C: int8_t fixtures_vendor_DelimitedList_1_0__deserialize_ir_(
+# C: fixtures__vendor__Delimited__deserialize_(
+
+# IR-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__serialize_ir_
+# IR: scf.for
+# IR: dsdl.element_addr
+# IR: dsdl.call_serdes "fixtures__vendor__Delimited__serialize_"
+# IR: dsdl.write_bits
+# IR-SAME: width = 32
+# IR-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__deserialize_ir_
+# IR: scf.for
+# IR: dsdl.read_bits
+# IR-SAME: width = 32
+# IR: dsdl.call_serdes "fixtures__vendor__Delimited__deserialize_"

@@ -1482,40 +1482,6 @@ struct AnnotateDSDLAliasabilityPass
 // legalized marker. It performs no byte reordering. The DSDL wire format is always
 // little-endian, so per-target endianness handling lives in the emitted code (the
 // `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
-struct DSDLEndianLegalizePass : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
-{
-    llvm::StringRef getArgument() const final
-    {
-        return "dsdl-legalize-endianness";
-    }
-    llvm::StringRef getDescription() const final
-    {
-        return "Validate and stamp DSDL target endianness metadata (no byte reordering)";
-    }
-
-    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
-    void runOnOperation() override
-    {
-        auto            module = getOperation();
-        mlir::OpBuilder builder(module.getContext());
-        const auto      targetEndianness = module->getAttrOfType<mlir::StringAttr>("llvmdsdl.target_endianness");
-        if (!targetEndianness)
-        {
-            module.emitError("missing required module attribute 'llvmdsdl.target_endianness'");
-            signalPassFailure();
-            return;
-        }
-        const auto endianValue = targetEndianness.getValue();
-        if (endianValue != "little" && endianValue != "big")
-        {
-            module.emitError("unsupported module target endianness (expected 'little' or 'big')");
-            signalPassFailure();
-            return;
-        }
-        module->setAttr("llvmdsdl.target_endianness_legalized", builder.getUnitAttr());
-    }
-};
-
 }  // namespace
 
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()
@@ -1531,11 +1497,6 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
 std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass()
 {
     return std::make_unique<AnnotateDSDLAliasabilityPass>();
-}
-
-std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass()
-{
-    return std::make_unique<DSDLEndianLegalizePass>();
 }
 
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
@@ -1556,11 +1517,11 @@ void registerDSDLPasses()
     static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
     static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
     static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
-    static mlir::PassRegistration<DSDLEndianLegalizePass> const       regEndian;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
+    registerBuildDSDLPlanBodiesPass();
     registerDSDLConvertPasses();
     registerEmitDSDLRuntimePass();
     registerDSDLToLLVMPasses();

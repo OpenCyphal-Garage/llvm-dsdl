@@ -1,11 +1,8 @@
 # Direct Object Lowering
 
-The plan for `--target-language obj`: DSDL dialect to LLVM IR to object code, inside `dsdlc`,
-with no C source and no host compiler.
-
-None of it is built. `--target-language obj` is recognised and exits with `not implemented`.
-What exists is the definition of done — five acceptance gates under
-`ctest -L direct-lowering-gate`, described in [Acceptance](#acceptance) below.
+`--target-language obj`: DSDL dialect to LLVM IR to object code, inside `dsdlc`, with no C
+source and no host compiler. Six acceptance gates under `ctest -L direct-lowering-gate`,
+described in [Acceptance](#acceptance) below, hold strictly.
 
 ## Why the serialisation has to be written first
 
@@ -16,12 +13,6 @@ convert.
 `dsdlc --target-language c` over the UAVCAN corpus emits 362 serialize and deserialize function
 bodies, and every one of them is a string literal in an `emitc.verbatim` op — braces, `for`
 loops, runtime calls and all.
-
-Measure this from what `dsdlc` emits, not by running `dsdl-opt` over `--target-language mlir`
-output. The conversion has two rendering paths and picks between them on whether the module
-carries `llvmdsdl.headers_available`: a typed path that addresses struct members by name, and a
-generic path that copies bytes. `dsdl-opt` on schema-only IR has no headers, so it renders the
-generic path, and the generic path is dead in production — all 167 corpus types render typed.
 
 What is real IR is the helper predicates: `capacity_check` is an `arith.cmpi` and an `scf.if`,
 and so are the saturation helpers, `validate_union_tag`, `validate_array_length` and
@@ -94,9 +85,8 @@ have reported a bad tag for a buffer that was simply too small.
 ### Nothing renders as text
 
 All 362 serialize and deserialize bodies over the UAVCAN corpus are built as operations, and
-all 167 files compile under `-Wall -Wextra -Werror`. The four `render*Function` text builders
-remain as the fallback `supportsOperationLowering` selects when a plan holds something the
-builders do not cover; the corpus holds no such plan.
+all 167 files compile under `-Wall -Wextra -Werror`. A plan the builder cannot express fails
+`build-dsdl-plan-bodies`, in every lane, naming the step and the reason.
 
 A `bool` is its own scalar category, and a bool array is not an array of them: the storage is
 bitpacked, already in the layout the wire wants, so the whole array moves in one run of bits
@@ -111,7 +101,7 @@ having no name to put them under. The writer is the one that pads to an alignmen
 given an end offset instead of computing one.
 
 A union's options may be composites or arrays. What one field needs is the same whether it
-sits in a union or a struct, so both shapes ask `supportsFieldStep`; having the two disagree
+sits in a union or a struct, so both shapes ask `unsupportedFieldReason`; having the two disagree
 is how an option gets accepted that the arm builder cannot emit. A union's step list also
 carries alignment steps that are not options, and they are passed over here the same way the
 option collection passes over them.
@@ -120,7 +110,7 @@ An array of composites is encoded element by element through the nested entry po
 stride is whatever each element reports and the loop cannot be driven by the offset. It is
 counted, with `scf.for`, whose induction variable is not among its results -- an `scf.while`
 would make the index a result nothing reads, which is the dead declaration again. An array of
-*delimited* composites would need a header per element and is not built.
+delimited composites writes a header per element, through the same loop.
 
 A fixed-length array is the variable one without its bookkeeping: its length is in its
 declaration, so there is no count member to read, nothing that could be out of range, and
@@ -260,8 +250,8 @@ using the same scopes and renderers it names its own output with.
 
 Two conditions were once one attribute. `llvmdsdl.names_final` says the C names on a module are
 a backend's own, and gates body building. `llvmdsdl.headers_available` says the generated header
-can be included, and gates the typed EmitC rendering. Only the first bears on an object
-lowering, and conflating them made the object lane appear to need headers.
+can be included, and gates the includes the C conversion emits. Only the first bears on an
+object lowering, and conflating them made the object lane appear to need headers.
 
 `--target-language mlir` stamps and sets `names_final`, which is what makes the symbols it
 prints the ones a generated header declares. It refuses to claim the attribute unless every
@@ -364,7 +354,7 @@ objects could be linked together.
 
 ### Where it reaches
 
-All five acceptance gates hold, strictly:
+All six acceptance gates hold, strictly:
 
 | Gate | What it establishes |
 |---|---|
@@ -373,6 +363,7 @@ All five acceptance gates hold, strictly:
 | 3 | No `.c` anywhere, no staging tree, `TMPDIR` untouched |
 | 4 | 32-bit RISC-V ELF objects on a host with no toolchain for it |
 | 5 | The object's wire bytes are the C lane's, transcript for transcript |
+| 6 | Every entry point a published header declares is defined in its object |
 
 The UAVCAN corpus passes through in about two seconds: 167 objects, 168 headers, no C. Linked
 against a driver in place of the generated sources, it round-trips byte-for-byte.
@@ -412,7 +403,7 @@ taking on for a serialisation entry point that has no need of it.
 
 ## Acceptance
 
-Five gates, in [`tools/gates/direct_lowering_gates.py`](../../tools/gates/direct_lowering_gates.py),
+Six gates, in [`tools/gates/direct_lowering_gates.py`](../../tools/gates/direct_lowering_gates.py),
 run by `ctest -L direct-lowering-gate`. Each reports `PASS`, `NOT_IMPLEMENTED` or `FAIL`;
 `-DLLVMDSDL_DIRECT_LOWERING_STRICT=ON` makes `NOT_IMPLEMENTED` a failure.
 
@@ -423,6 +414,7 @@ run by `ctest -L direct-lowering-gate`. Each reports `PASS`, `NOT_IMPLEMENTED` o
 | 3 `writes-no-c-intermediates` | No `.c` reaches the output tree or `TMPDIR`, and no staging tree exists | C |
 | 4 `cross-target-without-toolchain` | `riscv32-unknown-elf` yields an ELF with `e_machine` `EM_RISCV`, 32-bit | C |
 | 5 `object-matches-c-lane` | The object links and its wire bytes match the C lane | C |
+| 6 `object-defines-every-entry-point` | Every `_ir_` prototype a published header declares is defined in its object | C |
 
 Two limits are worth stating, because a gate believed to cover more than it does is worse than
 no gate:
@@ -434,12 +426,15 @@ no gate:
 - **Gate 1 passes**, strict included: the fixture corpus lowers with no `emitc` and no `dsdl`
   operations remaining. It counts both, a conversion that declined to touch the plan leaving
   `dsdl` behind rather than `emitc`.
+- **Gate 6 covers what gate 5 does not.** Gate 5 links one type. An object emitted for a plan
+  the builder had declined carried none of its entry points while its header declared them, and
+  `dsdlc` exited zero; the link failed later, in the user's build. Gate 6 reads every header's
+  prototypes against its object's symbol table, for a target that is ELF on every host.
 
-Gate 5's harness cannot run until the lane exists, so it is proven against the C lane on both
-sides by `llvmdsdl-direct-lowering-gate-harness-selftest`.
+Gate 5's harness is proven against the C lane on both sides by
+`llvmdsdl-direct-lowering-gate-harness-selftest`.
 
-## Consumers waiting on this
+## Consumers
 
 `DSDLCGenerate.cmake` and the `rules_dsdl` Bazel rules link the published objects directly; there
 is no archive to wrap. Both showroom recipes build and round-trip against them.
-`createDSDLEndianLegalizePass` has no callers and no lit coverage.

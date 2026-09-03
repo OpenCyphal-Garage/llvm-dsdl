@@ -16,9 +16,7 @@ This repo ships three user-facing tools:
 - [`dsdl-opt`](tools/dsdl-opt/main.cpp): pass-driver over the custom dialect.
 - [`dsdld`](tools/dsdld/main.cpp): language server for editor workflows.
 
-Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, and `python`.
-`obj` is recognised and unimplemented; see
-[Direct Object Lowering](docs/development/direct-object-lowering.md).
+Supported `dsdlc --target-language` values are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`, and `obj`.
 
 ## 2. Realized Architecture
 
@@ -33,7 +31,7 @@ flowchart LR
   E --> F["lowerToMLIR"]
   F --> G["dsdl.schema + dsdl.serialization_plan\n(dsdl.align/dsdl.io)"]
   G --> H["lower-dsdl-serialization\n(contract stamping + helper synthesis)"]
-  H --> I["dsdl-annotate-aliasability + dsdl-legalize-endianness"]
+  H --> I["dsdl-annotate-aliasability"]
   I --> K{"Backend path"}
   K --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
   K --> O["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
@@ -108,16 +106,20 @@ Transforms are where normalization and contract hardening happen. The pass set i
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
 - `dsdl-annotate-aliasability`
-- `dsdl-legalize-endianness`
-- `convert-dsdl-to-emitc`
 - optional `optimize-dsdl-lowered-serdes` pipeline
+- `build-dsdl-plan-bodies`
+- `convert-dsdl-to-emitc`
+- `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 
 Key files:
 
 - [`include/llvmdsdl/Transforms/Passes.h`](include/llvmdsdl/Transforms/Passes.h)
 - [`include/llvmdsdl/Transforms/LoweredSerDesContract.h`](include/llvmdsdl/Transforms/LoweredSerDesContract.h)
 - [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp)
+- [`include/llvmdsdl/Transforms/PlanSteps.h`](include/llvmdsdl/Transforms/PlanSteps.h)
+- [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp)
 - [`lib/Transforms/ConvertDSDLToEmitC.cpp`](lib/Transforms/ConvertDSDLToEmitC.cpp)
+- [`lib/Transforms/ConvertDSDLToLLVM.cpp`](lib/Transforms/ConvertDSDLToLLVM.cpp)
 
 The lowered contract attributes are an explicit handshake between producers and consumers. Backends validate contract version/producer and helper availability before rendering code. This is a major reliability property of the current design.
 
@@ -205,9 +207,15 @@ Key file:
 
 ### 4.7 Object backend (`obj`)
 
-`--target-language obj` is recognised and exits with `not implemented`. The design for lowering
-the DSDL dialect through LLVM IR to object code, its three phases and its acceptance gates, is in
-[Direct Object Lowering](docs/development/direct-object-lowering.md).
+`--target-language obj` is the C backend's API with the definitions already assembled: the same
+headers, declaring the same symbols, beside one object per definition. Each plan is built as
+dialect operations, converted to the LLVM dialect, translated to LLVM IR and handed to the
+target's own code generator inside `dsdlc`; `--target-triple` names the target. The design and
+its acceptance gates are in [Direct Object Lowering](docs/development/direct-object-lowering.md).
+
+Key file:
+
+- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
 
 ## 5. Runtime Design
 
@@ -306,8 +314,9 @@ The architecture is intentionally hard-cut and single-path: shared lowering cont
 Current tradeoffs:
 
 - C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
-- Direct LLVM object emission is designed but unbuilt, and gated on five acceptance properties;
-  see [Direct Object Lowering](docs/development/direct-object-lowering.md).
+- Direct LLVM object emission shares the C backend's pipeline up to the point a plan becomes
+  operations, and is held by six acceptance gates; see
+  [Direct Object Lowering](docs/development/direct-object-lowering.md).
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
 - Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.

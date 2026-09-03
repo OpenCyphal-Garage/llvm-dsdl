@@ -103,8 +103,8 @@ llvm::Error emitC(const SemanticModule& semantic,
 /// A variable-length array holds its count in one, so the struct an object addresses a member
 /// within depends on it. Answered from the target's own data layout.
 /// @param[in] triple The target, or empty for the host's own.
-/// @return The width in bits.
-[[nodiscard]] unsigned targetSizeBits(const std::string& triple);
+/// @return The width in bits, or an error naming the target when no backend knows it.
+[[nodiscard]] llvm::Expected<unsigned> targetSizeBits(const std::string& triple);
 
 /// @brief Emits the C API's headers beside objects holding its definitions.
 ///

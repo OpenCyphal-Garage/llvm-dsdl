@@ -33,8 +33,9 @@ a particular language.
 
 1. `lower-dsdl-exec`
 2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
-3. `dsdl-legalize-endianness` — validates and stamps target endianness; performs no byte reordering
-4. optional optimization pipeline
+3. optional `optimize-dsdl-lowered-serdes`
+4. `build-dsdl-plan-bodies` — every plan becomes a serialize and a deserialize function of plan operations
+5. `convert-dsdl-to-emitc` for C; `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects
 
 ### Boundary guarantees
 

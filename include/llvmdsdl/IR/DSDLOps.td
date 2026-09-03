@@ -94,12 +94,6 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let hasVerifier = 1;
 }
 
-def DSDL_ExecPlanOp : DSDL_Op<"exec_plan", [NoMemoryEffect, NoTerminator]> {
-  let summary = "Container for executable wire operations";
-  let regions = (region AnyRegion:$body);
-  let assemblyFormat = "attr-dict-with-keyword $body";
-}
-
 def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
   let summary = "Copy a run of bits from object storage into the wire buffer";
   let description = [{
@@ -339,20 +333,6 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
     $callee `(` $object `,` $buffer `,` $size `)` attr-dict `:`
     type($object) `,` type($buffer) `,` type($size)
   }];
-}
-
-def DSDL_UnionSwitchOp
-    : DSDL_Op<"union_switch", [NoMemoryEffect, NoTerminator]> {
-  let summary = "Executable union tag dispatch operation";
-  let arguments = (ins I64Attr:$tag_bits);
-  let regions = (region AnyRegion:$body);
-  let assemblyFormat = "attr-dict-with-keyword $body";
-}
-
-def DSDL_ZOHCheckOp : DSDL_Op<"zoh_check", [NoMemoryEffect]> {
-  let summary = "Zero-overhead aliasability check";
-  let arguments = (ins StrAttr:$result);
-  let assemblyFormat = "attr-dict";
 }
 
 #endif // LLVMDSDL_IR_DSDL_OPS_TD
