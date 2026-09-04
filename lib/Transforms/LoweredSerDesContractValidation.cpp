@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <optional>
 #include <set>
-#include <string>
 
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
