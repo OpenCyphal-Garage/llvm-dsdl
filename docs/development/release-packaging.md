@@ -100,8 +100,8 @@ there are two, each on both architectures:
 |---|---|---|
 | Serves | the release, `llvm-dsdl-dev`, CI | fully static binaries (§1 of the backlog) |
 | Floor | `GLIBC_2.34` | none |
-| Prefix | 805 MB | 831 MB |
-| Build | ~11.5 min aarch64 / ~29 min x86-64 | ~17 min aarch64 |
+| Prefix | 897 MB | 956 MB |
+| Build | ~72 min aarch64 / ~89 min x86-64 | ~83 min aarch64 / ~134 min x86-64 |
 
 Both carry the seven target backends above alongside the LLVM and MLIR component archives, and
 link nothing beyond the C and C++ runtimes.
@@ -117,11 +117,11 @@ leg builds its own natively and caches the prefix on the pin.
 
 - **The release** pulls `ghcr.io/opencyphal-garage/llvm-dsdl-toolchain:glibc-<ref>` and copies the
   prefix into the build image. A missing image fails the job outright. Building it inline is the
-  obvious fallback and is deliberately absent: it costs ~40 minutes on a 4-vCPU runner, which
+  obvious fallback and is deliberately absent: it costs one to two hours on a 4-vCPU runner, which
   once exceeded the job timeout, and a silent fallback would reproduce that as a mystery.
 - **CI** restores the prefix from a tarball attached to a prerelease tagged `toolchain-<ref>`, via
   [.github/actions/restore-llvm-toolchain](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/.github/actions/restore-llvm-toolchain).
-  141 MB compressed. The action asserts the unpacked `LLVM_REF` matches the pin, so a stale
+  172 MB compressed. The action asserts the unpacked `LLVM_REF` matches the pin, so a stale
   tarball fails there rather than as generated output that differs from the release.
 
 [packaging/toolchain/verify_toolchain.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/packaging/toolchain/verify_toolchain.py)

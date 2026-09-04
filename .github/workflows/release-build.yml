@@ -116,7 +116,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull the LLVM toolchain
-        # Pulled, never built here. Building it costs ~40 minutes on a 4-vCPU
+        # Pulled, never built here. Building it costs one to two hours on a 4-vCPU
         # runner, which exceeded this job's timeout on amd64; the Toolchain
         # workflow builds it when the pin moves and this pulls the result.
         #
