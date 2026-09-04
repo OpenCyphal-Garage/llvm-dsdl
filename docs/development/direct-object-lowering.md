@@ -19,7 +19,7 @@ and so are the saturation helpers, `validate_union_tag`, `validate_array_length`
 `array_length_prefix`. The plan predicates are compiled. The plan execution is text.
 
 `DSDL_BitReadOp` and `DSDL_BitWriteOp` are declared in
-[`DSDLOps.td`](../../include/llvmdsdl/IR/DSDLOps.td) and constructed nowhere in `lib/`. The
+[`DSDLOps.td`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/IR/DSDLOps.td) and constructed nowhere in `lib/`. The
 vocabulary for representing bit-level serialisation was defined and never used.
 
 So the work is three phases, and they run in the opposite order of the difficulty one would
@@ -37,7 +37,7 @@ risk and effort, and it can be finished and proven before any of the LLVM work s
 Two properties make it tractable:
 
 - **The oracle already exists.** The parity corpus and the Dafny ordering class in
-  [`spec/dafny/CyphalSerdes.dfy`](../../spec/dafny/CyphalSerdes.dfy) pin the wire bytes, and no
+  [`spec/dafny/CyphalSerdes.dfy`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy) pin the wire bytes, and no
   golden snapshot pins C source text. The C text being replaced is the specification of the
   behaviour, and the wire bytes must not move; the shape of the generated C is expected to
   change, because EmitC renders it rather than a string formatter.
@@ -134,7 +134,7 @@ holds composites -- so the count does not move, but the fixture suites cover it.
 The serdes signatures take pointers, and the helper predicates that exist today take only `i64`
 and `i8`, so the dialect has no pointer to reuse. Add `!dsdl.ptr<T>`, mapped by
 `convert-dsdl-to-emitc` to `!emitc.ptr<T>` and by `convert-dsdl-to-llvm` to `!llvm.ptr`.
-[`DSDLTypes.td`](../../include/llvmdsdl/IR/DSDLTypes.td) already carries parametric `TypeDef`s
+[`DSDLTypes.td`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/IR/DSDLTypes.td) already carries parametric `TypeDef`s
 to follow.
 
 Building the bodies on `!emitc.ptr` directly would work for the C path and would have to be
@@ -146,7 +146,7 @@ starting point.
 
 ### What the lowering path already supports
 
-[`CEmitter.cpp`](../../lib/CodeGen/CEmitter.cpp) already runs `createSCFToEmitC`,
+[`CEmitter.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/CEmitter.cpp) already runs `createSCFToEmitC`,
 `createConvertArithToEmitC`, `createConvertFuncToEmitC` and `translateToCpp`, which is how the
 helper predicates become C today. Checked against upstream `mlir-opt`/`mlir-translate`, that
 path also renders everything the serdes bodies need:
@@ -245,7 +245,7 @@ a struct, which is how each of these was found.
 
 Lowering stamps the unscoped, unversioned spelling of every C name, because it does not know a
 backend's naming options and produces one module every backend reads. A backend rewrites them
-through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](../../lib/CodeGen/SchemaNaming.cpp),
+through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/SchemaNaming.cpp),
 using the same scopes and renderers it names its own output with.
 
 Two conditions were once one attribute. `llvmdsdl.names_final` says the C names on a module are
@@ -274,7 +274,7 @@ The value beside them is not a `size_t`. `set_uxx` takes a `uint64_t` whatever t
 A C function's signature is a property of the function. Taking it from whatever a call site
 held gave one declaration per spelling of the same primitive, and a call passing its arguments
 somewhere the callee does not read them. `runtimeSignature` states what
-[`runtime/dsdl_runtime.h`](../../runtime/dsdl_runtime.h) declares, and arguments and results are
+[`runtime/dsdl_runtime.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/runtime/dsdl_runtime.h) declares, and arguments and results are
 converted to it -- a bit travels as `bool`, a narrow field in the holder it fits, a value widened
 to the 64-bit carrier `set_uxx` takes.
 
@@ -290,7 +290,7 @@ primitives.
 
 ### The primitives an object calls
 
-They are `static inline` in [`runtime/dsdl_runtime.h`](../../runtime/dsdl_runtime.h): a C
+They are `static inline` in [`runtime/dsdl_runtime.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/runtime/dsdl_runtime.h): a C
 translation unit carries its own copy and no symbol survives compilation, so an object has
 nothing to link against. `emit-dsdl-runtime` builds all twenty from the wire format instead,
 filling in the declarations the conversion left.
@@ -403,7 +403,7 @@ taking on for a serialisation entry point that has no need of it.
 
 ## Acceptance
 
-Six gates, in [`tools/gates/direct_lowering_gates.py`](../../tools/gates/direct_lowering_gates.py),
+Six gates, in [`tools/gates/direct_lowering_gates.py`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/gates/direct_lowering_gates.py),
 run by `ctest -L direct-lowering-gate`. Each reports `PASS`, `NOT_IMPLEMENTED` or `FAIL`;
 `-DLLVMDSDL_DIRECT_LOWERING_STRICT=ON` makes `NOT_IMPLEMENTED` a failure.
 
