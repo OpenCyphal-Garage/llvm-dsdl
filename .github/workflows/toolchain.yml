@@ -140,10 +140,10 @@ jobs:
       - name: Verify before publishing
         if: steps.guard.outputs.skip != 'true'
         # A toolchain that merely builds is not the goal. These assertions are
-        # the properties it is built *for* -- static-only, no target backends,
-        # the tools the build and lit suite need, no optional-feature libraries
-        # on the link line. Publishing an image that fails them would put the
-        # defect downstream of every consumer.
+        # the properties it is built *for* -- static-only, the target backends
+        # the obj lane assembles for, the tools the build and lit suite need, no
+        # optional-feature libraries on the link line. Publishing an image that
+        # fails them would put the defect downstream of every consumer.
         run: |
           docker run --rm -v "${PWD}/packaging/toolchain:/v:ro" \
             "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \

@@ -37,10 +37,12 @@ CMAKE_FLAGS = [
     # compile. Costs ~31 MB of the install prefix.
     "-DLLVM_ENABLE_RTTI=ON",
 
-    # dsdlc emits source text, not machine code, and no target backend is
-    # reachable from the MLIR libraries we link. This removes the bulk of an
-    # LLVM build: 4,861 ninja edges against 30,000-plus for a full one.
-    "-DLLVM_TARGETS_TO_BUILD=",
+    # `--target-language obj` assembles inside dsdlc, so a target is emitted for
+    # by naming it rather than by having a toolchain for it installed. These are
+    # the backends that reach a Cyphal node or a host that builds for one; the
+    # rest of LLVM's twenty are the bulk of a full build and none of them is a
+    # target this compiler is asked for.
+    "-DLLVM_TARGETS_TO_BUILD=X86;AArch64;ARM;RISCV;AVR;Mips;WebAssembly",
 
     # The point of the exercise: no shared libLLVM to vendor, sign or resolve.
     "-DLLVM_BUILD_LLVM_DYLIB=OFF",
@@ -161,11 +163,10 @@ def main() -> int:
     # orders the two. (MLIR_ENABLE_EXECUTION_ENGINE=OFF does not help: it gates
     # the JIT engine, not these utilities, which are built regardless.)
     #
-    # A normal LLVM build hides this -- with target backends enabled there is so
-    # much other work that analysis_gen always finishes first. LLVM_TARGETS_TO_BUILD
-    # being empty removes that cushion, and MLIR then starts early enough to lose
-    # on a machine with few cores: it built on a 14-core developer machine every
-    # time and failed on a 4-vCPU CI runner with
+    # How much other work is queued decides who wins, so the outcome moves with
+    # LLVM_TARGETS_TO_BUILD and with the core count: MLIR once started early
+    # enough to lose on a 4-vCPU CI runner, having built on a 14-core developer
+    # machine every time, with
     #
     #   fatal error: llvm/Analysis/TargetLibraryInfo.inc: No such file or directory
     #
