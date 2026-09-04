@@ -1278,7 +1278,7 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
 
             for (const PlanStep* option : unionOptionsOf(steps))
             {
-                cursor = buildUnionOption(builder, loc, rawTag, *option, cursor, [&](PlanCursor arm) {
+                cursor = buildUnionOption(builder, loc, tagValue, *option, cursor, [&](PlanCursor arm) {
                     if (option->alignmentBits > 1)
                     {
                         arm = buildAlignment(builder, loc, buffer, capacityBytes, arm, true, false);

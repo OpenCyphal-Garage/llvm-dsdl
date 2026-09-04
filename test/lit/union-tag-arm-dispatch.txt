@@ -1,0 +1,27 @@
+# A union's arms are selected by the value the plan validated and wrote, not by what came off
+# the object. The tag is loaded, normalised through the serialize tag helper, and it is that
+# result the validator sees, the wire receives and each arm's predicate compares against; the
+# deserialize side does the same with the value read off the wire.
+#
+# The two are equal only because a tag's storage is never wider than its bit count, an
+# invariant the analyser enforces. Selecting an arm on an unvalidated value would make the
+# wire's tag and the arm that produced the payload disagree the moment that ceased to hold.
+
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --lower-dsdl-exec --build-dsdl-plan-bodies %t.mlir | FileCheck %s
+
+# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__serialize_ir_
+# CHECK: dsdl.load_member %{{.*}} ["_tag_"]
+# CHECK: %[[SER_TAG:.*]] = func.call @llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser
+# CHECK: func.call @llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(%[[SER_TAG]])
+# CHECK: dsdl.write_bits %{{.*}}, %[[SER_TAG]]
+# CHECK: arith.cmpi eq, %[[SER_TAG]]
+# CHECK: arith.cmpi eq, %[[SER_TAG]]
+
+# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__deserialize_ir_
+# CHECK: dsdl.read_bits
+# CHECK: %[[DESER_TAG:.*]] = func.call @llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser
+# CHECK: func.call @llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(%[[DESER_TAG]])
+# CHECK: dsdl.store_member %{{.*}} ["_tag_"], %[[DESER_TAG]]
+# CHECK: arith.cmpi eq, %[[DESER_TAG]]
+# CHECK: arith.cmpi eq, %[[DESER_TAG]]
