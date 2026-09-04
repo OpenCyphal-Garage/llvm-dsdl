@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <vector>
 
 #include "llvm/ADT/SmallVector.h"
@@ -26,6 +27,11 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
 namespace llvmdsdl
@@ -41,84 +47,69 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVe
                                     versioning);
 }
 
-void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
+void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
     const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
     const NamingScope responseScope =
         makeSectionFieldScope(CodegenNamingLanguage::C, def.response.has_value() ? *def.response : def.request);
 
-    const auto scopeFor = [&](mlir::Operation* const op) -> const NamingScope& {
-        const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section");
-        return (sectionAttr && sectionAttr.getValue() == "response") ? responseScope : requestScope;
+    const auto scopeFor = [&](const std::optional<llvm::StringRef> section) -> const NamingScope& {
+        return (section && *section == "response") ? responseScope : requestScope;
     };
+    mlir::MLIRContext* const context = schema.getContext();
 
-    schema.walk([&](mlir::Operation* const op) {
-        const llvm::StringRef opName = op->getName().getStringRef();
-        if ((opName != "dsdl.field") && (opName != "dsdl.io"))
+    schema.walk([&](mlir::dsdl::FieldOp field) {
+        if (field.getPadding())
         {
             return;
         }
-        if (op->hasAttr("padding") || (op->getAttrOfType<mlir::StringAttr>("kind") &&
-                                       op->getAttrOfType<mlir::StringAttr>("kind").getValue() == "padding"))
+        field.setCNameAttr(
+            mlir::StringAttr::get(context,
+                                  scopeFor(field.getSection()).get(IdentifierRole::FieldName, field.getName())));
+    });
+
+    const std::string baseTypeName = cTypeNameFromInfo(def.info, versioning);
+    schema.setCTypeNameAttr(mlir::StringAttr::get(context, baseTypeName));
+
+    schema.walk([&](mlir::dsdl::SerializationPlanOp plan) {
+        // A service section appends its suffix to the *type* name, so the version sits before
+        // it rather than at the end. Composing from the base is what keeps that true.
+        std::string sectionTypeName = baseTypeName;
+        if (const auto section = plan.getSection())
         {
-            return;
+            if (*section == "request")
+            {
+                sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
+            }
+            else if (*section == "response")
+            {
+                sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
+            }
         }
-        const auto nameAttr = op->getAttrOfType<mlir::StringAttr>("name");
-        if (!nameAttr)
+        plan.setCTypeNameAttr(mlir::StringAttr::get(context, sectionTypeName));
+        plan.setCSerializeSymbolAttr(mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
+        plan.setCDeserializeSymbolAttr(mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
+    });
+
+    schema.walk([&](mlir::dsdl::IOOp io) {
+        if (io.isPadding())
         {
             return;
         }
         // An io op names no section of its own; the plan that encloses it does.
-        mlir::Operation* const sectionCarrier = (opName == "dsdl.io") ? op->getParentOp() : op;
-        op->setAttr("c_name",
-                    mlir::StringAttr::get(op->getContext(),
-                                          scopeFor(sectionCarrier)
-                                              .get(IdentifierRole::FieldName, nameAttr.getValue())));
-    });
-
-    mlir::MLIRContext* const context      = schema.getContext();
-    const std::string        baseTypeName = cTypeNameFromInfo(def.info, versioning);
-    schema.setAttr("c_type_name", mlir::StringAttr::get(context, baseTypeName));
-
-    schema.walk([&](mlir::Operation* const op) {
-        const llvm::StringRef opName = op->getName().getStringRef();
-        if (opName == "dsdl.serialization_plan")
-        {
-            // A service section appends its suffix to the *type* name, so the version sits before
-            // it rather than at the end. Composing from the base is what keeps that true.
-            std::string sectionTypeName = baseTypeName;
-            if (const auto sectionAttr = op->getAttrOfType<mlir::StringAttr>("section"))
-            {
-                if (sectionAttr.getValue() == "request")
-                {
-                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
-                }
-                else if (sectionAttr.getValue() == "response")
-                {
-                    sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
-                }
-            }
-            op->setAttr("c_type_name", mlir::StringAttr::get(context, sectionTypeName));
-            op->setAttr("c_serialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
-            op->setAttr("c_deserialize_symbol", mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
-            return;
-        }
-        if (opName != "dsdl.io")
+        auto plan = io->getParentOfType<mlir::dsdl::SerializationPlanOp>();
+        io.setCNameAttr(mlir::StringAttr::get(context,
+                                              scopeFor(plan ? plan.getSection() : std::nullopt)
+                                                  .get(IdentifierRole::FieldName, io.getName())));
+        if (!io.isComposite())
         {
             return;
         }
         // A referenced composite is named by the same rule as the definition itself. The io op
         // carries the reference's identity, so this re-renders rather than patching the string
         // lowering left.
-        const auto fullNameAttr = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
-        const auto majorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
-        const auto minorAttr    = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
-        if (!fullNameAttr || !majorAttr || !minorAttr)
-        {
-            return;
-        }
         llvm::SmallVector<llvm::StringRef, 8> parts;
-        fullNameAttr.getValue().split(parts, '.');
+        io.getCompositeFullName()->split(parts, '.');
         if (parts.empty())
         {
             return;
@@ -130,38 +121,26 @@ void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, const T
         {
             namespaceComponents.emplace_back(parts[i].str());
         }
-        op->setAttr("composite_c_type_name",
-                    mlir::StringAttr::get(context,
-                                          renderDefinitionTypeName(CodegenNamingLanguage::C,
-                                                                   namespaceComponents,
-                                                                   shortName,
-                                                                   static_cast<std::uint32_t>(majorAttr.getInt()),
-                                                                   static_cast<std::uint32_t>(minorAttr.getInt()),
-                                                                   versioning)));
+        io.setCompositeCTypeNameAttr(
+            mlir::StringAttr::get(context,
+                                  renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                                           namespaceComponents,
+                                                           shortName,
+                                                           static_cast<std::uint32_t>(*io.getCompositeMajor()),
+                                                           static_cast<std::uint32_t>(*io.getCompositeMinor()),
+                                                           versioning)));
     });
 }
 
 std::size_t stampCNames(mlir::ModuleOp module, const SemanticModule& semantic, const TypeNameVersioning versioning)
 {
     std::size_t stamped = 0;
-    for (mlir::Operation& schema : module.getBodyRegion().front())
+    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (schema.getName().getStringRef() != "dsdl.schema")
-        {
-            continue;
-        }
-        const auto fullName = schema.getAttrOfType<mlir::StringAttr>("full_name");
-        const auto major    = schema.getAttrOfType<mlir::IntegerAttr>("major");
-        const auto minor    = schema.getAttrOfType<mlir::IntegerAttr>("minor");
-        if (!fullName || !major || !minor)
-        {
-            continue;
-        }
         for (const auto& def : semantic.definitions)
         {
-            if ((def.info.fullName == fullName.getValue()) &&
-                (static_cast<std::int64_t>(def.info.majorVersion) == major.getInt()) &&
-                (static_cast<std::int64_t>(def.info.minorVersion) == minor.getInt()))
+            if ((def.info.fullName == schema.getFullName()) && (def.info.majorVersion == schema.getMajor()) &&
+                (def.info.minorVersion == schema.getMinor()))
             {
                 stampCNames(schema, def, versioning);
                 ++stamped;

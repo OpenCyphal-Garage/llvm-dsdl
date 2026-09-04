@@ -25,10 +25,7 @@
 
 #include <llvm/ADT/StringRef.h>
 
-namespace mlir
-{
-class Operation;
-}  // namespace mlir
+#include "llvmdsdl/IR/DSDLOps.h"
 
 namespace llvmdsdl
 {
@@ -138,9 +135,9 @@ struct PlanStep final
 };
 
 /// @brief Reads the steps of @p plan, in order.
-/// @param[in] plan A `dsdl.serialization_plan` operation.
+/// @param[in] plan The plan.
 /// @return Its steps.
-std::vector<PlanStep> collectPlanSteps(mlir::Operation* plan);
+std::vector<PlanStep> collectPlanSteps(mlir::dsdl::SerializationPlanOp plan);
 
 }  // namespace llvmdsdl
 

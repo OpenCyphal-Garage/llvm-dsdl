@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: 'dsdl.serialization_plan' op missing required min_bits/max_bits plan metadata
+// CHECK: error: 'dsdl.serialization_plan' op requires attribute 'max_bits'

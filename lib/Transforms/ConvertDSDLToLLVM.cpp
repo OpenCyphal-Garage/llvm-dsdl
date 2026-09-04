@@ -17,26 +17,43 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <cstddef>
+#include <cstdint>
+#include <llvm/ADT/DenseMap.h>
+#include <limits>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/CommandLine.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 #include <mlir/Interfaces/DataLayoutInterfaces.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <memory>
 #include <string>
+#include <utility>
 
+#include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
 
 namespace llvmdsdl
 {
@@ -80,9 +97,7 @@ unsigned targetSizeBits(mlir::ModuleOp module, const unsigned fallback)
 /// @param[in] name The runtime primitive's symbol.
 /// @param[in] sizeTy What the target spells `size_t` as.
 /// @return The signature, or null when @p name is not a runtime primitive.
-mlir::LLVM::LLVMFunctionType runtimeSignature(mlir::MLIRContext* ctx,
-                                              llvm::StringRef    name,
-                                              mlir::Type         sizeTy)
+mlir::LLVM::LLVMFunctionType runtimeSignature(mlir::MLIRContext* ctx, llvm::StringRef name, mlir::Type sizeTy)
 {
     auto ptr  = mlir::LLVM::LLVMPointerType::get(ctx);
     auto i1   = mlir::IntegerType::get(ctx, 1);
@@ -183,7 +198,7 @@ mlir::Value coerce(mlir::ConversionPatternRewriter& rewriter,
     if (mlir::isa<mlir::IntegerType>(from) && mlir::isa<mlir::IntegerType>(target))
     {
         const unsigned fromWidth = mlir::cast<mlir::IntegerType>(from).getWidth();
-        const unsigned to   = mlir::cast<mlir::IntegerType>(target).getWidth();
+        const unsigned to        = mlir::cast<mlir::IntegerType>(target).getWidth();
         if (fromWidth == to)
         {
             return value;
@@ -198,13 +213,13 @@ mlir::Value coerce(mlir::ConversionPatternRewriter& rewriter,
     if (mlir::isa<mlir::FloatType>(from) && mlir::isa<mlir::FloatType>(target))
     {
         const unsigned fromWidth = mlir::cast<mlir::FloatType>(from).getWidth();
-        const unsigned to   = mlir::cast<mlir::FloatType>(target).getWidth();
+        const unsigned to        = mlir::cast<mlir::FloatType>(target).getWidth();
         if (fromWidth == to)
         {
             return value;
         }
         return (fromWidth > to) ? mlir::Value{mlir::LLVM::FPTruncOp::create(rewriter, loc, target, value)}
-                           : mlir::Value{mlir::LLVM::FPExtOp::create(rewriter, loc, target, value)};
+                                : mlir::Value{mlir::LLVM::FPExtOp::create(rewriter, loc, target, value)};
     }
     return value;
 }
@@ -219,15 +234,14 @@ mlir::Value callRuntime(mlir::ConversionPatternRewriter& rewriter,
 {
     auto* ctx = rewriter.getContext();
     // The runtime's own signature, so that every call to one primitive agrees on what it takes.
-    const auto declared =
-        runtimeSignature(ctx, name, mlir::IntegerType::get(ctx, targetSizeBits(module, 64)));
+    const auto declared = runtimeSignature(ctx, name, mlir::IntegerType::get(ctx, targetSizeBits(module, 64)));
 
     mlir::SmallVector<mlir::Value, 6> coerced(arguments.begin(), arguments.end());
     mlir::Type                        resultType = result;
     if (declared)
     {
-        resultType = mlir::isa<mlir::LLVM::LLVMVoidType>(declared.getReturnType()) ? mlir::Type{}
-                                                                                  : declared.getReturnType();
+        resultType =
+            mlir::isa<mlir::LLVM::LLVMVoidType>(declared.getReturnType()) ? mlir::Type{} : declared.getReturnType();
         for (std::size_t i = 0; (i < coerced.size()) && (i < declared.getParams().size()); ++i)
         {
             coerced[i] = coerce(rewriter, loc, coerced[i], declared.getParams()[i], isSigned);
@@ -235,7 +249,7 @@ mlir::Value callRuntime(mlir::ConversionPatternRewriter& rewriter,
     }
 
     mlir::SmallVector<mlir::Type, 6> argumentTypes;
-    for (mlir::Value argument : coerced)
+    for (mlir::Value const argument : coerced)
     {
         argumentTypes.push_back(argument.getType());
     }
@@ -244,7 +258,7 @@ mlir::Value callRuntime(mlir::ConversionPatternRewriter& rewriter,
                                  name,
                                  resultType ? resultType : mlir::LLVM::LLVMVoidType::get(ctx),
                                  argumentTypes);
-    auto call = mlir::LLVM::CallOp::create(rewriter, loc, callee, coerced);
+    auto call   = mlir::LLVM::CallOp::create(rewriter, loc, callee, coerced);
     if (call.getNumResults() == 0)
     {
         return {};
@@ -272,10 +286,7 @@ struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNul
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
         auto null = mlir::LLVM::ZeroOp::create(rewriter, op.getLoc(), adaptor.getPointer().getType());
-        rewriter.replaceOpWithNewOp<mlir::LLVM::ICmpOp>(op,
-                                                        mlir::LLVM::ICmpPredicate::eq,
-                                                        adaptor.getPointer(),
-                                                        null);
+        rewriter.replaceOpWithNewOp<mlir::LLVM::ICmpOp>(op, mlir::LLVM::ICmpPredicate::eq, adaptor.getPointer(), null);
         return mlir::success();
     }
 };
@@ -334,9 +345,8 @@ struct LocalLowering final : public mlir::OpConversionPattern<mlir::dsdl::LocalO
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc  = op.getLoc();
-        auto                 one  = mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
-                                                 rewriter.getI64IntegerAttr(1));
+        const mlir::Location loc = op.getLoc();
+        auto one  = mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
         auto slot = mlir::LLVM::AllocaOp::create(rewriter,
                                                  loc,
                                                  mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
@@ -360,9 +370,9 @@ struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc     = op.getLoc();
-        auto                 module  = op->getParentOfType<mlir::ModuleOp>();
-        auto                 ptrTy   = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+        const mlir::Location      loc    = op.getLoc();
+        auto                      module = op->getParentOfType<mlir::ModuleOp>();
+        auto                      ptrTy  = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
         constexpr llvm::StringRef kEmpty = "llvmdsdl_empty_buffer";
 
         if (!module.lookupSymbol<mlir::LLVM::GlobalOp>(kEmpty))
@@ -376,20 +386,17 @@ struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl
                                          /*isConstant=*/true,
                                          mlir::LLVM::Linkage::Private,
                                          kEmpty,
-                                         rewriter.getZeroAttr(mlir::RankedTensorType::get({1}, rewriter.getI8Type())));
+                                         mlir::cast<mlir::Attribute>(rewriter.getZeroAttr(
+                                             mlir::RankedTensorType::get({1}, rewriter.getI8Type()))));
         }
-        auto empty  = mlir::LLVM::AddressOfOp::create(rewriter, loc, ptrTy, kEmpty);
-        auto null   = mlir::LLVM::ZeroOp::create(rewriter, loc, adaptor.getBuffer().getType());
-        auto isNull = mlir::LLVM::ICmpOp::create(rewriter,
-                                                 loc,
-                                                 mlir::LLVM::ICmpPredicate::eq,
-                                                 adaptor.getBuffer(),
-                                                 null);
+        auto empty = mlir::LLVM::AddressOfOp::create(rewriter, loc, ptrTy, kEmpty);
+        auto null  = mlir::LLVM::ZeroOp::create(rewriter, loc, adaptor.getBuffer().getType());
+        auto isNull =
+            mlir::LLVM::ICmpOp::create(rewriter, loc, mlir::LLVM::ICmpPredicate::eq, adaptor.getBuffer(), null);
         rewriter.replaceOpWithNewOp<mlir::LLVM::SelectOp>(op, isNull, empty, adaptor.getBuffer());
         return mlir::success();
     }
 };
-
 
 //===----------------------------------------------------------------------===//
 // The struct a member is addressed within
@@ -408,11 +415,9 @@ mlir::Type scalarStorage(mlir::MLIRContext* ctx, llvm::StringRef category, const
     }
     if (category == "float")
     {
-        return (bits <= 32) ? mlir::Type(mlir::Float32Type::get(ctx))
-                            : mlir::Type(mlir::Float64Type::get(ctx));
+        return (bits <= 32) ? mlir::Type(mlir::Float32Type::get(ctx)) : mlir::Type(mlir::Float64Type::get(ctx));
     }
-    const unsigned holder = (bits <= 8) ? 8U : (bits <= 16) ? 16U : (bits <= 32) ? 32U : 64U;
-    return mlir::IntegerType::get(ctx, holder);
+    return mlir::IntegerType::get(ctx, holderWidthFor(bits));
 }
 
 /// @brief The storage one field occupies in the generated struct.
@@ -424,12 +429,12 @@ mlir::Type scalarStorage(mlir::MLIRContext* ctx, llvm::StringRef category, const
 /// @param[in] module The module being converted.
 /// @param[in] fallback What to answer when the module states no layout.
 /// @return The width in bits.
-mlir::Type fieldStorage(mlir::MLIRContext* ctx,
-                        llvm::StringRef    category,
-                        const std::int64_t bits,
-                        llvm::StringRef    arrayKind,
-                        const std::int64_t capacity,
-                        llvm::StringRef    compositeType,
+mlir::Type fieldStorage(mlir::MLIRContext*                           ctx,
+                        llvm::StringRef                              category,
+                        const std::int64_t                           bits,
+                        llvm::StringRef                              arrayKind,
+                        const std::int64_t                           capacity,
+                        llvm::StringRef                              compositeType,
                         llvm::DenseMap<llvm::StringRef, mlir::Type>& composites,
                         const unsigned                               sizeBits)
 {
@@ -457,7 +462,7 @@ mlir::Type fieldStorage(mlir::MLIRContext* ctx,
     {
         return element;
     }
-    const auto extent = packed ? ((capacity + 7) / 8) : capacity;
+    const auto extent  = packed ? ((capacity + 7) / 8) : capacity;
     auto       storage = mlir::LLVM::LLVMArrayType::get(element, static_cast<unsigned>(extent));
     if (arrayKind == "fixed")
     {
@@ -468,10 +473,6 @@ mlir::Type fieldStorage(mlir::MLIRContext* ctx,
     return mlir::LLVM::LLVMStructType::getLiteral(ctx, {storage, mlir::IntegerType::get(ctx, sizeBits)});
 }
 
-/// @brief Builds a struct per schema section, matching what the C backend emits.
-///
-/// Keyed by the spelling `!dsdl.opaque` carries, which is how a plan names the thing it was
-/// handed. A type whose members cannot all be described is left out rather than guessed at.
 /// @brief What each published serdes wrapper is called beneath the header.
 ///
 /// A generated header publishes `X__serialize_` as a static inline that calls the body the plan
@@ -479,43 +480,30 @@ mlir::Type fieldStorage(mlir::MLIRContext* ctx,
 llvm::DenseMap<llvm::StringRef, std::string> buildSerdesBodies(mlir::ModuleOp module)
 {
     llvm::DenseMap<llvm::StringRef, std::string> bodies;
-    for (mlir::Operation& schema : module.getBodyRegion().front())
+    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (schema.getName().getStringRef() != "dsdl.schema")
+        if (schema.getBody().empty())
         {
             continue;
         }
-        const auto stem = schema.getAttrOfType<mlir::StringAttr>("sym_name");
-        if (!stem || (schema.getNumRegions() == 0) || schema.getRegion(0).empty())
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            continue;
-        }
-        for (mlir::Operation& plan : schema.getRegion(0).front())
-        {
-            if (plan.getName().getStringRef() != "dsdl.serialization_plan")
-            {
-                continue;
-            }
-            const auto section = plan.getAttrOfType<mlir::StringAttr>("section");
-            const std::string suffix =
-                section ? ("__" + section.getValue().str()) : std::string{};
-            for (const char* which : {"serialize", "deserialize"})
-            {
-                const auto published =
-                    plan.getAttrOfType<mlir::StringAttr>(std::string("c_") + which + "_symbol");
-                if (published)
-                {
-                    bodies[published.getValue()] = stem.getValue().str() + suffix + "__" + which + "_ir_";
-                }
-            }
+            const std::string suffix           = plan.getSection() ? ("__" + plan.getSection()->str()) : std::string{};
+            const std::string stem             = schema.getSymName().str() + suffix;
+            bodies[plan.getCSerializeSymbol()] = stem + "__serialize_ir_";
+            bodies[plan.getCDeserializeSymbol()] = stem + "__deserialize_ir_";
         }
     }
     return bodies;
 }
 
+/// @brief Builds a struct per schema section, matching what the C backend emits.
+///
+/// Keyed by the spelling `!dsdl.opaque` carries, which is how a plan names the thing it was
+/// handed. A type whose members cannot all be described is left out rather than guessed at.
 llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, const unsigned sizeBits)
 {
-    auto* ctx = module.getContext();
+    auto*                                       ctx = module.getContext();
     llvm::DenseMap<llvm::StringRef, mlir::Type> composites;
 
     // A nested type has to be described before the type holding it can be, and a chain of them
@@ -524,51 +512,33 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
     for (std::size_t described = std::numeric_limits<std::size_t>::max(); described != composites.size();)
     {
         described = composites.size();
-        for (mlir::Operation& schema : module.getBodyRegion().front())
+        for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
-            if (schema.getName().getStringRef() != "dsdl.schema")
+            if (schema.getBody().empty())
             {
                 continue;
             }
-            if ((schema.getNumRegions() == 0) || schema.getRegion(0).empty())
+            for (mlir::dsdl::SerializationPlanOp plan :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                continue;
-            }
-            for (mlir::Operation& plan : schema.getRegion(0).front())
-            {
-                if (plan.getName().getStringRef() != "dsdl.serialization_plan")
-                {
-                    continue;
-                }
-                const auto nameAttr = plan.getAttrOfType<mlir::StringAttr>("c_type_name");
-                if (!nameAttr || ((plan.getNumRegions() > 0) && plan.getRegion(0).empty()))
+                if (plan.getBody().empty())
                 {
                     continue;
                 }
                 mlir::SmallVector<mlir::Type, 8> members;
                 bool                             describable = true;
-                for (mlir::Operation& io : plan.getRegion(0).front())
+                for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
-                    if (io.getName().getStringRef() != "dsdl.io")
-                    {
-                        continue;
-                    }
-                    const auto kind = io.getAttrOfType<mlir::StringAttr>("kind");
-                    if (!kind || (kind.getValue() != "field"))
+                    if (io.isPadding())
                     {
                         continue;  // Padding reserves wire bits and holds no member.
                     }
-                    const auto category = io.getAttrOfType<mlir::StringAttr>("scalar_category");
-                    const auto arrayKind = io.getAttrOfType<mlir::StringAttr>("array_kind");
-                    const auto composite = io.getAttrOfType<mlir::StringAttr>("composite_c_type_name");
-                    const auto bitsAttr  = io.getAttrOfType<mlir::IntegerAttr>("bit_length");
-                    const auto capAttr   = io.getAttrOfType<mlir::IntegerAttr>("array_capacity");
-                    auto       storage   = fieldStorage(ctx,
-                                                category ? category.getValue() : llvm::StringRef{},
-                                                bitsAttr ? bitsAttr.getInt() : 0,
-                                                arrayKind ? arrayKind.getValue() : llvm::StringRef{},
-                                                capAttr ? capAttr.getInt() : 0,
-                                                composite ? composite.getValue() : llvm::StringRef{},
+                    auto storage = fieldStorage(ctx,
+                                                io.getScalarCategory(),
+                                                io.getBitLength(),
+                                                io.getArrayKind(),
+                                                io.getArrayCapacity(),
+                                                io.getCompositeCTypeName().value_or(llvm::StringRef{}),
                                                 composites,
                                                 sizeBits);
                     if (!storage)
@@ -582,17 +552,16 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
                 {
                     continue;
                 }
-                if (plan.hasAttr("is_union"))
+                if (plan.getIsUnion())
                 {
-                    const auto tagBits = plan.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-                    members.push_back(scalarStorage(ctx, "unsigned", tagBits ? tagBits.getInt() : 8));
+                    members.push_back(scalarStorage(ctx, "unsigned", *plan.getUnionTagBits()));
                 }
                 if (members.empty())
                 {
                     // C has no empty struct, so the backend gives it a member nothing maps to.
                     members.push_back(mlir::IntegerType::get(ctx, 8));
                 }
-                composites[nameAttr.getValue()] = mlir::LLVM::LLVMStructType::getLiteral(ctx, members);
+                composites[plan.getCTypeName()] = mlir::LLVM::LLVMStructType::getLiteral(ctx, members);
             }
         }
     }
@@ -635,8 +604,7 @@ std::string runtimePrimitiveName(const bool write, mlir::Type valueType, const s
     {
         return isSigned ? "dsdl_runtime_set_ixx" : "dsdl_runtime_set_uxx";
     }
-    const unsigned holder = (width <= 8) ? 8U : (width <= 16) ? 16U : (width <= 32) ? 32U : 64U;
-    return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holder);
+    return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holderWidthFor(width));
 }
 
 struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>
@@ -649,8 +617,10 @@ struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::Wr
     {
         const mlir::Location loc    = op.getLoc();
         auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee =
-            runtimePrimitiveName(true, op.getValue().getType(), op.getWidth(), op.getIsSigned());
+        const std::string    callee = runtimePrimitiveName(true,
+                                                           op.getValue().getType(),
+                                                           static_cast<std::int64_t>(op.getWidth()),
+                                                           op.getIsSigned());
 
         mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
                                                     adaptor.getBufferSizeBytes(),
@@ -658,11 +628,13 @@ struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::Wr
                                                     adaptor.getValue()};
         if ((callee == "dsdl_runtime_set_uxx") || (callee == "dsdl_runtime_set_ixx"))
         {
-            arguments.push_back(mlir::LLVM::ConstantOp::create(
-                rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            arguments.push_back(
+                mlir::LLVM::ConstantOp::create(rewriter,
+                                               loc,
+                                               rewriter.getI8Type(),
+                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
         }
-        auto result =
-            callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
+        auto result = callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
         rewriter.replaceOp(op, result);
         return mlir::success();
     }
@@ -678,19 +650,23 @@ struct ReadBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::Rea
     {
         const mlir::Location loc    = op.getLoc();
         auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee =
-            runtimePrimitiveName(false, op.getValue().getType(), op.getWidth(), op.getIsSigned());
+        const std::string    callee = runtimePrimitiveName(false,
+                                                           op.getValue().getType(),
+                                                           static_cast<std::int64_t>(op.getWidth()),
+                                                           op.getIsSigned());
 
         mlir::SmallVector<mlir::Value, 4> arguments{adaptor.getBuffer(),
                                                     adaptor.getBufferSizeBytes(),
                                                     adaptor.getBitOffset()};
-        if ((callee.find("_get_u") != std::string::npos) || (callee.find("_get_i") != std::string::npos))
+        if ((callee.contains("_get_u")) || (callee.contains("_get_i")))
         {
-            arguments.push_back(mlir::LLVM::ConstantOp::create(
-                rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            arguments.push_back(
+                mlir::LLVM::ConstantOp::create(rewriter,
+                                               loc,
+                                               rewriter.getI8Type(),
+                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
         }
-        auto result =
-            callRuntime(rewriter, loc, module, callee, op.getValue().getType(), arguments, op.getIsSigned());
+        auto result = callRuntime(rewriter, loc, module, callee, op.getValue().getType(), arguments, op.getIsSigned());
         rewriter.replaceOp(op, result);
         return mlir::success();
     }
@@ -747,8 +723,8 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
 /// @brief A nested type's own entry point, which lives in its own object.
 struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>
 {
-    CallSerdesLowering(const mlir::TypeConverter&                      converter,
-                       mlir::MLIRContext*                              ctx,
+    CallSerdesLowering(const mlir::TypeConverter&                          converter,
+                       mlir::MLIRContext*                                  ctx,
                        const llvm::DenseMap<llvm::StringRef, std::string>& bodies)
         : mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>(converter, ctx)
         , bodies_(bodies)
@@ -759,9 +735,9 @@ struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::C
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        auto              module   = op->getParentOfType<mlir::ModuleOp>();
-        const auto        found    = bodies_.find(op.getCallee());
-        const std::string callee   = (found == bodies_.end()) ? op.getCallee().str() : found->second;
+        auto              module = op->getParentOfType<mlir::ModuleOp>();
+        const auto        found  = bodies_.find(op.getCallee());
+        const std::string callee = (found == bodies_.end()) ? op.getCallee().str() : found->second;
         const mlir::SmallVector<mlir::Value, 3> arguments{adaptor.getObject(), adaptor.getBuffer(), adaptor.getSize()};
 
         // A nested type in this same module is called directly; one from another is declared.
@@ -771,8 +747,7 @@ struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::C
             rewriter.replaceOp(op, call.getResult(0));
             return mlir::success();
         }
-        auto result =
-            callRuntime(rewriter, op.getLoc(), module, callee, rewriter.getI8Type(), arguments);
+        auto result = callRuntime(rewriter, op.getLoc(), module, callee, rewriter.getI8Type(), arguments);
         rewriter.replaceOp(op, result);
         return mlir::success();
     }
@@ -780,7 +755,6 @@ struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::C
 private:
     const llvm::DenseMap<llvm::StringRef, std::string>& bodies_;
 };
-
 
 //===----------------------------------------------------------------------===//
 // Members, by position
@@ -795,9 +769,9 @@ private:
 template <typename OpT>
 struct MemberAccess : public mlir::OpConversionPattern<OpT>
 {
-    MemberAccess(const mlir::TypeConverter&                          converter,
-                 mlir::MLIRContext*                                  ctx,
-                 const llvm::DenseMap<llvm::StringRef, mlir::Type>&  composites)
+    MemberAccess(const mlir::TypeConverter&                         converter,
+                 mlir::MLIRContext*                                 ctx,
+                 const llvm::DenseMap<llvm::StringRef, mlir::Type>& composites)
         : mlir::OpConversionPattern<OpT>(converter, ctx)
         , structs(composites)
     {
@@ -853,7 +827,7 @@ struct MemberAccess : public mlir::OpConversionPattern<OpT>
         for (const std::int64_t index : op.getIndices())
         {
             auto owner = mlir::dyn_cast_or_null<mlir::LLVM::LLVMStructType>(at);
-            if (!owner || (index < 0) || (index >= static_cast<std::int64_t>(owner.getBody().size())))
+            if (!owner || (index < 0) || (std::cmp_greater_equal(index, owner.getBody().size())))
             {
                 return {};
             }
@@ -921,10 +895,10 @@ struct LoadMemberLowering final : public MemberAccess<mlir::dsdl::LoadMemberOp>
         {
             return mlir::failure();
         }
-        mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
-        rewriter.replaceOp(
-            op,
-            fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
+        const mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
+        rewriter
+            .replaceOp(op,
+                       fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
         return mlir::success();
     }
 };
@@ -943,8 +917,9 @@ struct StoreMemberLowering final : public MemberAccess<mlir::dsdl::StoreMemberOp
         {
             return mlir::failure();
         }
-        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(
-            op, fit(rewriter, op.getLoc(), adaptor.getValue(), held, false), at);
+        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(op,
+                                                         fit(rewriter, op.getLoc(), adaptor.getValue(), held, false),
+                                                         at);
         return mlir::success();
     }
 };
@@ -963,10 +938,10 @@ struct LoadElementLowering final : public MemberAccess<mlir::dsdl::LoadElementOp
         {
             return mlir::failure();
         }
-        mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
-        rewriter.replaceOp(
-            op,
-            fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
+        const mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
+        rewriter
+            .replaceOp(op,
+                       fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
         return mlir::success();
     }
 };
@@ -985,8 +960,9 @@ struct StoreElementLowering final : public MemberAccess<mlir::dsdl::StoreElement
         {
             return mlir::failure();
         }
-        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(
-            op, fit(rewriter, op.getLoc(), adaptor.getValue(), held, false), at);
+        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(op,
+                                                         fit(rewriter, op.getLoc(), adaptor.getValue(), held, false),
+                                                         at);
         return mlir::success();
     }
 };
@@ -1029,14 +1005,20 @@ struct ElementAddrLowering final : public MemberAccess<mlir::dsdl::ElementAddrOp
 
 //===----------------------------------------------------------------------===//
 
-struct ConvertDSDLToLLVMPass
-    : public mlir::PassWrapper<ConvertDSDLToLLVMPass, mlir::OperationPass<mlir::ModuleOp>>
+struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     ConvertDSDLToLLVMPass() = default;
+
+    // A pass is cloned by copy, so that each run gets its own options; it is never moved or
+    // assigned. The copy leaves the option at its default, which the pipeline then sets.
     ConvertDSDLToLLVMPass(const ConvertDSDLToLLVMPass& other)
         : mlir::PassWrapper<ConvertDSDLToLLVMPass, mlir::OperationPass<mlir::ModuleOp>>(other)
     {
     }
+    ConvertDSDLToLLVMPass(ConvertDSDLToLLVMPass&&)                 = delete;
+    ConvertDSDLToLLVMPass& operator=(const ConvertDSDLToLLVMPass&) = delete;
+    ConvertDSDLToLLVMPass& operator=(ConvertDSDLToLLVMPass&&)      = delete;
+    ~ConvertDSDLToLLVMPass() override                              = default;
 
     llvm::StringRef getArgument() const final
     {
@@ -1067,16 +1049,14 @@ struct ConvertDSDLToLLVMPass
         // path needs that name for, this path answers with an index instead.
         mlir::TypeConverter converter;
         converter.addConversion([](mlir::Type type) { return type; });
-        converter.addConversion([](mlir::dsdl::PtrType ptr) -> mlir::Type {
-            return mlir::LLVM::LLVMPointerType::get(ptr.getContext());
-        });
+        converter.addConversion(
+            [](mlir::dsdl::PtrType ptr) -> mlir::Type { return mlir::LLVM::LLVMPointerType::get(ptr.getContext()); });
 
         // The struct each plan addresses within, derived from the schema before it is erased.
         const unsigned sizeBits = targetSizeBits(module, static_cast<unsigned>(sizeBitsOption));
-        module->setAttr(kSizeBitsAttr,
-                        mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), sizeBits));
-        const llvm::DenseMap<llvm::StringRef, mlir::Type>   composites = buildStructs(module, sizeBits);
-        const llvm::DenseMap<llvm::StringRef, std::string>  bodies     = buildSerdesBodies(module);
+        module->setAttr(kSizeBitsAttr, mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), sizeBits));
+        const llvm::DenseMap<llvm::StringRef, mlir::Type>  composites = buildStructs(module, sizeBits);
+        const llvm::DenseMap<llvm::StringRef, std::string> bodies     = buildSerdesBodies(module);
 
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<LoadMemberLowering,
@@ -1103,7 +1083,9 @@ struct ConvertDSDLToLLVMPass
         mlir::populateCallOpTypeConversionPattern(patterns, converter);
 
         mlir::ConversionTarget target(getContext());
-        target.addLegalDialect<mlir::LLVM::LLVMDialect, mlir::arith::ArithDialect, mlir::func::FuncDialect,
+        target.addLegalDialect<mlir::LLVM::LLVMDialect,
+                               mlir::arith::ArithDialect,
+                               mlir::func::FuncDialect,
                                mlir::scf::SCFDialect>();
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::LoadMemberOp,
@@ -1123,12 +1105,10 @@ struct ConvertDSDLToLLVMPass
                             mlir::dsdl::BitWriteOp,
                             mlir::dsdl::BitReadOp,
                             mlir::dsdl::CallSerdesOp>();
-        target.addDynamicallyLegalOp<mlir::func::FuncOp>([&converter](mlir::func::FuncOp fn) {
-            return converter.isSignatureLegal(fn.getFunctionType());
-        });
-        target.addDynamicallyLegalOp<mlir::func::ReturnOp>([&converter](mlir::func::ReturnOp op) {
-            return converter.isLegal(op.getOperandTypes());
-        });
+        target.addDynamicallyLegalOp<mlir::func::FuncOp>(
+            [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
+        target.addDynamicallyLegalOp<mlir::func::ReturnOp>(
+            [&converter](mlir::func::ReturnOp op) { return converter.isLegal(op.getOperandTypes()); });
         target.addDynamicallyLegalOp<mlir::func::CallOp>([&converter](mlir::func::CallOp op) {
             return converter.isLegal(op.getOperandTypes()) && converter.isLegal(op.getResultTypes());
         });
@@ -1142,15 +1122,8 @@ struct ConvertDSDLToLLVMPass
 
         // The schema is description, not code: it says what the type is, which the plan bodies
         // have already been built from. An object has nowhere to put it.
-        mlir::SmallVector<mlir::Operation*, 16> schemas;
-        for (mlir::Operation& op : module.getBodyRegion().front())
-        {
-            if (op.getName().getStringRef() == "dsdl.schema")
-            {
-                schemas.push_back(&op);
-            }
-        }
-        for (mlir::Operation* schema : schemas)
+        for (const mlir::dsdl::SchemaOp schema :
+             llvm::to_vector(module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>()))
         {
             schema->erase();
         }
@@ -1166,7 +1139,7 @@ std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass()
 
 std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(const unsigned sizeBits)
 {
-    auto pass           = std::make_unique<ConvertDSDLToLLVMPass>();
+    auto pass            = std::make_unique<ConvertDSDLToLLVMPass>();
     pass->sizeBitsOption = sizeBits;
     return pass;
 }

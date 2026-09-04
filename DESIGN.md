@@ -89,6 +89,10 @@ Relevant dialect files:
 
 Core ops in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`.
 
+Every fact an op carries is a declared attribute with a typed accessor, and the op's verifier holds
+each to the range the wire format allows. Consumers read the accessors; `tools/gates/typed_dialect_attributes.py`
+fails the build when one reads an attribute or matches an op by its name string instead.
+
 ### 3.4 Semantic-to-MLIR Lowering ([`include/llvmdsdl/Lowering`](./include/llvmdsdl/Lowering), [`lib/Lowering`](./lib/Lowering))
 
 `lowerToMLIR(...)` converts semantic definitions into schema symbols and section plans. It includes enough attributes to describe field category, cast mode, array mode/capacity, alignment, union metadata, and bounded bit-length facts.

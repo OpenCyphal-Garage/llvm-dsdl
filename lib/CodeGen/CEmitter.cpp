@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/IR/DSDLOps.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
@@ -773,20 +774,13 @@ void cloneReachableSchemas(mlir::Operation*                         target,
     while (!pending.empty())
     {
         mlir::Operation* const at = pending.pop_back_val();
-        at->walk([&](mlir::Operation* const op) {
-            if (op->getName().getStringRef() != "dsdl.io")
+        at->walk([&](mlir::dsdl::IOOp op) {
+            if (!op.isComposite())
             {
                 return;
             }
-            const auto name  = op->getAttrOfType<mlir::StringAttr>("composite_full_name");
-            const auto major = op->getAttrOfType<mlir::IntegerAttr>("composite_major");
-            const auto minor = op->getAttrOfType<mlir::IntegerAttr>("composite_minor");
-            if (!name || !major || !minor)
-            {
-                return;
-            }
-            const std::string key =
-                name.getValue().str() + "." + std::to_string(major.getInt()) + "." + std::to_string(minor.getInt());
+            const std::string key = op.getCompositeFullName()->str() + "." + std::to_string(*op.getCompositeMajor()) +
+                                    "." + std::to_string(*op.getCompositeMinor());
             if (!seen.insert(key).second)
             {
                 return;
@@ -927,26 +921,16 @@ llvm::Error emitC(const SemanticModule& semantic,
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
     llvm::StringMap<mlir::Operation*>                 schemaByKey;
-    for (mlir::Operation& op : module.getBodyRegion().front())
+    for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.schema")
+        const auto headerPath = op.getHeaderPath();
+        if (!headerPath)
         {
             continue;
         }
-        const auto headerPathAttr = op.getAttrOfType<mlir::StringAttr>("header_path");
-        if (!headerPathAttr)
-        {
-            continue;
-        }
-        schemaByHeaderPath.emplace(headerPathAttr.str(), &op);
-        const auto fullName = op.getAttrOfType<mlir::StringAttr>("full_name");
-        const auto major    = op.getAttrOfType<mlir::IntegerAttr>("major");
-        const auto minor    = op.getAttrOfType<mlir::IntegerAttr>("minor");
-        if (fullName && major && minor)
-        {
-            schemaByKey[fullName.getValue().str() + "." + std::to_string(major.getInt()) + "." +
-                        std::to_string(minor.getInt())] = &op;
-        }
+        schemaByHeaderPath.emplace(headerPath->str(), op.getOperation());
+        schemaByKey[op.getFullName().str() + "." + std::to_string(op.getMajor()) + "." +
+                    std::to_string(op.getMinor())] = op.getOperation();
     }
 
     unsigned objectSizeBits = 64U;
@@ -983,7 +967,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         }
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
-        stampCNames(*schemaClone, def, options.typeNameVersioning);
+        stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
         if (options.artifact == CEmitArtifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);

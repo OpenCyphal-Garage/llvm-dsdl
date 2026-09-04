@@ -25,7 +25,8 @@ The custom `dsdl` MLIR dialect is what separates frontend semantics from backend
 above it decides what a definition *means*; everything below it decides how that meaning is spelled in
 a particular language.
 
-- Schema and serialization plans are represented as explicit IR ops
+- Schema and serialization plans are represented as explicit IR ops, and every fact they carry is a
+  declared attribute the verifier checks
 - Passes stamp and validate lowered contract metadata
 - Backends consume facts from validated lowered state, never from raw IR
 

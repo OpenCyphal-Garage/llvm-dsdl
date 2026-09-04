@@ -21,16 +21,27 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/SmallVector.h>
+#include <cstdint>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/TypeRange.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
 #include <memory>
+#include <mlir/Support/LLVM.h>
 #include <string>
 
 #include "llvmdsdl/Transforms/Passes.h"
@@ -55,9 +66,10 @@ mlir::LLVM::LLVMFuncOp declare(mlir::OpBuilder& b,
     }
     mlir::OpBuilder::InsertionGuard const guard(b);
     b.setInsertionPointToStart(module.getBody());
-    auto type = mlir::LLVM::LLVMFunctionType::get(
-        results.empty() ? mlir::Type{mlir::LLVM::LLVMVoidType::get(b.getContext())} : results.front(),
-        llvm::SmallVector<mlir::Type>(arguments.begin(), arguments.end()));
+    auto type =
+        mlir::LLVM::LLVMFunctionType::get(results.empty() ? mlir::Type{mlir::LLVM::LLVMVoidType::get(b.getContext())}
+                                                          : results.front(),
+                                          llvm::SmallVector<mlir::Type>(arguments.begin(), arguments.end()));
     return mlir::LLVM::LLVMFuncOp::create(b, module.getLoc(), name, type);
 }
 
@@ -89,7 +101,6 @@ void storeByte(mlir::OpBuilder& b, mlir::Location loc, mlir::Value buffer, mlir:
                                          mlir::ValueRange{index});
     mlir::LLVM::StoreOp::create(b, loc, value, ptr);
 }
-
 
 /// @brief Zero-extends @p value to @p target, which at equal widths is @p value itself.
 mlir::Value widen(mlir::OpBuilder& b, mlir::Location loc, mlir::Value value, mlir::Type target)
@@ -124,50 +135,68 @@ mlir::Value saturate(mlir::OpBuilder& b,
                      mlir::Value      offset,
                      mlir::Value      length)
 {
-    auto        sizeTy   = sizeBytes.getType();
-    mlir::Value sizeBits = mlir::arith::MulIOp::create(b, loc, sizeBytes, constant(b, loc, sizeTy, 8));
-    mlir::Value reached  = mlir::arith::MinUIOp::create(b, loc, sizeBits, offset);
-    mlir::Value tail     = mlir::arith::SubIOp::create(b, loc, sizeBits, reached);
+    auto              sizeTy   = sizeBytes.getType();
+    const mlir::Value sizeBits = mlir::arith::MulIOp::create(b, loc, sizeBytes, constant(b, loc, sizeTy, 8));
+    const mlir::Value reached  = mlir::arith::MinUIOp::create(b, loc, sizeBits, offset);
+    const mlir::Value tail     = mlir::arith::SubIOp::create(b, loc, sizeBits, reached);
     return mlir::arith::MinUIOp::create(b, loc, length, tail);
 }
 
 /// @brief A stack slot of @p bytes, zeroed.
 mlir::Value scratch(mlir::OpBuilder& b, mlir::Location loc, const std::int64_t bytes)
 {
-    auto        i8   = b.getIntegerType(8);
-    auto        ptr  = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    mlir::Value one  = mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(bytes));
-    mlir::Value slot = mlir::LLVM::AllocaOp::create(b, loc, ptr, i8, one);
-    mlir::Value zero = constant(b, loc, i8, 0);
+    auto              i8   = b.getIntegerType(8);
+    auto              ptr  = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    const mlir::Value one  = mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(bytes));
+    mlir::Value       slot = mlir::LLVM::AllocaOp::create(b, loc, ptr, i8, one);
+    const mlir::Value zero = constant(b, loc, i8, 0);
     for (std::int64_t i = 0; i < bytes; ++i)
     {
-        storeByte(b, loc, slot, mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(i)), zero);
+        storeByte(b,
+                  loc,
+                  slot,
+                  mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(i)),
+                  zero);
     }
     return slot;
 }
 
 /// @brief Reads @p bytes from @p buffer as one little-endian integer of @p resultTy.
-mlir::Value assembleLE(mlir::OpBuilder& b, mlir::Location loc, mlir::Value buffer, const std::int64_t bytes, mlir::Type resultTy)
+mlir::Value assembleLE(mlir::OpBuilder&   b,
+                       mlir::Location     loc,
+                       mlir::Value        buffer,
+                       const std::int64_t bytes,
+                       mlir::Type         resultTy)
 {
     mlir::Value out = constant(b, loc, resultTy, 0);
     for (std::int64_t i = 0; i < bytes; ++i)
     {
-        mlir::Value byte = loadByte(b, loc, buffer, mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(i)));
-        mlir::Value wide = widen(b, loc, byte, resultTy);
-        out = mlir::arith::OrIOp::create(
-            b, loc, out, mlir::arith::ShLIOp::create(b, loc, wide, constant(b, loc, resultTy, i * 8)));
+        const mlir::Value byte =
+            loadByte(b,
+                     loc,
+                     buffer,
+                     mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(i)));
+        const mlir::Value wide = widen(b, loc, byte, resultTy);
+        out = mlir::arith::OrIOp::create(b,
+                                         loc,
+                                         out,
+                                         mlir::arith::ShLIOp::create(b, loc, wide, constant(b, loc, resultTy, i * 8)));
     }
     return out;
 }
 
 /// @brief Writes @p value into @p buffer as @p bytes little-endian bytes.
-void disassembleLE(mlir::OpBuilder& b, mlir::Location loc, mlir::Value buffer, mlir::Value value, const std::int64_t bytes)
+void disassembleLE(mlir::OpBuilder&   b,
+                   mlir::Location     loc,
+                   mlir::Value        buffer,
+                   mlir::Value        value,
+                   const std::int64_t bytes)
 {
     auto i8   = b.getIntegerType(8);
     auto type = value.getType();
     for (std::int64_t i = 0; i < bytes; ++i)
     {
-        mlir::Value shifted = mlir::arith::ShRUIOp::create(b, loc, value, constant(b, loc, type, i * 8));
+        const mlir::Value shifted = mlir::arith::ShRUIOp::create(b, loc, value, constant(b, loc, type, i * 8));
         storeByte(b,
                   loc,
                   buffer,
@@ -204,11 +233,11 @@ mlir::Block* begin(mlir::OpBuilder& b, mlir::LLVM::LLVMFuncOp fn)
 /// asserts the two differ.
 void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 {
-    auto  loc = module.getLoc();
-    auto  i8  = b.getIntegerType(8);
-    auto  i32 = b.getIntegerType(32);
-    auto  ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto  fn  = declare(b, module, "dsdl_runtime_copy_bits", {ptr, sizeTy, sizeTy, ptr, sizeTy}, {});
+    auto loc = module.getLoc();
+    auto i8  = b.getIntegerType(8);
+    auto i32 = b.getIntegerType(32);
+    auto ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    auto fn  = declare(b, module, "dsdl_runtime_copy_bits", {ptr, sizeTy, sizeTy, ptr, sizeTy}, {});
 
     mlir::OpBuilder::InsertionGuard const guard(b);
     fn.setLinkage(mlir::LLVM::Linkage::Internal);
@@ -218,19 +247,19 @@ void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
         return;
     }
 
-    mlir::Value dst    = entry->getArgument(0);
-    mlir::Value dstOff = entry->getArgument(1);
-    mlir::Value length = entry->getArgument(2);
-    mlir::Value src    = entry->getArgument(3);
-    mlir::Value srcOff = entry->getArgument(4);
+    const mlir::Value dst    = entry->getArgument(0);
+    const mlir::Value dstOff = entry->getArgument(1);
+    const mlir::Value length = entry->getArgument(2);
+    const mlir::Value src    = entry->getArgument(3);
+    const mlir::Value srcOff = entry->getArgument(4);
 
-    auto        idxTy = b.getIndexType();
-    mlir::Value eight = constant(b, loc, sizeTy, 8);
-    mlir::Value zero  = constant(b, loc, sizeTy, 0);
+    auto              idxTy = b.getIndexType();
+    const mlir::Value eight = constant(b, loc, sizeTy, 8);
+    const mlir::Value zero  = constant(b, loc, sizeTy, 0);
 
-    mlir::Value srcMod = mlir::arith::RemUIOp::create(b, loc, srcOff, eight);
-    mlir::Value dstMod = mlir::arith::RemUIOp::create(b, loc, dstOff, eight);
-    mlir::Value aligned =
+    const mlir::Value srcMod = mlir::arith::RemUIOp::create(b, loc, srcOff, eight);
+    const mlir::Value dstMod = mlir::arith::RemUIOp::create(b, loc, dstOff, eight);
+    const mlir::Value aligned =
         mlir::arith::AndIOp::create(b,
                                     loc,
                                     mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::eq, srcMod, zero),
@@ -241,9 +270,9 @@ void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
         mlir::OpBuilder::InsertionGuard const inner(b);
         b.setInsertionPointToStart(choice.thenBlock());
 
-        mlir::Value bytes    = mlir::arith::DivUIOp::create(b, loc, length, eight);
-        mlir::Value srcStart = mlir::arith::DivUIOp::create(b, loc, srcOff, eight);
-        mlir::Value dstStart = mlir::arith::DivUIOp::create(b, loc, dstOff, eight);
+        const mlir::Value bytes    = mlir::arith::DivUIOp::create(b, loc, length, eight);
+        const mlir::Value srcStart = mlir::arith::DivUIOp::create(b, loc, srcOff, eight);
+        const mlir::Value dstStart = mlir::arith::DivUIOp::create(b, loc, dstOff, eight);
 
         auto move = mlir::scf::ForOp::create(b,
                                              loc,
@@ -253,7 +282,7 @@ void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
         {
             mlir::OpBuilder::InsertionGuard const body(b);
             b.setInsertionPointToStart(move.getBody());
-            mlir::Value at = mlir::arith::IndexCastOp::create(b, loc, sizeTy, move.getInductionVar());
+            const mlir::Value at = mlir::arith::IndexCastOp::create(b, loc, sizeTy, move.getInductionVar());
             storeByte(b,
                       loc,
                       dst,
@@ -263,36 +292,34 @@ void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 
         // A length that is not a whole number of bytes leaves a few bits in the byte after the
         // run; the rest of that byte is the destination's and stays as it was.
-        mlir::Value spare = mlir::arith::RemUIOp::create(b, loc, length, eight);
-        auto        partial = mlir::scf::IfOp::create(
-            b,
-            loc,
-            mlir::TypeRange{},
-            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ne, spare, zero),
-            true,
-            false);
+        const mlir::Value spare = mlir::arith::RemUIOp::create(b, loc, length, eight);
+        auto              partial =
+            mlir::scf::IfOp::create(b,
+                                    loc,
+                                    mlir::TypeRange{},
+                                    mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ne, spare, zero),
+                                    true,
+                                    false);
         {
             mlir::OpBuilder::InsertionGuard const body(b);
             b.setInsertionPointToStart(partial.thenBlock());
-            mlir::Value one  = constant(b, loc, i32, 1);
-            mlir::Value mask = mlir::arith::TruncIOp::create(
-                b,
-                loc,
-                i8,
-                mlir::arith::SubIOp::create(
-                    b,
-                    loc,
-                    mlir::arith::ShLIOp::create(b, loc, one, resize(b, loc, spare, i32)),
-                    one));
-            mlir::Value lastSrc = mlir::arith::AddIOp::create(b, loc, srcStart, bytes);
-            mlir::Value lastDst = mlir::arith::AddIOp::create(b, loc, dstStart, bytes);
-            mlir::Value keep    = mlir::arith::AndIOp::create(
-                b,
-                loc,
-                loadByte(b, loc, dst, lastDst),
-                mlir::arith::XOrIOp::create(b, loc, mask, constant(b, loc, i8, -1)));
-            mlir::Value take =
-                mlir::arith::AndIOp::create(b, loc, loadByte(b, loc, src, lastSrc), mask);
+            const mlir::Value one  = constant(b, loc, i32, 1);
+            const mlir::Value mask = mlir::arith::TruncIOp::
+                create(b,
+                       loc,
+                       i8,
+                       mlir::arith::SubIOp::create(b,
+                                                   loc,
+                                                   mlir::arith::ShLIOp::create(b, loc, one, resize(b, loc, spare, i32)),
+                                                   one));
+            const mlir::Value lastSrc = mlir::arith::AddIOp::create(b, loc, srcStart, bytes);
+            const mlir::Value lastDst = mlir::arith::AddIOp::create(b, loc, dstStart, bytes);
+            const mlir::Value keep =
+                mlir::arith::AndIOp::create(b,
+                                            loc,
+                                            loadByte(b, loc, dst, lastDst),
+                                            mlir::arith::XOrIOp::create(b, loc, mask, constant(b, loc, i8, -1)));
+            const mlir::Value take = mlir::arith::AndIOp::create(b, loc, loadByte(b, loc, src, lastSrc), mask);
             storeByte(b, loc, dst, lastDst, mlir::arith::OrIOp::create(b, loc, keep, take));
             mlir::scf::YieldOp::create(b, loc);
         }
@@ -304,67 +331,76 @@ void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 
         // Ben Dyer's algorithm, as the header carries it: each turn moves whatever is left before
         // the nearer of the two bytes ends, so a run crosses at most one boundary per turn.
-        mlir::Value last = mlir::arith::AddIOp::create(b, loc, srcOff, length);
-        auto        loop = mlir::scf::WhileOp::create(b, loc, mlir::TypeRange{sizeTy, sizeTy},
-                                               mlir::ValueRange{srcOff, dstOff});
+        const mlir::Value last = mlir::arith::AddIOp::create(b, loc, srcOff, length);
+        auto              loop =
+            mlir::scf::WhileOp::create(b, loc, mlir::TypeRange{sizeTy, sizeTy}, mlir::ValueRange{srcOff, dstOff});
         {
             mlir::OpBuilder::InsertionGuard const cond(b);
             mlir::Block* before = b.createBlock(&loop.getBefore(), {}, {sizeTy, sizeTy}, {loc, loc});
             b.setInsertionPointToStart(before);
-            mlir::scf::ConditionOp::create(
-                b,
-                loc,
-                mlir::arith::CmpIOp::create(
-                    b, loc, mlir::arith::CmpIPredicate::ugt, last, before->getArgument(0)),
-                before->getArguments());
+            mlir::scf::ConditionOp::create(b,
+                                           loc,
+                                           mlir::arith::CmpIOp::create(b,
+                                                                       loc,
+                                                                       mlir::arith::CmpIPredicate::ugt,
+                                                                       last,
+                                                                       before->getArgument(0)),
+                                           before->getArguments());
         }
         {
             mlir::OpBuilder::InsertionGuard const body(b);
             mlir::Block* after = b.createBlock(&loop.getAfter(), {}, {sizeTy, sizeTy}, {loc, loc});
             b.setInsertionPointToStart(after);
-            mlir::Value sAt = after->getArgument(0);
-            mlir::Value dAt = after->getArgument(1);
+            const mlir::Value sAt = after->getArgument(0);
+            const mlir::Value dAt = after->getArgument(1);
 
-            mlir::Value sMod = mlir::arith::RemUIOp::create(b, loc, sAt, eight);
-            mlir::Value dMod = mlir::arith::RemUIOp::create(b, loc, dAt, eight);
-            mlir::Value most = mlir::arith::MaxUIOp::create(b, loc, sMod, dMod);
-            mlir::Value size = mlir::arith::MinUIOp::create(
-                b,
-                loc,
-                mlir::arith::SubIOp::create(b, loc, eight, most),
-                mlir::arith::SubIOp::create(b, loc, last, sAt));
+            const mlir::Value sMod = mlir::arith::RemUIOp::create(b, loc, sAt, eight);
+            const mlir::Value dMod = mlir::arith::RemUIOp::create(b, loc, dAt, eight);
+            const mlir::Value most = mlir::arith::MaxUIOp::create(b, loc, sMod, dMod);
+            const mlir::Value size = mlir::arith::MinUIOp::create(b,
+                                                                  loc,
+                                                                  mlir::arith::SubIOp::create(b, loc, eight, most),
+                                                                  mlir::arith::SubIOp::create(b, loc, last, sAt));
 
             // The mask is built a byte wider than it is used: a run of eight bits would shift a
             // one clean out of a byte, and the header computes it in `unsigned` for that reason.
-            mlir::Value wide = resize(b, loc, size, i32);
-            mlir::Value mask = mlir::arith::TruncIOp::create(
-                b,
-                loc,
-                i8,
-                mlir::arith::ShLIOp::create(
-                    b,
-                    loc,
-                    mlir::arith::SubIOp::create(b,
-                                                loc,
-                                                mlir::arith::ShLIOp::create(b, loc, constant(b, loc, i32, 1), wide),
-                                                constant(b, loc, i32, 1)),
-                    resize(b, loc, dMod, i32)));
+            const mlir::Value wide = resize(b, loc, size, i32);
+            const mlir::Value mask = mlir::arith::TruncIOp::
+                create(b,
+                       loc,
+                       i8,
+                       mlir::arith::ShLIOp::create(b,
+                                                   loc,
+                                                   mlir::arith::SubIOp::create(b,
+                                                                               loc,
+                                                                               mlir::arith::ShLIOp::create(b,
+                                                                                                           loc,
+                                                                                                           constant(b,
+                                                                                                                    loc,
+                                                                                                                    i32,
+                                                                                                                    1),
+                                                                                                           wide),
+                                                                               constant(b, loc, i32, 1)),
+                                                   resize(b, loc, dMod, i32)));
 
-            mlir::Value taken = mlir::arith::ShLIOp::create(
-                b,
-                loc,
-                mlir::arith::ShRUIOp::create(b,
-                                             loc,
-                                             loadByte(b, loc, src, mlir::arith::DivUIOp::create(b, loc, sAt, eight)),
-                                             mlir::arith::TruncIOp::create(b, loc, i8, sMod)),
-                mlir::arith::TruncIOp::create(b, loc, i8, dMod));
+            const mlir::Value taken = mlir::arith::ShLIOp::
+                create(b,
+                       loc,
+                       mlir::arith::ShRUIOp::create(b,
+                                                    loc,
+                                                    loadByte(b,
+                                                             loc,
+                                                             src,
+                                                             mlir::arith::DivUIOp::create(b, loc, sAt, eight)),
+                                                    mlir::arith::TruncIOp::create(b, loc, i8, sMod)),
+                       mlir::arith::TruncIOp::create(b, loc, i8, dMod));
 
-            mlir::Value where = mlir::arith::DivUIOp::create(b, loc, dAt, eight);
-            mlir::Value keep  = mlir::arith::AndIOp::create(
-                b,
-                loc,
-                loadByte(b, loc, dst, where),
-                mlir::arith::XOrIOp::create(b, loc, mask, constant(b, loc, i8, -1)));
+            const mlir::Value where = mlir::arith::DivUIOp::create(b, loc, dAt, eight);
+            const mlir::Value keep =
+                mlir::arith::AndIOp::create(b,
+                                            loc,
+                                            loadByte(b, loc, dst, where),
+                                            mlir::arith::XOrIOp::create(b, loc, mask, constant(b, loc, i8, -1)));
             storeByte(b,
                       loc,
                       dst,
@@ -389,28 +425,28 @@ void buildGetBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
     auto ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
     auto fn  = declare(b, module, "dsdl_runtime_get_bits", {ptr, ptr, sizeTy, sizeTy, sizeTy}, {});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value output = entry->getArgument(0);
-    mlir::Value buffer = entry->getArgument(1);
-    mlir::Value size   = entry->getArgument(2);
-    mlir::Value offset = entry->getArgument(3);
-    mlir::Value length = entry->getArgument(4);
+    const mlir::Value output = entry->getArgument(0);
+    const mlir::Value buffer = entry->getArgument(1);
+    const mlir::Value size   = entry->getArgument(2);
+    const mlir::Value offset = entry->getArgument(3);
+    const mlir::Value length = entry->getArgument(4);
 
-    mlir::Value sat   = saturate(b, loc, size, offset, length);
-    mlir::Value eight = constant(b, loc, sizeTy, 8);
-    mlir::Value seven = constant(b, loc, sizeTy, 7);
+    const mlir::Value sat   = saturate(b, loc, size, offset, length);
+    const mlir::Value eight = constant(b, loc, sizeTy, 8);
+    const mlir::Value seven = constant(b, loc, sizeTy, 7);
 
     // Zero from where the readable part ends to the end of what was asked for, so a short
     // buffer reads as zeroes rather than as whatever the caller's slot held.
-    mlir::Value from  = mlir::arith::DivUIOp::create(b, loc, sat, eight);
-    mlir::Value until = mlir::arith::DivUIOp::create(
-        b, loc, mlir::arith::AddIOp::create(b, loc, length, seven), eight);
-    auto        idxTy = b.getIndexType();
-    auto        clear = mlir::scf::ForOp::create(b,
+    const mlir::Value from = mlir::arith::DivUIOp::create(b, loc, sat, eight);
+    const mlir::Value until =
+        mlir::arith::DivUIOp::create(b, loc, mlir::arith::AddIOp::create(b, loc, length, seven), eight);
+    auto idxTy = b.getIndexType();
+    auto clear = mlir::scf::ForOp::create(b,
                                           loc,
                                           mlir::arith::IndexCastOp::create(b, loc, idxTy, from),
                                           mlir::arith::IndexCastOp::create(b, loc, idxTy, until),
@@ -432,20 +468,19 @@ void buildGetBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 }
 
 /// @brief The buffer-too-small check every writer starts with.
-mlir::Value tooSmall(mlir::OpBuilder&   b,
-                     mlir::Location     loc,
-                     mlir::Value        sizeBytes,
-                     mlir::Value        offset,
-                     mlir::Value        length,
-                     const bool         inclusive)
+mlir::Value tooSmall(mlir::OpBuilder& b,
+                     mlir::Location   loc,
+                     mlir::Value      sizeBytes,
+                     mlir::Value      offset,
+                     mlir::Value      length,
+                     const bool       inclusive)
 {
-    auto        sizeTy   = sizeBytes.getType();
-    mlir::Value sizeBits = mlir::arith::MulIOp::create(b, loc, sizeBytes, constant(b, loc, sizeTy, 8));
-    mlir::Value need     = length ? mlir::arith::AddIOp::create(b, loc, offset, length) : offset;
+    auto              sizeTy   = sizeBytes.getType();
+    const mlir::Value sizeBits = mlir::arith::MulIOp::create(b, loc, sizeBytes, constant(b, loc, sizeTy, 8));
+    const mlir::Value need     = length ? mlir::arith::AddIOp::create(b, loc, offset, length) : offset;
     return mlir::arith::CmpIOp::create(b,
                                        loc,
-                                       inclusive ? mlir::arith::CmpIPredicate::ule
-                                                 : mlir::arith::CmpIPredicate::ult,
+                                       inclusive ? mlir::arith::CmpIPredicate::ule : mlir::arith::CmpIPredicate::ult,
                                        sizeBits,
                                        need);
 }
@@ -453,25 +488,25 @@ mlir::Value tooSmall(mlir::OpBuilder&   b,
 /// @brief `set_uxx` and `set_ixx`, which write the same bits.
 void buildSetInteger(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy, llvm::StringRef name)
 {
-    auto loc = module.getLoc();
-    auto i8  = b.getIntegerType(8);
-    auto i64 = b.getIntegerType(64);
-    auto ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto fn  = declare(b, module, name, {ptr, sizeTy, sizeTy, i64, i8}, {i8});
+    auto                                  loc = module.getLoc();
+    auto                                  i8  = b.getIntegerType(8);
+    auto                                  i64 = b.getIntegerType(64);
+    auto                                  ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    auto                                  fn  = declare(b, module, name, {ptr, sizeTy, sizeTy, i64, i8}, {i8});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value buffer = entry->getArgument(0);
-    mlir::Value size   = entry->getArgument(1);
-    mlir::Value offset = entry->getArgument(2);
-    mlir::Value value  = entry->getArgument(3);
-    mlir::Value width  = widen(b, loc, entry->getArgument(4), sizeTy);
+    const mlir::Value buffer = entry->getArgument(0);
+    const mlir::Value size   = entry->getArgument(1);
+    const mlir::Value offset = entry->getArgument(2);
+    const mlir::Value value  = entry->getArgument(3);
+    const mlir::Value width  = widen(b, loc, entry->getArgument(4), sizeTy);
 
-    mlir::Value short_ = tooSmall(b, loc, size, offset, width, false);
-    auto        guarded = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i8}, short_, true, true);
+    const mlir::Value short_  = tooSmall(b, loc, size, offset, width, false);
+    auto              guarded = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i8}, short_, true, true);
     {
         mlir::OpBuilder::InsertionGuard const inner(b);
         b.setInsertionPointToStart(guarded.thenBlock());
@@ -481,9 +516,9 @@ void buildSetInteger(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeT
     {
         mlir::OpBuilder::InsertionGuard const inner(b);
         b.setInsertionPointToStart(guarded.elseBlock());
-        mlir::Value slot = scratch(b, loc, 8);
+        const mlir::Value slot = scratch(b, loc, 8);
         disassembleLE(b, loc, slot, value, 8);
-        mlir::Value written = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, sizeTy, 64));
+        const mlir::Value written = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, sizeTy, 64));
         mlir::LLVM::CallOp::create(b,
                                    loc,
                                    module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_copy_bits"),
@@ -502,18 +537,18 @@ void buildSetBit(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
     auto ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
     auto fn  = declare(b, module, "dsdl_runtime_set_bit", {ptr, sizeTy, sizeTy, i1}, {i8});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value buffer = entry->getArgument(0);
-    mlir::Value size   = entry->getArgument(1);
-    mlir::Value offset = entry->getArgument(2);
-    mlir::Value value  = entry->getArgument(3);
+    const mlir::Value buffer = entry->getArgument(0);
+    const mlir::Value size   = entry->getArgument(1);
+    const mlir::Value offset = entry->getArgument(2);
+    const mlir::Value value  = entry->getArgument(3);
 
-    mlir::Value short_  = tooSmall(b, loc, size, offset, mlir::Value{}, true);
-    auto        guarded = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i8}, short_, true, true);
+    const mlir::Value short_  = tooSmall(b, loc, size, offset, mlir::Value{}, true);
+    auto              guarded = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i8}, short_, true, true);
     {
         mlir::OpBuilder::InsertionGuard const inner(b);
         b.setInsertionPointToStart(guarded.thenBlock());
@@ -522,17 +557,20 @@ void buildSetBit(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
     {
         mlir::OpBuilder::InsertionGuard const inner(b);
         b.setInsertionPointToStart(guarded.elseBlock());
-        mlir::Value slot = scratch(b, loc, 1);
+        const mlir::Value slot = scratch(b, loc, 1);
         storeByte(b,
                   loc,
                   slot,
                   mlir::LLVM::ConstantOp::create(b, loc, b.getIntegerType(64), b.getI64IntegerAttr(0)),
                   widen(b, loc, value, i8));
-        mlir::LLVM::CallOp::create(
-            b,
-            loc,
-            module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_copy_bits"),
-            mlir::ValueRange{buffer, offset, constant(b, loc, sizeTy, 1), slot, constant(b, loc, sizeTy, 0)});
+        mlir::LLVM::CallOp::create(b,
+                                   loc,
+                                   module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_copy_bits"),
+                                   mlir::ValueRange{buffer,
+                                                    offset,
+                                                    constant(b, loc, sizeTy, 1),
+                                                    slot,
+                                                    constant(b, loc, sizeTy, 0)});
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{constant(b, loc, i8, 0)});
     }
     mlir::LLVM::ReturnOp::create(b, loc, mlir::ValueRange{guarded.getResult(0)});
@@ -545,21 +583,21 @@ void buildGetUnsigned(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type size
     auto i8     = b.getIntegerType(8);
     auto result = b.getIntegerType(static_cast<unsigned>(bits));
     auto ptr    = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto fn = declare(b, module, "dsdl_runtime_get_u" + std::to_string(bits), {ptr, sizeTy, sizeTy, i8}, {result});
+    auto fn     = declare(b, module, "dsdl_runtime_get_u" + std::to_string(bits), {ptr, sizeTy, sizeTy, i8}, {result});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value buffer = entry->getArgument(0);
-    mlir::Value size   = entry->getArgument(1);
-    mlir::Value offset = entry->getArgument(2);
-    mlir::Value width  = widen(b, loc, entry->getArgument(3), sizeTy);
+    const mlir::Value buffer = entry->getArgument(0);
+    const mlir::Value size   = entry->getArgument(1);
+    const mlir::Value offset = entry->getArgument(2);
+    const mlir::Value width  = widen(b, loc, entry->getArgument(3), sizeTy);
 
-    mlir::Value capped = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, sizeTy, bits));
-    mlir::Value taken  = saturate(b, loc, size, offset, capped);
-    mlir::Value slot   = scratch(b, loc, bits / 8);
+    const mlir::Value capped = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, sizeTy, bits));
+    const mlir::Value taken  = saturate(b, loc, size, offset, capped);
+    const mlir::Value slot   = scratch(b, loc, bits / 8);
     mlir::LLVM::CallOp::create(b,
                                loc,
                                module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_copy_bits"),
@@ -577,65 +615,70 @@ void buildGetSigned(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy
     auto i8     = b.getIntegerType(8);
     auto result = b.getIntegerType(static_cast<unsigned>(bits));
     auto ptr    = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto fn = declare(b, module, "dsdl_runtime_get_i" + std::to_string(bits), {ptr, sizeTy, sizeTy, i8}, {result});
+    auto fn     = declare(b, module, "dsdl_runtime_get_i" + std::to_string(bits), {ptr, sizeTy, sizeTy, i8}, {result});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value width  = entry->getArgument(3);
-    mlir::Value capped = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, i8, bits));
-    auto        unsignedFn = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_get_u" + std::to_string(bits));
-    mlir::Value raw = mlir::LLVM::CallOp::create(b,
-                                                 loc,
-                                                 unsignedFn,
-                                                 mlir::ValueRange{entry->getArgument(0),
-                                                                  entry->getArgument(1),
-                                                                  entry->getArgument(2),
-                                                                  capped})
-                          .getResult();
+    const mlir::Value width  = entry->getArgument(3);
+    const mlir::Value capped = mlir::arith::MinUIOp::create(b, loc, width, constant(b, loc, i8, bits));
+    auto unsignedFn          = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_get_u" + std::to_string(bits));
+    const mlir::Value raw    = mlir::LLVM::CallOp::create(b,
+                                                          loc,
+                                                          unsignedFn,
+                                                          mlir::ValueRange{entry->getArgument(0),
+                                                                           entry->getArgument(1),
+                                                                           entry->getArgument(2),
+                                                                           capped})
+                                   .getResult();
 
     // Sign-extend by shifting the sign bit to the top and back down again.
-    mlir::Value wide  = widen(b, loc, capped, result);
-    mlir::Value slack = mlir::arith::SubIOp::create(b, loc, constant(b, loc, result, bits), wide);
-    mlir::Value up    = mlir::arith::ShLIOp::create(b, loc, raw, slack);
-    mlir::Value down  = mlir::arith::ShRSIOp::create(b, loc, up, slack);
+    const mlir::Value wide  = widen(b, loc, capped, result);
+    const mlir::Value slack = mlir::arith::SubIOp::create(b, loc, constant(b, loc, result, bits), wide);
+    const mlir::Value up    = mlir::arith::ShLIOp::create(b, loc, raw, slack);
+    const mlir::Value down  = mlir::arith::ShRSIOp::create(b, loc, up, slack);
     // A zero width shifts by the whole type, which is undefined; there is nothing to sign there.
-    mlir::Value none  = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::eq, wide, constant(b, loc, result, 0));
-    mlir::LLVM::ReturnOp::create(b, loc, mlir::ValueRange{mlir::arith::SelectOp::create(b, loc, none, raw, down).getResult()});
+    const mlir::Value none =
+        mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::eq, wide, constant(b, loc, result, 0));
+    mlir::LLVM::ReturnOp::create(b,
+                                 loc,
+                                 mlir::ValueRange{mlir::arith::SelectOp::create(b, loc, none, raw, down).getResult()});
 }
 
 /// @brief `get_bit`, which is the low bit of a one-bit read.
 void buildGetBit(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 {
-    auto loc = module.getLoc();
-    auto i1  = b.getIntegerType(1);
-    auto i8  = b.getIntegerType(8);
-    auto ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto fn  = declare(b, module, "dsdl_runtime_get_bit", {ptr, sizeTy, sizeTy}, {i1});
+    auto                                  loc = module.getLoc();
+    auto                                  i1  = b.getIntegerType(1);
+    auto                                  i8  = b.getIntegerType(8);
+    auto                                  ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    auto                                  fn  = declare(b, module, "dsdl_runtime_get_bit", {ptr, sizeTy, sizeTy}, {i1});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value raw = mlir::LLVM::CallOp::create(b,
-                                                 loc,
-                                                 module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_get_u8"),
-                                                 mlir::ValueRange{entry->getArgument(0),
-                                                                  entry->getArgument(1),
-                                                                  entry->getArgument(2),
-                                                                  constant(b, loc, i8, 1)})
-                          .getResult();
-    mlir::LLVM::ReturnOp::create(
-        b,
-        loc,
-        mlir::ValueRange{
-            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::eq, raw, constant(b, loc, i8, 1))
-                .getResult()});
+    const mlir::Value raw =
+        mlir::LLVM::CallOp::create(b,
+                                   loc,
+                                   module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_get_u8"),
+                                   mlir::ValueRange{entry->getArgument(0),
+                                                    entry->getArgument(1),
+                                                    entry->getArgument(2),
+                                                    constant(b, loc, i8, 1)})
+            .getResult();
+    mlir::LLVM::ReturnOp::create(b,
+                                 loc,
+                                 mlir::ValueRange{mlir::arith::CmpIOp::create(b,
+                                                                              loc,
+                                                                              mlir::arith::CmpIPredicate::eq,
+                                                                              raw,
+                                                                              constant(b, loc, i8, 1))
+                                                      .getResult()});
 }
-
 
 /// @brief `float16_pack`: the header's own conversion, which is not `fptrunc`.
 ///
@@ -644,106 +687,121 @@ void buildGetBit(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 /// so reproducing the arithmetic is what keeps the wire the same.
 mlir::Value packFloat16(mlir::OpBuilder& b, mlir::Location loc, mlir::Value value)
 {
-    auto i16 = b.getIntegerType(16);
-    auto i32 = b.getIntegerType(32);
-    auto f32 = b.getF32Type();
+    auto             i16 = b.getIntegerType(16);
+    auto             i32 = b.getIntegerType(32);
+    const mlir::Type f32 = mlir::cast<mlir::Type>(b.getF32Type());
 
-    const auto u32 = [&](const std::int64_t v) { return constant(b, loc, i32, v); };
-    const auto asFloat = [&](mlir::Value bits) { return mlir::arith::BitcastOp::create(b, loc, f32, bits).getResult(); };
-    const auto asBits  = [&](mlir::Value real) { return mlir::arith::BitcastOp::create(b, loc, i32, real).getResult(); };
+    const auto u32     = [&](const std::int64_t v) { return constant(b, loc, i32, v); };
+    const auto asFloat = [&](mlir::Value bits) {
+        return mlir::arith::BitcastOp::create(b, loc, f32, bits).getResult();
+    };
+    const auto asBits = [&](mlir::Value real) { return mlir::arith::BitcastOp::create(b, loc, i32, real).getResult(); };
 
-    mlir::Value roundMask = u32(~static_cast<std::int64_t>(0x0FFF) & 0xFFFFFFFF);
-    mlir::Value f32inf    = u32(255LL << 23);
-    mlir::Value f16inf    = u32(31LL << 23);
-    mlir::Value magic     = u32(15LL << 23);
+    const mlir::Value roundMask = u32(~static_cast<std::int64_t>(0x0FFF) & 0xFFFFFFFF);
+    const mlir::Value f32inf    = u32(255LL << 23);
+    const mlir::Value f16inf    = u32(31LL << 23);
+    const mlir::Value magic     = u32(15LL << 23);
 
-    mlir::Value bits = asBits(value);
-    mlir::Value sign = mlir::arith::AndIOp::create(b, loc, bits, u32(1LL << 31));
-    mlir::Value rest = mlir::arith::XOrIOp::create(b, loc, bits, sign);
+    const mlir::Value bits = asBits(value);
+    const mlir::Value sign = mlir::arith::AndIOp::create(b, loc, bits, u32(1LL << 31));
+    const mlir::Value rest = mlir::arith::XOrIOp::create(b, loc, bits, sign);
 
-    mlir::Value special = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::uge, rest, f32inf);
-    auto        chosen  = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i16}, special, true, true);
+    const mlir::Value special = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::uge, rest, f32inf);
+    auto              chosen  = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i16}, special, true, true);
     {
         mlir::OpBuilder::InsertionGuard const guard(b);
         b.setInsertionPointToStart(chosen.thenBlock());
         // Not a number keeps one pattern; the infinities keep theirs.
-        mlir::Value payload = mlir::arith::AndIOp::create(b, loc, rest, u32(0x7FFFFF));
-        mlir::Value isNaN   = mlir::arith::CmpIOp::create(
-            b, loc, mlir::arith::CmpIPredicate::ne, payload, u32(0));
-        mlir::Value beyond = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ugt, rest, f32inf);
-        mlir::Value edge   = mlir::arith::SelectOp::create(b,
-                                                         loc,
-                                                         beyond,
-                                                         constant(b, loc, i16, 0x7FFF),
-                                                         constant(b, loc, i16, 0x7C00));
-        mlir::scf::YieldOp::create(
-            b,
-            loc,
-            mlir::ValueRange{mlir::arith::SelectOp::create(b, loc, isNaN, constant(b, loc, i16, 0x7E00), edge)});
+        const mlir::Value payload = mlir::arith::AndIOp::create(b, loc, rest, u32(0x7FFFFF));
+        const mlir::Value isNaN  = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ne, payload, u32(0));
+        const mlir::Value beyond = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ugt, rest, f32inf);
+        const mlir::Value edge =
+            mlir::arith::SelectOp::create(b, loc, beyond, constant(b, loc, i16, 0x7FFF), constant(b, loc, i16, 0x7C00));
+        mlir::scf::YieldOp::create(b,
+                                   loc,
+                                   mlir::ValueRange{mlir::arith::SelectOp::create(b,
+                                                                                  loc,
+                                                                                  isNaN,
+                                                                                  constant(b, loc, i16, 0x7E00),
+                                                                                  edge)});
     }
     {
         mlir::OpBuilder::InsertionGuard const guard(b);
         b.setInsertionPointToStart(chosen.elseBlock());
-        mlir::Value rounded = mlir::arith::AndIOp::create(b, loc, rest, roundMask);
-        mlir::Value scaled  = asBits(mlir::arith::MulFOp::create(b, loc, asFloat(rounded), asFloat(magic)));
-        mlir::Value undone  = mlir::arith::SubIOp::create(b, loc, scaled, roundMask);
-        mlir::Value capped  = mlir::arith::SelectOp::create(
-            b,
-            loc,
-            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ugt, undone, f16inf),
-            f16inf,
-            undone);
-        mlir::scf::YieldOp::create(
-            b,
-            loc,
-            mlir::ValueRange{mlir::arith::TruncIOp::create(
-                b, loc, i16, mlir::arith::ShRUIOp::create(b, loc, capped, u32(13)))});
+        const mlir::Value rounded = mlir::arith::AndIOp::create(b, loc, rest, roundMask);
+        const mlir::Value scaled  = asBits(mlir::arith::MulFOp::create(b, loc, asFloat(rounded), asFloat(magic)));
+        const mlir::Value undone  = mlir::arith::SubIOp::create(b, loc, scaled, roundMask);
+        const mlir::Value capped =
+            mlir::arith::SelectOp::create(b,
+                                          loc,
+                                          mlir::arith::CmpIOp::create(b,
+                                                                      loc,
+                                                                      mlir::arith::CmpIPredicate::ugt,
+                                                                      undone,
+                                                                      f16inf),
+                                          f16inf,
+                                          undone);
+        mlir::scf::YieldOp::create(b,
+                                   loc,
+                                   mlir::ValueRange{
+                                       mlir::arith::TruncIOp::
+                                           create(b, loc, i16, mlir::arith::ShRUIOp::create(b, loc, capped, u32(13)))});
     }
-    mlir::Value signBit = mlir::arith::TruncIOp::create(
-        b, loc, i16, mlir::arith::ShRUIOp::create(b, loc, sign, u32(16)));
+    const mlir::Value signBit =
+        mlir::arith::TruncIOp::create(b, loc, i16, mlir::arith::ShRUIOp::create(b, loc, sign, u32(16)));
     return mlir::arith::OrIOp::create(b, loc, chosen.getResult(0), signBit);
 }
 
 /// @brief `float16_unpack`, the inverse of @ref packFloat16.
 mlir::Value unpackFloat16(mlir::OpBuilder& b, mlir::Location loc, mlir::Value packed)
 {
-    auto i32 = b.getIntegerType(32);
-    auto f32 = b.getF32Type();
+    auto             i32 = b.getIntegerType(32);
+    const mlir::Type f32 = mlir::cast<mlir::Type>(b.getF32Type());
 
-    const auto u32 = [&](const std::int64_t v) { return constant(b, loc, i32, v); };
-    const auto asFloat = [&](mlir::Value bits) { return mlir::arith::BitcastOp::create(b, loc, f32, bits).getResult(); };
-    const auto asBits  = [&](mlir::Value real) { return mlir::arith::BitcastOp::create(b, loc, i32, real).getResult(); };
+    const auto u32     = [&](const std::int64_t v) { return constant(b, loc, i32, v); };
+    const auto asFloat = [&](mlir::Value bits) {
+        return mlir::arith::BitcastOp::create(b, loc, f32, bits).getResult();
+    };
+    const auto asBits = [&](mlir::Value real) { return mlir::arith::BitcastOp::create(b, loc, i32, real).getResult(); };
 
-    mlir::Value wide  = widen(b, loc, packed, i32);
-    mlir::Value magic = u32(0xEFLL << 23);
-    mlir::Value limit = u32(0x8FLL << 23);
+    const mlir::Value wide  = widen(b, loc, packed, i32);
+    const mlir::Value magic = u32(0xEFLL << 23);
+    const mlir::Value limit = u32(0x8FLL << 23);
 
-    mlir::Value shifted = mlir::arith::ShLIOp::create(b, loc, mlir::arith::AndIOp::create(b, loc, wide, u32(0x7FFF)), u32(13));
-    mlir::Value scaled  = mlir::arith::MulFOp::create(b, loc, asFloat(shifted), asFloat(magic));
-    mlir::Value big     = mlir::arith::CmpFOp::create(b, loc, mlir::arith::CmpFPredicate::OGE, scaled, asFloat(limit));
-    mlir::Value bits    = mlir::arith::SelectOp::create(
-        b, loc, big, mlir::arith::OrIOp::create(b, loc, asBits(scaled), u32(0xFFLL << 23)), asBits(scaled));
-    mlir::Value sign = mlir::arith::ShLIOp::create(b, loc, mlir::arith::AndIOp::create(b, loc, wide, u32(0x8000)), u32(16));
+    const mlir::Value shifted =
+        mlir::arith::ShLIOp::create(b, loc, mlir::arith::AndIOp::create(b, loc, wide, u32(0x7FFF)), u32(13));
+    const mlir::Value scaled = mlir::arith::MulFOp::create(b, loc, asFloat(shifted), asFloat(magic));
+    const mlir::Value big =
+        mlir::arith::CmpFOp::create(b, loc, mlir::arith::CmpFPredicate::OGE, scaled, asFloat(limit));
+    const mlir::Value bits =
+        mlir::arith::SelectOp::create(b,
+                                      loc,
+                                      big,
+                                      mlir::arith::OrIOp::create(b, loc, asBits(scaled), u32(0xFFLL << 23)),
+                                      asBits(scaled));
+    const mlir::Value sign =
+        mlir::arith::ShLIOp::create(b, loc, mlir::arith::AndIOp::create(b, loc, wide, u32(0x8000)), u32(16));
     return asFloat(mlir::arith::OrIOp::create(b, loc, bits, sign));
 }
 
 /// @brief `set_f16`, `set_f32` and `set_f64`, each an integer write of the value's bits.
 void buildSetFloat(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy, const std::int64_t bits)
 {
-    auto loc   = module.getLoc();
-    auto i8    = b.getIntegerType(8);
-    auto i64   = b.getIntegerType(64);
-    auto ptr   = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto realTy = (bits == 64) ? mlir::Type{b.getF64Type()} : mlir::Type{b.getF32Type()};
+    auto             loc = module.getLoc();
+    auto             i8  = b.getIntegerType(8);
+    auto             i64 = b.getIntegerType(64);
+    auto             ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    const mlir::Type realTy =
+        (bits == 64) ? mlir::cast<mlir::Type>(b.getF64Type()) : mlir::cast<mlir::Type>(b.getF32Type());
     auto fn = declare(b, module, "dsdl_runtime_set_f" + std::to_string(bits), {ptr, sizeTy, sizeTy, realTy}, {i8});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
-    mlir::Value value = entry->getArgument(3);
-    mlir::Value carried;
+    const mlir::Value value = entry->getArgument(3);
+    mlir::Value       carried;
     if (bits == 16)
     {
         carried = widen(b, loc, packFloat16(b, loc, value), i64);
@@ -753,44 +811,46 @@ void buildSetFloat(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy,
         auto intTy = b.getIntegerType(static_cast<unsigned>(bits));
         carried    = widen(b, loc, mlir::arith::BitcastOp::create(b, loc, intTy, value), i64);
     }
-    mlir::Value written = mlir::LLVM::CallOp::create(b,
-                                                     loc,
-                                                     module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_set_uxx"),
-                                                     mlir::ValueRange{entry->getArgument(0),
-                                                                      entry->getArgument(1),
-                                                                      entry->getArgument(2),
-                                                                      carried,
-                                                                      constant(b, loc, i8, bits)})
-                              .getResult();
+    const mlir::Value written =
+        mlir::LLVM::CallOp::create(b,
+                                   loc,
+                                   module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_set_uxx"),
+                                   mlir::ValueRange{entry->getArgument(0),
+                                                    entry->getArgument(1),
+                                                    entry->getArgument(2),
+                                                    carried,
+                                                    constant(b, loc, i8, bits)})
+            .getResult();
     mlir::LLVM::ReturnOp::create(b, loc, mlir::ValueRange{written});
 }
 
 /// @brief `get_f16`, `get_f32` and `get_f64`, each an integer read reinterpreted.
 void buildGetFloat(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy, const std::int64_t bits)
 {
-    auto loc    = module.getLoc();
-    auto i8     = b.getIntegerType(8);
-    auto ptr    = mlir::LLVM::LLVMPointerType::get(b.getContext());
-    auto realTy = (bits == 64) ? mlir::Type{b.getF64Type()} : mlir::Type{b.getF32Type()};
+    auto             loc = module.getLoc();
+    auto             i8  = b.getIntegerType(8);
+    auto             ptr = mlir::LLVM::LLVMPointerType::get(b.getContext());
+    const mlir::Type realTy =
+        (bits == 64) ? mlir::cast<mlir::Type>(b.getF64Type()) : mlir::cast<mlir::Type>(b.getF32Type());
     auto fn = declare(b, module, "dsdl_runtime_get_f" + std::to_string(bits), {ptr, sizeTy, sizeTy}, {realTy});
     mlir::OpBuilder::InsertionGuard const guard(b);
-    mlir::Block* entry = begin(b, fn);
+    mlir::Block*                          entry = begin(b, fn);
     if (entry == nullptr)
     {
         return;
     }
     const std::int64_t read = (bits == 16) ? 16 : bits;
-    mlir::Value        raw  = mlir::LLVM::CallOp::create(
-                          b,
-                          loc,
-                          module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("dsdl_runtime_get_u" + std::to_string(read)),
-                          mlir::ValueRange{entry->getArgument(0),
-                                           entry->getArgument(1),
-                                           entry->getArgument(2),
-                                           constant(b, loc, i8, read)})
-                          .getResult();
-    mlir::Value out = (bits == 16) ? unpackFloat16(b, loc, raw)
-                                   : mlir::arith::BitcastOp::create(b, loc, realTy, raw).getResult();
+    mlir::Value const  raw  = mlir::LLVM::CallOp::create(b,
+                                                         loc,
+                                                         module.lookupSymbol<mlir::LLVM::LLVMFuncOp>(
+                                                             "dsdl_runtime_get_u" + std::to_string(read)),
+                                                         mlir::ValueRange{entry->getArgument(0),
+                                                                          entry->getArgument(1),
+                                                                          entry->getArgument(2),
+                                                                          constant(b, loc, i8, read)})
+                                  .getResult();
+    mlir::Value const  out =
+        (bits == 16) ? unpackFloat16(b, loc, raw) : mlir::arith::BitcastOp::create(b, loc, realTy, raw).getResult();
     mlir::LLVM::ReturnOp::create(b, loc, mlir::ValueRange{out});
 }
 
@@ -806,7 +866,9 @@ struct EmitDSDLRuntimePass : public mlir::PassWrapper<EmitDSDLRuntimePass, mlir:
     }
     void getDependentDialects(mlir::DialectRegistry& registry) const override
     {
-        registry.insert<mlir::LLVM::LLVMDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect,
+        registry.insert<mlir::LLVM::LLVMDialect,
+                        mlir::func::FuncDialect,
+                        mlir::arith::ArithDialect,
                         mlir::scf::SCFDialect>();
     }
 

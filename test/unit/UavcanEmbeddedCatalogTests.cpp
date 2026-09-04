@@ -158,7 +158,7 @@ bool runUavcanEmbeddedCatalogTests()
     std::unordered_set<std::string> selected;
     selected.insert("uavcan.node.Heartbeat:1:0");
 
-    if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(catalog, destination, selected, diagnostics))
+    if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(catalog, destination, selected))
     {
         std::cerr << "failed to append embedded UAVCAN schema to destination module\n";
         llvm::consumeError(std::move(err));

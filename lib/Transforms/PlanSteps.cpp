@@ -13,11 +13,14 @@
 //===----------------------------------------------------------------------===//
 #include "llvmdsdl/Transforms/PlanSteps.h"
 
+#include "llvmdsdl/IR/DSDLOps.h"
 #include <llvm/ADT/StringRef.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,215 +30,70 @@ namespace llvmdsdl
 namespace
 {
 
-std::int64_t ioStepBits(mlir::Operation* ioOp)
+/// @brief The width a step contributes, as the lowering settled it.
+std::int64_t ioStepBits(mlir::dsdl::IOOp io)
 {
-    if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("lowered_bits"))
-    {
-        return nonNegative(bits.getInt());
-    }
-    if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("max_bits"))
-    {
-        return nonNegative(bits.getInt());
-    }
-    return 0;
+    return nonNegative(io.getLoweredBits().value_or(io.getMaxBits()));
+}
+
+std::string valueOrEmpty(const std::optional<llvm::StringRef> value)
+{
+    return value ? value->str() : std::string{};
+}
+
+PlanStep stepFor(mlir::dsdl::IOOp io)
+{
+    PlanStep step;
+    step.kind                         = io.isPadding() ? PlanStepKind::Padding : PlanStepKind::Field;
+    step.bits                         = ioStepBits(io);
+    step.name                         = io.getName().str();
+    step.cName                        = valueOrEmpty(io.getCName());
+    step.scalarCategory               = io.getScalarCategory().str();
+    step.castMode                     = io.getCastMode().str();
+    step.arrayKind                    = io.getArrayKind().str();
+    step.bitLength                    = io.getBitLength();
+    step.arrayCapacity                = io.getArrayCapacity();
+    step.arrayLengthPrefixBits        = io.getArrayLengthPrefixBits();
+    step.alignmentBits                = io.getAlignmentBits();
+    step.unionOptionIndex             = io.getUnionOptionIndex();
+    step.unionTagBits                 = io.getUnionTagBits();
+    step.compositeCTypeName           = valueOrEmpty(io.getCompositeCTypeName());
+    step.serUnsignedHelper            = valueOrEmpty(io.getLoweredSerUnsignedHelper());
+    step.deserUnsignedHelper          = valueOrEmpty(io.getLoweredDeserUnsignedHelper());
+    step.serSignedHelper              = valueOrEmpty(io.getLoweredSerSignedHelper());
+    step.deserSignedHelper            = valueOrEmpty(io.getLoweredDeserSignedHelper());
+    step.serFloatHelper               = valueOrEmpty(io.getLoweredSerFloatHelper());
+    step.deserFloatHelper             = valueOrEmpty(io.getLoweredDeserFloatHelper());
+    step.serArrayLengthPrefixHelper   = valueOrEmpty(io.getLoweredSerArrayLengthPrefixHelper());
+    step.deserArrayLengthPrefixHelper = valueOrEmpty(io.getLoweredDeserArrayLengthPrefixHelper());
+    step.arrayLengthValidateHelper    = valueOrEmpty(io.getLoweredArrayLengthValidateHelper());
+    step.delimiterValidateHelper      = valueOrEmpty(io.getLoweredDelimiterValidateHelper());
+    step.compositeSealed              = io.getCompositeSealed().value_or(true);
+    step.compositeExtentBits          = nonNegative(io.getCompositeExtentBits().value_or(0));
+    return step;
 }
 
 }  // namespace
 
-std::vector<PlanStep> collectPlanSteps(mlir::Operation* plan)
+std::vector<PlanStep> collectPlanSteps(mlir::dsdl::SerializationPlanOp plan)
 {
     std::vector<PlanStep> steps;
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return steps;
     }
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::Operation& op : plan.getBody().front())
     {
-        if (op.getName().getStringRef() == "dsdl.align")
+        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(op))
         {
-            const auto bits = op.getAttrOfType<mlir::IntegerAttr>("bits");
-            PlanStep   alignStep;
+            PlanStep alignStep;
             alignStep.kind = PlanStepKind::Align;
-            alignStep.bits = bits ? nonNegative(bits.getInt()) : 1;
+            alignStep.bits = static_cast<std::int64_t>(align.getBits());
             steps.push_back(std::move(alignStep));
-            continue;
         }
-        if (op.getName().getStringRef() != "dsdl.io")
+        else if (auto io = mlir::dyn_cast<mlir::dsdl::IOOp>(op))
         {
-            continue;
-        }
-
-        const std::int64_t bits     = ioStepBits(&op);
-        const auto         kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto         nameAttr = op.getAttrOfType<mlir::StringAttr>("name");
-        const auto         kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind == "padding")
-        {
-            steps.push_back(
-                PlanStep{PlanStepKind::Padding,
-                         bits,
-                         nameAttr ? nameAttr.getValue().str() : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("c_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("c_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("scalar_category")
-                             ? op.getAttrOfType<mlir::StringAttr>("scalar_category").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("cast_mode")
-                             ? op.getAttrOfType<mlir::StringAttr>("cast_mode").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("array_kind")
-                             ? op.getAttrOfType<mlir::StringAttr>("array_kind").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::IntegerAttr>("bit_length")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("bit_length").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_capacity").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("alignment_bits").getInt()
-                             : 1,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_option_index")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_option_index").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::StringAttr>("composite_c_type_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("composite_c_type_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper").getValue().str()
-                             : std::string{}});
-            if (auto sealed = op.getAttrOfType<mlir::BoolAttr>("composite_sealed"))
-            {
-                steps.back().compositeSealed = sealed.getValue();
-            }
-            if (auto extent = op.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
-            {
-                steps.back().compositeExtentBits = nonNegative(extent.getInt());
-            }
-        }
-        else
-        {
-            steps.push_back(
-                PlanStep{PlanStepKind::Field,
-                         bits,
-                         nameAttr ? nameAttr.getValue().str() : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("c_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("c_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("scalar_category")
-                             ? op.getAttrOfType<mlir::StringAttr>("scalar_category").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("cast_mode")
-                             ? op.getAttrOfType<mlir::StringAttr>("cast_mode").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("array_kind")
-                             ? op.getAttrOfType<mlir::StringAttr>("array_kind").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::IntegerAttr>("bit_length")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("bit_length").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_capacity").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("alignment_bits").getInt()
-                             : 1,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_option_index")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_option_index").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::StringAttr>("composite_c_type_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("composite_c_type_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper").getValue().str()
-                             : std::string{}});
-            if (auto sealed = op.getAttrOfType<mlir::BoolAttr>("composite_sealed"))
-            {
-                steps.back().compositeSealed = sealed.getValue();
-            }
-            if (auto extent = op.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
-            {
-                steps.back().compositeExtentBits = nonNegative(extent.getInt());
-            }
+            steps.push_back(stepFor(io));
         }
     }
     return steps;

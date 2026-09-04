@@ -43,7 +43,8 @@ def DSDL_OpaqueType : TypeDef<DSDL_Dialect, "Opaque"> {
     Object emission ignores the name. A pointer is a pointer, and a member resolves to an
     offset in the published layout via the index the access operations carry.
   }];
-  let parameters = (ins StringRefParameter<"target spelling of the type">:$name);
+  let parameters =
+      (ins StringRefParameter<"target spelling of the type">:$name);
   let assemblyFormat = "`<` $name `>`";
 }
 

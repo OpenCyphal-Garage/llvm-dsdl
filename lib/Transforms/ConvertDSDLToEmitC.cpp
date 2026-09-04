@@ -20,6 +20,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -38,7 +39,6 @@
 #include <cstdint>
 #include <set>
 #include <string>
-#include <vector>
 #include <cstddef>
 #include <optional>
 #include <cstring>
@@ -695,14 +695,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             return;
         }
 
-        std::vector<mlir::Operation*> schemaOps;
-        for (mlir::Operation& op : body)
-        {
-            if (op.getName().getStringRef() == "dsdl.schema")
-            {
-                schemaOps.push_back(&op);
-            }
-        }
+        const auto schemaOps = llvm::to_vector(body.getOps<mlir::dsdl::SchemaOp>());
         if (schemaOps.empty())
         {
             return;
@@ -746,28 +739,18 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         std::set<std::string> delimiterValidateSymbols;
         std::set<std::string> includedHeaders;
 
-        for (mlir::Operation* schema : schemaOps)
+        for (mlir::dsdl::SchemaOp schema : schemaOps)
         {
-            const auto symNameAttr = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-            if (!symNameAttr)
-            {
-                continue;
-            }
-            const auto        headerPathAttr = schema->getAttrOfType<mlir::StringAttr>("header_path");
-            const std::string headerPath     = headerPathAttr ? headerPathAttr.getValue().str() : std::string{};
-
-            if (schema->getNumRegions() == 0 || schema->getRegion(0).empty())
+            const std::string headerPath = schema.getHeaderPath().value_or(llvm::StringRef{}).str();
+            if (schema.getBody().empty())
             {
                 continue;
             }
 
-            for (mlir::Operation& child : schema->getRegion(0).front())
+            for (mlir::dsdl::SerializationPlanOp child :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                if (child.getName().getStringRef() != "dsdl.serialization_plan")
-                {
-                    continue;
-                }
-                if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(&child))
+                if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(child.getOperation()))
                 {
                     switch (envelopeViolation->kind)
                     {
@@ -789,25 +772,22 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     signalPassFailure();
                     return;
                 }
-                if (const auto violation = findLoweredPlanContractViolation(module, &child))
+                if (const auto violation = findLoweredPlanContractViolation(module, child.getOperation()))
                 {
                     violation->operation->emitOpError(violation->message);
                     signalPassFailure();
                     return;
                 }
-                const auto        sectionAttr = child.getAttrOfType<mlir::StringAttr>("section");
-                const std::string section     = sectionAttr ? sectionAttr.getValue().str() : std::string{};
-                const std::string fnStem      = symNameAttr.getValue().str() + renderSectionSymbolSuffix(section);
-                const auto capacityCheckAttr  = child.getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
+                const std::string section = child.getSection().value_or(llvm::StringRef{}).str();
+                const std::string fnStem  = schema.getSymName().str() + renderSectionSymbolSuffix(section);
                 const std::string capacityCheckSymbol =
-                    capacityCheckAttr ? capacityCheckAttr.getValue().str() : std::string{};
-                const auto        cTypeNameAttr = child.getAttrOfType<mlir::StringAttr>("c_type_name");
-                const std::string cTypeName     = cTypeNameAttr ? cTypeNameAttr.getValue().str() : std::string{};
+                    child.getLoweredCapacityCheckHelper().value_or(llvm::StringRef{}).str();
+                const std::string cTypeName = child.getCTypeName().str();
                 if (!cTypeName.empty())
                 {
                     forwardDeclaredTypes.insert(cTypeName);
                 }
-                const auto steps = collectPlanSteps(&child);
+                const auto steps = collectPlanSteps(child);
                 for (const auto& step : steps)
                 {
                     // C member names are the C backend's to decide, not lowering's: it stamps
@@ -926,11 +906,11 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                         delimiterValidateSymbols.insert(step.delimiterValidateHelper);
                     }
                 }
-                if (child.hasAttr("is_union"))
+                if (child.getIsUnion())
                 {
-                    const auto validate = child.getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr);
-                    const auto serTag   = child.getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
-                    const auto deserTag = child.getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr);
+                    const auto validate = child.getLoweredUnionTagValidateHelperAttr();
+                    const auto serTag   = child.getLoweredSerUnionTagHelperAttr();
+                    const auto deserTag = child.getLoweredDeserUnionTagHelperAttr();
                     if (validate)
                     {
                         unionTagValidateSymbols.insert(validate.getValue().str());
@@ -1034,9 +1014,9 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t, int64_t);");
         }
 
-        for (mlir::Operation* op : schemaOps)
+        for (const mlir::dsdl::SchemaOp schema : schemaOps)
         {
-            op->erase();
+            schema->erase();
         }
 
         // Before the conversion, not after. A loop carries an induction variable its caller

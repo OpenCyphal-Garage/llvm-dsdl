@@ -27,7 +27,8 @@
 #include <string>
 
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Operation.h"
+
+#include "llvmdsdl/IR/DSDLOps.h"
 
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
@@ -50,7 +51,7 @@ namespace llvmdsdl
 /// @param[in,out] schema The schema op to stamp, ordinarily a clone the caller owns.
 /// @param[in] def The semantic definition the schema was lowered from.
 /// @param[in] versioning Whether type names carry the version.
-void stampCNames(mlir::Operation& schema, const SemanticDefinition& def, TypeNameVersioning versioning);
+void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, TypeNameVersioning versioning);
 
 /// @brief Stamps every schema in @p module against the definition it was lowered from.
 ///

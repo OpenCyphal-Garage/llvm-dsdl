@@ -32,8 +32,10 @@ def DSDL_SchemaOp
 
   let arguments = (ins SymbolNameAttr:$sym_name, StrAttr:$full_name,
       I32Attr:$major, I32Attr:$minor, UnitAttr:$sealed,
-      OptionalAttr<I64Attr>:$extent_bits, OptionalAttr<I64Attr>:$fixed_port_id,
-      UnitAttr:$service, UnitAttr:$deprecated, OptionalAttr<StrAttr>:$doc);
+      OptionalAttr<DSDL_I64Attr>:$extent_bits,
+      OptionalAttr<DSDL_I64Attr>:$fixed_port_id, UnitAttr:$service,
+      UnitAttr:$deprecated, OptionalAttr<StrAttr>:$doc,
+      OptionalAttr<StrAttr>:$c_type_name, OptionalAttr<StrAttr>:$header_path);
 
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "$sym_name attr-dict-with-keyword $body";
@@ -74,24 +76,91 @@ def DSDL_ConstantOp : DSDL_Op<"constant", [NoMemoryEffect]> {
 def DSDL_SerializationPlanOp
     : DSDL_Op<"serialization_plan", [NoMemoryEffect, NoTerminator]> {
   let summary = "Container for explicit wire-layout operations";
+  let description = [{
+    One section's wire layout: the `dsdl.align` and `dsdl.io` steps in order, and the facts
+    about the section as a whole. The `lowered_*` attributes are stamped by
+    `lower-dsdl-exec`, which also names the helper functions it synthesises for the section.
+  }];
+  let arguments = (ins StrAttr:$c_type_name, StrAttr:$c_serialize_symbol,
+      StrAttr:$c_deserialize_symbol, DSDL_I64Attr:$min_bits,
+      DSDL_I64Attr:$max_bits, OptionalAttr<StrAttr>:$section,
+      OptionalAttr<DSDL_I64Attr>:$extent_bits, UnitAttr:$sealed,
+      UnitAttr:$is_union, UnitAttr:$fixed_size,
+      OptionalAttr<DSDL_I64Attr>:$union_tag_bits,
+      OptionalAttr<DSDL_I64Attr>:$union_option_count, UnitAttr:$lowered,
+      OptionalAttr<DSDL_I64Attr>:$lowered_min_bits,
+      OptionalAttr<DSDL_I64Attr>:$lowered_max_bits,
+      OptionalAttr<DSDL_I64Attr>:$lowered_step_count,
+      OptionalAttr<DSDL_I64Attr>:$lowered_field_count,
+      OptionalAttr<DSDL_I64Attr>:$lowered_padding_count,
+      OptionalAttr<DSDL_I64Attr>:$lowered_align_count,
+      OptionalAttr<StrAttr>:$lowered_capacity_check_helper,
+      OptionalAttr<StrAttr>:$lowered_union_tag_validate_helper,
+      OptionalAttr<StrAttr>:$lowered_ser_union_tag_helper,
+      OptionalAttr<StrAttr>:$lowered_deser_union_tag_helper,
+      UnitAttr:$zoh_alias_eligible, OptionalAttr<StrAttr>:$zoh_alias_reason);
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
   let hasVerifier = 1;
+  // The steps are read only once they have been verified themselves.
+  let hasRegionVerifier = 1;
 }
 
 def DSDL_AlignOp : DSDL_Op<"align", [NoMemoryEffect]> {
   let summary = "Alignment event in serialization plan";
-  let arguments = (ins I32Attr:$bits);
+  let arguments = (ins I32Attr:$bits, OptionalAttr<DSDL_I64Attr>:$step_index);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }
 
 def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let summary = "Wire I/O event in serialization plan";
+  let description = [{
+    One step of a section's wire layout: a field, or a run of reserved bits when `kind` is
+    `padding`. Every fact the lowering knows about the step is an attribute here, and the
+    verifier holds them to the ranges the wire format allows.
+
+    The `composite_*` attributes are present exactly when `scalar_category` is `composite`.
+    `step_index`, `lowered_bits` and the `lowered_*_helper` symbols are stamped by
+    `lower-dsdl-exec`; the helpers a step needs depend on its category and array kind.
+  }];
   let arguments = (ins StrAttr:$kind, StrAttr:$name, StrAttr:$type_name,
-      OptionalAttr<StrAttr>:$doc);
+      StrAttr:$scalar_category, StrAttr:$cast_mode, StrAttr:$array_kind,
+      DSDL_I64Attr:$bit_length, DSDL_I64Attr:$array_capacity,
+      DSDL_I64Attr:$array_length_prefix_bits, DSDL_I64Attr:$alignment_bits,
+      DSDL_I64Attr:$min_bits, DSDL_I64Attr:$max_bits,
+      DSDL_I64Attr:$union_option_index, DSDL_I64Attr:$union_tag_bits,
+      OptionalAttr<StrAttr>:$c_name, OptionalAttr<StrAttr>:$doc,
+      OptionalAttr<StrAttr>:$composite_c_type_name,
+      OptionalAttr<StrAttr>:$composite_full_name,
+      OptionalAttr<DSDL_I64Attr>:$composite_major,
+      OptionalAttr<DSDL_I64Attr>:$composite_minor,
+      OptionalAttr<BoolAttr>:$composite_sealed,
+      OptionalAttr<DSDL_I64Attr>:$composite_extent_bits,
+      OptionalAttr<DSDL_I64Attr>:$step_index,
+      OptionalAttr<DSDL_I64Attr>:$lowered_bits,
+      OptionalAttr<StrAttr>:$lowered_ser_unsigned_helper,
+      OptionalAttr<StrAttr>:$lowered_deser_unsigned_helper,
+      OptionalAttr<StrAttr>:$lowered_ser_signed_helper,
+      OptionalAttr<StrAttr>:$lowered_deser_signed_helper,
+      OptionalAttr<StrAttr>:$lowered_ser_float_helper,
+      OptionalAttr<StrAttr>:$lowered_deser_float_helper,
+      OptionalAttr<StrAttr>:$lowered_ser_array_length_prefix_helper,
+      OptionalAttr<StrAttr>:$lowered_deser_array_length_prefix_helper,
+      OptionalAttr<StrAttr>:$lowered_array_length_validate_helper,
+      OptionalAttr<StrAttr>:$lowered_delimiter_validate_helper);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
+  let extraClassDeclaration = [{
+    /// Whether this step reserves bits and holds no member.
+    bool isPadding() { return getKind() == "padding"; }
+    /// Whether the field is an array of any kind.
+    bool isArray() { return getArrayKind() != "none"; }
+    /// Whether the field is a variable-length array.
+    bool isVariableArray() { return getArrayKind().starts_with("variable"); }
+    /// Whether the field is a nested composite.
+    bool isComposite() { return getScalarCategory() == "composite"; }
+  }];
 }
 
 def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
@@ -108,8 +177,8 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
     The operation carries memory effects. It is the write, and a plan whose writes folded
     away has serialized nothing.
   }];
-  let arguments = (ins DSDL_PtrType:$destination, I64:$destination_bit_offset, I64:$width,
-      DSDL_PtrType:$source, I64:$source_bit_offset);
+  let arguments = (ins DSDL_PtrType:$destination, I64:$destination_bit_offset,
+      I64:$width, DSDL_PtrType:$source, I64:$source_bit_offset);
   let assemblyFormat = [{
     $destination `[` $destination_bit_offset `]` `,` $width `,`
     $source `[` $source_bit_offset `]`
@@ -149,8 +218,9 @@ def DSDL_WriteBitsOp : DSDL_Op<"write_bits"> {
     `is_signed` is carried because MLIR integers are signless while the wire encoding is
     not: the same `i64` is written differently depending on it.
   }];
-  let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes, I64:$bit_offset,
-      AnyTypeOf<[AnyInteger, AnyFloat]>:$value, I64Attr:$width, UnitAttr:$is_signed);
+  let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes,
+      I64:$bit_offset, AnyTypeOf<[AnyInteger, AnyFloat]>:$value, I64Attr:$width,
+      UnitAttr:$is_signed);
   let results = (outs I8:$error);
   let assemblyFormat = [{
     $buffer `[` $bit_offset `]` `,` $value `,` `size` $buffer_size_bytes
@@ -165,8 +235,8 @@ def DSDL_ReadBitsOp : DSDL_Op<"read_bits"> {
     primitives report a short buffer by zero-extending rather than by an error code, which
     is the tolerance a deserializer is required to have.
   }];
-  let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes, I64:$bit_offset,
-      I64Attr:$width, UnitAttr:$is_signed);
+  let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes,
+      I64:$bit_offset, I64Attr:$width, UnitAttr:$is_signed);
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
   let assemblyFormat = [{
     $buffer `[` $bit_offset `]` `,` `size` $buffer_size_bytes
@@ -206,7 +276,8 @@ def DSDL_LoadScalarOp : DSDL_Op<"load_scalar"> {
   }];
   let arguments = (ins DSDL_PtrType:$pointer);
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
-  let assemblyFormat = "$pointer attr-dict `:` type($pointer) `->` type($value)";
+  let assemblyFormat =
+      "$pointer attr-dict `:` type($pointer) `->` type($value)";
 }
 
 def DSDL_StoreScalarOp : DSDL_Op<"store_scalar"> {
@@ -214,8 +285,10 @@ def DSDL_StoreScalarOp : DSDL_Op<"store_scalar"> {
   let description = [{
     How a plan reports the size it consumed or produced.
   }];
-  let arguments = (ins DSDL_PtrType:$pointer, AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
-  let assemblyFormat = "$pointer `,` $value attr-dict `:` type($pointer) `,` type($value)";
+  let arguments = (ins DSDL_PtrType:$pointer,
+      AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
+  let assemblyFormat =
+      "$pointer `,` $value attr-dict `:` type($pointer) `,` type($value)";
 }
 
 class DSDL_MemberAccessOp<string mnemonic, list<Trait> traits = []>
@@ -228,20 +301,23 @@ class DSDL_MemberAccessOp<string mnemonic, list<Trait> traits = []>
     A target resolves whichever of the two it can: the C path spells the names, and object
     emission walks the indices through the published layout.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices);
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices);
 }
 
 def DSDL_LoadMemberOp : DSDL_MemberAccessOp<"load_member"> {
   let summary = "Read a member of the object a plan was handed";
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
-  let assemblyFormat = "$object $path attr-dict `:` type($object) `->` type($value)";
+  let assemblyFormat =
+      "$object $path attr-dict `:` type($object) `->` type($value)";
 }
 
 def DSDL_StoreMemberOp : DSDL_MemberAccessOp<"store_member"> {
   let summary = "Write a member of the object a plan was handed";
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices,
-      AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
-  let assemblyFormat = "$object $path `,` $value attr-dict `:` type($object) `,` type($value)";
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices, AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
+  let assemblyFormat =
+      "$object $path `,` $value attr-dict `:` type($object) `,` type($value)";
 }
 
 def DSDL_LoadElementOp : DSDL_MemberAccessOp<"load_element"> {
@@ -254,8 +330,8 @@ def DSDL_LoadElementOp : DSDL_MemberAccessOp<"load_element"> {
     `uint8[<=255]` is held as `uint8_t` and normalised through helpers that take 64 bits.
     Addressing it as the working type would stride by the wrong width.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices,
-      I64:$index, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices, I64:$index, StrAttr:$element_type);
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
   let assemblyFormat = [{
     $object $path `[` $index `]` attr-dict `:` type($object) `->` type($value)
@@ -264,8 +340,9 @@ def DSDL_LoadElementOp : DSDL_MemberAccessOp<"load_element"> {
 
 def DSDL_StoreElementOp : DSDL_MemberAccessOp<"store_element"> {
   let summary = "Write one element of an array member";
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices,
-      I64:$index, AnyTypeOf<[AnyInteger, AnyFloat]>:$value, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices, I64:$index,
+      AnyTypeOf<[AnyInteger, AnyFloat]>:$value, StrAttr:$element_type);
   let assemblyFormat = [{
     $object $path `[` $index `]` `,` $value attr-dict `:` type($object) `,` type($value)
   }];
@@ -278,9 +355,11 @@ def DSDL_MemberAddrOp : DSDL_Op<"member_addr", [NoMemoryEffect]> {
     rather than by inlining its layout here. That keeps one definition of each type's wire
     format, and it is why a plan needs an address and not a value.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices);
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices);
   let results = (outs DSDL_PtrType:$address);
-  let assemblyFormat = "$object $path attr-dict `:` type($object) `->` type($address)";
+  let assemblyFormat =
+      "$object $path attr-dict `:` type($object) `->` type($address)";
 }
 
 def DSDL_ElementAddrOp : DSDL_Op<"element_addr", [NoMemoryEffect]> {
@@ -289,8 +368,8 @@ def DSDL_ElementAddrOp : DSDL_Op<"element_addr", [NoMemoryEffect]> {
     An array of composites is encoded element by element through the nested type's own entry
     point, so each iteration needs the address of that element rather than of the array.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path, DenseI64ArrayAttr:$indices,
-      I64:$index, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
+      DenseI64ArrayAttr:$indices, I64:$index, StrAttr:$element_type);
   let results = (outs DSDL_PtrType:$address);
   let assemblyFormat = [{
     $object $path `[` $index `]` attr-dict `:` type($object) `->` type($address)
@@ -306,7 +385,8 @@ def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
   }];
   let arguments = (ins DSDL_PtrType:$buffer, I64:$byte_offset);
   let results = (outs DSDL_PtrType:$address);
-  let assemblyFormat = "$buffer `[` $byte_offset `]` attr-dict `:` type($buffer) `->` type($address)";
+  let assemblyFormat = "$buffer `[` $byte_offset `]` attr-dict `:` "
+                       "type($buffer) `->` type($address)";
 }
 
 def DSDL_LocalOp : DSDL_Op<"local"> {
@@ -321,13 +401,14 @@ def DSDL_LocalOp : DSDL_Op<"local"> {
 }
 
 def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
-  let summary = "Invoke a nested type's own serialize or deserialize entry point";
+  let summary =
+      "Invoke a nested type's own serialize or deserialize entry point";
   let description = [{
     `callee` names the target's public symbol for that type rather than an operation in
     this module, because the definition lives in the nested type's own translation unit.
   }];
-  let arguments = (ins StrAttr:$callee, DSDL_PtrType:$object, DSDL_PtrType:$buffer,
-      DSDL_PtrType:$size);
+  let arguments = (ins StrAttr:$callee, DSDL_PtrType:$object,
+      DSDL_PtrType:$buffer, DSDL_PtrType:$size);
   let results = (outs I8:$error);
   let assemblyFormat = [{
     $callee `(` $object `,` $buffer `,` $size `)` attr-dict `:`

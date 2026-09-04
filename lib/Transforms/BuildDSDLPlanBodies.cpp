@@ -1839,8 +1839,8 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
 
     /// @brief Builds both bodies of @p plan, or says why it cannot.
     mlir::LogicalResult buildPlan(mlir::ModuleOp                             module,
-                                  mlir::Operation&                           schema,
-                                  mlir::Operation&                           plan,
+                                  mlir::dsdl::SchemaOp                       schema,
+                                  mlir::dsdl::SerializationPlanOp            plan,
                                   mlir::SmallVectorImpl<mlir::func::FuncOp>& built)
     {
         if (!module->hasAttr("llvmdsdl.names_final"))
@@ -1850,7 +1850,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             return plan.emitOpError("bodies are built from a backend's final C names, and this module carries "
                                     "none; stamp them and set 'llvmdsdl.names_final'");
         }
-        if (const auto envelope = findLoweredContractEnvelopeViolation(&plan))
+        if (const auto envelope = findLoweredContractEnvelopeViolation(plan.getOperation()))
         {
             switch (envelope->kind)
             {
@@ -1866,42 +1866,33 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                                         "build-dsdl-plan-bodies");
             }
         }
-        if (const auto violation = findLoweredPlanContractViolation(module, &plan))
+        if (const auto violation = findLoweredPlanContractViolation(module, plan.getOperation()))
         {
             return violation->operation->emitOpError(violation->message);
         }
 
-        const auto symNameAttr = schema.getAttrOfType<mlir::StringAttr>("sym_name");
-        if (!symNameAttr)
-        {
-            return schema.emitOpError("has no 'sym_name'");
-        }
-        const auto        sectionAttr = plan.getAttrOfType<mlir::StringAttr>("section");
-        const std::string section     = sectionAttr ? sectionAttr.getValue().str() : std::string{};
-        const std::string fnStem      = symNameAttr.getValue().str() + renderSectionSymbolSuffix(section);
+        const std::string section = plan.getSection().value_or(llvm::StringRef{}).str();
+        const std::string fnStem  = schema.getSymName().str() + renderSectionSymbolSuffix(section);
 
-        const auto cTypeNameAttr = plan.getAttrOfType<mlir::StringAttr>("c_type_name");
-        if (!cTypeNameAttr || cTypeNameAttr.getValue().empty())
+        const std::string cTypeName = plan.getCTypeName().str();
+        if (cTypeName.empty())
         {
             return plan.emitOpError(
                 "carries no 'c_type_name'; a body is built against the struct the backend declares");
         }
-        const std::string cTypeName = cTypeNameAttr.getValue().str();
 
-        const auto stringAttrOrEmpty = [&plan](llvm::StringRef name) {
-            const auto attr = plan.getAttrOfType<mlir::StringAttr>(name);
-            return attr ? attr.getValue().str() : std::string{};
+        const auto stringOrEmpty = [](const std::optional<llvm::StringRef> value) {
+            return value ? value->str() : std::string{};
         };
-        const std::string  capacityCheckSymbol       = stringAttrOrEmpty(kLoweredCapacityCheckHelperAttr);
-        const bool         isUnion                   = plan.hasAttr("is_union");
-        const auto         unionTagBitsAttr          = plan.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-        const std::int64_t unionTagBits              = unionTagBitsAttr ? nonNegative(unionTagBitsAttr.getInt()) : 0;
-        const std::string  unionTagSerializeHelper   = stringAttrOrEmpty(kLoweredSerUnionTagHelperAttr);
-        const std::string  unionTagDeserializeHelper = stringAttrOrEmpty(kLoweredDeserUnionTagHelperAttr);
+        const std::string  capacityCheckSymbol       = stringOrEmpty(plan.getLoweredCapacityCheckHelper());
+        const bool         isUnion                   = plan.getIsUnion();
+        const std::int64_t unionTagBits              = nonNegative(plan.getUnionTagBits().value_or(0));
+        const std::string  unionTagSerializeHelper   = stringOrEmpty(plan.getLoweredSerUnionTagHelper());
+        const std::string  unionTagDeserializeHelper = stringOrEmpty(plan.getLoweredDeserUnionTagHelper());
         const std::string  unionTagValidateSymbol =
-            isUnion ? stringAttrOrEmpty(kLoweredUnionTagValidateHelperAttr) : std::string{};
+            isUnion ? stringOrEmpty(plan.getLoweredUnionTagValidateHelper()) : std::string{};
 
-        const auto steps = collectPlanSteps(&plan);
+        const auto steps = collectPlanSteps(plan);
         if (const auto reason = unsupportedPlanReason(steps,
                                                       isUnion,
                                                       unionTagBits,
@@ -1959,13 +1950,9 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         auto module = getOperation();
 
         mlir::SmallVector<mlir::func::FuncOp, 16> built;
-        for (mlir::Operation& schema : module.getBodyRegion().front())
+        for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
-            if (schema.getName().getStringRef() != "dsdl.schema")
-            {
-                continue;
-            }
-            if (schema.hasAttr("llvmdsdl.layout_only"))
+            if (schema->hasAttr("llvmdsdl.layout_only"))
             {
                 // Present so that a member of this type can be addressed. Its serialisation is
                 // its own object's to define.
@@ -1975,16 +1962,13 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             // declares entry points for it, so a schema that carries none is malformed input
             // rather than something to pass over.
             std::size_t plans = 0;
-            if ((schema.getNumRegions() > 0) && !schema.getRegion(0).empty())
+            if (!schema.getBody().empty())
             {
-                for (mlir::Operation& child : schema.getRegion(0).front())
+                for (const mlir::dsdl::SerializationPlanOp plan :
+                     schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
                 {
-                    if (child.getName().getStringRef() != "dsdl.serialization_plan")
-                    {
-                        continue;
-                    }
                     ++plans;
-                    if (mlir::failed(buildPlan(module, schema, child, built)))
+                    if (mlir::failed(buildPlan(module, schema, plan, built)))
                     {
                         signalPassFailure();
                         return;

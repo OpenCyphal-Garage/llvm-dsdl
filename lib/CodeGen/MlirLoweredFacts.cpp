@@ -23,6 +23,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
 #include <optional>
@@ -31,6 +32,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
@@ -102,6 +104,24 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
     {
         addOptimizeLoweredSerDesPipeline(pm);
     }
+    // The passes read the dialect's attributes through their accessors, which is only sound over
+    // IR the verifier has accepted.
+    if (mlir::failed(mlir::verify(loweredModule->getOperation())))
+    {
+        diagnostics.error({"<mlir>", 1, 1},
+                          "failed to run lower-dsdl-exec for " + backendLabel +
+                              " backend validation: the module does not verify");
+        return false;
+    }
+    // The passes read the dialect's attributes through their accessors, which is only sound over
+    // IR the verifier has accepted.
+    if (mlir::failed(mlir::verify(loweredModule->getOperation())))
+    {
+        diagnostics.error({"<mlir>", 1, 1},
+                          "failed to run lower-dsdl-exec for " + backendLabel +
+                              " backend validation: the module does not verify");
+        return false;
+    }
     if (mlir::failed(pm.run(*loweredModule)))
     {
         diagnostics.error({"<mlir>", 1, 1},
@@ -135,40 +155,21 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
         return false;
     }
 
-    for (mlir::Operation& op : loweredModule->getBodyRegion().front())
+    for (mlir::dsdl::SchemaOp op : loweredModule->getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.schema")
-        {
-            continue;
-        }
+        const std::string fullName = op.getFullName().str();
+        const auto        key      = loweredTypeKey(fullName, op.getMajor(), op.getMinor());
+        auto&             sections = keyToSections[key];
 
-        const auto fullName = op.getAttrOfType<mlir::StringAttr>("full_name");
-        const auto major    = op.getAttrOfType<mlir::IntegerAttr>("major");
-        const auto minor    = op.getAttrOfType<mlir::IntegerAttr>("minor");
-        if (!fullName || !major || !minor)
+        if (op.getBody().empty())
         {
-            diagnostics.error({"<mlir>", 1, 1}, "dsdl.schema missing identity attributes");
+            diagnostics.error({"<mlir>", 1, 1}, "dsdl.schema has no body region for " + fullName);
             return false;
         }
 
-        const auto key      = loweredTypeKey(fullName.getValue().str(),
-                                             static_cast<std::uint32_t>(major.getInt()),
-                                             static_cast<std::uint32_t>(minor.getInt()));
-        auto&      sections = keyToSections[key];
-
-        if (op.getNumRegions() == 0 || op.getRegion(0).empty())
+        for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            diagnostics.error({"<mlir>", 1, 1}, "dsdl.schema has no body region for " + fullName.getValue().str());
-            return false;
-        }
-
-        for (mlir::Operation& child : op.getRegion(0).front())
-        {
-            if (child.getName().getStringRef() != "dsdl.serialization_plan")
-            {
-                continue;
-            }
-            if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(&child))
+            if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(child.getOperation()))
             {
                 switch (envelopeViolation->kind)
                 {
@@ -176,67 +177,54 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                     diagnostics.error({"<mlir>", 1, 1},
                                       "serialization plan missing lowered contract "
                                       "attribute '" +
-                                          std::string(kLoweredSerDesContractVersionAttr) + "' for " +
-                                          fullName.getValue().str());
+                                          std::string(kLoweredSerDesContractVersionAttr) + "' for " + fullName);
                     break;
                 case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
                     diagnostics.error({"<mlir>", 1, 1},
-                                      "serialization plan unsupported lowered contract major version for " +
-                                          fullName.getValue().str() + ": " +
+                                      "serialization plan unsupported lowered contract major version for " + fullName +
+                                          ": " +
                                           loweredSerDesUnsupportedMajorVersionDiagnosticDetail(
                                               envelopeViolation->encodedVersion));
                     break;
                 case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                     diagnostics.error({"<mlir>", 1, 1},
-                                      "serialization plan lowered contract producer mismatch for " +
-                                          fullName.getValue().str() + ": expected '" +
-                                          std::string(kLoweredSerDesContractProducer) + "'");
+                                      "serialization plan lowered contract producer mismatch for " + fullName +
+                                          ": expected '" + std::string(kLoweredSerDesContractProducer) + "'");
                     break;
                 }
                 return false;
             }
-            std::string section;
-            if (const auto sectionAttr = child.getAttrOfType<mlir::StringAttr>("section"))
-            {
-                section = sectionAttr.getValue().str();
-            }
-            auto& sectionFacts = loweredFacts[key][section];
+            const std::string section      = child.getSection().value_or(llvm::StringRef{}).str();
+            auto&             sectionFacts = loweredFacts[key][section];
             if (!sections.insert(section).second)
             {
-                diagnostics.error({"<mlir>", 1, 1},
-                                  "duplicate dsdl.serialization_plan section '" + section + "' for " +
-                                      fullName.getValue().str());
+                std::string duplicate = "duplicate dsdl.serialization_plan section '";
+                duplicate.append(section).append("' for ").append(fullName);
+                diagnostics.error({"<mlir>", 1, 1}, duplicate);
                 return false;
             }
 
-            if (const auto violation = findLoweredPlanContractViolation(*loweredModule, &child))
+            if (const auto violation = findLoweredPlanContractViolation(*loweredModule, child.getOperation()))
             {
                 diagnostics.error({"<mlir>", 1, 1},
-                                  "serialization plan contract violation for " + fullName.getValue().str() + ": " +
+                                  "serialization plan contract violation for " + op.getFullName().str() + ": " +
                                       violation->message);
                 return false;
             }
 
-            sectionFacts.capacityCheckHelper =
-                child.getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr).getValue().str();
-            if (child.hasAttr("is_union"))
+            // The contract validation above has established every helper the plan needs.
+            sectionFacts.capacityCheckHelper = child.getLoweredCapacityCheckHelper()->str();
+            if (child.getIsUnion())
             {
-                sectionFacts.unionTagBits =
-                    static_cast<std::uint32_t>(child.getAttrOfType<mlir::IntegerAttr>("union_tag_bits").getInt());
-                sectionFacts.unionTagValidateHelper =
-                    child.getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr).getValue().str();
-                sectionFacts.serUnionTagHelper =
-                    child.getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr).getValue().str();
-                sectionFacts.deserUnionTagHelper =
-                    child.getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr).getValue().str();
+                sectionFacts.unionTagBits           = static_cast<std::uint32_t>(*child.getUnionTagBits());
+                sectionFacts.unionTagValidateHelper = child.getLoweredUnionTagValidateHelper()->str();
+                sectionFacts.serUnionTagHelper      = child.getLoweredSerUnionTagHelper()->str();
+                sectionFacts.deserUnionTagHelper    = child.getLoweredDeserUnionTagHelper()->str();
             }
-            sectionFacts.zohAliasEligible = child.hasAttr("zoh_alias_eligible");
+            sectionFacts.zohAliasEligible = child.getZohAliasEligible();
             if (!sectionFacts.zohAliasEligible)
             {
-                if (const auto reasonAttr = child.getAttrOfType<mlir::StringAttr>("zoh_alias_reason"))
-                {
-                    sectionFacts.zohAliasReason = reasonAttr.getValue().str();
-                }
+                sectionFacts.zohAliasReason = child.getZohAliasReason().value_or(llvm::StringRef{}).str();
                 if (sectionFacts.zohAliasReason.empty())
                 {
                     sectionFacts.zohAliasReason = "not-proven";
@@ -247,81 +235,28 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                 sectionFacts.zohAliasReason = "eligible";
             }
 
-            for (mlir::Operation& step : child.getRegion(0).front())
+            const auto valueOrEmpty = [](const std::optional<llvm::StringRef> value) {
+                return value ? value->str() : std::string{};
+            };
+            for (mlir::dsdl::IOOp step : child.getBody().front().getOps<mlir::dsdl::IOOp>())
             {
-                const auto stepName = step.getName().getStringRef();
-                if (stepName == "dsdl.align")
+                auto& fieldFacts     = sectionFacts.fieldsByName[step.getName().str()];
+                fieldFacts.stepIndex = nonNegative(step.getStepIndex().value_or(0));
+                if (step.isVariableArray() && step.getArrayLengthPrefixBits() > 0)
                 {
-                    continue;
+                    fieldFacts.arrayLengthPrefixBits      = static_cast<std::uint32_t>(step.getArrayLengthPrefixBits());
+                    fieldFacts.serArrayLengthPrefixHelper = valueOrEmpty(step.getLoweredSerArrayLengthPrefixHelper());
+                    fieldFacts.deserArrayLengthPrefixHelper =
+                        valueOrEmpty(step.getLoweredDeserArrayLengthPrefixHelper());
+                    fieldFacts.arrayLengthValidateHelper = valueOrEmpty(step.getLoweredArrayLengthValidateHelper());
                 }
-                if (stepName != "dsdl.io")
-                {
-                    diagnostics.error({"<mlir>", 1, 1},
-                                      "unexpected operation in validated serialization plan body for " +
-                                          fullName.getValue().str());
-                    return false;
-                }
-
-                const auto arrayKind       = step.getAttrOfType<mlir::StringAttr>("array_kind");
-                const auto arrayPrefixBits = step.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
-                if (const auto fieldNameAttr = step.getAttrOfType<mlir::StringAttr>("name"); fieldNameAttr)
-                {
-                    auto& fieldFacts = sectionFacts.fieldsByName[fieldNameAttr.getValue().str()];
-                    if (const auto stepIndex = step.getAttrOfType<mlir::IntegerAttr>("step_index"))
-                    {
-                        fieldFacts.stepIndex = nonNegative(stepIndex.getInt());
-                    }
-                    if (arrayKind && arrayKind.getValue().starts_with("variable") && arrayPrefixBits &&
-                        arrayPrefixBits.getInt() > 0)
-                    {
-                        fieldFacts.arrayLengthPrefixBits = static_cast<std::uint32_t>(arrayPrefixBits.getInt());
-                        if (const auto serArrayPrefixHelper =
-                                step.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper"))
-                        {
-                            fieldFacts.serArrayLengthPrefixHelper = serArrayPrefixHelper.getValue().str();
-                        }
-                        if (const auto deserArrayPrefixHelper =
-                                step.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper"))
-                        {
-                            fieldFacts.deserArrayLengthPrefixHelper = deserArrayPrefixHelper.getValue().str();
-                        }
-                        if (const auto arrayValidateHelper =
-                                step.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper"))
-                        {
-                            fieldFacts.arrayLengthValidateHelper = arrayValidateHelper.getValue().str();
-                        }
-                    }
-                    if (const auto serUnsigned = step.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper"))
-                    {
-                        fieldFacts.serUnsignedHelper = serUnsigned.getValue().str();
-                    }
-                    if (const auto deserUnsigned =
-                            step.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper"))
-                    {
-                        fieldFacts.deserUnsignedHelper = deserUnsigned.getValue().str();
-                    }
-                    if (const auto serSigned = step.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper"))
-                    {
-                        fieldFacts.serSignedHelper = serSigned.getValue().str();
-                    }
-                    if (const auto deserSigned = step.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper"))
-                    {
-                        fieldFacts.deserSignedHelper = deserSigned.getValue().str();
-                    }
-                    if (const auto serFloat = step.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper"))
-                    {
-                        fieldFacts.serFloatHelper = serFloat.getValue().str();
-                    }
-                    if (const auto deserFloat = step.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper"))
-                    {
-                        fieldFacts.deserFloatHelper = deserFloat.getValue().str();
-                    }
-                    if (const auto delimiterValidateHelper =
-                            step.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper"))
-                    {
-                        fieldFacts.delimiterValidateHelper = delimiterValidateHelper.getValue().str();
-                    }
-                }
+                fieldFacts.serUnsignedHelper       = valueOrEmpty(step.getLoweredSerUnsignedHelper());
+                fieldFacts.deserUnsignedHelper     = valueOrEmpty(step.getLoweredDeserUnsignedHelper());
+                fieldFacts.serSignedHelper         = valueOrEmpty(step.getLoweredSerSignedHelper());
+                fieldFacts.deserSignedHelper       = valueOrEmpty(step.getLoweredDeserSignedHelper());
+                fieldFacts.serFloatHelper          = valueOrEmpty(step.getLoweredSerFloatHelper());
+                fieldFacts.deserFloatHelper        = valueOrEmpty(step.getLoweredDeserFloatHelper());
+                fieldFacts.delimiterValidateHelper = valueOrEmpty(step.getLoweredDelimiterValidateHelper());
             }
         }
     }

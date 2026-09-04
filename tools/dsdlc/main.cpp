@@ -60,6 +60,9 @@
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
@@ -1914,10 +1917,7 @@ int runDsdlc(int argc, char** argv)
         }
         if (embeddedCatalog)
         {
-            if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog,
-                                                                        *mlirModule,
-                                                                        selectedKeys,
-                                                                        diagnostics))
+            if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, selectedKeys))
             {
                 llvm::errs() << llvm::toString(std::move(err)) << "\n";
                 return finish("stdout", {}, true);
@@ -1932,14 +1932,8 @@ int runDsdlc(int argc, char** argv)
         // does not.
         const auto        stampSemantic = filterSemanticModule(mergedSemantic, selectedKeys);
         const std::size_t stamped       = llvmdsdl::stampCNames(*mlirModule, stampSemantic, options.typeNameVersioning);
-        std::size_t       schemaCount   = 0;
-        for (mlir::Operation& op : mlirModule->getBodyRegion().front())
-        {
-            if (op.getName().getStringRef() == "dsdl.schema")
-            {
-                ++schemaCount;
-            }
-        }
+        const std::size_t schemaCount =
+            llvm::range_size(mlirModule->getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>());
         if (stamped != schemaCount)
         {
             llvm::errs() << "error: named " << stamped << " of " << schemaCount
@@ -1964,8 +1958,7 @@ int runDsdlc(int argc, char** argv)
     }
     if (embeddedCatalog)
     {
-        if (auto err =
-                llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, closureKeys, diagnostics))
+        if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, closureKeys))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), {}, true);

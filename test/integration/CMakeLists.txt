@@ -3593,6 +3593,25 @@ if(PYTHON_EXECUTABLE)
   )
 endif()
 
+# Every fact a dialect op carries is a declared attribute with an accessor. A consumer that reads
+# one by its name string, or tells ops apart by their name string, is a second copy of the
+# contract the verifier holds.
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-typed-dialect-attributes-gate
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+        ${LLVMDSDL_SOURCE_DIR}/tools/gates/typed_dialect_attributes.py
+        --repo-root ${LLVMDSDL_SOURCE_DIR}
+  )
+
+  set_tests_properties(
+    llvmdsdl-typed-dialect-attributes-gate
+    PROPERTIES
+      LABELS "integration;dialect"
+  )
+endif()
+
 # The generated-C assertions in RunUavcanGeneration match by substring. This holds them to
 # matching a body as the builder produces it and to rejecting one with the call removed, reading
 # the patterns out of the checker so it cannot drift.
