@@ -74,5 +74,5 @@ spec/dafny/bin/
 .claude/settings.json
 compile_commands.json
 
-# Scratch directory for staged build-integration cells when run_cell.py is invoked by hand.
-examples/build_integration/.work/
+# Scratch directory for staged recipes when run_recipe.py is invoked by hand.
+examples/showroom/.work/
