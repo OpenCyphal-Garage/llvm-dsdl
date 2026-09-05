@@ -111,10 +111,8 @@ option(LLVMDSDL_ENABLE_BENCHMARK_TESTS
        "Enable benchmark throughput CTest checks (timing thresholds)"
        OFF)
 
-# Every benchmark target and test reaches the corpus through this rule, so the
-# definitions are written before anything measures how long they take to compile.
-# Deliberately outside ALL: a build that is not benchmarking has no use for three
-# thousand definitions.
+# Every benchmark target reaches the corpus through this rule, so the definitions
+# are written before anything measures how long they take to compile.
 add_custom_command(
   OUTPUT "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}"
   COMMAND
@@ -126,25 +124,18 @@ add_custom_command(
   VERBATIM
   COMMENT "Writing the complex benchmark corpus"
 )
-add_custom_target(benchmark-corpus
-  DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}")
 
-# A ctest run reaches the same rule through a fixture: ctest runs a setup test
-# whenever a test that requires it is selected, and skips it when none is.
-add_test(
-  NAME llvmdsdl-benchmark-corpus
-  COMMAND
-    ${Python3_EXECUTABLE}
-      "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATOR}"
-      --outdir "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_DIR}"
-      --stamp "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}"
-)
-set_tests_properties(
-  llvmdsdl-benchmark-corpus
-  PROPERTIES
-    FIXTURES_SETUP benchmark_corpus
-    LABELS "benchmark;integration"
-)
+# The benchmark tests take the corpus as a path rather than building it, so with
+# those enabled it belongs in the default build. Left out of ALL otherwise: a
+# build that is not benchmarking has no use for three thousand definitions, and
+# `--target benchmark-corpus` is there for a run by hand.
+if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
+  add_custom_target(benchmark-corpus ALL
+    DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}")
+else()
+  add_custom_target(benchmark-corpus
+    DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}")
+endif()
 
 add_custom_target(benchmark-codegen-record
   COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}"
@@ -289,7 +280,6 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}")
     set_tests_properties(
       llvmdsdl-codegen-benchmark-ci-oom
       PROPERTIES
-        FIXTURES_REQUIRED benchmark_corpus
         LABELS "benchmark;performance;integration;slow"
     )
 
@@ -316,7 +306,6 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}")
       set_tests_properties(
         llvmdsdl-codegen-benchmark-ci-oom-${lang}
         PROPERTIES
-          FIXTURES_REQUIRED benchmark_corpus
           LABELS "benchmark;performance;integration;slow;codegen;codegen-${lang}"
       )
     endforeach()
@@ -392,7 +381,6 @@ if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
   set_tests_properties(
     llvmdsdl-lsp-replay-benchmark
     PROPERTIES
-      FIXTURES_REQUIRED benchmark_corpus
       LABELS "benchmark;performance;lsp;integration;slow"
   )
 
@@ -415,7 +403,6 @@ if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
   set_tests_properties(
     llvmdsdl-lsp-index-cold-warm-benchmark
     PROPERTIES
-      FIXTURES_REQUIRED benchmark_corpus
       LABELS "benchmark;performance;lsp;integration;slow"
   )
 endif()
