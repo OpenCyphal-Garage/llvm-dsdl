@@ -1,7 +1,0 @@
-@union
-civildrone.vision.decoder.DecoderPipelineEvent.1.0 decoder_event
-civildrone.vision.stereo.StereoPipelineEvent.1.0 stereo_event
-civildrone.vision.extraction.ExtractionPipelineEvent.1.0 extraction_event
-civildrone.workload.VisionComposite465.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

@@ -1,4 +1,0 @@
-civildrone.vision.scenegraph.ScenegraphGraphNode.1.0[<=1024] nodes
-civildrone.vision.scenegraph.ScenegraphGraphEdge.1.0[<=2048] edges
-civildrone.vision.planner.PlannerGraphNode.1.0[<=64] upstream_nodes
-@sealed

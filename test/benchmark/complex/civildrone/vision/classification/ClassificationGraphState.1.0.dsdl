@@ -1,4 +1,0 @@
-civildrone.vision.classification.ClassificationGraphNode.1.0[<=1024] nodes
-civildrone.vision.classification.ClassificationGraphEdge.1.0[<=2048] edges
-civildrone.vision.detection.DetectionGraphNode.1.0[<=64] upstream_nodes
-@sealed

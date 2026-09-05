@@ -1,7 +1,0 @@
-@union
-civildrone.vision.depacketizer.DepacketizerPipelineEvent.1.0 depacketizer_event
-civildrone.vision.vslam.VslamPipelineEvent.1.0 vslam_event
-civildrone.vision.triangulation.TriangulationPipelineEvent.1.0 triangulation_event
-civildrone.workload.VisionComposite467.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

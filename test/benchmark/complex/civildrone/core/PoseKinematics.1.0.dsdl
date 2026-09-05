@@ -1,6 +1,0 @@
-uavcan.si.sample.length.Vector3.1.0 position
-uavcan.si.sample.velocity.Vector3.1.0 velocity
-uavcan.si.sample.acceleration.Vector3.1.0 acceleration
-uavcan.si.sample.angle.Quaternion.1.0 attitude
-uavcan.si.sample.angular_velocity.Vector3.1.0 angular_velocity
-@sealed

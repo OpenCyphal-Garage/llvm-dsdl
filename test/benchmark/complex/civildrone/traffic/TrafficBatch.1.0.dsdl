@@ -1,5 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 collected_at
-civildrone.traffic.TrafficEvent.1.0[<=12] events
-civildrone.traffic.TrafficState.1.0[<=6] states
-uint16 dropped_samples
-@sealed

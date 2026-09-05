@@ -1,6 +1,0 @@
-uavcan.node.Heartbeat.1.0 heartbeat
-uavcan.time.SynchronizedTimestamp.1.0 timestamp
-truncated uint8[<=64] vehicle_name
-uint16 node_id
-uint8 fleet_id
-@sealed

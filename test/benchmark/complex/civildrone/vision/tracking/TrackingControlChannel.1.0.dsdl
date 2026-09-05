@@ -1,7 +1,0 @@
-uint16 channel_id
-uint8 priority
-bool reliable
-float32 target_rate_hz
-uavcan.register.Value.1.0 channel_register
-civildrone.vision.common.StreamingQoS.1.0 qos
-@sealed

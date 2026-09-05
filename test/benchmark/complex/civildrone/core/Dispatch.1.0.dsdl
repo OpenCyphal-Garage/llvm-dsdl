@@ -1,9 +1,0 @@
-civildrone.core.NodeIdentity.1.0 requester
-civildrone.core.SurveyPlan.1.0 plan
-civildrone.core.SafetyEnvelope.1.0 envelope
-@sealed
----
-bool accepted
-uavcan.register.Value.1.0 scheduling_register
-uavcan.primitive.String.1.0 message
-@sealed

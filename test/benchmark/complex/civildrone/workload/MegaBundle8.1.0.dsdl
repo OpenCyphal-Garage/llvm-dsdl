@@ -1,8 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 timestamp
-civildrone.workload.Composite9.1.0 classic_composite
-civildrone.workload.VisionComposite9.1.0 vision_composite
-civildrone.vision.packetizer.PacketizerInferenceTensor.1.0 packetizer_tensor
-civildrone.vision.vslam.VslamInferenceTensor.1.0 vslam_tensor
-civildrone.vision.InferenceCampaign.1.0 campaign
-uavcan.register.Value.1.0 registry_hint
-@sealed

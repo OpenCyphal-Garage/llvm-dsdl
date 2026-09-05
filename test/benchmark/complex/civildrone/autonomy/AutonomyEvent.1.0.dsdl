@@ -1,6 +1,0 @@
-@union
-civildrone.autonomy.AutonomyMetric.1.0 metric
-civildrone.autonomy.AutonomyState.1.0 state
-uavcan.primitive.String.1.0 text
-uavcan.register.Value.1.0 register_value
-@sealed

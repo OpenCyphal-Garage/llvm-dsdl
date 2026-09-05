@@ -1,8 +1,0 @@
-@union
-civildrone.vision.packetizer.PacketizerFramePacket.1.0 packet
-civildrone.vision.packetizer.PacketizerFeatureSet.1.0 features
-civildrone.vision.packetizer.PacketizerDetectionSet.1.0 detections
-civildrone.vision.packetizer.PacketizerInferenceTensor.1.0 tensor
-civildrone.vision.packetizer.PacketizerGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

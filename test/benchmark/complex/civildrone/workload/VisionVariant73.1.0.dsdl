@@ -1,7 +1,0 @@
-@union
-civildrone.vision.optics.OpticsPipelineEvent.1.0 optics_event
-civildrone.vision.encoder.EncoderPipelineEvent.1.0 encoder_event
-civildrone.vision.calibration.CalibrationPipelineEvent.1.0 calibration_event
-civildrone.workload.VisionComposite73.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

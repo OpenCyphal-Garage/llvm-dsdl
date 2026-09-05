@@ -1,6 +1,0 @@
-uint32 tx_frames
-uint32 rx_frames
-uint32 dropped_frames
-float32 packet_error_rate
-uavcan.diagnostic.Record.1.1 last_fault
-@sealed

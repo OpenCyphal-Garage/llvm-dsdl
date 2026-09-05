@@ -1,7 +1,0 @@
-@union
-civildrone.avoidance.AvoidanceEvent.1.0 avoidance_event
-civildrone.planner.PlannerEvent.1.0 planner_event
-civildrone.airframe.AirframeEvent.1.0 airframe_event
-civildrone.workload.Composite267.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

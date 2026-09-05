@@ -92,7 +92,7 @@ Direct harness usage (example: Python only):
 ```bash
 python3 test/benchmark/benchmark_codegen.py record \
   --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
-  --root-namespace-dir test/benchmark/complex/civildrone \
+  --root-namespace-dir build/matrix/dev-homebrew/test/benchmark/complex/civildrone \
   --lookup-dir submodules/public_regulated_data_types/uavcan \
   --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/generated \
   --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/python-only-record.json \
@@ -102,7 +102,7 @@ python3 test/benchmark/benchmark_codegen.py record \
 
 Use a namespace root for `--root-namespace-dir` (`.../civildrone`) and provide
 `uavcan` as a lookup root. Do not pass the wrapper directory
-`test/benchmark/complex` as a root namespace.
+the generated corpus as a root namespace.
 
 CMake-driven single-language run:
 
@@ -120,7 +120,7 @@ Run a side-by-side C-only benchmark on the complex dataset:
 ```bash
 python3 test/benchmark/benchmark_codegen.py record \
   --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
-  --root-namespace-dir test/benchmark/complex/civildrone \
+  --root-namespace-dir build/matrix/dev-homebrew/test/benchmark/complex/civildrone \
   --lookup-dir submodules/public_regulated_data_types/uavcan \
   --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/embedc-compare-generated \
   --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/embedc-compare-report.json \

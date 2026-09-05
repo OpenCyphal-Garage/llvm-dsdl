@@ -1,4 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 timestamp
-civildrone.vision.VisionNodeSnapshot.1.0[<=64] nodes
-uavcan.primitive.String.1.0 deployment_name
-@sealed

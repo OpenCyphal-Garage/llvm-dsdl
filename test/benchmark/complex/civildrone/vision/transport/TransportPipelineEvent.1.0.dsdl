@@ -1,8 +1,0 @@
-@union
-civildrone.vision.transport.TransportFramePacket.1.0 packet
-civildrone.vision.transport.TransportFeatureSet.1.0 features
-civildrone.vision.transport.TransportDetectionSet.1.0 detections
-civildrone.vision.transport.TransportInferenceTensor.1.0 tensor
-civildrone.vision.transport.TransportGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

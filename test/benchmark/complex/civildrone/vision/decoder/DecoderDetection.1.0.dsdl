@@ -1,5 +1,0 @@
-civildrone.vision.common.BoundingBox2D.1.0 box
-civildrone.vision.common.ObjectClass.1.0 object_class
-float32 confidence
-uavcan.si.sample.length.Vector3.1.0 position_estimate
-@sealed

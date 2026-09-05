@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.telemetryvision.TelemetryvisionGraphNode.1.0 from_node
-civildrone.vision.camera.CameraGraphNode.1.0 to_node
-float32 information
-@sealed

@@ -1,8 +1,0 @@
-@union
-civildrone.vision.decoder.DecoderFramePacket.1.0 packet
-civildrone.vision.decoder.DecoderFeatureSet.1.0 features
-civildrone.vision.decoder.DecoderDetectionSet.1.0 detections
-civildrone.vision.decoder.DecoderInferenceTensor.1.0 tensor
-civildrone.vision.decoder.DecoderGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

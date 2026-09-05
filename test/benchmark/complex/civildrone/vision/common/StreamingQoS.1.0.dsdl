@@ -1,6 +1,0 @@
-uint32 bitrate_bps
-uint16 mtu_bytes
-float32 max_jitter_ms
-float32 max_latency_ms
-bool reliable_control_channel
-@sealed

@@ -1,6 +1,0 @@
-float32 fx
-float32 fy
-float32 cx
-float32 cy
-float32[<=8] distortion
-@sealed

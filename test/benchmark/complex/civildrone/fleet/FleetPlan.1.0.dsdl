@@ -1,4 +1,0 @@
-uint32 campaign_id
-civildrone.core.SurveyPlan.1.0[<=8] plans
-civildrone.fleet.PlatformControlVector.1.0[<=64] initial_controls
-@sealed

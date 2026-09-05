@@ -1,5 +1,0 @@
-civildrone.vision.synchronization.SynchronizationFrameMeta.1.0 meta
-uint16 packet_index
-uint16 packet_count
-truncated uint8[<=1400] payload
-@sealed

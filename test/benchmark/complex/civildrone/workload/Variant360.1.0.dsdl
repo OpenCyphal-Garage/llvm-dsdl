@@ -1,7 +1,0 @@
-@union
-civildrone.traffic.TrafficEvent.1.0 traffic_event
-civildrone.estimation.EstimationEvent.1.0 estimation_event
-civildrone.mapping.MappingEvent.1.0 mapping_event
-civildrone.workload.Composite360.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

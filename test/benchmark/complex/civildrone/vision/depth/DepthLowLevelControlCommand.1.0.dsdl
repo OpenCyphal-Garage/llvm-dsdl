@@ -1,5 +1,0 @@
-uint8 mode
-float32[<=32] gains
-float32[<=32] offsets
-uavcan.register.Value.1.0 override
-@sealed

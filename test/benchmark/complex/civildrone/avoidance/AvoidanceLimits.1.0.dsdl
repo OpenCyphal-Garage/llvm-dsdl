@@ -1,5 +1,0 @@
-float32 min_value
-float32 max_value
-float32 max_rate
-float32 max_jerk
-@sealed

@@ -1,8 +1,0 @@
-@union
-uavcan.primitive.Empty.1.0 unknown
-uint8 mono8
-uint8 rgb8
-uint8 bgr8
-uint8 yuv420
-uint8 nv12
-@sealed

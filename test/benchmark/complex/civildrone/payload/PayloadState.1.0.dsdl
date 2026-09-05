@@ -1,6 +1,0 @@
-civildrone.payload.PayloadMetric.1.0 metric
-civildrone.payload.PayloadSetpoint.1.0 setpoint
-civildrone.payload.PayloadLimits.1.0 limits
-uavcan.diagnostic.Record.1.1 last_diagnostic
-uavcan.register.Value.1.0 tuning_register
-@sealed

@@ -1,3 +1,0 @@
-civildrone.fleet.FleetEvent.1.0[<=128] events
-uavcan.diagnostic.Record.1.1[<=128] records
-@sealed

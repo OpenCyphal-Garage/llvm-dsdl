@@ -1,8 +1,0 @@
-@union
-civildrone.vision.telemetryvision.TelemetryvisionFramePacket.1.0 packet
-civildrone.vision.telemetryvision.TelemetryvisionFeatureSet.1.0 features
-civildrone.vision.telemetryvision.TelemetryvisionDetectionSet.1.0 detections
-civildrone.vision.telemetryvision.TelemetryvisionInferenceTensor.1.0 tensor
-civildrone.vision.telemetryvision.TelemetryvisionGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

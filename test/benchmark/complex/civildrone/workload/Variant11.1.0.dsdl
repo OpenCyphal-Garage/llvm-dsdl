@@ -1,7 +1,0 @@
-@union
-civildrone.imaging.ImagingEvent.1.0 imaging_event
-civildrone.geofence.GeofenceEvent.1.0 geofence_event
-civildrone.energy.EnergyEvent.1.0 energy_event
-civildrone.workload.Composite11.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

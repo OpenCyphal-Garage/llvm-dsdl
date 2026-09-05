@@ -1,7 +1,0 @@
-@union
-civildrone.diagnostics.DiagnosticsEvent.1.0 diagnostics_event
-civildrone.energy.EnergyEvent.1.0 energy_event
-civildrone.navigation.NavigationEvent.1.0 navigation_event
-civildrone.workload.Composite17.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

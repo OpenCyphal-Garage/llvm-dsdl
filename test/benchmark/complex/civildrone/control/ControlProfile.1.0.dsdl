@@ -1,8 +1,0 @@
-uint8 MODE_DISABLED = 0
-uint8 MODE_STANDBY  = 1
-uint8 MODE_ACTIVE   = 2
-uint8 mode
-civildrone.control.ControlLimits.1.0 limits
-civildrone.control.ControlSetpoint.1.0 default_setpoint
-uavcan.register.Value.1.0 profile_register
-@sealed

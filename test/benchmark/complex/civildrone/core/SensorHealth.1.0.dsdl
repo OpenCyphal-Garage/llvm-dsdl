@@ -1,5 +1,0 @@
-uint16 sensor_id
-bool online
-float32 confidence
-uavcan.diagnostic.Record.1.1 last_diagnostic
-@sealed

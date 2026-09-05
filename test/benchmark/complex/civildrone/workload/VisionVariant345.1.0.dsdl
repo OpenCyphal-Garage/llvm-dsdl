@@ -1,7 +1,0 @@
-@union
-civildrone.vision.inference.InferencePipelineEvent.1.0 inference_event
-civildrone.vision.camera.CameraPipelineEvent.1.0 camera_event
-civildrone.vision.controlchannel.ControlchannelPipelineEvent.1.0 controlchannel_event
-civildrone.workload.VisionComposite345.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

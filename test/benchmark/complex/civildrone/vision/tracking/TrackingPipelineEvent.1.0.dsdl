@@ -1,8 +1,0 @@
-@union
-civildrone.vision.tracking.TrackingFramePacket.1.0 packet
-civildrone.vision.tracking.TrackingFeatureSet.1.0 features
-civildrone.vision.tracking.TrackingDetectionSet.1.0 detections
-civildrone.vision.tracking.TrackingInferenceTensor.1.0 tensor
-civildrone.vision.tracking.TrackingGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

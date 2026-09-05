@@ -1,4 +1,0 @@
-civildrone.vision.localization.LocalizationGraphNode.1.0[<=1024] nodes
-civildrone.vision.localization.LocalizationGraphEdge.1.0[<=2048] edges
-civildrone.vision.vslam.VslamGraphNode.1.0[<=64] upstream_nodes
-@sealed

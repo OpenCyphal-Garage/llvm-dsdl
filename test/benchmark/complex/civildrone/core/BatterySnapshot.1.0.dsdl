@@ -1,6 +1,0 @@
-uavcan.si.sample.voltage.Scalar.1.0 voltage
-uavcan.si.sample.electric_current.Scalar.1.0 current
-uavcan.si.sample.power.Scalar.1.0 power
-float32 state_of_charge
-float32 state_of_health
-@sealed

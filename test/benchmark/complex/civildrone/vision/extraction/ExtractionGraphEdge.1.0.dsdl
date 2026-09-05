@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.extraction.ExtractionGraphNode.1.0 from_node
-civildrone.vision.matching.MatchingGraphNode.1.0 to_node
-float32 information
-@sealed

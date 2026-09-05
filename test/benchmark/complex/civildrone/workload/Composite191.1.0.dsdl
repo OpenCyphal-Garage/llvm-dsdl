@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.core.PoseKinematics.1.0 pose
-civildrone.planner.PlannerState.1.0 planner_state
-civildrone.navigation.NavigationReport.1.0 navigation_report
-civildrone.survey.SurveyHistory.1.0 survey_history
-uavcan.register.Value.1.0 tuning
-truncated uint8[<=256] opaque_payload
-@sealed

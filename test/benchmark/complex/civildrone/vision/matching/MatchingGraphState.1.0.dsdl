@@ -1,4 +1,0 @@
-civildrone.vision.matching.MatchingGraphNode.1.0[<=1024] nodes
-civildrone.vision.matching.MatchingGraphEdge.1.0[<=2048] edges
-civildrone.vision.extraction.ExtractionGraphNode.1.0[<=64] upstream_nodes
-@sealed

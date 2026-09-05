@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 identity
-civildrone.core.PoseKinematics.1.0 pose
-civildrone.core.WindEstimate.1.0 wind
-civildrone.core.BatterySnapshot.1.0 battery
-civildrone.core.LinkStats.1.0 link
-civildrone.core.MissionPhase.1.0 mission_phase
-civildrone.core.FaultRecord.1.0[<=16] recent_faults
-@sealed

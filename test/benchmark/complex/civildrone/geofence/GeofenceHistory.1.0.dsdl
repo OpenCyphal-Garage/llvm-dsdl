@@ -1,4 +1,0 @@
-civildrone.geofence.GeofenceReport.1.0[<=4] reports
-civildrone.geofence.GeofenceEvent.1.0[<=24] timeline
-uavcan.time.SynchronizedTimestamp.1.0 last_update
-@sealed

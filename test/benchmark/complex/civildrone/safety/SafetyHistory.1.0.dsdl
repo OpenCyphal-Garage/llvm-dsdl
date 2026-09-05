@@ -1,4 +1,0 @@
-civildrone.safety.SafetyReport.1.0[<=4] reports
-civildrone.safety.SafetyEvent.1.0[<=24] timeline
-uavcan.time.SynchronizedTimestamp.1.0 last_update
-@sealed

@@ -1,5 +1,0 @@
-uint32 node_id
-civildrone.vision.common.Keypoint2D.1.0 image_point
-uavcan.si.sample.length.Vector3.1.0 world_point
-float32 uncertainty
-@sealed

@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.synchronization.SynchronizationGraphNode.1.0 from_node
-civildrone.vision.calibration.CalibrationGraphNode.1.0 to_node
-float32 information
-@sealed

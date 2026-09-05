@@ -1,4 +1,0 @@
-civildrone.vision.extraction.ExtractionGraphNode.1.0[<=1024] nodes
-civildrone.vision.extraction.ExtractionGraphEdge.1.0[<=2048] edges
-civildrone.vision.feature.FeatureGraphNode.1.0[<=64] upstream_nodes
-@sealed

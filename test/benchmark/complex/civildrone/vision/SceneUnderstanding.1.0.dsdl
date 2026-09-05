@@ -1,5 +1,0 @@
-civildrone.vision.detection.DetectionDetectionSet.1.0 detections
-civildrone.vision.segmentation.SegmentationDetectionSet.1.0 segments
-civildrone.vision.classification.ClassificationClassification.1.0[<=256] classes
-civildrone.vision.tracking.TrackingGraphState.1.0 tracks
-@sealed

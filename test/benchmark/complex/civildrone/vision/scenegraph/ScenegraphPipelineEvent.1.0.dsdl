@@ -1,8 +1,0 @@
-@union
-civildrone.vision.scenegraph.ScenegraphFramePacket.1.0 packet
-civildrone.vision.scenegraph.ScenegraphFeatureSet.1.0 features
-civildrone.vision.scenegraph.ScenegraphDetectionSet.1.0 detections
-civildrone.vision.scenegraph.ScenegraphInferenceTensor.1.0 tensor
-civildrone.vision.scenegraph.ScenegraphGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

@@ -1,4 +1,0 @@
-civildrone.vision.codec.CodecGraphNode.1.0[<=1024] nodes
-civildrone.vision.codec.CodecGraphEdge.1.0[<=2048] edges
-civildrone.vision.controlchannel.ControlchannelGraphNode.1.0[<=64] upstream_nodes
-@sealed

@@ -1,8 +1,0 @@
-@union
-civildrone.vision.reid.ReidFramePacket.1.0 packet
-civildrone.vision.reid.ReidFeatureSet.1.0 features
-civildrone.vision.reid.ReidDetectionSet.1.0 detections
-civildrone.vision.reid.ReidInferenceTensor.1.0 tensor
-civildrone.vision.reid.ReidGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

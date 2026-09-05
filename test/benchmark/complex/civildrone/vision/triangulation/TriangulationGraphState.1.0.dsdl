@@ -1,4 +1,0 @@
-civildrone.vision.triangulation.TriangulationGraphNode.1.0[<=1024] nodes
-civildrone.vision.triangulation.TriangulationGraphEdge.1.0[<=2048] edges
-civildrone.vision.matching.MatchingGraphNode.1.0[<=64] upstream_nodes
-@sealed

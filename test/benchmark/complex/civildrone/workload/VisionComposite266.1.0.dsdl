@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.vision.feature.FeatureBatchReport.1.0 feature_batch
-civildrone.vision.segmentation.SegmentationDetectionSet.1.0 segmentation_detections
-civildrone.vision.scenegraph.ScenegraphGraphState.1.0 scenegraph_graph
-civildrone.vision.VisionNodeSnapshot.1.0 snapshot
-civildrone.fleet.PlatformDigest.1.0 fleet_digest
-truncated uint8[<=4096] opaque_payload
-@sealed

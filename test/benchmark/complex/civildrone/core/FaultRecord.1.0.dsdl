@@ -1,4 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 timestamp
-uavcan.diagnostic.Record.1.1 diagnostic
-uavcan.register.Value.1.0 captured_register
-@sealed

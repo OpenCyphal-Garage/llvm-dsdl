@@ -1,6 +1,0 @@
-uavcan.node.Heartbeat.1.0 heartbeat
-civildrone.core.NodeIdentity.1.0 node
-civildrone.geofence.GeofenceBatch.1.0 batch
-uavcan.si.sample.voltage.Scalar.1.0 bus_voltage
-uavcan.si.sample.electric_current.Scalar.1.0 bus_current
-@sealed

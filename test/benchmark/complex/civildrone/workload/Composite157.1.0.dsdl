@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.core.PoseKinematics.1.0 pose
-civildrone.diagnostics.DiagnosticsState.1.0 diagnostics_state
-civildrone.energy.EnergyReport.1.0 energy_report
-civildrone.navigation.NavigationHistory.1.0 navigation_history
-uavcan.register.Value.1.0 tuning
-truncated uint8[<=256] opaque_payload
-@sealed

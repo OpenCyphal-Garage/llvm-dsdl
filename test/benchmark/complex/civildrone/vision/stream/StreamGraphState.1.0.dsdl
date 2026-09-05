@@ -1,4 +1,0 @@
-civildrone.vision.stream.StreamGraphNode.1.0[<=1024] nodes
-civildrone.vision.stream.StreamGraphEdge.1.0[<=2048] edges
-civildrone.vision.isp.IspGraphNode.1.0[<=64] upstream_nodes
-@sealed

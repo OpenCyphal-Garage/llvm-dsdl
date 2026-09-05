@@ -1,5 +1,0 @@
-civildrone.vision.common.TensorShape.1.0 shape
-float32 scale
-int32 zero_point
-truncated uint8[<=4096] quantized_data
-@sealed

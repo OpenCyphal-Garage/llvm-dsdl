@@ -1,5 +1,0 @@
-@union
-uavcan.primitive.Empty.1.0 none
-uint16 class_id
-uavcan.primitive.String.1.0 class_name
-@sealed

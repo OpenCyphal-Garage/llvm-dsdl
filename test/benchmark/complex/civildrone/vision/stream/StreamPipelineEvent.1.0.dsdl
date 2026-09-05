@@ -1,8 +1,0 @@
-@union
-civildrone.vision.stream.StreamFramePacket.1.0 packet
-civildrone.vision.stream.StreamFeatureSet.1.0 features
-civildrone.vision.stream.StreamDetectionSet.1.0 detections
-civildrone.vision.stream.StreamInferenceTensor.1.0 tensor
-civildrone.vision.stream.StreamGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

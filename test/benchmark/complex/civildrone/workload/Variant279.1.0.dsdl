@@ -1,7 +1,0 @@
-@union
-civildrone.networking.NetworkingEvent.1.0 networking_event
-civildrone.power.PowerEvent.1.0 power_event
-civildrone.radar.RadarEvent.1.0 radar_event
-civildrone.workload.Composite279.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

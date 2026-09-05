@@ -1,5 +1,0 @@
-uint16 actuator_id
-float32 command
-float32 feed_forward
-float32 rate_limit
-@sealed

@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.reid.ReidGraphNode.1.0 from_node
-civildrone.vision.inference.InferenceGraphNode.1.0 to_node
-float32 information
-@sealed
