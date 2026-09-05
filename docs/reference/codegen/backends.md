@@ -10,7 +10,7 @@
 - `go`: module/package output
 - `ts`: typed model + runtime helpers
 - `python`: package + runtime loader/specialization
-- `obj`: compiled `.o` + optional `.a`
+- `obj`: the C headers beside one object per definition, assembled inside `dsdlc`
 
 ## Shared principles
 
@@ -59,6 +59,7 @@ already avoids.
 
 ## Object code path
 
-The `obj` lane runs executable lowering and emits compiled artifacts via host compiler toolchains.
+The `obj` lane lowers each definition through LLVM IR and assembles it inside `dsdlc`. No C is
+written and no compiler is invoked; `--target-triple` names the target.
 
-See [Object Backend](object.md) for endianness, ABI, and artifact details.
+See [Object Backend](object.md).

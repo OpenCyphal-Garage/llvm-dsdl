@@ -113,15 +113,6 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                               " backend validation: the module does not verify");
         return false;
     }
-    // The passes read the dialect's attributes through their accessors, which is only sound over
-    // IR the verifier has accepted.
-    if (mlir::failed(mlir::verify(loweredModule->getOperation())))
-    {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "failed to run lower-dsdl-exec for " + backendLabel +
-                              " backend validation: the module does not verify");
-        return false;
-    }
     if (mlir::failed(pm.run(*loweredModule)))
     {
         diagnostics.error({"<mlir>", 1, 1},
