@@ -1,6 +1,0 @@
-civildrone.weather.WeatherMetric.1.0 metric
-civildrone.weather.WeatherSetpoint.1.0 setpoint
-civildrone.weather.WeatherLimits.1.0 limits
-uavcan.diagnostic.Record.1.1 last_diagnostic
-uavcan.register.Value.1.0 tuning_register
-@sealed

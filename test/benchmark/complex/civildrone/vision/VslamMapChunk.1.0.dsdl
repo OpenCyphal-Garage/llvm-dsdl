@@ -1,5 +1,0 @@
-uint32 chunk_id
-civildrone.vision.vslam.VslamGraphState.1.0 graph
-civildrone.vision.localization.LocalizationGraphState.1.0 localization_graph
-truncated uint8[<=8192] compressed_payload
-@sealed

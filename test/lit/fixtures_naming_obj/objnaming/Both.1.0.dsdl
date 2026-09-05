@@ -1,7 +1,0 @@
-# The obj lane publishes a C header and, when asked for the C++ ABI, a C++ one beside it. `serialize`
-# is a plain field in C and a member function in C++, so it is the field that tells the two manifest
-# entries apart. Nothing here is a C++ keyword: a C-only keyword escape would not survive the lane's
-# own C++ compile of its staged C headers, which is a separate defect.
-uint8 serialize
-uint8 v
-@sealed

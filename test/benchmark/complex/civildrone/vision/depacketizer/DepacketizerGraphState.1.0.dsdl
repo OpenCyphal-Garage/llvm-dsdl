@@ -1,4 +1,0 @@
-civildrone.vision.depacketizer.DepacketizerGraphNode.1.0[<=1024] nodes
-civildrone.vision.depacketizer.DepacketizerGraphEdge.1.0[<=2048] edges
-civildrone.vision.packetizer.PacketizerGraphNode.1.0[<=64] upstream_nodes
-@sealed

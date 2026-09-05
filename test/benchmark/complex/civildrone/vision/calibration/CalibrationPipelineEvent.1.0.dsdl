@@ -1,8 +1,0 @@
-@union
-civildrone.vision.calibration.CalibrationFramePacket.1.0 packet
-civildrone.vision.calibration.CalibrationFeatureSet.1.0 features
-civildrone.vision.calibration.CalibrationDetectionSet.1.0 detections
-civildrone.vision.calibration.CalibrationInferenceTensor.1.0 tensor
-civildrone.vision.calibration.CalibrationGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

@@ -1,3 +1,0 @@
-civildrone.fleet.FleetRegisterMirror.1.0[<=64] mirrors
-uavcan.time.SynchronizedTimestamp.1.0 synchronized_at
-@sealed

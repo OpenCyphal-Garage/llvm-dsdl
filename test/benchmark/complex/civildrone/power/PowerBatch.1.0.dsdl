@@ -1,5 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 collected_at
-civildrone.power.PowerEvent.1.0[<=12] events
-civildrone.power.PowerState.1.0[<=6] states
-uint16 dropped_samples
-@sealed

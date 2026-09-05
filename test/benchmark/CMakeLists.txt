@@ -12,8 +12,17 @@ if(NOT Python3_Interpreter_FOUND)
   return()
 endif()
 
+# The corpus is generated into the build tree rather than committed. It is a few
+# thousand definitions that follow from three counts, and the generator beside it
+# is the readable form of the workload.
+set(LLVMDSDL_COMPLEX_BENCHMARK_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/complex/generate_complex_dsdl.py")
+set(LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/complex")
 set(LLVMDSDL_COMPLEX_BENCHMARK_ROOT
-    "${LLVMDSDL_SOURCE_DIR}/test/benchmark/complex/civildrone")
+    "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_DIR}/civildrone")
+set(LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP
+    "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_DIR}/corpus.stamp")
 set(LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT
     "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
 set(LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT
@@ -102,10 +111,59 @@ option(LLVMDSDL_ENABLE_BENCHMARK_TESTS
        "Enable benchmark throughput CTest checks (timing thresholds)"
        OFF)
 
-if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
-  add_custom_target(benchmark-codegen-record
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+# Every benchmark target reaches the corpus through this rule, so the definitions
+# are written before anything measures how long they take to compile.
+add_custom_command(
+  OUTPUT "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}"
+  COMMAND
+    ${Python3_EXECUTABLE}
+      "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATOR}"
+      --outdir "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_DIR}"
+      --stamp "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}"
+  DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATOR}"
+  VERBATIM
+  COMMENT "Writing the complex benchmark corpus"
+)
+
+# The benchmark tests take the corpus as a path rather than building it, so with
+# those enabled it belongs in the default build. Left out of ALL otherwise: a
+# build that is not benchmarking has no use for three thousand definitions, and
+# `--target benchmark-corpus` is there for a run by hand.
+if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
+  add_custom_target(benchmark-corpus ALL
+    DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}")
+else()
+  add_custom_target(benchmark-corpus
+    DEPENDS "${LLVMDSDL_COMPLEX_BENCHMARK_CORPUS_STAMP}")
+endif()
+
+add_custom_target(benchmark-codegen-record
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+  COMMAND
+    ${Python3_EXECUTABLE}
+      ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
+      record
+      --dsdlc $<TARGET_FILE:dsdlc>
+      --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+      ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+      --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
+      --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
+      --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
+      --languages ${LLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES}
+      --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
+      --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
+      --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
+  DEPENDS dsdlc benchmark-corpus
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Recording complex multi-language codegen benchmark timings"
+)
+
+if(LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS)
+  add_custom_target(benchmark-codegen-embedc-compare
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
     COMMAND
       ${Python3_EXECUTABLE}
         ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
@@ -113,69 +171,95 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         --dsdlc $<TARGET_FILE:dsdlc>
         --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+        --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated
+        --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_EMBEDC_COMPARE}
+        --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
+        --languages embedC,noEmbedC
+        --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
+        --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
+        --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
+    DEPENDS dsdlc benchmark-corpus
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Recording C benchmark A/B with embedded UAVCAN catalog vs --no-embedded-uavcan"
+  )
+else()
+  message(STATUS
+    "Skipping benchmark-codegen-embedc-compare target: no uavcan lookup root "
+    "available for noEmbedC lane.")
+endif()
+
+add_custom_target(benchmark-codegen-init-thresholds
+  COMMAND
+    ${Python3_EXECUTABLE}
+      ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
+      init-thresholds
+      --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
+      --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS_GENERATED}
+      --dev-relative-multiplier 1.35
+      --dev-absolute-margin-sec 2.0
+      --ci-relative-multiplier 10.0
+      --ci-absolute-margin-sec 30.0
+  DEPENDS benchmark-codegen-record
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Generating benchmark threshold template from recorded timings"
+)
+
+if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}")
+  add_custom_target(benchmark-codegen-check-ci-oom
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+    COMMAND
+      ${Python3_EXECUTABLE}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
+        check
+        --dsdlc $<TARGET_FILE:dsdlc>
+        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
-        --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
+        --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_CI}
+        --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
+        --profile ci_oom
         --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
         --languages ${LLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES}
         --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
         --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
         --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
-    DEPENDS dsdlc
+    DEPENDS dsdlc benchmark-corpus
     USES_TERMINAL
     VERBATIM
-    COMMENT "Recording complex multi-language codegen benchmark timings"
+    COMMENT "Checking complex benchmark timings against ci_oom threshold profile"
   )
 
-  if(LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS)
-    add_custom_target(benchmark-codegen-embedc-compare
-      COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
-      COMMAND
-        ${Python3_EXECUTABLE}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
-          record
-          --dsdlc $<TARGET_FILE:dsdlc>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-          --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated
-          --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_EMBEDC_COMPARE}
-          --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
-          --languages embedC,noEmbedC
-          --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
-          --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
-          --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
-      DEPENDS dsdlc
-      USES_TERMINAL
-      VERBATIM
-      COMMENT "Recording C benchmark A/B with embedded UAVCAN catalog vs --no-embedded-uavcan"
-    )
-  else()
-    message(STATUS
-      "Skipping benchmark-codegen-embedc-compare target: no uavcan lookup root "
-      "available for noEmbedC lane.")
-  endif()
-
-  add_custom_target(benchmark-codegen-init-thresholds
+  add_custom_target(benchmark-codegen-check-dev-ab
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
     COMMAND
       ${Python3_EXECUTABLE}
         ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
-        init-thresholds
-        --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
-        --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS_GENERATED}
-        --dev-relative-multiplier 1.35
-        --dev-absolute-margin-sec 2.0
-        --ci-relative-multiplier 10.0
-        --ci-absolute-margin-sec 30.0
-    DEPENDS benchmark-codegen-record
+        check
+        --dsdlc $<TARGET_FILE:dsdlc>
+        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+        --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
+        --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_DEV}
+        --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
+        --profile dev_ab
+        --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
+        --languages ${LLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES}
+        --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
+        --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
+        --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
+    DEPENDS dsdlc benchmark-corpus
     USES_TERMINAL
     VERBATIM
-    COMMENT "Generating benchmark threshold template from recorded timings"
+    COMMENT "Checking complex benchmark timings against dev_ab threshold profile"
   )
 
-  if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}")
-    add_custom_target(benchmark-codegen-check-ci-oom
-      COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
+  if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
+    add_test(
+      NAME llvmdsdl-codegen-benchmark-ci-oom
       COMMAND
         ${Python3_EXECUTABLE}
           ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
@@ -183,8 +267,8 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           --dsdlc $<TARGET_FILE:dsdlc>
           --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-          --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
-          --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_CI}
+          --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom
+          --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-report.json
           --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
           --profile ci_oom
           --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
@@ -192,40 +276,16 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
           --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
           --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
-      DEPENDS dsdlc
-      USES_TERMINAL
-      VERBATIM
-      COMMENT "Checking complex benchmark timings against ci_oom threshold profile"
+    )
+    set_tests_properties(
+      llvmdsdl-codegen-benchmark-ci-oom
+      PROPERTIES
+        LABELS "benchmark;performance;integration;slow"
     )
 
-    add_custom_target(benchmark-codegen-check-dev-ab
-      COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}"
-      COMMAND
-        ${Python3_EXECUTABLE}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
-          check
-          --dsdlc $<TARGET_FILE:dsdlc>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-          --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
-          --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_DEV}
-          --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
-          --profile dev_ab
-          --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
-          --languages ${LLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES}
-          --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
-          --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
-          --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
-      DEPENDS dsdlc
-      USES_TERMINAL
-      VERBATIM
-      COMMENT "Checking complex benchmark timings against dev_ab threshold profile"
-    )
-
-    if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
+    foreach(lang IN ITEMS c cpp rust go ts python)
       add_test(
-        NAME llvmdsdl-codegen-benchmark-ci-oom
+        NAME llvmdsdl-codegen-benchmark-ci-oom-${lang}
         COMMAND
           ${Python3_EXECUTABLE}
             ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
@@ -233,65 +293,77 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
             --dsdlc $<TARGET_FILE:dsdlc>
             --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
             ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-            --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom
-            --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-report.json
+            --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom-${lang}
+            --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-${lang}-report.json
             --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
             --profile ci_oom
             --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
-            --languages ${LLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES}
+            --languages ${lang}
             --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
             --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
             --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
       )
       set_tests_properties(
-        llvmdsdl-codegen-benchmark-ci-oom
+        llvmdsdl-codegen-benchmark-ci-oom-${lang}
         PROPERTIES
-          LABELS "benchmark;performance;integration;slow"
+          LABELS "benchmark;performance;integration;slow;codegen;codegen-${lang}"
       )
-
-      foreach(lang IN ITEMS c cpp rust go ts python)
-        add_test(
-          NAME llvmdsdl-codegen-benchmark-ci-oom-${lang}
-          COMMAND
-            ${Python3_EXECUTABLE}
-              ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
-              check
-              --dsdlc $<TARGET_FILE:dsdlc>
-              --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
-              ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-              --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom-${lang}
-              --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-${lang}-report.json
-              --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
-              --profile ci_oom
-              --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
-              --languages ${lang}
-              --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
-              --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
-              --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
-        )
-        set_tests_properties(
-          llvmdsdl-codegen-benchmark-ci-oom-${lang}
-          PROPERTIES
-            LABELS "benchmark;performance;integration;slow;codegen;codegen-${lang}"
-        )
-      endforeach()
-    endif()
-  else()
-    message(WARNING
-      "Benchmark thresholds file is missing at "
-      "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}. "
-      "benchmark-codegen-check-* targets will not be created.")
+    endforeach()
   endif()
 else()
-  message(STATUS
-    "Skipping complex benchmark target setup: root namespace not found at "
-    "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
+  message(WARNING
+    "Benchmark thresholds file is missing at "
+    "${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}. "
+    "benchmark-codegen-check-* targets will not be created.")
 endif()
 
-if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
-  add_custom_target(benchmark-lsp-replay
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+add_custom_target(benchmark-lsp-replay
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+  COMMAND
+    ${Python3_EXECUTABLE}
+      ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
+      replay
+      --dsdld $<TARGET_FILE:dsdld>
+      --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+      ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+      --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
+      --report-json ${LLVMDSDL_LSP_BENCHMARK_REPLAY_REPORT}
+      --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
+      --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
+      --request-iterations ${LLVMDSDL_LSP_BENCHMARK_REPLAY_ITERATIONS}
+      --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
+  DEPENDS dsdld benchmark-corpus
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Running LSP replay latency benchmark (p50/p95/p99 report)"
+)
+
+add_custom_target(benchmark-lsp-index-cold-warm
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+  COMMAND
+    ${Python3_EXECUTABLE}
+      ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
+      index-bench
+      --dsdld $<TARGET_FILE:dsdld>
+      --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+      ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+      --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
+      --report-json ${LLVMDSDL_LSP_BENCHMARK_INDEX_REPORT}
+      --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
+      --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
+      --symbol-iterations ${LLVMDSDL_LSP_BENCHMARK_SYMBOL_ITERATIONS}
+      --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
+  DEPENDS dsdld benchmark-corpus
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Running LSP workspace index cold/warm benchmark"
+)
+
+if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
+  add_test(
+    NAME llvmdsdl-lsp-replay-benchmark
     COMMAND
       ${Python3_EXECUTABLE}
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
@@ -299,21 +371,21 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         --dsdld $<TARGET_FILE:dsdld>
         --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-        --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
-        --report-json ${LLVMDSDL_LSP_BENCHMARK_REPLAY_REPORT}
+        --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-index-cache
+        --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-report.json
         --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
         --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
         --request-iterations ${LLVMDSDL_LSP_BENCHMARK_REPLAY_ITERATIONS}
         --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
-    DEPENDS dsdld
-    USES_TERMINAL
-    VERBATIM
-    COMMENT "Running LSP replay latency benchmark (p50/p95/p99 report)"
+  )
+  set_tests_properties(
+    llvmdsdl-lsp-replay-benchmark
+    PROPERTIES
+      LABELS "benchmark;performance;lsp;integration;slow"
   )
 
-  add_custom_target(benchmark-lsp-index-cold-warm
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}"
+  add_test(
+    NAME llvmdsdl-lsp-index-cold-warm-benchmark
     COMMAND
       ${Python3_EXECUTABLE}
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
@@ -321,65 +393,16 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         --dsdld $<TARGET_FILE:dsdld>
         --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-        --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
-        --report-json ${LLVMDSDL_LSP_BENCHMARK_INDEX_REPORT}
+        --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-cache
+        --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-report.json
         --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
         --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
         --symbol-iterations ${LLVMDSDL_LSP_BENCHMARK_SYMBOL_ITERATIONS}
         --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
-    DEPENDS dsdld
-    USES_TERMINAL
-    VERBATIM
-    COMMENT "Running LSP workspace index cold/warm benchmark"
   )
-
-  if(LLVMDSDL_ENABLE_BENCHMARK_TESTS)
-    add_test(
-      NAME llvmdsdl-lsp-replay-benchmark
-      COMMAND
-        ${Python3_EXECUTABLE}
-          ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
-          replay
-          --dsdld $<TARGET_FILE:dsdld>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-          --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-index-cache
-          --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-report.json
-          --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
-          --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
-          --request-iterations ${LLVMDSDL_LSP_BENCHMARK_REPLAY_ITERATIONS}
-          --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
-    )
-    set_tests_properties(
-      llvmdsdl-lsp-replay-benchmark
-      PROPERTIES
-        LABELS "benchmark;performance;lsp;integration;slow"
-    )
-
-    add_test(
-      NAME llvmdsdl-lsp-index-cold-warm-benchmark
-      COMMAND
-        ${Python3_EXECUTABLE}
-          ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
-          index-bench
-          --dsdld $<TARGET_FILE:dsdld>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
-          ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
-          --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-cache
-          --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-report.json
-          --open-file-count ${LLVMDSDL_LSP_BENCHMARK_OPEN_FILE_COUNT}
-          --request-timeout-sec ${LLVMDSDL_LSP_BENCHMARK_REQUEST_TIMEOUT_SEC}
-          --symbol-iterations ${LLVMDSDL_LSP_BENCHMARK_SYMBOL_ITERATIONS}
-          --workspace-symbol-query ${LLVMDSDL_LSP_BENCHMARK_WORKSPACE_QUERY}
-    )
-    set_tests_properties(
-      llvmdsdl-lsp-index-cold-warm-benchmark
-      PROPERTIES
-        LABELS "benchmark;performance;lsp;integration;slow"
-    )
-  endif()
-else()
-  message(STATUS
-    "Skipping LSP benchmark target setup: root namespace not found at "
-    "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
+  set_tests_properties(
+    llvmdsdl-lsp-index-cold-warm-benchmark
+    PROPERTIES
+      LABELS "benchmark;performance;lsp;integration;slow"
+  )
 endif()

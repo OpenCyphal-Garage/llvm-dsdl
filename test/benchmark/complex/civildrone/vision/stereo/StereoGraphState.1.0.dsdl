@@ -1,4 +1,0 @@
-civildrone.vision.stereo.StereoGraphNode.1.0[<=1024] nodes
-civildrone.vision.stereo.StereoGraphEdge.1.0[<=2048] edges
-civildrone.vision.calibration.CalibrationGraphNode.1.0[<=64] upstream_nodes
-@sealed

@@ -1,6 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 timestamp
-uint64 frame_index
-uint16 stream_id
-uint16 camera_id
-uavcan.si.sample.angle.Quaternion.1.0 sensor_attitude
-@sealed

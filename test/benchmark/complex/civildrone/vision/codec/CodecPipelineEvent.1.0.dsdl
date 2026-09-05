@@ -1,8 +1,0 @@
-@union
-civildrone.vision.codec.CodecFramePacket.1.0 packet
-civildrone.vision.codec.CodecFeatureSet.1.0 features
-civildrone.vision.codec.CodecDetectionSet.1.0 detections
-civildrone.vision.codec.CodecInferenceTensor.1.0 tensor
-civildrone.vision.codec.CodecGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

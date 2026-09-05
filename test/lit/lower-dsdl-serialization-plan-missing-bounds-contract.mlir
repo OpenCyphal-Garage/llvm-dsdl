@@ -8,4 +8,6 @@ module {
   }
 }
 
-// CHECK: error: 'dsdl.serialization_plan' op missing required min_bits/max_bits plan metadata
+// Both bounds are absent. Which one the verifier names first is the ODS generator's choice,
+// not the dialect's, so either is accepted.
+// CHECK: error: 'dsdl.serialization_plan' op requires attribute '{{max_bits|min_bits}}'

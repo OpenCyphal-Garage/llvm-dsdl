@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
+#include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -64,34 +65,15 @@ std::int64_t nonNegative(const std::int64_t value)
     return std::max<std::int64_t>(value, 0);
 }
 
-std::int64_t intAttrOrDefault(mlir::Operation* op, llvm::StringRef name, const std::int64_t fallback)
-{
-    if (const auto attr = op->getAttrOfType<mlir::IntegerAttr>(name))
-    {
-        return attr.getInt();
-    }
-    return fallback;
-}
-
-void setI64Attr(mlir::Operation* op, llvm::StringRef name, const std::int64_t value, mlir::Builder& builder)
-{
-    op->setAttr(name, builder.getI64IntegerAttr(value));
-}
-
-void setI32Attr(mlir::Operation* op, llvm::StringRef name, const std::int64_t value, mlir::Builder& builder)
-{
-    op->setAttr(name, builder.getI32IntegerAttr(static_cast<std::int32_t>(value)));
-}
-
 void stampLoweredContractAttributes(mlir::Operation* op, mlir::Builder& builder)
 {
     op->setAttr(kLoweredSerDesContractVersionAttr, builder.getI64IntegerAttr(kLoweredSerDesContractVersion));
     op->setAttr(kLoweredSerDesContractProducerAttr, builder.getStringAttr(kLoweredSerDesContractProducer));
 }
 
-mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& builder)
+mlir::LogicalResult canonicalizePlan(mlir::dsdl::SerializationPlanOp plan, mlir::Builder& builder)
 {
-    auto&                         body = plan->getRegion(0).front();
+    auto&                         body = plan.getBody().front();
     std::vector<mlir::Operation*> eraseOps;
     std::int64_t                  stepIndex    = 0;
     std::int64_t                  alignCount   = 0;
@@ -101,40 +83,23 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
 
     for (mlir::Operation& op : body)
     {
-        const auto opName = op.getName().getStringRef();
-        if (opName == "dsdl.align")
+        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(op))
         {
-            const std::int64_t bits = nonNegative(intAttrOrDefault(&op, "bits", 0));
-            if (bits <= 1)
+            if (align.getBits() <= 1)
             {
                 eraseOps.push_back(&op);
                 continue;
             }
-            setI32Attr(&op, "bits", bits, builder);
-            setI64Attr(&op, "step_index", stepIndex++, builder);
+            align.setStepIndexAttr(builder.getI64IntegerAttr(stepIndex++));
             ++alignCount;
             continue;
         }
 
-        if (opName == "dsdl.io")
+        if (auto io = mlir::dyn_cast<mlir::dsdl::IOOp>(op))
         {
-            const auto kindAttr  = op.getAttrOfType<mlir::StringAttr>("kind");
-            const auto kind      = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-            const bool isPadding = kind == "padding";
-
-            const std::int64_t minBits = nonNegative(intAttrOrDefault(&op, "min_bits", 0));
-            const std::int64_t maxBits =
-                std::max<std::int64_t>(nonNegative(intAttrOrDefault(&op, "max_bits", minBits)), minBits);
-
-            const std::int64_t bitLength     = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
-            const std::int64_t arrayCapacity = nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
-            const std::int64_t arrayPrefixBits =
-                nonNegative(intAttrOrDefault(&op, "array_length_prefix_bits", /*fallback=*/0));
-            const std::int64_t alignmentBits =
-                std::max<std::int64_t>(nonNegative(intAttrOrDefault(&op, "alignment_bits", /*fallback=*/1)), 1);
-            const std::int64_t unionOptionIndex =
-                nonNegative(intAttrOrDefault(&op, "union_option_index", /*fallback=*/0));
-            const std::int64_t unionTagBits = nonNegative(intAttrOrDefault(&op, "union_tag_bits", /*fallback=*/0));
+            const bool         isPadding = io.isPadding();
+            const std::int64_t minBits   = nonNegative(io.getMinBits());
+            const std::int64_t maxBits   = std::max<std::int64_t>(nonNegative(io.getMaxBits()), minBits);
 
             if (isPadding && maxBits == 0)
             {
@@ -142,22 +107,10 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
                 continue;
             }
 
-            setI64Attr(&op, "min_bits", minBits, builder);
-            setI64Attr(&op, "max_bits", maxBits, builder);
-            setI64Attr(&op, "lowered_bits", maxBits, builder);
-            setI64Attr(&op, "step_index", stepIndex++, builder);
-
-            setI64Attr(&op, "bit_length", bitLength, builder);
-            setI64Attr(&op, "array_capacity", arrayCapacity, builder);
-            setI64Attr(&op, "array_length_prefix_bits", arrayPrefixBits, builder);
-            setI64Attr(&op, "alignment_bits", alignmentBits, builder);
-            setI64Attr(&op, "union_option_index", unionOptionIndex, builder);
-            setI64Attr(&op, "union_tag_bits", unionTagBits, builder);
-
-            if (!isPadding)
-            {
-                unionOptionIndexes.insert(unionOptionIndex);
-            }
+            io.setMinBitsAttr(builder.getI64IntegerAttr(minBits));
+            io.setMaxBitsAttr(builder.getI64IntegerAttr(maxBits));
+            io.setLoweredBitsAttr(builder.getI64IntegerAttr(maxBits));
+            io.setStepIndexAttr(builder.getI64IntegerAttr(stepIndex++));
 
             if (isPadding)
             {
@@ -165,6 +118,7 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
             }
             else
             {
+                unionOptionIndexes.insert(io.getUnionOptionIndex());
                 ++fieldCount;
             }
             continue;
@@ -178,26 +132,23 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
         op->erase();
     }
 
-    std::int64_t minBits = nonNegative(intAttrOrDefault(plan, "min_bits", 0));
-    std::int64_t maxBits = nonNegative(intAttrOrDefault(plan, "max_bits", minBits));
-    maxBits              = std::max(maxBits, minBits);
-    setI64Attr(plan, "min_bits", minBits, builder);
-    setI64Attr(plan, "max_bits", maxBits, builder);
-    setI64Attr(plan, kLoweredMinBitsAttr, minBits, builder);
-    setI64Attr(plan, kLoweredMaxBitsAttr, maxBits, builder);
-    setI64Attr(plan, kLoweredStepCountAttr, stepIndex, builder);
-    setI64Attr(plan, kLoweredFieldCountAttr, fieldCount, builder);
-    setI64Attr(plan, kLoweredPaddingCountAttr, paddingCount, builder);
-    setI64Attr(plan, kLoweredAlignCountAttr, alignCount, builder);
-    plan->setAttr(kLoweredPlanMarkerAttr, builder.getUnitAttr());
-    stampLoweredContractAttributes(plan, builder);
+    const std::int64_t minBits = nonNegative(plan.getMinBits());
+    const std::int64_t maxBits = std::max<std::int64_t>(nonNegative(plan.getMaxBits()), minBits);
+    plan.setMinBitsAttr(builder.getI64IntegerAttr(minBits));
+    plan.setMaxBitsAttr(builder.getI64IntegerAttr(maxBits));
+    plan.setLoweredMinBitsAttr(builder.getI64IntegerAttr(minBits));
+    plan.setLoweredMaxBitsAttr(builder.getI64IntegerAttr(maxBits));
+    plan.setLoweredStepCountAttr(builder.getI64IntegerAttr(stepIndex));
+    plan.setLoweredFieldCountAttr(builder.getI64IntegerAttr(fieldCount));
+    plan.setLoweredPaddingCountAttr(builder.getI64IntegerAttr(paddingCount));
+    plan.setLoweredAlignCountAttr(builder.getI64IntegerAttr(alignCount));
+    plan.setLowered(true);
+    stampLoweredContractAttributes(plan.getOperation(), builder);
 
-    if (plan->hasAttr("is_union"))
+    if (plan.getIsUnion())
     {
-        const std::int64_t unionTagBits     = nonNegative(intAttrOrDefault(plan, "union_tag_bits", 0));
-        const auto         unionOptionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
-        setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
-        setI64Attr(plan, "union_option_count", unionOptionCount, builder);
+        plan.setUnionTagBitsAttr(builder.getI64IntegerAttr(nonNegative(plan.getUnionTagBits().value_or(0))));
+        plan.setUnionOptionCountAttr(builder.getI64IntegerAttr(static_cast<std::int64_t>(unionOptionIndexes.size())));
     }
 
     return mlir::success();
@@ -282,25 +233,21 @@ mlir::Value lowerScalarHelperBody(const llvmdsdl::HelperBody& body,
     return value;
 }
 
-mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
-                                                    mlir::Operation* plan,
-                                                    mlir::OpBuilder& builder)
+mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp                  module,
+                                                    mlir::dsdl::SerializationPlanOp plan,
+                                                    mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
     const std::string funcName =
         "llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
-    plan->setAttr(kLoweredCapacityCheckHelperAttr, builder.getStringAttr(funcName));
+    plan.setLoweredCapacityCheckHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
         return mlir::success();
@@ -324,20 +271,8 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
 
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    mlir::Value const capacityBits = entry->getArgument(0);
-    std::int64_t      requiredBits = 0;
-    if (const auto maxBits = plan->getAttrOfType<mlir::IntegerAttr>("max_bits"))
-    {
-        requiredBits = nonNegative(maxBits.getInt());
-    }
-    else if (const auto loweredMaxBits = plan->getAttrOfType<mlir::IntegerAttr>("lowered_max_bits"))
-    {
-        requiredBits = nonNegative(loweredMaxBits.getInt());
-    }
-    else
-    {
-        return plan->emitOpError("missing required max_bits metadata");
-    }
+    mlir::Value const  capacityBits = entry->getArgument(0);
+    const std::int64_t requiredBits = nonNegative(plan.getMaxBits());
 
     auto requiredBitsValue = mlir::arith::ConstantIntOp::create(builder, loc, requiredBits, 64).getResult();
     auto cond =
@@ -358,51 +293,41 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
-                                                     mlir::Operation* plan,
-                                                     mlir::OpBuilder& builder)
+mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp                  module,
+                                                     mlir::dsdl::SerializationPlanOp plan,
+                                                     mlir::OpBuilder&                builder)
 {
-    if (!plan->hasAttr("is_union"))
+    if (!plan.getIsUnion())
     {
         return mlir::success();
     }
 
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
     const std::string funcName =
         "llvmdsdl_plan_validate_union_tag__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
-    plan->setAttr(kLoweredUnionTagValidateHelperAttr, builder.getStringAttr(funcName));
+    plan.setLoweredUnionTagValidateHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
         return mlir::success();
     }
 
     std::set<std::int64_t> optionIndexes;
-    if (plan->getNumRegions() > 0 && !plan->getRegion(0).empty())
+    if (!plan.getBody().empty())
     {
-        for (mlir::Operation& op : plan->getRegion(0).front())
+        for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
         {
-            if (op.getName().getStringRef() != "dsdl.io")
+            if (op.isPadding())
             {
                 continue;
             }
-            const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-            const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-            if (kind == "padding")
-            {
-                continue;
-            }
-            optionIndexes.insert(nonNegative(intAttrOrDefault(&op, "union_option_index", /*fallback=*/0)));
+            optionIndexes.insert(op.getUnionOptionIndex());
         }
     }
     if (optionIndexes.empty())
@@ -453,61 +378,53 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
-                                                     mlir::Operation* plan,
-                                                     mlir::OpBuilder& builder)
+mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp                  module,
+                                                     mlir::dsdl::SerializationPlanOp plan,
+                                                     mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
+        const auto scalar = op.getScalarCategory();
         if (scalar != "unsigned" && scalar != "byte" && scalar != "utf8")
         {
             continue;
         }
-        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        const std::int64_t bitLength = op.getBitLength();
         if (bitLength <= 0 || bitLength > 64)
         {
             continue;
         }
-        const std::int64_t stepIndex    = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
-        const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex = *op.getStepIndex();
+        const auto         castMode  = op.getCastMode();
 
         const std::string symbolStem = "llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName    = symbolStem + "__ser";
         const std::string deserName  = symbolStem + "__deser";
-        op.setAttr("lowered_ser_unsigned_helper", builder.getStringAttr(serName));
-        op.setAttr("lowered_deser_unsigned_helper", builder.getStringAttr(deserName));
+        op.setLoweredSerUnsignedHelperAttr(builder.getStringAttr(serName));
+        op.setLoweredDeserUnsignedHelperAttr(builder.getStringAttr(deserName));
 
         const auto serShape   = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Unsigned,
                                                               static_cast<std::uint32_t>(bitLength),
@@ -566,61 +483,53 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
-                                                   mlir::Operation* plan,
-                                                   mlir::OpBuilder& builder)
+mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp                  module,
+                                                   mlir::dsdl::SerializationPlanOp plan,
+                                                   mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("signed");
+        const auto scalar = op.getScalarCategory();
         if (scalar != "signed")
         {
             continue;
         }
-        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        const std::int64_t bitLength = op.getBitLength();
         if (bitLength <= 0 || bitLength > 64)
         {
             continue;
         }
-        const std::int64_t stepIndex    = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-        const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
-        const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex = *op.getStepIndex();
+        const auto         castMode  = op.getCastMode();
 
         const std::string symbolStem = "llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string serName    = symbolStem + "__ser";
         const std::string deserName  = symbolStem + "__deser";
-        op.setAttr("lowered_ser_signed_helper", builder.getStringAttr(serName));
-        op.setAttr("lowered_deser_signed_helper", builder.getStringAttr(deserName));
+        op.setLoweredSerSignedHelperAttr(builder.getStringAttr(serName));
+        op.setLoweredDeserSignedHelperAttr(builder.getStringAttr(deserName));
 
         const auto serShape   = llvmdsdl::helperBodyForScalar(llvmdsdl::HelperScalarKind::Signed,
                                                               static_cast<std::uint32_t>(bitLength),
@@ -679,58 +588,51 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
-                                                  mlir::Operation* plan,
-                                                  mlir::OpBuilder& builder)
+mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp                  module,
+                                                  mlir::dsdl::SerializationPlanOp plan,
+                                                  mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("float");
+        const auto scalar = op.getScalarCategory();
         if (scalar != "float")
         {
             continue;
         }
-        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        const std::int64_t bitLength = op.getBitLength();
         if (bitLength != 16 && bitLength != 32 && bitLength != 64)
         {
             continue;
         }
-        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex  = *op.getStepIndex();
         const std::string  symbolStem = "llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string  serName    = symbolStem + "__ser";
         const std::string  deserName  = symbolStem + "__deser";
-        op.setAttr("lowered_ser_float_helper", builder.getStringAttr(serName));
-        op.setAttr("lowered_deser_float_helper", builder.getStringAttr(deserName));
+        op.setLoweredSerFloatHelperAttr(builder.getStringAttr(serName));
+        op.setLoweredDeserFloatHelperAttr(builder.getStringAttr(deserName));
 
         // Width-match the helper to the field's native storage type: 16/32-bit
         // fields are held as `float` (f32), 64-bit as `double` (f64). Typing the
@@ -786,52 +688,44 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
-                                                       mlir::Operation* plan,
-                                                       mlir::OpBuilder& builder)
+mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp                  module,
+                                                       mlir::dsdl::SerializationPlanOp plan,
+                                                       mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
-        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
-        const bool variableArray = (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
+        const bool variableArray = op.isVariableArray();
         if (!variableArray)
         {
             continue;
         }
-        const std::int64_t capacity   = nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
-        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const std::int64_t capacity = op.getArrayCapacity();
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex  = *op.getStepIndex();
         const std::string  symbolName = "llvmdsdl_plan_validate_array_length__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        op.setAttr("lowered_array_length_validate_helper", builder.getStringAttr(symbolName));
+        op.setLoweredArrayLengthValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
         {
@@ -878,59 +772,51 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
-                                                   mlir::Operation* plan,
-                                                   mlir::OpBuilder& builder)
+mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp                  module,
+                                                   mlir::dsdl::SerializationPlanOp plan,
+                                                   mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
-        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
-        const bool variableArray = (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
+        const bool variableArray = op.isVariableArray();
         if (!variableArray)
         {
             continue;
         }
-        const std::int64_t prefixBits = nonNegative(intAttrOrDefault(&op, "array_length_prefix_bits", /*fallback=*/0));
+        const std::int64_t prefixBits = op.getArrayLengthPrefixBits();
         if (prefixBits <= 0 || prefixBits > 64)
         {
             return op.emitOpError("invalid array-length prefix width");
         }
-        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex  = *op.getStepIndex();
         const std::string  symbolStem = "llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
         const std::string  serName    = symbolStem + "__ser";
         const std::string  deserName  = symbolStem + "__deser";
-        op.setAttr("lowered_ser_array_length_prefix_helper", builder.getStringAttr(serName));
-        op.setAttr("lowered_deser_array_length_prefix_helper", builder.getStringAttr(deserName));
+        op.setLoweredSerArrayLengthPrefixHelperAttr(builder.getStringAttr(serName));
+        op.setLoweredDeserArrayLengthPrefixHelperAttr(builder.getStringAttr(deserName));
 
         const bool          fullWidth = (prefixBits == 64);
         const std::uint64_t mask =
@@ -1001,26 +887,24 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
     return mlir::success();
 }
 
-mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operation* plan, mlir::OpBuilder& builder)
+mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp                  module,
+                                            mlir::dsdl::SerializationPlanOp plan,
+                                            mlir::OpBuilder&                builder)
 {
-    if (!plan->hasAttr("is_union"))
+    if (!plan.getIsUnion())
     {
         return mlir::success();
     }
 
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto         sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto         schemaSym   = schema.getSymNameAttr();
+    const auto         sectionAttr = plan.getSectionAttr();
     const std::string  section     = sectionAttr ? sectionAttr.getValue().str() : "";
-    const std::int64_t tagBits     = nonNegative(intAttrOrDefault(plan, "union_tag_bits", /*fallback=*/0));
+    const std::int64_t tagBits     = plan.getUnionTagBits().value_or(0);
     if (tagBits <= 0 || tagBits > 64)
     {
         return plan->emitOpError("invalid union tag width");
@@ -1030,8 +914,8 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
         "llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
     const std::string serName   = symbolStem + "__ser";
     const std::string deserName = symbolStem + "__deser";
-    plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
-    plan->setAttr(kLoweredDeserUnionTagHelperAttr, builder.getStringAttr(deserName));
+    plan.setLoweredSerUnionTagHelperAttr(builder.getStringAttr(serName));
+    plan.setLoweredDeserUnionTagHelperAttr(builder.getStringAttr(deserName));
 
     const bool          fullWidth = (tagBits == 64);
     const std::uint64_t mask = fullWidth ? UINT64_MAX : ((UINT64_C(1) << static_cast<unsigned>(tagBits)) - UINT64_C(1));
@@ -1100,56 +984,48 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operati
     return mlir::success();
 }
 
-mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   module,
-                                                           mlir::Operation* plan,
-                                                           mlir::OpBuilder& builder)
+mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp                  module,
+                                                           mlir::dsdl::SerializationPlanOp plan,
+                                                           mlir::OpBuilder&                builder)
 {
-    auto* schema = plan->getParentOp();
-    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    auto schema = plan->getParentOfType<mlir::dsdl::SchemaOp>();
+    if (!schema)
     {
         return plan->emitOpError("must be nested under dsdl.schema");
     }
-    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-    if (!schemaSym)
-    {
-        return schema->emitOpError("missing required sym_name attribute");
-    }
-    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const auto        schemaSym   = schema.getSymNameAttr();
+    const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
         return mlir::success();
     }
 
-    for (mlir::Operation& op : plan->getRegion(0).front())
+    for (mlir::dsdl::IOOp op : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.io")
+        if (op.isPadding())
         {
             continue;
         }
-        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind != "field")
-        {
-            continue;
-        }
-        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
+        const auto scalar = op.getScalarCategory();
         if (scalar != "composite")
         {
             continue;
         }
-        const auto sealedAttr      = op.getAttrOfType<mlir::BoolAttr>("composite_sealed");
-        const bool compositeSealed = sealedAttr ? sealedAttr.getValue() : true;
+        const bool compositeSealed = op.getCompositeSealed().value_or(true);
         if (compositeSealed)
         {
             continue;
         }
-        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        if (!op.getStepIndex())
+        {
+            return op.emitOpError("carries no step_index; canonicalise the plan first");
+        }
+        const std::int64_t stepIndex  = *op.getStepIndex();
         const std::string  symbolName = "llvmdsdl_plan_validate_delimiter_header__" + schemaSym.getValue().str() +
                                         renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        op.setAttr("lowered_delimiter_validate_helper", builder.getStringAttr(symbolName));
+        op.setLoweredDelimiterValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
         {
@@ -1200,26 +1076,29 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
 
 mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
 {
-    mlir::OpBuilder               builder(module.getContext());
-    std::vector<mlir::Operation*> plans;
+    mlir::OpBuilder                              builder(module.getContext());
+    std::vector<mlir::dsdl::SerializationPlanOp> plans;
 
-    for (mlir::Operation& op : module.getBodyRegion().front())
+    for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (op.getName().getStringRef() != "dsdl.schema")
+        if (op->hasAttr("llvmdsdl.layout_only"))
+        {
+            // Present so that a member of this type can be addressed. Its helpers belong to its
+            // own object, which is where a caller resolves them.
+            continue;
+        }
+        if (op.getBody().empty())
         {
             continue;
         }
-        for (mlir::Operation& child : op.getRegion(0).front())
+        for (const mlir::dsdl::SerializationPlanOp child :
+             op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            if (child.getName().getStringRef() != "dsdl.serialization_plan")
-            {
-                continue;
-            }
-            if (mlir::failed(canonicalizePlan(&child, builder)))
+            if (mlir::failed(canonicalizePlan(child, builder)))
             {
                 return mlir::failure();
             }
-            plans.push_back(&child);
+            plans.push_back(child);
         }
     }
 
@@ -1228,7 +1107,7 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
     // well-formed lowered module rather than an unstamped one a consumer must reject.
     stampLoweredContractAttributes(module, builder);
 
-    for (mlir::Operation* plan : plans)
+    for (const mlir::dsdl::SerializationPlanOp plan : plans)
     {
         if (mlir::failed(createPlanCapacityCheckFunction(module, plan, builder)))
         {
@@ -1343,33 +1222,34 @@ struct AnnotateDSDLAliasabilityPass
         auto            module = getOperation();
         mlir::OpBuilder builder(module.getContext());
 
-        for (mlir::Operation& op : module.getBodyRegion().front())
+        for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
-            if (op.getName().getStringRef() != "dsdl.schema" || op.getNumRegions() == 0 || op.getRegion(0).empty())
+            if (op.getBody().empty())
             {
                 continue;
             }
-            for (mlir::Operation& child : op.getRegion(0).front())
+            if (op->hasAttr("llvmdsdl.layout_only"))
             {
-                if (child.getName().getStringRef() != "dsdl.serialization_plan")
-                {
-                    continue;
-                }
-
-                const auto fixedSize = child.hasAttr("fixed_size");
-                const auto sealed    = child.hasAttr("sealed");
+                // Present so that a member of this type can be addressed. Its helpers belong to
+                // its own object, which is where a caller resolves them.
+                continue;
+            }
+            for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                const bool fixedSize = child.getFixedSize();
+                const bool sealed    = child.getSealed();
 
                 std::string  reason;
                 bool         hasPayloadFields = false;
                 std::int64_t offsetBits       = 0;
 
-                if (child.getNumRegions() > 0 && !child.getRegion(0).empty())
+                if (!child.getBody().empty())
                 {
-                    for (mlir::Operation& step : child.getRegion(0).front())
+                    for (mlir::Operation& stepOp : child.getBody().front())
                     {
-                        if (step.getName().getStringRef() == "dsdl.align")
+                        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(stepOp))
                         {
-                            const auto alignBits = nonNegative(intAttrOrDefault(&step, "bits", 1));
+                            const std::int64_t alignBits = align.getBits();
                             if (alignBits > 1)
                             {
                                 const auto rem = offsetBits % alignBits;
@@ -1380,14 +1260,13 @@ struct AnnotateDSDLAliasabilityPass
                             }
                             continue;
                         }
-                        if (step.getName().getStringRef() != "dsdl.io")
+                        auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+                        if (!step)
                         {
                             continue;
                         }
-                        const auto kindAttr  = step.getAttrOfType<mlir::StringAttr>("kind");
-                        const auto kind      = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-                        const auto bitLength = nonNegative(intAttrOrDefault(&step, "bit_length", 0));
-                        if (kind == "padding")
+                        const std::int64_t bitLength = step.getBitLength();
+                        if (step.isPadding())
                         {
                             offsetBits += bitLength;
                             continue;
@@ -1409,22 +1288,18 @@ struct AnnotateDSDLAliasabilityPass
                             reason = "sub-byte-field";
                             break;
                         }
-                        const auto arrayKindAttr = step.getAttrOfType<mlir::StringAttr>("array_kind");
-                        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
-                        if (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive")
+                        if (step.isVariableArray())
                         {
                             reason = "variable-array";
                             break;
                         }
-                        const auto scalarCategoryAttr = step.getAttrOfType<mlir::StringAttr>("scalar_category");
-                        const auto scalarCategory =
-                            scalarCategoryAttr ? scalarCategoryAttr.getValue() : llvm::StringRef("void");
-                        if (scalarCategory == "composite")
+                        if (step.isComposite())
                         {
                             reason = "composite-field";
                             break;
                         }
-                        if (scalarCategory == "float" && bitLength != 16 && bitLength != 32 && bitLength != 64)
+                        if (step.getScalarCategory() == "float" && bitLength != 16 && bitLength != 32 &&
+                            bitLength != 64)
                         {
                             reason = "unsupported-float-width";
                             break;
@@ -1441,7 +1316,7 @@ struct AnnotateDSDLAliasabilityPass
                 {
                     reason = "not-sealed";
                 }
-                if (reason.empty() && child.hasAttr("is_union"))
+                if (reason.empty() && child.getIsUnion())
                 {
                     reason = "union-type";
                 }
@@ -1451,16 +1326,8 @@ struct AnnotateDSDLAliasabilityPass
                 }
 
                 const bool eligible = reason.empty();
-                if (eligible)
-                {
-                    child.setAttr("zoh_alias_eligible", builder.getUnitAttr());
-                    child.removeAttr("zoh_alias_reason");
-                }
-                else
-                {
-                    child.removeAttr("zoh_alias_eligible");
-                    child.setAttr("zoh_alias_reason", builder.getStringAttr(reason));
-                }
+                child.setZohAliasEligible(eligible);
+                child.setZohAliasReasonAttr(eligible ? mlir::StringAttr{} : builder.getStringAttr(reason));
             }
         }
     }
@@ -1470,40 +1337,6 @@ struct AnnotateDSDLAliasabilityPass
 // legalized marker. It performs no byte reordering. The DSDL wire format is always
 // little-endian, so per-target endianness handling lives in the emitted code (the
 // `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
-struct DSDLEndianLegalizePass : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
-{
-    llvm::StringRef getArgument() const final
-    {
-        return "dsdl-legalize-endianness";
-    }
-    llvm::StringRef getDescription() const final
-    {
-        return "Validate and stamp DSDL target endianness metadata (no byte reordering)";
-    }
-
-    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
-    void runOnOperation() override
-    {
-        auto            module = getOperation();
-        mlir::OpBuilder builder(module.getContext());
-        const auto      targetEndianness = module->getAttrOfType<mlir::StringAttr>("llvmdsdl.target_endianness");
-        if (!targetEndianness)
-        {
-            module.emitError("missing required module attribute 'llvmdsdl.target_endianness'");
-            signalPassFailure();
-            return;
-        }
-        const auto endianValue = targetEndianness.getValue();
-        if (endianValue != "little" && endianValue != "big")
-        {
-            module.emitError("unsupported module target endianness (expected 'little' or 'big')");
-            signalPassFailure();
-            return;
-        }
-        module->setAttr("llvmdsdl.target_endianness_legalized", builder.getUnitAttr());
-    }
-};
-
 }  // namespace
 
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()
@@ -1519,11 +1352,6 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
 std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass()
 {
     return std::make_unique<AnnotateDSDLAliasabilityPass>();
-}
-
-std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass()
-{
-    return std::make_unique<DSDLEndianLegalizePass>();
 }
 
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
@@ -1544,12 +1372,14 @@ void registerDSDLPasses()
     static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
     static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
     static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
-    static mlir::PassRegistration<DSDLEndianLegalizePass> const       regEndian;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
+    registerBuildDSDLPlanBodiesPass();
     registerDSDLConvertPasses();
+    registerEmitDSDLRuntimePass();
+    registerDSDLToLLVMPasses();
 }
 
 }  // namespace llvmdsdl

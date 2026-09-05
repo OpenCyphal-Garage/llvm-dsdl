@@ -1,7 +1,0 @@
-@union
-civildrone.estimation.EstimationEvent.1.0 estimation_event
-civildrone.lidar.LidarEvent.1.0 lidar_event
-civildrone.weather.WeatherEvent.1.0 weather_event
-civildrone.workload.Composite228.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

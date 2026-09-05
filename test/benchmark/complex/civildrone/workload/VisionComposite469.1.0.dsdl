@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.vision.synchronization.SynchronizationBatchReport.1.0 synchronization_batch
-civildrone.vision.mapping.MappingDetectionSet.1.0 mapping_detections
-civildrone.vision.classification.ClassificationGraphState.1.0 classification_graph
-civildrone.vision.VisionNodeSnapshot.1.0 snapshot
-civildrone.fleet.PlatformDigest.1.0 fleet_digest
-truncated uint8[<=4096] opaque_payload
-@sealed

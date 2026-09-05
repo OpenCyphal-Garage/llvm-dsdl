@@ -1,6 +1,0 @@
-civildrone.maintenance.MaintenanceMetric.1.0 metric
-civildrone.maintenance.MaintenanceSetpoint.1.0 setpoint
-civildrone.maintenance.MaintenanceLimits.1.0 limits
-uavcan.diagnostic.Record.1.1 last_diagnostic
-uavcan.register.Value.1.0 tuning_register
-@sealed

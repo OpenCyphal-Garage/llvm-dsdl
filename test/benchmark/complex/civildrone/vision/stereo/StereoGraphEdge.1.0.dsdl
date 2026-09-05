@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.stereo.StereoGraphNode.1.0 from_node
-civildrone.vision.depth.DepthGraphNode.1.0 to_node
-float32 information
-@sealed

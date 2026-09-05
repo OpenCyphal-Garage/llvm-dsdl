@@ -1,5 +1,0 @@
-uavcan.time.SynchronizedTimestamp.1.0 collected_at
-civildrone.communications.CommunicationsEvent.1.0[<=12] events
-civildrone.communications.CommunicationsState.1.0[<=6] states
-uint16 dropped_samples
-@sealed

@@ -1,9 +1,0 @@
-{
-  "name": "llvmdsdl_generated",
-  "version": "0.2.3",
-  "type": "module",
-  "llvmdsdl": {
-    "generatorVersion": "0.2.3",
-    "tsRuntimeSpecialization": "portable"
-  }
-}

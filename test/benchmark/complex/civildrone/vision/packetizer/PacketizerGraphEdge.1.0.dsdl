@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.packetizer.PacketizerGraphNode.1.0 from_node
-civildrone.vision.depacketizer.DepacketizerGraphNode.1.0 to_node
-float32 information
-@sealed

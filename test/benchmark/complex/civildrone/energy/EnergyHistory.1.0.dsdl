@@ -1,4 +1,0 @@
-civildrone.energy.EnergyReport.1.0[<=4] reports
-civildrone.energy.EnergyEvent.1.0[<=24] timeline
-uavcan.time.SynchronizedTimestamp.1.0 last_update
-@sealed

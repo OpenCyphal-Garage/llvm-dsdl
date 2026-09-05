@@ -1,8 +1,0 @@
-uint8 action
-civildrone.fleet.SurveyCampaign.1.0 campaign
-uavcan.register.Value.1.0 config
-@sealed
----
-bool accepted
-civildrone.fleet.SurveyCampaignState.1.0 state
-@sealed

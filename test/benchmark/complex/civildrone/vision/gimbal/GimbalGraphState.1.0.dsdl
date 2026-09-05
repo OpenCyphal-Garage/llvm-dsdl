@@ -1,4 +1,0 @@
-civildrone.vision.gimbal.GimbalGraphNode.1.0[<=1024] nodes
-civildrone.vision.gimbal.GimbalGraphEdge.1.0[<=2048] edges
-civildrone.vision.camera.CameraGraphNode.1.0[<=64] upstream_nodes
-@sealed

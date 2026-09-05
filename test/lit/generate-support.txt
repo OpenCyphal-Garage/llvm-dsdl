@@ -62,7 +62,6 @@
 # RUN: not %dsdlc --target-language mlir --generate-support only +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_MLIR
 # The ast probe carries no `+` target: that gate rejects ast first, and would mask this one.
 # RUN: not %dsdlc --target-language ast --generate-support never 2>&1 | FileCheck %s --check-prefix=GATE_AST
-# RUN: not %dsdlc --target-language obj --generate-support never --target-endianness little +uavcan 2>&1 | FileCheck %s --check-prefix=GATE_OBJ
 # RUN: not %dsdlc --target-language c --generate-support sometimes +uavcan 2>&1 | FileCheck %s --check-prefix=BAD_VALUE
 # RUN: not %dsdlc --target-language c --generate-support 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE
 
@@ -70,6 +69,5 @@
 
 # GATE_MLIR: --generate-support requires a source-emitting --target-language (c, cpp, rust, go, ts, python), not 'mlir'
 # GATE_AST: --generate-support requires a source-emitting --target-language
-# GATE_OBJ: --generate-support requires a source-emitting --target-language
 # BAD_VALUE: invalid --generate-support value: sometimes
 # MISSING_VALUE: missing value for --generate-support

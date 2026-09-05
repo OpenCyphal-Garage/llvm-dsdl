@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.core.PoseKinematics.1.0 pose
-civildrone.avoidance.AvoidanceState.1.0 avoidance_state
-civildrone.planner.PlannerReport.1.0 planner_report
-civildrone.airframe.AirframeHistory.1.0 airframe_history
-uavcan.register.Value.1.0 tuning
-truncated uint8[<=256] opaque_payload
-@sealed

@@ -1,8 +1,0 @@
-@union
-civildrone.vision.stereo.StereoFramePacket.1.0 packet
-civildrone.vision.stereo.StereoFeatureSet.1.0 features
-civildrone.vision.stereo.StereoDetectionSet.1.0 detections
-civildrone.vision.stereo.StereoInferenceTensor.1.0 tensor
-civildrone.vision.stereo.StereoGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

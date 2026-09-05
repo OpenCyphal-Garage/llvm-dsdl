@@ -10,7 +10,11 @@
 add_library(llvmdsdlTransforms
   LoweredSerDesContractValidation.cpp
   Passes.cpp
+  PlanSteps.cpp
+  BuildDSDLPlanBodies.cpp
   ConvertDSDLToEmitC.cpp
+  ConvertDSDLToLLVM.cpp
+  EmitDSDLRuntime.cpp
 )
 
 target_link_libraries(llvmdsdlTransforms
@@ -21,6 +25,9 @@ target_link_libraries(llvmdsdlTransforms
   MLIRPass
   MLIRTransforms
   MLIREmitCDialect
+  MLIRLLVMDialect
+  MLIRLLVMCommonConversion
+  MLIRFuncTransforms
   MLIRFuncDialect
   MLIRArithDialect
   MLIRSCFDialect

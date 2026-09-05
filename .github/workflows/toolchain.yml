@@ -4,8 +4,8 @@ name: Toolchain
 #
 # This runs when the toolchain's build configuration changes -- the pin, the
 # CMake flags, or a Dockerfile -- not per release. Building it inline in a release
-# job costs roughly 40 minutes on a 4-vCPU runner -- enough to exceed the release
-# timeout on amd64 -- whereas pulling the published image costs a minute or two.
+# job costs one to two hours on a 4-vCPU runner -- far past the release timeout --
+# whereas pulling the published image costs a minute or two.
 #
 # Four images, because a toolchain prefix is ~490 static archives built against
 # one libc and does not cross that boundary:
@@ -43,8 +43,9 @@ jobs:
     name: ${{ matrix.flavour }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     # Generous, and deliberately so: this is the job that is *allowed* to take
-    # 40 minutes, precisely so no other job has to.
-    timeout-minutes: 180
+    # hours, precisely so no other job has to. The slowest leg is musl on amd64,
+    # measured at 134 minutes; the headroom above that absorbs a slower runner.
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +103,7 @@ jobs:
         # edited comment, and for a flag only macOS passes.
         #
         # Without this, editing a publishing job in this file rebuilds four
-        # images that come out byte-identical, at about seventy minutes each.
+        # images that come out byte-identical, at one to two hours each.
         # The trigger is a path filter and cannot tell the two kinds of edit
         # apart; this can.
         #
@@ -140,10 +141,10 @@ jobs:
       - name: Verify before publishing
         if: steps.guard.outputs.skip != 'true'
         # A toolchain that merely builds is not the goal. These assertions are
-        # the properties it is built *for* -- static-only, no target backends,
-        # the tools the build and lit suite need, no optional-feature libraries
-        # on the link line. Publishing an image that fails them would put the
-        # defect downstream of every consumer.
+        # the properties it is built *for* -- static-only, the target backends
+        # the obj lane assembles for, the tools the build and lit suite need, no
+        # optional-feature libraries on the link line. Publishing an image that
+        # fails them would put the defect downstream of every consumer.
         run: |
           docker run --rm -v "${PWD}/packaging/toolchain:/v:ro" \
             "${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}" \

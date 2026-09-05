@@ -89,21 +89,6 @@ std::string decodedCompositePayloadExceedsRemainingBufferSpace(const std::string
     return "decoded payload size for composite field '" + fieldName + "' exceeds remaining buffer space";
 }
 
-std::string malformedArrayLengthCategory()
-{
-    return "malformed input: invalid array length";
-}
-
-std::string malformedUnionTagCategory()
-{
-    return "malformed input: invalid union tag";
-}
-
-std::string malformedDelimiterHeaderCategory()
-{
-    return "malformed input: malformed delimiter header";
-}
-
 std::string mlirSchemaCoverageValidationFailedForEmission(const std::string& backendName)
 {
     return "MLIR schema coverage validation failed for " + backendName + " emission";

@@ -1,7 +1,0 @@
-@union
-civildrone.vision.extraction.ExtractionPipelineEvent.1.0 extraction_event
-civildrone.vision.tracking.TrackingPipelineEvent.1.0 tracking_event
-civildrone.vision.objectstore.ObjectstorePipelineEvent.1.0 objectstore_event
-civildrone.workload.VisionComposite337.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

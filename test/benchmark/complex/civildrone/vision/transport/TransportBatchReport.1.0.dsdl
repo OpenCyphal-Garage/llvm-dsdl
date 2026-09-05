@@ -1,7 +1,0 @@
-uavcan.node.Heartbeat.1.0 heartbeat
-civildrone.core.NodeIdentity.1.0 node
-civildrone.vision.transport.TransportPipelineEvent.1.0[<=32] events
-civildrone.vision.controlchannel.ControlchannelPipelineEvent.1.0[<=4] downstream_events
-civildrone.vision.common.InferenceRuntime.1.0 runtime
-uavcan.register.Value.1.0 active_model
-@sealed

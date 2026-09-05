@@ -1,7 +1,0 @@
-@union
-civildrone.power.PowerEvent.1.0 power_event
-civildrone.avoidance.AvoidanceEvent.1.0 avoidance_event
-civildrone.autonomy.AutonomyEvent.1.0 autonomy_event
-civildrone.workload.Composite399.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

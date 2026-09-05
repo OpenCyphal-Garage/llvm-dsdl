@@ -135,8 +135,7 @@ EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCata
 /// @brief Appends embedded schemas for selected keys into destination module.
 llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&           catalog,
                                                mlir::ModuleOp                         destination,
-                                               const std::unordered_set<std::string>& selectedTypeKeys,
-                                               DiagnosticEngine&                      diagnostics);
+                                               const std::unordered_set<std::string>& selectedTypeKeys);
 
 }  // namespace llvmdsdl
 

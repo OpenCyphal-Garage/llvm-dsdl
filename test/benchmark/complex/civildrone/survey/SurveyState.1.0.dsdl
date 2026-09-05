@@ -1,6 +1,0 @@
-civildrone.survey.SurveyMetric.1.0 metric
-civildrone.survey.SurveySetpoint.1.0 setpoint
-civildrone.survey.SurveyLimits.1.0 limits
-uavcan.diagnostic.Record.1.1 last_diagnostic
-uavcan.register.Value.1.0 tuning_register
-@sealed

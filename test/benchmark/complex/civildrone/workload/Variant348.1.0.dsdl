@@ -1,7 +1,0 @@
-@union
-civildrone.lidar.LidarEvent.1.0 lidar_event
-civildrone.terrain.TerrainEvent.1.0 terrain_event
-civildrone.maintenance.MaintenanceEvent.1.0 maintenance_event
-civildrone.workload.Composite348.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

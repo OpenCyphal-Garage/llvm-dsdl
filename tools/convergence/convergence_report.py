@@ -210,7 +210,7 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
             traits["semantic_gate"] = traits["semantic_gate_helper_checks"] and traits["semantic_gate_fallback_checks"]
 
     if kind == "c":
-        convert_emitc_text = _load_text(repo_root, "lib/Transforms/ConvertDSDLToEmitC.cpp")
+        builder_text = _load_text(repo_root, "lib/Transforms/BuildDSDLPlanBodies.cpp")
         traits["lower_pass"] = _has_any(
             text,
             [
@@ -221,12 +221,15 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         traits["convert_pass"] = _has_any(text, [r"createConvertDSDLToEmitCPass\("])
         traits["schema_scan"] = _has_any(text, [r"dsdl\.schema", r"schemaByHeaderPath"])
         traits["schema_selection_guard"] = _has_any(text, [r"schema selection failed"])
+        # A malformed input is reported by the lowered validation helpers every backend binds;
+        # the C body calls them and carries their error code, and renders no text of its own.
         traits["diagnostic_catalog"] = _has_all(
-            convert_emitc_text,
+            builder_text,
             [
-                r"codegen_diagnostic_text::malformedArrayLengthCategory\(",
-                r"codegen_diagnostic_text::malformedUnionTagCategory\(",
-                r"codegen_diagnostic_text::malformedDelimiterHeaderCategory\(",
+                r"callErrorHelper\(",
+                r"arrayLengthValidateHelper",
+                r"unionTagValidateSymbol",
+                r"delimiterValidateHelper",
             ],
         )
         traits["emitc_pipeline"] = traits["lower_pass"] and traits["convert_pass"]

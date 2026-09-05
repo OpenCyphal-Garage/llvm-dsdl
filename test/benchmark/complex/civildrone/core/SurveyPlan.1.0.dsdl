@@ -1,5 +1,0 @@
-uint32 plan_id
-civildrone.core.SurveyTask.1.0[<=32] tasks
-civildrone.core.SafetyEnvelope.1.0 constraints
-uavcan.time.SynchronizedTimestamp.1.0 created_at
-@sealed

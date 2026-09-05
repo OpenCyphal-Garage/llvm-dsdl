@@ -1,8 +1,0 @@
-uint8 BACKEND_CPU   = 0
-uint8 BACKEND_GPU   = 1
-uint8 BACKEND_NPU   = 2
-uint8 BACKEND_FPGA  = 3
-uint8 backend
-float32 max_latency_ms
-float32 target_fps
-@sealed

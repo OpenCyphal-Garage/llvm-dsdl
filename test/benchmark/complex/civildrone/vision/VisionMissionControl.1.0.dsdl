@@ -1,9 +1,0 @@
-civildrone.core.NodeIdentity.1.0 requester
-civildrone.vision.VisionFleetSnapshot.1.0 baseline
-uavcan.register.Value.1.0 mission_register
-@sealed
----
-bool accepted
-civildrone.vision.VisionFleetSnapshot.1.0 updated
-uavcan.primitive.String.1.0 status
-@sealed

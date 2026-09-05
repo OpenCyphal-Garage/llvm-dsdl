@@ -1,9 +1,0 @@
-civildrone.vision.common.FrameHeader.1.0 header
-civildrone.vision.common.PixelFormat.1.0 format
-uint16 width
-uint16 height
-float32 exposure_ms
-float32 gain_db
-civildrone.vision.common.CameraIntrinsics.1.0 intrinsics
-civildrone.vision.common.CameraExtrinsics.1.0 extrinsics
-@sealed

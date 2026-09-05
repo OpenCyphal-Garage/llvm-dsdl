@@ -67,12 +67,14 @@ def main() -> int:
     mlir_archives = sorted(libdir.glob("libMLIR*.a")) if libdir.is_dir() else []
     check(len(mlir_archives) > 10, "MLIR component archives present", f"{len(mlir_archives)} archives")
 
-    print("\n== no target backends ==")
-    backend = re.compile(
-        r"libLLVM(AArch64|X86|ARM|RISCV|PowerPC|NVPTX|AMDGPU|WebAssembly|Mips|"
-        r"SPARC|SystemZ|Hexagon|Lanai|MSP430|XCore|BPF|AVR|VE|LoongArch)")
-    found = sorted(a.name for a in archives if backend.match(a.name))
-    check(not found, "no target-backend archives", ", ".join(found[:4]) or "none")
+    print("\n== target backends ==")
+    # `--target-language obj` assembles inside dsdlc, so a triple it is asked
+    # for has to be one the prefix carries. The names are LLVM's own target
+    # names, which is what LLVM_TARGETS_TO_BUILD is spelled in and what the
+    # archives are named after.
+    for target in ("X86", "AArch64", "ARM", "RISCV", "AVR", "Mips", "WebAssembly"):
+        present = [a.name for a in archives if a.name.startswith(f"libLLVM{target}")]
+        check(bool(present), f"{target} backend archives present", f"{len(present)} archives")
 
     print("\n== tools the build and test suite require ==")
     # mlir-tblgen: include/llvmdsdl/IR/CMakeLists.txt calls mlir_tablegen() 8 times.

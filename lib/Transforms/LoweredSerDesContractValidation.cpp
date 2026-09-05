@@ -17,33 +17,19 @@
 #include <cstdint>
 #include <optional>
 #include <set>
-#include <string>
 
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/Support/LLVM.h>
 
+#include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 
 namespace llvmdsdl
 {
-namespace
-{
-
-bool isVariableArrayKind(const llvm::StringRef arrayKind)
-{
-    return arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive";
-}
-
-bool isSupportedArrayKind(const llvm::StringRef arrayKind)
-{
-    return arrayKind == "none" || arrayKind == "fixed" || isVariableArrayKind(arrayKind);
-}
-
-}  // namespace
-
 std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViolation(mlir::Operation* operation)
 {
     const auto contractVersion = operation->getAttrOfType<mlir::IntegerAttr>(kLoweredSerDesContractVersionAttr);
@@ -65,71 +51,76 @@ std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViola
 }
 
 std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mlir::ModuleOp   module,
-                                                                             mlir::Operation* plan)
+                                                                             mlir::Operation* operation)
 {
-    if (!plan->hasAttr(kLoweredPlanMarkerAttr))
+    auto plan = mlir::dyn_cast<mlir::dsdl::SerializationPlanOp>(operation);
+    if (!plan)
     {
-        return LoweredPlanContractViolation{plan,
-                                            "missing lowered marker attribute '" + std::string(kLoweredPlanMarkerAttr) +
+        return LoweredPlanContractViolation{operation, "not a serialization plan"};
+    }
+    if (!plan.getLowered())
+    {
+        return LoweredPlanContractViolation{operation,
+                                            "missing lowered marker attribute '" + plan.getLoweredAttrName().str() +
                                                 "'"};
     }
-    const auto minBits      = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMinBitsAttr);
-    const auto maxBits      = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMaxBitsAttr);
-    const auto stepCount    = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredStepCountAttr);
-    const auto fieldCount   = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredFieldCountAttr);
-    const auto paddingCount = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredPaddingCountAttr);
-    const auto alignCount   = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredAlignCountAttr);
+    const auto minBits      = plan.getLoweredMinBits();
+    const auto maxBits      = plan.getLoweredMaxBits();
+    const auto stepCount    = plan.getLoweredStepCount();
+    const auto fieldCount   = plan.getLoweredFieldCount();
+    const auto paddingCount = plan.getLoweredPaddingCount();
+    const auto alignCount   = plan.getLoweredAlignCount();
     if (!minBits || !maxBits || !stepCount || !fieldCount || !paddingCount || !alignCount)
     {
-        return LoweredPlanContractViolation{plan, "missing required lowered plan metadata"};
+        return LoweredPlanContractViolation{operation, "missing required lowered plan metadata"};
     }
-    if (minBits.getInt() < 0 || maxBits.getInt() < minBits.getInt() || stepCount.getInt() < 0 ||
-        fieldCount.getInt() < 0 || paddingCount.getInt() < 0 || alignCount.getInt() < 0)
+    if (*minBits < 0 || *maxBits < *minBits || *stepCount < 0 || *fieldCount < 0 || *paddingCount < 0 ||
+        *alignCount < 0)
     {
-        return LoweredPlanContractViolation{plan, "invalid lowered plan metadata values"};
+        return LoweredPlanContractViolation{operation, "invalid lowered plan metadata values"};
     }
 
-    const auto capacityCheckHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
-    if (!capacityCheckHelper || capacityCheckHelper.getValue().empty())
+    const auto capacityCheckHelper = plan.getLoweredCapacityCheckHelper();
+    if (!capacityCheckHelper || capacityCheckHelper->empty())
     {
-        return LoweredPlanContractViolation{plan,
+        return LoweredPlanContractViolation{operation,
                                             "missing lowered capacity-check helper attribute '" +
-                                                std::string(kLoweredCapacityCheckHelperAttr) + "'"};
+                                                plan.getLoweredCapacityCheckHelperAttrName().str() + "'"};
     }
-    if (!module.lookupSymbol<mlir::func::FuncOp>(capacityCheckHelper.getValue()))
+    if (!module.lookupSymbol<mlir::func::FuncOp>(*capacityCheckHelper))
     {
-        return LoweredPlanContractViolation{plan,
+        return LoweredPlanContractViolation{operation,
                                             "missing lowered capacity-check helper symbol: " +
-                                                capacityCheckHelper.getValue().str()};
+                                                capacityCheckHelper->str()};
     }
 
-    if (plan->hasAttr("is_union"))
+    if (plan.getIsUnion())
     {
-        const auto unionTagBits            = plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-        const auto unionOptionCount        = plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
-        const auto unionTagValidateHelper  = plan->getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr);
-        const auto unionTagSerializeHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
-        const auto unionTagDeserializeHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr);
+        const auto unionTagBits              = plan.getUnionTagBits();
+        const auto unionOptionCount          = plan.getUnionOptionCount();
+        const auto unionTagValidateHelper    = plan.getLoweredUnionTagValidateHelper();
+        const auto unionTagSerializeHelper   = plan.getLoweredSerUnionTagHelper();
+        const auto unionTagDeserializeHelper = plan.getLoweredDeserUnionTagHelper();
         if (!unionTagBits || !unionOptionCount || !unionTagValidateHelper || !unionTagSerializeHelper ||
             !unionTagDeserializeHelper)
         {
-            return LoweredPlanContractViolation{plan, "missing required lowered union metadata"};
+            return LoweredPlanContractViolation{operation, "missing required lowered union metadata"};
         }
-        if (unionTagBits.getInt() <= 0 || unionTagBits.getInt() > 64 || unionOptionCount.getInt() <= 0)
+        if (*unionTagBits <= 0 || *unionTagBits > 64 || *unionOptionCount <= 0)
         {
-            return LoweredPlanContractViolation{plan, "invalid lowered union metadata values"};
+            return LoweredPlanContractViolation{operation, "invalid lowered union metadata values"};
         }
-        if (!module.lookupSymbol<mlir::func::FuncOp>(unionTagValidateHelper.getValue()) ||
-            !module.lookupSymbol<mlir::func::FuncOp>(unionTagSerializeHelper.getValue()) ||
-            !module.lookupSymbol<mlir::func::FuncOp>(unionTagDeserializeHelper.getValue()))
+        if (!module.lookupSymbol<mlir::func::FuncOp>(*unionTagValidateHelper) ||
+            !module.lookupSymbol<mlir::func::FuncOp>(*unionTagSerializeHelper) ||
+            !module.lookupSymbol<mlir::func::FuncOp>(*unionTagDeserializeHelper))
         {
-            return LoweredPlanContractViolation{plan, "missing lowered union-tag helper symbol body"};
+            return LoweredPlanContractViolation{operation, "missing lowered union-tag helper symbol body"};
         }
     }
 
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    if (plan.getBody().empty())
     {
-        return LoweredPlanContractViolation{plan, "must contain a non-empty lowered plan body"};
+        return LoweredPlanContractViolation{operation, "must contain a non-empty lowered plan body"};
     }
 
     std::int64_t           observedStepCount    = 0;
@@ -137,68 +128,50 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
     std::int64_t           observedPaddingCount = 0;
     std::int64_t           observedAlignCount   = 0;
     std::set<std::int64_t> seenStepIndexes;
-    for (mlir::Operation& step : plan->getRegion(0).front())
+    for (mlir::Operation& stepOp : plan.getBody().front())
     {
-        const auto stepName = step.getName().getStringRef();
-        if (stepName == "dsdl.align")
+        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(stepOp))
         {
-            const auto bits      = step.getAttrOfType<mlir::IntegerAttr>("bits");
-            const auto stepIndex = step.getAttrOfType<mlir::IntegerAttr>("step_index");
-            if (!bits || !stepIndex)
+            const auto stepIndex = align.getStepIndex();
+            if (!stepIndex)
             {
-                return LoweredPlanContractViolation{&step, "missing lowered align metadata"};
+                return LoweredPlanContractViolation{&stepOp, "missing lowered align metadata"};
             }
-            if (bits.getInt() <= 1)
+            if (align.getBits() <= 1)
             {
-                return LoweredPlanContractViolation{&step, "unexpected no-op alignment in lowered plan"};
+                return LoweredPlanContractViolation{&stepOp, "unexpected no-op alignment in lowered plan"};
             }
-            if (!seenStepIndexes.insert(stepIndex.getInt()).second)
+            if (!seenStepIndexes.insert(*stepIndex).second)
             {
-                return LoweredPlanContractViolation{&step, "duplicate lowered step_index"};
+                return LoweredPlanContractViolation{&stepOp, "duplicate lowered step_index"};
             }
             ++observedStepCount;
             ++observedAlignCount;
             continue;
         }
-        if (stepName != "dsdl.io")
+        auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+        if (!step)
         {
-            return LoweredPlanContractViolation{&step, "unsupported lowered plan operation"};
+            return LoweredPlanContractViolation{&stepOp, "unsupported lowered plan operation"};
         }
 
-        const auto stepMinBits    = step.getAttrOfType<mlir::IntegerAttr>("min_bits");
-        const auto stepMaxBits    = step.getAttrOfType<mlir::IntegerAttr>("max_bits");
-        const auto loweredBits    = step.getAttrOfType<mlir::IntegerAttr>("lowered_bits");
-        const auto stepIndex      = step.getAttrOfType<mlir::IntegerAttr>("step_index");
-        const auto scalarCategory = step.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto arrayKind      = step.getAttrOfType<mlir::StringAttr>("array_kind");
-        const auto kind           = step.getAttrOfType<mlir::StringAttr>("kind");
-        const auto bitLength      = step.getAttrOfType<mlir::IntegerAttr>("bit_length");
-        const auto alignmentBits  = step.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
-        if (!stepMinBits || !stepMaxBits || !loweredBits || !stepIndex || !scalarCategory || !arrayKind || !kind ||
-            !bitLength || !alignmentBits)
+        const auto loweredBits = step.getLoweredBits();
+        const auto stepIndex   = step.getStepIndex();
+        if (!loweredBits || !stepIndex)
         {
-            return LoweredPlanContractViolation{&step, "missing required lowered step metadata"};
+            return LoweredPlanContractViolation{&stepOp, "missing required lowered step metadata"};
         }
-        if (stepMinBits.getInt() < 0 || stepMaxBits.getInt() < stepMinBits.getInt() || loweredBits.getInt() < 0 ||
-            loweredBits.getInt() != stepMaxBits.getInt() || bitLength.getInt() < 0 || alignmentBits.getInt() <= 0)
+        if (*loweredBits < 0 || *loweredBits != step.getMaxBits())
         {
-            return LoweredPlanContractViolation{&step, "invalid lowered step metadata values"};
+            return LoweredPlanContractViolation{&stepOp, "invalid lowered step metadata values"};
         }
-        if (!isSupportedArrayKind(arrayKind.getValue()))
+        if (!seenStepIndexes.insert(*stepIndex).second)
         {
-            return LoweredPlanContractViolation{&step, "unsupported array kind in lowered step metadata"};
-        }
-        if (kind.getValue() != "field" && kind.getValue() != "padding")
-        {
-            return LoweredPlanContractViolation{&step, "unsupported step kind in lowered step metadata"};
-        }
-        if (!seenStepIndexes.insert(stepIndex.getInt()).second)
-        {
-            return LoweredPlanContractViolation{&step, "duplicate lowered step_index"};
+            return LoweredPlanContractViolation{&stepOp, "duplicate lowered step_index"};
         }
         ++observedStepCount;
 
-        const bool isPadding = kind.getValue() == "padding";
+        const bool isPadding = step.isPadding();
         if (isPadding)
         {
             ++observedPaddingCount;
@@ -208,44 +181,46 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
             ++observedFieldCount;
         }
         auto requireStepHelperSymbol =
-            [&](const llvm::StringRef attrName,
-                const llvm::StringRef helperLabel) -> std::optional<LoweredPlanContractViolation> {
-            const auto helper = step.getAttrOfType<mlir::StringAttr>(attrName);
-            if (!helper || helper.getValue().empty())
+            [&](const std::optional<llvm::StringRef> helper,
+                const llvm::StringRef                attrName,
+                const llvm::StringRef                helperLabel) -> std::optional<LoweredPlanContractViolation> {
+            if (!helper || helper->empty())
             {
-                return LoweredPlanContractViolation{&step,
+                return LoweredPlanContractViolation{&stepOp,
                                                     "missing lowered " + helperLabel.str() + " helper attribute '" +
                                                         attrName.str() + "'"};
             }
-            if (!module.lookupSymbol<mlir::func::FuncOp>(helper.getValue()))
+            if (!module.lookupSymbol<mlir::func::FuncOp>(*helper))
             {
-                return LoweredPlanContractViolation{&step,
+                return LoweredPlanContractViolation{&stepOp,
                                                     "missing lowered " + helperLabel.str() +
-                                                        " helper symbol: " + helper.getValue().str()};
+                                                        " helper symbol: " + helper->str()};
             }
             return std::nullopt;
         };
 
-        const bool variableArray   = isVariableArrayKind(arrayKind.getValue());
-        const auto arrayPrefixBits = step.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
-        if (variableArray && (!arrayPrefixBits || arrayPrefixBits.getInt() <= 0 || arrayPrefixBits.getInt() > 64))
+        const bool variableArray = step.isVariableArray();
+        if (variableArray && (step.getArrayLengthPrefixBits() <= 0 || step.getArrayLengthPrefixBits() > 64))
         {
-            return LoweredPlanContractViolation{&step, "missing valid array-length prefix width"};
+            return LoweredPlanContractViolation{&stepOp, "missing valid array-length prefix width"};
         }
         if (!isPadding && variableArray)
         {
-            if (const auto violation =
-                    requireStepHelperSymbol("lowered_ser_array_length_prefix_helper", "array-length-prefix"))
+            if (const auto violation = requireStepHelperSymbol(step.getLoweredSerArrayLengthPrefixHelper(),
+                                                               step.getLoweredSerArrayLengthPrefixHelperAttrName(),
+                                                               "array-length-prefix"))
             {
                 return violation;
             }
-            if (const auto violation =
-                    requireStepHelperSymbol("lowered_deser_array_length_prefix_helper", "array-length-prefix"))
+            if (const auto violation = requireStepHelperSymbol(step.getLoweredDeserArrayLengthPrefixHelper(),
+                                                               step.getLoweredDeserArrayLengthPrefixHelperAttrName(),
+                                                               "array-length-prefix"))
             {
                 return violation;
             }
-            if (const auto violation =
-                    requireStepHelperSymbol("lowered_array_length_validate_helper", "array-length-validate"))
+            if (const auto violation = requireStepHelperSymbol(step.getLoweredArrayLengthValidateHelper(),
+                                                               step.getLoweredArrayLengthValidateHelperAttrName(),
+                                                               "array-length-validate"))
             {
                 return violation;
             }
@@ -253,71 +228,75 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
 
         if (!isPadding)
         {
-            const auto category = scalarCategory.getValue();
+            const auto category = step.getScalarCategory();
             if (category == "unsigned" || category == "byte" || category == "utf8")
             {
-                if (const auto violation = requireStepHelperSymbol("lowered_ser_unsigned_helper", "scalar-unsigned"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredSerUnsignedHelper(),
+                                                                   step.getLoweredSerUnsignedHelperAttrName(),
+                                                                   "scalar-unsigned"))
                 {
                     return violation;
                 }
-                if (const auto violation = requireStepHelperSymbol("lowered_deser_unsigned_helper", "scalar-unsigned"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredDeserUnsignedHelper(),
+                                                                   step.getLoweredDeserUnsignedHelperAttrName(),
+                                                                   "scalar-unsigned"))
                 {
                     return violation;
                 }
             }
             else if (category == "signed")
             {
-                if (const auto violation = requireStepHelperSymbol("lowered_ser_signed_helper", "scalar-signed"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredSerSignedHelper(),
+                                                                   step.getLoweredSerSignedHelperAttrName(),
+                                                                   "scalar-signed"))
                 {
                     return violation;
                 }
-                if (const auto violation = requireStepHelperSymbol("lowered_deser_signed_helper", "scalar-signed"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredDeserSignedHelper(),
+                                                                   step.getLoweredDeserSignedHelperAttrName(),
+                                                                   "scalar-signed"))
                 {
                     return violation;
                 }
             }
             else if (category == "float")
             {
-                if (const auto violation = requireStepHelperSymbol("lowered_ser_float_helper", "scalar-float"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredSerFloatHelper(),
+                                                                   step.getLoweredSerFloatHelperAttrName(),
+                                                                   "scalar-float"))
                 {
                     return violation;
                 }
-                if (const auto violation = requireStepHelperSymbol("lowered_deser_float_helper", "scalar-float"))
+                if (const auto violation = requireStepHelperSymbol(step.getLoweredDeserFloatHelper(),
+                                                                   step.getLoweredDeserFloatHelperAttrName(),
+                                                                   "scalar-float"))
                 {
                     return violation;
                 }
             }
         }
 
-        if (!isPadding && scalarCategory.getValue() == "composite")
+        if (!isPadding && step.isComposite() && !step.getCompositeSealed().value_or(true))
         {
-            const auto compositeSealed = step.getAttrOfType<mlir::BoolAttr>("composite_sealed");
-            if (compositeSealed && !compositeSealed.getValue())
+            if (const auto violation = requireStepHelperSymbol(step.getLoweredDelimiterValidateHelper(),
+                                                               step.getLoweredDelimiterValidateHelperAttrName(),
+                                                               "delimiter-validate"))
             {
-                if (!step.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
-                {
-                    return LoweredPlanContractViolation{&step,
-                                                        "delimited composite missing composite_extent_bits metadata"};
-                }
-                if (const auto violation =
-                        requireStepHelperSymbol("lowered_delimiter_validate_helper", "delimiter-validate"))
-                {
-                    return violation;
-                }
+                return violation;
             }
         }
     }
 
-    if (observedStepCount != stepCount.getInt() || observedFieldCount != fieldCount.getInt() ||
-        observedPaddingCount != paddingCount.getInt() || observedAlignCount != alignCount.getInt())
+    if (observedStepCount != *stepCount || observedFieldCount != *fieldCount || observedPaddingCount != *paddingCount ||
+        observedAlignCount != *alignCount)
     {
-        return LoweredPlanContractViolation{plan, "lowered plan counts do not match plan body"};
+        return LoweredPlanContractViolation{operation, "lowered plan counts do not match plan body"};
     }
     for (const auto stepIndex : seenStepIndexes)
     {
-        if (stepIndex < 0 || stepIndex >= stepCount.getInt())
+        if (stepIndex < 0 || stepIndex >= *stepCount)
         {
-            return LoweredPlanContractViolation{plan, "step_index out of lowered plan bounds"};
+            return LoweredPlanContractViolation{operation, "step_index out of lowered plan bounds"};
         }
     }
 

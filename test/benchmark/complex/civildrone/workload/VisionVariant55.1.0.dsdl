@@ -1,7 +1,0 @@
-@union
-civildrone.vision.mapping.MappingPipelineEvent.1.0 mapping_event
-civildrone.vision.classification.ClassificationPipelineEvent.1.0 classification_event
-civildrone.vision.planner.PlannerPipelineEvent.1.0 planner_event
-civildrone.workload.VisionComposite55.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

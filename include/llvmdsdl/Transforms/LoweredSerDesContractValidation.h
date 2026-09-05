@@ -62,10 +62,10 @@ std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViola
 
 /// @brief Validates lowered metadata and helper references for a serialization plan.
 /// @param[in] module Module containing helper symbols.
-/// @param[in] plan `dsdl.serialization_plan` operation to validate.
+/// @param[in] operation The `dsdl.serialization_plan` to validate.
 /// @return Violation details on failure; `std::nullopt` on success.
 std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mlir::ModuleOp   module,
-                                                                             mlir::Operation* plan);
+                                                                             mlir::Operation* operation);
 
 }  // namespace llvmdsdl
 

@@ -1,7 +1,0 @@
-@union
-civildrone.vision.packetizer.PacketizerPipelineEvent.1.0 packetizer_event
-civildrone.vision.depth.DepthPipelineEvent.1.0 depth_event
-civildrone.vision.matching.MatchingPipelineEvent.1.0 matching_event
-civildrone.workload.VisionComposite291.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

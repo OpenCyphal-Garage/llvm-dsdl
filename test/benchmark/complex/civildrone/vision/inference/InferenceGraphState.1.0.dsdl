@@ -1,4 +1,0 @@
-civildrone.vision.inference.InferenceGraphNode.1.0[<=1024] nodes
-civildrone.vision.inference.InferenceGraphEdge.1.0[<=2048] edges
-civildrone.vision.reid.ReidGraphNode.1.0[<=64] upstream_nodes
-@sealed

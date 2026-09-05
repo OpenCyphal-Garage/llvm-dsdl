@@ -20,9 +20,9 @@ namespace llvmdsdl::uavcan_embedded_mlir
 {
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = 189U;
 inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
-    "9d81987721570b5c86da5ea1072e451a6ec0e37accf8d3a78b1b4d229488d75c";
+    "0e0f3de08ea65c882dee2161ce29291f48c567ad401d8f7e1186e6083b4e8dd2";
 inline constexpr const char kEmbeddedUavcanMlirText[] = R"LLVMDSDL_UAVCAN(
-module {
+module attributes {llvmdsdl.names_final} {
   dsdl.schema @uavcan_diagnostic_Record_1_1 attributes {c_type_name = "uavcan__diagnostic__Record", doc = "Generic human-readable text message for logging and displaying purposes.\0AGenerally, it should be published at the lowest priority level.", extent_bits = 2400 : i64, fixed_port_id = 8184 : i64, full_name = "uavcan.diagnostic.Record", header_path = "uavcan/diagnostic/Record_1_1.h", major = 1 : i32, minor = 1 : i32} {
     dsdl.field {c_name = "timestamp", doc = "Optional timestamp in the network-synchronized time system; zero if undefined.\0AThe timestamp value conveys the exact moment when the reported event took place.", name = "timestamp", type_name = "uavcan.time.SynchronizedTimestamp.1.0"}
     dsdl.field {c_name = "severity", name = "severity", type_name = "Severity.1.0"}

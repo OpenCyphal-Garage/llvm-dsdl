@@ -1,7 +1,0 @@
-@union
-civildrone.vision.matching.MatchingPipelineEvent.1.0 matching_event
-civildrone.vision.reid.ReidPipelineEvent.1.0 reid_event
-civildrone.vision.telemetryvision.TelemetryvisionPipelineEvent.1.0 telemetryvision_event
-civildrone.workload.VisionComposite478.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

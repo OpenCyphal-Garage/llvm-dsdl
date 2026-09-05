@@ -1,5 +1,0 @@
-uint32 campaign_id
-civildrone.vision.inference.InferenceModelChunk.1.0[<=64] updates
-civildrone.vision.fusion.FusionControlChannel.1.0[<=64] controls
-civildrone.vision.VisionFleetSnapshot.1.0 fleet
-@sealed

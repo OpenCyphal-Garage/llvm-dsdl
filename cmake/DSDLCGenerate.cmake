@@ -111,7 +111,7 @@ with the output directory on its INTERFACE include path -- link it and you are d
 emits no compilable sources (SUPPORT only, for instance) creates an INTERFACE library instead, which
 still carries the include path.
 
-For LANGUAGE obj, creates an INTERFACE target linking the prebuilt archive and carrying the include
+For LANGUAGE obj, creates an INTERFACE target linking the prebuilt objects and carrying the include
 path of the headers published beside it -- link it and you are done, the same way.
 
 For the other languages CMake is only orchestrating a build it does not own, so this creates a custom
@@ -138,7 +138,7 @@ function(dsdlc_generate name)
       "Call find_package(llvm-dsdl) first.")
   endif()
 
-  # The obj backend compiles what it generates and emits no support code of its own, so dsdlc rejects
+  # The obj backend assembles what it lowers and emits no support code of its own, so dsdlc rejects
   # --generate-support for it outright. Catch that here, where the message can say which argument to
   # drop, rather than passing it through and surfacing the generator's complaint about a flag the
   # caller never wrote.
@@ -256,36 +256,31 @@ function(dsdlc_generate name)
     VERBATIM)
 
   if(ARG_LANGUAGE STREQUAL "obj")
-    # The obj backend hands back a linkable archive rather than sources: dsdlc has already compiled
-    # the generated C, for a target triple that need not be this one. It publishes the headers
-    # alongside the archive, in the same layout the `c` backend uses, so one call gives a complete
-    # interface -- link the target and the include path comes with it.
-    set(_archive "")
+    # The obj backend hands back objects rather than sources: dsdlc assembled them itself, for a
+    # target triple that need not be this one. The headers are published beside them in the layout
+    # the `c` backend uses, so one call gives a complete interface -- link the target and the
+    # include path comes with it.
+    set(_objects "")
     foreach(_file IN LISTS _outputs)
-      if(_file MATCHES "\\.a$")
-        set(_archive "${_file}")
+      if(_file MATCHES "\\.o$")
+        list(APPEND _objects "${_file}")
       endif()
     endforeach()
-    if(NOT _archive)
-      message(FATAL_ERROR
-        "dsdlc_generate(${name}): the obj backend produced no archive. "
-        "Remove --obj-no-archive from OPTIONS, or consume the objects directly.")
+    if(NOT _objects)
+      message(FATAL_ERROR "dsdlc_generate(${name}): the obj backend produced no objects.")
     endif()
 
     set_source_files_properties(${_outputs} PROPERTIES GENERATED TRUE)
     add_custom_target(${name}-generate DEPENDS ${_outputs})
 
-    # An IMPORTED target names a file that already exists, and cannot itself depend on the rule that
-    # produces it. The INTERFACE library in front of it is what carries that dependency, so linking
-    # ${name} both pulls in the archive and waits for it to be built.
-    add_library(${name}-archive STATIC IMPORTED)
-    set_target_properties(${name}-archive PROPERTIES IMPORTED_LOCATION "${_archive}")
+    # An INTERFACE library carries both the objects and the dependency on the rule that writes
+    # them, so linking ${name} pulls them in and waits for them to exist.
     add_library(${name} INTERFACE)
-    target_link_libraries(${name} INTERFACE ${name}-archive)
+    target_link_libraries(${name} INTERFACE ${_objects})
     target_include_directories(${name} INTERFACE "${_outdir}")
     add_dependencies(${name} ${name}-generate)
     set_property(TARGET ${name} PROPERTY DSDLC_OUTPUT_DIR "${_outdir}")
-    set_property(TARGET ${name} PROPERTY DSDLC_ARCHIVE "${_archive}")
+    set_property(TARGET ${name} PROPERTY DSDLC_OBJECTS "${_objects}")
   elseif(ARG_LANGUAGE STREQUAL "c" OR ARG_LANGUAGE STREQUAL "cpp")
     set(_sources "")
     foreach(_file IN LISTS _outputs)

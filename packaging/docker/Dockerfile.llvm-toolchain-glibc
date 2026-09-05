@@ -69,7 +69,7 @@ ARG LLVM_REF
 ARG UBUNTU_CODENAME
 ENV DEBIAN_FRONTEND=noninteractive
 LABEL org.opencontainers.image.title="llvm-dsdl LLVM/MLIR toolchain (glibc)"
-LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, no target backends, glibc 2.35"
+LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, seven target backends, glibc 2.35"
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         ca-certificates gnupg wget \

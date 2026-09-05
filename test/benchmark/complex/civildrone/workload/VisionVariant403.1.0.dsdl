@@ -1,7 +1,0 @@
-@union
-civildrone.vision.vslam.VslamPipelineEvent.1.0 vslam_event
-civildrone.vision.triangulation.TriangulationPipelineEvent.1.0 triangulation_event
-civildrone.vision.inference.InferencePipelineEvent.1.0 inference_event
-civildrone.workload.VisionComposite403.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

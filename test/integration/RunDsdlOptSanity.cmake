@@ -150,7 +150,7 @@ endif()
 execute_process(
   COMMAND
     "${DSDLOPT}"
-      "--pass-pipeline=builtin.module(lower-dsdl-serialization,convert-dsdl-to-emitc)"
+      "--pass-pipeline=builtin.module(lower-dsdl-serialization,build-dsdl-plan-bodies,convert-dsdl-to-emitc)"
       "${input_mlir}"
   RESULT_VARIABLE convert_result
   OUTPUT_FILE "${converted_mlir}"
@@ -164,7 +164,7 @@ endif()
 execute_process(
   COMMAND
     "${DSDLOPT}"
-      "--pass-pipeline=builtin.module(lower-dsdl-serialization,optimize-dsdl-lowered-serdes,convert-dsdl-to-emitc)"
+      "--pass-pipeline=builtin.module(lower-dsdl-serialization,optimize-dsdl-lowered-serdes,build-dsdl-plan-bodies,convert-dsdl-to-emitc)"
       "${input_mlir}"
   RESULT_VARIABLE convert_optimized_result
   OUTPUT_FILE "${converted_optimized_mlir}"
@@ -180,7 +180,7 @@ file(READ "${converted_mlir}" converted_text)
 file(READ "${converted_optimized_mlir}" converted_optimized_text)
 
 foreach(required
-    "_err_capacity = llvmdsdl_plan_capacity_check__"
+    "call @llvmdsdl_plan_capacity_check__"
     "int8_t llvmdsdl_plan_capacity_check__"
     "int64_t llvmdsdl_plan_union_tag__"
     "int64_t llvmdsdl_plan_scalar_unsigned__"
@@ -196,7 +196,7 @@ foreach(required
   endif()
 endforeach()
 foreach(required
-    "_err_capacity = llvmdsdl_plan_capacity_check__"
+    "call @llvmdsdl_plan_capacity_check__"
     "int8_t llvmdsdl_plan_capacity_check__"
     "int64_t llvmdsdl_plan_union_tag__"
     "int64_t llvmdsdl_plan_scalar_unsigned__"
@@ -215,7 +215,7 @@ endforeach()
 execute_process(
   COMMAND
     "${DSDLOPT}"
-      "--pass-pipeline=builtin.module(lower-dsdl-serialization,optimize-dsdl-lowered-serdes,convert-dsdl-to-emitc)"
+      "--pass-pipeline=builtin.module(lower-dsdl-serialization,optimize-dsdl-lowered-serdes,build-dsdl-plan-bodies,convert-dsdl-to-emitc)"
       "${input_mlir}"
   RESULT_VARIABLE convert_optimized_again_result
   OUTPUT_FILE "${converted_optimized_again_mlir}"

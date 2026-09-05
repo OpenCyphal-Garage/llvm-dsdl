@@ -1,4 +1,0 @@
-civildrone.traffic.TrafficReport.1.0[<=4] reports
-civildrone.traffic.TrafficEvent.1.0[<=24] timeline
-uavcan.time.SynchronizedTimestamp.1.0 last_update
-@sealed

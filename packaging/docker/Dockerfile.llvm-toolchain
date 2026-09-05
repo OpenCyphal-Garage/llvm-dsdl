@@ -49,7 +49,7 @@ FROM alpine:${ALPINE_VERSION}
 
 ARG LLVM_REF
 LABEL org.opencontainers.image.title="llvm-dsdl LLVM/MLIR toolchain (musl)"
-LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, no target backends, musl"
+LABEL org.opencontainers.image.description="Static LLVM/MLIR ${LLVM_REF}, seven target backends, musl"
 
 RUN apk add --no-cache build-base cmake ninja git python3 py3-pip
 

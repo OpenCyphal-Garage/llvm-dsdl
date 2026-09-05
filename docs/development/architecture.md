@@ -25,7 +25,8 @@ The custom `dsdl` MLIR dialect is what separates frontend semantics from backend
 above it decides what a definition *means*; everything below it decides how that meaning is spelled in
 a particular language.
 
-- Schema and serialization plans are represented as explicit IR ops
+- Schema and serialization plans are represented as explicit IR ops, and every fact they carry is a
+  declared attribute the verifier checks
 - Passes stamp and validate lowered contract metadata
 - Backends consume facts from validated lowered state, never from raw IR
 
@@ -33,8 +34,9 @@ a particular language.
 
 1. `lower-dsdl-exec`
 2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
-3. `dsdl-legalize-endianness` — validates and stamps target endianness; performs no byte reordering
-4. optional optimization pipeline
+3. optional `optimize-dsdl-lowered-serdes`
+4. `build-dsdl-plan-bodies` — every plan becomes a serialize and a deserialize function of plan operations
+5. `convert-dsdl-to-emitc` for C; `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects
 
 ### Boundary guarantees
 

@@ -22,19 +22,19 @@ target_link_libraries(roundtrip PRIVATE lanyard)
 # --------------------------------------------------------------------------------------------------
 # The obj backend: the same types as a prebuilt archive rather than as sources.
 #
-# `-l obj` runs the C backend and then compiles it, handing back the headers, the objects, and a
-# `.a`. That is what you want when the generated code should be built once -- for a target triple
-# that is not this host, or by a party who ships the archive rather than the schema.
+# `-l obj` lowers the schema to LLVM IR and assembles it, handing back the headers and the
+# objects. No C is written and no compiler is invoked, which is what you want when the generated
+# code should be built once -- for a target that is not this host, or by a party who ships the
+# objects rather than the schema.
 #
 # One call, like the source build above: the headers are declared outputs published beside the
-# archive, so linking the target brings its include path with it.
+# objects, so linking the target brings its include path with it.
 dsdlc_generate(lanyard_prebuilt
   LANGUAGE  obj
   NAMESPACE "${CMAKE_CURRENT_SOURCE_DIR}/dsdl/lanyard"
-  # Required for obj. It selects the codegen strategy, not the wire format -- DSDL is little-endian
-  # on every target either way. Add --target-triple here to build the archive for a different one,
-  # after which it only links into a build using that same toolchain.
-  OPTIONS   --target-endianness little)
+  # Pass `--target-triple <triple>` in OPTIONS to assemble for something other than this host,
+  # after which the objects only link into a build using that same target.
+  )
 
 add_executable(roundtrip_prebuilt src/c/roundtrip.c)
 target_link_libraries(roundtrip_prebuilt PRIVATE lanyard_prebuilt)

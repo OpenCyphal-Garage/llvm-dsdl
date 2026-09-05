@@ -1,6 +1,0 @@
-@union
-uavcan.primitive.Empty.1.0 idle
-uavcan.primitive.String.1.0 phase_name
-uint8 phase_code
-civildrone.core.GeoPoint.1.0 anchor
-@sealed

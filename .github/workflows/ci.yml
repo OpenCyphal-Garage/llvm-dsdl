@@ -13,7 +13,7 @@ name: CI
 # same LLVM the release ships rather than whichever one the image happened to
 # carry. A tarball rather than an image baking the two together: a job's
 # container is resolved before any step could compose one, and republishing a
-# 13 GB image whenever the pin moved bought nothing — the prefix is 141 MB and
+# 13 GB image whenever the pin moved bought nothing — the prefix is 172 MB and
 # the toolshed is pulled either way. The Dafny job restores nothing; it proves a
 # model and never touches LLVM.
 #

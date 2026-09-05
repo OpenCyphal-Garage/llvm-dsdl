@@ -1,7 +1,0 @@
-@union
-civildrone.vision.segmentation.SegmentationPipelineEvent.1.0 segmentation_event
-civildrone.vision.scenegraph.ScenegraphPipelineEvent.1.0 scenegraph_event
-civildrone.vision.isp.IspPipelineEvent.1.0 isp_event
-civildrone.workload.VisionComposite132.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

@@ -1,6 +1,0 @@
-float32 max_speed_mps
-float32 max_altitude_m
-float32 max_climb_rate_mps
-float32 max_descend_rate_mps
-civildrone.core.GeoBounds.1.0 geofence
-@sealed

@@ -1,6 +1,0 @@
-@union
-civildrone.perception.PerceptionMetric.1.0 metric
-civildrone.perception.PerceptionState.1.0 state
-uavcan.primitive.String.1.0 text
-uavcan.register.Value.1.0 register_value
-@sealed

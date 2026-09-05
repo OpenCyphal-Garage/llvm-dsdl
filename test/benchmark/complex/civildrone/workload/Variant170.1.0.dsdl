@@ -1,7 +1,0 @@
-@union
-civildrone.mission.MissionEvent.1.0 mission_event
-civildrone.mapping.MappingEvent.1.0 mapping_event
-civildrone.safety.SafetyEvent.1.0 safety_event
-civildrone.workload.Composite170.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

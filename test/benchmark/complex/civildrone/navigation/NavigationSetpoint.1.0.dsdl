@@ -1,4 +1,0 @@
-float32[3] target_vector
-saturated int16 gain_q8
-bool enabled
-@sealed

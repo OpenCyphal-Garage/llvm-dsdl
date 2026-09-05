@@ -1,7 +1,0 @@
-@union
-civildrone.geofence.GeofenceEvent.1.0 geofence_event
-civildrone.networking.NetworkingEvent.1.0 networking_event
-civildrone.control.ControlEvent.1.0 control_event
-civildrone.workload.Composite355.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

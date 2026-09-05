@@ -1,5 +1,0 @@
-uint32 archive_id
-uint32 chunk_index
-civildrone.vision.stream.StreamFramePacket.1.0[<=8] packets
-truncated uint8[<=8192] compressed_index
-@sealed

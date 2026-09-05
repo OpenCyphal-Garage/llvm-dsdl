@@ -1,5 +1,0 @@
-uint32 edge_id
-civildrone.vision.mapping.MappingGraphNode.1.0 from_node
-civildrone.vision.feature.FeatureGraphNode.1.0 to_node
-float32 information
-@sealed

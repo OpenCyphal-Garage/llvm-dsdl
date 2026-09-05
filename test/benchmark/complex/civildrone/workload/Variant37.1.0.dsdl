@@ -1,7 +1,0 @@
-@union
-civildrone.survey.SurveyEvent.1.0 survey_event
-civildrone.diagnostics.DiagnosticsEvent.1.0 diagnostics_event
-civildrone.planner.PlannerEvent.1.0 planner_event
-civildrone.workload.Composite37.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

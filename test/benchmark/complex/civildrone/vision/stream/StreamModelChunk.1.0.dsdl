@@ -1,6 +1,0 @@
-uavcan.primitive.String.1.0 model_name
-uint32 model_version
-civildrone.vision.common.TensorShape.1.0 input_shape
-truncated uint8[<=4096] model_chunk
-uavcan.register.Value.1.0 checksum
-@sealed

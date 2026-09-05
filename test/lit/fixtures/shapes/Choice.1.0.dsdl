@@ -1,0 +1,5 @@
+@union
+uint8 z
+shapes.Nested.1.0 x
+uint8[<=4] y
+@sealed

@@ -1,6 +1,0 @@
-civildrone.autonomy.AutonomyMetric.1.0 metric
-civildrone.autonomy.AutonomySetpoint.1.0 setpoint
-civildrone.autonomy.AutonomyLimits.1.0 limits
-uavcan.diagnostic.Record.1.1 last_diagnostic
-uavcan.register.Value.1.0 tuning_register
-@sealed

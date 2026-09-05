@@ -1,5 +1,0 @@
-civildrone.vision.common.RegionOfInterest.1.0 roi
-civildrone.vision.common.ObjectClass.1.0 object_class
-float32 confidence
-float32[<=16] embedding
-@sealed

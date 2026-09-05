@@ -1,8 +1,0 @@
-@union
-civildrone.vision.localization.LocalizationFramePacket.1.0 packet
-civildrone.vision.localization.LocalizationFeatureSet.1.0 features
-civildrone.vision.localization.LocalizationDetectionSet.1.0 detections
-civildrone.vision.localization.LocalizationInferenceTensor.1.0 tensor
-civildrone.vision.localization.LocalizationGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

@@ -1,7 +1,0 @@
-@union
-civildrone.vision.recorder.RecorderPipelineEvent.1.0 recorder_event
-civildrone.vision.localization.LocalizationPipelineEvent.1.0 localization_event
-civildrone.vision.detection.DetectionPipelineEvent.1.0 detection_event
-civildrone.workload.VisionComposite398.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

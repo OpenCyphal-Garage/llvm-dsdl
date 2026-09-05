@@ -1,6 +1,0 @@
-@union
-civildrone.fleet.PlatformDigest.1.0 digest
-civildrone.fleet.FleetSnapshot.1.0 snapshot
-uavcan.diagnostic.Record.1.1 diagnostic
-uavcan.primitive.String.1.0 text
-@sealed

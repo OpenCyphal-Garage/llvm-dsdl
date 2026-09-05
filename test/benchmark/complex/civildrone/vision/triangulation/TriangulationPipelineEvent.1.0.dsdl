@@ -1,8 +1,0 @@
-@union
-civildrone.vision.triangulation.TriangulationFramePacket.1.0 packet
-civildrone.vision.triangulation.TriangulationFeatureSet.1.0 features
-civildrone.vision.triangulation.TriangulationDetectionSet.1.0 detections
-civildrone.vision.triangulation.TriangulationInferenceTensor.1.0 tensor
-civildrone.vision.triangulation.TriangulationGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

@@ -1,4 +1,0 @@
-uavcan.si.sample.velocity.Vector3.1.0 velocity
-uavcan.si.sample.pressure.Scalar.1.0 pressure
-uavcan.si.sample.temperature.Scalar.1.0 temperature
-@sealed

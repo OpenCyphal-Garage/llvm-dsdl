@@ -1,7 +1,0 @@
-@union
-civildrone.vision.objectstore.ObjectstorePipelineEvent.1.0 objectstore_event
-civildrone.vision.stream.StreamPipelineEvent.1.0 stream_event
-civildrone.vision.packetizer.PacketizerPipelineEvent.1.0 packetizer_event
-civildrone.workload.VisionComposite104.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

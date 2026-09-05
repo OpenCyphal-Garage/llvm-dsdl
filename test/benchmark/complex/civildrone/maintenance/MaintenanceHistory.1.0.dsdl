@@ -1,4 +1,0 @@
-civildrone.maintenance.MaintenanceReport.1.0[<=4] reports
-civildrone.maintenance.MaintenanceEvent.1.0[<=24] timeline
-uavcan.time.SynchronizedTimestamp.1.0 last_update
-@sealed

@@ -5,7 +5,7 @@ description: >
   A tarball rather than a container image, because a job's container is resolved
   before any step could compose one, and the alternative -- publishing the
   toolshed with the prefix baked in -- meant republishing a 13 GB image every
-  time the pin moved. The prefix is 141 MB compressed, and the toolshed is
+  time the pin moved. The prefix is 172 MB compressed, and the toolshed is
   pulled either way, so this costs no extra bandwidth and removes the coupling
   between ci.yml and the toolshed's version.
 

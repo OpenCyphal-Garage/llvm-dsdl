@@ -1,4 +1,0 @@
-civildrone.vision.reid.ReidGraphNode.1.0[<=1024] nodes
-civildrone.vision.reid.ReidGraphEdge.1.0[<=2048] edges
-civildrone.vision.tracking.TrackingGraphNode.1.0[<=64] upstream_nodes
-@sealed

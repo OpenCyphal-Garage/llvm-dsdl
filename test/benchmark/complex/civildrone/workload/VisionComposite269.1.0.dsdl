@@ -1,8 +1,0 @@
-civildrone.core.NodeIdentity.1.0 node
-civildrone.vision.triangulation.TriangulationBatchReport.1.0 triangulation_batch
-civildrone.vision.inference.InferenceDetectionSet.1.0 inference_detections
-civildrone.vision.camera.CameraGraphState.1.0 camera_graph
-civildrone.vision.VisionNodeSnapshot.1.0 snapshot
-civildrone.fleet.PlatformDigest.1.0 fleet_digest
-truncated uint8[<=4096] opaque_payload
-@sealed

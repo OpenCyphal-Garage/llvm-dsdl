@@ -1,7 +1,0 @@
-@union
-civildrone.vision.telemetryvision.TelemetryvisionPipelineEvent.1.0 telemetryvision_event
-civildrone.vision.transport.TransportPipelineEvent.1.0 transport_event
-civildrone.vision.depacketizer.DepacketizerPipelineEvent.1.0 depacketizer_event
-civildrone.workload.VisionComposite455.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

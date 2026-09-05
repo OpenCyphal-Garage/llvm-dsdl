@@ -13,7 +13,12 @@
 # RUN: cat %t/c/dsdl/wtag/BigTag_1_0.h | FileCheck %s --check-prefix=C_DECL
 # RUN: cat %t/c/dsdl/wtag/BigTag_1_0.c | FileCheck %s --check-prefix=C_STORE
 # C_DECL: uint16_t _tag_;
-# C_STORE: out_obj->_tag_ = (uint16_t)_tag_value;
+# Anchored on the property rather than the cast: the wire tag is read at 16 bits and
+# lands in `_tag_`, which C_DECL has already pinned as uint16_t. A hardcoded 8-bit read
+# fails the first line, and a store that misses the field fails the second, whichever
+# renderer produced the body.
+# C_STORE: dsdl_runtime_get_u16
+# C_STORE: ->_tag_ =
 
 # RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl --outdir %t/cpp
 # RUN: cat %t/cpp/dsdl/wtag/BigTag_1_0.hpp | FileCheck %s --check-prefix=CPP

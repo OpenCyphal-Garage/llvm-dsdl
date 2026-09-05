@@ -1,7 +1,0 @@
-@union
-civildrone.terrain.TerrainEvent.1.0 terrain_event
-civildrone.storage.StorageEvent.1.0 storage_event
-civildrone.propulsion.PropulsionEvent.1.0 propulsion_event
-civildrone.workload.Composite384.1.0 composite
-uavcan.primitive.String.1.0 text
-@sealed

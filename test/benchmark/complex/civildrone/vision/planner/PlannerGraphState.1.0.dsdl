@@ -1,4 +1,0 @@
-civildrone.vision.planner.PlannerGraphNode.1.0[<=1024] nodes
-civildrone.vision.planner.PlannerGraphEdge.1.0[<=2048] edges
-civildrone.vision.fusion.FusionGraphNode.1.0[<=64] upstream_nodes
-@sealed

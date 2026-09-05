@@ -1,5 +1,0 @@
-uint32 task_id
-civildrone.core.GeoBounds.1.0 area
-float32 desired_ground_resolution_m
-uavcan.primitive.String.1.0 sensor_profile
-@sealed

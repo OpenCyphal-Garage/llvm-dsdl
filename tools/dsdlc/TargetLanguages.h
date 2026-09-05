@@ -52,8 +52,7 @@ struct TargetLanguage final
 
     /// @brief Whether the backend writes a source tree the caller then builds.
     ///
-    /// False for `obj`, which stages and compiles its own sources: those are an internal detail of
-    /// the `.o`/`.a` it produces, not output the caller reads.
+    /// False for `obj`, which publishes headers beside objects already assembled.
     bool emitsSourceTree;
 };
 

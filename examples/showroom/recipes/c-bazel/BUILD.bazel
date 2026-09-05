@@ -25,7 +25,7 @@ cc_binary(
 )
 
 # The obj backend on the same path: the same one line in MODULE.bazel with `language = "obj"`. dsdlc
-# publishes the headers beside the archive, so the generated library wraps a cc_import and carries
+# publishes the headers beside the objects, so the generated library links the objects and carries
 # the include path.
 cc_binary(
     name = "roundtrip_prebuilt",

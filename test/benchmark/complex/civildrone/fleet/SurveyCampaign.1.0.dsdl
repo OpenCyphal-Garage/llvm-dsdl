@@ -1,4 +1,0 @@
-uint32 campaign_id
-civildrone.core.SurveyTask.1.0[<=256] tasks
-civildrone.core.SafetyEnvelope.1.0 global_safety
-@sealed

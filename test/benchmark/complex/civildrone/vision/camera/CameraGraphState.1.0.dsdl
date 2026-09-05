@@ -1,4 +1,0 @@
-civildrone.vision.camera.CameraGraphNode.1.0[<=1024] nodes
-civildrone.vision.camera.CameraGraphEdge.1.0[<=2048] edges
-civildrone.vision.telemetryvision.TelemetryvisionGraphNode.1.0[<=64] upstream_nodes
-@sealed

@@ -55,6 +55,7 @@ class ConvergenceReportRegressionTest(unittest.TestCase):
         "test/lit/lower-dsdl-serialization-union-missing-metadata-contract.mlir",
         "lib/Transforms/LoweredSerDesContractValidation.cpp",
         "lib/CodeGen/MlirLoweredFacts.cpp",
+        "lib/Transforms/BuildDSDLPlanBodies.cpp",
         "lib/Transforms/ConvertDSDLToEmitC.cpp",
         "include/llvmdsdl/CodeGen/WireOperationContract.h",
         "lib/CodeGen/LoweredRenderIR.cpp",
@@ -274,9 +275,9 @@ class ConvergenceReportRegressionTest(unittest.TestCase):
 
     def test_expected_shared_regression_is_detected(self) -> None:
         self._assert_classification_mutation_regression(
-            relative_path="lib/Transforms/ConvertDSDLToEmitC.cpp",
-            present_token="codegen_diagnostic_text::malformedUnionTagCategory()",
-            replacement_token="codegen_diagnostic_text::malformedUnionTagCategory_REMOVED()",
+            relative_path="lib/Transforms/BuildDSDLPlanBodies.cpp",
+            present_token="callErrorHelper(",
+            replacement_token="callErrorHelper_REMOVED(",
             expected_class_id="malformed_input_diagnostic_text",
         )
 

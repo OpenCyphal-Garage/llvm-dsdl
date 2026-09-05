@@ -1,8 +1,0 @@
-@union
-civildrone.vision.fusion.FusionFramePacket.1.0 packet
-civildrone.vision.fusion.FusionFeatureSet.1.0 features
-civildrone.vision.fusion.FusionDetectionSet.1.0 detections
-civildrone.vision.fusion.FusionInferenceTensor.1.0 tensor
-civildrone.vision.fusion.FusionGraphState.1.0 graph
-uavcan.diagnostic.Record.1.1 diagnostic
-@sealed

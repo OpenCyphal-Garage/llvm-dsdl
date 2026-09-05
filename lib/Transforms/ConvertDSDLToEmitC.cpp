@@ -8,9 +8,11 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements conversion from DSDL dialect ops to EmitC constructs.
+/// Converts plan bodies to EmitC, for the C backend.
 ///
-/// The pass lowers dialect-specific control flow and bit operations into EmitC-compatible forms for C code emission.
+/// `convert-dsdl-to-emitc` is the C target's answer to the operations `build-dsdl-plan-bodies`
+/// produces: a member access becomes a member expression, a bit access a runtime call, and a
+/// nested call the published symbol. It renders no body of its own.
 ///
 /// The line-building concatenations here carry NOLINT for
 /// performance-inefficient-string-concatenation. Each one spells out a line of generated
@@ -18,6 +20,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -27,23 +30,30 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Pass/PassRegistry.h>
+#include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Rewrite/FrozenRewritePatternSet.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Support/LLVM.h>
-#include <algorithm>
 #include <cstdint>
 #include <set>
-#include <sstream>
 #include <string>
-#include <vector>
 #include <cstddef>
+#include <optional>
+#include <cstring>
 #include <memory>
 #include <utility>
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 #include "llvmdsdl/Transforms/Passes.h"
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
-#include "llvmdsdl/CodeGen/SourceWriter.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -56,1336 +66,542 @@ namespace llvmdsdl
 namespace
 {
 
-SourceWriter makeEmitCWriter(std::ostringstream& out)
+constexpr llvm::StringRef kRuntimeCopyBits = "dsdl_runtime_copy_bits";
+
+/// @brief Converts the dialect's pointer onto the C path's pointer.
+///
+/// The plan body is built once on `!dsdl.ptr`; this is the half of that bargain the C backend
+/// pays. Object emission converts the same type to `!llvm.ptr`.
+///
+/// The conversion has to reach function signatures, not just operands, because `!dsdl.ptr` is
+/// how a plan states what it was handed. An operand-only rewrite would leave the argument type
+/// behind and no EmitC operation accepts it.
+mlir::TypeConverter makeBitCopyTypeConverter()
 {
-    return SourceWriter{out, IndentPolicy::spaces(2)};
+    mlir::TypeConverter converter;
+    converter.addConversion([](mlir::Type type) { return type; });
+    converter.addConversion([](mlir::dsdl::OpaqueType named) -> mlir::Type {
+        return mlir::emitc::OpaqueType::get(named.getContext(), named.getName());
+    });
+    converter.addConversion([&converter](mlir::dsdl::PtrType ptr) -> mlir::Type {
+        return mlir::emitc::PointerType::get(converter.convertType(ptr.getPointee()));
+    });
+    return converter;
 }
 
-std::int64_t nonNegative(std::int64_t value)
+/// @brief Rewrites a bulk bit copy into `dsdl_runtime_copy_bits`.
+struct BitWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitWriteOp>
 {
-    return std::max<std::int64_t>(value, 0);
-}
+    using mlir::OpConversionPattern<mlir::dsdl::BitWriteOp>::OpConversionPattern;
 
-bool isVariableArrayKind(llvm::StringRef arrayKind)
-{
-    return arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive";
-}
-
-bool isSupportedArrayKind(llvm::StringRef arrayKind)
-{
-    return arrayKind == "none" || arrayKind == "fixed" || isVariableArrayKind(arrayKind);
-}
-
-std::int64_t ioStepBits(mlir::Operation* ioOp)
-{
-    if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("lowered_bits"))
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::BitWriteOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
     {
-        return nonNegative(bits.getInt());
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr(kRuntimeCopyBits),
+                                                               mlir::ValueRange{adaptor.getDestination(),
+                                                                                adaptor.getDestinationBitOffset(),
+                                                                                adaptor.getWidth(),
+                                                                                adaptor.getSource(),
+                                                                                adaptor.getSourceBitOffset()});
+        return mlir::success();
     }
-    if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("max_bits"))
-    {
-        return nonNegative(bits.getInt());
-    }
-    return 0;
-}
-
-enum class PlanStepKind
-{
-    Align,
-    Padding,
-    Field
 };
 
-struct PlanStep final
+/// @brief Rewrites a bulk bit read into `dsdl_runtime_get_bits`, which zero-extends a run
+///        reaching past the buffer rather than refusing it.
+struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitReadOp>
 {
-    PlanStepKind kind{PlanStepKind::Field};
-    std::int64_t bits{0};
-    std::string  name;
-    std::string  cName;
-    std::string  scalarCategory;
-    std::string  castMode;
-    std::string  arrayKind;
-    std::int64_t bitLength{0};
-    std::int64_t arrayCapacity{0};
-    std::int64_t arrayLengthPrefixBits{0};
-    std::int64_t alignmentBits{1};
-    std::int64_t unionOptionIndex{0};
-    std::int64_t unionTagBits{0};
-    std::string  compositeCTypeName;
-    std::string  serUnsignedHelper;
-    std::string  deserUnsignedHelper;
-    std::string  serSignedHelper;
-    std::string  deserSignedHelper;
-    std::string  serFloatHelper;
-    std::string  deserFloatHelper;
-    std::string  serArrayLengthPrefixHelper;
-    std::string  deserArrayLengthPrefixHelper;
-    std::string  arrayLengthValidateHelper;
-    std::string  delimiterValidateHelper;
-    bool         compositeSealed{true};
-    std::int64_t compositeExtentBits{0};
+    using mlir::OpConversionPattern<mlir::dsdl::BitReadOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::BitReadOp            op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_get_bits"),
+                                                               mlir::ValueRange{adaptor.getDestination(),
+                                                                                adaptor.getBuffer(),
+                                                                                adaptor.getBufferSizeBytes(),
+                                                                                adaptor.getBitOffset(),
+                                                                                adaptor.getWidth()});
+        return mlir::success();
+    }
 };
 
-std::vector<PlanStep> collectPlanSteps(mlir::Operation* plan)
+struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNullOp>
 {
-    std::vector<PlanStep> steps;
-    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
-    {
-        return steps;
-    }
-    for (mlir::Operation& op : plan->getRegion(0).front())
-    {
-        if (op.getName().getStringRef() == "dsdl.align")
-        {
-            const auto bits = op.getAttrOfType<mlir::IntegerAttr>("bits");
-            PlanStep   alignStep;
-            alignStep.kind = PlanStepKind::Align;
-            alignStep.bits = bits ? nonNegative(bits.getInt()) : 1;
-            steps.push_back(std::move(alignStep));
-            continue;
-        }
-        if (op.getName().getStringRef() != "dsdl.io")
-        {
-            continue;
-        }
+    using mlir::OpConversionPattern<mlir::dsdl::IsNullOp>::OpConversionPattern;
 
-        const std::int64_t bits     = ioStepBits(&op);
-        const auto         kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-        const auto         nameAttr = op.getAttrOfType<mlir::StringAttr>("name");
-        const auto         kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-        if (kind == "padding")
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::IsNullOp             op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Type pointerType = adaptor.getPointer().getType();
+        auto null = mlir::emitc::ConstantOp::create(rewriter,
+                                                    op.getLoc(),
+                                                    pointerType,
+                                                    mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "NULL"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CmpOp>(op,
+                                                        rewriter.getI1Type(),
+                                                        mlir::emitc::CmpPredicate::eq,
+                                                        adaptor.getPointer(),
+                                                        null);
+        return mlir::success();
+    }
+};
+
+/// @brief Addresses `pointer[0]`, which is how EmitC spells a dereference that can be assigned.
+///
+/// `emitc.apply "*"` yields an rvalue and cannot be written through, so both directions go via
+/// a zero subscript.
+mlir::Value scalarSlot(mlir::ConversionPatternRewriter& rewriter, mlir::Location loc, mlir::Value pointer)
+{
+    auto indexType = mlir::emitc::OpaqueType::get(rewriter.getContext(), "size_t");
+    auto zero      = mlir::emitc::ConstantOp::create(rewriter,
+                                                     loc,
+                                                     indexType,
+                                                     mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "0"));
+    return mlir::emitc::SubscriptOp::create(rewriter,
+                                            loc,
+                                            mlir::cast<mlir::TypedValue<mlir::emitc::PointerType>>(pointer),
+                                            zero);
+}
+
+struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl::BufferOrEmptyOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::BufferOrEmptyOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::BufferOrEmptyOp      op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc         = op.getLoc();
+        const mlir::Type     pointerType = adaptor.getBuffer().getType();
+        auto null   = mlir::emitc::ConstantOp::create(rewriter,
+                                                      loc,
+                                                      pointerType,
+                                                      mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "NULL"));
+        auto isNull = mlir::emitc::CmpOp::create(rewriter,
+                                                 loc,
+                                                 rewriter.getI1Type(),
+                                                 mlir::emitc::CmpPredicate::eq,
+                                                 adaptor.getBuffer(),
+                                                 null);
+        // A string literal is the shortest expression of "somewhere readable holding no
+        // bytes" that C guarantees; the pointer is never dereferenced past its terminator
+        // because the capacity travelling with it is zero.
+        auto empty = mlir::emitc::ConstantOp::create(rewriter,
+                                                     loc,
+                                                     pointerType,
+                                                     mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                                  "(const uint8_t*)\"\""));
+        rewriter.replaceOpWithNewOp<mlir::emitc::ConditionalOp>(op, pointerType, isNull, empty, adaptor.getBuffer());
+        return mlir::success();
+    }
+};
+
+struct LoadScalarLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadScalarOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::LoadScalarOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadScalarOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc    = op.getLoc();
+        const mlir::Value    slot   = scalarSlot(rewriter, loc, adaptor.getPointer());
+        const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value          loaded = mlir::emitc::LoadOp::create(rewriter, loc, stored, slot);
+        if (stored != op.getValue().getType())
         {
-            steps.push_back(
-                PlanStep{PlanStepKind::Padding,
-                         bits,
-                         nameAttr ? nameAttr.getValue().str() : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("c_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("c_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("scalar_category")
-                             ? op.getAttrOfType<mlir::StringAttr>("scalar_category").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("cast_mode")
-                             ? op.getAttrOfType<mlir::StringAttr>("cast_mode").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("array_kind")
-                             ? op.getAttrOfType<mlir::StringAttr>("array_kind").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::IntegerAttr>("bit_length")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("bit_length").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_capacity").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("alignment_bits").getInt()
-                             : 1,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_option_index")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_option_index").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::StringAttr>("composite_c_type_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("composite_c_type_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper").getValue().str()
-                             : std::string{}});
-            if (auto sealed = op.getAttrOfType<mlir::BoolAttr>("composite_sealed"))
-            {
-                steps.back().compositeSealed = sealed.getValue();
-            }
-            if (auto extent = op.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
-            {
-                steps.back().compositeExtentBits = nonNegative(extent.getInt());
-            }
+            loaded = mlir::emitc::CastOp::create(rewriter, loc, op.getValue().getType(), loaded);
+        }
+        rewriter.replaceOp(op, loaded);
+        return mlir::success();
+    }
+};
+
+struct StoreScalarLowering final : public mlir::OpConversionPattern<mlir::dsdl::StoreScalarOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::StoreScalarOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreScalarOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc    = op.getLoc();
+        const mlir::Value    slot   = scalarSlot(rewriter, loc, adaptor.getPointer());
+        const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value          value  = adaptor.getValue();
+        if (stored != value.getType())
+        {
+            value = mlir::emitc::CastOp::create(rewriter, loc, stored, value);
+        }
+        rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, value);
+        return mlir::success();
+    }
+};
+
+/// @brief Names the runtime primitive a scalar access lowers to.
+///
+/// The runtime spells one primitive per value shape rather than one generic call, so the
+/// selection is by value type, width and signedness together. Widths that are not a standard
+/// integer size go through the `xx` primitives, which take the width as an argument.
+std::string runtimePrimitiveName(const bool write, mlir::Type valueType, const std::int64_t width, const bool isSigned)
+{
+    if (mlir::isa<mlir::FloatType>(valueType))
+    {
+        // Selected by the field's width, not the value's. A float16 field travels as a C
+        // `float` and is written by set_f16; choosing on the carrier would write 32 bits into
+        // a 16-bit slot and report the buffer too small.
+        return std::string(write ? "dsdl_runtime_set_f" : "dsdl_runtime_get_f") + std::to_string(width);
+    }
+    if (width == 1 && !isSigned)
+    {
+        return write ? "dsdl_runtime_set_bit" : "dsdl_runtime_get_bit";
+    }
+    if (write)
+    {
+        return isSigned ? "dsdl_runtime_set_ixx" : "dsdl_runtime_set_uxx";
+    }
+    // Reads answer in a concrete width, so the primitive is chosen by the smallest standard
+    // integer that holds the field rather than by the field width itself.
+    const unsigned holder = holderWidthFor(width);
+    return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holder);
+}
+
+/// @brief Materialises an lvalue holding @p pointer.
+///
+/// `emitc.member_of_ptr` takes an lvalue of pointer type, and a function parameter is an
+/// rvalue, so a member access needs the pointer parked in a variable first.
+mlir::Value pointerSlot(mlir::ConversionPatternRewriter& rewriter, mlir::Location loc, mlir::Value pointer)
+{
+    auto slotType = mlir::emitc::LValueType::get(pointer.getType());
+    auto slot     = mlir::emitc::VariableOp::create(rewriter,
+                                                    loc,
+                                                    slotType,
+                                                    mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
+    mlir::emitc::AssignOp::create(rewriter, loc, slot, pointer);
+    return slot;
+}
+
+struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::WriteBitsOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc      = op.getLoc();
+        const auto           width    = static_cast<std::int64_t>(op.getWidth());
+        const bool           isSigned = op.getIsSigned();
+        const std::string    callee   = runtimePrimitiveName(true, op.getValue().getType(), width, isSigned);
+
+        mlir::SmallVector<mlir::Value, 5> args{adaptor.getBuffer(),
+                                               adaptor.getBufferSizeBytes(),
+                                               adaptor.getBitOffset(),
+                                               adaptor.getValue()};
+        // Only the width-carrying integer primitives take a length; the bit and float ones
+        // encode it in the name they were selected by.
+        if (callee == "dsdl_runtime_set_uxx" || callee == "dsdl_runtime_set_ixx")
+        {
+            args.push_back(mlir::emitc::ConstantOp::create(rewriter,
+                                                           loc,
+                                                           rewriter.getIntegerType(8),
+                                                           rewriter.getI8IntegerAttr(static_cast<std::int8_t>(width))));
+        }
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{rewriter.getIntegerType(8)},
+                                                               rewriter.getStringAttr(callee),
+                                                               args);
+        return mlir::success();
+    }
+};
+
+struct ReadBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ReadBitsOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc    = op.getLoc();
+        const auto           width  = static_cast<std::int64_t>(op.getWidth());
+        const std::string    callee = runtimePrimitiveName(false, op.getValue().getType(), width, op.getIsSigned());
+
+        mlir::SmallVector<mlir::Value, 4> args{adaptor.getBuffer(),
+                                               adaptor.getBufferSizeBytes(),
+                                               adaptor.getBitOffset()};
+        if (callee.contains("_get_u") || callee.contains("_get_i"))
+        {
+            args.push_back(mlir::emitc::ConstantOp::create(rewriter,
+                                                           loc,
+                                                           rewriter.getIntegerType(8),
+                                                           rewriter.getI8IntegerAttr(static_cast<std::int8_t>(width))));
+        }
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{op.getValue().getType()},
+                                                               rewriter.getStringAttr(callee),
+                                                               args);
+        return mlir::success();
+    }
+};
+
+/// @brief Walks a member path, answering the lvalue the last name designates.
+///
+/// The first hop leaves a pointer and uses `member_of_ptr`; the rest are within a value and
+/// use `member`. Every hop but the last lands on a struct whose type this pass does not know,
+/// so the intermediate lvalues are opaque -- C resolves them, and nothing here has to.
+mlir::Value walkMemberPath(mlir::ConversionPatternRewriter& rewriter,
+                           mlir::Location                   loc,
+                           mlir::Value                      object,
+                           mlir::ArrayAttr                  path,
+                           mlir::Type                       leafType)
+{
+    mlir::Value cursor = pointerSlot(rewriter, loc, object);
+    for (std::size_t hop = 0; hop < path.size(); ++hop)
+    {
+        const bool       last    = (hop + 1 == path.size());
+        const mlir::Type hopType = last ? leafType : mlir::emitc::OpaqueType::get(rewriter.getContext(), "struct");
+        auto             member  = mlir::cast<mlir::StringAttr>(path[hop]);
+        if (hop == 0)
+        {
+            cursor = mlir::emitc::MemberOfPtrOp::create(rewriter,
+                                                        loc,
+                                                        mlir::emitc::LValueType::get(hopType),
+                                                        member,
+                                                        cursor);
         }
         else
         {
-            steps.push_back(
-                PlanStep{PlanStepKind::Field,
-                         bits,
-                         nameAttr ? nameAttr.getValue().str() : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("c_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("c_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("scalar_category")
-                             ? op.getAttrOfType<mlir::StringAttr>("scalar_category").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("cast_mode")
-                             ? op.getAttrOfType<mlir::StringAttr>("cast_mode").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("array_kind")
-                             ? op.getAttrOfType<mlir::StringAttr>("array_kind").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::IntegerAttr>("bit_length")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("bit_length").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_capacity").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("alignment_bits").getInt()
-                             : 1,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_option_index")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_option_index").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
-                             ? op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits").getInt()
-                             : 0,
-                         op.getAttrOfType<mlir::StringAttr>("composite_c_type_name")
-                             ? op.getAttrOfType<mlir::StringAttr>("composite_c_type_name").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_unsigned_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_signed_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_float_helper").getValue().str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_ser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_deser_array_length_prefix_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_array_length_validate_helper")
-                                   .getValue()
-                                   .str()
-                             : std::string{},
-                         op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper")
-                             ? op.getAttrOfType<mlir::StringAttr>("lowered_delimiter_validate_helper").getValue().str()
-                             : std::string{}});
-            if (auto sealed = op.getAttrOfType<mlir::BoolAttr>("composite_sealed"))
-            {
-                steps.back().compositeSealed = sealed.getValue();
-            }
-            if (auto extent = op.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
-            {
-                steps.back().compositeExtentBits = nonNegative(extent.getInt());
-            }
+            cursor =
+                mlir::emitc::MemberOp::create(rewriter, loc, mlir::emitc::LValueType::get(hopType), member, cursor);
         }
     }
-    return steps;
+    return cursor;
 }
 
-std::string renderGenericSerializeFunction(llvm::StringRef              functionName,
-                                           llvm::StringRef              cTypeName,
-                                           llvm::StringRef              cSerializeSymbol,
-                                           llvm::StringRef              fullName,
-                                           llvm::StringRef              sectionName,
-                                           std::int64_t                 minBits,
-                                           std::int64_t                 maxBits,
-                                           const std::vector<PlanStep>& steps,
-                                           llvm::StringRef              capacityCheckSymbol)
+struct LoadMemberLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadMemberOp>
 {
-    const std::string  functionNameText     = functionName.str();
-    const std::string  cTypeNameText        = cTypeName.str();
-    const std::string  cSerializeSymbolText = cSerializeSymbol.str();
-    const std::string  fullNameText         = fullName.str();
-    const std::string  sectionNameText      = sectionName.str();
-    std::ostringstream out;
-    SourceWriter       w = makeEmitCWriter(out);
-    if (cTypeNameText.empty())
-    {
-        out << "int8_t " << functionNameText
-            << "(const void* obj, uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    else
-    {
-        out << "int8_t " << functionNameText << "(const " << cTypeNameText
-            << "* const obj, uint8_t* buffer, size_t* const inout_buffer_size_bytes)\n";
-    }
-    w.open("{");
-    out << "  // IR section: " << fullNameText;
-    if (!sectionNameText.empty())
-    {
-        out << " (" << sectionNameText << ")";
-    }
-    out << ", min_bits=" << minBits << ", max_bits=" << maxBits << ".\n";
-    if (!cSerializeSymbolText.empty())
-    {
-        out << "  // Public C API symbol: " << cSerializeSymbolText << "\n";
-    }
-    out << "  // Generic bitstream mapping: non-padding fields are packed in\n";
-    out << "  // declaration order from/to object memory as contiguous bits.\n";
-    out << "  if ((obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == "
-           "NULL)) {\n";
-    out << "    return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;\n";
-    out << "  }\n";
-    out << "  const uint8_t* const obj_bytes = (const uint8_t*)obj;\n";
-    out << "  const size_t capacity_bits = (*inout_buffer_size_bytes) * 8U;\n";
-    out << "  const int8_t _err_capacity = " << capacityCheckSymbol.str() << "((int64_t)capacity_bits);\n";
-    out << "  if (_err_capacity < 0) {\n";
-    out << "    return _err_capacity;\n";
-    out << "  }\n";
-    out << "  size_t offset_bits = 0U;\n";
-    out << "  size_t obj_offset_bits = 0U;\n";
-    out << "  (void)obj_bytes;\n";
-    out << "  (void)obj_offset_bits;\n";
-    for (std::size_t index = 0; index < steps.size(); ++index)
-    {
-        const auto& step = steps[index];
-        if (step.kind == PlanStepKind::Align)
-        {
-            if (step.bits > 1)
-            {
-                out << "  offset_bits = ((offset_bits + " << (step.bits - 1) << "U) / " << step.bits << "U) * "
-                    << step.bits << "U;\n";
-            }
-            continue;
-        }
+    using mlir::OpConversionPattern<mlir::dsdl::LoadMemberOp>::OpConversionPattern;
 
-        out << "  {\n";
-        out << "    const size_t bits_" << index << " = " << nonNegative(step.bits) << "U;\n";
-        if (!step.name.empty())
-        {
-            out << "    /* " << step.name << " */\n";
-        }
-        out << "    if (bits_" << index << " > 0U) {\n";
-        out << "      if (offset_bits + bits_" << index << " > capacity_bits) {\n";
-        out << "        return "
-               "-(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;\n";
-        out << "      }\n";
-        if (step.kind == PlanStepKind::Padding)
-        {
-            out << "      for (size_t bit_" << index << " = 0U; bit_" << index << " < bits_" << index << "; ++bit_"
-                << index << ") {\n";
-            out << "        dsdl_runtime_set_bit(buffer, *inout_buffer_size_bytes, "
-                   "offset_bits + bit_"
-                << index << ", false);\n";
-            out << "      }\n";
-        }
-        else
-        {
-            out << "      dsdl_runtime_copy_bits(buffer, offset_bits, bits_" << index
-                << ", obj_bytes, obj_offset_bits);\n";
-            out << "      obj_offset_bits += bits_" << index << ";\n";
-        }
-        out << "      offset_bits += bits_" << index << ";\n";
-        out << "    }\n";
-        out << "  }\n";
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadMemberOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value slot =
+            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), op.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::LoadOp>(op, op.getValue().getType(), slot);
+        return mlir::success();
     }
-    out << "  *inout_buffer_size_bytes = (offset_bits + 7U) / 8U;\n";
-    out << "  return (int8_t)DSDL_RUNTIME_SUCCESS;\n";
-    out << "}\n";
-    return out.str();
-}
+};
 
-std::string renderGenericDeserializeFunction(llvm::StringRef              functionName,
-                                             llvm::StringRef              cTypeName,
-                                             llvm::StringRef              cDeserializeSymbol,
-                                             llvm::StringRef              fullName,
-                                             llvm::StringRef              sectionName,
-                                             std::int64_t                 minBits,
-                                             std::int64_t                 maxBits,
-                                             const std::vector<PlanStep>& steps)
+struct StoreMemberLowering final : public mlir::OpConversionPattern<mlir::dsdl::StoreMemberOp>
 {
-    const std::string  functionNameText       = functionName.str();
-    const std::string  cTypeNameText          = cTypeName.str();
-    const std::string  cDeserializeSymbolText = cDeserializeSymbol.str();
-    const std::string  fullNameText           = fullName.str();
-    const std::string  sectionNameText        = sectionName.str();
-    std::ostringstream out;
-    SourceWriter       w = makeEmitCWriter(out);
-    if (cTypeNameText.empty())
-    {
-        out << "int8_t " << functionNameText
-            << "(void* out_obj, const uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    else
-    {
-        out << "int8_t " << functionNameText << "(" << cTypeNameText
-            << "* const out_obj, const uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    w.open("{");
-    out << "  // IR section: " << fullNameText;
-    if (!sectionNameText.empty())
-    {
-        out << " (" << sectionNameText << ")";
-    }
-    out << ", min_bits=" << minBits << ", max_bits=" << maxBits << ".\n";
-    if (!cDeserializeSymbolText.empty())
-    {
-        out << "  // Public C API symbol: " << cDeserializeSymbolText << "\n";
-    }
-    out << "  // Generic bitstream mapping: non-padding fields are unpacked in\n";
-    out << "  // declaration order into object memory as contiguous bits.\n";
-    out << "  if ((out_obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes "
-           "== NULL)) {\n";
-    out << "    return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;\n";
-    out << "  }\n";
-    out << "  uint8_t* const obj_bytes = (uint8_t*)out_obj;\n";
-    out << "  const size_t capacity_bits = (*inout_buffer_size_bytes) * 8U;\n";
-    out << "  const size_t required_bits = " << nonNegative(maxBits) << "U;\n";
-    out << "  const size_t obj_capacity_bytes = (required_bits + 7U) / 8U;\n";
-    out << "  size_t offset_bits = 0U;\n";
-    out << "  size_t obj_offset_bits = 0U;\n";
-    out << "  (void)obj_bytes;\n";
-    out << "  (void)obj_capacity_bytes;\n";
-    out << "  (void)obj_offset_bits;\n";
-    for (std::size_t index = 0; index < steps.size(); ++index)
-    {
-        const auto& step = steps[index];
-        if (step.kind == PlanStepKind::Align)
-        {
-            if (step.bits > 1)
-            {
-                out << "  offset_bits = ((offset_bits + " << (step.bits - 1) << "U) / " << step.bits << "U) * "
-                    << step.bits << "U;\n";
-            }
-            continue;
-        }
+    using mlir::OpConversionPattern<mlir::dsdl::StoreMemberOp>::OpConversionPattern;
 
-        out << "  {\n";
-        out << "    const size_t bits_" << index << " = " << nonNegative(step.bits) << "U;\n";
-        if (!step.name.empty())
-        {
-            out << "    /* " << step.name << " */\n";
-        }
-        out << "    if (bits_" << index << " > 0U) {\n";
-        if (step.kind == PlanStepKind::Field)
-        {
-            out << "      const size_t available_bits_" << index
-                << " = (offset_bits < capacity_bits) ? (capacity_bits - offset_bits) : "
-                   "0U;\n";
-            out << "      const size_t copy_bits_" << index << " = (available_bits_" << index << " < bits_" << index
-                << ") ? available_bits_" << index << " : bits_" << index << ";\n";
-            out << "      if (copy_bits_" << index << " > 0U) {\n";
-            out << "        dsdl_runtime_copy_bits(obj_bytes, obj_offset_bits, "
-                   "copy_bits_"
-                << index << ", buffer, offset_bits);\n";
-            out << "      }\n";
-            out << "      if (copy_bits_" << index << " < bits_" << index << ") {\n";
-            out << "        const size_t zero_bits_" << index << " = bits_" << index << " - copy_bits_" << index
-                << ";\n";
-            out << "        for (size_t bit_" << index << " = 0U; bit_" << index << " < zero_bits_" << index
-                << "; ++bit_" << index << ") {\n";
-            out << "          dsdl_runtime_set_bit(obj_bytes, obj_capacity_bytes, "
-                   "obj_offset_bits + copy_bits_"
-                << index << " + bit_" << index << ", false);\n";
-            out << "        }\n";
-            out << "      }\n";
-            out << "      obj_offset_bits += bits_" << index << ";\n";
-        }
-        out << "      offset_bits += bits_" << index << ";\n";
-        out << "    }\n";
-        out << "  }\n";
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreMemberOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value slot =
+            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), adaptor.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, adaptor.getValue());
+        return mlir::success();
     }
-    out << "  const size_t consumed_bits = (offset_bits < capacity_bits) "
-           "? offset_bits : capacity_bits;\n";
-    out << "  *inout_buffer_size_bytes = consumed_bits / 8U;\n";
-    out << "  return (int8_t)DSDL_RUNTIME_SUCCESS;\n";
-    out << "}\n";
-    return out.str();
-}
+};
 
-void emitMalformedCategoryComment(SourceWriter& w, const std::string& category)
+/// @brief Addresses one element of the array storage a path reaches.
+mlir::Value elementSlot(mlir::ConversionPatternRewriter& rewriter,
+                        mlir::Location                   loc,
+                        mlir::Value                      object,
+                        mlir::ArrayAttr                  path,
+                        mlir::Value                      index,
+                        llvm::StringRef                  elementTypeName)
 {
-    w.line("/* " + category + " */");
+    // The member is reached at whatever qualification it is declared with -- a serializer
+    // holds the object by pointer-to-const -- and then the pointer is taken unqualified. The
+    // element read out of it is assigned to a variable, and EmitC declares its variables
+    // before assigning them, which a const-qualified declaration does not survive.
+    auto*             ctx         = rewriter.getContext();
+    const std::string bare        = elementTypeName.starts_with("const ")
+                                        ? elementTypeName.drop_front(std::strlen("const ")).str()
+                                        : elementTypeName.str();
+    auto              declared    = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, elementTypeName));
+    auto              unqualified = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, bare));
+
+    auto        storageSlot = walkMemberPath(rewriter, loc, object, path, declared);
+    mlir::Value storage     = mlir::emitc::LoadOp::create(rewriter, loc, declared, storageSlot);
+    if (declared != unqualified)
+    {
+        storage = mlir::emitc::CastOp::create(rewriter, loc, unqualified, storage);
+    }
+    return mlir::emitc::SubscriptOp::create(rewriter,
+                                            loc,
+                                            mlir::cast<mlir::TypedValue<mlir::emitc::PointerType>>(storage),
+                                            index);
 }
 
-bool supportsTypedFieldStep(const PlanStep& step)
+struct LoadElementLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadElementOp>
 {
-    if (step.kind != PlanStepKind::Field)
-    {
-        return true;
-    }
-    if (step.cName.empty())
-    {
-        return false;
-    }
+    using mlir::OpConversionPattern<mlir::dsdl::LoadElementOp>::OpConversionPattern;
 
-    if (!isSupportedArrayKind(step.arrayKind))
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadElementOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
     {
-        return false;
-    }
-    if (step.arrayKind != "none")
-    {
-        if (step.arrayCapacity < 0)
+        const mlir::Location loc = op.getLoc();
+        const mlir::Value    slot =
+            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
+        const mlir::Type stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value      loaded = mlir::emitc::LoadOp::create(rewriter, loc, stored, slot);
+        if (stored != op.getValue().getType())
         {
-            return false;
+            loaded = mlir::emitc::CastOp::create(rewriter, loc, op.getValue().getType(), loaded);
         }
-        if (isVariableArrayKind(step.arrayKind) && (step.arrayLengthPrefixBits <= 0 || step.arrayLengthPrefixBits > 64))
-        {
-            return false;
-        }
+        rewriter.replaceOp(op, loaded);
+        return mlir::success();
     }
+};
 
-    if (step.scalarCategory == "void")
-    {
-        return false;
-    }
-
-    if (step.scalarCategory == "composite")
-    {
-        return !step.compositeCTypeName.empty();
-    }
-    if (step.scalarCategory == "bool")
-    {
-        return step.bitLength == 1;
-    }
-    if (step.scalarCategory == "byte" || step.scalarCategory == "utf8")
-    {
-        return step.bitLength == 8;
-    }
-    if (step.scalarCategory == "unsigned" || step.scalarCategory == "signed")
-    {
-        return step.bitLength >= 1 && step.bitLength <= 64;
-    }
-    if (step.scalarCategory == "float")
-    {
-        return step.bitLength == 16 || step.bitLength == 32 || step.bitLength == 64;
-    }
-    return false;
-}
-
-bool supportsTypedLowering(const std::vector<PlanStep>& steps, const bool isUnion, const std::int64_t unionTagBits)
+struct StoreElementLowering final : public mlir::OpConversionPattern<mlir::dsdl::StoreElementOp>
 {
-    if (isUnion && (unionTagBits <= 0 || unionTagBits > 64))
-    {
-        return false;
-    }
+    using mlir::OpConversionPattern<mlir::dsdl::StoreElementOp>::OpConversionPattern;
 
-    std::set<std::int64_t> unionOptions;
-    for (const auto& step : steps)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreElementOp       op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
     {
-        if (!supportsTypedFieldStep(step))
+        const mlir::Location loc = op.getLoc();
+        const mlir::Value    slot =
+            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
+        const mlir::Type stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value      value  = adaptor.getValue();
+        if (stored != value.getType())
         {
-            return false;
+            value = mlir::emitc::CastOp::create(rewriter, loc, stored, value);
         }
-        if (step.kind == PlanStepKind::Align && step.bits <= 0)
-        {
-            return false;
-        }
-        if (isUnion && step.kind == PlanStepKind::Field)
-        {
-            unionOptions.insert(step.unionOptionIndex);
-        }
+        rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, value);
+        return mlir::success();
     }
-    return !(isUnion && unionOptions.empty());
-}
+};
 
-void emitDeserializeAlign(SourceWriter& w, const std::int64_t alignmentBits)
+/// @brief Takes the address of an lvalue, which is how a plan hands storage to a callee.
+mlir::Value addressOf(mlir::ConversionPatternRewriter& rewriter,
+                      mlir::Location                   loc,
+                      mlir::Value                      lvalue,
+                      mlir::Type                       pointerType)
 {
-    if (alignmentBits <= 1)
-    {
-        return;
-    }
-    w.line("offset_bits = ((offset_bits + " + std::to_string(alignmentBits - 1) + "U) / " +
-           std::to_string(alignmentBits) + "U) * " + std::to_string(alignmentBits) + "U;");
+    return mlir::emitc::ApplyOp::create(rewriter, loc, pointerType, "&", lvalue);
 }
 
-void emitSerializeAlign(SourceWriter& w, const std::int64_t alignmentBits, const std::string& tag)
+struct MemberAddrLowering final : public mlir::OpConversionPattern<mlir::dsdl::MemberAddrOp>
 {
-    if (alignmentBits <= 1)
-    {
-        return;
-    }
-    const std::string alignedName = "_aligned_offset_bits_" + tag;
-    const std::string padBitName  = "_pad_bit_" + tag;
-    const std::string errName     = "_err_align_" + tag;
-    w.line("const size_t " + alignedName + " = ((offset_bits + " + std::to_string(alignmentBits - 1) + "U) / " +
-           std::to_string(alignmentBits) + "U) * " + std::to_string(alignmentBits) + "U;");
-    w.open("for (size_t " + padBitName + " = offset_bits; " + padBitName + " < " + alignedName + "; ++" + padBitName +
-           ") {");
-    w.line("const int8_t " + errName + " = dsdl_runtime_set_bit(buffer, capacity_bytes, " + padBitName + ", false);");
-    w.open("if (" + errName + " < 0) {");
-    w.line("return " + errName + ";");
-    w.close("}");
-    w.close("}");
-    w.line("offset_bits = " + alignedName + ";");
-}
+    using mlir::OpConversionPattern<mlir::dsdl::MemberAddrOp>::OpConversionPattern;
 
-std::string unsignedGetterForBits(const std::int64_t bits)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::MemberAddrOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        auto pointerType =
+            mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
+        const mlir::Value slot =
+            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), pointerType.getPointee());
+        rewriter.replaceOp(op, addressOf(rewriter, op.getLoc(), slot, pointerType));
+        return mlir::success();
+    }
+};
+
+struct ElementAddrLowering final : public mlir::OpConversionPattern<mlir::dsdl::ElementAddrOp>
 {
-    if (bits <= 8)
-    {
-        return "dsdl_runtime_get_u8";
-    }
-    if (bits <= 16)
-    {
-        return "dsdl_runtime_get_u16";
-    }
-    if (bits <= 32)
-    {
-        return "dsdl_runtime_get_u32";
-    }
-    return "dsdl_runtime_get_u64";
-}
+    using mlir::OpConversionPattern<mlir::dsdl::ElementAddrOp>::OpConversionPattern;
 
-/// @brief The C fixed-width unsigned storage type that holds `bits` (union tag width, etc.).
-std::string unsignedStorageTypeForBits(const std::int64_t bits)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ElementAddrOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        auto                 pointerType =
+            mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
+        const mlir::Value slot =
+            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
+        rewriter.replaceOp(op, addressOf(rewriter, loc, slot, pointerType));
+        return mlir::success();
+    }
+};
+
+struct BufferAtLowering final : public mlir::OpConversionPattern<mlir::dsdl::BufferAtOp>
 {
-    if (bits <= 8)
-    {
-        return "uint8_t";
-    }
-    if (bits <= 16)
-    {
-        return "uint16_t";
-    }
-    if (bits <= 32)
-    {
-        return "uint32_t";
-    }
-    return "uint64_t";
-}
+    using mlir::OpConversionPattern<mlir::dsdl::BufferAtOp>::OpConversionPattern;
 
-std::string signedGetterForBits(const std::int64_t bits)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::BufferAtOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        auto                 pointerType =
+            mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
+        auto element = mlir::emitc::SubscriptOp::create(rewriter,
+                                                        loc,
+                                                        mlir::cast<mlir::TypedValue<mlir::emitc::PointerType>>(
+                                                            adaptor.getBuffer()),
+                                                        adaptor.getByteOffset());
+        rewriter.replaceOp(op, addressOf(rewriter, loc, element, pointerType));
+        return mlir::success();
+    }
+};
+
+struct LocalLowering final : public mlir::OpConversionPattern<mlir::dsdl::LocalOp>
 {
-    if (bits <= 8)
-    {
-        return "dsdl_runtime_get_i8";
-    }
-    if (bits <= 16)
-    {
-        return "dsdl_runtime_get_i16";
-    }
-    if (bits <= 32)
-    {
-        return "dsdl_runtime_get_i32";
-    }
-    return "dsdl_runtime_get_i64";
-}
+    using mlir::OpConversionPattern<mlir::dsdl::LocalOp>::OpConversionPattern;
 
-void emitSerializePadding(SourceWriter& w, const std::size_t index, const std::int64_t bits)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LocalOp              op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        auto                 pointerType =
+            mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
+        const mlir::Type stored = pointerType.getPointee();
+
+        auto        slot = mlir::emitc::VariableOp::create(rewriter,
+                                                           loc,
+                                                           mlir::emitc::LValueType::get(stored),
+                                                           mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
+        mlir::Value init = adaptor.getInit();
+        if (init.getType() != stored)
+        {
+            init = mlir::emitc::CastOp::create(rewriter, loc, stored, init);
+        }
+        mlir::emitc::AssignOp::create(rewriter, loc, slot, init);
+        rewriter.replaceOp(op, addressOf(rewriter, loc, slot, pointerType));
+        return mlir::success();
+    }
+};
+
+struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>
 {
-    w.open("for (size_t bit_" + std::to_string(index) + " = 0U; bit_" + std::to_string(index) + " < " +
-           std::to_string(nonNegative(bits)) + "U; ++bit_" + std::to_string(index) + ") {");
-    w.line("const int8_t _err_pad_" + std::to_string(index) +
-           " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits + "
-           "bit_" +
-           std::to_string(index) + ", false);");
-    w.open("if (_err_pad_" + std::to_string(index) + " < 0) {");
-    w.line("return _err_pad_" + std::to_string(index) + ";");
-    w.close("}");
-    w.close("}");
-    w.line("offset_bits += " + std::to_string(nonNegative(bits)) + "U;");
-}
+    using mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>::OpConversionPattern;
 
-bool emitSerializeField(SourceWriter& w, const PlanStep& step, const std::string& expr, std::size_t index);
-bool emitDeserializeField(SourceWriter& w, const PlanStep& step, const std::string& expr, std::size_t index);
-
-bool emitSerializeArrayField(SourceWriter& w, const PlanStep& step, const std::string& expr, const std::size_t index)
-{
-    const bool variable     = isVariableArrayKind(step.arrayKind);
-    const auto capacityExpr = std::to_string(nonNegative(step.arrayCapacity)) + "U";
-
-    if (variable)
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CallSerdesOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
     {
-        if (step.serArrayLengthPrefixHelper.empty())
-        {
-            return false;
-        }
-        if (!step.arrayLengthValidateHelper.empty())
-        {
-            w.line("const int8_t _err_lenchk_" + std::to_string(index) + " = " + step.arrayLengthValidateHelper +
-                   "((int64_t)(" + expr + ".count));");
-            w.open("if (_err_lenchk_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_lenchk_" + std::to_string(index) + ";");
-            w.close("}");
-        }
-        else
-        {
-            w.open("if (" + expr + ".count > " + capacityExpr + ") {");
-            emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedArrayLengthCategory());
-            w.line("return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
-            w.close("}");
-        }
-        w.line("const uint64_t _wire_len_" + std::to_string(index) + " = (uint64_t)" + step.serArrayLengthPrefixHelper +
-               "((int64_t)(" + expr + ".count));");
-        w.line("const int8_t _err_len_" + std::to_string(index) +
-               " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, "
-               "_wire_len_" +
-               std::to_string(index) + ", (uint8_t)" + std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U);");
-        w.open("if (_err_len_" + std::to_string(index) + " < 0) {");
-        w.line("return _err_len_" + std::to_string(index) + ";");
-        w.close("}");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U;");
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{rewriter.getIntegerType(8)},
+                                                               op.getCalleeAttr(),
+                                                               mlir::ValueRange{adaptor.getObject(),
+                                                                                adaptor.getBuffer(),
+                                                                                adaptor.getSize()});
+        return mlir::success();
     }
-
-    const auto countExpr = variable ? (expr + ".count") : capacityExpr;
-    if (step.scalarCategory == "bool")
-    {
-        const auto sourceExpr = variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
-        w.line("dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr + ", " + sourceExpr + ", 0U);");
-        w.line("offset_bits += " + countExpr + ";");
-        return true;
-    }
-
-    const auto loopIndex    = "_i_" + std::to_string(index);
-    const auto accessPrefix = variable ? (expr + ".elements") : expr;
-    w.open("for (size_t " + loopIndex + " = 0U; " + loopIndex + " < " + countExpr + "; ++" + loopIndex + ") {");
-    auto elementStep                  = step;
-    elementStep.arrayKind             = "none";
-    elementStep.arrayCapacity         = 0;
-    elementStep.arrayLengthPrefixBits = 0;
-    if (!emitSerializeField(w, elementStep, accessPrefix + "[" + loopIndex + "]", index))
-    {
-        return false;
-    }
-    w.close("}");
-    return true;
-}
-
-bool emitDeserializeArrayField(SourceWriter& w, const PlanStep& step, const std::string& expr, const std::size_t index)
-{
-    const bool variable     = isVariableArrayKind(step.arrayKind);
-    const auto capacityExpr = std::to_string(nonNegative(step.arrayCapacity)) + "U";
-
-    if (variable)
-    {
-        if (step.deserArrayLengthPrefixHelper.empty())
-        {
-            return false;
-        }
-        w.line("const uint64_t _wire_len_" + std::to_string(index) + " = (uint64_t)" +
-               unsignedGetterForBits(step.arrayLengthPrefixBits) + "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
-               std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U);");
-        w.line(expr + ".count = (size_t)" + step.deserArrayLengthPrefixHelper + "((int64_t)_wire_len_" +
-               std::to_string(index) + ");");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U;");
-        if (!step.arrayLengthValidateHelper.empty())
-        {
-            w.line("const int8_t _err_lenchk_" + std::to_string(index) + " = " + step.arrayLengthValidateHelper +
-                   "((int64_t)(" + expr + ".count));");
-            w.open("if (_err_lenchk_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_lenchk_" + std::to_string(index) + ";");
-            w.close("}");
-        }
-        else
-        {
-            w.open("if (" + expr + ".count > " + capacityExpr + ") {");
-            emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedArrayLengthCategory());
-            w.line("return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
-            w.close("}");
-        }
-    }
-
-    const auto countExpr = variable ? (expr + ".count") : capacityExpr;
-    if (step.scalarCategory == "bool")
-    {
-        const auto targetExpr = variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
-        w.line("dsdl_runtime_get_bits(" + targetExpr + ", &buffer[0], capacity_bytes, offset_bits, " + countExpr +
-               ");");
-        w.line("offset_bits += " + countExpr + ";");
-        return true;
-    }
-
-    const auto loopIndex    = "_i_" + std::to_string(index);
-    const auto accessPrefix = variable ? (expr + ".elements") : expr;
-    w.open("for (size_t " + loopIndex + " = 0U; " + loopIndex + " < " + countExpr + "; ++" + loopIndex + ") {");
-    auto elementStep                  = step;
-    elementStep.arrayKind             = "none";
-    elementStep.arrayCapacity         = 0;
-    elementStep.arrayLengthPrefixBits = 0;
-    if (!emitDeserializeField(w, elementStep, accessPrefix + "[" + loopIndex + "]", index))
-    {
-        return false;
-    }
-    w.close("}");
-    return true;
-}
-
-bool emitSerializeField(SourceWriter& w, const PlanStep& step, const std::string& expr, const std::size_t index)
-{
-    if (step.arrayKind != "none")
-    {
-        return emitSerializeArrayField(w, step, expr, index);
-    }
-
-    if (step.scalarCategory == "composite")
-    {
-        if (!step.compositeSealed)
-        {
-            w.line("const size_t _delim_start_bytes_" + std::to_string(index) + " = offset_bits / 8U;");
-            w.line("offset_bits += 32U;");
-            w.line("const size_t _remaining_bytes_" + std::to_string(index) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
-                   "capacity_bytes);");
-            w.line("size_t _size_bytes_" + std::to_string(index) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
-                   "capacity_bytes);");
-            w.line("const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName + "__serialize_(&" +
-                   expr + ", &buffer[offset_bits / 8U], &_size_bytes_" + std::to_string(index) + ");");
-            w.open("if (_err_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_" + std::to_string(index) + ";");
-            w.close("}");
-            if (step.delimiterValidateHelper.empty())
-            {
-                return false;
-            }
-            w.line("const int8_t _delim_chk_" + std::to_string(index) + " = " + step.delimiterValidateHelper +
-                   "((int64_t)_size_bytes_" + std::to_string(index) + ", (int64_t)_remaining_bytes_" +
-                   std::to_string(index) + ");");
-            w.open("if (_delim_chk_" + std::to_string(index) + " < 0) {");
-            emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedDelimiterHeaderCategory());
-            w.line("return _delim_chk_" + std::to_string(index) + ";");
-            w.close("}");
-            w.line("offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
-            w.line("const int8_t _hdr_err_" + std::to_string(index) +
-                   " = dsdl_runtime_set_uxx(buffer, capacity_bytes, "
-                   "_delim_start_bytes_" +
-                   std::to_string(index) + " * 8U, (uint64_t)_size_bytes_" + std::to_string(index) + ", 32U);");
-            w.open("if (_hdr_err_" + std::to_string(index) + " < 0) {");
-            w.line("return _hdr_err_" + std::to_string(index) + ";");
-            w.close("}");
-        }
-        else
-        {
-            w.line("size_t _size_bytes_" + std::to_string(index) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
-                   "capacity_bytes);");
-            w.line("const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName + "__serialize_(&" +
-                   expr + ", &buffer[offset_bits / 8U], &_size_bytes_" + std::to_string(index) + ");");
-            w.open("if (_err_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_" + std::to_string(index) + ";");
-            w.close("}");
-            w.line("offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
-        }
-        return true;
-    }
-
-    if (step.scalarCategory == "bool")
-    {
-        w.line("const int8_t _err_" + std::to_string(index) +
-               " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " + expr + ");");
-        w.open("if (_err_" + std::to_string(index) + " < 0) {");
-        w.line("return _err_" + std::to_string(index) + ";");
-        w.close("}");
-        w.line("offset_bits += 1U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "byte" || step.scalarCategory == "utf8" || step.scalarCategory == "unsigned")
-    {
-        std::string valueExpr = "(uint64_t)(" + expr + ")";
-        if (step.serUnsignedHelper.empty())
-        {
-            return false;
-        }
-        const auto normName = "_norm_" + std::to_string(index);
-        w.line("const uint64_t " + normName + " = (uint64_t)" + step.serUnsignedHelper + "((int64_t)(" + valueExpr +
-               "));");
-        valueExpr = normName;
-        w.line("const int8_t _err_" + std::to_string(index) +
-               " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", (uint8_t)" +
-               std::to_string(nonNegative(step.bitLength)) + "U);");
-        w.open("if (_err_" + std::to_string(index) + " < 0) {");
-        w.line("return _err_" + std::to_string(index) + ";");
-        w.close("}");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "signed")
-    {
-        std::string valueExpr = "(int64_t)(" + expr + ")";
-        if (step.serSignedHelper.empty())
-        {
-            return false;
-        }
-        const auto normName = "_norms_" + std::to_string(index);
-        w.line("const int64_t " + normName + " = (int64_t)" + step.serSignedHelper + "((int64_t)(" + valueExpr + "));");
-        valueExpr = normName;
-        w.line("const int8_t _err_" + std::to_string(index) +
-               " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " + valueExpr + ", (uint8_t)" +
-               std::to_string(nonNegative(step.bitLength)) + "U);");
-        w.open("if (_err_" + std::to_string(index) + " < 0) {");
-        w.line("return _err_" + std::to_string(index) + ";");
-        w.close("}");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "float")
-    {
-        std::string setter;
-        std::string castType;
-        if (step.bitLength == 16 || step.bitLength == 32)
-        {
-            castType = "float";
-            setter   = (step.bitLength == 16) ? "dsdl_runtime_set_f16" : "dsdl_runtime_set_f32";
-        }
-        else if (step.bitLength == 64)
-        {
-            castType = "double";
-            setter   = "dsdl_runtime_set_f64";
-        }
-        else
-        {
-            return false;
-        }
-        if (step.serFloatHelper.empty())
-        {
-            return false;
-        }
-        // Keep the value in its native storage width (float for 16/32-bit,
-        // double for 64-bit) through the identity normalization helper so a NaN
-        // payload is not canonicalized by a float->double->float round-trip.
-        const auto normName = "_normf_" + std::to_string(index);
-        w.line("const " + castType + " " + normName + " = " + step.serFloatHelper + "((" + castType + ")(" + expr +
-               "));");
-        std::string const& valueExpr = normName;
-        w.line("const int8_t _err_" + std::to_string(index) + " = " + setter +
-               "(buffer, capacity_bytes, offset_bits, " + valueExpr + ");");
-        w.open("if (_err_" + std::to_string(index) + " < 0) {");
-        w.line("return _err_" + std::to_string(index) + ";");
-        w.close("}");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    return false;
-}
-
-bool emitDeserializeField(SourceWriter& w, const PlanStep& step, const std::string& expr, const std::size_t index)
-{
-    if (step.arrayKind != "none")
-    {
-        return emitDeserializeArrayField(w, step, expr, index);
-    }
-
-    if (step.scalarCategory == "composite")
-    {
-        if (!step.compositeSealed)
-        {
-            w.line("size_t _size_bytes_" + std::to_string(index) +
-                   " = (size_t)dsdl_runtime_get_u32(buffer, capacity_bytes, "
-                   "offset_bits, 32U);");
-            w.line("offset_bits += 32U;");
-            w.line("const size_t _remaining_bytes_" + std::to_string(index) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
-                   "capacity_bytes);");
-            if (step.delimiterValidateHelper.empty())
-            {
-                return false;
-            }
-            w.line("const int8_t _delim_chk_" + std::to_string(index) + " = " + step.delimiterValidateHelper +
-                   "((int64_t)_size_bytes_" + std::to_string(index) + ", (int64_t)_remaining_bytes_" +
-                   std::to_string(index) + ");");
-            w.open("if (_delim_chk_" + std::to_string(index) + " < 0) {");
-            emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedDelimiterHeaderCategory());
-            w.line("return _delim_chk_" + std::to_string(index) + ";");
-            w.close("}");
-            // The nested deserialize writes back how many bytes it actually consumed, which for a
-            // delimited field may be FEWER than the header declares (a newer peer appended fields this
-            // reader does not understand). Capture that in a separate variable and advance the outer
-            // offset by the header-declared size (`_size_bytes_`) -- advancing by the consumed count
-            // would misplace every subsequent field, breaking delimited forward compatibility.
-            w.line("size_t _consumed_bytes_" + std::to_string(index) + " = _size_bytes_" + std::to_string(index) + ";");
-            w.line("const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName + "__deserialize_(&" +
-                   expr + ", &buffer[offset_bits / 8U], &_consumed_bytes_" + std::to_string(index) + ");");
-            w.open("if (_err_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_" + std::to_string(index) + ";");
-            w.close("}");
-            w.line("offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
-        }
-        else
-        {
-            w.line("size_t _size_bytes_" + std::to_string(index) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
-                   "capacity_bytes);");
-            w.line("const int8_t _err_" + std::to_string(index) + " = " + step.compositeCTypeName + "__deserialize_(&" +
-                   expr + ", &buffer[offset_bits / 8U], &_size_bytes_" + std::to_string(index) + ");");
-            w.open("if (_err_" + std::to_string(index) + " < 0) {");
-            w.line("return _err_" + std::to_string(index) + ";");
-            w.close("}");
-            w.line("offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
-        }
-        return true;
-    }
-
-    if (step.scalarCategory == "bool")
-    {
-        w.line(expr + " = dsdl_runtime_get_bit(buffer, capacity_bytes, offset_bits);");
-        w.line("offset_bits += 1U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "byte" || step.scalarCategory == "utf8" || step.scalarCategory == "unsigned")
-    {
-        const auto rawName = "_raw_" + std::to_string(index);
-        w.line("const uint64_t " + rawName + " = (uint64_t)" + unsignedGetterForBits(step.bitLength) +
-               "(buffer, capacity_bytes, offset_bits, (uint8_t)" + std::to_string(nonNegative(step.bitLength)) + "U);");
-        if (step.deserUnsignedHelper.empty())
-        {
-            return false;
-        }
-        w.line(expr + " = (uint64_t)" + step.deserUnsignedHelper + "((int64_t)" + rawName + ");");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "signed")
-    {
-        const auto rawName = "_raws_" + std::to_string(index);
-        w.line("const int64_t " + rawName + " = (int64_t)" + signedGetterForBits(step.bitLength) +
-               "(buffer, capacity_bytes, offset_bits, (uint8_t)" + std::to_string(nonNegative(step.bitLength)) + "U);");
-        if (step.deserSignedHelper.empty())
-        {
-            return false;
-        }
-        w.line(expr + " = (int64_t)" + step.deserSignedHelper + "((int64_t)" + rawName + ");");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    if (step.scalarCategory == "float")
-    {
-        std::string getter;
-        if (step.bitLength == 16)
-        {
-            getter = "dsdl_runtime_get_f16";
-        }
-        else if (step.bitLength == 32)
-        {
-            getter = "dsdl_runtime_get_f32";
-        }
-        else if (step.bitLength == 64)
-        {
-            getter = "dsdl_runtime_get_f64";
-        }
-        else
-        {
-            return false;
-        }
-        std::string const castType = (step.bitLength == 64) ? "double" : "float";
-        const auto        rawName  = "_rawf_" + std::to_string(index);
-        // Read into the native storage width (get_f16/get_f32 return float,
-        // get_f64 returns double) and run the identity normalization helper at
-        // that width, so a NaN payload survives without float->double->float
-        // canonicalization.
-        w.line("const " + castType + " " + rawName + " = " + getter + "(buffer, capacity_bytes, offset_bits);");
-        if (step.deserFloatHelper.empty())
-        {
-            return false;
-        }
-        w.line(expr + " = (" + castType + ")(" + step.deserFloatHelper + "(" + rawName + "));");
-        w.line("offset_bits += " + std::to_string(nonNegative(step.bitLength)) + "U;");
-        return true;
-    }
-
-    return false;
-}
-
-std::string renderTypedSerializeFunction(llvm::StringRef              functionName,
-                                         llvm::StringRef              cTypeName,
-                                         llvm::StringRef              cSerializeSymbol,
-                                         llvm::StringRef              fullName,
-                                         llvm::StringRef              sectionName,
-                                         std::int64_t                 minBits,
-                                         std::int64_t                 maxBits,
-                                         const std::vector<PlanStep>& steps,
-                                         const bool                   isUnion,
-                                         const std::int64_t           unionTagBits,
-                                         llvm::StringRef              capacityCheckSymbol,
-                                         llvm::StringRef              unionTagValidateSymbol,
-                                         llvm::StringRef              unionTagSerializeSymbol)
-{
-    const std::string  functionNameText     = functionName.str();
-    const std::string  cTypeNameText        = cTypeName.str();
-    const std::string  cSerializeSymbolText = cSerializeSymbol.str();
-    const std::string  fullNameText         = fullName.str();
-    const std::string  sectionNameText      = sectionName.str();
-    std::ostringstream out;
-    SourceWriter       w = makeEmitCWriter(out);
-    if (cTypeNameText.empty())
-    {
-        out << "int8_t " << functionNameText
-            << "(const void* obj, uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    else
-    {
-        out << "int8_t " << functionNameText << "(const " << cTypeNameText
-            << "* const obj, uint8_t* buffer, size_t* const inout_buffer_size_bytes)\n";
-    }
-    w.open("{");
-    w.line("// IR section: " + fullNameText +
-           (sectionNameText.empty() ? std::string{} : (" (" + sectionNameText + ")")) +
-           ", min_bits=" + std::to_string(minBits) + ", max_bits=" + std::to_string(maxBits) + ".");
-    if (!cSerializeSymbolText.empty())
-    {
-        w.line("// Public C API symbol: " + cSerializeSymbolText);
-    }
-    w.line("// Typed IR lowering path.");
-    w.open("if ((obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == "
-           "NULL)) {");
-    w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("const size_t capacity_bytes = *inout_buffer_size_bytes;");
-    w.line("const int8_t _err_capacity = " + capacityCheckSymbol.str() + "((int64_t)(capacity_bytes * 8U));");
-    w.open("if (_err_capacity < 0) {");
-    w.line("return _err_capacity;");
-    w.close("}");
-    w.line("size_t offset_bits = 0U;");
-
-    if (isUnion)
-    {
-        const auto tagBits = nonNegative(unionTagBits);
-        w.line("const uint64_t _tag_value = (uint64_t)" + unionTagSerializeSymbol.str() + "((int64_t)(obj->_tag_));");
-        w.line("const int8_t _err_union_tag = " + unionTagValidateSymbol.str() + "((int64_t)_tag_value);");
-        w.open("if (_err_union_tag < 0) {");
-        emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedUnionTagCategory());
-        w.line("return _err_union_tag;");
-        w.close("}");
-        w.line("const int8_t _err_tag_ = dsdl_runtime_set_uxx(buffer, "
-               "capacity_bytes, offset_bits, _tag_value, (uint8_t)" +
-               std::to_string(tagBits) + "U);");
-        w.open("if (_err_tag_ < 0) {");
-        w.line("return _err_tag_;");
-        w.close("}");
-        w.line("offset_bits += " + std::to_string(tagBits) + "U;");
-
-        std::vector<const PlanStep*> unionFields;
-        for (const auto& step : steps)
-        {
-            if (step.kind == PlanStepKind::Field)
-            {
-                unionFields.push_back(&step);
-            }
-        }
-        std::ranges::sort(unionFields, [](const PlanStep* lhs, const PlanStep* rhs) {
-            return lhs->unionOptionIndex < rhs->unionOptionIndex;
-        });
-
-        bool first = true;
-        for (std::size_t i = 0; i < unionFields.size(); ++i)
-        {
-            const auto& step = *unionFields[i];
-            w.open(std::string(first ? "if" : "else if") +
-                   " (obj->_tag_ == " + std::to_string(nonNegative(step.unionOptionIndex)) + "U) {");
-            first = false;
-            emitSerializeAlign(w, step.alignmentBits, "u" + std::to_string(i));
-            if (!emitSerializeField(w, step, "obj->" + step.cName, i))
-            {
-                w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-            }
-            w.close("}");
-        }
-        w.open("else {");
-        emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedUnionTagCategory());
-        w.line("return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
-        w.close("}");
-    }
-    else
-    {
-        for (std::size_t i = 0; i < steps.size(); ++i)
-        {
-            const auto& step = steps[i];
-            if (step.kind == PlanStepKind::Align)
-            {
-                emitSerializeAlign(w, step.bits, "a" + std::to_string(i));
-                continue;
-            }
-            if (step.kind == PlanStepKind::Padding)
-            {
-                emitSerializePadding(w, i, step.bits);
-                continue;
-            }
-            if (!emitSerializeField(w, step, "obj->" + step.cName, i))
-            {
-                w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-            }
-        }
-    }
-
-    emitSerializeAlign(w, 8, "final");
-    w.line("*inout_buffer_size_bytes = (size_t)(offset_bits / 8U);");
-    w.line("return (int8_t)DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    return out.str();
-}
-
-std::string renderTypedDeserializeFunction(llvm::StringRef              functionName,
-                                           llvm::StringRef              cTypeName,
-                                           llvm::StringRef              cDeserializeSymbol,
-                                           llvm::StringRef              fullName,
-                                           llvm::StringRef              sectionName,
-                                           std::int64_t                 minBits,
-                                           std::int64_t                 maxBits,
-                                           const std::vector<PlanStep>& steps,
-                                           const bool                   isUnion,
-                                           const std::int64_t           unionTagBits,
-                                           llvm::StringRef              unionTagValidateSymbol,
-                                           llvm::StringRef              unionTagDeserializeSymbol)
-{
-    const std::string  functionNameText       = functionName.str();
-    const std::string  cTypeNameText          = cTypeName.str();
-    const std::string  cDeserializeSymbolText = cDeserializeSymbol.str();
-    const std::string  fullNameText           = fullName.str();
-    const std::string  sectionNameText        = sectionName.str();
-    std::ostringstream out;
-    SourceWriter       w = makeEmitCWriter(out);
-    if (cTypeNameText.empty())
-    {
-        out << "int8_t " << functionNameText
-            << "(void* out_obj, const uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    else
-    {
-        out << "int8_t " << functionNameText << "(" << cTypeNameText
-            << "* const out_obj, const uint8_t* buffer, size_t* const "
-               "inout_buffer_size_bytes)\n";
-    }
-    w.open("{");
-    w.line("// IR section: " + fullNameText +
-           (sectionNameText.empty() ? std::string{} : (" (" + sectionNameText + ")")) +
-           ", min_bits=" + std::to_string(minBits) + ", max_bits=" + std::to_string(maxBits) + ".");
-    if (!cDeserializeSymbolText.empty())
-    {
-        w.line("// Public C API symbol: " + cDeserializeSymbolText);
-    }
-    w.line("// Typed IR lowering path.");
-    w.open("if ((out_obj == NULL) || (inout_buffer_size_bytes == NULL) || "
-           "((buffer == NULL) && (0U != *inout_buffer_size_bytes))) {");
-    w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.open("if (buffer == NULL) {");
-    w.line("buffer = (const uint8_t*)\"\";");
-    w.close("}");
-    w.line("const size_t capacity_bytes = *inout_buffer_size_bytes;");
-    w.line("const size_t capacity_bits = capacity_bytes * 8U;");
-    w.line("size_t offset_bits = 0U;");
-
-    if (isUnion)
-    {
-        const auto tagBits = nonNegative(unionTagBits);
-        w.line("const uint64_t _tag_wire = " + unsignedGetterForBits(tagBits) +
-               "(buffer, capacity_bytes, offset_bits, (uint8_t)" + std::to_string(tagBits) + "U);");
-        w.line("const uint64_t _tag_value = (uint64_t)" + unionTagDeserializeSymbol.str() + "((int64_t)_tag_wire);");
-        w.line("const int8_t _err_union_tag = " + unionTagValidateSymbol.str() + "((int64_t)_tag_value);");
-        w.open("if (_err_union_tag < 0) {");
-        emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedUnionTagCategory());
-        w.line("return _err_union_tag;");
-        w.close("}");
-        // Store the tag in its true width; a hardcoded (uint8_t) truncates a wide tag
-        // (>256-option unions get a 16-bit tag) and corrupts the decoded object / round-trip.
-        w.line("out_obj->_tag_ = (" + unsignedStorageTypeForBits(tagBits) + ")_tag_value;");
-        w.line("offset_bits += " + std::to_string(tagBits) + "U;");
-
-        std::vector<const PlanStep*> unionFields;
-        for (const auto& step : steps)
-        {
-            if (step.kind == PlanStepKind::Field)
-            {
-                unionFields.push_back(&step);
-            }
-        }
-        std::ranges::sort(unionFields, [](const PlanStep* lhs, const PlanStep* rhs) {
-            return lhs->unionOptionIndex < rhs->unionOptionIndex;
-        });
-
-        bool first = true;
-        for (std::size_t i = 0; i < unionFields.size(); ++i)
-        {
-            const auto& step = *unionFields[i];
-            w.open(std::string(first ? "if" : "else if") +
-                   " (_tag_value == " + std::to_string(nonNegative(step.unionOptionIndex)) + "U) {");
-            first = false;
-            emitDeserializeAlign(w, step.alignmentBits);
-            if (!emitDeserializeField(w, step, "out_obj->" + step.cName, i))
-            {
-                w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-            }
-            w.close("}");
-        }
-        w.open("else {");
-        emitMalformedCategoryComment(w, codegen_diagnostic_text::malformedUnionTagCategory());
-        w.line("return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
-        w.close("}");
-    }
-    else
-    {
-        for (std::size_t i = 0; i < steps.size(); ++i)
-        {
-            const auto& step = steps[i];
-            if (step.kind == PlanStepKind::Align)
-            {
-                emitDeserializeAlign(w, step.bits);
-                continue;
-            }
-            if (step.kind == PlanStepKind::Padding)
-            {
-                w.line("offset_bits += " + std::to_string(nonNegative(step.bits)) + "U;");
-                continue;
-            }
-            if (!emitDeserializeField(w, step, "out_obj->" + step.cName, i))
-            {
-                w.line("return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-            }
-        }
-    }
-
-    emitDeserializeAlign(w, 8);
-    w.line("*inout_buffer_size_bytes = (size_t)(dsdl_runtime_choose_min(offset_bits, "
-           "capacity_bits) / 8U);");
-    w.line("return (int8_t)DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    return out.str();
-}
+};
 
 struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1402,28 +618,84 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         registry.insert<mlir::emitc::EmitCDialect>();
     }
 
+    /// @brief Converts plan operations into their C spellings.
+    ///
+    /// Runs before the schema walk, for a module that already carries a plan body, and again
+    /// after it, for the bodies the walk builds. The second run is a no-op when the first
+    /// already emptied the module of them.
+    mlir::LogicalResult lowerPlanOperations(mlir::ModuleOp module)
+    {
+        mlir::TypeConverter     converter = makeBitCopyTypeConverter();
+        mlir::RewritePatternSet patterns(&getContext());
+        patterns.add<BitWriteLowering,
+                     BitReadLowering,
+                     WriteBitsLowering,
+                     ReadBitsLowering,
+                     LoadMemberLowering,
+                     StoreMemberLowering,
+                     LoadElementLowering,
+                     StoreElementLowering,
+                     MemberAddrLowering,
+                     BufferAtLowering,
+                     ElementAddrLowering,
+                     LocalLowering,
+                     CallSerdesLowering,
+                     IsNullLowering,
+                     BufferOrEmptyLowering,
+                     LoadScalarLowering,
+                     StoreScalarLowering>(converter, &getContext());
+        mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
+
+        mlir::ConversionTarget target(getContext());
+        target.addLegalDialect<mlir::emitc::EmitCDialect,
+                               mlir::arith::ArithDialect,
+                               mlir::func::FuncDialect,
+                               mlir::scf::SCFDialect>();
+        target.addLegalDialect<mlir::dsdl::DSDLDialect>();
+        target.addIllegalOp<mlir::dsdl::BitWriteOp,
+                            mlir::dsdl::BitReadOp,
+                            mlir::dsdl::WriteBitsOp,
+                            mlir::dsdl::ReadBitsOp,
+                            mlir::dsdl::LoadMemberOp,
+                            mlir::dsdl::StoreMemberOp,
+                            mlir::dsdl::LoadElementOp,
+                            mlir::dsdl::StoreElementOp,
+                            mlir::dsdl::MemberAddrOp,
+                            mlir::dsdl::BufferAtOp,
+                            mlir::dsdl::ElementAddrOp,
+                            mlir::dsdl::LocalOp,
+                            mlir::dsdl::CallSerdesOp,
+                            mlir::dsdl::IsNullOp,
+                            mlir::dsdl::BufferOrEmptyOp,
+                            mlir::dsdl::LoadScalarOp,
+                            mlir::dsdl::StoreScalarOp>();
+        target.addDynamicallyLegalOp<mlir::func::FuncOp>(
+            [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
+
+        if (mlir::failed(mlir::applyPartialConversion(module, target, std::move(patterns))))
+        {
+            module.emitError("failed to lower dsdl plan operations to emitc");
+            signalPassFailure();
+            return mlir::failure();
+        }
+        return mlir::success();
+    }
+
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
-        auto       module               = getOperation();
-        const bool headersAvailable     = module->hasAttr("llvmdsdl.headers_available");
-        const bool requireTypedLowering = module->hasAttr("llvmdsdl.require_typed_lowering");
-        if (requireTypedLowering && !headersAvailable)
+        auto module = getOperation();
+        // Whether the generated headers can be included. A body names the struct its header
+        // declares either way; only the includes depend on this.
+        const bool headersAvailable = module->hasAttr("llvmdsdl.headers_available");
+        auto&      body             = module.getBodyRegion().front();
+
+        if (mlir::failed(lowerPlanOperations(module)))
         {
-            module.emitError("typed lowering requires header availability");
-            signalPassFailure();
             return;
         }
-        auto& body = module.getBodyRegion().front();
 
-        std::vector<mlir::Operation*> schemaOps;
-        for (mlir::Operation& op : body)
-        {
-            if (op.getName().getStringRef() == "dsdl.schema")
-            {
-                schemaOps.push_back(&op);
-            }
-        }
+        const auto schemaOps = llvm::to_vector(body.getOps<mlir::dsdl::SchemaOp>());
         if (schemaOps.empty())
         {
             return;
@@ -1455,8 +727,6 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             return;
         }
 
-        std::vector<std::string> emittedFunctions;
-        emittedFunctions.reserve(schemaOps.size() * 4U);
         std::set<std::string> forwardDeclaredTypes;
         std::set<std::string> capacityCheckSymbols;
         std::set<std::string> unionTagValidateSymbols;
@@ -1467,32 +737,20 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         std::set<std::string> arrayLengthPrefixHelperSymbols;
         std::set<std::string> arrayLengthValidateSymbols;
         std::set<std::string> delimiterValidateSymbols;
-        std::set<std::string> typedHeaders;
+        std::set<std::string> includedHeaders;
 
-        for (mlir::Operation* schema : schemaOps)
+        for (mlir::dsdl::SchemaOp schema : schemaOps)
         {
-            const auto symNameAttr = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-            if (!symNameAttr)
-            {
-                continue;
-            }
-            const auto        fullNameAttr = schema->getAttrOfType<mlir::StringAttr>("full_name");
-            const std::string fullName = fullNameAttr ? fullNameAttr.getValue().str() : symNameAttr.getValue().str();
-            const auto        headerPathAttr = schema->getAttrOfType<mlir::StringAttr>("header_path");
-            const std::string headerPath     = headerPathAttr ? headerPathAttr.getValue().str() : std::string{};
-
-            if (schema->getNumRegions() == 0 || schema->getRegion(0).empty())
+            const std::string headerPath = schema.getHeaderPath().value_or(llvm::StringRef{}).str();
+            if (schema.getBody().empty())
             {
                 continue;
             }
 
-            for (mlir::Operation& child : schema->getRegion(0).front())
+            for (mlir::dsdl::SerializationPlanOp child :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                if (child.getName().getStringRef() != "dsdl.serialization_plan")
-                {
-                    continue;
-                }
-                if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(&child))
+                if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(child.getOperation()))
                 {
                     switch (envelopeViolation->kind)
                     {
@@ -1514,31 +772,22 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     signalPassFailure();
                     return;
                 }
-                if (const auto violation = findLoweredPlanContractViolation(module, &child))
+                if (const auto violation = findLoweredPlanContractViolation(module, child.getOperation()))
                 {
                     violation->operation->emitOpError(violation->message);
                     signalPassFailure();
                     return;
                 }
-                const auto        sectionAttr = child.getAttrOfType<mlir::StringAttr>("section");
-                const std::string section     = sectionAttr ? sectionAttr.getValue().str() : std::string{};
-                const std::string fnStem      = symNameAttr.getValue().str() + renderSectionSymbolSuffix(section);
-                const auto capacityCheckAttr  = child.getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
+                const std::string section = child.getSection().value_or(llvm::StringRef{}).str();
+                const std::string fnStem  = schema.getSymName().str() + renderSectionSymbolSuffix(section);
                 const std::string capacityCheckSymbol =
-                    capacityCheckAttr ? capacityCheckAttr.getValue().str() : std::string{};
-                const std::int64_t minBits =
-                    nonNegative(child.getAttrOfType<mlir::IntegerAttr>(kLoweredMinBitsAttr).getInt());
-                const std::int64_t maxBits =
-                    nonNegative(child.getAttrOfType<mlir::IntegerAttr>(kLoweredMaxBitsAttr).getInt());
-                const auto cTypeNameAttr          = child.getAttrOfType<mlir::StringAttr>("c_type_name");
-                const auto cSerializeSymbolAttr   = child.getAttrOfType<mlir::StringAttr>("c_serialize_symbol");
-                const auto cDeserializeSymbolAttr = child.getAttrOfType<mlir::StringAttr>("c_deserialize_symbol");
-                const std::string cTypeName       = cTypeNameAttr ? cTypeNameAttr.getValue().str() : std::string{};
+                    child.getLoweredCapacityCheckHelper().value_or(llvm::StringRef{}).str();
+                const std::string cTypeName = child.getCTypeName().str();
                 if (!cTypeName.empty())
                 {
                     forwardDeclaredTypes.insert(cTypeName);
                 }
-                const auto steps = collectPlanSteps(&child);
+                const auto steps = collectPlanSteps(child);
                 for (const auto& step : steps)
                 {
                     // C member names are the C backend's to decide, not lowering's: it stamps
@@ -1657,202 +906,42 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                         delimiterValidateSymbols.insert(step.delimiterValidateHelper);
                     }
                 }
-                const bool         isUnion          = child.hasAttr("is_union");
-                const auto         unionTagBitsAttr = child.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-                const std::int64_t unionTagBits     = unionTagBitsAttr ? nonNegative(unionTagBitsAttr.getInt()) : 0;
-                const auto unionTagSerHelperAttr = child.getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
-                const auto unionTagDeserHelperAttr =
-                    child.getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr);
-                const std::string unionTagSerializeHelper =
-                    unionTagSerHelperAttr ? unionTagSerHelperAttr.getValue().str() : std::string{};
-                const std::string unionTagDeserializeHelper =
-                    unionTagDeserHelperAttr ? unionTagDeserHelperAttr.getValue().str() : std::string{};
-                std::string unionTagValidateSymbol;
-                if (isUnion)
+                if (child.getIsUnion())
                 {
-                    const auto unionTagValidateAttr =
-                        child.getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr);
-                    unionTagValidateSymbol =
-                        unionTagValidateAttr ? unionTagValidateAttr.getValue().str() : std::string{};
-                    unionTagValidateSymbols.insert(unionTagValidateSymbol);
-                    unionTagIoHelperSymbols.insert(unionTagSerializeHelper);
-                    unionTagIoHelperSymbols.insert(unionTagDeserializeHelper);
-                }
-                const bool useTyped = headersAvailable && supportsTypedLowering(steps, isUnion, unionTagBits);
-                if (requireTypedLowering && !useTyped)
-                {
-                    std::string reason = "typed lowering is required for this module";
-                    if (!headersAvailable)
+                    const auto validate = child.getLoweredUnionTagValidateHelperAttr();
+                    const auto serTag   = child.getLoweredSerUnionTagHelperAttr();
+                    const auto deserTag = child.getLoweredDeserUnionTagHelperAttr();
+                    if (validate)
                     {
-                        reason += " but generated headers are not available";
+                        unionTagValidateSymbols.insert(validate.getValue().str());
                     }
-                    else
+                    if (serTag)
                     {
-                        reason += " but the serialization plan contains unsupported constructs";
+                        unionTagIoHelperSymbols.insert(serTag.getValue().str());
                     }
-                    if (!section.empty())
+                    if (deserTag)
                     {
-                        reason += " (section: " + section + ")";
-                    }
-                    child.emitOpError(reason);
-                    signalPassFailure();
-                    return;
-                }
-                if (useTyped)
-                {
-                    if (isUnion && (unionTagSerializeHelper.empty() || unionTagDeserializeHelper.empty()))
-                    {
-                        child.emitOpError("typed lowering requires lowered union-tag IO helpers; run "
-                                          "lower-dsdl-serialization before convert-dsdl-to-emitc");
-                        signalPassFailure();
-                        return;
-                    }
-                    for (const auto& step : steps)
-                    {
-                        if (step.kind != PlanStepKind::Field)
-                        {
-                            continue;
-                        }
-                        if (isVariableArrayKind(step.arrayKind) && step.arrayLengthValidateHelper.empty())
-                        {
-                            child.emitOpError("typed lowering requires lowered array-length validation helper "
-                                              "for variable array field '" +
-                                              step.cName +
-                                              "'; run lower-dsdl-exec before "
-                                              "convert-dsdl-to-emitc");
-                            signalPassFailure();
-                            return;
-                        }
-                        if (isVariableArrayKind(step.arrayKind) &&
-                            (step.serArrayLengthPrefixHelper.empty() || step.deserArrayLengthPrefixHelper.empty()))
-                        {
-                            child.emitOpError("typed lowering requires lowered array-length-prefix IO "
-                                              "helpers for variable array field '" +
-                                              step.cName +
-                                              "'; run lower-dsdl-exec before "
-                                              "convert-dsdl-to-emitc");
-                            signalPassFailure();
-                            return;
-                        }
-                        if (step.scalarCategory == "unsigned" || step.scalarCategory == "byte" ||
-                            step.scalarCategory == "utf8")
-                        {
-                            if (step.serUnsignedHelper.empty() || step.deserUnsignedHelper.empty())
-                            {
-                                child.emitOpError("typed lowering requires lowered unsigned scalar helpers for "
-                                                  "field '" +
-                                                  step.cName +
-                                                  "'; run lower-dsdl-exec before "
-                                                  "convert-dsdl-to-emitc");
-                                signalPassFailure();
-                                return;
-                            }
-                        }
-                        else if (step.scalarCategory == "signed")
-                        {
-                            if (step.serSignedHelper.empty() || step.deserSignedHelper.empty())
-                            {
-                                child.emitOpError("typed lowering requires lowered signed scalar helpers for "
-                                                  "field '" +
-                                                  step.cName +
-                                                  "'; run lower-dsdl-exec before "
-                                                  "convert-dsdl-to-emitc");
-                                signalPassFailure();
-                                return;
-                            }
-                        }
-                        else if (step.scalarCategory == "float")
-                        {
-                            if (step.serFloatHelper.empty() || step.deserFloatHelper.empty())
-                            {
-                                child.emitOpError("typed lowering requires lowered float scalar helpers for "
-                                                  "field '" +
-                                                  step.cName +
-                                                  "'; run lower-dsdl-exec before "
-                                                  "convert-dsdl-to-emitc");
-                                signalPassFailure();
-                                return;
-                            }
-                        }
-                        else if (step.scalarCategory == "composite" && !step.compositeSealed)
-                        {
-                            if (step.delimiterValidateHelper.empty())
-                            {
-                                child.emitOpError("typed lowering requires lowered delimiter-header validation "
-                                                  "helper for delimited composite field '" +
-                                                  step.cName +
-                                                  "'; run lower-dsdl-exec before "
-                                                  "convert-dsdl-to-emitc");
-                                signalPassFailure();
-                                return;
-                            }
-                        }
-                    }
-                }
-                if (useTyped)
-                {
-                    if (!headerPath.empty())
-                    {
-                        typedHeaders.insert(headerPath);
+                        unionTagIoHelperSymbols.insert(deserTag.getValue().str());
                     }
                 }
                 capacityCheckSymbols.insert(capacityCheckSymbol);
-
-                if (useTyped)
+                if (!headerPath.empty())
                 {
-                    emittedFunctions.push_back(renderTypedSerializeFunction(fnStem + "__serialize_ir_",
-                                                                            cTypeName,
-                                                                            cSerializeSymbolAttr
-                                                                                ? cSerializeSymbolAttr.getValue()
-                                                                                : llvm::StringRef{},
-                                                                            fullName,
-                                                                            section,
-                                                                            minBits,
-                                                                            maxBits,
-                                                                            steps,
-                                                                            isUnion,
-                                                                            unionTagBits,
-                                                                            capacityCheckSymbol,
-                                                                            unionTagValidateSymbol,
-                                                                            unionTagSerializeHelper));
-                    emittedFunctions.push_back(renderTypedDeserializeFunction(fnStem + "__deserialize_ir_",
-                                                                              cTypeName,
-                                                                              cDeserializeSymbolAttr
-                                                                                  ? cDeserializeSymbolAttr.getValue()
-                                                                                  : llvm::StringRef{},
-                                                                              fullName,
-                                                                              section,
-                                                                              minBits,
-                                                                              maxBits,
-                                                                              steps,
-                                                                              isUnion,
-                                                                              unionTagBits,
-                                                                              unionTagValidateSymbol,
-                                                                              unionTagDeserializeHelper));
+                    includedHeaders.insert(headerPath);
                 }
-                else
+
+                // The bodies are operations by the time this pass runs, or they are absent.
+                for (const char* direction : {"serialize", "deserialize"})
                 {
-                    emittedFunctions.push_back(renderGenericSerializeFunction(fnStem + "__serialize_ir_",
-                                                                              cTypeName,
-                                                                              cSerializeSymbolAttr
-                                                                                  ? cSerializeSymbolAttr.getValue()
-                                                                                  : llvm::StringRef{},
-                                                                              fullName,
-                                                                              section,
-                                                                              minBits,
-                                                                              maxBits,
-                                                                              steps,
-                                                                              capacityCheckSymbol));
-                    emittedFunctions.push_back(renderGenericDeserializeFunction(fnStem + "__deserialize_ir_",
-                                                                                cTypeName,
-                                                                                cDeserializeSymbolAttr
-                                                                                    ? cDeserializeSymbolAttr.getValue()
-                                                                                    : llvm::StringRef{},
-                                                                                fullName,
-                                                                                section,
-                                                                                minBits,
-                                                                                maxBits,
-                                                                                steps));
+                    const std::string body = fnStem + "__" + direction + "_ir_";
+                    if (!module.lookupSymbol<mlir::func::FuncOp>(body))
+                    {
+                        child.emitOpError(std::string("no ") + direction +
+                                          " body was built for this plan; run build-dsdl-plan-bodies before "
+                                          "convert-dsdl-to-emitc");
+                        signalPassFailure();
+                        return;
+                    }
                 }
             }
         }
@@ -1865,7 +954,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::emitc::VerbatimOp::create(builder, loc, "#include \"dsdl_runtime.h\"");
         if (headersAvailable)
         {
-            for (const auto& headerPath : typedHeaders)
+            for (const auto& headerPath : includedHeaders)
             {
                 mlir::emitc::VerbatimOp::create(builder, loc, "#include \"" + headerPath + "\"");
             }
@@ -1924,14 +1013,52 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         {
             mlir::emitc::VerbatimOp::create(builder, loc, "int8_t " + symbol + "(int64_t, int64_t);");
         }
-        for (const auto& fn : emittedFunctions)
+
+        for (const mlir::dsdl::SchemaOp schema : schemaOps)
         {
-            mlir::emitc::VerbatimOp::create(builder, loc, fn);
+            schema->erase();
         }
 
-        for (mlir::Operation* op : schemaOps)
+        // Before the conversion, not after. A loop carries an induction variable its caller
+        // does not read, and here that is a dead scf result the canonicaliser drops; once it
+        // is an emitc.variable it has memory effects and stays, reaching the consumer as a
+        // set-but-unused declaration and their -Werror build.
+        //
+        // Applied as patterns rather than through a pass manager, because this is already
+        // inside a pass.
         {
-            op->erase();
+            mlir::RewritePatternSet cleanup(&getContext());
+            for (const mlir::RegisteredOperationName name : getContext().getRegisteredOperations())
+            {
+                name.getCanonicalizationPatterns(cleanup, &getContext());
+            }
+            if (mlir::failed(mlir::applyPatternsGreedily(module, std::move(cleanup))))
+            {
+                module.emitError("failed to canonicalize built plan bodies");
+                signalPassFailure();
+                return;
+            }
+        }
+
+        if (mlir::failed(lowerPlanOperations(module)))
+        {
+            return;
+        }
+
+        // Again after the conversion: it introduces values of its own, and a declaration the
+        // emitted C never reads is a diagnostic in the consumer's build.
+        {
+            mlir::RewritePatternSet cleanup(&getContext());
+            for (const mlir::RegisteredOperationName name : getContext().getRegisteredOperations())
+            {
+                name.getCanonicalizationPatterns(cleanup, &getContext());
+            }
+            if (mlir::failed(mlir::applyPatternsGreedily(module, std::move(cleanup))))
+            {
+                module.emitError("failed to canonicalize converted plan bodies");
+                signalPassFailure();
+                return;
+            }
         }
     }
 };
