@@ -41,8 +41,10 @@ SCHEMA = re.compile(r'dsdl\.schema @(\S+)\s+attributes\s*\{([^}]*)\}')
 PLAN = re.compile(r'dsdl\.serialization_plan attributes \{([^}]*)\}')
 ATTR_STR = re.compile(r'(\w+) = "((?:[^"\\]|\\.)*)"')
 
-# `typedef struct NAME {` ... `} NAME;`
-STRUCT = re.compile(r'typedef struct (\w+) \{(.*?)\n\} \1;', re.S)
+# `typedef struct NAME {` ... `} NAME;` -- or `} NAME __attribute__((deprecated));` for a
+# type the schema marks `@deprecated`, which the C backend places after the name so that GCC
+# warns at the use rather than at the definition.
+STRUCT = re.compile(r'typedef struct (\w+) \{(.*?)\n\} \1(?: __attribute__\(\(deprecated\)\))?;', re.S)
 # A member declaration is the last identifier before `;`, with any array extent after it.
 MEMBER = re.compile(r'^\s*[A-Za-z_][\w \*]*?(\w+)\s*(?:\[[^\]]*\])?\s*;\s*$')
 # A variable-length array is an anonymous struct, so its member name is on the closing brace.
@@ -222,7 +224,10 @@ def main() -> int:
     for name, members, _ in offset_cases:
         lines.append("    previous = 0U;")
         for index, member in enumerate(members):
-            lines.append(f"    if (offsetof({name}, {member}) < previous) {{")
+            if index == 0:
+                lines.append(f"    previous = offsetof({name}, {member});")
+                continue
+            lines.append(f"    if (offsetof({name}, {member}) <= previous) {{")
             lines.append(f'        printf("{name}: member {index} (%s) is laid out before the one '
                          f'before it\\n", "{member}");')
             lines.append("        ++failures;")
