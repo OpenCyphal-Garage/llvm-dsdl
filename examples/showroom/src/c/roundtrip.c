@@ -12,7 +12,7 @@
  * weakest property that cannot pass by accident if the wiring is wrong.
  *
  * `lanyard.health.SystemHealth.1.0` is the type under test because of what it drags in: two standard
- * types from the compiled-in catalog, a bounded array of a local composite, and a delimited extent.
+ * types from the compiled-in catalogue, a bounded array of a local composite, and a delimited extent.
  * An integration that compiles the top-level type but not what it embeds fails here rather than in a
  * user's build.
  */

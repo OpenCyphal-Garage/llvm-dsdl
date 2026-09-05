@@ -21,7 +21,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/IR/DSDLOps.h"
@@ -50,7 +50,7 @@
 #include <cstdint>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
@@ -98,7 +98,7 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::c
 {
 namespace
 {
@@ -490,14 +490,14 @@ void emitSectionMetadata(SourceWriter&                    w,
                          const SemanticSection&           section,
                          const LoweredSectionFacts* const sectionFacts)
 {
-    CHeaderTypeMetadata metadata;
+    HeaderTypeMetadata metadata;
     metadata.typeName                     = typeName;
     metadata.fullName                     = fullName;
     metadata.majorVersion                 = majorVersion;
     metadata.minorVersion                 = minorVersion;
     metadata.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
     metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
-    for (const auto& line : renderCTypeMetadataMacros(metadata))
+    for (const auto& line : renderTypeMetadataMacros(metadata))
     {
         w.line(line);
     }
@@ -674,7 +674,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     {
         if (const auto* dep = ctx.find(depRef))
         {
-            out << "#include \"" << llvmdsdl::EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
         }
     }
     w.blank();
@@ -695,10 +695,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
         const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
 
-        for (const auto& line : renderCServiceAliasIdentityMacros(baseTypeName,
-                                                                  def.info.fullName,
-                                                                  def.info.majorVersion,
-                                                                  def.info.minorVersion))
+        for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
+                                                                 def.info.fullName,
+                                                                 def.info.majorVersion,
+                                                                 def.info.minorVersion))
         {
             w.line(line);
         }
@@ -725,13 +725,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                         def.doc,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
-        for (const auto& line : renderCServiceAliasBridgeLines(baseTypeName, requestType))
+        for (const auto& line : renderServiceAliasBridgeLines(baseTypeName, requestType))
         {
             w.line(line);
         }
         w.blank();
 
-        for (const auto& line : renderCServiceAliasWrapperLines(baseTypeName, requestType))
+        for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
         {
             w.line(line);
         }
@@ -882,10 +882,10 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
 
 }  // namespace
 
-llvm::Error emitC(const SemanticModule& semantic,
-                  mlir::ModuleOp        module,
-                  const CEmitOptions&   options,
-                  DiagnosticEngine&     diagnostics)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics)
 {
     if (options.outDir.empty())
     {
@@ -934,7 +934,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     unsigned objectSizeBits = 64U;
-    if (options.artifact == CEmitArtifact::Object)
+    if (options.artifact == Artifact::Object)
     {
         auto width = targetSizeBits(options.targetTriple);
         if (!width)
@@ -957,7 +957,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         perDefModule->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string targetHeaderPath = llvmdsdl::EmitterContext::relativeHeaderPath(def);
+        const std::string targetHeaderPath = EmitterContext::relativeHeaderPath(def);
         const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
         if (targetIt == schemaByHeaderPath.end())
         {
@@ -968,7 +968,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
         stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
-        if (options.artifact == CEmitArtifact::Object)
+        if (options.artifact == Artifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
             // The clones carry lowering's guesses; the module overload matches each to its own
@@ -983,7 +983,7 @@ llvm::Error emitC(const SemanticModule& semantic,
             addOptimizeLoweredSerDesPipeline(pm);
         }
         pm.addPass(createBuildDSDLPlanBodiesPass());
-        if (options.artifact == CEmitArtifact::Object)
+        if (options.artifact == Artifact::Object)
         {
             pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));
             pm.addPass(createEmitDSDLRuntimePass());
@@ -1158,12 +1158,12 @@ llvm::Expected<unsigned> targetSizeBits(const std::string& triple)
 
 llvm::Error emitObject(const SemanticModule& semantic,
                        mlir::ModuleOp        module,
-                       CEmitOptions          options,
+                       Options               options,
                        DiagnosticEngine&     diagnostics)
 {
     registerTargets();
-    options.artifact = CEmitArtifact::Object;
-    return emitC(semantic, module, options, diagnostics);
+    options.artifact = Artifact::Object;
+    return emit(semantic, module, options, diagnostics);
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::c

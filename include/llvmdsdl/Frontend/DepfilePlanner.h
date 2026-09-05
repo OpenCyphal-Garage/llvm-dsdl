@@ -35,10 +35,10 @@ namespace llvmdsdl
 /// Returned dependency vectors are normalized absolute paths, sorted, and de-duplicated.
 ///
 /// Synthetic embedded-uavcan paths are never emitted as dependencies -- they do not name files a
-/// build system can stat. An output that depends on the compiled-in catalog is not thereby
-/// dependency-free, though: the catalog is a real input that changes when the compiler carrying it
+/// build system can stat. An output that depends on the compiled-in catalogue is not thereby
+/// dependency-free, though: the catalogue is a real input that changes when the compiler carrying it
 /// changes. Such outputs get `toolchainStampPath` (normally the `dsdlc` executable) as a stand-in
-/// prerequisite, so upgrading the compiler rebuilds what its catalog produced.
+/// prerequisite, so upgrading the compiler rebuilds what its catalogue produced.
 class DepfilePlanner final
 {
 public:
@@ -46,10 +46,10 @@ public:
     ///
     /// @param[in] semantic Semantic module covering every type reachable from generated outputs.
     ///     Embedded-catalog definitions must be present when they participate in the closure;
-    ///     otherwise the planner cannot distinguish "supplied by the compiled-in catalog" from
+    ///     otherwise the planner cannot distinguish "supplied by the compiled-in catalogue" from
     ///     "unknown type", and both silently yield no dependencies.
     /// @param[in] toolchainStampPath Prerequisite recorded for outputs that draw on the embedded
-    ///     catalog or on compiled-in support content. Empty disables the behaviour.
+    ///     catalogue or on compiled-in support content. Empty disables the behaviour.
     explicit DepfilePlanner(const SemanticModule& semantic, const std::string& toolchainStampPath = {});
 
     /// @brief Returns the dependency list for an output rendered entirely from compiled-in content.

@@ -11,7 +11,7 @@
 /// Implements shared constant-literal rendering helpers for code generation.
 ///
 /// This module renders semantic constant values into language-specific literal
-/// expressions while preserving backend behavioral parity.
+/// expressions while preserving backend behavioural parity.
 ///
 //===----------------------------------------------------------------------===//
 

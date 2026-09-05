@@ -12,7 +12,7 @@
 ///
 /// This engine supports arithmetic and union composition over bit-length expressions used by semantic extent reasoning.
 ///
-/// The authoritative behavioral contract (denotational semantics, value-domain preconditions,
+/// The authoritative behavioural contract (denotational semantics, value-domain preconditions,
 /// invariants I1..I4, algebraic laws, and the exactness model) lives in the class-level
 /// specification in BitLengthSet.h. The comments in this file document how each expression
 /// node realizes that contract, and in particular the per-node truncation policies of

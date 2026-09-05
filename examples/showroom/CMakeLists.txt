@@ -15,7 +15,7 @@
 # another thing that can fail for reasons unrelated to what it is showing.
 #
 # Unlike the other two examples, this one has no submodule dependency: the lanyard namespace refers
-# only to uavcan types, which dsdlc carries in its embedded catalog.
+# only to uavcan types, which dsdlc carries in its embedded catalogue.
 
 set(LLVMDSDL_SHOWROOM_DSDL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dsdl/lanyard")
 set(LLVMDSDL_SHOWROOM_OUT_ROOT "${LLVMDSDL_BINARY_DIR}/showroom")

@@ -153,7 +153,7 @@ dsdl_namespace_repository = repository_rule(
     environ = ["DSDLC", "PATH"],
     doc = """Generates a whole namespace at fetch time and exposes it as one cc_library.
 
-Everything the namespace reaches is generated, including the standard types from the catalog
+Everything the namespace reaches is generated, including the standard types from the catalogue
 compiled into dsdlc, so there is nothing to list and nothing to keep in step. Use this unless you
 specifically want generation to happen as a build action -- see defs.bzl for that.
 """,

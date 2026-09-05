@@ -101,7 +101,7 @@ Composite:           → [Composite]
 ```
 The saturating/masking `HELPER` is applied to the value **before** `WRITE_SCALAR` (principle 1).
 Float helpers are width-matched (f32 for 16/32-bit, f64 for 64-bit) so no native backend
-canonicalizes signaling-NaN payloads through a `float→double→float` round-trip.
+canonicalizes signalling-NaN payloads through a `float→double→float` round-trip.
 
 ### Scalar — deserialize
 ```

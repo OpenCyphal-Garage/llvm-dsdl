@@ -370,7 +370,7 @@ if(PYTHON_EXECUTABLE)
     )
   else()
     message(STATUS
-      "Skipping embedded UAVCAN catalog guard tests: ${LLVMDSDL_UAVCAN_ROOT} missing")
+      "Skipping embedded UAVCAN catalogue guard tests: ${LLVMDSDL_UAVCAN_ROOT} missing")
   endif()
 
   # The adversarial naming corpus, compiled in every backend. lit asserts the identifiers that come

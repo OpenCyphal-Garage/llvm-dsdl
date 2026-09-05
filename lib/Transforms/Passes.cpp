@@ -637,7 +637,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp                
         // Width-match the helper to the field's native storage type: 16/32-bit
         // fields are held as `float` (f32), 64-bit as `double` (f64). Typing the
         // helper as f64 for every width forced callers to promote a float32
-        // value to double and narrow it back, which canonicalizes a signaling
+        // value to double and narrow it back, which canonicalizes a signalling
         // NaN's mantissa payload and diverges bit-for-bit from the reference
         // compiler. The helper is an identity pass-through, so matching the width
         // preserves the exact bits.

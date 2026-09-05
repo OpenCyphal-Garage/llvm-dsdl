@@ -826,9 +826,9 @@ int runDirectedErrorCases()
     }
 
     {
-        // Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // Float32 signalling-NaN payload must survive deserialize->serialize byte-exactly in both C
         // and C++. Regression guard for the float32 -> double -> float32 round-trip that quieted
-        // signaling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
+        // signalling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
         // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
         // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
         const std::uint8_t                golden[4] = {0x01U, 0x00U, 0x80U, 0x7FU};  // float32 sNaN
@@ -849,7 +849,7 @@ int runDirectedErrorCases()
             (std::memcmp(cppOut, golden, 4U) != 0))
         {
             std::fprintf(stderr,
-                         "Directed mismatch (Real32 signaling-NaN payload roundtrip): "
+                         "Directed mismatch (Real32 signalling-NaN payload roundtrip): "
                          "C(rc=%d,size=%zu) C++(rc=%d,size=%zu)\n",
                          static_cast<int>(cSerRc),
                          cSize,

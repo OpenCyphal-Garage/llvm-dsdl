@@ -146,7 +146,7 @@ starting point.
 
 ### What the lowering path already supports
 
-[`CEmitter.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/CEmitter.cpp) already runs `createSCFToEmitC`,
+[`emitter/C.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/C.cpp) already runs `createSCFToEmitC`,
 `createConvertArithToEmitC`, `createConvertFuncToEmitC` and `translateToCpp`, which is how the
 helper predicates become C today. Checked against upstream `mlir-opt`/`mlir-translate`, that
 path also renders everything the serdes bodies need:
@@ -255,7 +255,7 @@ object lowering, and conflating them made the object lane appear to need headers
 
 `--target-language mlir` stamps and sets `names_final`, which is what makes the symbols it
 prints the ones a generated header declares. It refuses to claim the attribute unless every
-schema was stamped, the embedded catalog otherwise contributing schemas the stamp never reached.
+schema was stamped, the embedded catalogue otherwise contributing schemas the stamp never reached.
 `llvmdsdl-schema-symbol-parity` holds those symbols against the headers under both naming modes.
 
 ### The target's `size_t`

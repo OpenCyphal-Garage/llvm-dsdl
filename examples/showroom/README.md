@@ -44,7 +44,7 @@ Building the output is what the [recipes](RECIPES.md) do, deliberately as a sepa
 Individual variants build on their own: `cmake --build <build-dir> --target showroom-rust-std`.
 
 There is no submodule dependency -- `lanyard` refers only to `uavcan` types, which dsdlc carries in
-its embedded catalog.
+its embedded catalogue.
 
 ## Browse it
 

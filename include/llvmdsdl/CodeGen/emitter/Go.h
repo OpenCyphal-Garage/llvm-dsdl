@@ -8,11 +8,11 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Public entry points and options for C++ backend emission.
+/// Public entry points and options for Go backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_CPPEMITTER_H
-#define LLVMDSDL_CODEGEN_CPPEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_GO_H
+#define LLVMDSDL_CODEGEN_EMITTER_GO_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -32,29 +32,16 @@ namespace llvmdsdl
 class DiagnosticEngine;
 class EmitTraceSink;
 struct SemanticModule;
+}  // namespace llvmdsdl
 
-/// @file
-/// @brief C++ backend emission entry points.
-
-/// @brief C++ runtime profile selection.
-enum class CppProfile
+namespace llvmdsdl::emitter::go
 {
 
-    /// @brief Emit `std` profile only.
-    Std,
+/// @file
+/// @brief Go backend emission entry points.
 
-    /// @brief Emit `pmr` profile only.
-    Pmr,
-
-    /// @brief Emit both `std` and `pmr` profiles.
-    Both,
-
-    /// @brief Emit AUTOSAR-oriented C++14 profile.
-    Autosar,
-};
-
-/// @brief Configuration options for C++ code generation.
-struct CppEmitOptions final
+/// @brief Configuration options for Go code generation.
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -65,22 +52,14 @@ struct CppEmitOptions final
     /// @brief Output directory root.
     std::string outDir;
 
-    /// @brief Requested C++ profile.
-    CppProfile profile{CppProfile::Both};
+    /// @brief Generated Go module name.
+    std::string moduleName{"llvmdsdl_generated"};
+
+    /// @brief Emits `go.mod` when true.
+    bool emitGoMod{true};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
-
-    /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
-    ///
-    /// @details
-    /// On by default: a deprecation that only a reader of the documentation can see is a deprecation
-    /// nobody acts on, so the attribute is what gives the marking teeth. Only code that names a
-    /// deprecated type is diagnosed -- each generated file suppresses the diagnostic across its own
-    /// body, so including generated headers stays clean under `-Werror`. Disable this when a
-    /// `-Werror` build must keep using deprecated definitions that have no migration target yet. The
-    /// deprecation notice and the metadata constant are emitted regardless of this setting.
-    bool emitDeprecationAttributes{true};
 
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
@@ -92,18 +71,18 @@ struct CppEmitOptions final
     EmitWritePolicy writePolicy;
 };
 
-/// @brief Emits C++ artifacts from semantic and lowered MLIR inputs.
+/// @brief Emits Go artifacts from semantic and lowered MLIR inputs.
 /// @param[in] semantic Resolved semantic module.
 /// @param[in] module Lowered MLIR module.
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emitCpp(const SemanticModule& semantic,
-                    mlir::ModuleOp        module,
-                    const CppEmitOptions& options,
-                    DiagnosticEngine&     diagnostics,
-                    EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::go
 
-#endif  // LLVMDSDL_CODEGEN_CPPEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_GO_H

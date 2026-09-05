@@ -220,7 +220,7 @@ struct PruneReport final
 ///
 /// @details
 /// A build may split one namespace across several dsdlc invocations -- support code, the embedded
-/// catalog, and definitions are the natural seams -- and each invocation owns only the files it
+/// catalogue, and definitions are the natural seams -- and each invocation owns only the files it
 /// emits. Pruning is therefore scoped by a manifest supplied by the caller, one per tranche, rather
 /// than by sweeping @p outputRoot: a tranche that swept the output directory would delete its
 /// siblings' work.

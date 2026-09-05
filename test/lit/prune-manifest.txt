@@ -5,7 +5,7 @@
 # until somebody wipes the output directory by hand.
 #
 # Pruning is per invocation rather than per output directory because generation decomposes: a build
-# may split one namespace across several dsdlc runs (support, the embedded catalog, definitions), and
+# may split one namespace across several dsdlc runs (support, the embedded catalogue, definitions), and
 # a run that swept --outdir would delete the files its siblings had just written.
 
 # Set up a working copy, since this test deletes definitions.

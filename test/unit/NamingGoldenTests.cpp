@@ -286,9 +286,9 @@ std::string applyTypeName(const CodegenNamingLanguage language, const std::strin
 
 /// @brief True when @p language's backend derives output file names from the shared projection.
 ///
-/// Rust (RustEmitter.cpp `rustModuleName`), Go (GoEmitter.cpp `goFileName`), TypeScript and Python
+/// Rust (emitter/Rust.cpp `rustModuleName`), Go (emitter/Go.cpp `goFileName`), TypeScript and Python
 /// (both via `renderVersionedFileStem`) all fold the short name to snake_case first. C and C++ use
-/// the DSDL short name verbatim (CEmitter.cpp `headerFileName`, CppEmitter.cpp `headerFileName`),
+/// the DSDL short name verbatim (emitter/C.cpp `headerFileName`, emitter/Cpp.cpp `headerFileName`),
 /// so no two distinct type names can share a header and the column would say nothing about them.
 bool usesSharedFileStem(const CodegenNamingLanguage language)
 {
@@ -300,8 +300,8 @@ bool usesSharedFileStem(const CodegenNamingLanguage language)
 ///        projection: PascalCase short name plus version.
 ///
 /// Go (`goTypeName`), TypeScript and Python (`renderVersionedTypeName`). C, C++ and Rust build a
-/// namespace-qualified symbol instead (CEmitter.cpp `mangleSymbol`, CppEmitter.cpp `cppTypeName`,
-/// RustEmitter.cpp `rustTypeName`), which cannot collide across namespaces.
+/// namespace-qualified symbol instead (emitter/C.cpp `mangleSymbol`, emitter/Cpp.cpp `cppTypeName`,
+/// emitter/Rust.cpp `rustTypeName`), which cannot collide across namespaces.
 bool usesSharedTypeName(const CodegenNamingLanguage language)
 {
     return language == CodegenNamingLanguage::Go || language == CodegenNamingLanguage::TypeScript ||

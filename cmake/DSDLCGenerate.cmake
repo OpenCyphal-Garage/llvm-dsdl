@@ -167,7 +167,7 @@ function(dsdlc_generate name)
   foreach(_selector IN LISTS ARG_BUILTIN)
     if(NOT _selector MATCHES "^\\+")
       message(FATAL_ERROR
-        "dsdlc_generate(${name}): BUILTIN selectors name the compiled-in catalog and begin with "
+        "dsdlc_generate(${name}): BUILTIN selectors name the compiled-in catalogue and begin with "
         "'+', for example +uavcan.node; got '${_selector}'")
     endif()
   endforeach()

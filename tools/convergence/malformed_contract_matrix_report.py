@@ -264,7 +264,7 @@ def _build_report(
             evidence = _matches(test_names, patterns)
             failed_evidence = _matches(failed_names, patterns) if behavioral else []
             skipped_evidence = _matches(skipped_names, patterns) if behavioral else []
-            # Behavioral rule: covered iff a matching test passed AND none failed.
+            # Behavioural rule: covered iff a matching test passed AND none failed.
             covered = len(evidence) > 0 and len(failed_evidence) == 0
             if covered:
                 backend_covered += 1
@@ -357,13 +357,13 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append(f"Test-source scan: `{report['test_source']}`")
     if report.get("behavioral"):
         lines.append(
-            "Gating mode: **behavioral** — a category is `covered` only if a matching test "
+            "Gating mode: **behavioural** — a category is `covered` only if a matching test "
             "executed and passed; failed/skipped/absent evidence leaves it uncovered."
         )
     else:
         lines.append(
             "Gating mode: **structural** — coverage is inferred from registered test names. "
-            "Supply `--ctest-junit` for behavioral (executed pass/fail) gating."
+            "Supply `--ctest-junit` for behavioural (executed pass/fail) gating."
         )
     lines.append("")
 
@@ -395,7 +395,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         lines.append("")
 
     if report.get("behavioral"):
-        lines.append("## Coverage Manifest (behavioral)")
+        lines.append("## Coverage Manifest (behavioural)")
         lines.append("")
         manifest = report.get("coverage_manifest", [])
         if manifest:
@@ -505,7 +505,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         "--ctest-junit",
         action="append",
         default=[],
-        help="JUnit XML result file from an executed ctest run; enables behavioral "
+        help="JUnit XML result file from an executed ctest run; enables behavioural "
         "(executed pass/fail) gating. Repeatable.",
     )
     parser.add_argument("--output-json", help="Output JSON path.")
@@ -530,14 +530,14 @@ def main(argv: List[str]) -> int:
 
     if junit is None and test_dir is None:
         print(
-            "error: one of --ctest-junit (behavioral) or --ctest-test-dir (structural) is required",
+            "error: one of --ctest-junit (behavioural) or --ctest-test-dir (structural) is required",
             file=sys.stderr,
         )
         return 2
     if args.check_regressions and junit is None:
         print(
             "warning: malformed-contract gate running in STRUCTURAL mode (test-name presence); "
-            "supply --ctest-junit for behavioral gating",
+            "supply --ctest-junit for behavioural gating",
             file=sys.stderr,
         )
 

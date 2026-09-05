@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Shared diagnostic-text catalog for generated runtime contracts.
+/// Shared diagnostic-text catalogue for generated runtime contracts.
 ///
 /// The functions in this file provide parity-locked diagnostic text fragments
 /// used across multiple language emitters. Emitters remain responsible for

@@ -32,7 +32,7 @@ extern const DifferentialCaseInfo g_nv_case_sync_timestamp;
 // Every case is compared byte-for-byte against the reference compiler. This
 // includes the float-carrying types (Real32, and register.Value's real16/32/64
 // union variants): our C codegen keeps floats in their native storage width
-// end-to-end, so a signaling NaN's mantissa payload is preserved exactly as the
+// end-to-end, so a signalling NaN's mantissa payload is preserved exactly as the
 // reference does (no float->double->float canonicalization).
 typedef struct {
   const char *name;

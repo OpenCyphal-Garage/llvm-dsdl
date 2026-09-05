@@ -20,15 +20,15 @@
 # LIST_INPUTS: UsesHeartbeat.1.0.dsdl
 # LIST_INPUTS-NOT: embedded-uavcan
 
-# A mixed output lists its real inputs and, because its closure reaches the compiled-in catalog,
-# the dsdlc binary standing in for that catalog. Order within the rule follows path sort order,
+# A mixed output lists its real inputs and, because its closure reaches the compiled-in catalogue,
+# the dsdlc binary standing in for that catalogue. Order within the rule follows path sort order,
 # which varies by build layout, so the two prerequisites are matched unordered.
 # DEPFILE_LOCAL: UsesHeartbeat_1_0.h:
 # DEPFILE_LOCAL-DAG: UsesHeartbeat.1.0.dsdl
 # DEPFILE_LOCAL-DAG: dsdlc
 # DEPFILE_LOCAL-NOT: embedded-uavcan
 
-# An output generated entirely from the embedded catalog has no .dsdl source to name, so the binary
+# An output generated entirely from the embedded catalogue has no .dsdl source to name, so the binary
 # is its only prerequisite. Before the stamp existed this rule had none at all and never rebuilt.
 # DEPFILE_EMBEDDED: Heartbeat_1_0.h: {{.*}}dsdlc
 # DEPFILE_EMBEDDED-NOT: embedded-uavcan
@@ -38,7 +38,7 @@
 # DEPFILE_NO_EMBED: UsesHeartbeat.1.0.dsdl
 # DEPFILE_NO_EMBED: Heartbeat.1.0.dsdl
 # DEPFILE_NO_EMBED-NOT: embedded-uavcan
-# A closure that never reaches the catalog must not be pinned to the compiler.
+# A closure that never reaches the catalogue must not be pinned to the compiler.
 # DEPFILE_NO_EMBED-NOT: dsdlc
 
 # DEPFILE_NO_EMBED_HEARTBEAT: Heartbeat_1_0.h:

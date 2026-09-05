@@ -8,11 +8,11 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Public entry points and options for TypeScript backend emission.
+/// Public entry points and options for Python backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_TS_EMITTER_H
-#define LLVMDSDL_CODEGEN_TS_EMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_PYTHON_H
+#define LLVMDSDL_CODEGEN_EMITTER_PYTHON_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -30,24 +30,25 @@ class ModuleOp;
 namespace llvmdsdl
 {
 class DiagnosticEngine;
-class EmitTraceSink;
 struct SemanticModule;
+class EmitTraceSink;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::python
+{
 
 /// @file
-/// @brief TypeScript backend emission entry points.
+/// @brief Python backend emission entry points.
 
-/// @brief TypeScript runtime specialization selection.
-enum class TsRuntimeSpecialization
+/// @brief Runtime specialization profile for generated Python runtime helpers.
+enum class RuntimeSpecialization
 {
-    /// @brief Emit conservative portable runtime helpers.
-    Portable,
-
-    /// @brief Emit runtime helpers with byte-aligned fast paths.
-    Fast,
+    Portable,  ///< Conservative bit-level runtime helper implementation.
+    Fast       ///< Enables byte-aligned runtime helper fast paths.
 };
 
-/// @brief Configuration options for TypeScript code generation.
-struct TsEmitOptions final
+/// @brief Configuration options for Python code generation.
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -58,14 +59,11 @@ struct TsEmitOptions final
     /// @brief Output directory root.
     std::string outDir;
 
-    /// @brief Generated npm/module name.
-    std::string moduleName{"llvmdsdl_generated"};
+    /// @brief Generated Python package name.
+    std::string packageName{"dsdl_gen"};
 
-    /// @brief Emits package metadata when true.
-    bool emitPackageJson{true};
-
-    /// @brief Requested runtime helper specialization.
-    TsRuntimeSpecialization runtimeSpecialization{TsRuntimeSpecialization::Portable};
+    /// @brief Runtime helper specialization profile.
+    RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
@@ -80,7 +78,7 @@ struct TsEmitOptions final
     EmitWritePolicy writePolicy;
 };
 
-/// @brief Emits TypeScript artifacts from semantic and lowered MLIR inputs.
+/// @brief Emits Python artifacts from semantic and lowered MLIR inputs.
 /// @param[in] semantic Resolved semantic module.
 /// @param[in] module Lowered MLIR module.
 /// @param[in] options Backend configuration.
@@ -88,12 +86,12 @@ struct TsEmitOptions final
 /// @param[in] traceSink Optional emit-order trace sink (for the emit-order verifier); null (default) disables tracing
 /// at zero cost.
 /// @return Success or detailed failure.
-llvm::Error emitTs(const SemanticModule& semantic,
-                   mlir::ModuleOp        module,
-                   const TsEmitOptions&  options,
-                   DiagnosticEngine&     diagnostics,
-                   EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::python
 
-#endif  // LLVMDSDL_CODEGEN_TS_EMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_PYTHON_H

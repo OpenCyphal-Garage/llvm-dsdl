@@ -56,7 +56,7 @@ bool runUavcanEmbeddedCatalogTests()
     //     C++ string-literal text decodes byte-identically to the text the generator hashed.
     if (!llvmdsdl::embeddedUavcanCatalogIntegrityOk())
     {
-        std::cerr << "embedded UAVCAN catalog failed its own SHA-256 integrity check\n";
+        std::cerr << "embedded UAVCAN catalogue failed its own SHA-256 integrity check\n";
         return false;
     }
     // (2) The verifier must compute SHA-256 correctly: the empty string has a well-known digest.
@@ -77,7 +77,7 @@ bool runUavcanEmbeddedCatalogTests()
     //     and must be the same pair the check itself compares.
     if (llvmdsdl::embeddedUavcanCatalogComputedSha256() != llvmdsdl::embeddedUavcanCatalogRecordedSha256())
     {
-        std::cerr << "embedded UAVCAN catalog hash accessors disagree: computed "
+        std::cerr << "embedded UAVCAN catalogue hash accessors disagree: computed "
                   << llvmdsdl::embeddedUavcanCatalogComputedSha256() << ", recorded "
                   << llvmdsdl::embeddedUavcanCatalogRecordedSha256().str() << "\n";
         return false;
@@ -97,13 +97,13 @@ bool runUavcanEmbeddedCatalogTests()
     auto                       loaded = llvmdsdl::loadUavcanEmbeddedCatalog(context, diagnostics);
     if (!loaded)
     {
-        std::cerr << "failed to load embedded UAVCAN catalog\n";
+        std::cerr << "failed to load embedded UAVCAN catalogue\n";
         llvm::consumeError(loaded.takeError());
         return false;
     }
     if (diagnostics.hasErrors())
     {
-        std::cerr << "embedded UAVCAN catalog load emitted diagnostics\n";
+        std::cerr << "embedded UAVCAN catalogue load emitted diagnostics\n";
         return false;
     }
 
@@ -111,20 +111,20 @@ bool runUavcanEmbeddedCatalogTests()
 
     if (catalog.semantic.definitions.size() < 100U)
     {
-        std::cerr << "embedded UAVCAN catalog has unexpectedly few semantic definitions\n";
+        std::cerr << "embedded UAVCAN catalogue has unexpectedly few semantic definitions\n";
         return false;
     }
 
     if (!catalog.typeKeys.contains("uavcan.node.Heartbeat:1:0"))
     {
-        std::cerr << "embedded UAVCAN catalog missing sentinel key uavcan.node.Heartbeat:1:0\n";
+        std::cerr << "embedded UAVCAN catalogue missing sentinel key uavcan.node.Heartbeat:1:0\n";
         return false;
     }
 
     const auto* heartbeat = findDefinition(catalog.semantic, "uavcan.node.Heartbeat", 1U, 0U);
     if (heartbeat == nullptr)
     {
-        std::cerr << "embedded UAVCAN catalog missing semantic definition uavcan.node.Heartbeat.1.0\n";
+        std::cerr << "embedded UAVCAN catalogue missing semantic definition uavcan.node.Heartbeat.1.0\n";
         return false;
     }
     if (!llvmdsdl::isEmbeddedUavcanSyntheticPath(heartbeat->info.filePath))
@@ -141,7 +141,7 @@ bool runUavcanEmbeddedCatalogTests()
     const auto* registerValue = findDefinition(catalog.semantic, "uavcan.register.Value", 1U, 0U);
     if (registerValue == nullptr || !registerValue->request.isUnion)
     {
-        std::cerr << "embedded UAVCAN catalog failed to preserve union metadata for uavcan.register.Value.1.0\n";
+        std::cerr << "embedded UAVCAN catalogue failed to preserve union metadata for uavcan.register.Value.1.0\n";
         return false;
     }
 
@@ -149,7 +149,7 @@ bool runUavcanEmbeddedCatalogTests()
     if (getInfo == nullptr || !getInfo->isService || !getInfo->response)
     {
         std::cerr
-            << "embedded UAVCAN catalog failed to preserve service request/response for uavcan.node.GetInfo.1.0\n";
+            << "embedded UAVCAN catalogue failed to preserve service request/response for uavcan.node.GetInfo.1.0\n";
         return false;
     }
 
@@ -237,7 +237,7 @@ bool runUavcanEmbeddedCatalogTests()
             return false;
         }
     }
-    // Heartbeat has exactly one version in the catalog, so this selector expands to the same single
+    // Heartbeat has exactly one version in the catalogue, so this selector expands to the same single
     // key the versioned one did. It still swept to get there, and must not claim otherwise -- a
     // result-size test would get this wrong, which is why it is asserted on the one-version type.
     if (byTypeName.namesExactVersion)
@@ -261,7 +261,7 @@ bool runUavcanEmbeddedCatalogTests()
     }
     if (rootKeys.typeKeys.size() != catalog.typeKeys.size())
     {
-        std::cerr << "root namespace selector should select the whole catalog\n";
+        std::cerr << "root namespace selector should select the whole catalogue\n";
         return false;
     }
     if (!std::ranges::is_sorted(rootKeys.typeKeys))
@@ -298,7 +298,7 @@ bool runUavcanEmbeddedCatalogTests()
     }
     if (std::ranges::find(badVersion.suggestions, "uavcan.node.Heartbeat.1.0") == badVersion.suggestions.end())
     {
-        std::cerr << "an unavailable version should suggest the versions the catalog carries\n";
+        std::cerr << "an unavailable version should suggest the versions the catalogue carries\n";
         return false;
     }
 

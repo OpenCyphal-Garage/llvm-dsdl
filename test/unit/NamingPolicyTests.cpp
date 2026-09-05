@@ -126,8 +126,8 @@ bool runNamingRoleTests()
             const bool rustLike = language == CodegenNamingLanguage::Rust;
             const bool goLike   = language == CodegenNamingLanguage::Go;
 
-            // Fields: C/C++/Rust keep the DSDL spelling (CEmitter.cpp, CppEmitter.cpp, RustEmitter.cpp
-            // all call codegenSanitizeIdentifier); Go exports PascalCase (GoEmitter.cpp
+            // Fields: C/C++/Rust keep the DSDL spelling (emitter/C.cpp, emitter/Cpp.cpp, emitter/Rust.cpp
+            // all call codegenSanitizeIdentifier); Go exports PascalCase (emitter/Go.cpp
             // toExportedIdent); TypeScript and Python fold to snake_case.
             std::string fieldOracle = codegenToSnakeCaseIdentifier(language, name);
             if (cLike || rustLike)
@@ -148,7 +148,7 @@ bool runNamingRoleTests()
             ok = expectRole(language, IdentifierRole::MacroName, name, constOracle, "the macro call site") && ok;
 
             // Namespaces: C/C++/Rust sanitize each component, Go/TypeScript/Python snake_case it
-            // (GoEmitter.cpp packagePathFromComponents, renderNamespaceRelativePath).
+            // (emitter/Go.cpp packagePathFromComponents, renderNamespaceRelativePath).
             const std::string nsOracle = (cLike || rustLike) ? codegenSanitizeIdentifier(language, name)
                                                              : codegenToSnakeCaseIdentifier(language, name);
             ok = expectRole(language, IdentifierRole::NamespaceName, name, nsOracle, "the namespace call site") && ok;

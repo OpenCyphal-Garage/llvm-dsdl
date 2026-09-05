@@ -79,7 +79,7 @@ jobs:
         # cpp/rust/go cell in the parity matrix is corpus-backed, so a submodule-less checkout does
         # not merely fail the gate (score 12 against a minimum of 100); it would publish a parity
         # page claiming those three backends have no array, union, delimited or service coverage.
-        # The showroom itself does resolve its uavcan dependencies from dsdlc's embedded catalog --
+        # The showroom itself does resolve its uavcan dependencies from dsdlc's embedded catalogue --
         # that part of the old comment was right, it just was not the whole dependency.
         uses: actions/checkout@v7
         with:
@@ -106,7 +106,7 @@ jobs:
         #
         # The matrices come out in STRUCTURAL mode here -- coverage inferred from registered test
         # names -- because this job does not run the suite. Each page says so in its own banner. The
-        # behavioral run, which consumes executed pass/fail, is a release gate in the CI workflow.
+        # behavioural run, which consumes executed pass/fail, is a release gate in the CI workflow.
         run: cmake --build build/matrix/ci --config Debug --target docs-generate
 
       - name: Install the pinned docs toolchain

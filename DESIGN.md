@@ -131,6 +131,8 @@ The lowered contract attributes are an explicit handshake between producers and 
 
 Code generation is split into backend-specific rendering plus shared convergence layers. All backends receive both semantic and MLIR module inputs. Shared planners/helpers reduce divergence in behaviour across languages.
 
+The backend emitters live in [`include/llvmdsdl/CodeGen/emitter`](./include/llvmdsdl/CodeGen/emitter) and [`lib/CodeGen/emitter`](./lib/CodeGen/emitter), one translation unit per language, each in the namespace `llvmdsdl::emitter::<language>`.
+
 Representative shared layers:
 
 - [`include/llvmdsdl/CodeGen/MlirLoweredFacts.h`](include/llvmdsdl/CodeGen/MlirLoweredFacts.h)
@@ -145,13 +147,13 @@ This structure is the core of the “shared semantics, multiple syntaxes” stra
 
 ## 4. Backend Architecture (As Implemented)
 
-### 4.1 C backend (`emitC`)
+### 4.1 C backend (`emitter::c::emit`)
 
 The C backend is the most MLIR-native path. For each selected definition, it runs lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
 
 Key file:
 
-- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
+- [`lib/CodeGen/emitter/C.cpp`](lib/CodeGen/emitter/C.cpp)
 
 Current path:
 
@@ -161,13 +163,13 @@ Current path:
 4. Emit body using `mlir::emitc::translateToCpp(...)`.
 5. Emit matching `.h` API and `dsdl_runtime.h`.
 
-### 4.2 C++ backend (`emitCpp`)
+### 4.2 C++ backend (`emitter::cpp::emit`)
 
 The C++ backend renders modern namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
 
 Key file:
 
-- [`lib/CodeGen/CppEmitter.cpp`](lib/CodeGen/CppEmitter.cpp)
+- [`lib/CodeGen/emitter/Cpp.cpp`](lib/CodeGen/emitter/Cpp.cpp)
 
 `pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
 
@@ -175,39 +177,39 @@ Key file:
 
 `both` remains a convenience output that emits only the `std` and `pmr` trees.
 
-### 4.3 Rust backend (`emitRust`)
+### 4.3 Rust backend (`emitter::rust::emit`)
 
 Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialization modes, and configurable memory-mode contracts.
 
 Key file:
 
-- [`lib/CodeGen/RustEmitter.cpp`](lib/CodeGen/RustEmitter.cpp)
+- [`lib/CodeGen/emitter/Rust.cpp`](lib/CodeGen/emitter/Rust.cpp)
 
 The design emphasizes explicit memory/runtime contracts because Rust deployments span both desktop and constrained embedded environments.
 
-### 4.4 Go backend (`emitGo`)
+### 4.4 Go backend (`emitter::go::emit`)
 
 Go emission produces a module root, runtime package, and namespace-organized type files. It reuses native traversal/helper contract layers shared with C++ and Rust.
 
 Key file:
 
-- [`lib/CodeGen/GoEmitter.cpp`](lib/CodeGen/GoEmitter.cpp)
+- [`lib/CodeGen/emitter/Go.cpp`](lib/CodeGen/emitter/Go.cpp)
 
-### 4.5 TypeScript backend (`emitTs`)
+### 4.5 TypeScript backend (`emitter::ts::emit`)
 
 TypeScript emission is a scripted backend that uses runtime/body operation plans to produce typed model declarations and runtime-backed SerDes functions. It supports `portable` and `fast` runtime variants.
 
 Key file:
 
-- [`lib/CodeGen/TsEmitter.cpp`](lib/CodeGen/TsEmitter.cpp)
+- [`lib/CodeGen/emitter/Ts.cpp`](lib/CodeGen/emitter/Ts.cpp)
 
-### 4.6 Python backend (`emitPython`)
+### 4.6 Python backend (`emitter::python::emit`)
 
 Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. It mirrors the scripted-backend planning model used by TypeScript.
 
 Key file:
 
-- [`lib/CodeGen/PythonEmitter.cpp`](lib/CodeGen/PythonEmitter.cpp)
+- [`lib/CodeGen/emitter/Python.cpp`](lib/CodeGen/emitter/Python.cpp)
 
 ### 4.7 Object backend (`obj`)
 
@@ -219,7 +221,7 @@ its acceptance gates are in [Direct Object Lowering](docs/development/direct-obj
 
 Key file:
 
-- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
+- [`lib/CodeGen/emitter/C.cpp`](lib/CodeGen/emitter/C.cpp)
 
 ## 5. Runtime Design
 
@@ -323,7 +325,7 @@ Current tradeoffs:
   [Direct Object Lowering](docs/development/direct-object-lowering.md).
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
-- Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.
+- Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalogue; `ast` remains source-only.
 - Guardrails are intentionally strict: convergence/parity/malformed/determinism and runtime/architecture gates are release-blocking.
 
 This gives the project a stable multi-backend compiler with one canonical semantic flow and explicit boundaries for where backend-specific code is allowed.

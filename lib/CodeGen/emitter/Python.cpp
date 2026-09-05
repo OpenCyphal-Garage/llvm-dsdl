@@ -22,7 +22,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
-#include "llvmdsdl/CodeGen/PythonEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Python.h"
 
 #include <algorithm>
 #include <cassert>
@@ -65,9 +65,8 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::python
 {
-class DiagnosticEngine;
 
 namespace
 {
@@ -1717,9 +1716,9 @@ llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)
 /// @brief Returns the runtime scaffold file name for a Python specialization.
 /// @param[in] runtimeSpecialization Runtime specialization profile.
 /// @return Source runtime scaffold file name under `runtime/python`.
-std::string runtimeFileForSpecialization(const PythonRuntimeSpecialization runtimeSpecialization)
+std::string runtimeFileForSpecialization(const RuntimeSpecialization runtimeSpecialization)
 {
-    if (runtimeSpecialization == PythonRuntimeSpecialization::Fast)
+    if (runtimeSpecialization == RuntimeSpecialization::Fast)
     {
         return "_dsdl_runtime_fast.py";
     }
@@ -1729,14 +1728,14 @@ std::string runtimeFileForSpecialization(const PythonRuntimeSpecialization runti
 /// @brief Renders backend metadata emitted with generated Python artifacts.
 /// @param[in] options Python emission options.
 /// @return Stable JSON metadata payload.
-std::string renderPackageMetadata(const PythonEmitOptions& options)
+std::string renderPackageMetadata(const Options& options)
 {
     std::ostringstream out;
     out << "{\n";
     out << "  \"llvmdsdl\": {\n";
     out << R"(    "generatorVersion": ")" << llvmdsdl::kVersionString << "\",\n";
     out << R"(    "pythonRuntimeSpecialization": ")";
-    out << (options.runtimeSpecialization == PythonRuntimeSpecialization::Fast ? "fast" : "portable");
+    out << (options.runtimeSpecialization == RuntimeSpecialization::Fast ? "fast" : "portable");
     out << "\"\n";
     out << "  }\n";
     out << "}\n";
@@ -1856,11 +1855,11 @@ llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
 
 }  // namespace
 
-llvm::Error emitPython(const SemanticModule&    semantic,
-                       mlir::ModuleOp           module,
-                       const PythonEmitOptions& options,
-                       DiagnosticEngine&        diagnostics,
-                       EmitTraceSink*           traceSink)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1987,7 +1986,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath  = llvmdsdl::EmitterContext::relativeFilePath(def->info);
+        const auto                     relPath  = EmitterContext::relativeFilePath(def->info);
         const auto                     fullPath = packageRoot / relPath;
 
         if (auto err = ensurePackageInitChain(packageRoot,
@@ -2014,4 +2013,4 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     return llvm::Error::success();
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::python

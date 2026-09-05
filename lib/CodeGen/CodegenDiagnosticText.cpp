@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements shared diagnostic-text catalog for generated runtime contracts.
+/// Implements shared diagnostic-text catalogue for generated runtime contracts.
 ///
 //===----------------------------------------------------------------------===//
 

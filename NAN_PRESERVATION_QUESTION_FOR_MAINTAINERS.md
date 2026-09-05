@@ -13,7 +13,7 @@ need to know whether "preserved" means:
 - **(b)** the exact **bit pattern (including the NaN payload) is preserved** wherever the
   field width makes that possible.
 
-The two readings diverge for `float16`, and they have implications for whether signaling
+The two readings diverge for `float16`, and they have implications for whether signalling
 NaNs may be quieted on `float32`/`float64`.
 
 ## The specification text
@@ -38,14 +38,14 @@ the well-known "magic-float" algorithm also used by libcanard/Nunavut).
 
 ### float32 / float64 — exact bit pattern preserved
 
-A signaling NaN survives a deserialize→serialize round-trip byte-for-byte, identically
+A signalling NaN survives a deserialize→serialize round-trip byte-for-byte, identically
 across all four backends:
 
 | input (wire, little-endian) | output |
 | --- | --- |
 | `01 00 80 7F` (float32 sNaN, quiet bit clear) | `01 00 80 7F` |
 
-Note we do **not** set the quiet bit — the signaling NaN is preserved as-is. This is now
+Note we do **not** set the quiet bit — the signalling NaN is preserved as-is. This is now
 covered by a regression test in the C↔C++, C↔Rust, and C↔Go parity suites.
 
 ### float16 — NaN preserved, but payload canonicalized
@@ -67,7 +67,7 @@ A 23-bit payload cannot in general be represented in 10 bits, so a normative req
 "preserve the exact NaN payload" through a `float32 → float16` cast would be unsatisfiable.
 That pushes us toward reading (a) ("remains a NaN") as the only coherent meaning at `float16`
 width. IEEE 754 is consistent with this: it treats NaN payload propagation as a
-*recommendation*, not a requirement, and explicitly permits quieting a signaling NaN on
+*recommendation*, not a requirement, and explicitly permits quieting a signalling NaN on
 format conversion.
 
 We currently implement reading (a): NaN in → NaN out, payload canonicalized at `float16`,
@@ -83,11 +83,11 @@ exact payload preserved at `float32`/`float64` where the width allows it.
    least reproduce the low payload bits when the source NaN's payload already fits in the
    10 available bits (e.g. round-tripping a wire `0x7C01` back to `0x7C01`)?
 
-3. **Signaling NaNs at float32/float64.** We currently preserve signaling NaNs exactly and
+3. **Signalling NaNs at float32/float64.** We currently preserve signalling NaNs exactly and
    do **not** set the quiet bit, reading "preserve the original value" literally. IEEE 754
-   *recommends* quieting signaling NaNs on conversion. For a same-width `float32 → float32`
+   *recommends* quieting signalling NaNs on conversion. For a same-width `float32 → float32`
    store (which is arguably not a "conversion" at all), which behaviour does the spec intend —
-   preserve the signaling NaN as-is (what we do), or quiet it?
+   preserve the signalling NaN as-is (what we do), or quiet it?
 
 ## Why this matters
 
@@ -103,5 +103,5 @@ with the reference implementations (libcanard/Nunavut) to keep the ecosystem con
   (<https://github.com/OpenCyphal/specification/blob/master/specification/dsdl/serializable_types.tex>)
 - Runtime float16 conversion: `runtime/dsdl_runtime.h`
   (`dsdl_runtime_float16_pack` / `dsdl_runtime_float16_unpack`)
-- float32 signaling-NaN regression tests: `test/integration/CppCParityMain.cpp`,
+- float32 signalling-NaN regression tests: `test/integration/CppCParityMain.cpp`,
   `test/integration/CRustParityMain.rs`, `test/integration/CGoParityMain.go`

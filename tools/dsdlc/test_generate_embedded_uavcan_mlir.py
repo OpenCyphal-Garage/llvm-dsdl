@@ -6,7 +6,7 @@
 #
 #===----------------------------------------------------------------------===#
 
-"""Regression tests for embedded UAVCAN MLIR catalog generator."""
+"""Regression tests for embedded UAVCAN MLIR catalogue generator."""
 
 from __future__ import annotations
 

@@ -183,7 +183,7 @@ jobs:
 
       - name: Configure (ci preset)
         # LLVMDSDL_REPORT_GATE_JUNIT makes the parity/malformed/determinism report gates
-        # BEHAVIORAL: a matrix cell is covered only if a matching test executed and passed
+        # BEHAVIOURAL: a matrix cell is covered only if a matching test executed and passed
         # (consumed from the suite's --output-junit below), not merely registered by name.
         # LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON turns a missing nunavut/pydsdl into a hard
         # configure error, so a green CI run can never mean the reference-parity lane was

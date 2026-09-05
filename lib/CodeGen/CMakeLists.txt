@@ -11,7 +11,7 @@
 # C/C++/Rust/Go/Python emitters resolve them from the binary itself rather than
 # from an absolute source path baked in at compile time -- which is what lets a
 # packaged/installed dsdlc run outside a source checkout. Unlike the embedded
-# UAVCAN MLIR catalog (which needs a built dsdlc to produce, hence is committed),
+# UAVCAN MLIR catalogue (which needs a built dsdlc to produce, hence is committed),
 # this embed only reads files, so it is regenerated at build time from the
 # runtime sources and never committed. See tools/runtime/generate_embedded_runtime.py.
 if(NOT LLVMDSDL_PYTHON3_EXE)
@@ -63,7 +63,6 @@ add_custom_target(llvmdsdl-embedded-runtime-sources
 add_library(llvmdsdlCodeGen
   EmbeddedRuntimeSources.cpp
   ArrayWirePlan.cpp
-  CHeaderRender.cpp
   CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
   DefinitionDependencies.cpp
@@ -71,9 +70,6 @@ add_library(llvmdsdlCodeGen
   DefinitionPathProjection.cpp
   EmitCommon.cpp
   EmitStepRender.cpp
-  CEmitter.cpp
-  CppEmitter.cpp
-  GoEmitter.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
   SectionHelperBodies.cpp
@@ -93,16 +89,20 @@ add_library(llvmdsdlCodeGen
   SectionNaming.cpp
   ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
-  PythonEmitter.cpp
-  RustEmitter.cpp
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
   SourceWriter.cpp
-  TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp
   UavcanEmbeddedCatalog.cpp
+  emitter/C.cpp
+  emitter/CHeaderRender.cpp
+  emitter/Cpp.cpp
+  emitter/Go.cpp
+  emitter/Python.cpp
+  emitter/Rust.cpp
+  emitter/Ts.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen

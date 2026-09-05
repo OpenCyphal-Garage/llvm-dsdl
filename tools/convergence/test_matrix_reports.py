@@ -160,9 +160,9 @@ class MatrixReportRegressionTest(unittest.TestCase):
 
 
 class BehavioralGateTest(unittest.TestCase):
-    """JUnit-consuming behavioral gate tests. Self-contained (no configured build dir).
+    """JUnit-consuming behavioural gate tests. Self-contained (no configured build dir).
 
-    These prove the core behavioral property the gates now enforce: a matrix cell is
+    These prove the core behavioural property the gates now enforce: a matrix cell is
     covered only if a matching test actually executed and passed — a failed or skipped
     test (or a missing results file) must NOT read as covered.
     """

@@ -11,8 +11,8 @@
 /// Public entry points and options for Rust backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_RUSTEMITTER_H
-#define LLVMDSDL_CODEGEN_RUSTEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_RUST_H
+#define LLVMDSDL_CODEGEN_EMITTER_RUST_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -33,12 +33,16 @@ namespace llvmdsdl
 class DiagnosticEngine;
 class EmitTraceSink;
 struct SemanticModule;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::rust
+{
 
 /// @file
 /// @brief Rust backend emission entry points.
 
 /// @brief Rust crate profile selection.
-enum class RustProfile
+enum class Profile
 {
 
     /// @brief `std` profile.
@@ -49,7 +53,7 @@ enum class RustProfile
 };
 
 /// @brief Runtime implementation specialization for generated Rust helpers.
-enum class RustRuntimeSpecialization
+enum class RuntimeSpecialization
 {
 
     /// @brief Portable baseline implementation.
@@ -60,7 +64,7 @@ enum class RustRuntimeSpecialization
 };
 
 /// @brief Memory strategy for variable-length data in generated Rust code.
-enum class RustMemoryMode
+enum class MemoryMode
 {
 
     /// @brief Use fixed-capacity inline storage sized to DSDL maxima.
@@ -71,7 +75,7 @@ enum class RustMemoryMode
 };
 
 /// @brief Configuration options for Rust code generation.
-struct RustEmitOptions final
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -89,13 +93,13 @@ struct RustEmitOptions final
     bool emitCargoToml{true};
 
     /// @brief Requested crate profile.
-    RustProfile profile{RustProfile::Std};
+    Profile profile{Profile::Std};
 
     /// @brief Requested runtime specialization.
-    RustRuntimeSpecialization runtimeSpecialization{RustRuntimeSpecialization::Portable};
+    RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
     /// @brief Requested memory strategy for variable-length data.
-    RustMemoryMode memoryMode{RustMemoryMode::MaxInline};
+    MemoryMode memoryMode{MemoryMode::MaxInline};
 
     /// @brief Inline storage threshold in bytes for pool mode.
     std::uint32_t inlineThresholdBytes{256U};
@@ -130,12 +134,12 @@ struct RustEmitOptions final
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emitRust(const SemanticModule&  semantic,
-                     mlir::ModuleOp         module,
-                     const RustEmitOptions& options,
-                     DiagnosticEngine&      diagnostics,
-                     EmitTraceSink*         traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::rust
 
-#endif  // LLVMDSDL_CODEGEN_RUSTEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_RUST_H

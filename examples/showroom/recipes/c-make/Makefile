@@ -29,7 +29,7 @@ endif
 # 1. Support: everything not derived from a definition. Needs no positional target.
 SUPPORT_OUT := $(subst ;, ,$(shell $(DSDLC) $(BASE) --generate-support only --list-outputs))
 
-# 2. The standard types this namespace refers to, taken from the catalog compiled into dsdlc and
+# 2. The standard types this namespace refers to, taken from the catalogue compiled into dsdlc and
 #    named with the `+` sigil rather than through a checkout of public_regulated_data_types.
 # Every standard type the namespace reaches, listed exactly. `+uavcan.si.unit` would cover nine of
 # these in one line, but it generates all forty-five types in that namespace -- five times the work

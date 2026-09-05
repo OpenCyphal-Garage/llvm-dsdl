@@ -8,7 +8,7 @@
 """Parse ctest/JUnit XML result files into pass/fail/skip test-name sets.
 
 This turns the convergence matrix gates from *name-presence* checks (a cell is
-"covered" if a test with a matching name is merely registered) into *behavioral*
+"covered" if a test with a matching name is merely registered) into *behavioural*
 checks (a cell is "covered" only if a matching test actually executed and passed).
 
 The parser is deliberately tolerant of the two shapes the project produces:
@@ -63,7 +63,7 @@ def load_junit_results(paths: Iterable[Path]) -> TestResults:
     """Parse one or more JUnit XML files into a :class:`TestResults`.
 
     Raises ``FileNotFoundError`` if any path is missing and ``ValueError`` if a
-    file cannot be parsed as XML — a behavioral gate must fail loudly rather than
+    file cannot be parsed as XML — a behavioural gate must fail loudly rather than
     silently treat "no results" as "everything passed".
     """
     results = TestResults()

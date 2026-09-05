@@ -1083,9 +1083,9 @@ fn run_directed_error_cases() -> Result<(), String> {
     }
 
     {
-        // Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // Float32 signalling-NaN payload must survive deserialize->serialize byte-exactly in both C
         // and Rust. Regression guard for the float32 -> f64 -> float32 round-trip that quieted
-        // signaling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
+        // signalling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
         // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
         // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
         let golden = [0x01u8, 0x00u8, 0x80u8, 0x7Fu8]; // float32 sNaN
@@ -1102,7 +1102,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         };
         if c_status != 0 {
             return Err(format!(
-                "C harness call failed for real32 signaling-NaN roundtrip: status={c_status}"
+                "C harness call failed for real32 signalling-NaN roundtrip: status={c_status}"
             ));
         }
         let mut rust_obj = uavcan_primitive_scalar_Real32@V1_0@::default();
@@ -1113,7 +1113,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             Ok(size) => size,
             Err(rc) => {
                 return Err(format!(
-                    "Rust real32 signaling-NaN serialize unexpectedly failed rc={rc}"
+                    "Rust real32 signalling-NaN serialize unexpectedly failed rc={rc}"
                 ));
             }
         };
@@ -1126,7 +1126,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             || rust_output[..golden.len()] != golden
         {
             return Err(format!(
-                "Directed mismatch (Real32 signaling-NaN payload roundtrip): golden=[{}] \
+                "Directed mismatch (Real32 signalling-NaN payload roundtrip): golden=[{}] \
                  C(rc={},size={},bytes=[{}]) Rust(rc={},size={},bytes=[{}])",
                 format_bytes(&golden),
                 c_result.serialize_rc,

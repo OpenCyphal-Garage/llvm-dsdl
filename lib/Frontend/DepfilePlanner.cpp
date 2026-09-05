@@ -195,7 +195,7 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
         queue.insert(queue.end(), node.dependencyIndexes.begin(), node.dependencyIndexes.end());
     }
 
-    // The catalog has no source file to name, so the binary carrying it stands in. Without this the
+    // The catalogue has no source file to name, so the binary carrying it stands in. Without this the
     // rule would have no prerequisites at all and never rebuild across a compiler upgrade.
     if (drawsOnEmbeddedCatalog && !toolchainStampPath_.empty())
     {

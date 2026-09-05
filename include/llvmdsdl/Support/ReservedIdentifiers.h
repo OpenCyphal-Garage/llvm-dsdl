@@ -11,8 +11,8 @@
 /// Reserved identifier patterns from Cyphal Specification v1.0 section 3.2.5.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_SUPPORT_RESERVEDIDENTIFIERS_H
-#define LLVMDSDL_SUPPORT_RESERVEDIDENTIFIERS_H
+#ifndef LLVMDSDL_SUPPORT_RESERVED_IDENTIFIERS_H
+#define LLVMDSDL_SUPPORT_RESERVED_IDENTIFIERS_H
 
 #include <string>
 
@@ -31,4 +31,4 @@ namespace llvmdsdl
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_SUPPORT_RESERVEDIDENTIFIERS_H
+#endif  // LLVMDSDL_SUPPORT_RESERVED_IDENTIFIERS_H

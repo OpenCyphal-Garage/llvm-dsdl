@@ -19,7 +19,7 @@ This generator captures the runtime sources *verbatim* into
 ``EmbeddedRuntimeSources.inc`` as raw string literals plus a lookup table, so
 the emitters resolve them from the binary itself with no filesystem access.
 
-Unlike the embedded UAVCAN MLIR catalog -- which requires a *built* ``dsdlc``
+Unlike the embedded UAVCAN MLIR catalogue -- which requires a *built* ``dsdlc``
 to produce and is therefore committed -- this embed only reads files, so CMake
 regenerates it at build time (see lib/CodeGen/CMakeLists.txt) with the runtime
 sources as dependencies. It is a build product, never committed, and can never

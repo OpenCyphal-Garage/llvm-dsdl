@@ -23,7 +23,7 @@ dsdlc_generate(dsdl_support
   SUPPORT  only
   OUTDIR   "${GEN}")
 
-# So do the standard types this namespace reaches. `+` names the catalog compiled into dsdlc, so
+# So do the standard types this namespace reaches. `+` names the catalogue compiled into dsdlc, so
 # none of this needs a checkout of public_regulated_data_types.
 #
 # They are listed exactly rather than by namespace selector: `+uavcan.si.unit` would cover nine of

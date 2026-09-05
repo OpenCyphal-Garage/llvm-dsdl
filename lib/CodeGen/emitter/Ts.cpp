@@ -22,7 +22,7 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
-#include "llvmdsdl/CodeGen/TsEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Ts.h"
 
 #include <algorithm>
 #include <cassert>
@@ -63,9 +63,8 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::ts
 {
-class DiagnosticEngine;
 
 namespace
 {
@@ -1536,7 +1535,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         responseRuntimePlan        = &(*responseRuntimePlanStorage);
     }
 
-    const auto ownerPath = llvmdsdl::EmitterContext::relativeFilePath(def.info);
+    const auto ownerPath = EmitterContext::relativeFilePath(def.info);
 
     // Disambiguate before anything is rendered.
     //
@@ -1800,10 +1799,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     return out.str();
 }
 
-std::string renderPackageJson(const TsEmitOptions& options)
+std::string renderPackageJson(const Options& options)
 {
     const auto* const runtimeSpecialization =
-        options.runtimeSpecialization == TsRuntimeSpecialization::Fast ? "fast" : "portable";
+        options.runtimeSpecialization == RuntimeSpecialization::Fast ? "fast" : "portable";
     std::ostringstream out;
     out << "{\n";
     out << R"(  "name": ")" << options.moduleName << "\",\n";
@@ -1817,7 +1816,7 @@ std::string renderPackageJson(const TsEmitOptions& options)
     return out.str();
 }
 
-std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecialization)
+std::string renderTsRuntimeModule(const RuntimeSpecialization runtimeSpecialization)
 {
     std::ostringstream out;
     SourceWriter       w = makeTsWriter(out);
@@ -1910,7 +1909,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.open("if (lenBits <= 0) {");
     w.line("return;");
     w.close("}");
-    if (runtimeSpecialization == TsRuntimeSpecialization::Fast)
+    if (runtimeSpecialization == RuntimeSpecialization::Fast)
     {
         w.open("if (dst !== src && dstOffBits % 8 === 0 && srcOffBits % 8 === 0 && lenBits % 8 === 0) {");
         w.line("const dstStart = Math.floor(dstOffBits / 8);");
@@ -1933,7 +1932,7 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
     w.line("srcOffBits: number,");
     w.line("lenBits: number");
     w.midway("): Uint8Array {");
-    if (runtimeSpecialization == TsRuntimeSpecialization::Fast)
+    if (runtimeSpecialization == RuntimeSpecialization::Fast)
     {
         w.open("if (srcOffBits % 8 === 0 && lenBits % 8 === 0) {");
         w.line("const srcStart = Math.floor(srcOffBits / 8);");
@@ -2158,11 +2157,11 @@ std::string renderTsRuntimeModule(const TsRuntimeSpecialization runtimeSpecializ
 
 }  // namespace
 
-llvm::Error emitTs(const SemanticModule& semantic,
-                   mlir::ModuleOp        module,
-                   const TsEmitOptions&  options,
-                   DiagnosticEngine&     diagnostics,
-                   EmitTraceSink*        traceSink)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -2248,7 +2247,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath = llvmdsdl::EmitterContext::relativeFilePath(def->info);
+        const auto                     relPath = EmitterContext::relativeFilePath(def->info);
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
@@ -2295,4 +2294,4 @@ llvm::Error emitTs(const SemanticModule& semantic,
     return llvm::Error::success();
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::ts

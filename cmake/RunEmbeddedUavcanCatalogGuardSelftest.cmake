@@ -1,6 +1,6 @@
 foreach(var PYTHON_EXECUTABLE REPO_ROOT)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
-    message(FATAL_ERROR "${var} is required for embedded UAVCAN catalog guard self-test")
+    message(FATAL_ERROR "${var} is required for embedded UAVCAN catalogue guard self-test")
   endif()
 endforeach()
 
@@ -31,4 +31,4 @@ if(selftest_stderr)
   message(STATUS "embedded UAVCAN generator self-test diagnostics:\n${selftest_stderr}")
 endif()
 
-message(STATUS "embedded UAVCAN catalog guard self-test passed")
+message(STATUS "embedded UAVCAN catalogue guard self-test passed")

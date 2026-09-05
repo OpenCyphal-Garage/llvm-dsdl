@@ -459,13 +459,13 @@ add_custom_target(distclean
   COMMENT "Removing generated build and local development artifacts"
 )
 
-# Optional behavioral gating input: a JUnit results file from an executed ctest run.
+# Optional behavioural gating input: a JUnit results file from an executed ctest run.
 # When set (e.g. by CI after running the suite with --output-junit), the
-# parity/malformed/determinism report gates enforce BEHAVIORAL coverage — a matrix cell
+# parity/malformed/determinism report gates enforce BEHAVIOURAL coverage — a matrix cell
 # is covered only if a matching test executed and passed. Empty (default) keeps them as
 # structural test-name-presence lints so local doc regeneration needs no prior suite run.
 set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
-  "JUnit XML from an executed ctest run; enables behavioral parity/malformed/determinism gating.")
+  "JUnit XML from an executed ctest run; enables behavioural parity/malformed/determinism gating.")
 
 # Where the four report generators put their markdown: straight into docs/, because that markdown
 # *is* the published page (Reference > Guarantees, plus the consistency lint under Development).

@@ -17,8 +17,8 @@ multi-language code generation throughput.
   - `ts`
   - `python`
   - optional C A/B experiment lanes:
-    - `embedC`: embedded `uavcan` MLIR catalog enabled (no lookup dirs passed to `dsdlc`)
-    - `noEmbedC`: embedded `uavcan` MLIR catalog disabled (`--no-embedded-uavcan`)
+    - `embedC`: embedded `uavcan` MLIR catalogue enabled (no lookup dirs passed to `dsdlc`)
+    - `noEmbedC`: embedded `uavcan` MLIR catalogue disabled (`--no-embedded-uavcan`)
 - `benchmark_lsp.py` benchmarks `dsdld` request latency for:
   - mixed request replay (`replay`)
   - workspace index cold/warm runs (`index-bench`)

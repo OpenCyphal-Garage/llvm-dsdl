@@ -1,4 +1,4 @@
-# Targeting the embedded uavcan catalog with the '+' sigil.
+# Targeting the embedded uavcan catalogue with the '+' sigil.
 
 # Granularity: exact version pulls its dependency closure.
 # RUN: rm -rf %t.exact && %dsdlc --target-language c --outdir %t.exact +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
@@ -29,7 +29,7 @@
 # RUN: %dsdlc --target-language c --list-inputs +uavcan.node.Heartbeat.1.0 >%t.inputs 2>/dev/null
 # RUN: not test -s %t.inputs
 
-# The dependency that does get recorded is the binary carrying the catalog.
+# The dependency that does get recorded is the binary carrying the catalogue.
 # RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
 # RUN: cat %t.md/uavcan/node/Heartbeat_1_0.h.d | FileCheck %s --check-prefix=PLUS_DEPFILE
 
@@ -57,7 +57,7 @@
 
 # Empty-root colon syntax stays an error. '+' was chosen over spelling the builtin root as ':name'
 # precisely so a build system that drops a variable fails here instead of silently resolving to the
-# embedded catalog and shipping the wrong definition.
+# embedded catalogue and shipping the wrong definition.
 # RUN: not %dsdlc --target-language c --outdir %t.colon :uavcan/node/Heartbeat.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=EMPTY_ROOT
 
 # MLIR_PLUS: full_name = "uavcan.node.Heartbeat"

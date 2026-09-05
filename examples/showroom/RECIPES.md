@@ -74,7 +74,7 @@ outputs, and its own lifetime.
 | `--generate-support only` | Only code *not* derived from a definition: runtime headers and modules, package manifests, scaffolding. Needs no positional target. |
 | `--generate-support never` | Only code derived from definitions. |
 | `--omit-dependencies` | Only the definitions named, not the ones they refer to. |
-| `+uavcan.node`, `+uavcan.node.Heartbeat.1.0` | Standard types from the catalog compiled into `dsdlc`, with no checkout of `public_regulated_data_types`. |
+| `+uavcan.node`, `+uavcan.node.Heartbeat.1.0` | Standard types from the catalogue compiled into `dsdlc`, with no checkout of `public_regulated_data_types`. |
 | `<root>:<relative/Type.1.0.dsdl>` | One definition, with output paths anchored at `<root>`. |
 
 Combining them gives a build as much granularity as it wants -- per namespace, per tranche, or per
@@ -203,7 +203,7 @@ Between them the definitions force a real integration:
 
 | What | Why it matters |
 |---|---|
-| Twelve standard `uavcan` types, reached transitively | They resolve from the catalog compiled into dsdlc -- no checkout of `public_regulated_data_types` anywhere in the matrix |
+| Twelve standard `uavcan` types, reached transitively | They resolve from the catalogue compiled into dsdlc -- no checkout of `public_regulated_data_types` anywhere in the matrix |
 | Three different `Vector3` types in sibling namespaces | Same short name, different namespace: the case that breaks a naive import |
 | Two `@deprecated` definitions | A namespace containing them still has to compile clean |
 | Services, unions, multiple versions of one type | Each generates more than one type from one file |
