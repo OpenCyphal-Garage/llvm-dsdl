@@ -23,7 +23,7 @@
 //                          commutativity/associativity/identity, + distributes over |,
 //                          repeat additivity (RepeatSplit — the correctness backbone of
 //                          RunSet::repeated()), pad idempotence/identity/multiples/soundness,
-//                          and the repeatRange union characterization. These constrain the
+//                          and the repeatRange union characterisation. These constrain the
 //                          DENOTATION independently of any evaluator, so a mis-transcribed
 //                          Sem fails even if an evaluator were mis-transcribed to match.
 //
@@ -59,22 +59,22 @@ module BitLengthSetModel {
   // TRACEABILITY (the requirement each constructor implements). Authority: the OpenCyphal
   // Specification v1.0, ch. 3 (DSDL), "Serialized representations"; pydsdl's BitLengthSet is
   // the peer implementation of the same algebra. The C++ site listed for each constructor is
-  // where the analyzer builds that node, so the map from language rule to algebra is auditable
+  // where the analyser builds that node, so the map from language rule to algebra is auditable
   // end to end:
   //
   //   Leaf        — a scalar/void field's possible widths (a fixed-width primitive is a
   //                 singleton). Built throughout Analyzer.cpp layout resolution.
-  //   Add         — CONCATENATION: fields of a structure serialize in declaration order, so
+  //   Add         — CONCATENATION: fields of a structure serialise in declaration order, so
   //                 lengths add (Minkowski sum over the possibilities).
   //                 Analyzer.cpp analyzeSection: `structureOffset + layout.bls`.
-  //   Union       — TAGGED-UNION ALTERNATIVES: exactly one alternative serializes, so the
+  //   Union       — TAGGED-UNION ALTERNATIVES: exactly one alternative serialises, so the
   //                 payload length set is the union over alternatives (the tag itself is a
   //                 separate Add). Analyzer.cpp computeUnionOffsetFromSeenFields:
   //                 `(BitLengthSet(tagBits) + payloadSet).padToAlignment(8)`.
   //   Pad         — ALIGNMENT PADDING: composite boundaries round up to the alignment (byte
   //                 alignment in practice). Analyzer.cpp: `padToAlignment(layout.alignment)`
   //                 between fields, `.padToAlignment(8)` at section ends.
-  //   Repeat      — FIXED-LENGTH ARRAYS: exactly `k` elements serialize back to back.
+  //   Repeat      — FIXED-LENGTH ARRAYS: exactly `k` elements serialise back to back.
   //                 Analyzer.cpp: `scalarLayout.bls.repeat(capacity)`.
   //   RepeatRange — VARIABLE-LENGTH ARRAY PAYLOAD: any count in [0, capacity] of elements
   //                 (the implicit length prefix is accounted separately by the caller, as an
@@ -213,7 +213,7 @@ module BitLengthSetModel {
     DivModUnique(a * k, a, k, 0);
   }
 
-  // RoundUp is the least multiple of `a` at or above `v` — characterized by these three facts.
+  // RoundUp is the least multiple of `a` at or above `v` — characterised by these three facts.
   lemma RoundUpProps(v: int, a: int)
     requires 1 <= a
     ensures RoundUp(v, a) % a == 0

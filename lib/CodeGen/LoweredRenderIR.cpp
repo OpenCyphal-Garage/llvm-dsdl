@@ -10,7 +10,7 @@
 /// @file
 /// Builds render-oriented IR steps from lowered statement plans.
 ///
-/// The render IR normalizes union dispatch and linear field processing so backend emitters can share traversal logic.
+/// The render IR normalises union dispatch and linear field processing so backend emitters can share traversal logic.
 ///
 //===----------------------------------------------------------------------===//
 

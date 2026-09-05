@@ -17,10 +17,10 @@ uint11[16] channel
 # fields would cost. Eleven bits is the native resolution of the
 # receiver's serial protocol, so nothing is lost. Generated code exposes
 # this as a plain sixteen-element array and hides the cross-byte packing
-# inside the serializer.
+# inside the serialiser.
 
 uint8 rssi
-# Received signal strength as a normalized 0 to 255 value, where 255 is
+# Received signal strength as a normalised 0 to 255 value, where 255 is
 # the strongest reading the receiver can report. Not in dBm: the scale
 # is receiver-specific and only meaningful as a trend.
 

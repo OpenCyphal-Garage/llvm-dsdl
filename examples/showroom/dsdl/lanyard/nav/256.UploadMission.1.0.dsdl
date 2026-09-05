@@ -36,7 +36,7 @@ lanyard.nav.Waypoint.1.0[<=8] item
 # Eight waypoints at the 64-byte waypoint extent plus a four-byte
 # delimiter header each, plus the array length prefix and the leading
 # fields. The extent must cover the worst case, not the typical one: the
-# compiler rejects an extent smaller than the maximal serialized length.
+# compiler rejects an extent smaller than the maximal serialised length.
 
 ---
 

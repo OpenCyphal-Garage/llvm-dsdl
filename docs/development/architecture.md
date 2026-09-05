@@ -13,7 +13,7 @@ flowchart LR
   F --> H["obj (.o/.a)"]
 ```
 
-## Why this shape
+## Design goals
 
 - Single source of truth for semantics
 - Strong pass and contract boundaries
@@ -25,7 +25,7 @@ The custom `dsdl` MLIR dialect is what separates frontend semantics from backend
 above it decides what a definition *means*; everything below it decides how that meaning is spelled in
 a particular language.
 
-- Schema and serialization plans are represented as explicit IR ops, and every fact they carry is a
+- Schema and serialisation plans are represented as explicit IR ops, and every fact they carry is a
   declared attribute the verifier checks
 - Passes stamp and validate lowered contract metadata
 - Backends consume facts from validated lowered state, never from raw IR
@@ -35,7 +35,7 @@ a particular language.
 1. `lower-dsdl-exec`
 2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
 3. optional `optimize-dsdl-lowered-serdes`
-4. `build-dsdl-plan-bodies` — every plan becomes a serialize and a deserialize function of plan operations
+4. `build-dsdl-plan-bodies` — every plan becomes a serialise and a deserialise function of plan operations
 5. `convert-dsdl-to-emitc` for C; `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects
 
 ### Boundary guarantees
@@ -45,7 +45,7 @@ a particular language.
 - Backend emitters stay aligned, because they read the same validated facts.
 - Unsupported and malformed states produce deterministic diagnostics.
 
-The serialize/deserialize step order the emitters render from this state is itself a contract, and a
+The serialise/deserialize step order the emitters render from this state is itself a contract, and a
 published one: see [Emit Order](../reference/codegen/emit-order.md).
 
 ## Canonical references

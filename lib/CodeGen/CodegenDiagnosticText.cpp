@@ -29,7 +29,7 @@ std::string fieldLabel(const bool isUnionField)
 
 std::string serializationBufferTooSmall()
 {
-    return "serialization buffer too small";
+    return "serialisation buffer too small";
 }
 
 std::string invalidUnionTagPrefix()

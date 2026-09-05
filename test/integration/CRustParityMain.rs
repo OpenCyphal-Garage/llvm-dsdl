@@ -3,9 +3,9 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Rust parity driver comparing generated Rust and C serializers/deserializers.
+/// Rust parity driver comparing generated Rust and C serialisers/deserializers.
 ///
-/// The executable runs randomized and directed parity checks through a shared C
+/// The executable runs randomised and directed parity checks through a shared C
 /// harness and validates status, consumed size, and payload equivalence.
 ///
 //===----------------------------------------------------------------------===//
@@ -415,7 +415,7 @@ fn run_directed_error_cases() -> Result<(), String> {
 
     {
         // Service request mixed-path: declared count exceeds payload bytes but remains representable.
-        // Deserialization should succeed via truncation/zero-extension and reserialize deterministically.
+        // Deserialisation should succeed via truncation/zero-extension and reserialise deterministically.
         let input = [0x34u8, 0x12u8, 0x02u8, 0xAAu8];
         let mut c_result = CCaseResult::default();
         let mut c_output = [0xA5u8; MAX_IO_BUFFER];
@@ -485,7 +485,7 @@ fn run_directed_error_cases() -> Result<(), String> {
 
     {
         // Service response mixed-path: declared count exceeds payload bytes but remains representable.
-        // Deserialization should succeed via truncation/zero-extension and reserialize deterministically.
+        // Deserialisation should succeed via truncation/zero-extension and reserialise deterministically.
         let input = [0x01u8, 0x02u8, 0xAAu8];
         let mut c_result = CCaseResult::default();
         let mut c_output = [0xA5u8; MAX_IO_BUFFER];
@@ -1083,10 +1083,10 @@ fn run_directed_error_cases() -> Result<(), String> {
     }
 
     {
-        // Float32 signalling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // Float32 signalling-NaN payload must survive deserialise->serialize byte-exactly in both C
         // and Rust. Regression guard for the float32 -> f64 -> float32 round-trip that quieted
         // signalling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
-        // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
+        // float16 is intentionally excluded: the shared runtime canonicalises half-precision NaN
         // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
         let golden = [0x01u8, 0x00u8, 0x80u8, 0x7Fu8]; // float32 sNaN
         let mut c_result = CCaseResult::default();

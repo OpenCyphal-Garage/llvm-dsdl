@@ -1,8 +1,8 @@
 # Regression: a deep-but-finite chain of composite references (T0 -> T1 -> ... -> Tn) must be rejected
-# with a diagnostic rather than overflowing the stack. The analyzer's cycle detection only catches
+# with a diagnostic rather than overflowing the stack. The analyser's cycle detection only catches
 # repeats (A -> B -> A), not a long acyclic chain, so each level recursed one frame deeper until the
 # process crashed (SIGILL/EXC_BAD_ACCESS) -- taking down both dsdlc and the dsdld language server, which
-# share the analyzer. A depth bound (kMaxAnalysisDepth) now caps the recursion. See the
+# share the analyser. A depth bound (kMaxAnalysisDepth) now caps the recursion. See the
 # recursion-depth / stack-overflow audit.
 
 # RUN: rm -rf %t && mkdir -p %t/deep/deep

@@ -38,7 +38,7 @@ struct LoweredBodyPlan final
 /// @brief Builds combined lowered body plan.
 /// @param[in] section Semantic section.
 /// @param[in] sectionFacts Lowered section facts.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Lowered body plan.
 LoweredBodyPlan buildLoweredBodyPlan(const SemanticSection&     section,
                                      const LoweredSectionFacts* sectionFacts,

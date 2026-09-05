@@ -263,7 +263,7 @@ HelperBody helperBodyForScalar(HelperScalarKind kind, std::uint32_t bits, bool s
 /// carries. Every backend renders the result.
 ///
 /// @param[in] plan Helper bindings the section requires.
-/// @param[in] scalarDirection Serialize or deserialize; scalar shapes differ by direction.
+/// @param[in] scalarDirection Serialise or deserialise; scalar shapes differ by direction.
 /// @param[in] helperNameResolver Projects a helper symbol to the target language's identifier.
 /// @param[in] emitCapacityCheck Controls whether the capacity check is included.
 /// @return The bodies, in the order they are emitted.

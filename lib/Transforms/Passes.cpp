@@ -124,7 +124,7 @@ mlir::LogicalResult canonicalizePlan(mlir::dsdl::SerializationPlanOp plan, mlir:
             continue;
         }
 
-        return op.emitError("unsupported operation in serialization plan body");
+        return op.emitError("unsupported operation in serialisation plan body");
     }
 
     for (mlir::Operation* op : eraseOps)
@@ -637,7 +637,7 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp                
         // Width-match the helper to the field's native storage type: 16/32-bit
         // fields are held as `float` (f32), 64-bit as `double` (f64). Typing the
         // helper as f64 for every width forced callers to promote a float32
-        // value to double and narrow it back, which canonicalizes a signalling
+        // value to double and narrow it back, which canonicalises a signalling
         // NaN's mantissa payload and diverges bit-for-bit from the reference
         // compiler. The helper is an identity pass-through, so matching the width
         // preserves the exact bits.
@@ -1159,7 +1159,7 @@ struct LowerDSDLSerializationPass
     }
     llvm::StringRef getDescription() const final
     {
-        return "Lower DSDL serialization-plan ops into canonical control-flow form";
+        return "Lower DSDL serialisation-plan ops into canonical control-flow form";
     }
     void getDependentDialects(mlir::DialectRegistry& registry) const override
     {
@@ -1184,7 +1184,7 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
     llvm::StringRef getDescription() const final
     {
-        return "Lower DSDL serialization-plan ops into canonical executable-contract control-flow form";
+        return "Lower DSDL serialisation-plan ops into canonical executable-contract control-flow form";
     }
     void getDependentDialects(mlir::DialectRegistry& registry) const override
     {
@@ -1212,8 +1212,8 @@ struct AnnotateDSDLAliasabilityPass
     {
         // Conservative annotator: stamps aliasability metadata only. It does not
         // prove anything about emitted-code overhead and does not switch the
-        // serializer onto a zero-copy path.
-        return "Annotate serialization plans with conservative zero-overhead aliasability facts";
+        // serialiser onto a zero-copy path.
+        return "Annotate serialisation plans with conservative zero-overhead aliasability facts";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
@@ -1374,7 +1374,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
-                                      "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
+                                      "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
     registerBuildDSDLPlanBodiesPass();
     registerDSDLConvertPasses();

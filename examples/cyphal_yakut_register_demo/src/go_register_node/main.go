@@ -3,7 +3,7 @@
 /// @file
 /// Go Cyphal node demo exposing heartbeat and register services.
 ///
-/// This node uses llvm-dsdl-generated Go types for serialization and a small
+/// This node uses llvm-dsdl-generated Go types for serialisation and a small
 /// cgo shim around libudpard + POSIX UDP for transport.
 ///
 //===----------------------------------------------------------------------===//

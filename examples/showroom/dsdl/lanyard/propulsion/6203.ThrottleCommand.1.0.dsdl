@@ -1,11 +1,10 @@
 # Group throttle setpoint for the propulsion array.
 #
-# VERSIONING: the stabilized successor to ThrottleCommand.0.1. Promoting
+# VERSIONING: the stabilised successor to ThrottleCommand.0.1. Promoting
 # a 0.x definition to 1.0 is not a "non-breaking change" -- it is the
 # moment the definition acquires a compatibility promise for the first
-# time. The field set was allowed to change on the way (a sequence
-# counter and an emergency-stop flag were added) precisely because 0.1
-# promised nothing.
+# time. 0.1 promised nothing, so the field set was free to change on
+# the way (a sequence counter and an emergency-stop flag were added).
 #
 # WHY SEALED: this message is published at the inner-loop rate on every
 # armed flight. It is latency critical and never grows, so it pays
@@ -21,7 +20,7 @@ uint4 MAX_MOTORS = 8
 # rather than a literal duplicated at every call site.
 
 float16[<=8] ratio
-# Normalized throttle command per motor, 0.0 (idle) to 1.0 (full),
+# Normalised throttle command per motor, 0.0 (idle) to 1.0 (full),
 # indexed by motor number.
 
 uint7 sequence

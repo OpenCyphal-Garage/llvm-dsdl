@@ -10,7 +10,7 @@
 /// @file
 /// Shared composite-import dependency collection and projection helpers.
 ///
-/// This utility centralizes deterministic dependency discovery for composite
+/// This utility centralises deterministic dependency discovery for composite
 /// field references and language-specific import projection.
 ///
 //===----------------------------------------------------------------------===//

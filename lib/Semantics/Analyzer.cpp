@@ -10,7 +10,7 @@
 /// @file
 /// Implements semantic analysis for parsed DSDL definitions.
 ///
-/// The analyzer resolves symbols, evaluates type rules, and computes layout and extent facts used by lowering.
+/// The analyser resolves symbols, evaluates type rules, and computes layout and extent facts used by lowering.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -685,7 +685,7 @@ private:
         {
             if (!std::holds_alternative<bool>(value.data))
             {
-                diagnostics_.error(decl.location, "boolean constants must be initialized from bool");
+                diagnostics_.error(decl.location, "boolean constants must be initialised from bool");
                 return false;
             }
             return true;
@@ -709,7 +709,7 @@ private:
                 // A constant must fit the [min, max] range of its declared width and signedness
                 // (unsigned `[0, 2^n-1]`, signed two's-complement `[-2^(n-1), 2^(n-1)-1]`); `n <= 64`
                 // so every bound fits the 128-bit constant value type. Enforced here because the
-                // Rational core deliberately no longer poisons at 64-bit range.
+                // Rational core does not poison at 64-bit range.
                 const std::uint32_t bits     = prim->bitLength;
                 const bool          isSigned = prim->kind == PrimitiveKind::SignedInt;
                 const __int128      minValue = isSigned ? -(static_cast<__int128>(1) << (bits - 1U)) : __int128{0};
@@ -821,7 +821,7 @@ private:
                 auto* resolvedDef = analyzeOne(*resolved->localIndex);
                 if (!resolvedDef || !*resolvedDef)
                 {
-                    diagnostics_.error(location, "failed to analyze dependent type: " + resolved->candidateName);
+                    diagnostics_.error(location, "failed to analyse dependent type: " + resolved->candidateName);
                     return std::nullopt;
                 }
                 def = &(**resolvedDef);
@@ -833,7 +833,7 @@ private:
 
             if (def == nullptr)
             {
-                diagnostics_.error(location, "failed to analyze dependent type: " + resolved->candidateName);
+                diagnostics_.error(location, "failed to analyse dependent type: " + resolved->candidateName);
                 return std::nullopt;
             }
 
@@ -887,8 +887,7 @@ private:
 
         // `_offset_` is bound symbolically: the evaluator answers `.min`/`.max`/`% k` and similar
         // queries exactly at any cardinality, and hard-fails an expression it cannot evaluate
-        // exactly — a truncated offset set can no longer exist, so the former BLS-D2 truncation
-        // warning is gone with it.
+        // exactly, so a truncated offset set cannot exist.
         auto updateOffsetEnv = [&]() {
             if (section.isUnion)
             {
@@ -925,7 +924,7 @@ private:
                 firstStatementLocation = statementLocation(stmt);
             }
 
-            // Materialize _offset_ lazily only when the current statement can reference it.
+            // Materialise _offset_ lazily only when the current statement can reference it.
             if (stmtNeedsOffset(stmt))
             {
                 updateOffsetEnv();
@@ -986,7 +985,7 @@ private:
                 {
                     if (serializationModeSet)
                     {
-                        diagnostics_.error(d.location, "serialization mode already set before @extent");
+                        diagnostics_.error(d.location, "serialisation mode already set before @extent");
                         continue;
                     }
                     if (!d.expression)
@@ -1034,7 +1033,7 @@ private:
                 {
                     if (serializationModeSet)
                     {
-                        diagnostics_.error(d.location, "serialization mode already set before @sealed");
+                        diagnostics_.error(d.location, "serialisation mode already set before @sealed");
                         continue;
                     }
                     if (d.expression)
@@ -1080,8 +1079,7 @@ private:
                         }
                         else if (value)
                         {
-                            // The whole point of @print is the operand's value reaching the build log; evaluating it
-                            // and dropping the result made the directive a no-op.
+                            // @print puts the operand's value in the build log.
                             diagnostics_.note(d.location, value->str());
                         }
                     }
@@ -1244,7 +1242,7 @@ private:
             if (extent < section.offsetAtEnd.max())
             {
                 diagnostics_.error(extentValueLocation,
-                                   "extent smaller than maximal serialized length",
+                                   "extent smaller than maximal serialised length",
                                    extentValueLength,
                                    suggestedExtent);
             }

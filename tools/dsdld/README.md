@@ -17,7 +17,7 @@ Binary path example:
 
 ## Runtime Model
 
-`dsdld` does not use command-line flags currently.
+`dsdld` takes no command-line flags beyond `--help` and `--version`.
 Clients configure behaviour via LSP `workspace/didChangeConfiguration` settings.
 
 Supported high-level features:

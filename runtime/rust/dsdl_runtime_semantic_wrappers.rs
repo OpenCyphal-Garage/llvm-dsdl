@@ -1,5 +1,5 @@
 //===----------------------------------------------------------------------===//
-// NOTE: LLVMDSDL AUTO-GENERATED FILE. DO NOT EDIT.
+// LLVMDSDL AUTO-GENERATED FILE.
 //===----------------------------------------------------------------------===//
 
 #[cfg(feature = "std")]
@@ -122,7 +122,7 @@ impl fmt::Display for AllocationError {
 pub const DSDL_RUNTIME_SUCCESS: i8 = 0;
 /// API usage error code for invalid arguments.
 pub const DSDL_RUNTIME_ERROR_INVALID_ARGUMENT: i8 = 2;
-/// API usage error code for insufficient serialization buffer size.
+/// API usage error code for insufficient serialisation buffer size.
 pub const DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL: i8 = 3;
 /// Representation error code for malformed array-length values.
 pub const DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH: i8 = 10;

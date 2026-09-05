@@ -39,14 +39,14 @@ extern "C"
         int fd;
     } UDPRxHandle;
 
-    /// @brief Initializes a transmit socket for multicast Cyphal/UDP traffic.
-    /// @param[out] self Transmit handle to initialize.
+    /// @brief Initialises a transmit socket for multicast Cyphal/UDP traffic.
+    /// @param[out] self Transmit handle to initialise.
     /// @param[in] local_iface_address Local interface IPv4 address in host byte order.
     /// @return `0` on success, otherwise a negated `errno` value.
     int16_t udpTxInit(UDPTxHandle* self, uint32_t local_iface_address);
 
     /// @brief Sends one datagram to a remote endpoint.
-    /// @param[in,out] self Initialized transmit socket handle.
+    /// @param[in,out] self Initialised transmit socket handle.
     /// @param[in] remote_address Destination IPv4 address in host byte order.
     /// @param[in] remote_port Destination UDP port in host byte order.
     /// @param[in] dscp DSCP value in range [0, 63].
@@ -64,8 +64,8 @@ extern "C"
     /// @param[in,out] self Handle to close. `NULL` is ignored.
     void udpTxClose(UDPTxHandle* self);
 
-    /// @brief Initializes a receive socket for a multicast endpoint.
-    /// @param[out] self Receive handle to initialize.
+    /// @brief Initialises a receive socket for a multicast endpoint.
+    /// @param[out] self Receive handle to initialise.
     /// @param[in] local_iface_address Local interface IPv4 address in host byte order.
     /// @param[in] multicast_group Multicast group IPv4 address in host byte order.
     /// @param[in] remote_port UDP port in host byte order.
@@ -73,7 +73,7 @@ extern "C"
     int16_t udpRxInit(UDPRxHandle* self, uint32_t local_iface_address, uint32_t multicast_group, uint16_t remote_port);
 
     /// @brief Receives one datagram without blocking.
-    /// @param[in,out] self Initialized receive socket handle.
+    /// @param[in,out] self Initialised receive socket handle.
     /// @param[in,out] inout_payload_size On input, destination capacity; on output, bytes read.
     /// @param[out] out_payload Destination buffer.
     /// @return `1` if one datagram was received, `0` if socket is not readable, otherwise a negated `errno`.

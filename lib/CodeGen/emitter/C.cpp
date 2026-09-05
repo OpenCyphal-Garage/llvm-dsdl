@@ -265,15 +265,14 @@ std::string generatedCommentLine(llvm::StringRef detail)
 /// @brief Makes one line of documentation safe to place inside a C block comment.
 ///
 /// @details
-/// Both delimiters have to go, not just the closing one. `*/` obviously ends the comment early and
+/// Both delimiters have to go, not just the closing one. `*/` ends the comment early and
 /// spills the rest of the sentence into code position. `/*` is subtler: the comment still ends where
 /// it should, so the file compiles -- but it warns under `-Wcomment`, which is an error under
 /// `-Werror`, and generated code that cannot be compiled with warnings as errors is generated code
 /// somebody has to work around. Definitions do write both: the standard namespace and the showroom
 /// both carry doc comments that quote C and JSDoc syntax.
 ///
-/// A space is inserted rather than a backslash or an entity, because the text ends up in front of a
-/// human reading a header and `* /` reads as what it is.
+/// A space is inserted rather than a backslash or an entity.
 std::string sanitizeCCommentText(std::string text)
 {
     const auto separate = [&text](const char* delimiter, const char* replacement) {
@@ -358,7 +357,7 @@ void emitSectionTypedef(SourceWriter&          w,
                         const bool             deprecatedAttribute)
 {
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
-    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serializer
+    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
     // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     w.open("typedef struct " + typeName + " {");
@@ -680,7 +679,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     w.blank();
 
     // Generated code must never warn about itself. A deprecated typedef is referenced by this very
-    // header -- in its own declaration, in its serializer signatures, and, when a deprecated type is
+    // header -- in its own declaration, in its serialiser signatures, and, when a deprecated type is
     // used as a field, in the struct body of an unrelated type (uavcan.file.Path.1.0 is deprecated and
     // embedded by five other definitions). Suppressing across the whole body covers all three. The
     // region ends before the include guard closes, so a user naming the type still gets the warning.
@@ -1046,7 +1045,7 @@ llvm::Error emit(const SemanticModule& semantic,
             std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + " */\n\n";
         // The header suppresses deprecation diagnostics across its own body, and this translation unit
         // needs the same treatment for the same reason: it names the deprecated typedef in every
-        // serializer signature it defines. The region opens before the includes so that a deprecated
+        // serialiser signature it defines. The region opens before the includes so that a deprecated
         // type pulled in as a field is covered too, and closes at end of file, which is where this
         // translation unit stops being generated code.
         const std::string implGuardOpen =
@@ -1131,8 +1130,8 @@ void registerTargets()
 /// @brief What @p triple spells `size_t` at, in bits.
 ///
 /// A variable-length array holds its count in one, so the struct a member is addressed within
-/// depends on it. The per-definition module carries no data layout of its own, which is why this
-/// is asked of the target rather than read off the module.
+/// depends on it. The per-definition module carries no data layout of its own, so this is asked
+/// of the target rather than read off the module.
 /// @param[in] triple The target, or empty for the host's own.
 /// @return The width in bits, or an error naming the target when no backend knows it.
 llvm::Expected<unsigned> targetSizeBits(const std::string& triple)

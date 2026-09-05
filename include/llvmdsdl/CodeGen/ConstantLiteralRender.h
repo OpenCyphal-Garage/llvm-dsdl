@@ -10,7 +10,7 @@
 /// @file
 /// Shared constant-literal rendering helpers for code generation backends.
 ///
-/// These APIs centralize backend-specific literal syntax for booleans, numeric
+/// These APIs centralise backend-specific literal syntax for booleans, numeric
 /// constants, and strings emitted from semantic constant values.
 ///
 //===----------------------------------------------------------------------===//
@@ -45,7 +45,7 @@ enum class ConstantNumericClass
 
 /// @brief The declared type of a constant, sufficient to pick a range-correct literal spelling.
 ///
-/// Needed because the same 64-bit value renders differently by target: a full-width `uint64` needs an
+/// The same 64-bit value renders differently by target: a full-width `uint64` needs an
 /// unsigned suffix, `INT64_MIN` cannot be written as a bare negated literal in Rust/C, an
 /// integer-valued `float` constant must carry a decimal point, and a TypeScript 64-bit integer is a
 /// `bigint` (an `n`-suffixed literal) even for a small value.

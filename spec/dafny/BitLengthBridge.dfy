@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MIT
 //
 // The length-semantics bridge: the bit-length algebra computes EXACTLY the achievable
-// serialized lengths, per type constructor.
+// serialised lengths, per type constructor.
 //
 // WHAT THIS ADDS (hardening rung 4): stages 1-3 proved the evaluators correct AGAINST the
 // algebra's denotational semantics `Sem`, proved `Sem`'s algebraic shape, and corroborated it
 // against pydsdl — but `Sem` itself remained an axiom transcribed from our own header. This
-// module makes it a THEOREM: for every type in the grammar the analyzer compiles, the
-// algebra expression the analyzer would build (`BlsOf`, transcribing the Analyzer.cpp
-// construction sites) denotes precisely the set of serialized bit lengths achievable by
-// conforming values (`BitLen`, the length semantics of DSDL serialization):
+// module makes it a THEOREM: for every type in the grammar the analyser compiles, the
+// algebra expression the analyser would build (`BlsOf`, transcribing the Analyzer.cpp
+// construction sites) denotes precisely the set of serialised bit lengths achievable by
+// conforming values (`BitLen`, the length semantics of DSDL serialisation):
 //
 //   BridgeTheorem: L in Sem(BlsOf(t))  <==>  exists v :: Conforms(t, v) && BitLen(t, v) == L
 //
-// After this, trusting the algebra + the analyzer's construction pattern reduces to trusting
-// `BitLen` — five lines of arithmetic, one per serialization rule, each auditable directly
-// against the OpenCyphal Specification's serialization chapter:
+// After this, trusting the algebra + the analyser's construction pattern reduces to trusting
+// `BitLen` — five lines of arithmetic, one per serialisation rule, each auditable directly
+// against the OpenCyphal Specification's serialisation chapter:
 //   scalar/void   -> its width
 //   struct        -> fold of (round the offset up to the field's alignment, add the field),
 //                    rounded up to a byte boundary (Analyzer.cpp:1209,
@@ -30,7 +30,7 @@
 // granularity — the token model deliberately abstracts widths and alignment (its wire is
 // token-atomic), so the length projection lives here rather than as WireBits over its
 // tokens. A delimited composite (TComp, sealed == false) is representable as
-// VarArray(32, Scalar(8), extentBytes): the analyzer models the delimited field's length as
+// VarArray(32, Scalar(8), extentBytes): the analyser models the delimited field's length as
 // the FORWARD-COMPAT ENVELOPE — 32-bit delimiter header plus ANY payload of 0..extent bytes
 // (the DeCompat tolerance domain, version-skew by design) — not merely the lengths the
 // current inner type can write, and that envelope is exactly this VarArray shape
@@ -51,12 +51,12 @@
 //                                                       are on the wire; the algebra must
 //                                                       count them)
 //   - use Repeat instead of RepeatRange for VarArray -> backward fails (short arrays exist)
-//   - use Add instead of Union for alternatives      -> fails (one alternative serializes,
+//   - use Add instead of Union for alternatives      -> fails (one alternative serialises,
 //                                                       not all of them)
 //   - drop Pad from the struct fold                  -> fails for align > 1 (alignment bits
 //                                                       are real)
 //   - drop the trailing byte-Pad from Struct/UnionT  -> fails whenever the pre-pad length is
-//                                                       not a multiple of 8 (the analyzer pads
+//                                                       not a multiple of 8 (the analyser pads
 //                                                       every section end and every union to a
 //                                                       byte boundary: Analyzer.cpp:1209 / :884)
 //
@@ -68,7 +68,7 @@ module BitLengthBridge {
   import opened BitLengthSetModel
 
   // ==========================================================================
-  // The type grammar the analyzer compiles (bit-granular; see header for the
+  // The type grammar the analyser compiles (bit-granular; see header for the
   // CyphalSerdes.dfy correspondence).
   // ==========================================================================
 
@@ -104,7 +104,7 @@ module BitLengthBridge {
 
   // ==========================================================================
   // Values and conformance. A scalar value carries no payload: the payload does
-  // not influence the serialized LENGTH. Conformance is pointwise over indices.
+  // not influence the serialised LENGTH. Conformance is pointwise over indices.
   // ==========================================================================
 
   datatype Val =
@@ -139,13 +139,13 @@ module BitLengthBridge {
   }
 
   // ==========================================================================
-  // The REQUIREMENT: the serialized bit length of a conforming value — the
-  // length semantics of DSDL serialization, one rule per constructor. Struct
+  // The REQUIREMENT: the serialised bit length of a conforming value — the
+  // length semantics of DSDL serialisation, one rule per constructor. Struct
   // offsets are relative to the struct's own start (composites begin
   // byte-aligned, so field alignment is start-relative — the same convention
-  // as the analyzer's structureOffset accumulation). Struct and union lengths
-  // are rounded up to a byte boundary: a serialized composite always occupies
-  // a whole number of bytes (the trailing pad the analyzer applies at
+  // as the analyser's structureOffset accumulation). Struct and union lengths
+  // are rounded up to a byte boundary: a serialised composite always occupies
+  // a whole number of bytes (the trailing pad the analyser applies at
   // Analyzer.cpp:1209 and Analyzer.cpp:884).
   // ==========================================================================
 
@@ -204,7 +204,7 @@ module BitLengthBridge {
   }
 
   // ==========================================================================
-  // The IMPLEMENTATION map: the algebra expression the analyzer builds for a
+  // The IMPLEMENTATION map: the algebra expression the analyser builds for a
   // type — a transcription of the Analyzer.cpp construction sites (see the
   // traceability notes on Expr in BitLengthSet.dfy).
   // ==========================================================================
@@ -228,7 +228,7 @@ module BitLengthBridge {
     if i == |alts| - 1 then BlsOf(alts[i]) else Union(BlsOf(alts[i]), BlsOfAltsFrom(alts, i + 1))
   }
 
-  // Struct and union both end with the trailing byte-pad the analyzer applies:
+  // Struct and union both end with the trailing byte-pad the analyser applies:
   //   struct -> Analyzer.cpp:1209 `section.offsetAtEnd = structureOffset.padToAlignment(8)`
   //   union  -> Analyzer.cpp:884  `(BitLengthSet(tagBits) + payloadSet).padToAlignment(8)`
   ghost function BlsOf(t: Typ): Expr
@@ -388,7 +388,7 @@ module BitLengthBridge {
   }
 
   // Struct fold: the offsets reachable after fields fs[..i] are Sem(acc); the
-  // fold threads pad-then-add exactly as the analyzer accumulates
+  // fold threads pad-then-add exactly as the analyser accumulates
   // structureOffset.
   lemma {:isolate_assertions} FieldsBridge(aligns: seq<int>, typs: seq<Typ>, i: nat, acc: Expr, L: int)
     requires TWFFields(aligns, typs) && i <= |typs| && WF(acc)
@@ -459,8 +459,8 @@ module BitLengthBridge {
     }
   }
 
-  // The bridge: the algebra expression the analyzer builds for `t` denotes
-  // EXACTLY the achievable serialized bit lengths of values conforming to `t`.
+  // The bridge: the algebra expression the analyser builds for `t` denotes
+  // EXACTLY the achievable serialised bit lengths of values conforming to `t`.
   lemma BridgeTheorem(t: Typ, L: int)
     requires TWF(t)
     ensures WF(BlsOf(t))

@@ -28,7 +28,7 @@ function show(value: unknown): string {
 }
 
 // Deliberately not an empty value: an integration that serialised nothing and deserialised nothing
-// would round-trip an empty object perfectly and prove nothing at all.
+// would round-trip an empty object and prove nothing.
 const original: SystemHealth_1_0 = {
   timestamp: { microsecond: 1_234_567_890_123n },
   aggregate_health: { value: 2 }, // CAUTION, on the standard four-level scale

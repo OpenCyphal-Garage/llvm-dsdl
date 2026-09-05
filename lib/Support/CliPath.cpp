@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Normalization of the filesystem paths a command line carries.
+/// Normalisation of the filesystem paths a command line carries.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -281,7 +281,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append("# Parity Matrix Coverage")
     lines.append("")
     lines.append(
-        "Which serialization behaviours are covered by tests in every target language, and which "
+        "Which serialisation behaviours are covered by tests in every target language, and which "
         "are not. A cell is a (backend, behaviour) pair."
     )
     lines.append("")

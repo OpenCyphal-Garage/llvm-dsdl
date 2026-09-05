@@ -28,11 +28,11 @@ namespace llvmdsdl
 /// @brief Resolves and caches transitive DSDL input dependencies for depfile emission.
 ///
 /// @details
-/// The planner indexes one semantic module once, then memoizes:
+/// The planner indexes one semantic module once, then memoises:
 /// 1) per-type transitive input paths; and
 /// 2) per-required-type-set merged input paths.
 ///
-/// Returned dependency vectors are normalized absolute paths, sorted, and de-duplicated.
+/// Returned dependency vectors are normalised absolute paths, sorted, and de-duplicated.
 ///
 /// Synthetic embedded-uavcan paths are never emitted as dependencies -- they do not name files a
 /// build system can stat. An output that depends on the compiled-in catalogue is not thereby

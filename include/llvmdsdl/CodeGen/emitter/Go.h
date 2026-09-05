@@ -58,7 +58,7 @@ struct Options final
     /// @brief Emits `go.mod` when true.
     bool emitGoMod{true};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Optional list of selected type keys to emit.

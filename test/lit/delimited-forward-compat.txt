@@ -1,7 +1,7 @@
 # Regression: delimited (non-sealed) composite forward-compatibility skip in the C backend.
 #
 # On decode, a delimited composite is a 32-bit byte-length header followed by the nested object. The
-# nested deserialize reports how many bytes it actually consumed, which may be FEWER than the header
+# nested deserialise reports how many bytes it consumed, which may be FEWER than the header
 # declares when a newer peer appended fields this reader does not understand. The outer offset MUST
 # advance by the header-declared size, not by what the nested reader consumed -- otherwise every
 # subsequent field is read from the wrong position (a decoded-buffer 04 00 00 00 01 02 AA BB 77 with a

@@ -52,7 +52,7 @@ def DSDL_PtrType : TypeDef<DSDL_Dialect, "Ptr"> {
   let mnemonic = "ptr";
   let summary = "A pointer to object or wire-buffer storage";
   let description = [{
-    Addresses the storage a serialization plan reads and writes: the object, the wire
+    Addresses the storage a serialisation plan reads and writes: the object, the wire
     buffer, and the in/out size. The dialect carries its own pointer so that a plan body
     is expressed once and mapped per target -- `!emitc.ptr` for the C path, `!llvm.ptr`
     for object emission.

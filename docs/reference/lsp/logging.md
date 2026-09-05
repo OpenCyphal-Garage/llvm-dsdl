@@ -48,7 +48,7 @@ Every record carries `event` and `level`; the rest is event-specific.
 
 | Event | Level | Meaning |
 | --- | --- | --- |
-| `request` | info | One record per request — **synchronous and scheduler-completed alike**, because every request funnels through a single telemetry choke point. Carries `method`, `latency_us`, and `outcome` (`ok` or `cancelled`). |
+| `request` | info | One record per request — **synchronous and scheduler-completed alike**. Carries `method`, `latency_us`, and `outcome` (`ok` or `cancelled`). |
 | `error_response` | warn | A request was answered with a JSON-RPC error. Cancellations are routine flow control and stay at `info`. |
 | `set_trace` | info | Verbosity changed at runtime. |
 | `configuration_changed` | debug | `workspace/didChangeConfiguration` was applied. |

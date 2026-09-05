@@ -31,13 +31,13 @@ class GenerationTarget:
 # what a consumer of that package needs. The template a header came from is a
 # repository concern; the --check gate keeps the pair in step.
 RUST_GENERATED_HEADER = """//===----------------------------------------------------------------------===//
-// NOTE: LLVMDSDL AUTO-GENERATED FILE. DO NOT EDIT.
+// LLVMDSDL AUTO-GENERATED FILE.
 //===----------------------------------------------------------------------===//
 
 """
 
 PYTHON_GENERATED_HEADER = """#===----------------------------------------------------------------------===#
-# NOTE: LLVMDSDL AUTO-GENERATED FILE. DO NOT EDIT.
+# LLVMDSDL AUTO-GENERATED FILE.
 #===----------------------------------------------------------------------===#
 
 """

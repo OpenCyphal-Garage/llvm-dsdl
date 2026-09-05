@@ -246,7 +246,7 @@ bool runLspRobustnessTests()
 }
 
 // Structured logging is the post-mortem trail: every request must produce one parseable record, the
-// negotiated trace level must actually gate output (the `trace` knob was previously parsed but unused),
+// negotiated trace level must gate output,
 // and records must never reach the JSON-RPC channel.
 bool runLspStructuredLoggingTests()
 {
@@ -285,7 +285,7 @@ bool runLspStructuredLoggingTests()
                                 llvm::json::Object{{"textDocument", llvm::json::Object{{"uri", "file:///x.dsdl"}}}}}});
     };
 
-    // trace=off from initialize: the handshake and everything after it stay silent.
+    // trace=off from initialise: the handshake and everything after it stay silent.
     const auto silent = collect(llvm::json::Object{{"trace", "off"}}, {symbolRequest()});
     if (!silent.empty())
     {

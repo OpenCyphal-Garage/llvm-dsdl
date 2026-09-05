@@ -66,9 +66,9 @@ bool runLspDocumentStoreTests()
     }
 
     // Concurrency: hammer the store from multiple threads. With the internal mutex this must not
-    // race or crash. Because lookup()/snapshots() return value copies, a reader can never hold a
-    // pointer into the map while another thread erases/rehashes it (a use-after-free the old
-    // raw-pointer API allowed). Exercised for real under the ASan/UBSan sanitizer lanes.
+    // race or crash. lookup()/snapshots() return value copies, so a reader never holds a pointer
+    // into the map while another thread erases or rehashes it. Exercised under the ASan/UBSan
+    // sanitizer lanes.
     {
         llvmdsdl::lsp::DocumentStore shared;
         constexpr int                kThreads      = 8;

@@ -149,7 +149,7 @@ const llvm::StringSet<>& keywordSet(const CodegenNamingLanguage language)
     // C output is compiled as C++ more often than not, so it is escaped against both sets. The
     // object backend is the case that forced it: its C++ ABI lane includes the staged C headers from
     // C++ translation units, and the `c_shim` header it publishes is a dual-language surface that the
-    // suite compiles both ways. `extern "C"` changes linkage, not tokenization, so a member named
+    // suite compiles both ways. `extern "C"` changes linkage, not tokenisation, so a member named
     // `class` is a parse error there however it is linked.
     //
     // The cost is a trailing `_` on the handful of DSDL names that are C++ keywords and not C ones --
@@ -261,7 +261,7 @@ namespace
 ///
 /// The `escape` and `strop` columns are not uniform. A role skips the keyword escape when its output
 /// is not an identifier in the language's own namespace -- a file name, or a token that is always
-/// emitted under a type-name prefix -- because there is nothing there for a keyword to collide with.
+/// emitted under a type-name prefix.
 /// Names the generated code has already claimed are a separate question and are checked regardless;
 /// see @ref runtimeOwnedNames.
 ///
@@ -352,7 +352,7 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                                     "to_c",
                                                                     "from_c"};
 
-    // `Tag` is the union discriminator; Go is the only backend that spells it as an exported field,
+    // `Tag` is the union discriminator; Go alone spells it as an exported field,
     // and an exported field is what a DSDL field named `tag` projects to.
     static constexpr std::array<llvm::StringRef, 3> kGoMethods = {"Serialize", "Deserialize", "Tag"};
 
@@ -416,8 +416,8 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::C:
         // `ConstantName` and `MacroName` are one thing in C -- both name a `<Type>_<TOKEN>` macro --
-        // so both are claimed against the same list. Fields need nothing: the only member C adds of
-        // its own is a union's `_tag_`, which DSDL will not accept as a name.
+        // so both are claimed against the same list. Fields need nothing: C adds one member of its
+        // own, a union's `_tag_`, which DSDL will not accept as a name.
         if ((role == IdentifierRole::ConstantName) || (role == IdentifierRole::MacroName))
         {
             return kCMacros;
@@ -489,12 +489,12 @@ std::string encodeReservedNamespace(const CodegenNamingLanguage language, const 
 
 /// @brief Runs the shared naming pipeline.
 ///
-/// Stage order is load-bearing and matches what the case-explicit helpers did before this existed:
+/// Stage order is load-bearing:
 /// the keyword check runs on the cased but not yet upper-cased form, so a Go constant named `break`
 /// becomes `break_` and only then `BREAK_`.
 /// @param[in] role The role whose claimed-name set applies, or nullopt for a token this generator
 ///            constructed rather than a DSDL name being named -- those must not pick up names the
-///            generated code owns, because they are not competing for the same scope.
+///            generated code owns.
 ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
                                 const std::optional<IdentifierRole> role,
                                 const RolePolicy&                   policy,
@@ -545,7 +545,7 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
         out += "_";
         escaped = true;
         // One iteration suffices because no keyword in any table ends in `_`. The table invariant
-        // test in NamingPolicyTests.cpp is what keeps that true.
+        // test in NamingPolicyTests.cpp keeps that true.
         assert(!keywordSet(language).contains(out));
     }
 

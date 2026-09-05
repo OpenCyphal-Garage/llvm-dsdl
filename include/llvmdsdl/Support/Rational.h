@@ -27,31 +27,31 @@ namespace llvmdsdl
 /// @brief Decimal string of a 128-bit value (there is no `std::to_string(__int128)`).
 [[nodiscard]] std::string wideToString(__int128 value);
 
-/// @brief Immutable normalized rational value.
+/// @brief Immutable normalised rational value.
 ///
 /// Numerator and denominator are stored in 128-bit so the type can exactly represent every DSDL
 /// integer constant, whose value domain spans `[INT64_MIN, UINT64_MAX]` (a signed `int64` floor and
 /// an unsigned `uint64` ceiling do not both fit in a single 64-bit integer). Arithmetic still poisons
 /// (see `overflowed()`) when a reduced result leaves 128-bit range; per-type range enforcement for a
-/// constant against its declared width is a separate, higher-level concern (the semantic analyzer).
+/// constant against its declared width is a separate, higher-level concern (the semantic analyser).
 class Rational final
 {
 public:
     /// @brief Constructs zero (`0/1`).
     Rational();
 
-    /// @brief Constructs and normalizes a rational value.
+    /// @brief Constructs and normalises a rational value.
     /// @param[in] numerator Numerator value.
     /// @param[in] denominator Denominator value (must not be zero).
     Rational(__int128 numerator, __int128 denominator = 1);
 
-    /// @brief Returns the normalized numerator.
+    /// @brief Returns the normalised numerator.
     [[nodiscard]] __int128 numerator() const
     {
         return numerator_;
     }
 
-    /// @brief Returns the normalized denominator.
+    /// @brief Returns the normalised denominator.
     [[nodiscard]] __int128 denominator() const
     {
         return denominator_;
@@ -125,14 +125,14 @@ private:
     /// @brief Reduces sign and fraction by GCD.
     void normalize();
 
-    /// @brief Builds a normalized rational from 128-bit numerator/denominator, marking the result
+    /// @brief Builds a normalised rational from 128-bit numerator/denominator, marking the result
     ///        overflowed (and clamping to zero) when the reduced value does not fit in 128 bits.
     static Rational fromWide(__int128 numerator, __int128 denominator, bool operandOverflowed);
 
-    /// @brief Normalized numerator.
+    /// @brief Normalised numerator.
     __int128 numerator_;
 
-    /// @brief Normalized denominator (always positive).
+    /// @brief Normalised denominator (always positive).
     __int128 denominator_;
 
     /// @brief Set when a preceding arithmetic op overflowed 64-bit range; see `overflowed()`.

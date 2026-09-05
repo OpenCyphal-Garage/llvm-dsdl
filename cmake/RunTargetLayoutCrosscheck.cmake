@@ -2,7 +2,7 @@
 # named target rather than only for this host.
 #
 # The width the lane resolved is read back from its own report, so what is checked is what it
-# actually derived and not a width supplied here.
+# derived and not a width supplied here.
 
 if(NOT DEFINED DSDLC OR NOT DEFINED DSDL_OPT OR NOT DEFINED OUT_DIR OR NOT DEFINED PYTHON_EXECUTABLE)
   message(FATAL_ERROR "DSDLC, DSDL_OPT, OUT_DIR and PYTHON_EXECUTABLE are required")

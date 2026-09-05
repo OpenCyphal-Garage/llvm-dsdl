@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: 'dsdl.serialization_plan' op lowered step counters do not match serialization plan body
+// CHECK: error: 'dsdl.serialization_plan' op lowered step counters do not match serialisation plan body

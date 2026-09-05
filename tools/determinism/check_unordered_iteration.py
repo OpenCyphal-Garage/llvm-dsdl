@@ -7,9 +7,8 @@ Reject unjustified iteration over hashed containers in the generated-output path
 A `std::unordered_*` container's iteration order is a property of the standard
 library implementation, not of the data in it. libstdc++ and libc++ hash and
 bucket differently, so a loop over one can emit different bytes when built
-against a different standard library -- while being perfectly deterministic for
-any single binary, which is what makes it so easy to introduce and so hard to
-notice.
+against a different standard library -- while being deterministic for
+any single binary, so it is easy to introduce and hard to notice.
 
 This project publishes byte-reproducibility of generated code as a guarantee, so
 that class of divergence has to be structurally excluded rather than tested for

@@ -36,7 +36,7 @@ namespace llvmdsdl
 namespace
 {
 
-/// Constructs a normalized representable run. This is the single validation point for runs
+/// Constructs a normalised representable run. This is the single validation point for runs
 /// synthesized by arithmetic operations; callers refuse when it returns nullopt.
 std::optional<Run> makeRun(std::int64_t start, std::int64_t stride, std::int64_t count)
 {
@@ -243,7 +243,7 @@ bool subtractSubProgression(const Run& r, const Run& cut, std::vector<Run>& out,
 
     // Tail: elements of r strictly after the last cut element. Checked: r.last() can be
     // INT64_MAX (a legal element), in which case cut.last() + r.stride overflows and the
-    // correct reading is simply "no tail".
+    // correct reading is "no tail".
     std::int64_t afterCut = 0;
     if (checkedAdd(cut.last(), r.stride, afterCut) && afterCut <= r.last())
     {
@@ -273,7 +273,7 @@ RunSet RunSet::fromValues(const FlatSet<std::int64_t>& values)
     }
     // Greedy maximal runs over the sorted input: extend while the gap stays constant. The gap
     // is computed in 128-bit: two extreme int64 inputs can be further apart than int64 can
-    // represent, and such a pair must simply stay two singleton runs (the representability
+    // represent, and such a pair must stay two singleton runs (the representability
     // invariant) rather than form a run whose stride silently overflowed. Each extension also
     // validates the complete run span; a larger evenly spaced sequence may require multiple
     // representable runs.
@@ -496,7 +496,7 @@ void RunSet::coalesce()
     {
         Run&       cur  = merged.back();
         const Run& next = runs_[i];
-        // Same greedy rules as fromValues, generalized to runs: merge only structurally
+        // Same greedy rules as fromValues, generalised to runs: merge only structurally
         // contiguous same-stride (or singleton) neighbours. Purely compaction; the denoted
         // set is unchanged, and failing to merge is always safe.
         // All probes are checked: a run may legally end at INT64_MAX, where last() + stride
@@ -616,9 +616,9 @@ std::optional<RunSet> RunSet::sum(const RunSet& a, const RunSet& b)
             const std::int64_t    spanSmall   = small.max() - small.min() + 1;
             constexpr std::size_t kWordOpsCap = 1U << 26U;
             const std::size_t     smallWords  = (static_cast<std::size_t>(spanSmall) + 63U) / 64U;
-            // Gate BEFORE materializing: the exact counts (runs are pairwise disjoint, so count
-            // equals materialized size) and the run-derived span decide the same predicate in
-            // O(#runs), so failing inputs skip the potentially multi-MiB materialization.
+            // Gate BEFORE materialising: the exact counts (runs are pairwise disjoint, so count
+            // equals materialised size) and the run-derived span decide the same predicate in
+            // O(#runs), so failing inputs skip the potentially multi-MiB materialisation.
             const auto& cSmall = (&small == &a) ? ca : cb;
             const auto& cLarge = (&small == &a) ? cb : ca;
             if (cSmall && cLarge && *cSmall <= kSumSpanLimit && *cLarge <= kSumSpanLimit &&

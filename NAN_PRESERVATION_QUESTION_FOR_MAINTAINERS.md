@@ -1,7 +1,7 @@
-# Question for maintainers: what does "the original value will be preserved" mean for NaN?
+# NaN preservation and the meaning of "the original value will be preserved"
 
 **Status:** open question about DSDL specification interpretation. Not a known bug — a
-request for clarification that affects float serialization conformance across all backends.
+request for clarification that affects float serialisation conformance across all backends.
 
 ## Summary
 
@@ -30,7 +30,7 @@ original value is not-a-number, in which case it will be preserved.")
 Source: <https://github.com/OpenCyphal/specification/blob/master/specification/dsdl/serializable_types.tex>
 · <http://specification.opencyphal.org/Cyphal_Specification.pdf>
 
-## What we observe today (all four native backends: C, C++, Rust, Go)
+## Behaviour of the native backends (C, C++, Rust, Go)
 
 These backends share one runtime float16 conversion routine
 (`dsdl_runtime_float16_pack` / `dsdl_runtime_float16_unpack` in `runtime/dsdl_runtime.h`,
@@ -38,7 +38,7 @@ the well-known "magic-float" algorithm also used by libcanard/Nunavut).
 
 ### float32 / float64 — exact bit pattern preserved
 
-A signalling NaN survives a deserialize→serialize round-trip byte-for-byte, identically
+A signalling NaN survives a deserialise→serialise round-trip byte-for-byte, identically
 across all four backends:
 
 | input (wire, little-endian) | output |
@@ -48,7 +48,7 @@ across all four backends:
 Note we do **not** set the quiet bit — the signalling NaN is preserved as-is. This is now
 covered by a regression test in the C↔C++, C↔Rust, and C↔Go parity suites.
 
-### float16 — NaN preserved, but payload canonicalized
+### float16 — NaN preserved, but payload canonicalised
 
 The runtime conversion flattens any half-precision NaN payload to a single canonical value:
 
@@ -59,7 +59,7 @@ The runtime conversion flattens any half-precision NaN payload to a single canon
 
 So under reading (b), float16 would be non-conforming; under reading (a) it is fine.
 
-## Why reading (a) seems forced for float16 (but we want confirmation)
+## The case for reading (a) at float16
 
 The native value being cast into a `float16` field is a `float32`/`float64`, whose NaN
 payload is **23 bits** wide (binary32). A `float16` NaN payload is only **10 bits** wide.
@@ -70,7 +70,7 @@ width. IEEE 754 is consistent with this: it treats NaN payload propagation as a
 *recommendation*, not a requirement, and explicitly permits quieting a signalling NaN on
 format conversion.
 
-We currently implement reading (a): NaN in → NaN out, payload canonicalized at `float16`,
+We implement reading (a): NaN in → NaN out, payload canonicalised at `float16`,
 exact payload preserved at `float32`/`float64` where the width allows it.
 
 ## Concrete questions
@@ -78,20 +78,20 @@ exact payload preserved at `float32`/`float64` where the width allows it.
 1. **Semantics of "preserved" for NaN.** Is the requirement (a) "the value remains a NaN,"
    or (b) "the exact bit pattern is preserved where representable"?
 
-2. **float16 payload canonicalization.** If the answer is (a): is canonicalizing every
+2. **float16 payload canonicalisation.** If the answer is (a): is canonicalising every
    `float16` NaN to a single pattern (`0x7E00`) acceptable, or should an implementation at
    least reproduce the low payload bits when the source NaN's payload already fits in the
    10 available bits (e.g. round-tripping a wire `0x7C01` back to `0x7C01`)?
 
-3. **Signalling NaNs at float32/float64.** We currently preserve signalling NaNs exactly and
+3. **Signalling NaNs at float32/float64.** We preserve signalling NaNs exactly and
    do **not** set the quiet bit, reading "preserve the original value" literally. IEEE 754
    *recommends* quieting signalling NaNs on conversion. For a same-width `float32 → float32`
    store (which is arguably not a "conversion" at all), which behaviour does the spec intend —
    preserve the signalling NaN as-is (what we do), or quiet it?
 
-## Why this matters
+## Consequences
 
-Cross-implementation byte-exactness of the serialized form is a protocol-level concern.
+Cross-implementation byte-exactness of the serialised form is a protocol-level concern.
 If reading (b) is intended, or if maintainers want a specific float16 payload policy, then
 the shared runtime float16 routine (and any conformance/differential test that tolerates NaN
 payload differences) would need to change accordingly, and this would need to be coordinated

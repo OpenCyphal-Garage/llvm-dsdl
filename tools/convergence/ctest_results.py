@@ -9,7 +9,7 @@
 
 This turns the convergence matrix gates from *name-presence* checks (a cell is
 "covered" if a test with a matching name is merely registered) into *behavioural*
-checks (a cell is "covered" only if a matching test actually executed and passed).
+checks (a cell is "covered" only if a matching test executed and passed).
 
 The parser is deliberately tolerant of the two shapes the project produces:
 

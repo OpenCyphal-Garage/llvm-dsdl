@@ -3,7 +3,7 @@
 /// @file
 /// Rust Cyphal node demo exposing heartbeat and register services.
 ///
-/// This node uses llvm-dsdl-generated Rust types for serialization and a
+/// This node uses llvm-dsdl-generated Rust types for serialisation and a
 /// C transport shim around libudpard + POSIX UDP.
 ///
 //===----------------------------------------------------------------------===//
@@ -353,7 +353,7 @@ impl NodeApp {
         let mut encoded = vec![0u8; uavcan_node_Heartbeat_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = heartbeat
             .serialize(&mut encoded)
-            .map_err(|rc| format!("heartbeat serialization failed: {}", rc))?;
+            .map_err(|rc| format!("heartbeat serialisation failed: {}", rc))?;
         encoded.truncate(used);
 
         let deadline = now_usec.saturating_add(TX_DEADLINE_USEC);

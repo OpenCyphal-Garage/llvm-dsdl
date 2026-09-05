@@ -3,10 +3,10 @@
 // The bulk bit moves, which a bool array uses: it is stored bitpacked rather than as
 // elements, so the whole array travels in one run whose length is its count.
 //
-// The two directions are not mirror images, because the runtime's are not. Writing past the
-// end of the buffer is an error; reading past it zero-extends, which is the tolerance a
-// deserializer is required to have. So the read takes the buffer's size and the write does
-// not, and they lower to different primitives.
+// The two directions are not mirror images. Writing past the end of the buffer is an error;
+// reading past it zero-extends, which is the tolerance a deserialiser is required to have. So
+// the read takes the buffer's size and the write does not, and they lower to different
+// primitives.
 
 // CHECK-LABEL: func.func @pack
 // CHECK-SAME: (%[[OBJ:.*]]: !emitc.ptr<!emitc.opaque<"const uint8_t">>, %[[BUF:.*]]: !emitc.ptr<!emitc.opaque<"uint8_t">>

@@ -39,9 +39,9 @@ namespace llvmdsdl
 namespace
 {
 
-/// Materialization ceiling for symbolic set values (`_offset_`). This is a pure resource guard
+/// Materialisation ceiling for symbolic set values (`_offset_`). This is a pure resource guard
 /// against pathological definitions (compile-time DoS), NOT a correctness knob: an expression
-/// whose exact value set cannot be materialized within this many elements FAILS with a
+/// whose exact value set cannot be materialised within this many elements FAILS with a
 /// diagnostic instead of being evaluated against a truncated set. Queries answered symbolically
 /// (`.min`, `.max`, `% k`, singleton comparisons) never consult this limit and are exact at any
 /// cardinality.
@@ -66,7 +66,7 @@ Value::Set toRationalSet(const FlatSet<std::int64_t>& values)
     return out;
 }
 
-/// Materializes the exact value set denoted by a symbolic set, or fails with a hard error.
+/// Materialises the exact value set denoted by a symbolic set, or fails with a hard error.
 /// Never returns a truncated set: inexactness here is a diagnosed evaluation failure, so
 /// approximate values cannot leak into expression results.
 ///
@@ -95,7 +95,7 @@ std::optional<Value::Set> materializeExact(const BitLengthSet&   bls,
         }
     }
     diagnostics.error(location,
-                      "this expression requires the full contents of '_offset_', which cannot be materialized "
+                      "this expression requires the full contents of '_offset_', which cannot be materialised "
                       "exactly within the evaluator's capacity of " +
                           std::to_string(kExactMaterializationLimit) +
                           " values; rewrite using '_offset_.min', '_offset_.max', '_offset_.count', "
@@ -120,11 +120,11 @@ std::optional<std::int64_t> literalElementAsInt(const Rational& r)
 }
 
 /// Decides `S == literal` exactly, where S is symbolic. Returns true with the verdict in
-/// `equal`, or false after diagnosing a genuinely undecidable comparison (never guesses):
+/// `equal`, or false after diagnosing an undecidable comparison (never guesses):
 ///   - `min()`/`max()` are exact at any cardinality, so a bounds mismatch disproves equality
-///     without materializing anything;
-///   - a materialization that completes is compared exactly;
-///   - a truncated materialization is still a sound subset of S, so any element outside the
+///     without materialising anything;
+///   - a materialisation that completes is compared exactly;
+///   - a truncated materialisation is still a sound subset of S, so any element outside the
 ///     literal — or more elements than the literal holds — also disproves equality exactly.
 bool decideSetEquality(const BitLengthSet&   bls,
                        const Value::Set&     literal,
@@ -523,14 +523,14 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
     }
 
     // Symbolic set operands (`_offset_`): answer exactly from the symbolic form where possible;
-    // whatever remains materializes its exact value set below or fails — an expression is never
+    // whatever remains materialises its exact value set below or fails — an expression is never
     // evaluated against a truncated set.
     if (std::holds_alternative<BitLengthSet>(lhs->data) || std::holds_alternative<BitLengthSet>(rhs->data))
     {
         // `_offset_ % k`: exact residues at any cardinality via modulo() (exact-or-refuse).
         // Offsets are non-negative, so remainder by a negative divisor equals remainder by its
         // magnitude (elementwise `%` truncates toward zero). A refusal — like a divisor beyond
-        // int64 — falls THROUGH to generic materialization, which is itself exact-or-error.
+        // int64 — falls THROUGH to generic materialisation, which is itself exact-or-error.
         if (b.op == BinaryOp::Mod)
         {
             const auto* lbls = std::get_if<BitLengthSet>(&lhs->data);
@@ -573,7 +573,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
 
             // Equality against a concrete set: decidable exactly at any cardinality in all but
-            // genuinely pathological cases (see decideSetEquality).
+            // pathological cases (see decideSetEquality).
             const auto* lset = std::get_if<Value::Set>(&lhs->data);
             const auto* rset = std::get_if<Value::Set>(&rhs->data);
             const auto* bls  = (lbls != nullptr) ? lbls : rbls;
@@ -632,7 +632,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                 // Tri-state deciders so ordered comparisons decide wherever equality does (Eq is
                 // mutual subset): definite verdicts survive a run-representation refusal via the
                 // same refusal-tolerant ladder as decideSetEquality. nullopt = undecided; the
-                // undecided cases fall through to exact materialization below.
+                // undecided cases fall through to exact materialisation below.
                 std::optional<bool> litInS;    // every literal element is a member of S
                 std::optional<bool> sInLit;    // S is a subset of the literal
                 std::optional<bool> sameCard;  // |S| == |literal|
@@ -758,7 +758,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
 
         // `_offset_ + c` (either order): elementwise addition of a non-negative integer scalar
         // is the algebra's own Add node, so the result stays symbolic and exact at any
-        // cardinality instead of forcing materialization.
+        // cardinality instead of forcing materialisation.
         if (b.op == BinaryOp::Add)
         {
             const auto* sbls   = std::get_if<BitLengthSet>(&lhs->data);
@@ -778,7 +778,7 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
         }
 
-        // Everything else: materialize the exact set (or fail) and dispatch through the
+        // Everything else: materialise the exact set (or fail) and dispatch through the
         // ordinary concrete-set paths below.
         if (auto* lbls = std::get_if<BitLengthSet>(&lhs->data))
         {
@@ -1098,7 +1098,7 @@ std::string Value::str() const
     }
     else if (const auto* p = std::get_if<BitLengthSet>(&data))
     {
-        // Concrete rendering when the exact set materializes; otherwise the symbolic expression
+        // Concrete rendering when the exact set materialises; otherwise the symbolic expression
         // — never a silently truncated set. Mirrors materializeExact's ladder: the RunSet path
         // first (no intermediate-truncation cliff), expandChecked as the fallback.
         std::optional<FlatSet<std::int64_t>> values;

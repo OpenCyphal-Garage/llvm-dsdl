@@ -34,7 +34,7 @@ on:
     #
     # A label event says nothing about the code, so every lane below it is
     # guarded with `github.event.action != 'labeled'` and only the release lane
-    # actually runs. Without that guard any label at all -- `bug`, `docs`,
+    # runs. Without that guard any label at all -- `bug`, `docs`,
     # anything -- replayed the whole suite, the two-hour lane included, over a
     # commit that had already passed it.
     types: [opened, synchronize, reopened, labeled]
@@ -49,12 +49,11 @@ permissions:
 
 concurrency:
   # Label runs and code runs are different work on the same ref: a label run
-  # exists only to start the release lane, a code run proves the commit. One
-  # shared group made them cancel each other -- opening a labelled pull request
-  # fired `opened` then `labeled` and left the first run dead seconds in, which
-  # reads as a failure on the pull request and is why this exists. Splitting the
-  # group lets each supersede only its own kind, so a second push still cancels
-  # a stale build and a label no longer kills one.
+  # exists only to start the release lane, a code run proves the commit. In one
+  # shared group they would cancel each other -- opening a labelled pull request
+  # fires `opened` then `labeled`, and the first run would die seconds in, which
+  # reads as a failure on the pull request. Each kind supersedes only its own, so
+  # a second push cancels a stale build and a label cancels nothing else.
   group: "ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'code' }}"
   cancel-in-progress: true
 
@@ -75,7 +74,7 @@ jobs:
 
       - name: Check that every mention of where this project lives is current
         # The repository has moved before and moves again at v1.0. Everything that names the owner is
-        # derived from project-identity.json, and this is what stops a hand-edit from drifting back.
+        # derived from project-identity.json.
         # It also fails on a committed /Users/<somebody>/ path, which is wrong for every other reader.
         run: python3 tools/repo_identity.py
 
@@ -168,8 +167,7 @@ jobs:
         # machine-checked oracle (see its Authority hierarchy); a mismatch here is an
         # investigation adjudicated by the spec, as likely a Nunavut defect as ours.
         # With the SHAs pinned, a newly appearing mismatch implicates our change
-        # first, which is what makes this lane a useful blocking tripwire. The
-        # harness consumes both repos as source trees via PYTHONPATH — nunavut
+        # first. The harness consumes both repos as source trees via PYTHONPATH — nunavut
         # vendors Jinja2 and pydsdl has no runtime deps, so no pip install is
         # needed. Bump both SHAs only as a deliberate, adjudicated update.
         env:
@@ -283,7 +281,7 @@ jobs:
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
     # ASan/UBSan over the generated C/C++/Go decoders plus a coverage-guided
-    # libFuzzer lane over the native deserializers on the real UAVCAN corpus.
+    # libFuzzer lane over the native deserialisers on the real UAVCAN corpus.
     # Linux-only: threading the ASan runtime into a Go external link is only
     # reliable here, and macOS Apple-Silicon ASan startup is flaky. The lane is
     # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
@@ -378,7 +376,7 @@ jobs:
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
     # spec/dafny/CyphalSerdes.dfy is the normative oracle for the emit-order verifier:
-    # it PROVES (unbounded, by induction) that serialize/deserialize round-trip and that
+    # it PROVES (unbounded, by induction) that serialise/deserialize round-trip and that
     # the read path is bounds-safe by construction, and defines the accepted op orderings
     # the B1 verifier checks each generated backend against. Re-verified on every change
     # so the oracle can't rot. Needs only the Dafny toolchain — independent of the
@@ -427,9 +425,9 @@ jobs:
         run: dafny verify spec/dafny/BitLengthSet.dfy
 
       - name: Verify BitLengthSet bridge
-        # The length-semantics bridge theorem: the algebra expression the analyzer builds for
-        # each type denotes EXACTLY the achievable serialized bit lengths of conforming values
-        # — Sem stops being an axiom and becomes a theorem about serialization.
+        # The length-semantics bridge theorem: the algebra expression the analyser builds for
+        # each type denotes EXACTLY the achievable serialised bit lengths of conforming values
+        # — Sem stops being an axiom and becomes a theorem about serialisation.
         run: dafny verify spec/dafny/BitLengthBridge.dfy
 
   corpus:
@@ -440,16 +438,15 @@ jobs:
     # identical toolchain, differing only in the architecture the compiler runs
     # on, so a difference in the emitted corpus can only come from the build.
     #
-    # This replaces the retired cross-stdlib lane, and covers something the
-    # project actually ships: two architectures of the same release. Word size,
+    # This covers something the project ships: two architectures of the same release. Word size,
     # alignment and floating-point formatting reaching emitted text are what it
     # would catch, none of which same-host perturbation (locale/TZ/hash seed,
     # gated elsewhere) can expose.
     #
     # The same image and the same restored prefix as every other job: this
     # builds dsdlc and nothing else, but using a different environment for it
-    # would weaken the comparison, since the point is that only the architecture
-    # differs between the two halves.
+    # would weaken the comparison: only the architecture may differ between the
+    # two halves.
     runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.3
@@ -480,9 +477,9 @@ jobs:
       - name: Build dsdlc
         # LLVM_DIR/MLIR_DIR name the restored prefix explicitly, exactly as the
         # other jobs do. Leaving it to a search would let a distro LLVM in the
-        # image satisfy find_package instead, which is the one thing this lane
-        # cannot tolerate: the two halves must differ in architecture and in
-        # nothing else, and an implicit LLVM is free to differ per runner.
+        # image satisfy find_package instead. The two halves must differ in
+        # architecture and in nothing else, and an implicit LLVM is free to
+        # differ per runner.
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
@@ -597,8 +594,8 @@ jobs:
         # build directory would exercise a path no user ever takes. This step is therefore also the
         # selftest for the CMake package -- if the config is broken for a user, c-cmake fails here.
         #
-        # `install-bin` rather than `--target dsdlc` and a hand-written `cmake --install`, because
-        # both halves of that are easy to get subtly wrong and neither fails until here. The `bin`
+        # `install-bin` rather than `--target dsdlc` and a hand-written `cmake --install`: neither
+        # half of that fails until here. The `bin`
         # component installs every tool in LLVMDSDL_INSTALLABLE_TOOLS, not just dsdlc, so building
         # dsdlc alone leaves the install looking for a dsdl-opt nobody built; and `ci` is a Ninja
         # Multi-Config preset, so an install with no --config silently resolves to
@@ -629,8 +626,8 @@ jobs:
         #
         # c-bazel joined the list in ts26.4.3, which carries bazel; the recipe pins the same 9.2.0 the
         # image pre-warms, so it neither downloads a compiler nor drifts off it. ts-pnpm is in the
-        # list too now that the step above installs pnpm outright: provisioning it is no longer
-        # allowed to fail quietly, so a skip is a real loss of coverage like any other.
+        # list too: the step above installs pnpm outright, so a skip is a real loss of coverage like
+        # any other.
         #
         # The installed dsdlc, not one fished out of the build tree. Under a multi-config generator
         # the build tree can hold several, and `find | head -1` would pick between them by accident;
@@ -655,18 +652,17 @@ jobs:
 
       - name: Regenerate the documentation pages
         # Cheap, needs no compiler, and proves the generator still runs against the recipes as they
-        # actually are -- a recipe.json the renderer chokes on should fail here, not at publish time.
+        # are -- a recipe.json the renderer chokes on should fail here, not at publish time.
         run: python3 tools/showroom/recipes_index.py
 
   benchmarks:
     name: Runtime benchmarks (linux / toolshed)
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
-    # The runtime benchmarks measure generated Rust and generated Python doing real work. They are
-    # the only lane that runs the generated code for speed rather than for correctness, and until
-    # this job existed they ran nowhere: `test-ci-full` filters `-LE bench`, and the `test-ci-bench`
-    # preset had no caller. That is how the Rust harness came to stop compiling without anything
-    # noticing -- the failure was a broken benchmark, and no lane built one.
+    # The runtime benchmarks measure generated Rust and generated Python doing real work. No other
+    # lane runs the generated code for speed rather than for correctness: `test-ci-full` filters
+    # `-LE bench`, so the `test-ci-bench` preset runs here and nowhere else, and a benchmark that
+    # stops compiling fails here.
     #
     # So the first thing this lane buys is that the harnesses are exercised. The numbers are the
     # second thing, and they are REPORTED, NOT ENFORCED, on purpose:
@@ -685,7 +681,7 @@ jobs:
     # guessed rather than observed either flakes or is too wide to catch anything.
     #
     # The durable answer is narrower than absolute seconds. The Python report already carries
-    # `fastVsPortableRatio`: two specializations timed in the same process on the same machine, so
+    # `fastVsPortableRatio`: two specialisations timed in the same process on the same machine, so
     # the ratio survives a runner that is having a bad day in a way that a second does not. A gate
     # built on ratios would work here today; one built on seconds needs the calibration above.
     #
@@ -744,8 +740,8 @@ jobs:
 
       - name: Run the benchmarks
         # The preset selects the `bench` label and inherits no `jobs`, so ctest runs serially. Both
-        # tests also carry RUN_SERIAL, which is what keeps a wall-clock measurement off a machine
-        # that is compiling something else.
+        # tests also carry RUN_SERIAL; a wall-clock measurement never shares the machine with a
+        # compile.
         run: ctest --preset test-ci-bench
 
       - name: Summarise
@@ -773,7 +769,7 @@ jobs:
 
   release-artifacts:
     name: Release artifacts
-    # Opt-in, on the `release-ci` label. The packages are the only thing this
+    # Opt-in, on the `release-ci` label. The packages are what this
     # project ships and no other job here builds one -- every other lane is
     # Linux-only and runs no packaging step -- so a pull request that touches
     # packaging, the toolchain pin, install rules or the version needs this to
@@ -784,7 +780,7 @@ jobs:
     # pull request checklist in CONTRIBUTING.md §13 names when to ask for it.
     #
     # `labeled` is in the trigger list because otherwise applying the label does
-    # nothing until the next push, which is the whole point of applying it.
+    # nothing until the next push.
     #
     # Pull requests only. This workflow also runs on push-to-main, dispatch and
     # a weekly cron, and none of those should pay for a packaging build. The
@@ -801,7 +797,7 @@ jobs:
       (github.event.action != 'labeled' || github.event.label.name == 'release-ci')
     # Calls the same workflow a tag does rather than restating it, so the .deb
     # legs, the pristine-container install, the macOS tarballs and their linkage
-    # assertions cannot drift from what a release actually runs. Publishing is
+    # assertions cannot drift from what a release runs. Publishing is
     # not part of it -- that lives in release.yml, which owns the write token --
     # so this lane builds and verifies and creates nothing.
     uses: ./.github/workflows/release-build.yml

@@ -10,7 +10,7 @@
 /// @file
 /// Shared native-emitter helper-contract validation declarations.
 ///
-/// This utility centralizes required helper-presence checks for native
+/// This utility centralises required helper-presence checks for native
 /// backends (C++/Rust/Go) so semantic helper requirements remain uniform.
 ///
 //===----------------------------------------------------------------------===//
@@ -30,10 +30,10 @@ struct SemanticSection;
 /// @details Native backends require lowered capacity helpers for every section,
 /// union sections additionally require union-tag validate/mask helpers, and
 /// field-level scalar/array/delimiter helper contracts must be satisfiable for
-/// the requested serialization direction.
+/// the requested serialisation direction.
 /// @param[in] section Semantic section metadata.
 /// @param[in] sectionFacts Lowered section facts used to resolve field helper symbols.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @param[in] helperBindings Section helper bindings for one direction.
 /// @param[out] missingRequirement Optional missing-requirement label.
 /// @return True when required helpers are present.

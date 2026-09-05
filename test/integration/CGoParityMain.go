@@ -1,9 +1,9 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Go parity driver comparing generated Go and C serializers/deserializers.
+/// Go parity driver comparing generated Go and C serialisers/deserializers.
 ///
-/// The program executes randomized and directed parity checks through cgo
+/// The program executes randomised and directed parity checks through cgo
 /// bindings and reports category-based pass/fail summaries.
 ///
 //===----------------------------------------------------------------------===//
@@ -2006,7 +2006,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_angle_quaternion",
 			maxSerialized: siunitanglepkg.QUATERNION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_angle_quaternion_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2025,7 +2025,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_acceleration_vector3",
 			maxSerialized: siunitaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_acceleration_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2044,7 +2044,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_force_vector3",
 			maxSerialized: siunitforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_force_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2063,7 +2063,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_length_wide_vector3",
 			maxSerialized: siunitlengthpkg.WIDE_VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_length_wide_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2082,7 +2082,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_torque_vector3",
 			maxSerialized: siunittorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_torque_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2101,7 +2101,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_sample_angle_quaternion",
 			maxSerialized: sisampleanglepkg.QUATERNION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_sample_angle_quaternion_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2120,7 +2120,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_sample_acceleration_vector3",
 			maxSerialized: sisampleaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_sample_acceleration_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2139,7 +2139,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_sample_force_vector3",
 			maxSerialized: sisampleforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_sample_force_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2158,7 +2158,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_sample_torque_vector3",
 			maxSerialized: sisampletorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_sample_torque_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2177,7 +2177,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_unit_velocity_vector3",
 			maxSerialized: siunitvelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_unit_velocity_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -2196,7 +2196,7 @@ func buildParityCases(baseIterations int) []parityCase {
 			name:          "si_sample_velocity_vector3",
 			maxSerialized: sisamplevelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
 			iterations:    scaledIterations(baseIterations, 2, 32),
-			// Float-heavy fixed arrays may differ in NaN bit canonicalization while preserving behaviour.
+			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_si_sample_velocity_vector3_roundtrip(input, inputSize, output, outputCapacity, result)
@@ -4444,10 +4444,10 @@ func runCGoParity(iterations int) error {
 		directedCategoryCounts[classifyDirectedVector("real16_nan_vector")]++
 	}
 
-	// Float32 signalling-NaN payload must survive deserialize->serialize byte-exactly in both C and
+	// Float32 signalling-NaN payload must survive deserialise->serialize byte-exactly in both C and
 	// Go. Regression guard for the float32 -> float64 -> float32 round-trip that quieted signalling
 	// NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0). float16 is
-	// intentionally excluded: the shared runtime canonicalizes half-precision NaN payloads to
+	// intentionally excluded: the shared runtime canonicalises half-precision NaN payloads to
 	// 0x7E00 for every backend, so there is no stable payload to preserve there.
 	if tc, ok := caseByName["scalar_real32"]; ok {
 		golden := []byte{0x01, 0x00, 0x80, 0x7F} // float32 sNaN

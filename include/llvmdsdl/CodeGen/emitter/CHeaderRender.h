@@ -10,7 +10,7 @@
 /// @file
 /// Shared C header rendering helpers for generated type metadata and wrappers.
 ///
-/// This utility centralizes C metadata macro and service alias wrapper text used
+/// This utility centralises C metadata macro and service alias wrapper text used
 /// by the C backend emitter.
 ///
 //===----------------------------------------------------------------------===//
@@ -42,7 +42,7 @@ struct HeaderTypeMetadata final
     /// @brief Type extent in bytes.
     std::uint64_t extentBytes{0};
 
-    /// @brief Type serialization buffer size in bytes.
+    /// @brief Type serialisation buffer size in bytes.
     std::uint64_t serializationBufferSizeBytes{0};
 };
 
@@ -69,7 +69,7 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string& bas
 std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
                                                        const std::string& requestTypeName);
 
-/// @brief Renders service alias serialize/deserialize inline wrappers.
+/// @brief Renders service alias serialise/deserialize inline wrappers.
 /// @param[in] baseTypeName Alias base type name.
 /// @param[in] requestTypeName Request section generated type name.
 /// @return Ordered wrapper lines.

@@ -8,10 +8,10 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Builds serialization plan bodies as dialect operations.
+/// Builds serialisation plan bodies as dialect operations.
 ///
-/// `build-dsdl-plan-bodies` turns every `dsdl.serialization_plan` into a serialize and a
-/// deserialize `func.func` over the plan operations, for whichever target converts them next. A
+/// `build-dsdl-plan-bodies` turns every `dsdl.serialization_plan` into a serialise and a
+/// deserialise `func.func` over the plan operations, for whichever target converts them next. A
 /// plan it cannot express is an error; there is no other way to render one.
 ///
 //===----------------------------------------------------------------------===//
@@ -394,7 +394,7 @@ std::string deserHelperFor(const PlanStep& step)
 
 /// @brief Passes @p value through a lowered helper, named by symbol.
 ///
-/// The helper is not optional. The builder pass establishes that every helper a plan names is
+/// The builder pass establishes that every helper a plan names is
 /// present before a body is built, so a call here always has a callee.
 mlir::Value applyHelper(mlir::OpBuilder& b, mlir::Location loc, llvm::StringRef helper, mlir::Value value)
 {
@@ -486,7 +486,7 @@ PlanCursor guarded(mlir::OpBuilder& b, mlir::Location loc, PlanCursor cursor, Bo
     return PlanCursor{guard.getResult(0), guard.getResult(1)};
 }
 
-/// @brief Serializes one scalar field.
+/// @brief Serialises one scalar field.
 PlanCursor buildScalarWrite(mlir::OpBuilder&   b,
                             mlir::Location     loc,
                             const PlanStep&    step,
@@ -511,7 +511,7 @@ PlanCursor buildScalarWrite(mlir::OpBuilder&   b,
     });
 }
 
-/// @brief Serializes one variable-length array: a validated count, its prefix, then elements.
+/// @brief Serialises one variable-length array: a validated count, its prefix, then elements.
 PlanCursor buildArrayWrite(mlir::OpBuilder&   b,
                            mlir::Location     loc,
                            const PlanStep&    step,
@@ -746,8 +746,8 @@ PlanCursor buildFinalPadding(mlir::OpBuilder&            b,
 
 /// @brief Whether a step leaves the plan on a byte boundary, given it began on one.
 ///
-/// A composite does: it consumes whole bytes, whatever it contains. That is what makes the
-/// alignment before the next one a no-op, and it holds without knowing any offset.
+/// A composite does: it consumes whole bytes, whatever it contains, so the alignment before the
+/// next one is a no-op, and that holds without knowing any offset.
 bool stepPreservesByteAlignment(const PlanStep& step)
 {
     if ((step.kind == PlanStepKind::Align) || stepIsComposite(step))
@@ -767,8 +767,7 @@ bool stepPreservesByteAlignment(const PlanStep& step)
 
 /// @brief Rounds the running offset up to a byte boundary.
 ///
-/// Serializing has to write the bits it skips, because the buffer is the output. Reading does
-/// not: the offset simply moves.
+/// Serialising writes the bits it skips. Reading does not: the offset moves.
 PlanCursor buildAlignment(mlir::OpBuilder& b,
                           mlir::Location   loc,
                           mlir::Value      buffer,
@@ -862,8 +861,8 @@ PlanCursor buildSealedNested(mlir::OpBuilder& b,
 /// @brief Encodes or decodes one delimited nested composite at @p target.
 ///
 /// A delimited nested type is preceded by its own length in bytes, so that a reader which
-/// does not know the type can step over it. That is the whole point of the header, and it is
-/// why the decoder advances by the length it was told rather than by what the nested decode
+/// does not know the type can step over it. The decoder advances by the length it was told
+/// rather than by what the nested decode
 /// consumed: a newer sender may have written fields this reader has no name for, and skipping
 /// only what was understood would leave the cursor inside them.
 PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
@@ -898,7 +897,7 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
         mlir::arith::AddIOp::create(b, loc, headerOffset, constantI64(b, loc, kDelimiterHeaderBits));
     const mlir::Value remaining = remainingBytes(b, loc, capacityBytes, afterHeader);
 
-    // Serializing does not know the length until the nested type reports it, so the header
+    // Serialising does not know the length until the nested type reports it, so the header
     // is reserved here and written once the encoding below has run.
     const mlir::Value sizeInit = writing ? remaining : declared;
     const mlir::Value sizeSlot = mlir::dsdl::LocalOp::create(b, loc, sizePtr, sizeInit);
@@ -931,7 +930,7 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
 
         mlir::Value err = call.getError();
 
-        // The length the reader will be told. Serializing learns it from the nested type,
+        // The length the reader will be told. Serialising learns it from the nested type,
         // reading it back out of the slot the callee wrote. Decoding was told it up front
         // and steps that far regardless of what the nested decode consumed, so it never
         // reads the slot back at all.
@@ -1025,7 +1024,7 @@ std::vector<const PlanStep*> unionOptionsOf(const std::vector<PlanStep>& steps)
 ///
 /// A union encodes exactly one of its options, so the chain of tests is the plan: whichever
 /// arm the tag selects contributes, and the rest contribute nothing. An option that the tag
-/// did not select must not advance the offset, which is why each arm yields the cursor it
+/// did not select must not advance the offset, so each arm yields the cursor it
 /// was given rather than a merged one.
 template <typename StepFn>
 PlanCursor buildUnionOption(mlir::OpBuilder& b,
@@ -1160,10 +1159,10 @@ PlanCursor buildCompositeElementLoop(mlir::OpBuilder&   b,
 ///
 /// The struct is the non-padding fields in declaration order: a `void` field reserves wire
 /// bits and has nothing to hold, so it takes no member and no position. A union lists its
-/// options and then `_tag_`, which is why the tag's index is the option count.
+/// options and then `_tag_`; the tag's index is the option count.
 ///
 /// The C path never reads this -- it has the member's name -- and object emission has nothing
-/// else to go on, so it is the one place the two targets are told apart by more than spelling.
+/// else to go on. Nowhere else do the two targets differ by more than spelling.
 std::vector<std::int64_t> memberIndicesFor(const std::vector<PlanStep>& steps)
 {
     std::vector<std::int64_t> indices(steps.size(), -1);
@@ -1184,10 +1183,10 @@ std::int64_t unionTagMemberIndex(const std::vector<PlanStep>& steps)
     return static_cast<std::int64_t>(unionOptionsOf(steps).size());
 }
 
-/// @brief Builds a typed serialize body as operations.
+/// @brief Builds a typed serialise body as operations.
 ///
 /// The published header declares this symbol, so the parameter spellings are the header's.
-/// Control flow is structured, because the C path has no branch-graph conversion, so what the
+/// The C path has no branch-graph conversion, so control flow is structured: what the
 /// hand-written text says with an early return this says by carrying an error through the
 /// cursor.
 mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder,
@@ -1410,10 +1409,10 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
     return mlir::success();
 }
 
-/// @brief Deserializes one scalar field, advancing the offset past it.
+/// @brief Deserialises one scalar field, advancing the offset past it.
 ///
-/// No guard, unlike the serialize side. A read cannot fail: the runtime answers a short
-/// buffer by zero-extending, which is the tolerance a deserializer is required to have.
+/// No guard, unlike the serialise side. A read cannot fail: the runtime answers a short
+/// buffer by zero-extending, which is the tolerance a deserialiser is required to have.
 PlanCursor buildScalarRead(mlir::OpBuilder&   b,
                            mlir::Location     loc,
                            const PlanStep&    step,
@@ -1445,7 +1444,7 @@ PlanCursor buildScalarRead(mlir::OpBuilder&   b,
                       cursor.error};
 }
 
-/// @brief Deserializes one variable-length array.
+/// @brief Deserialises one variable-length array.
 ///
 /// The count comes off the wire and is clamped to the declared capacity before it is used to
 /// bound the loop: a length prefix is attacker-controlled, and a decoder that trusted it would
@@ -1480,7 +1479,7 @@ PlanCursor buildArrayElementReads(mlir::OpBuilder&   b,
     }
     auto              i64Ty  = b.getIntegerType(64);
     const mlir::Value offset = cursor.bitOffset;
-    // Driven by the offset alone, for the same reason as the serialize side: a carried index
+    // Driven by the offset alone, for the same reason as the serialise side: a carried index
     // would also be a loop result, and nothing after the loop reads it.
     const mlir::Value start = offset;
     const mlir::Value width = constantI64(b, loc, step.bitLength);
@@ -1586,9 +1585,9 @@ PlanCursor buildArrayRead(mlir::OpBuilder&   b,
     });
 }
 
-/// @brief Builds a typed deserialize body as operations.
+/// @brief Builds a typed deserialise body as operations.
 ///
-/// The argument check is not the serialize one reversed, and its order is load-bearing. A null
+/// The argument check is not the serialise one reversed, and its order is load-bearing. A null
 /// buffer is legal when the declared size is zero, and C reaches that clause by short-circuit,
 /// having already established the size pointer is non-null. Reading the size eagerly would
 /// dereference null on exactly the call the check exists to reject.
@@ -1810,9 +1809,9 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
     return mlir::success();
 }
 
-/// @brief Builds every serialization plan's bodies as operations, before a target is chosen.
+/// @brief Builds every serialisation plan's bodies as operations, before a target is chosen.
 ///
-/// A plan becomes a serialize and a deserialize `func.func` over the plan operations, in the
+/// A plan becomes a serialise and a deserialise `func.func` over the plan operations, in the
 /// dialect's own vocabulary. Which target converts them next is not this pass's concern: the C
 /// conversion and the LLVM conversion read the same bodies, and neither renders a body of its
 /// own. A plan this pass cannot express fails it, naming the step and the reason.
@@ -1827,7 +1826,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
     }
     llvm::StringRef getDescription() const final
     {
-        return "Build DSDL serialization plan bodies as dialect operations";
+        return "Build DSDL serialisation plan bodies as dialect operations";
     }
     void getDependentDialects(mlir::DialectRegistry& registry) const override
     {
@@ -1977,7 +1976,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             }
             if (plans == 0)
             {
-                schema.emitOpError("carries no serialization plan");
+                schema.emitOpError("carries no serialisation plan");
                 signalPassFailure();
                 return;
             }
@@ -1987,7 +1986,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         // body may not read and a branch may prove constant; those are dead results while they
         // are still scf, and become variables a target cannot remove once they are not.
         //
-        // Applied to the built functions rather than the module. A serialization plan holds a
+        // Applied to the built functions rather than the module. A serialisation plan holds a
         // region, has no results and declares no memory effects, so it is trivially dead to a
         // module-wide sweep -- which would delete the plans the next pass still has to read.
         mlir::RewritePatternSet cleanup(&getContext());
@@ -2000,7 +1999,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         {
             if (mlir::failed(mlir::applyPatternsGreedily(fn, frozen)))
             {
-                fn.emitError("failed to canonicalize built plan body");
+                fn.emitError("failed to canonicalise built plan body");
                 signalPassFailure();
                 return;
             }

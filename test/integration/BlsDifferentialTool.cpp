@@ -22,7 +22,7 @@
 /// Output line format (one per case; fields `|`-separated, sets brace-enclosed and sorted):
 ///
 ///   CASE <id> | <recipe> | min=<n> max=<n> fixed=<0|1> | mod3={..} mod5={..} mod8={..}
-///        | values={..}            (when the exact set materializes within kValuesLimit)
+///        | values={..}            (when the exact set materialises within kValuesLimit)
 ///        | values=BIG count=<n>   (exact cardinality known but set too large to exchange)
 ///        | values=BIG             (cardinality itself beyond exact evaluation)
 ///
@@ -55,7 +55,7 @@ namespace
 using llvmdsdl::BitLengthSet;
 using llvmdsdl::FlatSet;
 
-/// Materialization ceiling for exchanging concrete value sets with the Python side. Beyond it
+/// Materialisation ceiling for exchanging concrete value sets with the Python side. Beyond it
 /// the differential still compares min/max/fixed and residues (which stay small), plus exact
 /// cardinality when this side can compute it — pydsdl cannot enumerate huge sets cheaply, so
 /// the concrete-values comparison is bounded by construction, never truncated.
@@ -110,7 +110,7 @@ std::string renderSet(const FlatSet<std::int64_t>& values)
 
 /// Builds one random composed expression, returning both the replayable recipe and the set.
 /// The magnitudes are sized so pydsdl's lazy evaluation stays cheap for the comparisons the
-/// script actually performs (min/max/fixed/mod always; concrete values only when small).
+/// script performs (min/max/fixed/mod always; concrete values only when small).
 Case makeRandomCase(std::mt19937& rng)
 {
     std::ostringstream        recipe;

@@ -10,11 +10,11 @@
 // Reads the shared vector file (argv[2]) and exercises each vector directly
 // against the generated TypeScript runtime primitives, checking every primitive
 // direction on its own. Prints "PROCESSED <n>" and "SKIPPED <n>" and exits
-// non-zero on the first genuine mismatch.
+// non-zero on the first mismatch.
 //
 // TypeScript numbers are IEEE-754 doubles, so float16 *unpack* results that are
 // NaN are SKIPPED with a printed reason (never silently): reading a binary16 NaN
-// into a JS number canonicalizes the payload, so the exact float32 NaN bit
+// into a JS number canonicalises the payload, so the exact float32 NaN bit
 // pattern cannot be reproduced. float16 pack, integer reads, and copy_bits are
 // exact and fully checked.
 //

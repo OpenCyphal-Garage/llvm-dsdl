@@ -77,7 +77,7 @@ void testConstruction(TestContext& t)
     t.expectContents(FlatSet<std::int64_t>{}, {}, "default construction is empty");
     t.expect(FlatSet<std::int64_t>{}.empty(), "default construction reports empty");
 
-    // Initializer lists are neither sorted nor unique in general.
+    // Initialiser lists are neither sorted nor unique in general.
     t.expectContents(FlatSet<std::int64_t>{5, 1, 5, 3, 1}, {1, 3, 5}, "initializer list is sorted and de-duplicated");
 
     std::vector<std::int64_t> unsorted{9, 2, 9, 4};

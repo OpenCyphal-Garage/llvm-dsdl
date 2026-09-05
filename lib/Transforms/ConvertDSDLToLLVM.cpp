@@ -11,8 +11,8 @@
 /// Lowers DSDL plan operations into the LLVM dialect, for emission as objects.
 ///
 /// The counterpart of convert-dsdl-to-emitc over the same bodies. Where that one maps the
-/// dialect onto C's spellings, this one maps it onto addresses and calls, which is what the
-/// two targets genuinely disagree about: a plan says "the member at index 2", and C answers
+/// dialect onto C's spellings, this one maps it onto addresses and calls. The two targets
+/// disagree there: a plan says "the member at index 2", and C answers
 /// with a name while LLVM answers with an offset.
 ///
 //===----------------------------------------------------------------------===//
@@ -406,7 +406,7 @@ struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl
 ///
 /// A DSDL width is not a C width: eleven bits are held in two bytes, and a float16 in a
 /// `float`, there being no narrower one to put it in. Held against the generated headers by
-/// llvmdsdl-member-layout-crosscheck, which is what makes this safe to write twice.
+/// llvmdsdl-member-layout-crosscheck.
 mlir::Type scalarStorage(mlir::MLIRContext* ctx, llvm::StringRef category, const std::int64_t bits)
 {
     if (category == "bool")
@@ -468,8 +468,8 @@ mlir::Type fieldStorage(mlir::MLIRContext*                           ctx,
     {
         return storage;
     }
-    // A variable-length array holds its elements and then its count, which is what the
-    // member's own two positions address.
+    // A variable-length array holds its elements and then its count; the member's two positions
+    // address them.
     return mlir::LLVM::LLVMStructType::getLiteral(ctx, {storage, mlir::IntegerType::get(ctx, sizeBits)});
 }
 
@@ -499,7 +499,7 @@ llvm::DenseMap<llvm::StringRef, std::string> buildSerdesBodies(mlir::ModuleOp mo
 
 /// @brief Builds a struct per schema section, matching what the C backend emits.
 ///
-/// Keyed by the spelling `!dsdl.opaque` carries, which is how a plan names the thing it was
+/// Keyed by the spelling `!dsdl.opaque` carries, the name a plan gives the thing it was
 /// handed. A type whose members cannot all be described is left out rather than guessed at.
 llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, const unsigned sizeBits)
 {
@@ -764,8 +764,7 @@ private:
 ///
 /// Each carries the member's position and the struct is derived from the schema, so the GEP is
 /// the two put together and LLVM computes the offset from its own data layout. Nothing here
-/// adds up bytes by hand, which is the one thing that could disagree with the C struct without
-/// anything noticing.
+/// adds up bytes by hand, so no offset can silently disagree with the C struct.
 template <typename OpT>
 struct MemberAccess : public mlir::OpConversionPattern<OpT>
 {
@@ -811,7 +810,7 @@ struct MemberAccess : public mlir::OpConversionPattern<OpT>
                                          path);
     }
 
-    /// @brief The type of the member the path reaches, which is what a load and a store move.
+    /// @brief The type of the member the path reaches.
     ///
     /// A plan carries scalars at the width it computes on, and the struct holds them at the
     /// width C declares them. Reading the wider type would take the neighbouring members with
@@ -1045,7 +1044,7 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
         auto module = getOperation();
 
         // An LLVM pointer carries no pointee, so every dialect pointer converts to the same
-        // type and the spelling `!dsdl.opaque` holds is simply not consulted here. What the C
+        // type and the spelling `!dsdl.opaque` holds is not consulted here. What the C
         // path needs that name for, this path answers with an index instead.
         mlir::TypeConverter converter;
         converter.addConversion([](mlir::Type type) { return type; });

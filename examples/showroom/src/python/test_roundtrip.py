@@ -31,7 +31,7 @@ SUBSYSTEMS = ("gnss", "esc.3", "imu.0")
 
 def main() -> int:
     # Deliberately not the default value: an integration that serialised nothing and deserialised
-    # nothing would round-trip a default dataclass perfectly and prove nothing at all.
+    # nothing would round-trip a default dataclass and prove nothing.
     original = SystemHealth_1_0(
         timestamp=SynchronizedTimestamp_1_0(microsecond=1_234_567_890_123),
         aggregate_health=Health_1_0(value=2),  # CAUTION, on the standard four-level scale

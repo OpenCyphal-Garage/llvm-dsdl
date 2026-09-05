@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 //
-// Formal control-flow / round-trip model of Cyphal DSDL serialize/deserialize.
+// Formal control-flow / round-trip model of Cyphal DSDL serialise/deserialize.
 //
 // SCOPE (deliberate): models the SEQUENCE of wire operations and the structural
-// invertibility of serialize/deserialize -- NOT bit-exact byte layout. The wire is
+// invertibility of serialise/deserialize -- NOT bit-exact byte layout. The wire is
 // an ordered stream of typed *tokens*; a scalar's value is an opaque tag that must
 // survive the round trip. Tokens are ATOMIC: effects that split a field mid-way
 // (byte-level truncation inside a scalar) are below this abstraction -- exact for
@@ -13,7 +13,7 @@
 //
 // WHAT IS PROVEN (unbounded -- for all conforming values, by structural induction):
 //   RoundTrip     : De(t, SerWire(v) + suffix) == Some((v, suffix)) for v conforming
-//                   to t. Serialize/deserialize are genuine inverses; the reader
+//                   to t. Serialise/deserialize are genuine inverses; the reader
 //                   consumes exactly what the writer produced.
 //   DeCanonical   : the converse -- every wire De accepts decodes to a conforming
 //                   value whose re-serialization is exactly the consumed prefix, so
@@ -51,7 +51,7 @@ module CyphalSerdes {
 
   // ---- Data model ----------------------------------------------------------
 
-  // A schema. Deserialize is driven by this (the reader knows the type, not the value).
+  // A schema. Deserialise is driven by this (the reader knows the type, not the value).
   datatype Typ =
     | TScal(w: nat)
     | TPad(w: nat)
@@ -61,7 +61,7 @@ module CyphalSerdes {
     | TUnion(tb: nat, opts: seq<Typ>)
     | TComp(sealed: bool, inner: Typ)
 
-  // A value being (de)serialized. `val` on a scalar is opaque; it only has to survive.
+  // A value being (de)serialised. `val` on a scalar is opaque; it only has to survive.
   datatype Value =
     | Scal(w: nat, val: nat)
     | Pad(w: nat)
@@ -106,7 +106,7 @@ module CyphalSerdes {
     case TComp(sl, it)   => v.Comp? && v.sealed == sl && ConformsTo(v.inner, it)
   }
 
-  // ---- Serialize: value -> wire (token stream) -----------------------------
+  // ---- Serialise: value -> wire (token stream) -----------------------------
 
   function SerWire(v: Value): seq<Token>
     decreases v
@@ -129,7 +129,7 @@ module CyphalSerdes {
     else SerWire(vs[0]) + SerWireSeq(vs[1..])
   }
 
-  // ---- Deserialize: (type, wire) -> Option<(value, rest)> ------------------
+  // ---- Deserialise: (type, wire) -> Option<(value, rest)> ------------------
   // Total (no precondition): Dafny forbids the out-of-bounds token access, so this
   // is bounds-safe on ANY wire by construction. Token kind AND metadata (width /
   // pb / tb) are validated against the schema, so acceptance is canonical -- the
@@ -278,9 +278,9 @@ module CyphalSerdes {
   // ==========================================================================
   // PROOF: round-trip identity, for ALL conforming values (unbounded).
   //
-  // The generalization over an arbitrary `suffix` is what makes the sequential
+  // The generalisation over an arbitrary `suffix` is what makes the sequential
   // cases (struct fields, array elements, delimited bodies) compose: when a field
-  // is deserialized from  field_wire + rest_of_message,  `rest_of_message` is the
+  // is deserialised from  field_wire + rest_of_message,  `rest_of_message` is the
   // suffix. RoundTrip is the special case suffix == [].
   // ==========================================================================
 
@@ -457,7 +457,7 @@ module CyphalSerdes {
     }
   }
 
-  // The characterization corollary: De succeeds on EXACTLY the canonical wires.
+  // The characterisation corollary: De succeeds on EXACTLY the canonical wires.
   lemma DeAcceptanceCharacterization(t: Typ, w: seq<Token>)
     ensures De(t, w).Some? <==>
             exists v: Value, rest: seq<Token> ::

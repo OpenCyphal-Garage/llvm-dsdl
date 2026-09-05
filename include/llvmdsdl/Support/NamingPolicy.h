@@ -10,7 +10,7 @@
 /// @file
 /// Shared naming-policy helpers for backend code generation.
 ///
-/// This interface centralizes language-specific identifier sanitization and
+/// This interface centralises language-specific identifier sanitization and
 /// common case projections (snake/pascal/upper-snake) used by emitters.
 ///
 //===----------------------------------------------------------------------===//
@@ -97,8 +97,8 @@ enum class CaseStyle
 
 /// @brief How one role is named in one language.
 ///
-/// The three booleans are separate from the case style because the backends use every combination of
-/// them: a C macro token is escaped but not stropped, a C header stem is neither, and a Go constant
+/// The three booleans are independent of the case style. The backends use every combination: a
+/// C macro token is escaped but not stropped, a C header stem is neither, and a Go constant
 /// is both and then uppercased.
 struct RolePolicy final
 {
@@ -195,7 +195,7 @@ struct ProjectedIdentifier final
 ///
 /// This is the shared pipeline: case projection, then escaping, then stropping, then the optional
 /// final upper-casing. The case-explicit helpers below are the same pipeline with the style passed
-/// in rather than looked up, and exist because the emitters have not been migrated to roles yet.
+/// in rather than looked up.
 /// @param[in] language Naming language.
 /// @param[in] role What the identifier will be used as.
 /// @param[in] name Source name.
@@ -216,8 +216,8 @@ bool codegenIsKeyword(CodegenNamingLanguage language, llvm::StringRef name);
 /// identifier containing `__`. The other four reserve no such namespace and always answer false.
 ///
 /// The projection escapes such names on the way in. This asks the question of an identifier that is
-/// already projected, which is what a caller composing one -- a disambiguation suffix, a generated
-/// prefix -- needs in order not to compose its way into the namespace.
+/// already projected; a caller composing one -- a disambiguation suffix, a generated prefix -- uses it
+/// to avoid composing its way into the namespace.
 /// @param[in] language Naming language.
 /// @param[in] identifier An identifier, already projected.
 /// @return True when it is reserved.

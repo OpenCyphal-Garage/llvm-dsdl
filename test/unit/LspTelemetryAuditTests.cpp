@@ -11,7 +11,7 @@
 /// Regression tests for the `dsdld` telemetry + AI-audit memory bounds.
 ///
 /// Both surfaces ingest attacker-controlled strings from JSON-RPC (any method
-/// name reaches Telemetry; serialized tool arguments reach the audit log). These
+/// name reaches Telemetry; serialised tool arguments reach the audit log). These
 /// tests pin the two DoS bounds found in the LSP data-flow audit: the telemetry
 /// distinct-key cap and the audit per-record detail cap.
 ///

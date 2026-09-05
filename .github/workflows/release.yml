@@ -6,7 +6,7 @@ name: Release
 # a `release-ci` pull request. This workflow is the half that needs a write
 # token: it runs that shared lane first, then publishes what it produced.
 #
-# The split is not cosmetic. A called workflow's job permissions are checked
+# A called workflow's job permissions are checked
 # against the caller's grant at parse time, so keeping `publish` here is what
 # lets CI call the same build jobs with a read-only token.
 
@@ -72,7 +72,7 @@ jobs:
           find staging -type f ! -name SHA256SUMS -exec cp {} dist/ \;
           # One checksum file covering everything, rebuilt from the artifacts
           # themselves rather than concatenated, so it cannot disagree with what
-          # is actually attached.
+          # is attached.
           cd dist && sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
 
@@ -138,8 +138,7 @@ jobs:
             ## Both platforms
 
             No repository or package manager to configure: each package bundles the
-            LLVM 22 runtime it needs, because neither Ubuntu nor a stock macOS
-            carries it. Everything else comes from the platform.
+            LLVM 22 runtime it needs. Everything else comes from the platform.
 
             Verify downloads against `SHA256SUMS`, or check build provenance with
             `gh attestation verify <file> --repo ${{ github.repository }}`.

@@ -99,7 +99,7 @@ execute_process(
   ERROR_VARIABLE opt_optimized_stderr
 )
 if(NOT opt_optimized_result EQUAL 0)
-  message(STATUS "dsdl-opt optimized lower stderr:\n${opt_optimized_stderr}")
+  message(STATUS "dsdl-opt optimised lower stderr:\n${opt_optimized_stderr}")
   message(FATAL_ERROR
     "lower-dsdl-serialization + optimize-dsdl-lowered-serdes pipeline failed")
 endif()
@@ -171,7 +171,7 @@ execute_process(
   ERROR_VARIABLE convert_optimized_stderr
 )
 if(NOT convert_optimized_result EQUAL 0)
-  message(STATUS "dsdl-opt optimized convert stderr:\n${convert_optimized_stderr}")
+  message(STATUS "dsdl-opt optimised convert stderr:\n${convert_optimized_stderr}")
   message(FATAL_ERROR
     "optimized convert-dsdl-to-emitc pipeline failed")
 endif()
@@ -235,4 +235,4 @@ if(NOT converted_optimized_sha STREQUAL converted_optimized_again_sha)
     "optimized convert pipeline is not deterministic across repeated runs")
 endif()
 
-message(STATUS "dsdl-opt sanity check passed (baseline + optimized pipelines)")
+message(STATUS "dsdl-opt sanity check passed (baseline + optimised pipelines)")

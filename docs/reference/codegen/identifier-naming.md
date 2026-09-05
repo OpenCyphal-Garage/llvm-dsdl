@@ -102,7 +102,7 @@ error: type name collision in generated output: ns.Foo_bar and ns.FooBar map to 
 
 Only the languages the invocation emits are checked, so a build never fails over a hazard in output
 it was not going to produce. An invocation that emits nothing — analysis, or the language server —
-checks every language, because there is no build to fail.
+checks every language.
 
 A service is checked the same way against its own sections. A service `Foo` emits `Foo_Request`, and
 a sibling definition may be *called* `Foo_Request`; the pair is rejected where the two would meet.
@@ -161,7 +161,7 @@ The machine-checked form of this table is
 [`test/unit/golden/naming-roles.txt`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/test/unit/golden/naming-roles.txt),
 regenerated from the call sites that produce each name. A diff there is an ABI change.
 
-### What shares a scope
+### Scope boundaries
 
 This decides whether two definitions can collide, and how much a scope can repair.
 
@@ -184,7 +184,7 @@ Go, TypeScript and Python fold case, so `fooBar` and `foo_bar` are one identifie
 identifiers in C, C++ and Rust. The scope repairs it either way: in C, C++ and Rust the keyword and
 claimed-name escapes are many-to-one where case folding is not.
 
-## Where it is decided in code
+## Implementation
 
 [`include/llvmdsdl/Support/NamingPolicy.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/Support/NamingPolicy.h)
 holds the role table and the pipeline; `NamingScope` in the same header holds the per-region

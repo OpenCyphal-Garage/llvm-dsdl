@@ -705,7 +705,7 @@ std::optional<StatementAST> Parser::parseAttribute()
         return StatementAST(f);
     }
 
-    diagnostics_.error(current().location, "expected field name or constant initializer");
+    diagnostics_.error(current().location, "expected field name or constant initialiser");
     return std::nullopt;
 }
 

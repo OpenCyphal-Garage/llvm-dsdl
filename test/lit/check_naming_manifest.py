@@ -6,7 +6,7 @@
 #
 #===----------------------------------------------------------------------===//
 
-"""Check the naming manifest against the tree a backend actually wrote.
+"""Check the naming manifest against the tree a backend wrote.
 
 The manifest's whole claim is that it reports what will be generated rather than a second opinion
 about it, so the test is not "does it contain plausible strings" but "does every stem it names for

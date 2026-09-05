@@ -42,7 +42,7 @@ execute_process(
 if(NOT portable_result EQUAL 0)
   message(STATUS "portable generation stdout:\n${portable_stdout}")
   message(STATUS "portable generation stderr:\n${portable_stderr}")
-  message(FATAL_ERROR "failed to generate Python portable runtime specialization output")
+  message(FATAL_ERROR "failed to generate Python portable runtime specialisation output")
 endif()
 
 execute_process(
@@ -60,7 +60,7 @@ execute_process(
 if(NOT fast_result EQUAL 0)
   message(STATUS "fast generation stdout:\n${fast_stdout}")
   message(STATUS "fast generation stderr:\n${fast_stderr}")
-  message(FATAL_ERROR "failed to generate Python fast runtime specialization output")
+  message(FATAL_ERROR "failed to generate Python fast runtime specialisation output")
 endif()
 
 set(portable_package_root "${portable_out}/${py_package_path}")

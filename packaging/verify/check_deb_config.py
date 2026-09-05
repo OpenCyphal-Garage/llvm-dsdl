@@ -11,7 +11,7 @@
 CMake's DEB generator exists only on Linux, so on any other host the packaging
 configuration is unexercised -- the control files, the component split, the
 policy metadata, and the inter-package dependency are all invisible until
-something actually builds a ``.deb``. This drives a container that runs the real
+something builds a ``.deb``. This drives a container that runs the real
 ``cmake/Packaging.cmake`` (not a copy) against stand-in binaries, then checks
 what came out.
 
@@ -244,7 +244,7 @@ def docker_unavailable_reason() -> str | None:
     if not docker:
         return "docker was not found on PATH"
     # Installed but not running is the common case, and it is indistinguishable
-    # from a broken install until the daemon is actually probed.
+    # from a broken install until the daemon is probed.
     probe = subprocess.run(
         [docker, "info"], capture_output=True, text=True, timeout=120)
     if probe.returncode != 0:

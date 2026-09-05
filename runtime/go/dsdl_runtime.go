@@ -4,7 +4,7 @@
 /// Portable bit-level runtime primitives for generated Go DSDL bindings.
 ///
 /// This module provides integer, floating-point, and bit-copy helpers shared by
-/// generated serializers and deserializers.
+/// generated serialisers and deserialisers.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -20,16 +20,16 @@ const (
 	// DSDL_RUNTIME_ERROR_INVALID_ARGUMENT indicates invalid API arguments.
 	DSDL_RUNTIME_ERROR_INVALID_ARGUMENT int8 = 2
 	// DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL indicates that the
-	// destination buffer cannot hold the requested serialized bits.
+	// destination buffer cannot hold the requested serialised bits.
 	DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL int8 = 3
 	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH indicates malformed
-	// array-length representation in serialized data.
+	// array-length representation in serialised data.
 	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH int8 = 10
 	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG indicates malformed union
-	// discriminator representation in serialized data.
+	// discriminator representation in serialised data.
 	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG int8 = 11
 	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER indicates malformed
-	// delimiter header representation in serialized data.
+	// delimiter header representation in serialised data.
 	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER int8 = 12
 )
 
@@ -84,7 +84,7 @@ func GetBits(output []byte, buf []byte, offBits, lenBits int) {
 	CopyBits(output, 0, satBits, buf, offBits)
 }
 
-// SetBit serializes a single boolean bit at offBits in buf.
+// SetBit serialises a single boolean bit at offBits in buf.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetBit(buf []byte, offBits int, value bool) int8 {
 	if len(buf)*8 <= offBits {
@@ -98,7 +98,7 @@ func SetBit(buf []byte, offBits int, value bool) int8 {
 	return DSDL_RUNTIME_SUCCESS
 }
 
-// SetUxx serializes an unsigned integer fragment of lenBits width at offBits.
+// SetUxx serialises an unsigned integer fragment of lenBits width at offBits.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetUxx(buf []byte, offBits int, value uint64, lenBits uint8) int8 {
 	if len(buf)*8 < offBits+int(lenBits) {
@@ -119,18 +119,18 @@ func SetUxx(buf []byte, offBits int, value uint64, lenBits uint8) int8 {
 	return DSDL_RUNTIME_SUCCESS
 }
 
-// SetIxx serializes a signed integer fragment of lenBits width at offBits.
+// SetIxx serialises a signed integer fragment of lenBits width at offBits.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetIxx(buf []byte, offBits int, value int64, lenBits uint8) int8 {
 	return SetUxx(buf, offBits, uint64(value), lenBits)
 }
 
-// GetBit deserializes one bit from buf at offBits.
+// GetBit deserialises one bit from buf at offBits.
 func GetBit(buf []byte, offBits int) bool {
 	return GetU8(buf, offBits, 1) == 1
 }
 
-// GetU8 deserializes up to 8 bits as an unsigned integer.
+// GetU8 deserialises up to 8 bits as an unsigned integer.
 func GetU8(buf []byte, offBits int, lenBits uint8) uint8 {
 	bits := SaturateFragmentBits(len(buf), offBits, ChooseMin(int(lenBits), 8))
 	var out [1]byte
@@ -138,7 +138,7 @@ func GetU8(buf []byte, offBits int, lenBits uint8) uint8 {
 	return out[0]
 }
 
-// GetU16 deserializes up to 16 bits as an unsigned integer.
+// GetU16 deserialises up to 16 bits as an unsigned integer.
 func GetU16(buf []byte, offBits int, lenBits uint8) uint16 {
 	bits := SaturateFragmentBits(len(buf), offBits, ChooseMin(int(lenBits), 16))
 	var out [2]byte
@@ -146,7 +146,7 @@ func GetU16(buf []byte, offBits int, lenBits uint8) uint16 {
 	return uint16(out[0]) | (uint16(out[1]) << 8)
 }
 
-// GetU32 deserializes up to 32 bits as an unsigned integer.
+// GetU32 deserialises up to 32 bits as an unsigned integer.
 func GetU32(buf []byte, offBits int, lenBits uint8) uint32 {
 	bits := SaturateFragmentBits(len(buf), offBits, ChooseMin(int(lenBits), 32))
 	var out [4]byte
@@ -157,7 +157,7 @@ func GetU32(buf []byte, offBits int, lenBits uint8) uint32 {
 		(uint32(out[3]) << 24)
 }
 
-// GetU64 deserializes up to 64 bits as an unsigned integer.
+// GetU64 deserialises up to 64 bits as an unsigned integer.
 func GetU64(buf []byte, offBits int, lenBits uint8) uint64 {
 	bits := SaturateFragmentBits(len(buf), offBits, ChooseMin(int(lenBits), 64))
 	var out [8]byte
@@ -185,28 +185,28 @@ func signExtendU64(value uint64, sat uint8) uint64 {
 	return value | (^uint64(0) << sat)
 }
 
-// GetI8 deserializes up to 8 bits as a signed integer with sign extension.
+// GetI8 deserialises up to 8 bits as a signed integer with sign extension.
 func GetI8(buf []byte, offBits int, lenBits uint8) int8 {
 	sat := uint8(ChooseMin(int(lenBits), 8))
 	val := uint64(GetU8(buf, offBits, sat))
 	return int8(signExtendU64(val, sat))
 }
 
-// GetI16 deserializes up to 16 bits as a signed integer with sign extension.
+// GetI16 deserialises up to 16 bits as a signed integer with sign extension.
 func GetI16(buf []byte, offBits int, lenBits uint8) int16 {
 	sat := uint8(ChooseMin(int(lenBits), 16))
 	val := uint64(GetU16(buf, offBits, sat))
 	return int16(signExtendU64(val, sat))
 }
 
-// GetI32 deserializes up to 32 bits as a signed integer with sign extension.
+// GetI32 deserialises up to 32 bits as a signed integer with sign extension.
 func GetI32(buf []byte, offBits int, lenBits uint8) int32 {
 	sat := uint8(ChooseMin(int(lenBits), 32))
 	val := uint64(GetU32(buf, offBits, sat))
 	return int32(signExtendU64(val, sat))
 }
 
-// GetI64 deserializes up to 64 bits as a signed integer with sign extension.
+// GetI64 deserialises up to 64 bits as a signed integer with sign extension.
 func GetI64(buf []byte, offBits int, lenBits uint8) int64 {
 	sat := uint8(ChooseMin(int(lenBits), 64))
 	val := GetU64(buf, offBits, sat)
@@ -265,35 +265,35 @@ func Float16Unpack(value uint16) float32 {
 	return math.Float32frombits(outBits)
 }
 
-// SetF16 serializes value as binary16 at offBits.
+// SetF16 serialises value as binary16 at offBits.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetF16(buf []byte, offBits int, value float32) int8 {
 	return SetUxx(buf, offBits, uint64(Float16Pack(value)), 16)
 }
 
-// GetF16 deserializes a binary16 value at offBits.
+// GetF16 deserialises a binary16 value at offBits.
 func GetF16(buf []byte, offBits int) float32 {
 	return Float16Unpack(GetU16(buf, offBits, 16))
 }
 
-// SetF32 serializes value as IEEE-754 binary32 at offBits.
+// SetF32 serialises value as IEEE-754 binary32 at offBits.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetF32(buf []byte, offBits int, value float32) int8 {
 	return SetUxx(buf, offBits, uint64(math.Float32bits(value)), 32)
 }
 
-// GetF32 deserializes an IEEE-754 binary32 value at offBits.
+// GetF32 deserialises an IEEE-754 binary32 value at offBits.
 func GetF32(buf []byte, offBits int) float32 {
 	return math.Float32frombits(GetU32(buf, offBits, 32))
 }
 
-// SetF64 serializes value as IEEE-754 binary64 at offBits.
+// SetF64 serialises value as IEEE-754 binary64 at offBits.
 // It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
 func SetF64(buf []byte, offBits int, value float64) int8 {
 	return SetUxx(buf, offBits, math.Float64bits(value), 64)
 }
 
-// GetF64 deserializes an IEEE-754 binary64 value at offBits.
+// GetF64 deserialises an IEEE-754 binary64 value at offBits.
 func GetF64(buf []byte, offBits int) float64 {
 	return math.Float64frombits(GetU64(buf, offBits, 64))
 }

@@ -2,7 +2,7 @@
 #
 # TypeScript brings referenced types into a file by name, so a definition that reaches
 # `collide.alpha.Vec.1.0` and `collide.beta.Vec.1.0` would import `Vec_1_0` twice -- a duplicate
-# identifier, which tsc rejects outright rather than warning about. The generated file simply does
+# identifier, which tsc rejects outright rather than warning about. The generated file does
 # not compile.
 #
 # This is ordinary rather than exotic. The standard namespace carries three `Vector3` types and four
@@ -27,7 +27,7 @@
 # ALIASED_USE: from_beta: Vec__collide_beta;
 
 # Aliasing is confined to the clash. A file whose referenced names are already unique imports them
-# plainly, so ordinary output is untouched by this.
+# unaliased, so ordinary output is untouched by this.
 # RUN: %dsdlc --target-language ts %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/plain >/dev/null 2>&1
 # RUN: cat %t/plain/demo/commented_1_0.ts | FileCheck %s --check-prefix=PLAIN
 # PLAIN-NOT: as {{[A-Za-z_0-9]+__}}

@@ -23,7 +23,7 @@
 namespace llvmdsdl::codegen_diagnostic_text
 {
 
-/// @brief Returns canonical serialization buffer-capacity failure text.
+/// @brief Returns canonical serialisation buffer-capacity failure text.
 /// @return Diagnostic text.
 std::string serializationBufferTooSmall();
 

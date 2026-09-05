@@ -95,7 +95,7 @@ public:
     RequestScheduler& operator=(RequestScheduler&&)      = delete;
 
     /// @brief Enqueues request work for execution.
-    /// @param[in] requestKey Stable request key (typically serialized LSP id).
+    /// @param[in] requestKey Stable request key (typically serialised LSP id).
     /// @param[in] method Request method name for tracing.
     /// @param[in] task Request task body.
     /// @param[in] completion Completion callback invoked once.

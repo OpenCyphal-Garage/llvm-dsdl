@@ -52,14 +52,14 @@ enum class Profile
     NoStdAlloc,
 };
 
-/// @brief Runtime implementation specialization for generated Rust helpers.
+/// @brief Runtime implementation specialisation for generated Rust helpers.
 enum class RuntimeSpecialization
 {
 
     /// @brief Portable baseline implementation.
     Portable,
 
-    /// @brief Faster specialized implementation.
+    /// @brief Faster specialised implementation.
     Fast,
 };
 
@@ -95,7 +95,7 @@ struct Options final
     /// @brief Requested crate profile.
     Profile profile{Profile::Std};
 
-    /// @brief Requested runtime specialization.
+    /// @brief Requested runtime specialisation.
     RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
     /// @brief Requested memory strategy for variable-length data.
@@ -104,7 +104,7 @@ struct Options final
     /// @brief Inline storage threshold in bytes for pool mode.
     std::uint32_t inlineThresholdBytes{256U};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.

@@ -297,7 +297,7 @@ std::vector<AiCodeActionSuggestion> OfflineAiProvider::suggestCodeActions(const 
 
 void AiAuditLogger::record(std::string category, std::string detail)
 {
-    // `detail` embeds attacker-controlled request text (e.g. serialized tool arguments,
+    // `detail` embeds attacker-controlled request text (e.g. serialised tool arguments,
     // bounded only by the JSON-RPC frame cap). Redact secrets, then cap the retained size
     // so MaxRecords records cannot amplify a large request into unbounded audit memory.
     std::string redacted = redactSensitive(std::move(detail));

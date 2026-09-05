@@ -64,7 +64,7 @@ extern "C"
     /// @return `0` on success, negative on parse failure.
     int go_demo_parse_iface_address(const char* address, uint32_t* out_iface_address);
 
-    /// @brief Initializes node transport and RPC subscriptions.
+    /// @brief Initialises node transport and RPC subscriptions.
     /// @param[in,out] node Node handle.
     /// @param[in] node_id Local node identifier.
     /// @param[in] iface_address Bind interface address string.
@@ -74,7 +74,7 @@ extern "C"
     /// @param[in] register_list_request_extent Request extent for register list.
     /// @param[in] tx_queue_capacity Transfer queue capacity.
     /// @param[in] rx_datagram_capacity Maximum accepted datagram size.
-    /// @return `0` on success, negative on initialization failure.
+    /// @return `0` on success, negative on initialisation failure.
     int go_demo_node_init(GoDemoNode* node,
                           uint16_t    node_id,
                           const char* iface_address,
@@ -96,7 +96,7 @@ extern "C"
     /// @param[in,out] node Node handle.
     /// @param[in] subject_id Subject-ID to publish on.
     /// @param[in] transfer_id Transfer-ID to use.
-    /// @param[in] payload Serialized payload bytes.
+    /// @param[in] payload Serialised payload bytes.
     /// @param[in] payload_size Payload size in bytes.
     /// @param[in] deadline_usec Absolute transmit deadline in microseconds.
     /// @param[in] priority Cyphal transfer priority.
@@ -114,7 +114,7 @@ extern "C"
     /// @param[in] service_id Service-ID being responded to.
     /// @param[in] destination_node_id Requesting node-id.
     /// @param[in] transfer_id Transfer-ID to echo/advance.
-    /// @param[in] payload Serialized response payload bytes.
+    /// @param[in] payload Serialised response payload bytes.
     /// @param[in] payload_size Payload size in bytes.
     /// @param[in] deadline_usec Absolute transmit deadline in microseconds.
     /// @param[in] priority Cyphal transfer priority.

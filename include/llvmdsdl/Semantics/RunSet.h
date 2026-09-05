@@ -28,7 +28,7 @@ namespace llvmdsdl
 /// Invariants (upheld by every RunSet operation; `RunSet::valid()` audits them):
 ///   - `count >= 1`;
 ///   - `stride >= 1`;
-///   - `count == 1` implies `stride == 1` (a singleton's stride is meaningless; normalizing it
+///   - `count == 1` implies `stride == 1` (a singleton's stride is meaningless; normalising it
 ///     makes structural comparisons in tests deterministic);
 ///   - REPRESENTABILITY: every element — in particular `last()` — fits `int64`, and so does
 ///     the span `(count - 1) * stride`. Construction maintains this by checked arithmetic
@@ -53,12 +53,12 @@ struct Run final
 ///
 /// ## Purpose
 ///
-/// `BitLengthSet::expand()` materializes a set element-by-element, so its cost and its exactness
+/// `BitLengthSet::expand()` materialises a set element-by-element, so its cost and its exactness
 /// ceiling scale with cardinality. A `RunSet` represents the same set in O(#runs) space: the
 /// 9001-element offset set of `uint8[<=9000]` is ONE run `(16, 8, 9001)`, and so is the
 /// billion-element analogue. Cardinality, membership, subset, and equality queries are answered
-/// in closed form without enumeration, which is what makes `_offset_` evaluation exact at any
-/// scale (the PR-2 exactness contract).
+/// in closed form without enumeration, so `_offset_` evaluation is exact at any scale (the PR-2
+/// exactness contract).
 ///
 /// ## Exactness contract
 ///
@@ -75,8 +75,8 @@ struct Run final
 ///
 ///   - `runs()` is non-empty (the denoted set is never empty, mirroring BitLengthSet I1);
 ///   - runs are sorted by strictly increasing `start`;
-///   - runs are pairwise SET-disjoint (no element belongs to two runs) — this is what makes
-///     `count()` a plain sum. Note ranges may still interleave: `{0,8,16} u {3,13,23}` is two
+///   - runs are pairwise SET-disjoint (no element belongs to two runs), so `count()` is a plain
+///     sum. Ranges may still interleave: `{0,8,16} u {3,13,23}` is two
 ///     range-overlapping but set-disjoint runs.
 ///
 /// The representation is NOT canonical: `{0,4,8,12}` may be held as one stride-4 run or as two
@@ -165,7 +165,7 @@ public:
     [[nodiscard]] std::optional<RunSet> repeatRange(std::int64_t countMax) const;
     /// @}
 
-    /// @brief Materializes the concrete elements when `count() <= limit`; `nullopt` otherwise
+    /// @brief Materialises the concrete elements when `count() <= limit`; `nullopt` otherwise
     ///        (the caller decides how to surface the refusal — this is a size guard on the
     ///        OUTPUT, which is inherently proportional to cardinality).
     [[nodiscard]] std::optional<FlatSet<std::int64_t>> materialize(std::size_t limit) const;

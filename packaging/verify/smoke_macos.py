@@ -6,7 +6,7 @@
 #
 # ===----------------------------------------------------------------------===//
 
-"""Verify a macOS release tarball is genuinely self-contained.
+"""Verify a macOS release tarball is self-contained.
 
 The Linux verifier installs into a pristine container, which makes "does this
 package carry what it needs" answer itself: nothing else is there. macOS has no
@@ -17,7 +17,7 @@ behavioural test.
 
 So the load-bearing check here is **linkage**, not behaviour: every non-system
 library reference must resolve inside the tarball. A binary still pointing at
-/opt/homebrew would run perfectly here and fail on a user's machine, and only
+/opt/homebrew would run here and fail on a user's machine, and only
 this check tells the two apart.
 
 Against the self-built toolchain there are no such references at all: the tools
@@ -60,8 +60,8 @@ TOOLS = ("dsdlc", "dsdl-opt", "dsdld")
 # and every macOS machine has them. Anything else absolute is a leak.
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/")
 
-# The project's packaging vocabulary, which is what names the tarball and what
-# --expect-arch is given. lipo speaks the Mach-O spelling; cmake/Packaging.cmake
+# The project's packaging vocabulary, used to name the tarball and given to
+# --expect-arch. lipo speaks the Mach-O spelling; cmake/Packaging.cmake
 # performs the same normalisation on the other side of the build.
 ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
@@ -105,9 +105,8 @@ def binary_arches(binary: Path) -> list[str]:
         ["lipo", "-archs", str(binary)], capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         raise SystemExit(f"lipo -archs failed for {binary}: {proc.stderr.strip()}")
-    # An unrecognised slice is reported as lipo spelled it rather than dropped:
-    # the point of the check is to notice the unexpected, so swallowing it here
-    # would defeat it.
+    # An unrecognised slice is reported as lipo spelled it rather than dropped;
+    # the check exists to notice the unexpected.
     return [ARCH_ALIASES.get(a, a) for a in proc.stdout.split()]
 
 
@@ -225,8 +224,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--max-minos", metavar="VERSION",
                         help="Assert the binaries run on macOS VERSION, and fail if they "
                              "require anything newer. The floor comes from the build "
-                             "machine rather than from any setting, so this is what "
-                             "notices a runner image bump narrowing the supported hardware.")
+                             "machine rather than from any setting, so a runner image bump that "
+                             "narrows the supported hardware fails here.")
     args = parser.parse_args(argv)
 
     if not args.tarball.is_file():
@@ -246,7 +245,7 @@ def main(argv: list[str]) -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         dest = Path(tmp)
-        # Note that this says nothing about Gatekeeper. The tarball reaching this
+        # This says nothing about Gatekeeper. The tarball reaching this
         # verifier was built in this job and never downloaded, so it carries no
         # com.apple.quarantine for anything to propagate -- and `tar` does
         # propagate it, onto every extracted file, when the archive has one (see

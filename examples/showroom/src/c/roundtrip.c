@@ -11,8 +11,8 @@
  * mean a schema edit broke thirteen recipes at once. What this asserts is round-trip identity -- the
  * weakest property that cannot pass by accident if the wiring is wrong.
  *
- * `lanyard.health.SystemHealth.1.0` is the type under test because of what it drags in: two standard
- * types from the compiled-in catalogue, a bounded array of a local composite, and a delimited extent.
+ * `lanyard.health.SystemHealth.1.0` is the type under test. It drags in two standard types from the
+ * compiled-in catalogue, a bounded array of a local composite, and a delimited extent.
  * An integration that compiles the top-level type but not what it embeds fails here rather than in a
  * user's build.
  */
@@ -22,14 +22,16 @@
 
 #include "lanyard/health/SystemHealth_1_0.h"
 
-#define CHECK(cond, ...)                             \
-    do {                                             \
-        if (!(cond)) {                               \
-            (void) fprintf(stderr, "FAIL: ");        \
-            (void) fprintf(stderr, __VA_ARGS__);     \
-            (void) fprintf(stderr, "\n");            \
-            return 1;                                \
-        }                                            \
+#define CHECK(cond, ...)                         \
+    do                                           \
+    {                                            \
+        if (!(cond))                             \
+        {                                        \
+            (void) fprintf(stderr, "FAIL: ");    \
+            (void) fprintf(stderr, __VA_ARGS__); \
+            (void) fprintf(stderr, "\n");        \
+            return 1;                            \
+        }                                        \
     } while (0)
 
 static const char* const kSubsystemNames[] = {"gnss", "esc.3", "imu.0"};
@@ -37,7 +39,7 @@ static const char* const kSubsystemNames[] = {"gnss", "esc.3", "imu.0"};
 int main(void)
 {
     /* Deliberately not the zero value: an integration that serialised nothing and deserialised
-     * nothing would round-trip a zeroed struct perfectly and prove nothing at all. Every field is
+     * nothing would round-trip a zeroed struct and prove nothing. Every field is
      * set, the array is non-empty, and each element carries a non-default nested value. */
     lanyard__health__SystemHealth original;
     memset(&original, 0, sizeof(original));
@@ -49,10 +51,10 @@ int main(void)
     for (size_t i = 0U; i < original.subsystem.count; ++i)
     {
         lanyard__health__SubsystemReport* const report = &original.subsystem.elements[i];
-        report->health.value   = (uint8_t) (i % 4U);
-        report->severity.value = (uint8_t) (i % 8U);
-        report->fault_code     = (uint16_t) (0x1000U + i);
-        report->name.count     = strlen(kSubsystemNames[i]);
+        report->health.value                           = (uint8_t) (i % 4U);
+        report->severity.value                         = (uint8_t) (i % 8U);
+        report->fault_code                             = (uint16_t) (0x1000U + i);
+        report->name.count                             = strlen(kSubsystemNames[i]);
         memcpy(report->name.elements, kSubsystemNames[i], report->name.count);
     }
 
@@ -66,7 +68,7 @@ int main(void)
     memset(&restored, 0, sizeof(restored));
 
     size_t       consumed = size;
-    const int8_t des = lanyard__health__SystemHealth__deserialize_(&restored, buffer, &consumed);
+    const int8_t des      = lanyard__health__SystemHealth__deserialize_(&restored, buffer, &consumed);
     CHECK(des == DSDL_RUNTIME_SUCCESS, "deserialize returned %d", (int) des);
 
     CHECK(restored.timestamp.microsecond == original.timestamp.microsecond,
@@ -78,25 +80,33 @@ int main(void)
           (unsigned) restored.aggregate_health.value,
           (unsigned) original.aggregate_health.value);
     CHECK(restored.subsystem.count == original.subsystem.count,
-          "subsystem.count: %zu != %zu", restored.subsystem.count, original.subsystem.count);
+          "subsystem.count: %zu != %zu",
+          restored.subsystem.count,
+          original.subsystem.count);
 
     for (size_t i = 0U; i < original.subsystem.count; ++i)
     {
         const lanyard__health__SubsystemReport* const a = &original.subsystem.elements[i];
         const lanyard__health__SubsystemReport* const b = &restored.subsystem.elements[i];
-        CHECK(a->health.value == b->health.value, "subsystem[%zu].health: %u != %u",
-              i, (unsigned) b->health.value, (unsigned) a->health.value);
-        CHECK(a->severity.value == b->severity.value, "subsystem[%zu].severity: %u != %u",
-              i, (unsigned) b->severity.value, (unsigned) a->severity.value);
-        CHECK(a->fault_code == b->fault_code, "subsystem[%zu].fault_code: %u != %u",
-              i, (unsigned) b->fault_code, (unsigned) a->fault_code);
-        CHECK(a->name.count == b->name.count, "subsystem[%zu].name.count: %zu != %zu",
-              i, b->name.count, a->name.count);
-        CHECK(memcmp(a->name.elements, b->name.elements, a->name.count) == 0,
-              "subsystem[%zu].name bytes differ", i);
+        CHECK(a->health.value == b->health.value,
+              "subsystem[%zu].health: %u != %u",
+              i,
+              (unsigned) b->health.value,
+              (unsigned) a->health.value);
+        CHECK(a->severity.value == b->severity.value,
+              "subsystem[%zu].severity: %u != %u",
+              i,
+              (unsigned) b->severity.value,
+              (unsigned) a->severity.value);
+        CHECK(a->fault_code == b->fault_code,
+              "subsystem[%zu].fault_code: %u != %u",
+              i,
+              (unsigned) b->fault_code,
+              (unsigned) a->fault_code);
+        CHECK(a->name.count == b->name.count, "subsystem[%zu].name.count: %zu != %zu", i, b->name.count, a->name.count);
+        CHECK(memcmp(a->name.elements, b->name.elements, a->name.count) == 0, "subsystem[%zu].name bytes differ", i);
     }
 
-    (void) printf("round-trip OK: %zu subsystems, %zu bytes on the wire\n",
-                  restored.subsystem.count, size);
+    (void) printf("round-trip OK: %zu subsystems, %zu bytes on the wire\n", restored.subsystem.count, size);
     return 0;
 }

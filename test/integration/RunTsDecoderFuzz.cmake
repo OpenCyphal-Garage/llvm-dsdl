@@ -1,13 +1,13 @@
-# Robustness fuzz lane over the generated TypeScript deserializers.
+# Robustness fuzz lane over the generated TypeScript deserialisers.
 #
 # TS/JS is memory-safe + GC'd, so the caught class is a runtime fault (TypeError
-# / RangeError escaping deserialize, e.g. a huge `new Array(...)` after a
+# / RangeError escaping deserialise, e.g. a huge `new Array(...)` after a
 # length-validation bypass) or a hang / unbounded allocation — not OOB. The
 # driver (test/integration/TsDecoderFuzzDriver.ts) feeds a deterministic
-# pseudo-random byte stream into each generated deserialize for a compact,
+# pseudo-random byte stream into each generated deserialise for a compact,
 # self-contained adversarial fixture set (union, variable-length arrays, nested
 # delimited composites, narrow non-byte-aligned scalars) and round-trips accepted
-# objects through serialize.
+# objects through serialise.
 #
 # Iteration count is overridable via env LLVMDSDL_TS_FUZZ_ITERS for the deep run.
 cmake_minimum_required(VERSION 3.24)

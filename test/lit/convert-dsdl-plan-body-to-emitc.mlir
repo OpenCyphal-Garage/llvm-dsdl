@@ -1,10 +1,10 @@
 // RUN: %dsdl-opt --convert-dsdl-to-emitc %s | FileCheck %s
 
-// A whole serialization plan body carried as operations rather than as C text, to pin the
+// A whole serialisation plan body carried as operations rather than as C text, to pin the
 // shape the producer has to build: the published signature spelled exactly, the argument
 // checks, the size read through a pointer, and the scalar write.
 //
-// Control flow is structured because it has to be. There is no cf-to-emitc conversion, so the
+// Control flow is structured: there is no cf-to-emitc conversion, so the
 // C path cannot take a branch graph, and the early returns of the hand-written text become
 // nested `scf.if` yielding the error code.
 

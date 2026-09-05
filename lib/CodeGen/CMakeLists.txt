@@ -9,8 +9,8 @@
 
 # Embed the language-runtime support sources (runtime/) into this library so the
 # C/C++/Rust/Go/Python emitters resolve them from the binary itself rather than
-# from an absolute source path baked in at compile time -- which is what lets a
-# packaged/installed dsdlc run outside a source checkout. Unlike the embedded
+# from an absolute source path baked in at compile time, so a packaged dsdlc runs
+# outside a source checkout. Unlike the embedded
 # UAVCAN MLIR catalogue (which needs a built dsdlc to produce, hence is committed),
 # this embed only reads files, so it is regenerated at build time from the
 # runtime sources and never committed. See tools/runtime/generate_embedded_runtime.py.
@@ -27,7 +27,7 @@ set(LLVMDSDL_EMBEDDED_RUNTIME_INC
 
 # The generator owns the manifest of embedded files; ask it for that list so the
 # custom command depends on exactly the files it embeds (single source of truth,
-# no drift between the DEPENDS list here and what actually gets baked in).
+# no drift between the DEPENDS list here and what gets baked in).
 execute_process(
   COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR}" --print-manifest
   OUTPUT_VARIABLE LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_RAW
@@ -129,7 +129,7 @@ target_link_libraries(llvmdsdlCodeGen
 )
 
 # The object lane needs the target backends and the optimisation pipeline. Where the build
-# provides a single shared LLVM, that is what to link: adding the static component archives beside
+# provides a single shared LLVM, link it: adding the static component archives beside
 # it puts two copies of LLVM in one binary, and analysis keys are per-copy statics -- the pass
 # manager then looks up an analysis registered in the other copy and follows a null.
 if(LLVM_LINK_LLVM_DYLIB)

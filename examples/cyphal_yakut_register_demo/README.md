@@ -69,7 +69,7 @@ export UAVCAN__NODE__ID="100"
 yakut monitor
 ```
 
-You should see node `42` online and publishing heartbeat traffic.
+Node `42` appears online and publishing heartbeat traffic.
 
 ## Register List / Read / Write
 
@@ -89,4 +89,4 @@ Expected behaviour:
 
 1. `demo.rate_hz` changes and readback reflects new value.
 2. `uavcan.node.description` changes and readback reflects new value.
-3. `sys.version` remains unchanged because it is immutable.
+3. `sys.version`, an immutable register, remains unchanged.

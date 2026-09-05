@@ -15,8 +15,8 @@
 # Dockerfile.ubuntu-release, which reaches back to jammy for the same reason.
 #
 # Unlike Dockerfile.ubuntu-release this adds no apt.llvm.org source: the point
-# is to stop consuming someone else's libLLVM, and jammy's own GCC is a
-# perfectly good compiler for building one. Kitware is still needed because
+# is to stop consuming someone else's libLLVM, and jammy's own GCC can build
+# one. Kitware is still needed because
 # jammy ships CMake 3.22 and the project floor is 3.24 -- this image is also
 # usable for building llvm-dsdl itself.
 #

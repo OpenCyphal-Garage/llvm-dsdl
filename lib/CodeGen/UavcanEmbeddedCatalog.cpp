@@ -488,7 +488,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
             if (it->second.seenPlan)
             {
                 diagnostics.error({"<embedded-uavcan>", 1, 1},
-                                  "duplicate embedded serialization plan for section '" + sectionName + "'");
+                                  "duplicate embedded serialisation plan for section '" + sectionName + "'");
                 return false;
             }
 
@@ -537,7 +537,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
         if (!sections["request"].seenPlan || !sections["response"].seenPlan)
         {
             diagnostics.error({"<embedded-uavcan>", 1, 1},
-                              "embedded service schema missing request/response serialization plans for " +
+                              "embedded service schema missing request/response serialisation plans for " +
                                   out.info.fullName);
             return false;
         }
@@ -553,7 +553,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
         if (!sections[""].seenPlan)
         {
             diagnostics.error({"<embedded-uavcan>", 1, 1},
-                              "embedded message schema missing primary serialization plan for " + out.info.fullName);
+                              "embedded message schema missing primary serialisation plan for " + out.info.fullName);
             return false;
         }
         out.request = sections[""].section;

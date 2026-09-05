@@ -46,7 +46,7 @@ enum class LoweredRenderStepKind
     UnionDispatch,
 };
 
-/// @brief Single render-IR step for serialize/deserialize body generation.
+/// @brief Single render-IR step for serialise/deserialize body generation.
 struct LoweredRenderStep final
 {
     /// @brief Step kind.

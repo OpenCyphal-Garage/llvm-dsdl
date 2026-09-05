@@ -27,7 +27,7 @@ CATEGORIES: List[Tuple[str, str]] = [
     ("copy_range_violations", "Bit-copy range violation handling"),
     ("invalid_union_tag", "Invalid union-tag handling"),
     ("invalid_delimiter_header", "Invalid delimited-header handling"),
-    ("capacity_precheck", "Section serialization-capacity precheck"),
+    ("capacity_precheck", "Section serialisation-capacity precheck"),
 ]
 
 MATRIX: Dict[str, Dict[str, object]] = {

@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Contract constants for lowered serialization metadata exchanged between passes and backends.
+/// Contract constants for lowered serialisation metadata exchanged between passes and backends.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_TRANSFORMS_LOWERED_SERDES_CONTRACT_H

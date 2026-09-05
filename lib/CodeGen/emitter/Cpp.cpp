@@ -142,8 +142,8 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
 
 /// @brief C++ spelling of the helper body shapes (see HelperBodyPlan.h).
 ///
-/// Conditional expressions where a body is one `return`, which is how the rest of
-/// the generated headers read, and a block only where a body genuinely has several
+/// Conditional expressions where a body is one `return`, as the rest of the
+/// generated headers read, and a block only where a body has several
 /// statements.
 class CppHelperBodySpelling final : public HelperBodySpelling
 {
@@ -389,7 +389,7 @@ public:
         }
 
         // Nothing to count versions against, so assume the name is ambiguous and spell the version.
-        // Guessing the other way would name a type that does not exist if it turns out there are two.
+        // Guessing the other way would name a type that does not exist if there are two.
         return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
                                         ref.namespaceComponents,
                                         ref.shortName,

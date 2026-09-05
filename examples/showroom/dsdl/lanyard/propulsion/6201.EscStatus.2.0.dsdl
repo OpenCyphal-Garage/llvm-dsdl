@@ -12,7 +12,7 @@
 # identifier (6200 -> 6201) because a port carries exactly one major
 # version.
 #
-# This revision buys extensibility with an @extent: the serialized value
+# This revision buys extensibility with an @extent: the serialised value
 # is prefixed with a 32-bit length header, and any reader may skip a
 # longer-than-expected tail. Minor versions of this type (2.1, 2.2, ...)
 # may append fields without breaking readers built against 2.0, as long

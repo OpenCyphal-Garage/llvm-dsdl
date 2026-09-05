@@ -12,10 +12,10 @@ name: Toolchain
 #
 #   musl   -- the `bin` component. No glibc floor; the .deb carries no Depends.
 #   glibc  -- llvm-dsdl-dev, whose archives must link against what consumers
-#             actually compile with, and the CI toolshed.
+#             compile with, and the CI toolshed.
 #
-# Each on both architectures, on native runners. Emulation costs a measured 3.8x
-# and there is no reason to pay it when GitHub provides both natively.
+# Each on both architectures, on native runners. Emulation costs a measured 3.8x;
+# GitHub provides both natively.
 #
 # macOS is deliberately absent: a Darwin toolchain cannot be a container image.
 # The macOS release leg builds it natively and caches the prefix instead.
@@ -98,9 +98,9 @@ jobs:
         # broken image and reported success. The image instead carries a hash of
         # what determines its content, and this compares it.
         #
-        # That hash covers build_llvm.py's *effective flags*, not the file. An
-        # earlier version hashed the file and so rebuilt all four images for an
-        # edited comment, and for a flag only macOS passes.
+        # That hash covers build_llvm.py's *effective flags*, not the file: hashing
+        # the file would rebuild all four images for an edited comment, and for a
+        # flag only macOS passes.
         #
         # Without this, editing a publishing job in this file rebuilds four
         # images that come out byte-identical, at one to two hours each.
@@ -205,8 +205,7 @@ jobs:
       - name: Publish
         # A prerelease so it never displaces a product release as "Latest", and
         # a tag naming the pin so the asset URL is derivable from llvm.pin alone
-        # -- which is what lets the restore action build the URL without being
-        # told where to look.
+        # -- the restore action builds the URL from that alone.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

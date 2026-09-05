@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements the shared snake_case name canonicalization.
+/// Implements the shared snake_case name canonicalisation.
 ///
 //===----------------------------------------------------------------------===//
 

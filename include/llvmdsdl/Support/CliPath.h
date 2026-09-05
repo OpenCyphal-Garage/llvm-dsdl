@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Normalization of the filesystem paths a command line carries.
+/// Normalisation of the filesystem paths a command line carries.
 ///
 /// One definition of what a path argument means, so that every option taking one agrees: a leading
 /// `~` is the invoking user's home directory, `.` and `..` are folded away, an absolute path is
@@ -44,7 +44,7 @@ namespace llvmdsdl
 ///         name.
 [[nodiscard]] llvm::Expected<std::string> expandHomeDirectory(llvm::StringRef argument);
 
-/// @brief Normalizes a path argument naming something the run reads.
+/// @brief Normalises a path argument naming something the run reads.
 ///
 /// @details
 /// Expands a leading `~` (see @ref expandHomeDirectory), then folds away `.` and `..` components.
@@ -53,22 +53,22 @@ namespace llvmdsdl
 /// from the working directory the tool was started in. An empty argument stays empty.
 ///
 /// @param[in] argument Path argument as typed.
-/// @return The normalized path, or an error when a `~` needs a home directory the platform cannot
+/// @return The normalised path, or an error when a `~` needs a home directory the platform cannot
 ///         name.
 [[nodiscard]] llvm::Expected<std::string> normalizeCliPath(llvm::StringRef argument);
 
-/// @brief Normalizes a path argument naming something the run writes.
+/// @brief Normalises a path argument naming something the run writes.
 ///
 /// @details
 /// As @ref normalizeCliPath, except that a relative path is rooted under @p outputDirectory. The
 /// rooting happens before the `.` and `..` folding, so `path/../to/file.txt` names
-/// `<outputDirectory>/to/file.txt`. An absolute path is taken as given, which is how a caller
-/// writes outside the output directory. An empty @p outputDirectory leaves a relative path
+/// `<outputDirectory>/to/file.txt`. An absolute path is taken as given, so a caller can write
+/// outside the output directory. An empty @p outputDirectory leaves a relative path
 /// relative.
 ///
 /// @param[in] argument Path argument as typed.
 /// @param[in] outputDirectory Output directory in effect for the run.
-/// @return The normalized path, or an error when a `~` needs a home directory the platform cannot
+/// @return The normalised path, or an error when a `~` needs a home directory the platform cannot
 ///         name.
 [[nodiscard]] llvm::Expected<std::string> normalizeCliOutputPath(llvm::StringRef argument,
                                                                  llvm::StringRef outputDirectory);

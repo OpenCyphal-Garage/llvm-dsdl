@@ -1,6 +1,6 @@
 # Canonical emit order
 
-The reference **abstract** serialize/deserialize step order that every string backend
+The reference **abstract** serialise/deserialize step order that every string backend
 (Rust, Go, C++, TypeScript, Python) follows. This is a live contract: the shared render
 template produces this order by construction, and the emit-order verifier
 (`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order-verifier`)
@@ -8,7 +8,7 @@ independently pins it on every build.
 
 This prose is the human-readable projection of the machine-checked model in
 [spec/dafny/CyphalSerdes.dfy](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
-by induction) that serialize/deserialize round-trip and that the read path is bounds-safe, and
+by induction) that serialise/deserialize round-trip and that the read path is bounds-safe, and
 defines the accepted op orderings (`SerOrderOK`/`DeOrderOK`). The model is the source of truth;
 this doc is the readable shadow.
 
@@ -42,15 +42,15 @@ case doubles as a verifier insensitivity check (D1 below).
 ## Two invariant principles
 
 1. **Write path validates before it emits; read path reads before it validates.** On
-   serialize, a value is range/tag/length-validated *before* the corresponding `WRITE_*`. On
-   deserialize, the raw bits are `READ_*` first, then masked/validated. This asymmetry is
+   serialise, a value is range/tag/length-validated *before* the corresponding `WRITE_*`. On
+   deserialise, the raw bits are `READ_*` first, then masked/validated. This asymmetry is
    intentional and appears identically for the union tag and the array length prefix.
 2. **`ADVANCE` (`offset_bits += N`) happens immediately after the matching `WRITE_*`/`READ_*`,
    never before.** Alignment padding (`ALIGN`) is emitted *before* a field's value ops.
 
 ## Section level
 
-### Struct (non-union) — serialize and deserialize
+### Struct (non-union) — serialise and deserialise
 For each lowered field step, in lowered order:
 ```
 (padding step)  → ALIGN(pad.bits) → PAD(write/skip zero bits) → ADVANCE
@@ -58,7 +58,7 @@ For each lowered field step, in lowered order:
 end of section  → ALIGN(8)          # trailing pad to byte boundary
 ```
 
-### Union — serialize
+### Union — serialise
 ```
 VALIDATE_TAG          # unionTagValidate(tag); error-branch on failure
 MASK_TAG              # unionTagMask(tag)
@@ -73,7 +73,7 @@ SWITCH(tag) {
 }
 ```
 
-### Union — deserialize
+### Union — deserialise
 ```
 READ_TAG(tagBits)     # get_u64 / readUnsigned
 MASK_TAG              # unionTagMask(raw)
@@ -82,7 +82,7 @@ VALIDATE_TAG          # unionTagValidate(tag); error-branch
 ADVANCE(tagBits)
 SWITCH(tag) { CASE(optionIndex): ALIGN(...) <field ops> ... DEFAULT: DEFAULT_BAD_TAG }
 ```
-Note `READ → MASK → STORE → VALIDATE` on deserialize vs `VALIDATE → MASK → WRITE` on serialize
+Note `READ → MASK → STORE → VALIDATE` on deserialise vs `VALIDATE → MASK → WRITE` on serialise
 (principle 1). All five backends emit this by construction via `renderUnionSection`.
 
 ## Field level
@@ -101,9 +101,9 @@ Composite:           → [Composite]
 ```
 The saturating/masking `HELPER` is applied to the value **before** `WRITE_SCALAR` (principle 1).
 Float helpers are width-matched (f32 for 16/32-bit, f64 for 64-bit) so no native backend
-canonicalizes signalling-NaN payloads through a `float→double→float` round-trip.
+canonicalises signalling-NaN payloads through a `float→double→float` round-trip.
 
-### Scalar — deserialize
+### Scalar — deserialise
 ```
 Bool:                       READ_SCALAR(get_bit)                → ADVANCE(1)
 Unsigned/Byte/Utf8:  READ_SCALAR(get_uN) → HELPER(mask) → CAST(store) → ADVANCE(bits)
@@ -111,20 +111,20 @@ Signed:              READ_SCALAR(get_u64) → HELPER → CAST(signed store) → 
 Float:               READ_SCALAR(get_fN) → HELPER → CAST(store) → ADVANCE(bits)
 ```
 
-### Array — serialize
+### Array — serialise
 ```
 Fixed:     LEN_CHECK(len == capacity)          # exact-length guard
 Variable:  LEN_VALIDATE(len) → MASK(prefix) → LEN_WRITE(prefixBits) → ADVANCE(prefixBits)
 ELEM_LOOP(0..count) { <element scalar/composite ops> }     # count = len (var) or capacity (fixed)
 ```
 
-### Array — deserialize
+### Array — deserialise
 ```
 Variable:  LEN_READ(prefixBits) → ADVANCE(prefixBits) → MASK(prefix) → STORE(count) → LEN_VALIDATE(count)
 Fixed:     count = capacity
 CLEAR → RESERVE(count) → ELEM_LOOP(0..count) { DEFAULT_ELEM → <element deserialize ops> → PUSH }
 ```
-Same validate asymmetry: serialize `LEN_VALIDATE` before `LEN_WRITE`; deserialize `LEN_READ`
+Same validate asymmetry: serialise `LEN_VALIDATE` before `LEN_WRITE`; deserialise `LEN_READ`
 before `LEN_VALIDATE`.
 
 Array steps own their element's step subtree, so nesting is decided once in shared code and
@@ -139,7 +139,7 @@ Delimited:  COMPOSITE_DELIM_HEADER(32) # 32-bit delimiter/extent header, then ne
 **Sealed** — no header. The nested call runs against the buffer from the current byte offset;
 the cursor advances by the bytes the nested call reports consuming (`ADVANCE(consumed * 8)`).
 
-**Delimited — serialize** (length backpatch):
+**Delimited — serialise** (length backpatch):
 ```
 ADVANCE(32)                             # reserve the header slot; write it last
 size = ceil(bitLengthSet.max() / 8)     # worst-case bound for the sub-buffer
@@ -150,7 +150,7 @@ WRITE header(32) at (offset_bits - 32) = size       # the backpatch
 ADVANCE(size * 8)
 ```
 
-**Delimited — deserialize** (bounded read):
+**Delimited — deserialise** (bounded read):
 ```
 READ header(32) → size
 ADVANCE(32)
@@ -181,7 +181,7 @@ that enum are kept in step.
 `ELEM_LOOP` · `BULK_COPY` · `COMPOSITE_INLINE` · `COMPOSITE_DELIM_HEADER` · `PAD` · `ADVANCE`.
 
 Each op carries a small payload where relevant (bit width, option index, scalar sub-kind). The emit-order verifier
-normalizes away identifiers and indentation, keeping op + payload — payloads are compared,
+normalises away identifiers and indentation, keeping op + payload — payloads are compared,
 so a wrong bit width or option index fails even when op names agree.
 
 Two structural elements beyond the wire ops: `BULK_COPY` (payload = total bits) is the honest trace
@@ -190,15 +190,14 @@ of the C++ fixed-bool-array fast path — the D3 declared equivalence
 `SECTION <canonical.name> <serialize|deserialize>` header events segment the trace per
 (type, direction) so divergences localize and cannot cancel across type boundaries.
 
-**Trace calls live at the spelling sites, not in the shared render template.** This is
-deliberate: tracing the shared sequencer would be tautological for order. Because each
-backend traces the tokens it actually emits, the verifier stays an independent check on the
-shared template rather than a restatement of it.
+**Trace calls live at the spelling sites, not in the shared render template.** Tracing the
+shared sequencer would be tautological for order; each backend traces the tokens it emits, so
+the verifier stays an independent check on the shared template.
 
 ## Accepted differences
 
 Cross-backend differences fall into three classes: invisible by design (spelling), a declared
-right exercised through a named interface point, or genuine abstract-order divergence. Only
+right exercised through a named interface point, or abstract-order divergence. Only
 the third is a defect. All three are explicitly modeled. The marker-regex "convergence"
 score cannot see structural facts of this kind.
 
@@ -206,9 +205,9 @@ score cannot see structural facts of this kind.
 |---|---|---|---|
 | D1 | TS/Python mask the union tag as its own statement; Rust/Go fold it into the write argument | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Both kept. Serves as the verifier's insensitivity case: it must report *equal* |
 | D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Structural, accepted** — type-system-subsumed, not missing | Declared interface point `FieldStepSpelling::spellFixedArrayLenCheck` (a documented no-op in Go/C++); `LEN_CHECK` is backend-optional in the comparator skeleton |
-| D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits no `ELEM_LOOP` / per-element scalar ops for that case | **Genuine C++ optimization** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces an honest `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned, exercised by the `BoolArray` fixture) |
+| D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits no `ELEM_LOOP` / per-element scalar ops for that case | **C++ optimisation** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces an honest `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned, exercised by the `BoolArray` fixture) |
 | D4 | *(none)* | — | All five backends render the union prologue through `renderUnionSection`, so their raw prologue traces are identical by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
-| D5 | *(further genuine reorderings)* | **None.** All 5 backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
+| D5 | *(further reorderings)* | **None.** All 5 backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
 
 ## Enforcement
 
@@ -224,12 +223,3 @@ Three ctests (labels `integration;convergence;emit-order`) run in every ctest-dr
 `convert-dsdl-to-emitc` with no string emitter, and is covered instead by the
 C↔{Go,Rust,Cpp} parity harnesses. State coverage as "5 string emitters + C via parity",
 never "six". Driving EmitC from the step IR is a separate, unscoped epic.
-
-## History
-
-This document is the standing specification of the emit order. It began as the Phase 0
-oracle for the P2 emit-order deduplication work, which sequenced the emit-order verifier
-before the shared render template and completed on 2026-07-12. That effort's own record —
-per-phase status, the byte-identity proofs, the LOC-delta accounting — is kept in the
-G1 section of [the project report](../../development/roadmap.md) and in git
-history (`docs/plans/P2_emit_order_dedup.md`, removed 2026-07-31).

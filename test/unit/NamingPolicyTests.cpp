@@ -42,8 +42,8 @@ using llvmdsdl::NamingScope;
 /// neither escape, so including one would compare a role against a function never meant to agree with
 /// it. @ref runNamingClaimedNameTests and @ref runNamingReservedNamespaceTests cover them.
 ///
-/// The empty string is deliberately absent: it is not a DSDL name, and it is the one input where the
-/// shared pipeline and the emitter-private paths disagree. That divergence is pinned separately by
+/// The empty string is deliberately absent: it is not a DSDL name, and the shared pipeline and the
+/// emitter-private paths disagree on it alone. That divergence is pinned separately by
 /// @ref runEmptyNameDivergenceTest so it is recorded rather than assumed away.
 const std::vector<std::string>& sampleNames()
 {
@@ -189,7 +189,7 @@ bool runEmptyNameDivergenceTest()
 
 /// @brief Checks that a name the generated code already claims is escaped.
 ///
-/// Every case below was a real duplicate declaration before this existed: a C++ struct holds its
+/// Every case below collides in generated code: a C++ struct holds its
 /// fields, its DSDL constants and the generated statics and methods in one scope; Go and Rust give a
 /// DSDL constant the same prefix as their metadata constants. C claims the same names with the
 /// trailing `_` it spells them with, since a macro token passes a source name's own trailing
@@ -219,7 +219,7 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
         {CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
         // C spells its metadata macros with a trailing underscore, so `FULL_NAME` is free and
-        // `FULL_NAME_` is the one that has to move -- as does the lower-case spelling of it, since a
+        // `FULL_NAME_` has to move -- as does the lower-case spelling of it, since a
         // macro token is upper-cased before the claim is checked.
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME_", "FULL_NAME__"},
@@ -372,7 +372,7 @@ bool runNamingTableInvariantTests()
 ///
 /// The engine's contract is that distinct DSDL names in one scope get distinct identifiers: the case
 /// projections are many-to-one, and the scope is what repairs them. A handful of hand-picked names
-/// cannot establish that, so the names are generated -- from the pieces that actually collide, which
+/// cannot establish that, so the names are generated -- from the pieces that collide, which
 /// is case variation, underscore placement, and the escapes.
 bool runNamingInjectivityTests()
 {

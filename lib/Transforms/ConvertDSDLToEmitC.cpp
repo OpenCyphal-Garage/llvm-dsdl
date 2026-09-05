@@ -154,7 +154,7 @@ struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNul
     }
 };
 
-/// @brief Addresses `pointer[0]`, which is how EmitC spells a dereference that can be assigned.
+/// @brief Addresses `pointer[0]`, EmitC's spelling of an assignable dereference.
 ///
 /// `emitc.apply "*"` yields an rvalue and cannot be written through, so both directions go via
 /// a zero subscript.
@@ -425,7 +425,7 @@ mlir::Value elementSlot(mlir::ConversionPatternRewriter& rewriter,
                         mlir::Value                      index,
                         llvm::StringRef                  elementTypeName)
 {
-    // The member is reached at whatever qualification it is declared with -- a serializer
+    // The member is reached at whatever qualification it is declared with -- a serialiser
     // holds the object by pointer-to-const -- and then the pointer is taken unqualified. The
     // element read out of it is assigned to a variable, and EmitC declares its variables
     // before assigning them, which a const-qualified declaration does not survive.
@@ -492,7 +492,7 @@ struct StoreElementLowering final : public mlir::OpConversionPattern<mlir::dsdl:
     }
 };
 
-/// @brief Takes the address of an lvalue, which is how a plan hands storage to a callee.
+/// @brief Takes the address of an lvalue, the form in which a plan hands storage to a callee.
 mlir::Value addressOf(mlir::ConversionPatternRewriter& rewriter,
                       mlir::Location                   loc,
                       mlir::Value                      lvalue,
@@ -1034,7 +1034,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             }
             if (mlir::failed(mlir::applyPatternsGreedily(module, std::move(cleanup))))
             {
-                module.emitError("failed to canonicalize built plan bodies");
+                module.emitError("failed to canonicalise built plan bodies");
                 signalPassFailure();
                 return;
             }
@@ -1055,7 +1055,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             }
             if (mlir::failed(mlir::applyPatternsGreedily(module, std::move(cleanup))))
             {
-                module.emitError("failed to canonicalize converted plan bodies");
+                module.emitError("failed to canonicalise converted plan bodies");
                 signalPassFailure();
                 return;
             }

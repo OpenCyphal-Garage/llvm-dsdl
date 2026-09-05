@@ -223,7 +223,7 @@ LogicalResult SerializationPlanOp::verifyRegions()
             }
             continue;
         }
-        return op.emitError("unsupported operation in serialization plan body");
+        return op.emitError("unsupported operation in serialisation plan body");
     }
 
     if (getIsUnion())
@@ -257,7 +257,7 @@ LogicalResult SerializationPlanOp::verifyRegions()
         if (observedStepCount != loweredStepCount || observedFieldCount != loweredFieldCount ||
             observedPaddingCount != loweredPaddingCount || observedAlignCount != loweredAlignCount)
         {
-            return emitOpError("lowered step counters do not match serialization plan body");
+            return emitOpError("lowered step counters do not match serialisation plan body");
         }
         for (const auto stepIndex : seenStepIndexes)
         {

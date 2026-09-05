@@ -10,7 +10,7 @@
 /// @file
 /// Shared lookup helpers for lowered MLIR section facts.
 ///
-/// This utility centralizes deterministic lookup of per-definition section facts
+/// This utility centralises deterministic lookup of per-definition section facts
 /// used by backend emitters.
 ///
 //===----------------------------------------------------------------------===//

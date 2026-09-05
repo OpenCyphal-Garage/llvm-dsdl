@@ -42,7 +42,7 @@ export function serializeHelpers(value: Helpers): Uint8Array {
   const mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2 = (value: number): boolean => (value >= 0) && (value <= 5);
 
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(out.length * 8)) {
-    throw new Error("serialization buffer too small");
+    throw new Error("serialisation buffer too small");
   }
   dsdlRuntime.writeSigned(out, offsetBits, 13, mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(value.a), true);
   offsetBits += 13;

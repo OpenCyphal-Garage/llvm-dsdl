@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements initialization of the DSDL MLIR dialect.
+/// Implements initialisation of the DSDL MLIR dialect.
 ///
 /// The dialect registration wires generated operation, attribute, and type classes into MLIR.
 ///

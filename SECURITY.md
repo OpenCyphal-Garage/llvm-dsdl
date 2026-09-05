@@ -6,7 +6,7 @@ Report privately through
 [GitHub Security Advisories](https://github.com/OpenCyphal-Garage/llvm-dsdl/security/advisories/new).
 That opens a channel visible only to you and the maintainers.
 
-Please do not open a public issue for a suspected vulnerability. A public report
+Do not open a public issue for a suspected vulnerability. A public report
 on a compiler is a public report on everything it has compiled.
 
 Include what you would want if you were fixing it: the DSDL or the input that
@@ -58,7 +58,7 @@ write and emits code somebody else will run.
   the bounds the compiler states — nesting depth is capped at 128, and a
   definition exceeding it is a diagnostic.
 
-## What you can verify yourself
+## Independent verification
 
 Release artifacts carry a provenance attestation and a CycloneDX SBOM recording
 the exact source commit and the LLVM revision linked. The LLVM the tools link is

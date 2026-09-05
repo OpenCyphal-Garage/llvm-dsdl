@@ -85,8 +85,8 @@ void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, co
 /// The order is what decides which name moves when two collide, and it runs from least to most
 /// willing to move. Fields are first because a field's identifier is the ABI a caller writes against
 /// and has to be predictable from the DSDL alone; the generated array metadata is next; DSDL
-/// constants are last, being the only one of the three a author can rename without changing the wire
-/// format or breaking a field access.
+/// constants are last; of the three, only they can be renamed without changing the wire format or
+/// breaking a field access.
 void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
 {
     if (emitsArrayMetadata(language))

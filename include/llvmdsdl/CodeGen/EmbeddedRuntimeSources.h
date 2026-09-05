@@ -14,7 +14,7 @@
 /// every generated package. Those sources are embedded verbatim at build time
 /// (tools/runtime/generate_embedded_runtime.py) so an installed `dsdlc`
 /// resolves them from itself rather than from a source path baked in at compile
-/// time -- which is what lets the tool run outside a source checkout.
+/// time, so the tool runs outside a source checkout.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_EMBEDDED_RUNTIME_SOURCES_H

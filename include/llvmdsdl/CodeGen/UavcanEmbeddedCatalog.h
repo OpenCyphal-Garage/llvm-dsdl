@@ -54,9 +54,8 @@ struct UavcanEmbeddedCatalog final
     /// suggestionsForSelector and by selector expansion -- and an unordered
     /// container's iteration order is a property of the standard library
     /// implementation, not of the data. Emitted text must not be able to
-    /// inherit it. The callers currently funnel every such iteration through an
-    /// ordered container of their own, so this changes no output; it removes
-    /// the obligation to keep doing so. 189 entries, one lookup against three
+    /// inherit it, and ordering it here spares every caller an ordered copy of its
+    /// own. 189 entries, one lookup against three
     /// iterations, so the hashed container was not buying anything either.
     std::set<std::string> typeKeys;
 
@@ -72,7 +71,7 @@ struct UavcanEmbeddedCatalog final
 /// drifted out of sync. Pure and side-effect-free so it can be unit-tested with arbitrary pairs.
 [[nodiscard]] bool verifyEmbeddedCatalogIntegrity(llvm::StringRef mlirText, llvm::StringRef expectedSha256Hex);
 
-/// @brief Verifies the integrity of the catalogue blob actually compiled into this binary.
+/// @brief Verifies the integrity of the catalogue blob compiled into this binary.
 /// @return True when the embedded MLIR text matches its recorded SHA-256.
 [[nodiscard]] bool embeddedUavcanCatalogIntegrityOk();
 

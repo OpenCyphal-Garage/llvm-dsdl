@@ -12,7 +12,7 @@
 ///
 /// The emit-order verifier (tools/convergence/emit_order_verifier.py) asserts that every string backend
 /// (Rust/Go/C++/TypeScript/Python) performs the same ordered sequence of
-/// *abstract* serialize/deserialize operations for a given type, independent of
+/// *abstract* serialise/deserialize operations for a given type, independent of
 /// surface spelling. Each backend records these ops into an @ref EmitTraceSink
 /// at the point it emits the corresponding text; a null sink is the default and
 /// costs nothing. The canonical order these ops must follow is specified in
@@ -32,7 +32,7 @@
 namespace llvmdsdl
 {
 
-/// @brief Serialize vs deserialize direction for a recorded trace.
+/// @brief Serialise vs deserialise direction for a recorded trace.
 enum class EmitTraceDirection
 {
     Serialize,
@@ -47,7 +47,7 @@ enum class EmitTraceDirection
 /// — two backends that differ only in spelling must produce identical traces.
 enum class EmitTraceOp
 {
-    // ---- Union tag (see canonical spec: Union serialize/deserialize) ----
+    // ---- Union tag (see canonical spec: Union serialise/deserialize) ----
     ValidateTag,    ///< unionTagValidate(tag) + error branch.
     MaskTag,        ///< unionTagMask(tag).
     WriteTag,       ///< write tag bits (payload = tagBits).
@@ -71,7 +71,7 @@ enum class EmitTraceOp
     ReadScalarSint,
     ReadScalarFloat,
 
-    // ---- Arrays (see canonical spec: Array serialize/deserialize) ----
+    // ---- Arrays (see canonical spec: Array serialise/deserialize) ----
     LenCheck,     ///< fixed-array exact-length guard (payload = capacity).
     LenValidate,  ///< variable-array length validate.
     LenWrite,     ///< write length prefix (payload = prefix bits).
@@ -80,10 +80,10 @@ enum class EmitTraceOp
     BulkCopy,     ///< bulk bit-copy replacing an element loop (payload = total bits).
                   ///< C++-only fixed-bool-array fast path (known difference D3): the
                   ///< comparator models it as equivalent to ELEM_LOOP + one 1-bit
-                  ///< bool scalar op — an accepted optimization, explicitly declared.
+                  ///< bool scalar op — an accepted optimisation, explicitly declared.
 
     // ---- Composites ----
-    CompositeInline,       ///< sealed: inline nested (de)serialize at current offset.
+    CompositeInline,       ///< sealed: inline nested (de)serialise at current offset.
     CompositeDelimHeader,  ///< delimited: 32-bit delimiter/extent header + nested payload.
 
     // ---- Cursor ----
@@ -91,7 +91,7 @@ enum class EmitTraceOp
 
     // ---- Stream structure (not a wire op) ----
     SectionStart,  ///< begin of one (type, direction) trace segment; payload = direction
-                   ///< (0 = serialize, 1 = deserialize), label = canonical DSDL name
+                   ///< (0 = serialise, 1 = deserialise), label = canonical DSDL name
                    ///< ("full.type.Name[.Request|.Response].major.minor"). The comparator
                    ///< keys segments by this label so failures localize to a type and
                    ///< direction and misalignment cannot cancel across type boundaries.
@@ -124,7 +124,7 @@ public:
     /// @brief Marks the start of one (type, direction) trace segment.
     /// @param[in] name Canonical DSDL section name ("full.type.Name[.Request|.Response].major.minor").
     ///                 Must be backend-independent so the comparator can align segments across backends.
-    /// @param[in] direction Serialize or deserialize.
+    /// @param[in] direction Serialise or deserialise.
     void beginSection(const std::string& name, const EmitTraceDirection direction)
     {
         events_.push_back(EmitTraceEvent{EmitTraceOp::SectionStart,
@@ -165,7 +165,7 @@ inline void emitTrace(EmitTraceSink* const sink, const EmitTraceOp op, const std
 /// @brief Null-safe section-start helper used at emitter (type, direction) entry points.
 /// @param[in] sink Nullable sink; when null this is a no-op (zero cost).
 /// @param[in] name Canonical DSDL section name (backend-independent).
-/// @param[in] direction Serialize or deserialize.
+/// @param[in] direction Serialise or deserialise.
 inline void emitTraceSection(EmitTraceSink* const sink, const std::string& name, const EmitTraceDirection direction)
 {
     if (sink != nullptr)

@@ -7,8 +7,7 @@
 # enumerations. That is the point of reusing the regulated namespace: a
 # generic health monitor, a logger, or a ground station can interpret
 # the severity and health of a vendor-specific subsystem without knowing
-# anything about this vendor, because those two fields mean exactly what
-# they mean everywhere else on the network.
+# anything about this vendor.
 
 uavcan.node.Health.1.0 health
 # Aggregate health of the subsystem, using the standard four-level
@@ -28,7 +27,6 @@ uint16 fault_code
 # below.
 
 uint8[<=24] name
-# Subsystem name, UTF-8, for example "gnss" or "esc.3". Bounded because
-# up to eight of these are carried in a single SystemHealth message.
+# Subsystem name, UTF-8, for example "gnss" or "esc.3".
 
 @sealed

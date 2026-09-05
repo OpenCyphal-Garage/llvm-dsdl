@@ -84,7 +84,7 @@ def _dsdl_namespace_repository_impl(repository_ctx):
     # the ordinary case is that neither does: a developer rebuilds dsdlc, or a package upgrade drops
     # a new binary at the same install path. Without this, that build silently serves generated code
     # from the previous compiler -- a dsdlc that cannot even run still yields "up-to-date", because
-    # nothing in the graph refers to it. Cheap to get wrong and expensive to notice.
+    # nothing in the graph refers to it.
     repository_ctx.watch(dsdlc)
 
     # The anchor is a file in the calling module whose directory is the reference point for `root`.

@@ -34,7 +34,7 @@
 ///
 /// @param[in] argc Argument count.
 /// @param[in] argv Argument vector.
-/// @return Zero when MLIR optimization driver exits successfully; non-zero on
+/// @return Zero when MLIR optimisation driver exits successfully; non-zero on
 ///         option parsing or pass pipeline failure.
 int main(int argc, char** argv)
 {

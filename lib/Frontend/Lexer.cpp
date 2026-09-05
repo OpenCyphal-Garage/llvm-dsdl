@@ -238,7 +238,7 @@ void Lexer::lexNumber(std::uint32_t line, std::uint32_t column)
     // Note (DSDL spec v1.0, section 3.2.4): the grammar's
     // `literal_real_point_notation` makes the integer part optional and allows a
     // bare trailing dot, so `.5` and `3.` are both valid real literals. This
-    // leading-dot branch is dead in practice: `lex()` only dispatches into
+    // leading-dot branch is unreachable: `lex()` only dispatches into
     // lexNumber() on a leading digit, so `.` is emitted as a standalone Dot token
     // and `.5` lexes as `Dot Integer(5)` (and `3.` as `Integer(3) Dot`). The
     // reference grammar is a scannerless PEG that disambiguates `.` between real

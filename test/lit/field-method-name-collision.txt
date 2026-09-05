@@ -33,7 +33,7 @@
 # PY-DAG: def deserialize(cls
 
 # C++ was in the "unaffected" list above until the claimed-name policy was written and the case was
-# actually generated: `serialize` and `deserialize` are member functions of the generated struct, so
+# generated: `serialize` and `deserialize` are member functions of the generated struct, so
 # a field of either name did not compile.
 # RUN: %dsdlc --target-language cpp %t/dsdl --cpp-profile std --outdir %t/cpp
 # RUN: cat %t/cpp/dsdl/mf/M_1_0.hpp | FileCheck %s --check-prefix=CPP

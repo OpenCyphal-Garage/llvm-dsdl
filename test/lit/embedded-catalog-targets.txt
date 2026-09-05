@@ -6,7 +6,7 @@
 # RUN: test -f %t.exact/uavcan/node/Health_1_0.h
 # RUN: test -f %t.exact/uavcan/node/Mode_1_0.h
 
-# ...and --omit-dependencies restricts to what was actually named.
+#...and --omit-dependencies restricts to what was named.
 # RUN: rm -rf %t.omit && %dsdlc --target-language c --omit-dependencies --outdir %t.omit +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
 # RUN: test -f %t.omit/uavcan/node/Heartbeat_1_0.h
 # RUN: not test -f %t.omit/uavcan/node/Health_1_0.h
@@ -40,8 +40,7 @@
 # RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h | FileCheck %s --check-prefix=SHADOWED
 # RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h.d 2>/dev/null | FileCheck %s --check-prefix=SHADOWED_DEPS --allow-empty
 
-# Nothing resolves silently to zero targets. Each of these must be a diagnostic, because a build
-# that succeeds while generating nothing is the failure this syntax exists to prevent.
+# Nothing resolves silently to zero targets; each of these is a diagnostic.
 # RUN: not %dsdlc --target-language c --outdir %t.typo +uavcna 2>&1 | FileCheck %s --check-prefix=TYPO_NS
 # RUN: not %dsdlc --target-language c --outdir %t.typo2 +uavcan.node.Hartbeat.1.0 2>&1 | FileCheck %s --check-prefix=TYPO_TYPE
 # RUN: not %dsdlc --target-language c --outdir %t.ver +uavcan.node.Heartbeat.9.9 2>&1 | FileCheck %s --check-prefix=BAD_VERSION

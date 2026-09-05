@@ -8,7 +8,7 @@ find_program(PYTHON_EXECUTABLE python3 QUIET)
 set(LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS
     "portable;fast"
     CACHE STRING
-    "Python runtime benchmark specializations to generate (semicolon-separated).")
+    "Python runtime benchmark specialisations to generate (semicolon-separated).")
 set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_SMALL
     "2000"
     CACHE STRING
@@ -288,7 +288,7 @@ if(PYTHON_EXECUTABLE)
   )
 
   # End-to-end mutation negative control: dsdlc re-runs with
-  # LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate (a genuine mask-before-validate reorder
+  # LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate (a mask-before-validate reorder
   # of the recorded trace) and the verifier must go red. Proves the whole pipeline
   # (emitter run -> trace side channel -> comparator) detects a reorder, not merely that
   # the checker rejects a hand-written list.
@@ -374,8 +374,8 @@ if(PYTHON_EXECUTABLE)
   endif()
 
   # The adversarial naming corpus, compiled in every backend. lit asserts the identifiers that come
-  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Generating every one
-  # regardless of what this build targets is deliberate: the frontend's collision check is keyed to
+  # out of test/lit/fixtures_naming; this asserts that the languages accept them. Every one is
+  # generated regardless of what this build targets: the frontend's collision check is keyed to
   # the languages an invocation emits, so a hazard confined to one backend would otherwise surface
   # first to whoever selects it. The corpus ships with the tree, so this needs no external namespace.
   find_program(CARGO_EXECUTABLE cargo QUIET)
@@ -2661,7 +2661,7 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
 
   # The deterministic half of the same question. The benchmark above answers "how fast", which is a
   # property of the machine; this answers "did the emitted code change", which is a property of the
-  # code. Skips where valgrind is absent -- notably Apple Silicon, which it has never supported.
+  # code. Skips where valgrind is absent -- Apple Silicon, which it has never supported.
   add_test(
     NAME llvmdsdl-fixtures-rust-runtime-instructions
     COMMAND
@@ -2679,7 +2679,7 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     PROPERTIES
       SKIP_RETURN_CODE 77
       # Not in the `bench` label: this one is deterministic, so it belongs in the ordinary suite
-      # where it can actually gate, rather than in the reporting-only lane.
+      # where it can gate, rather than in the reporting-only lane.
       LABELS "integration;fixtures;rust;runtime;instructions;slow;release-blocking"
   )
 
@@ -3040,7 +3040,7 @@ set_tests_properties(
 )
 
 # ASan/UBSan variant of the C/C++ decoder parity harness. Reuses the same
-# randomized + directed malformed-input harness but rebuilds the generated C and
+# randomised + directed malformed-input harness but rebuilds the generated C and
 # C++ decoders (and the harness main) under sanitizers, so memory/UB defects in
 # the generated decode path surface as a hard failure. Registered only when a
 # sanitizer flavor is active (ci-asan preset) and the toolchain is Clang, which
@@ -3654,7 +3654,7 @@ endif()
 
 # An object lowering addresses a member by position, and the struct it must agree with is
 # emitted by different code from different information. This holds the two against each other
-# and then asks the compiler what the layout really is.
+# and then asks the compiler what the layout is.
 if(PYTHON_EXECUTABLE AND CMAKE_C_COMPILER)
   add_test(
     NAME llvmdsdl-member-layout-crosscheck

@@ -10,7 +10,7 @@
 /// @file
 /// Shared helper-binding lookup utilities for scripted runtime emitters.
 ///
-/// These APIs centralize lowered helper symbol resolution and per-field helper
+/// These APIs centralise lowered helper symbol resolution and per-field helper
 /// binding names for TypeScript/Python emitters.
 ///
 //===----------------------------------------------------------------------===//
@@ -32,16 +32,16 @@ struct SemanticSection;
 /// @brief Name bundle for helper bindings used by one planned runtime field.
 struct RuntimeFieldHelperNames final
 {
-    /// @brief Serialize scalar helper name.
+    /// @brief Serialise scalar helper name.
     std::string serScalar;
 
-    /// @brief Deserialize scalar helper name.
+    /// @brief Deserialise scalar helper name.
     std::string deserScalar;
 
-    /// @brief Serialize array-prefix helper name.
+    /// @brief Serialise array-prefix helper name.
     std::string serArrayPrefix;
 
-    /// @brief Deserialize array-prefix helper name.
+    /// @brief Deserialise array-prefix helper name.
     std::string deserArrayPrefix;
 
     /// @brief Array-length validation helper name.
@@ -60,10 +60,10 @@ struct RuntimeSectionHelperNames final
     /// @brief Union-tag validation helper name.
     std::string unionTagValidate;
 
-    /// @brief Serialize union-tag mask helper name.
+    /// @brief Serialise union-tag mask helper name.
     std::string serUnionTagMask;
 
-    /// @brief Deserialize union-tag mask helper name.
+    /// @brief Deserialise union-tag mask helper name.
     std::string deserUnionTagMask;
 };
 

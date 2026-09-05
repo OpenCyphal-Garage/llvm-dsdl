@@ -28,7 +28,7 @@ namespace llvmdsdl
 /// @file
 /// @brief Registration and factory APIs for DSDL MLIR transform passes.
 
-/// @brief Creates the pass that lowers serialization plans into the canonical
+/// @brief Creates the pass that lowers serialisation plans into the canonical
 /// @details Lowered-serdes contract form.
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
@@ -39,11 +39,11 @@ std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
 
-/// @brief Creates the pass that annotates serialization plans with conservative
+/// @brief Creates the pass that annotates serialisation plans with conservative
 ///        zero-overhead aliasability facts.
 /// @details This is a conservative *annotator*, not a proof: it stamps
 ///          `zoh_alias_eligible`/`zoh_alias_reason` metadata on eligible plans and
-///          does not alter the emitted serialization path. Registered under the
+///          does not alter the emitted serialisation path. Registered under the
 ///          `dsdl-annotate-aliasability` pipeline name.
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass();
@@ -52,7 +52,7 @@ std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();
 
-/// @brief Builds serialization plan bodies as dialect operations, before a target is chosen.
+/// @brief Builds serialisation plan bodies as dialect operations, before a target is chosen.
 ///
 /// Runs after the C member names are stamped and before any backend conversion, so that both
 /// the C path and object emission lower the same bodies rather than each producing its own.
@@ -81,8 +81,8 @@ void registerEmitDSDLRuntimePass();
 /// @brief Registers the LLVM lowering with the pass registry.
 void registerDSDLToLLVMPasses();
 
-/// @brief Adds optional lowered-serdes optimization passes to a pipeline.
-/// @param[in,out] pm Pass manager receiving the optimization pipeline.
+/// @brief Adds optional lowered-serdes optimisation passes to a pipeline.
+/// @param[in,out] pm Pass manager receiving the optimisation pipeline.
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm);
 
 /// @brief Registers the plan-body builder with the pass registry.

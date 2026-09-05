@@ -10,7 +10,7 @@
 /// @file
 /// Implements Go backend code emission from lowered DSDL modules.
 ///
-/// This file materializes Go type declarations and serdes helpers from backend-neutral lowering plans.
+/// This file materialises Go type declarations and serdes helpers from backend-neutral lowering plans.
 ///
 /// The line-building concatenations here carry NOLINT for
 /// performance-inefficient-string-concatenation. Each one spells out a line of generated
@@ -84,7 +84,7 @@ namespace
 /// @brief Builds the collision-free exported field-name allocation for one section.
 ///
 /// Two distinct DSDL field names (e.g. `fooBar` and `foo_bar`) both export to `FooBar`; without this
-/// the struct would declare the same field twice (a compile error) and the (de)serializer would read
+/// the struct would declare the same field twice (a compile error) and the (de)serialiser would read
 /// or write the wrong field. Padding fields carry no exported name and are excluded.
 NamingScope makeExportedFieldIdents(const SemanticSection& section)
 {
@@ -329,8 +329,8 @@ void emitAttachedDocGo(SourceWriter& w, const AttachedDoc& doc)
 
 /// @brief Go spelling of the helper body shapes (see HelperBodyPlan.h).
 ///
-/// Guards rather than conditional expressions throughout, which is how the rest of
-/// the generated Go reads. The float identity is the one single-line form: a
+/// Guards rather than conditional expressions throughout, as the rest of the
+/// generated Go reads. The float identity is the one single-line form: a
 /// `func(value float32) float32 { return value }` on its own line, matching what a
 /// reader would write.
 class GoHelperBodySpelling final : public HelperBodySpelling
@@ -1790,7 +1790,7 @@ llvm::Error emit(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    // Go is the one backend that cannot express unversioned names where it matters. A DSDL namespace
+    // Go alone cannot express unversioned names where it matters. A DSDL namespace
     // becomes one package and every version of a type lands in it, so two versions give one struct
     // name and one set of metadata constants -- the package does not compile, and no include-time
     // guard can help because Go compiles the package as a whole. Refuse rather than write a tree

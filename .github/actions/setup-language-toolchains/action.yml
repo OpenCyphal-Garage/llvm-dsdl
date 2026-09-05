@@ -82,7 +82,7 @@ runs:
       shell: bash
       # Diagnostics, not provisioning: when a lane behaves differently from a
       # local run, the first question is always which toolchain versions the
-      # image actually shipped.
+      # image shipped.
       run: |
         {
           echo "## Toolchains"

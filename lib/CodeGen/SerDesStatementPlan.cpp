@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Builds ordered serialization and deserialization statement plans.
+/// Builds ordered serialisation and deserialisation statement plans.
 ///
 /// The planner establishes a deterministic field traversal order for both linear and union sections.
 ///

@@ -106,7 +106,7 @@ struct RankingBreakdown final
     /// @brief Bias by candidate kind.
     double kindBoost{0.0};
 
-    /// @brief Small penalty for very long candidate names.
+    /// @brief Small penalty for long candidate names.
     double lengthPenalty{0.0};
 
     /// @brief Final aggregate score.

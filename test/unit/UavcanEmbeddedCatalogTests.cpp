@@ -239,7 +239,7 @@ bool runUavcanEmbeddedCatalogTests()
     }
     // Heartbeat has exactly one version in the catalogue, so this selector expands to the same single
     // key the versioned one did. It still swept to get there, and must not claim otherwise -- a
-    // result-size test would get this wrong, which is why it is asserted on the one-version type.
+    // result-size test would get this wrong, so it is asserted on the one-version type.
     if (byTypeName.namesExactVersion)
     {
         std::cerr << "a type selector sweeps versions even when only one exists\n";

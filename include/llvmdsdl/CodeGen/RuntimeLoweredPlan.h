@@ -11,7 +11,7 @@
 /// Backend-neutral runtime lowering plans derived from shared lowered metadata.
 ///
 /// These declarations provide a language-agnostic runtime field/body planning
-/// surface used by scripted backends (currently TypeScript and Python).
+/// surface used by the scripted backends.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_RUNTIME_LOWERED_PLAN_H
@@ -141,7 +141,7 @@ struct RuntimeSectionPlan final
     /// @brief Ordered runtime field steps.
     std::vector<RuntimeFieldPlan> fields;
 
-    /// @brief Maximum serialized bit length used for allocation.
+    /// @brief Maximum serialised bit length used for allocation.
     std::int64_t maxBits{0};
 };
 

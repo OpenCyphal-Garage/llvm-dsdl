@@ -37,11 +37,10 @@ namespace llvmdsdl
 
 /// @brief Whether generated type names carry the definition's version.
 ///
-/// This is a property of the *consuming* code, not of the corpus, which is why it is a choice and
-/// not a rule. Code that speaks one version of a type reads better with `p::ns::Bar`; code that
-/// deliberately handles two versions side by side needs `Bar_1_0` and `Bar_2_0` to keep them apart
-/// in its own source. Under either, the name follows from the definition alone -- neither depends on
-/// what else happened to be in the invocation.
+/// This is a property of the *consuming* code, not of the corpus. Code that speaks one version of a type reads better
+/// with `p::ns::Bar`; code that deliberately handles two versions side by side needs `Bar_1_0` and `Bar_2_0` to keep
+/// them apart in its own source. Under either, the name follows from the definition alone -- neither depends on what
+/// else happened to be in the invocation.
 enum class TypeNameVersioning : std::uint8_t
 {
     /// @brief The version is not part of the type name.
@@ -148,12 +147,10 @@ struct DefinitionNamePolicy final
 ///
 /// A service emits a type per section, named after the service with a suffix. C separates with `__`
 /// because it has no namespaces and the doubled separator is what keeps the section apart from a
-/// sibling type whose DSDL name really does end in `_Request`; every other language separates with a
+/// sibling type whose DSDL name does end in `_Request`; every other language separates with a
 /// single underscore.
 ///
 /// This exists so the check that rejects such a collision computes the same name the emitter writes.
-/// It was nine independent splices, and the collision they let through is D5 in
-/// `STROPPING_DEFECTS.md`.
 /// @param[in] language Naming language.
 /// @param[in] sectionName Section name: `request`, `response`, or empty for a message.
 /// @return The suffix, or an empty string for a message.

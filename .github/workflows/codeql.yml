@@ -59,7 +59,7 @@ jobs:
         if: matrix.build
         uses: ./.github/actions/restore-llvm-toolchain
 
-      - name: Initialize CodeQL
+      - name: Initialise CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}

@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-//! Runtime forward/backward compatibility test for the generated Rust serializers. See
+//! Runtime forward/backward compatibility test for the generated Rust serialisers. See
 //! ForwardCompatDriver.c for the full rationale: round-trip tests only ever decode a buffer with the
 //! same type version that wrote it, so the delimited version-skew skip is never exercised. This decodes
 //! across two versions of a delimited composite (`wire.nar.Inner` has one field; `wire.wid.Inner`

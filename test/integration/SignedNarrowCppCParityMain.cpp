@@ -10,7 +10,7 @@
 /// @file
 /// Differential parity harness for signed-narrow C++-vs-C bindings.
 ///
-/// The test checks randomized deserialize/serialize parity for saturating and
+/// The test checks randomised deserialise/serialize parity for saturating and
 /// truncating 3-bit integer fixtures generated for C and C++.
 ///
 //===----------------------------------------------------------------------===//
@@ -280,7 +280,7 @@ int runDirectedChecks()
     }
 
     {
-        // Sign extension in deserialize path: 0b111 -> -1, 0b100 -> -4.
+        // Sign extension in deserialise path: 0b111 -> -1, 0b100 -> -4.
         for (const auto sample : {std::uint8_t{0x07U}, std::uint8_t{0x04U}})
         {
             vendor__Int3Sat@CV1_0@   cObj{};
@@ -317,7 +317,7 @@ int runDirectedChecks()
     }
 
     {
-        // Truncated deserialize sign extension: 0b101 -> -3, 0b011 -> +3.
+        // Truncated deserialise sign extension: 0b101 -> -3, 0b011 -> +3.
         for (const auto sample : {std::uint8_t{0x05U}, std::uint8_t{0x03U}})
         {
             vendor__Int3Trunc@CV1_0@ cObj{};

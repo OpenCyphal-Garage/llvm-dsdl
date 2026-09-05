@@ -9,7 +9,7 @@ which this project does not author — and diffs each answer:
   - ``min`` / ``max`` / ``fixed`` on every case (including the huge closed-form cases where
     our RunSet answers arithmetically and pydsdl answers lazily);
   - residue sets ``mod 3 / 5 / 8`` on every case (small by construction);
-  - the concrete value set whenever the C++ side materialized it (bounded, never truncated);
+  - the concrete value set whenever the C++ side materialised it (bounded, never truncated);
     plus exact cardinality agreement in that regime.
 
 Agreement corroborates that our denotational semantics matches the ecosystem's reference

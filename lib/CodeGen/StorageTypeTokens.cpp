@@ -10,7 +10,7 @@
 /// @file
 /// Implements shared scalar storage token rendering for native backends.
 ///
-/// The token renderer maps normalized scalar storage widths to backend-local
+/// The token renderer maps normalised scalar storage widths to backend-local
 /// type token spellings.
 ///
 //===----------------------------------------------------------------------===//

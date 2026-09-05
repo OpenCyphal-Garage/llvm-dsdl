@@ -51,7 +51,7 @@ public:
     /// @param[out] error Parsing/framing error text when read fails.
     /// @param[out] recoverable When non-null, set to true iff the failure is recoverable —
     ///            i.e. a well-framed message whose payload was fully consumed but is not
-    ///            valid JSON. The stream is still synchronized at the next frame, so the
+    ///            valid JSON. The stream is still synchronised at the next frame, so the
     ///            caller should reply with a JSON-RPC parse error and keep serving rather
     ///            than terminate. All other failures (EOF, bad/oversized framing, truncated
     ///            payload) leave the stream ended or desynchronized and are not recoverable.

@@ -87,7 +87,7 @@ namespace
 //
 // LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate additionally swaps each VALIDATE_TAG with the
 // MASK_TAG that follows it before writing — the verifier's end-to-end mutation negative
-// control (a genuine mask-before-validate reorder flowing through the real pipeline). It
+// control (a mask-before-validate reorder flowing through the real pipeline). It
 // affects only this diagnostic trace file, never the generated code.
 void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink)
 {
@@ -341,7 +341,7 @@ void printHelp()
                  << "        never               - never generate support code.\n"
                  << "        only                - only generate support code.\n"
                  << "  --omit-dependencies\n"
-                 << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
+                 << "      Emit only explicit targets; dependencies are still resolved and analysed.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
                  << "      as, for every target language this invocation names.\n"
@@ -357,7 +357,7 @@ void printHelp()
                  << "      File mode for generated files using auto-base parsing (default: 0o444).\n"
                  << "  --jobs, -j <N>\n"
                  << "      Worker parallelism hint (N>=1). -j1 ensures no parallelism, however, the inverse\n"
-                 << "      does not hold: not all backends utilize parallel processing.\n"
+                 << "      does not hold: not all backends utilise parallel processing.\n"
                  << "  -MD\n"
                  << "      Emit make-style .d dependency files alongside generated outputs.\n"
                  << "  --list-inputs\n"
@@ -372,7 +372,7 @@ void printHelp()
                  << "  --no-embedded-uavcan\n"
                  << "      Disable automatic embedded uavcan dependency catalogue for mlir/codegen targets.\n"
                  << "  --optimize-lowered-serdes\n"
-                 << "      Enable optional MLIR optimization for lowered serialization plans.\n"
+                 << "      Enable optional MLIR optimisation for lowered serialisation plans.\n"
                  << "  --encode-reserved-identifiers\n"
                  << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
                  << "      namespace, encoding the offending characters instead of rejecting the\n"
@@ -403,7 +403,8 @@ void printHelp()
                  << "  TS:     --ts-module <name>\n"
                  << "          --ts-runtime-specialization <portable|fast>\n"
                  << "  Python: --py-package <name>\n"
-                 << "          --py-runtime-specialization <portable|fast>\n";
+                 << "          --py-runtime-specialization <portable|fast>\n"
+                 << "  Object: --target-triple <triple> (default: the host's own)\n";
 }
 
 void printDiagnostics(const llvmdsdl::DiagnosticEngine& diagnostics)
@@ -1243,7 +1244,7 @@ std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::Semanti
 
 // Path recorded as the depfile prerequisite for outputs generated from the embedded uavcan catalogue.
 // The catalogue is compiled into this binary and has no source file to name, so the binary is the
-// honest stand-in: upgrading dsdlc genuinely changes those outputs' inputs.
+// honest stand-in: upgrading dsdlc changes those outputs' inputs.
 //
 // argv[0] alone is not a reliable path (PATH lookup, symlinks, some platforms), so this defers to
 // getMainExecutable, which additionally needs the address of a symbol in this image to locate it.
@@ -1615,8 +1616,8 @@ int runDsdlc(int argc, char** argv)
     const auto mergedSemantic =
         embeddedCatalog ? mergeSemanticModulesPreferPrimary(localSemantic, embeddedCatalog->semantic) : localSemantic;
 
-    // '+' targets are explicit in exactly the sense filesystem targets are; they just cannot be
-    // marked by path, since embedded definitions have none. Note that a local definition sharing a
+    // '+' targets are explicit in exactly the sense filesystem targets are; they cannot be
+    // marked by path, since embedded definitions have none. A local definition sharing a
     // key shadows the embedded one here, because `mergedSemantic` prefers local.
     auto explicitKeys = collectExplicitKeys(localSemantic);
     // determinism-ok: the destination is itself a set, so the order these
@@ -1624,7 +1625,7 @@ int runDsdlc(int argc, char** argv)
     explicitKeys.insert(builtinExplicitKeys.begin(), builtinExplicitKeys.end());
     if (explicitKeys.empty() && !supportIsSelfSufficient)
     {
-        diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
+        diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analysed semantic graph");
         printDiagnostics(diagnostics);
         return 1;
     }
@@ -1648,8 +1649,7 @@ int runDsdlc(int argc, char** argv)
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
 
     // Reported only now, because the closure has the last word: a version dropped from the seed
-    // comes back if something that survived still references it, and saying it was not generated
-    // when it was would be worse than saying nothing.
+    // comes back if something that survived still references it.
     if (!narrowedAwayKeys.empty())
     {
         std::vector<std::string> absent;
@@ -1665,7 +1665,7 @@ int runDsdlc(int argc, char** argv)
             diagnostics.note({"<cli>", 1, 1},
                              "generating the newest version of each type; " + std::to_string(absent.size()) +
                                  " older version(s) were not generated. Pass --all-type-versions for all of "
-                                 "them, or name one to keep just it");
+                                 "them, or name one to keep only it");
             for (const auto& key : absent)
             {
                 logVerbose(1, "not generating older version " + key);
@@ -1673,8 +1673,8 @@ int runDsdlc(int argc, char** argv)
         }
         if (!restored.empty())
         {
-            // Worth its own note: this is why the output can still hold two versions of a type, and
-            // therefore why a backend that cannot express that may still refuse.
+            // The output can still hold two versions of a type, so a backend that cannot express
+            // that may still refuse.
             std::string list;
             for (const auto& key : restored)
             {
@@ -1697,7 +1697,7 @@ int runDsdlc(int argc, char** argv)
             {
                 emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
             }
-            // After the outputs are final and only when this run actually wrote them. The listing
+            // After the outputs are final and only when this run wrote them. The listing
             // modes imply --dry-run, and pruning on a dry run would delete files while claiming to
             // have touched nothing.
             bool pruneFailed = false;
@@ -1988,8 +1988,8 @@ int runDsdlc(int argc, char** argv)
         const auto plannerBuildStart = std::chrono::steady_clock::now();
         // Built from the closure over the *merged* module, not the local one: embedded definitions
         // must be present as nodes for the planner to tell "resolved from the compiled-in catalogue"
-        // apart from "unknown type". Both used to produce an empty dependency list, so generated
-        // uavcan sources were pinned to a rule with no prerequisites and never rebuilt.
+        // apart from "unknown type". Conflating them yields an empty dependency list, which pins
+        // generated uavcan sources to a rule with no prerequisites that never rebuilds.
         depfilePlanner =
             std::make_unique<llvmdsdl::DepfilePlanner>(closureSemantic, resolveToolchainStampPath(argv[0]));
         if (options.verbose >= 2)

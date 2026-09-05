@@ -10,10 +10,8 @@
 /// @file
 /// Tests for the helper body shape decision.
 ///
-/// What is worth pinning here is which shape a descriptor calls for, because that
-/// decision is shared by every backend: a mistake in it is a mistake in five
-/// languages at once. How a shape is spelled is per backend and is covered by the
-/// generated-corpus comparisons instead.
+/// These pin which shape a descriptor calls for, a decision shared by every backend. How a
+/// shape is spelled is per backend and is covered by the generated-corpus comparisons.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -72,7 +70,7 @@ using llvmdsdl::HelperDirection;
 using llvmdsdl::HelperSignature;
 using llvmdsdl::ScalarHelperKind;
 
-/// @brief Scalar shapes, which are the only ones that vary by direction and cast mode.
+/// @brief Scalar shapes; only these vary by direction and cast mode.
 bool scalarShapes()
 {
     bool ok = true;

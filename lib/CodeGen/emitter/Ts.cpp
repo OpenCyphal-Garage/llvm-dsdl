@@ -94,8 +94,8 @@ void emitAttachedDocTs(SourceWriter& w, const AttachedDoc& doc)
 
 /// @brief TypeScript spelling of the helper body shapes (see HelperBodyPlan.h).
 ///
-/// Guards answer with a boolean rather than a status code, which is what the
-/// generated call sites test. Integer helpers marshal through `bigint` because a
+/// Guards answer with a boolean rather than a status code, as the generated call
+/// sites test. Integer helpers marshal through `bigint` because a
 /// `number` cannot hold a 64-bit wire value, and hand back whichever of the two the
 /// caller passed in.
 class TsHelperBodySpelling final : public HelperBodySpelling
@@ -280,13 +280,13 @@ public:
     /// @brief Local name for a *referenced* type in the file currently being emitted.
     ///
     /// @details
-    /// Usually the plain versioned name, which is what the import brings in. It differs when one
+    /// Usually the plain versioned name the import brings in. It differs when one
     /// file references two types that share a short name from different namespaces --
     /// `uavcan.si.unit.angular_velocity.Vector3.1.0` and `uavcan.si.unit.velocity.Vector3.1.0` are
     /// both `Vector3_1_0`, and importing both under that name is a duplicate-identifier error that
     /// stops `tsc` outright. Such types are imported under a namespace-qualified alias instead, and
-    /// this is where every reference site picks that alias up: the type annotations, the serialize
-    /// and deserialize call names, and the import list all resolve through here, so they cannot
+    /// this is where every reference site picks that alias up: the type annotations, the serialise
+    /// and deserialise call names, and the import list all resolve through here, so they cannot
     /// disagree.
     std::string typeName(const SemanticTypeRef& ref) const
     {
@@ -448,7 +448,7 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
 /// @brief Collision-free property names for one section's fields.
 ///
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
-/// object type would declare the same property twice and the (de)serializer would read/write the
+/// object type would declare the same property twice and the (de)serialiser would read/write the
 /// wrong one. Built from `section.fields` (declaration order) so every emission site agrees.
 NamingScope makeTsFieldIdents(const SemanticSection& section)
 {
@@ -871,7 +871,7 @@ public:
         w_.close("}");
     }
 
-    /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
+    /// @brief Selects the bad-tag diagnostic text (serialise vs decoded spelling).
     void setBadTagDiagnosticPrefix(std::string prefix)
     {
         badTagDiagnosticPrefix_ = std::move(prefix);
@@ -889,7 +889,7 @@ private:
 
 /// @brief TypeScript spelling of the shared recursive field-body steps (see EmitStep.h).
 ///
-/// One spelling covers all four contexts (struct/union x serialize/deserialize):
+/// One spelling covers all four contexts (struct/union x serialise/deserialize):
 /// the union context differs only in declare-vs-assign store style, diagnostic
 /// flag, temp suffixes, and root-expression casts (applied by the caller). Leaf
 /// composite/padding idioms delegate to the existing atomic renderers; all
@@ -1157,7 +1157,7 @@ public:
         w_.open("for (let i = 0; i < " + bound + "; ++i) {");
         inElement_ = true;
         // The union option array came from an `unknown`-typed member, so composite
-        // elements carry an explicit cast for the nested serializer call.
+        // elements carry an explicit cast for the nested serialiser call.
         if (unionContext_ && field.kind == RuntimeFieldKind::Composite)
         {
             return fieldArr + "[i] as " + compositeTypeName(field, ctx_);
@@ -1240,7 +1240,7 @@ private:
     bool                              inElement_{false};
 };
 
-/// @brief Root serialize expression for a union option: optionValue with the
+/// @brief Root serialise expression for a union option: optionValue with the
 ///        kind-appropriate cast (the option member is `unknown`-typed).
 std::string tsUnionOptionSerializeExpr(const ScriptedFieldOperationPlan& operation, const EmitterContext& ctx)
 {
@@ -1266,7 +1266,7 @@ std::string tsUnionOptionSerializeExpr(const ScriptedFieldOperationPlan& operati
     return "optionValue";
 }
 
-/// @brief Renders one TS union serialize case body (option guard + aligned field ops).
+/// @brief Renders one TS union serialise case body (option guard + aligned field ops).
 void emitTsUnionSerializeCaseBody(SourceWriter&                     w,
                                   const EmitterContext&             ctx,
                                   const ScriptedFieldOperationPlan& scriptedField)
@@ -1288,7 +1288,7 @@ void emitTsUnionSerializeCaseBody(SourceWriter&                     w,
                      spelling);
 }
 
-/// @brief Renders one TS union deserialize case body (aligned field ops + value construction).
+/// @brief Renders one TS union deserialise case body (aligned field ops + value construction).
 void emitTsUnionDeserializeCaseBody(SourceWriter&                     w,
                                     const EmitterContext&             ctx,
                                     const ScriptedFieldOperationPlan& scriptedField,
@@ -1545,7 +1545,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // duplicate identifier. So the referenced set is collected first, short-name clashes are found,
     // and the clashing types are given namespace-qualified local names. Installing the table on the
     // context before any rendering is what keeps the import list, the type annotations, and the
-    // serialize/deserialize call names in agreement: they all resolve through ctx.typeName().
+    // serialise/deserialize call names in agreement: they all resolve through ctx.typeName().
     {
         std::map<std::string, std::vector<const DiscoveredDefinition*>> byShortName;
         const auto collectReferenced = [&](const SemanticSection& section) {
@@ -1580,7 +1580,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             }
             for (const auto* info : definitions)
             {
-                // Namespace as a suffix rather than a prefix. The serialize and deserialize call
+                // Namespace as a suffix rather than a prefix. The serialise and deserialise call
                 // names are built by sticking a verb on the front of this, and a leading lowercase
                 // namespace would run the two together -- `deserializeuavcan_si_unit_...`. Keeping
                 // the type name where it has always been leaves those readable and leaves the

@@ -39,7 +39,7 @@ export function serializeUnionTag(value: UnionTag): Uint8Array {
   };
 
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(out.length * 8)) {
-    throw new Error("serialization buffer too small");
+    throw new Error("serialisation buffer too small");
   }
   let tag = Math.trunc((value as { _tag: number })._tag);
   if (!mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)) {

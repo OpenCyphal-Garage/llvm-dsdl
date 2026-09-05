@@ -114,7 +114,7 @@ static PyObject* py_set_bit(PyObject* self, PyObject* args)
     const int8_t rc = dsdl_runtime_set_bit(dst, (size_t) dstSize, (size_t) offBits, value != 0);
     if (rc < 0)
     {
-        PyErr_SetString(PyExc_ValueError, "set_bit failed: serialization buffer too small");
+        PyErr_SetString(PyExc_ValueError, "set_bit failed: serialisation buffer too small");
         return NULL;
     }
     Py_RETURN_NONE;
@@ -307,7 +307,7 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
     const int8_t rc = dsdl_runtime_set_uxx(dst, (size_t) dstSize, (size_t) offBits, out, lenBits);
     if (rc < 0)
     {
-        PyErr_SetString(PyExc_ValueError, "write_unsigned failed: serialization buffer too small");
+        PyErr_SetString(PyExc_ValueError, "write_unsigned failed: serialisation buffer too small");
         return NULL;
     }
 
@@ -386,7 +386,7 @@ static PyObject* py_write_signed(PyObject* self, PyObject* args)
     const int8_t rc = dsdl_runtime_set_ixx(dst, (size_t) dstSize, (size_t) offBits, outValue, lenBits);
     if (rc < 0)
     {
-        PyErr_SetString(PyExc_ValueError, "write_signed failed: serialization buffer too small");
+        PyErr_SetString(PyExc_ValueError, "write_signed failed: serialisation buffer too small");
         return NULL;
     }
 
@@ -493,7 +493,7 @@ static PyObject* py_write_float(PyObject* self, PyObject* args)
 
     if (rc < 0)
     {
-        PyErr_SetString(PyExc_ValueError, "write_float failed: serialization buffer too small");
+        PyErr_SetString(PyExc_ValueError, "write_float failed: serialisation buffer too small");
         return NULL;
     }
     Py_RETURN_NONE;

@@ -41,11 +41,11 @@ struct Value final
 
     /// @brief Value payload variant.
     ///
-    /// The `BitLengthSet` alternative holds a symbolic set of non-negative integers (the analyzer
+    /// The `BitLengthSet` alternative holds a symbolic set of non-negative integers (the analyser
     /// binds `_offset_` this way). To the DSDL author it is indistinguishable from a `Set`; the
     /// evaluator answers `.min`/`.max`/`% k` and similar queries from the exact symbolic form at
-    /// any cardinality, and an expression that genuinely requires the concrete elements either
-    /// materializes them exactly or fails with a diagnostic — it is never evaluated against a
+    /// any cardinality, and an expression that requires the concrete elements either
+    /// materialises them exactly or fails with a diagnostic — it is never evaluated against a
     /// truncated set.
     std::variant<bool, Rational, std::string, Set, TypeExprAST, BitLengthSet> data;
 

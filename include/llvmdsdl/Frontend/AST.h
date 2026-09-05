@@ -84,13 +84,13 @@ enum class ArrayKind
 struct TypeExprAST;
 struct ExprAST;
 
-/// @brief One normalized source comment line attached to an AST node.
+/// @brief One normalised source comment line attached to an AST node.
 struct AttachedDocLine
 {
     /// @brief Source location of the original comment token.
     SourceLocation location;
 
-    /// @brief Normalized comment text without leading `#`.
+    /// @brief Normalised comment text without leading `#`.
     std::string text;
 };
 
@@ -105,7 +105,7 @@ struct AttachedDoc
     [[nodiscard]] bool empty() const;
 
     /// @brief Returns attached comment text joined by newlines.
-    /// @return Joined normalized comment text.
+    /// @return Joined normalised comment text.
     [[nodiscard]] std::string str() const;
 };
 
@@ -161,7 +161,7 @@ struct TypeExprAST
     /// @return True for @ref VoidTypeExprAST scalar variant.
     [[nodiscard]] bool isVoid() const;
 
-    /// @brief Returns a normalized textual representation.
+    /// @brief Returns a normalised textual representation.
     /// @return Human-readable type expression text.
     [[nodiscard]] std::string str() const;
 };
@@ -292,7 +292,7 @@ struct ExprAST
     /// @brief Expression payload variant.
     std::variant<bool, Rational, std::string, Identifier, Unary, Binary, SetLiteral, TypeLiteral> value;
 
-    /// @brief Returns a normalized textual representation.
+    /// @brief Returns a normalised textual representation.
     /// @return Human-readable expression text.
     [[nodiscard]] std::string str() const;
 };
@@ -449,8 +449,8 @@ struct DiscoveredDefinition
     /// @brief True if the CLI named this definition's file one at a time, rather than sweeping it in.
     ///
     /// A folder target makes @ref isExplicitTarget true for everything beneath it, so that flag
-    /// cannot distinguish `dsdlc ns/` from `dsdlc ns/Foo.1.0.dsdl`. This one can, which is what lets
-    /// a default that generates only the newest version of each type leave alone a version the user
+    /// cannot distinguish `dsdlc ns/` from `dsdlc ns/Foo.1.0.dsdl`. This one can, so a default that
+    /// generates only the newest version of each type leaves alone a version the user
     /// asked for by name.
     bool isNamedTarget{false};
 

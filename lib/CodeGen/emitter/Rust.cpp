@@ -894,7 +894,7 @@ private:
     ///
     /// Leaf statement idioms only; all cross-group and recursive ordering comes
     /// from renderFieldSteps. Constructed per field render with the direction and
-    /// (for deserialize) the pool-class expression.
+    /// (for deserialise) the pool-class expression.
     class FieldSpelling final : public FieldStepSpelling
     {
     public:

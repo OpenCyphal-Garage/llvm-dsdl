@@ -41,10 +41,10 @@ struct LoweredFieldFacts final
     /// @brief Optional variable-array prefix width override.
     std::optional<std::uint32_t> arrayLengthPrefixBits;
 
-    /// @brief Serialize array-length prefix helper symbol.
+    /// @brief Serialise array-length prefix helper symbol.
     std::string serArrayLengthPrefixHelper;
 
-    /// @brief Deserialize array-length prefix helper symbol.
+    /// @brief Deserialise array-length prefix helper symbol.
     std::string deserArrayLengthPrefixHelper;
 
     /// @brief Array-length validation helper symbol.
@@ -53,22 +53,22 @@ struct LoweredFieldFacts final
     /// @brief Delimiter validation helper symbol.
     std::string delimiterValidateHelper;
 
-    /// @brief Serialize unsigned helper symbol.
+    /// @brief Serialise unsigned helper symbol.
     std::string serUnsignedHelper;
 
-    /// @brief Deserialize unsigned helper symbol.
+    /// @brief Deserialise unsigned helper symbol.
     std::string deserUnsignedHelper;
 
-    /// @brief Serialize signed helper symbol.
+    /// @brief Serialise signed helper symbol.
     std::string serSignedHelper;
 
-    /// @brief Deserialize signed helper symbol.
+    /// @brief Deserialise signed helper symbol.
     std::string deserSignedHelper;
 
-    /// @brief Serialize float helper symbol.
+    /// @brief Serialise float helper symbol.
     std::string serFloatHelper;
 
-    /// @brief Deserialize float helper symbol.
+    /// @brief Deserialise float helper symbol.
     std::string deserFloatHelper;
 };
 
@@ -84,10 +84,10 @@ struct LoweredSectionFacts final
     /// @brief Union-tag validation helper symbol.
     std::string unionTagValidateHelper;
 
-    /// @brief Serialize union-tag helper symbol.
+    /// @brief Serialise union-tag helper symbol.
     std::string serUnionTagHelper;
 
-    /// @brief Deserialize union-tag helper symbol.
+    /// @brief Deserialise union-tag helper symbol.
     std::string deserUnionTagHelper;
 
     /// @brief True when conservative proof allows zero-overhead alias/view path.
@@ -115,11 +115,11 @@ std::string loweredTypeKey(const std::string& name, std::uint32_t major, std::ui
 
 /// @brief Collects lowered metadata from MLIR for all semantic definitions.
 /// @param[in] semantic Semantic module used for validation/indexing.
-/// @param[in] module MLIR module containing lowered serialization plans.
+/// @param[in] module MLIR module containing lowered serialisation plans.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @param[in] backendLabel Backend label for diagnostics.
 /// @param[out] outFacts Output lowered-facts map.
-/// @param[in] optimizeLoweredSerDes Enables optional optimization pipeline.
+/// @param[in] optimizeLoweredSerDes Enables optional optimisation pipeline.
 /// @return True on success, false on extraction/validation failure.
 bool collectLoweredFactsFromMlir(const SemanticModule& semantic,
                                  mlir::ModuleOp        module,

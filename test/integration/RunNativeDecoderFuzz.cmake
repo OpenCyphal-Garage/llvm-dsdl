@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-# Coverage-guided libFuzzer lane over the generated native (C) deserializers on
+# Coverage-guided libFuzzer lane over the generated native (C) deserialisers on
 # the real UAVCAN corpus, compiled under ASan + UBSan. See NativeDecoderFuzz.c
 # for the harness and the rationale. On a toolchain whose Clang lacks compiler-rt
 # libFuzzer (-fsanitize=fuzzer), this degrades — loudly — to an ASan/UBSan

@@ -719,7 +719,7 @@ void publishHeartbeat(NodeApp& app, const UdpardMicrosecond now)
     std::vector<uint8_t> encoded = {};
     if (!serializeMessage(heartbeat, encoded))
     {
-        std::fprintf(stderr, "[%s] heartbeat serialization failed\n", app.options.name.c_str());
+        std::fprintf(stderr, "[%s] heartbeat serialisation failed\n", app.options.name.c_str());
         return;
     }
 

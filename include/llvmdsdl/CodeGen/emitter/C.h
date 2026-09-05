@@ -67,7 +67,7 @@ struct Options final
     /// @brief Emits C89-style top-of-block variable declarations when true.
     bool declareVariablesAtTop{false};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.

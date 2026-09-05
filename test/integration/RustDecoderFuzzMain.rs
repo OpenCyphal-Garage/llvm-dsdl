@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-//! Robustness fuzz over the *generated Rust deserializers* — the Rust analogue of
+//! Robustness fuzz over the *generated Rust deserialisers* — the Rust analogue of
 //! test/integration/NativeDecoderFuzz.c and GoDecoderFuzzTest.go.
 //!
 //! Rust is memory-safe: an out-of-bounds slice access panics (a controlled abort)

@@ -1,7 +1,7 @@
 # High-rate telemetry from a single electronic speed controller (ESC).
 #
 # LEAST SUPPORTED TRANSPORT: Classic CAN (CAN 2.0B). This definition
-# is sealed and hand-packed so that a complete serialized value fits
+# is sealed and hand-packed so that a complete serialised value fits
 # inside the seven payload bytes of one classic-CAN frame, leaving the
 # eighth byte for the Cyphal/CAN tail byte. A multi-frame transfer
 # would cost an extra transfer-CRC and would make the message
@@ -9,7 +9,7 @@
 # at 100 Hz per ESC on a shared bus.
 #
 # WHY SEALED: sealing removes the four-byte delimiter header that a
-# delimited (extensible) type carries, and it lets the serializer emit
+# delimited (extensible) type carries, and it lets the serialiser emit
 # a fixed-size, fully static layout. The price is that this definition
 # can never gain a field: any addition is a breaking change requiring a
 # new major version. See EscStatus.2.0 for the extensible successor and
@@ -34,8 +34,7 @@ int12 dc_current_da
 
 int9 motor_temperature_c
 # Motor winding temperature in whole degrees Celsius, range -256 to
-# +255. Whole degrees are adequate because the thermal time constant of
-# a motor is measured in tens of seconds.
+# +255.
 
 uint4 error_flags
 # Bit mask of latched controller faults. Cleared when the controller is
@@ -47,7 +46,7 @@ uint4 error_flags
 
 void5
 # Explicit padding to a whole number of bytes. Void fields are
-# serialized as zeros and are not surfaced in generated code; they exist
+# serialised as zeros and are not surfaced in generated code; they exist
 # so that the wire layout is byte-aligned by construction rather than by
 # accident.
 

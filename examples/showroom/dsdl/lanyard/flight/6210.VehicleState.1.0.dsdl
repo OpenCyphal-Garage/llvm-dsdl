@@ -28,9 +28,7 @@ lanyard.flight.FlightMode.1.0 mode
 
 uavcan.si.unit.angle.Quaternion.1.0 orientation_ned
 # Vehicle attitude as a unit quaternion in the North-East-Down reference
-# frame. Quaternions are used rather than Euler angles because they do
-# not gimbal-lock at +/-90 degrees of pitch, which a vehicle with any
-# aerobatic envelope will reach.
+# frame.
 
 uavcan.si.unit.angular_velocity.Vector3.1.0 angular_velocity
 # Body-frame roll, pitch, and yaw rates in radians per second.

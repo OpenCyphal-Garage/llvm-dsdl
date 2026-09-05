@@ -1,4 +1,4 @@
-# Robustness fuzz lane over the generated Rust deserializers.
+# Robustness fuzz lane over the generated Rust deserialisers.
 #
 # Generates the Rust crate for the UAVCAN corpus and builds a small binary
 # (test/integration/RustDecoderFuzzMain.rs) that feeds a deterministic stream of

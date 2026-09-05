@@ -15,12 +15,13 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 - [`dsdlc`](commands/dsdlc.md) — the compiler and codegen driver
 - [`dsdl-opt`](commands/dsdl-opt.md) — dialect and pass-pipeline work
 - [`dsdld`](commands/dsdld.md) — the language server
+- [`dsdlc` Options](commands/dsdlc-options.md) — every switch `dsdlc` accepts, from its own `--help`
 
 ## Code generation
 
 - [Backends](codegen/backends.md) — the target languages and what each produces
 - [Object Backend](codegen/object.md) — the `obj` lane: C headers beside objects assembled inside `dsdlc`
-- [Emit Order](codegen/emit-order.md) — the canonical serialize/deserialize step order every backend renders
+- [Emit Order](codegen/emit-order.md) — the canonical serialise/deserialize step order every backend renders
 
 ## Language server
 

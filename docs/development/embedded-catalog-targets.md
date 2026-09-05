@@ -25,7 +25,7 @@ files generated: 0
 
 Two separate reasons produce that empty result. There are no positional targets, so
 `resolveTargets` returns an empty `explicitTargetFiles` and `main.cpp:1204` short-circuits before
-the catalogue is even loaded. And even with a target, only referenced types materialize:
+the catalogue is even loaded. And even with a target, only referenced types materialise:
 
 ```console
 $ dsdlc --target-language c --list-outputs test/lit/fixtures_embedded_uavcan/demo
@@ -49,7 +49,7 @@ dsdlc --target-language c +uavcan.node --outdir out/c
 dsdlc --target-language c +uavcan.node.Heartbeat.1.0 --outdir out/c
 ```
 
-### Why `+`
+### Sigil selection
 
 Sigil candidates were tested for pass-through in `zsh` and `bash`:
 

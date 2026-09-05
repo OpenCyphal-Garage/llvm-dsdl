@@ -55,12 +55,12 @@ message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 # LLVM major-version lock. The C backend is routed through MLIR/EmitC, whose printed output can vary
 # across MLIR majors (which are released with LLVM), so the linked major is a semantic input to the
 # byte-reproducible generated code -- see docs/reference/guarantees/supply-chain.md. Pinning one major and testing across
-# many are competing strategies; this project takes the pin. It was previously enforced only in CI;
-# asserting it at configure time makes the lock authoritative everywhere, so an accidental build against
-# another major fails loudly instead of silently producing divergent EmitC.
+# many are competing strategies; this project takes the pin. Asserting it at configure time makes the
+# lock authoritative everywhere, so an accidental build against another major fails loudly instead of
+# silently producing divergent EmitC.
 #
-# Currently LLVM 22 (23 is not yet stable). Bumping is a deliberate one-line change here plus updating
-# the CI pins together (both determinism hosts must move at once). A maintainer evaluating another major
+# Bumping the major is a one-line change here plus updating the CI pins together (both determinism
+# hosts must move at once). A maintainer evaluating another major
 # can opt out with -DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON; MLIR ships with LLVM at the same version, so
 # asserting the LLVM major covers MLIR too.
 set(LLVMDSDL_REQUIRED_LLVM_MAJOR "22" CACHE STRING
@@ -193,8 +193,8 @@ option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
 # Fully static tools.
 #
 # Intended for the musl toolchain, where it produces static-pie executables with
-# no loader dependency at all -- which is what makes the .deb carry no Depends
-# rather than the two it carries when linked against glibc.
+# no loader dependency at all; the .deb then carries no Depends rather than the
+# two it carries when linked against glibc.
 #
 # Deliberately not the default: against glibc this links but is a trap, because
 # NSS and dlopen need the shared libc at runtime. dsdlc and dsdl-opt use neither,
@@ -375,7 +375,7 @@ if(LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE)
     "Native-decoder harnesses sanitized with: ${LLVMDSDL_NATIVE_HARNESS_SANITIZE_EFFECTIVE}")
 endif()
 
-# Coverage-guided libFuzzer lane over the generated native (C/C++) deserializers
+# Coverage-guided libFuzzer lane over the generated native (C/C++) deserialisers
 # on the real UAVCAN corpus. Requires a Clang that ships compiler-rt's
 # -fsanitize=fuzzer; the harness registration probes for it and skips loudly if
 # absent so a toolchain without libFuzzer does not silently drop the lane.
@@ -477,6 +477,7 @@ set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
 # collector consume.
 set(LLVMDSDL_DOCS_GUARANTEES_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/guarantees")
 set(LLVMDSDL_DOCS_DEVELOPMENT_DIR "${LLVMDSDL_SOURCE_DIR}/docs/development")
+set(LLVMDSDL_DOCS_COMMANDS_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/commands")
 
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(convergence-report
@@ -602,16 +603,41 @@ add_subdirectory(examples/cyphal_yakut_register_demo)
 # --------------------------------------------------------------------------------------------------
 # Generated documentation.
 #
-# Three kinds of page under docs/ are produced rather than written: the showroom (the compiler's own
-# output), the guarantee matrices (the report generators' output), and the machine-readable index
-# that agents and documentation crawlers read. `docs-generate` produces all of them, in that order,
-# and is the single target the Docs workflow builds.
+# Four kinds of page under docs/ are produced rather than written: the showroom (the compiler's own
+# output), the guarantee matrices (the report generators' output), the dsdlc options (dsdlc's own
+# --help), and the machine-readable index that agents and documentation crawlers read.
+# `docs-generate` produces all of them, in that order, and is the single target the Docs workflow
+# builds.
 #
 # Ordering is load-bearing for the last one: llms.txt lists every published page, so it has to run
 # after the pages that are generated exist. It also fails if a page under docs/ is in neither the
 # mkdocs nav nor its exclusion list, which is the same coverage rule mkdocs' own `not_in_nav` applies
 # -- enforced here so a missing page is caught by a build that does not need mkdocs installed.
+set(LLVMDSDL_CLI_OPTIONS_SCRIPT "${LLVMDSDL_SOURCE_DIR}/tools/docs/build_cli_options.py")
 set(LLVMDSDL_LLMS_INDEX_SCRIPT "${LLVMDSDL_SOURCE_DIR}/tools/docs/build_llms_index.py")
+
+# The page runs dsdlc, so it depends on the binary rather than on its sources.
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(docs-cli-options
+    COMMAND
+      ${LLVMDSDL_PYTHON3_EXE} "${LLVMDSDL_CLI_OPTIONS_SCRIPT}"
+        --tool "dsdlc=$<TARGET_FILE:dsdlc>"
+        --output "${LLVMDSDL_DOCS_COMMANDS_DIR}/dsdlc-options.md"
+    DEPENDS "${LLVMDSDL_CLI_OPTIONS_SCRIPT}"
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Docs: regenerating the dsdlc options page from --help"
+  )
+  add_dependencies(docs-cli-options dsdlc)
+else()
+  add_custom_target(docs-cli-options
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run docs-cli-options"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "docs-cli-options requires python3"
+  )
+endif()
 
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(docs-llms
@@ -636,7 +662,7 @@ endif()
 
 # showroom-docs joins this chain from examples/showroom/CMakeLists.txt, which is processed after
 # this point -- see the note beside the example subdirectories above.
-add_dependencies(docs-llms release-blocking-report-gates)
+add_dependencies(docs-llms release-blocking-report-gates docs-cli-options)
 
 add_custom_target(docs-generate)
 add_dependencies(docs-generate docs-llms)
@@ -731,7 +757,7 @@ if(LLVMDSDL_VENDOR_LLVM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Debug information in the vendored library is of no use to us: a backtrace
   # through LLVM internals is not something this project can act on, and anyone
   # debugging LLVM itself has the distro's own -dbgsym packages. This project's
-  # own binaries stay unstripped, which is where post-mortems actually land --
+  # own binaries stay unstripped, which is where post-mortems land --
   # see packaging/deb/lintian-overrides/llvm-dsdl.
   #
   # Against a distro libLLVM this saves nothing, because Debian and Ubuntu already
@@ -790,10 +816,9 @@ endif()
 
 if(LLVMDSDL_VENDOR_LLVM_VIA_BUNDLE)
   # macOS gets its self-contained tree from the bundle target, which rewrites
-  # Mach-O install names in place. Installing the bundle rather than the raw
-  # targets is the whole point: the raw binaries reference
-  # /opt/homebrew/opt/llvm and only run where Homebrew LLVM is already present,
-  # which is exactly the trap a downloadable tarball must not contain.
+  # Mach-O install names in place. The bundle is installed rather than the raw
+  # targets: those reference /opt/homebrew/opt/llvm and run only where Homebrew
+  # LLVM is present, and a downloadable tarball must not.
   #
   # The bundle's layout is bin/ + lib/ and its install names are
   # @executable_path/../lib, so it must land at the prefix root unchanged --
@@ -862,8 +887,8 @@ install(
 # install(EXPORT).
 #
 # It ships in the BIN component, not DEV. The dev component is about linking against the compiler's
-# own libraries; this is about running the compiler, which is what someone who installed only the
-# tool wants to do from their build -- and DSDLC_EXECUTABLE resolves to a binary that would not be
+# own libraries; this is about running the compiler from a build that installed only the tool --
+# and DSDLC_EXECUTABLE resolves to a binary that would not be
 # there if the two could be installed apart.
 set(LLVMDSDL_CMAKE_CONFIG_SUBDIR "${CMAKE_INSTALL_LIBDIR}/cmake/llvm-dsdl")
 
@@ -914,7 +939,7 @@ install(
   COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
 
 # CycloneDX SBOM for the release artifacts: records the tool version and source revision, the locked
-# LLVM/MLIR version actually linked in, and the pinned commits of the build/test submodules. Built with
+# LLVM/MLIR version linked in, and the pinned commits of the build/test submodules. Built with
 # the default target so `cmake --install` always ships an SBOM that matches the binaries; the generator
 # is deterministic (no wall-clock timestamp) so it does not perturb the reproducibility lanes.
 # See docs/reference/guarantees/supply-chain.md.
@@ -1067,7 +1092,7 @@ if(LLVMDSDL_PYTHON3_EXE AND LLVMDSDL_GZIP_EXE)
   set(LLVMDSDL_MAN_DIR "${LLVMDSDL_BINARY_DIR}/man")
 
   # dsdlc and dsdld print their own NAME line; dsdl-opt uses LLVM's cl::opt help,
-  # whose OVERVIEW just repeats the program name, so its summary is supplied here.
+  # whose OVERVIEW repeats the program name, so its summary is supplied here.
   set(LLVMDSDL_MAN_DESC_dsdlc "")
   set(LLVMDSDL_MAN_DESC_dsdl_opt "MLIR pass driver for the dsdl dialect")
   set(LLVMDSDL_MAN_DESC_dsdld "")
@@ -1082,7 +1107,7 @@ if(LLVMDSDL_PYTHON3_EXE AND LLVMDSDL_GZIP_EXE)
       set(desc_arg --description "${LLVMDSDL_MAN_DESC_${tool_key}}")
     endif()
     # gzip -f consumes the .1 and leaves only the .1.gz, so the .gz is what this
-    # command actually produces; declaring the .1 would leave the build convinced
+    # command produces; declaring the .1 would leave the build convinced
     # the output was never created and regenerate it on every invocation.
     add_custom_command(
       OUTPUT "${man_page}.gz"
@@ -1134,10 +1159,9 @@ endforeach()
 # Everything `--component bin` will ask for, as one target, so that no caller has to keep a list of
 # it. Anything that installs the bin component must build this first -- and that is more than one
 # caller: `install-bin` below, and the showroom recipe fixture, which installs into a private prefix
-# of its own and so cannot go through `install-bin`. Both used to name targets by hand and both were
-# wrong in the same way, because a lane that builds a subset (the coverage lane builds dsdlc,
-# dsdl-opt and the unit tests, and no dsdld) then fails inside cmake_install.cmake on a path nobody
-# asked for.
+# of its own and so cannot go through `install-bin`. A caller naming targets by hand fails in a lane
+# that builds a subset (the coverage lane builds dsdlc, dsdl-opt and the unit tests, and no dsdld):
+# cmake_install.cmake then fails on a path nobody asked for.
 add_custom_target(llvmdsdl-bin-component
   COMMENT "Building everything the `bin` install component ships")
 add_dependencies(llvmdsdl-bin-component ${LLVMDSDL_INSTALL_BIN_DEPENDS})
@@ -1445,7 +1469,7 @@ add_subdirectory(test)
 #
 # A std::unordered_* iteration order is a property of the standard library, not
 # of the data, so a loop over one can emit different bytes when built against a
-# different stdlib while being perfectly deterministic for any single binary.
+# different stdlib while being deterministic for any single binary.
 # The cross-stdlib corpus gate detects that after the fact, and only for as long
 # as the two CI halves keep using different standard libraries -- which owning
 # one toolchain ends. This excludes the class at the source instead, and costs
@@ -1531,7 +1555,7 @@ if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
   llvmdsdl_collect_executables("${LLVMDSDL_SOURCE_DIR}/tools" LLVMDSDL_COVERAGE_TOOL_EXES)
   llvmdsdl_collect_executables("${LLVMDSDL_SOURCE_DIR}/test" LLVMDSDL_COVERAGE_TEST_EXES)
 
-  # The one name CI builds before the (serialized) report run, so the workflow keeps no
+  # The one name CI builds before the (serialised) report run, so the workflow keeps no
   # target list of its own either.
   add_custom_target(coverage-prerequisites)
   add_dependencies(coverage-prerequisites

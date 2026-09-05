@@ -10,9 +10,9 @@
 /// @file
 /// Final C names for a lowered schema.
 ///
-/// Lowering stamps the unscoped, unversioned spelling of every C name it puts on a schema,
-/// because it does not know a backend's naming options and produces one module every backend
-/// reads. A backend clones the schema and rewrites those names here, through the same scopes
+/// Lowering does not know a backend's naming options and produces one module every backend
+/// reads, so it stamps the unscoped, unversioned spelling of every C name it puts on a schema.
+/// A backend clones the schema and rewrites those names here, through the same scopes
 /// and renderers it names its own output with.
 ///
 /// Both the C backend and an object lowering need this. What they take from it differs: C
@@ -46,8 +46,8 @@ namespace llvmdsdl
 ///
 /// Member names come from the section scope that also names the struct declaration, so two
 /// fields whose C projections collide are told apart the same way in both. Type and symbol
-/// names are re-rendered under @p versioning rather than patched, which is what keeps a header
-/// declaring `Foo_1_0` from meeting an implementation defining `Foo`.
+/// names are re-rendered under @p versioning rather than patched, so a header declaring `Foo_1_0`
+/// never meets an implementation defining `Foo`.
 /// @param[in,out] schema The schema op to stamp, ordinarily a clone the caller owns.
 /// @param[in] def The semantic definition the schema was lowered from.
 /// @param[in] versioning Whether type names carry the version.

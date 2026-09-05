@@ -25,9 +25,9 @@ class DSDL_Op<string mnemonic, list<Trait> traits = []>
 
 def DSDL_SchemaOp
     : DSDL_Op<"schema", [Symbol, IsolatedFromAbove, NoTerminator]> {
-  let summary = "A normalized DSDL schema declaration";
+  let summary = "A normalised DSDL schema declaration";
   let description = [{
-    Contains field/constant metadata and a serialization plan region.
+    Contains field/constant metadata and a serialisation plan region.
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name, StrAttr:$full_name,
@@ -48,7 +48,7 @@ def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
   let description = [{
     Carries a field's schema-level identity (name, resolved type name, optional
     generated C name, docs, and owning service section) for introspection and
-    comment propagation. It is NOT consumed by the serialization path — the wire
+    comment propagation. It is NOT consumed by the serialisation path — the wire
     layout lives in `dsdl.serialization_plan` — but it IS a first-class,
     verified op so malformed schema IR is rejected during lowering.
   }];
@@ -65,7 +65,7 @@ def DSDL_ConstantOp : DSDL_Op<"constant", [NoMemoryEffect]> {
   let description = [{
     Carries a constant's schema-level identity (name, type name, rendered value
     text, docs, owning service section) for introspection and comment
-    propagation. Not consumed by the serialization path, but verified.
+    propagation. Not consumed by the serialisation path, but verified.
   }];
   let arguments = (ins StrAttr:$name, StrAttr:$type_name, StrAttr:$value_text,
       OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section);
@@ -107,14 +107,14 @@ def DSDL_SerializationPlanOp
 }
 
 def DSDL_AlignOp : DSDL_Op<"align", [NoMemoryEffect]> {
-  let summary = "Alignment event in serialization plan";
+  let summary = "Alignment event in serialisation plan";
   let arguments = (ins I32Attr:$bits, OptionalAttr<DSDL_I64Attr>:$step_index);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }
 
 def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
-  let summary = "Wire I/O event in serialization plan";
+  let summary = "Wire I/O event in serialisation plan";
   let description = [{
     One step of a section's wire layout: a field, or a run of reserved bits when `kind` is
     `padding`. Every fact the lowering knows about the step is an attribute here, and the
@@ -170,12 +170,12 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
     `destination_bit_offset` -- the operand order of `dsdl_runtime_copy_bits`, read as a
     destination-first assignment.
 
-    This is how a bool array travels: it is stored bitpacked rather than as elements, so it
+    A bool array is stored bitpacked rather than as elements, so it
     moves as one run rather than a loop. `width` is an operand because that run's length is
     the array's count, which is not known here.
 
     The operation carries memory effects. It is the write, and a plan whose writes folded
-    away has serialized nothing.
+    away has serialised nothing.
   }];
   let arguments = (ins DSDL_PtrType:$destination, I64:$destination_bit_offset,
       I64:$width, DSDL_PtrType:$source, I64:$source_bit_offset);
@@ -189,9 +189,8 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
 def DSDL_BitReadOp : DSDL_Op<"bit_read"> {
   let summary = "Copy a run of bits from the wire buffer into object storage";
   let description = [{
-    Not the inverse of `dsdl.bit_write` in operands, because the runtime's read is not the
-    inverse of its write. Reading takes the buffer's size and tolerates a run that reaches
-    past it, zero-extending the remainder, which is the tolerance a deserializer is required
+    Not the inverse of `dsdl.bit_write` in operands. Reading takes the buffer's size and tolerates a run that reaches
+    past it, zero-extending the remainder, which is the tolerance a deserialiser is required
     to have; writing past the end is an error instead. The operands are what
     `dsdl_runtime_get_bits` needs, and the destination is filled from its own beginning.
   }];
@@ -206,7 +205,7 @@ def DSDL_BitReadOp : DSDL_Op<"bit_read"> {
 def DSDL_WriteBitsOp : DSDL_Op<"write_bits"> {
   let summary = "Write a scalar value into the wire buffer at a bit offset";
   let description = [{
-    The scalar write a serialization plan performs: a value already normalised by the
+    The scalar write a serialisation plan performs: a value already normalised by the
     plan's saturation helper, placed at `bit_offset` with `width` bits, answering with the
     runtime's error code.
 
@@ -233,7 +232,7 @@ def DSDL_ReadBitsOp : DSDL_Op<"read_bits"> {
   let description = [{
     The inverse of `dsdl.write_bits`. It answers with the value alone: the runtime's read
     primitives report a short buffer by zero-extending rather than by an error code, which
-    is the tolerance a deserializer is required to have.
+    is the tolerance a deserialiser is required to have.
   }];
   let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes,
       I64:$bit_offset, I64Attr:$width, UnitAttr:$is_signed);
@@ -249,7 +248,7 @@ def DSDL_IsNullOp : DSDL_Op<"is_null", [NoMemoryEffect]> {
   let description = [{
     A plan validates its arguments before touching them. The test is an operation rather
     than a comparison against a materialised null because null is spelled differently per
-    target, and a plan should not have to know which.
+    target.
   }];
   let arguments = (ins DSDL_PtrType:$pointer);
   let results = (outs I1:$result);
@@ -259,7 +258,7 @@ def DSDL_IsNullOp : DSDL_Op<"is_null", [NoMemoryEffect]> {
 def DSDL_BufferOrEmptyOp : DSDL_Op<"buffer_or_empty", [NoMemoryEffect]> {
   let summary = "The buffer, or a readable empty one when it is null";
   let description = [{
-    A deserializer accepts a null buffer when the declared size is zero, and the runtime's
+    A deserialiser accepts a null buffer when the declared size is zero, and the runtime's
     read primitives require a non-null pointer even when they read nothing from it. This
     answers with a pointer that is always safe to pass, which each target supplies its own
     way.
@@ -351,7 +350,7 @@ def DSDL_StoreElementOp : DSDL_MemberAccessOp<"store_element"> {
 def DSDL_MemberAddrOp : DSDL_Op<"member_addr", [NoMemoryEffect]> {
   let summary = "Address of a member of the object a plan was handed";
   let description = [{
-    A nested composite is serialized by handing its own entry point a pointer to its member,
+    A nested composite is serialised by handing its own entry point a pointer to its member,
     rather than by inlining its layout here. That keeps one definition of each type's wire
     format, and it is why a plan needs an address and not a value.
   }];
@@ -379,7 +378,7 @@ def DSDL_ElementAddrOp : DSDL_Op<"element_addr", [NoMemoryEffect]> {
 def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
   let summary = "Address of a byte offset within the wire buffer";
   let description = [{
-    A nested type serializes from the start of the buffer it is given, so the caller hands
+    A nested type serialises from the start of the buffer it is given, so the caller hands
     it the point its own encoding reached. The offset is in bytes because a composite
     begins on a byte boundary -- the plan aligns to one before this.
   }];

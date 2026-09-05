@@ -46,8 +46,8 @@ bool runSupportGenerationTests()
 {
     using llvmdsdl::SupportGeneration;
 
-    // `as-needed` is the only mode that consults whether any type is being emitted; the other three
-    // are unconditional, which is what lets `only` and `always` run with no targets at all.
+    // Only `as-needed` consults whether any type is being emitted; the other three
+    // are unconditional; `only` and `always` run with no targets at all.
     if (!expectSupport(SupportGeneration::AsNeeded, true, true, "as-needed") ||
         !expectSupport(SupportGeneration::AsNeeded, false, false, "as-needed") ||
         !expectSupport(SupportGeneration::Always, false, true, "always") ||
@@ -60,7 +60,7 @@ bool runSupportGenerationTests()
         return false;
     }
 
-    // `only` is the sole mode that suppresses type emission.
+    // `only` alone suppresses type emission.
     if (!llvmdsdl::shouldEmitTypes(SupportGeneration::AsNeeded) ||
         !llvmdsdl::shouldEmitTypes(SupportGeneration::Always) || !llvmdsdl::shouldEmitTypes(SupportGeneration::Never) ||
         llvmdsdl::shouldEmitTypes(SupportGeneration::Only))

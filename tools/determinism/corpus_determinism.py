@@ -10,7 +10,7 @@ then compared byte-for-byte: identical input, identical output, or the differenc
 a property of the build rather than of the data.
 
 CI compares x86-64 against arm64, both built from the project's own toolchain. That
-covers what actually ships -- two architectures of the same release -- and catches
+covers what ships -- two architectures of the same release -- and catches
 anything that lets word size, alignment, or floating-point formatting reach emitted
 text, which same-host environment perturbation (locale/TZ/PYTHONHASHSEED, already
 gated) cannot expose.

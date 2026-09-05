@@ -663,7 +663,7 @@ bool runEvaluatorTests()
     {
         // A product that leaves 128-bit range must yield a diagnostic, not undefined behaviour.
         // (`(2^64-1)^2` ~ 2^128 overflows the 128-bit constant value type; per-type range checking of
-        // in-range values is the analyzer's job, not the evaluator's.)
+        // in-range values is the analyser's job, not the evaluator's.)
         llvmdsdl::DiagnosticEngine diag;
         auto value = evaluateAssertExpression("18446744073709551615 * 18446744073709551615", diag);
         if (value || !hasErrorContaining(diag, "invalid rational operation"))
@@ -695,7 +695,7 @@ bool runEvaluatorTests()
     }
     {
         // 128-bit storage: every value in [INT64_MIN, UINT64_MAX] is exact and unflagged; only a
-        // genuine 128-bit overflow poisons.
+        // 128-bit overflow poisons.
         const llvmdsdl::Rational big = llvmdsdl::Rational(INT64_MAX, 1) * llvmdsdl::Rational(2, 1);
         if (big.overflowed() || big.asWideInteger().value() != static_cast<__int128>(INT64_MAX) * 2)
         {

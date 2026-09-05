@@ -161,7 +161,7 @@ def summarize(path: Path) -> str:
 
     Taken from the page rather than written here so that a summary cannot describe a page that has
     since been rewritten. Leading HTML comments (the generated pages carry a do-not-edit banner) and
-    the H1 are skipped; a leading blockquote counts, because several pages open with one. A paragraph
+    the H1 are skipped; a leading blockquote counts. A paragraph
     that only states where the page came from is skipped too -- provenance is not what a page is
     about, and one generated page still leads with it.
     """
@@ -207,8 +207,8 @@ def collect(docs_dir: Path, site_url: str, nav: list[tuple[str, str, str, str]])
 def collect_excluded(docs_dir: Path, site_url: str, patterns: list[str], navigated: set[str]) -> list[Page]:
     """Pages deliberately kept out of the human nav -- the showroom's per-type gallery.
 
-    They stay out of the dropdown because two dozen entries would drown the section they belong to,
-    but they are the densest description of what the compiler emits, so a machine reader gets them.
+    They stay out of the dropdown, but they are the densest description of what the compiler emits,
+    so a machine reader gets them.
     """
     found: list[Page] = []
     for path in sorted(docs_dir.rglob("*.md")):

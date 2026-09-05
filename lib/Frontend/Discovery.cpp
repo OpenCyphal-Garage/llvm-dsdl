@@ -10,7 +10,7 @@
 /// @file
 /// Implements filesystem discovery for DSDL namespaces and types.
 ///
-/// Discovery routines scan namespace roots, classify type files, and construct normalized lookup structures.
+/// Discovery routines scan namespace roots, classify type files, and construct normalised lookup structures.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -59,7 +59,7 @@ def _serialize_Helpers(value: Helpers) -> bytes:
         return (value >= 0) and (value <= 5)
 
     if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(len(out) * 8):
-        raise ValueError("serialization buffer too small")
+        raise ValueError("serialisation buffer too small")
     dsdl_runtime.write_signed(out, offset_bits, 13, int(mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(int(value.a))), True)
     offset_bits += 13
     dsdl_runtime.write_float(out, offset_bits, 16, float(mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(float(value.b))))

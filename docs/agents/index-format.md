@@ -12,8 +12,8 @@ Both follow the [llms.txt](https://llmstxt.org/) convention.
 ## Generation
 
 `tools/docs/build_llms_index.py` reads the navigation in `mkdocs.yml`, resolves each entry to its
-published URL, and takes the summary from the page's own first paragraph. Nothing in either file is
-maintained by hand, so neither can describe a page that does not exist or miss one that does.
+published URL, and takes the summary from the page's own first paragraph, so neither file can
+describe a page that does not exist or miss one that does.
 
 The generator runs as part of the documentation build, after the showroom pages and the guarantee
 matrices have been generated, so the compiler's own output is included rather than skipped.

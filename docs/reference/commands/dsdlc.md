@@ -129,7 +129,7 @@ keep their own guards, described below.
 
 ### Deprecated types
 
-A definition is deprecated because a newer version replaced it, so this default drops almost every
+A deprecated definition is usually one a newer version replaced, so this default drops almost every
 `@deprecated` type as a side effect. Generating every version brings them back, with the deprecation
 attributes and notices described under [Deprecation](#deprecation).
 

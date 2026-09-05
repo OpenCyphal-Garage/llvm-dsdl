@@ -99,7 +99,7 @@ bool runConformanceTests()
         {"uint64 X = 05\n@sealed\n", false},                          // but a standalone leading-zero int is not
         {"uint64 X = 99999999999999999999999999\n@sealed\n", false},  // not representable
 
-        // ---- Operator precedence is exercised by ParserTests; here just sanity ----
+        // ---- Operator precedence is exercised by ParserTests; here a sanity check ----
         {"@assert !a == b\n@sealed\n", true},
         {"@assert -2 ** 2 == -4\n@sealed\n", true},
 

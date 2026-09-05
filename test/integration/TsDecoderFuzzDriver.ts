@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Robustness fuzz over the *generated TypeScript deserializers* — the TS analogue
+// Robustness fuzz over the *generated TypeScript deserialisers* — the TS analogue
 // of the C/Go/Rust decoder fuzzers.
 //
 // TS/JS is memory-safe and GC'd, so the failure class is neither OOB nor a panic:
@@ -14,11 +14,11 @@
 // (TypeError from reading undefined, RangeError from an unbounded `new Array(...)`
 // after a length-validation bypass) and never a hang / unbounded allocation. This
 // driver feeds a deterministic pseudo-random byte stream (plus edge seeds) into
-// each generated deserialize for a compact adversarial fixture set (union,
+// each generated deserialise for a compact adversarial fixture set (union,
 // variable-length arrays, nested delimited composites, narrow non-byte-aligned
-// scalars), round-tripping accepted objects back through serialize.
+// scalars), round-tripping accepted objects back through serialise.
 //
-// A RangeError or TypeError escaping deserialize is treated as a defect; a plain
+// A RangeError or TypeError escaping deserialise is treated as a defect; a plain
 // Error is the expected rejection of malformed input. A hang is caught by the
 // harness process timeout.
 
@@ -78,7 +78,7 @@ function runOne(target: Target, data: Uint8Array): void {
           `${(e as Error).message}`,
       );
     }
-    // A plain Error from serialize on an accepted object is also unexpected.
+    // A plain Error from serialise on an accepted object is also unexpected.
     throw new Error(`${target.name}: serialize threw on an accepted object: ${(e as Error).message}`);
   }
 }
@@ -103,7 +103,7 @@ function main(): void {
 
   for (let i = 0; i < iters; ++i) {
     const len = nextByte() | (nextByte() << 8);
-    const boundedLen = len % 320; // exceeds the fixtures' max serialized size
+    const boundedLen = len % 320; // exceeds the fixtures' max serialised size
     const data = new Uint8Array(boundedLen);
     for (let j = 0; j < boundedLen; ++j) {
       data[j] = nextByte();

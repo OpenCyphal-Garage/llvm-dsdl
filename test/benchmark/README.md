@@ -35,8 +35,8 @@ multi-language code generation throughput.
 2. Generate/update threshold config with desired margins.
 3. Run checks against `dev_ab` and/or `ci_oom`.
 
-The committed threshold file starts as a template with zero baselines.
-You must calibrate it before `check` mode can run.
+The committed threshold file starts as a template with zero baselines; `check` mode needs it
+calibrated first.
 
 CMake utility targets are available:
 

@@ -11,7 +11,7 @@
 # Reads the shared vector file (argv[1]) and exercises each vector directly
 # against the pure-Python runtime primitives (argv[2] = path to _dsdl_runtime.py),
 # checking every primitive direction on its own. Prints "PROCESSED <n>" and
-# "SKIPPED <n>" and exits non-zero on the first genuine mismatch.
+# "SKIPPED <n>" and exits non-zero on the first mismatch.
 #
 # Python is double-typed, so a small number of vectors are legitimately not
 # comparable at the raw-primitive level and are SKIPPED with a printed reason:

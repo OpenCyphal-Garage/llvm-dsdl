@@ -27,8 +27,7 @@
 # Note the placement: @deprecated appears in the request section, ahead
 # of the first attribute, and applies to the whole service. The language
 # accepts it nowhere else -- not after a field, and not in the response
-# section -- because a service is deprecated or not as a unit; you
-# cannot retire half a request/response pair.
+# section.
 #
 # MIGRATION: subscribe to lanyard.health.BatteryStatus.2.0 (port 6251),
 # which the pack publishes at 2 Hz on its own. Polling cost the bus a

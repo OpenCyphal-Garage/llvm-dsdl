@@ -14,9 +14,8 @@
 # docs/development/distribution-channels.md.
 #
 # apt.llvm.org is still used, for clang alone. jammy's GCC 11 predates much of
-# C++23 and the project requires it. Taking a *compiler* from them is not the
-# thing we were trying to stop doing; taking their *libraries* was, because
-# those are what decided the floor, the stdlib and the dylib on our behalf.
+# C++23 and the project requires it. Their *libraries* would decide the glibc
+# floor, the stdlib and the dylib on our behalf; a compiler decides none of that.
 #
 # apt.kitware.com supplies CMake >= 3.24 (jammy has 3.22).
 

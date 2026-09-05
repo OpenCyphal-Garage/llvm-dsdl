@@ -4,13 +4,13 @@
 source and no host compiler. Six acceptance gates under `ctest -L direct-lowering-gate`,
 described in [Acceptance](#acceptance) below, hold strictly.
 
-## Why the serialisation has to be written first
+## The serialisation is not in the IR
 
 The obvious reading of "lower to LLVM" is that an LLVM conversion is added beside the existing
 EmitC one. That is not the shape of the work, because the serialisation is not in the IR to
 convert.
 
-`dsdlc --target-language c` over the UAVCAN corpus emits 362 serialize and deserialize function
+`dsdlc --target-language c` over the UAVCAN corpus emits 362 serialise and deserialise function
 bodies, and every one of them is a string literal in an `emitc.verbatim` op — braces, `for`
 loops, runtime calls and all.
 
@@ -25,7 +25,7 @@ vocabulary for representing bit-level serialisation was defined and never used.
 So the work is three phases, and they run in the opposite order of the difficulty one would
 guess.
 
-## Phase A — the serialisation becomes IR
+## The serialisation becomes IR
 
 `lower-dsdl-exec` constructs `dsdl.bit_write`/`dsdl.bit_read` instead of formatting C, and those
 lower to `arith`/`scf` over a byte pointer. The C backend consumes the result through the
@@ -69,7 +69,7 @@ A step that fails stops the plan, and every later step has to leave its error al
 now been got wrong twice, so `foldError` states it in one place: a later check keeps the
 earlier failure if there was one.
 
-The array deserializer overwrote the incoming error with its own length check, so
+The array deserialiser overwrote the incoming error with its own length check, so
 `uavcan.metatransport.can.Frame.0.2` reported a bad array length where the reference
 reported the bad union tag already found in the nested `ArbitrationID` -- Frame being a
 union of four composites, one of which holds another union before its payload. The whole
@@ -80,11 +80,11 @@ reference validates and rejects. A decoder that quietly truncates accepts a mess
 sender did not send.
 
 The union tag validation did the same to the capacity check that preceded it, which would
-have reported a bad tag for a buffer that was simply too small.
+have reported a bad tag for a buffer that was too small.
 
 ### Nothing renders as text
 
-All 362 serialize and deserialize bodies over the UAVCAN corpus are built as operations, and
+All 362 serialise and deserialise bodies over the UAVCAN corpus are built as operations, and
 all 167 files compile under `-Wall -Wextra -Werror`. A plan the builder cannot express fails
 `build-dsdl-plan-bodies`, in every lane, naming the step and the reason.
 
@@ -97,7 +97,7 @@ zero-extends, so the read takes the buffer's size and the write does not.
 A type with no fields encodes nothing, and its body is the prologue and epilogue alone.
 
 A `void` field is a run of reserved bits: written as zeros, and read as nothing, a decoder
-having no name to put them under. The writer is the one that pads to an alignment boundary,
+having no name to put them under. The writer pads to an alignment boundary,
 given an end offset instead of computing one.
 
 A union's options may be composites or arrays. What one field needs is the same whether it
@@ -115,7 +115,7 @@ delimited composites writes a header per element, through the same loop.
 A fixed-length array is the variable one without its bookkeeping: its length is in its
 declaration, so there is no count member to read, nothing that could be out of range, and
 nothing to announce on the wire. The member is the elements rather than a struct holding
-them, which is the only thing the element path has to know.
+them, and that is all the element path has to know.
 
 A delimited nested composite is built: its length precedes it so that a reader which does not
 know the type can step over it, which is why decoding advances by the length it was told
@@ -138,13 +138,13 @@ and `i8`, so the dialect has no pointer to reuse. Add `!dsdl.ptr<T>`, mapped by
 to follow.
 
 Building the bodies on `!emitc.ptr` directly would work for the C path and would have to be
-redone for phase B, which is the whole failure this design exists to avoid.
+redone for the LLVM conversion, which is the failure this design avoids.
 
 `DSDL_BitReadOp` and `DSDL_BitWriteOp` as declared take a width and a saturating flag, with no
 operands and no results. They cannot express a bit write and are a redefinition rather than a
 starting point.
 
-### What the lowering path already supports
+### The existing lowering path
 
 [`emitter/C.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/C.cpp) already runs `createSCFToEmitC`,
 `createConvertArithToEmitC`, `createConvertFuncToEmitC` and `translateToCpp`, which is how the
@@ -181,7 +181,7 @@ width and an error result, plus addressing for the struct member the value comes
 `emitc.member_of_ptr` on the C path, and a computed offset into the published struct layout for
 object emission.
 
-### What the operations resolve to
+### Per-target resolution
 
 Bit operations carry operands rather than naming a call, and that distinction is load-bearing,
 because the two targets cannot resolve them the same way.
@@ -193,22 +193,15 @@ translation unit includes that header and the C compiler inlines it. An object e
 IR cannot: a `call @dsdl_runtime_copy_bits` in the module would be an undefined reference to a
 symbol that exists nowhere, and gate 5 would fail at link time.
 
-So phase C picks one of:
+So the object emission defines the primitives in the module and each object carries its own copy
+(see [The primitives an object calls](#the-primitives-an-object-calls)).
 
-- Lower the bit ops to loads, stores, shifts and masks in the IR. No call, no symbol, no runtime
-  dependency, and the answer that matches what direct lowering means.
-- Define the primitives in the module in IR, so each object carries its own copy.
-- Give the runtime external linkage, which changes its contract for every consumer and is the
-  reason it is listed last.
-
-Nothing about that choice reaches phase A, which is why phase A can proceed without it.
-
-## Phase B — the LLVM conversion
+## The LLVM conversion
 
 `convert-dsdl-to-llvm`, then the upstream conversions: `convert-scf-to-cf`,
 `convert-cf-to-llvm`, `convert-arith-to-llvm`, `convert-func-to-llvm`.
 
-Bodies are built by `build-dsdl-plan-bodies`, split out of `convert-dsdl-to-emitc` so that a
+Bodies are built by `build-dsdl-plan-bodies`, ahead of `convert-dsdl-to-emitc`, so that a
 plan becomes operations before a target is chosen. Its cleanup is scoped to the functions it
 built: a `dsdl.serialization_plan` holds a region, has no results and no memory effects, so a
 module-wide canonicalisation deletes the plans the next pass has to read.
@@ -219,8 +212,8 @@ Every `!dsdl.ptr` converts to `!llvm.ptr`, so the spelling `!dsdl.opaque` carrie
 consulted. A member is reached by `llvm.getelementptr` against a struct derived from the
 schema, whose `dsdl.io` operations carry the category, width, array kind and capacity the C
 struct is built from. Nothing adds up bytes: the member's position indexes the struct and LLVM
-computes the offset from its own data layout, which is the one arrangement that cannot drift
-from what a C compiler does with the same fields.
+computes the offset from its own data layout, so it cannot drift from what a C compiler does
+with the same fields.
 
 That derivation is a second implementation of what `cTypeFromFieldType` already performs, and
 it is safe to write twice because the two are held against each other.
@@ -278,7 +271,7 @@ somewhere the callee does not read them. `runtimeSignature` states what
 converted to it -- a bit travels as `bool`, a narrow field in the holder it fits, a value widened
 to the 64-bit carrier `set_uxx` takes.
 
-### Where it reaches
+### Conversion results
 
 All 362 bodies over the UAVCAN corpus convert with no `emitc` and no `dsdl` operations left.
 Through the upstream conversions and `mlir-translate` they become 1025 LLVM IR definitions, and
@@ -286,7 +279,7 @@ Through the upstream conversions and `mlir-translate` they become 1025 LLVM IR d
 points, which each type's own object defines as the C lane arranges it, and 20 runtime
 primitives.
 
-## Phase C — object emission
+## Object emission
 
 ### The primitives an object calls
 
@@ -329,7 +322,7 @@ field is signed, as C's own conversion does. Reading the plan's width instead ta
 neighbouring members with it, and the value that produces is not obviously wrong: it is large,
 so the saturation helper clamps it, and every saturating field comes out at its maximum.
 
-### Where it reaches
+### Emission results
 
 The UAVCAN corpus becomes 1045 LLVM IR definitions and an object file with **no undefined
 symbols at all**. Linked against a driver in place of the generated C, it round-trips
@@ -352,7 +345,7 @@ be a duplicate symbol and a second thing to keep right.
 The primitives are internal to each object, as `static inline` makes them in C. Exported, no two
 objects could be linked together.
 
-### Where it reaches
+### Gate results
 
 All six acceptance gates hold, strictly:
 
@@ -420,7 +413,7 @@ Two limits are worth stating, because a gate believed to cover more than it does
 no gate:
 
 - **Gate 5 is satisfied by a C generator**, and that is correct. It measures whether the object
-  agrees with the C lane, so an implementation that compiles the C lane agrees trivially. It is
+  agrees with the C lane, so an implementation that compiles the C lane agrees. It is
   a correctness gate, not a mechanism gate. Gates 2, 3 and 4 are the mechanism gates; all three
   were validated against the removed lane, rebuilt, and fail it.
 - **Gate 1 passes**, strict included: the fixture corpus lowers with no `emitc` and no `dsdl`

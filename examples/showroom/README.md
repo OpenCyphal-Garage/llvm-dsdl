@@ -8,7 +8,7 @@ It exists so you can answer three questions in order, without inventing a schema
 
 1. **What would I write?** `lanyard` is a fictional vendor's namespace, the sort of thing a drone
    programme adds alongside the standard `uavcan` types. Nothing here is regulated and UDRAL is
-   deliberately unused -- the point is what a vendor writes from scratch, leaning on the standard
+   unused: a vendor writes this from scratch, leaning on the standard
    types where standard types exist.
 2. **What does the compiler make of it?** Every definition below pairs its authored DSDL with its
    wire-layout facts and a declaration excerpt in each language.

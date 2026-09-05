@@ -23,7 +23,7 @@
 # RUN: test -f %t.always/uavcan/node/Heartbeat_1_0.h
 
 # Support code is rendered from the compiler, not from definitions, so `only` and `always` have work
-# to do with no positional targets at all -- which is how a project vendors the runtime on its own.
+# to do with no positional targets at all; a project vendors the runtime on its own that way.
 # RUN: rm -rf %t.bare && %dsdlc --target-language c --generate-support only --outdir %t.bare >/dev/null 2>&1
 # RUN: test -f %t.bare/dsdl_runtime.h
 # RUN: rm -rf %t.bare2 && %dsdlc --target-language c --generate-support always --outdir %t.bare2 >/dev/null 2>&1

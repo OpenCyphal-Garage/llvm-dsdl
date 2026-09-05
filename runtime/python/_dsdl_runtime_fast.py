@@ -11,7 +11,7 @@
 # Pure-Python DSDL runtime primitives with byte-aligned fast-path helpers.
 #
 # The module preserves the reference runtime API while accelerating aligned copy
-# operations commonly emitted by generated serializers and deserializers.
+# operations commonly emitted by generated serialisers and deserialisers.
 #
 #===----------------------------------------------------------------------===#
 
@@ -60,7 +60,7 @@ def set_bit(buf: bytearray, off_bits: int, value: bool) -> None:
     byte_index = off_bits // 8
     bit_index = off_bits % 8
     if byte_index < 0 or byte_index >= len(buf):
-        raise ValueError("serialization buffer too small")
+        raise ValueError("serialisation buffer too small")
     mask = 1 << bit_index
     if value:
         buf[byte_index] = (buf[byte_index] | mask) & 0xFF
@@ -90,7 +90,7 @@ def copy_bits(dst: bytearray, dst_off_bits: int, src: BytesLike, src_off_bits: i
         if dst_start < 0 or src_start < 0:
             raise ValueError("negative offsets are not supported")
         if dst_start + byte_len > len(dst) or src_start + byte_len > len(source):
-            raise ValueError("serialization buffer too small")
+            raise ValueError("serialisation buffer too small")
         dst[dst_start : dst_start + byte_len] = source[src_start : src_start + byte_len]
         return
 
@@ -106,7 +106,7 @@ def extract_bits(src: BytesLike, src_off_bits: int, len_bits: int) -> bytes:
         if src_start < 0:
             raise ValueError("negative offsets are not supported")
         if src_start + byte_len > len(source):
-            raise ValueError("serialization buffer too small")
+            raise ValueError("serialisation buffer too small")
         return source[src_start : src_start + byte_len]
 
     out = bytearray(byte_length_for_bits(len_bits))

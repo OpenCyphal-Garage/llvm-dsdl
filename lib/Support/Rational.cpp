@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements normalized rational arithmetic utilities.
+/// Implements normalised rational arithmetic utilities.
 ///
 /// Rational helpers provide stable arithmetic primitives used by expression evaluation and semantic calculations.
 ///
@@ -223,8 +223,8 @@ bool operator!=(const Rational& lhs, const Rational& rhs)
 
 bool operator<(const Rational& lhs, const Rational& rhs)
 {
-    // Denominators are always positive after normalization, so the cross-multiplied comparison is
-    // order-preserving. Values are bounded to `[INT64_MIN, UINT64_MAX]` in practice, so the products
+    // Denominators are always positive after normalisation, so the cross-multiplied comparison is
+    // order-preserving. Values are bounded to `[INT64_MIN, UINT64_MAX]`, so the products
     // fit 128 bits; guard with an overflow check for pathological coprime fractions and fall back to
     // extended-precision ordering (equality is decided exactly by `operator==`).
     __int128 p1 = 0;

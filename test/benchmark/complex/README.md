@@ -3,7 +3,7 @@
 This directory contains a synthetic, large-scale DSDL corpus intended to stress
 `llvm-dsdl` with a realistic civilian autonomous aerial-survey system model.
 
-The corpus is organized under the root namespace `civildrone` and includes:
+The corpus is organised under the root namespace `civildrone` and includes:
 
 - many subsystem namespaces (airframe, navigation, perception, survey, etc.)
 - message, union, and service types per subsystem
@@ -20,14 +20,13 @@ The size is intentionally large (thousands of `.dsdl` files) to surface
 combinatorial behaviour in discovery, parsing, semantic analysis, and downstream
 lowering/codegen passes.
 
-## Where it comes from
+## Generation
 
 `generate_complex_dsdl.py` writes it, and the build runs that: the
 `benchmark-corpus` target produces the corpus under
 `<build-dir>/test/benchmark/complex/civildrone`, and every benchmark target
 depends on it. `LLVMDSDL_ENABLE_BENCHMARK_TESTS=ON` puts it in the default build
-as well, because the benchmark tests take the corpus as a path. Building is
-enough; there is no step to remember.
+as well.
 
 The output is a pure function of the generator and its three counts, so a timing
 compared across revisions is measuring the compiler rather than the corpus.

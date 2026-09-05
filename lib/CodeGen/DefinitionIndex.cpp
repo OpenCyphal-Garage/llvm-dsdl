@@ -10,7 +10,7 @@
 /// @file
 /// Implements shared semantic-definition lookup index for code generation.
 ///
-/// This component centralizes keyed definition lookups used by emitter contexts.
+/// This component centralises keyed definition lookups used by emitter contexts.
 ///
 //===----------------------------------------------------------------------===//
 

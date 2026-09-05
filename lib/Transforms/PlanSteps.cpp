@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Reads a serialization plan's steps out of its operations.
+/// Reads a serialisation plan's steps out of its operations.
 ///
 //===----------------------------------------------------------------------===//
 #include "llvmdsdl/Transforms/PlanSteps.h"

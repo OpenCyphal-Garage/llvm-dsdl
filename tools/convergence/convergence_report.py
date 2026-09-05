@@ -23,7 +23,7 @@ SEMANTIC_CLASSES: List[Tuple[str, str]] = [
     ("field_step_ordering", "Field step ordering"),
     ("union_tag_mask_validate", "Union tag mask and validation"),
     ("scalar_normalize_sign_extend", "Scalar cast/normalize and sign extension"),
-    ("variable_array_prefix_validate", "Variable array prefix normalize and length validation"),
+    ("variable_array_prefix_validate", "Variable array prefix normalise and length validation"),
     ("fixed_array_cardinality_validate", "Fixed array cardinality validation"),
     ("delimited_payload_validate", "Delimited payload header validation"),
     ("section_capacity_precheck", "Section capacity pre-check"),

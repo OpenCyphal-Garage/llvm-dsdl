@@ -18,7 +18,7 @@ name: Docs
 #
 # Every push to main builds the site and publishes nothing. What is served on GitHub Pages is the
 # last release, so a reader following the manual is reading instructions for a version they can
-# actually download -- main routinely documents tools and flags that no released binary has.
+# download -- main routinely documents tools and flags that no released binary has.
 #
 # Publishing happens on `release: published`, which is the moment a maintainer publishes the draft
 # that release.yml left behind, and the checkout for that event is the tag rather than main. So the
@@ -27,7 +27,7 @@ name: Docs
 # Prereleases are deliberately not excluded: every release this project has cut so far is one, and
 # `!github.event.release.prerelease` would mean the site never updates. Add it if that changes.
 #
-# The main-push build is therefore a pure check, and it is the one that has to stay green -- it is
+# The main-push build is therefore a pure check, and it has to stay green -- it is
 # what stops a release-day publish from being the first time anyone discovered the site does not
 # build.
 
@@ -56,7 +56,7 @@ concurrency:
   #
   # A single shared group would do exactly that: `cancel-in-progress` is evaluated for the arriving
   # run, so an ordinary push to main landing during a release publish would cancel the publish.
-  # Splitting the group is what actually keeps them out of each other's way; the flag below then
+  # Splitting the group keeps them out of each other's way; the flag below then
   # only decides whether pushes supersede each other, which they should.
   group: docs-${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'build' }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -79,8 +79,8 @@ jobs:
         # cpp/rust/go cell in the parity matrix is corpus-backed, so a submodule-less checkout does
         # not merely fail the gate (score 12 against a minimum of 100); it would publish a parity
         # page claiming those three backends have no array, union, delimited or service coverage.
-        # The showroom itself does resolve its uavcan dependencies from dsdlc's embedded catalogue --
-        # that part of the old comment was right, it just was not the whole dependency.
+        # The showroom itself resolves its uavcan dependencies from dsdlc's embedded catalogue; the
+        # parity corpus is what needs the checkout.
         uses: actions/checkout@v7
         with:
           submodules: recursive
@@ -89,7 +89,7 @@ jobs:
         # Skipped under act (which sets ACT=true), here and on the two steps below: these three talk
         # to the GitHub Pages and artifact APIs, which no local runner has, and none of them affect
         # what is built -- mkdocs takes its site_url from mkdocs.yml, not from this action's output.
-        # Guarding them is what lets `act push -W .github/workflows/docs.yml` answer the only
+        # Guarding them is what lets `act push -W .github/workflows/docs.yml` answer the
         # question worth asking locally: does the site build. See CONTRIBUTING.md.
         if: ${{ !env.ACT }}
         uses: actions/configure-pages@v6
@@ -137,7 +137,7 @@ jobs:
           path: site
 
   deploy:
-    # A push to main never reaches here: it builds, and that is the whole point of the split.
+    # A push to main never reaches here: it builds and stops.
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: build
     runs-on: ubuntu-latest

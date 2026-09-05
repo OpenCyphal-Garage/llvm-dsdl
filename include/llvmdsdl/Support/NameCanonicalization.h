@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Shared snake_case name canonicalization.
+/// Shared snake_case name canonicalisation.
 ///
 /// A single definition of the snake_case projection so that identifier naming (backend emitters) and
 /// output-name collision detection (frontend discovery) fold names identically.

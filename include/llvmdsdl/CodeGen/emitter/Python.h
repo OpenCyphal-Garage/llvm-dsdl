@@ -40,7 +40,7 @@ namespace llvmdsdl::emitter::python
 /// @file
 /// @brief Python backend emission entry points.
 
-/// @brief Runtime specialization profile for generated Python runtime helpers.
+/// @brief Runtime specialisation profile for generated Python runtime helpers.
 enum class RuntimeSpecialization
 {
     Portable,  ///< Conservative bit-level runtime helper implementation.
@@ -62,10 +62,10 @@ struct Options final
     /// @brief Generated Python package name.
     std::string packageName{"dsdl_gen"};
 
-    /// @brief Runtime helper specialization profile.
+    /// @brief Runtime helper specialisation profile.
     RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Optional list of selected type keys to emit.

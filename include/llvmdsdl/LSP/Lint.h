@@ -93,7 +93,7 @@ struct LintFinding final
 /// @brief Document snapshot supplied to lint rules.
 struct LintDocument final
 {
-    /// @brief Normalized source path.
+    /// @brief Normalised source path.
     std::string path;
 
     /// @brief Source URI.
@@ -118,7 +118,7 @@ struct LintExecutionConfig final
     /// @brief Workspace-level disabled rule IDs.
     std::unordered_set<std::string> disabledRules;
 
-    /// @brief Per-file disabled rule IDs keyed by URI or normalized path.
+    /// @brief Per-file disabled rule IDs keyed by URI or normalised path.
     std::unordered_map<std::string, std::unordered_set<std::string>> fileDisabledRules;
 
     /// @brief Dynamic rule-pack library paths.
@@ -165,7 +165,7 @@ public:
     /// @return `true` on success.
     [[nodiscard]] bool loadPluginLibrary(const std::string& libraryPath, std::string* errorMessage = nullptr);
 
-    /// @brief Materializes all registered rule instances.
+    /// @brief Materialises all registered rule instances.
     /// @return Rule instances sorted by rule ID.
     [[nodiscard]] std::vector<std::unique_ptr<LintRule>> createRules() const;
 

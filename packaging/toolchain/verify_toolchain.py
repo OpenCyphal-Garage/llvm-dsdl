@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Assert a built LLVM/MLIR toolchain is the one llvm-dsdl intends to link.
+"""Assert a built LLVM/MLIR toolchain is what llvm-dsdl intends to link.
 
-A toolchain that merely *builds* is not the goal: the point of building it
-ourselves is that specific properties hold. Each check below corresponds to a
+The toolchain is built for specific properties. Each check below corresponds to a
 claim in docs/development/distribution-channels.md section 1, so a regression
 in the Dockerfile fails here rather than surfacing as a mysterious dependency
 in a shipped package.
@@ -55,7 +54,7 @@ def main() -> int:
         check(val in ("OFF", "0", "<unset>"),
               "LLVMConfig does not force the shared LLVM", f"LLVM_LINK_LLVM_DYLIB={val}")
 
-    print("\n== static-only (the whole point) ==")
+    print("\n== static-only ==")
     libdir = p / "lib"
     shared = sorted(
         f.name for f in libdir.glob("libLLVM*")
@@ -70,8 +69,7 @@ def main() -> int:
     print("\n== target backends ==")
     # `--target-language obj` assembles inside dsdlc, so a triple it is asked
     # for has to be one the prefix carries. The names are LLVM's own target
-    # names, which is what LLVM_TARGETS_TO_BUILD is spelled in and what the
-    # archives are named after.
+    # names, the spelling of LLVM_TARGETS_TO_BUILD and of the archives.
     for target in ("X86", "AArch64", "ARM", "RISCV", "AVR", "Mips", "WebAssembly"):
         present = [a.name for a in archives if a.name.startswith(f"libLLVM{target}")]
         check(bool(present), f"{target} backend archives present", f"{len(present)} archives")

@@ -96,7 +96,7 @@ struct NewestVersionSelection final
 /// this is the single source of truth for its wording. DSDL's `@deprecated` carries no author-supplied
 /// message, so the notice is derived from the definition's own identity.
 ///
-/// The returned text deliberately begins with `Deprecated: ` because Go's toolchain (gopls,
+/// The returned text begins with `Deprecated: ` because Go's toolchain (gopls,
 /// staticcheck, pkg.go.dev) recognises a deprecation only when a doc-comment paragraph starts with
 /// exactly that prefix. Backends that need a different prefix strip or replace it.
 ///
@@ -110,7 +110,7 @@ std::string deprecationNotice(const std::string& fullName, std::uint32_t majorVe
 ///
 /// @details
 /// Generated comments inherit whatever width their source was written at, but text synthesised by the
-/// compiler has no source width to inherit -- so it must be wrapped here or it lands as one very long
+/// compiler has no source width to inherit -- so it must be wrapped here or it lands as one long
 /// line. The showroom renders generated code in a documentation site whose code column fits roughly
 /// eighty characters, and the widest comment prefix any backend adds is eight characters, which is
 /// where the default budget comes from.
@@ -257,7 +257,7 @@ std::string renderMakeDepfile(const std::string& target, const std::vector<std::
 /// @brief Writes `<outputPath>.d` make depfile for one generated output path.
 ///
 /// @details
-/// Dependency paths and target path are normalized to absolute lexical paths.
+/// Dependency paths and target path are normalised to absolute lexical paths.
 /// The write path obeys @ref EmitWritePolicy semantics (`dryRun`,
 /// `noOverwrite`, `fileMode`, and `recordedOutputs`).
 ///
@@ -274,7 +274,7 @@ llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path&    outpu
 /// @details
 /// This fast path assumes `normalizedSortedDedupDeps` are already absolute (or
 /// otherwise final-form), sorted, and de-duplicated. No dependency
-/// normalization, sorting, or de-duplication is performed in this overload.
+/// normalisation, sorting, or de-duplication is performed in this overload.
 ///
 /// @param[in] outputPath Generated output path the depfile describes.
 /// @param[in] normalizedSortedDedupDeps Prepared dependency path list.

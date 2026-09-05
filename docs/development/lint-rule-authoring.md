@@ -132,7 +132,7 @@ Runtime configuration path:
 1. Set `lint.pluginLibraries` in `workspace/didChangeConfiguration`.
 2. `LintEngine` loads the libraries during construction.
 
-Current implementation uses `dlopen`/`dlsym` (POSIX dynamic loading).
+Loading is by `dlopen`/`dlsym` (POSIX dynamic loading).
 
 ## 8. Documentation Requirements For New Rules
 

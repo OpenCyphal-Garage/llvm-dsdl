@@ -86,7 +86,7 @@ endif()
 file(READ "${package_root}/llvmdsdl_codegen.json" metadata_json)
 if(NOT metadata_json MATCHES
       "\"pythonRuntimeSpecialization\"[ \t\r\n]*:[ \t\r\n]*\"${PY_RUNTIME_SPECIALIZATION}\"")
-  message(FATAL_ERROR "Python generation metadata does not match specialization=${PY_RUNTIME_SPECIALIZATION}")
+  message(FATAL_ERROR "Python generation metadata does not match specialisation=${PY_RUNTIME_SPECIALIZATION}")
 endif()
 
 file(GLOB_RECURSE dsdl_files "${UAVCAN_ROOT}/*.dsdl")
