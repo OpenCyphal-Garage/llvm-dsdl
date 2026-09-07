@@ -10,7 +10,7 @@
 /// @file
 /// Shared semantic definition path/type projection helpers.
 ///
-/// This utility centralizes deterministic versioned type naming and relative
+/// This utility centralises deterministic versioned type naming and relative
 /// source-file path projection used by scripted emitters.
 ///
 //===----------------------------------------------------------------------===//

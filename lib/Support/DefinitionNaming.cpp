@@ -25,9 +25,9 @@ namespace llvmdsdl
 
 const DefinitionNamePolicy& definitionNamePolicy(const CodegenNamingLanguage language)
 {
-    // C flattens the namespace into the identifier because it has nowhere else to put it. Rust does
-    // the same and then re-checks the result. The other four let the language carry the namespace:
-    // C++ in a real namespace, Go/TypeScript/Python in a per-namespace module.
+    // C flattens the namespace into the identifier. Rust does the same and then re-checks the
+    // result. The other four let the language carry the namespace: C++ in a real namespace,
+    // Go/TypeScript/Python in a per-namespace module.
     static constexpr DefinitionNamePolicy kC{"__", false};
     static constexpr DefinitionNamePolicy kCpp{"", false};
     static constexpr DefinitionNamePolicy kRust{"_", true};
@@ -114,7 +114,7 @@ std::pair<std::string, std::string> renderVersionSentinelMacros(const CodegenNam
                                                                 const std::uint32_t         majorVersion,
                                                                 const std::uint32_t         minorVersion)
 {
-    // The generic one carries no version -- that is the whole point of it.
+    // The generic one carries no version.
     const std::string generic =
         codegenProjectIdentifier(language, IdentifierRole::MacroName, "LLVMDSDL_SELECTED_" + fullName.str() + "_");
     const std::string specific =

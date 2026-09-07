@@ -62,7 +62,7 @@
 
 
 
-# The headers are declared outputs too. An archive is only linkable; the headers are the only way to
+# The headers are declared outputs too. An archive is only linkable; without the headers nothing can
 # call what is in it, so a build system that could not discover them would have to run a second
 # backend purely to get them -- and keep two invocations' options in agreement.
 

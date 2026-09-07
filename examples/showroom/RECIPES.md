@@ -4,13 +4,13 @@ The [showroom](README.md) shows you what dsdlc produces from the `lanyard` names
 other half: the build wiring that turns that output into a compiled library.
 
 Each *recipe* is one (language, build system) pair, complete and self-contained, and every one
-builds the same twenty-four definitions you can browse on the [overview](README.md). Browsing a type
-and then seeing it compiled into a library is the point of the two halves living together.
+builds the same twenty-four definitions you can browse on the [overview](README.md). The two halves
+live together: browse a type, then see it compiled into a library.
 
 A recipe generates with `dsdlc`, compiles the output, and runs a round-trip program that serialises
 a value, deserialises it, and checks the result. CI runs all of them, so a recipe on this page is a
-recipe that worked the last time anyone looked -- which is the one thing the browsing half
-deliberately does not promise, since it generates and stops.
+recipe that worked the last time anyone looked. The browsing half generates and stops, and
+promises nothing past that.
 
 ## Self-contained output
 
@@ -21,7 +21,7 @@ compile what comes out.
 
 For Rust, Go, TypeScript, and Python, `dsdlc` goes further and writes a native manifest too --
 `Cargo.toml`, `go.mod`, `package.json`, `pyproject.toml`. C and C++ get `dsdl_runtime.h` /
-`dsdl_runtime.hpp` and no manifest, because C and C++ have no such thing to write.
+`dsdl_runtime.hpp` and no manifest.
 
 ## Two idioms
 
@@ -35,7 +35,7 @@ that gets used. Shortest path when it is available, which for Rust and Go is a s
 existing build at the output directory and compile it as part of your own target. Forced on you
 when:
 
-- **C and C++** -- no manifest is emitted at all, because neither language has one to emit.
+- **C and C++** -- no manifest is emitted.
 - **TypeScript** -- a `package.json` *is* emitted, but it declares no `main`, `exports`, or `types`
 and the tree contains only `.ts` files. `npm install file:generated` succeeds and then fails at run
 time, because Node falls back to looking for `index.js` and finds `index.ts`. Generated TypeScript
@@ -43,7 +43,7 @@ is source, and joins your program as source.
 - **Every Python build backend except setuptools** -- the emitted `pyproject.toml` declares
   `setuptools.build_meta`, and a project cannot have two build backends. Pointing another backend at
   the generated package is one line of configuration; the generated tree is an ordinary Python
-  package, and dsdlc's own manifest just sits there unused.
+  package, and dsdlc's own manifest is unused.
 
 Each recipe page states which idiom it is and why that build system left no choice.
 
@@ -74,7 +74,7 @@ outputs, and its own lifetime.
 | `--generate-support only` | Only code *not* derived from a definition: runtime headers and modules, package manifests, scaffolding. Needs no positional target. |
 | `--generate-support never` | Only code derived from definitions. |
 | `--omit-dependencies` | Only the definitions named, not the ones they refer to. |
-| `+uavcan.node`, `+uavcan.node.Heartbeat.1.0` | Standard types from the catalog compiled into `dsdlc`, with no checkout of `public_regulated_data_types`. |
+| `+uavcan.node`, `+uavcan.node.Heartbeat.1.0` | Standard types from the catalogue compiled into `dsdlc`, with no checkout of `public_regulated_data_types`. |
 | `<root>:<relative/Type.1.0.dsdl>` | One definition, with output paths anchored at `<root>`. |
 
 Combining them gives a build as much granularity as it wants -- per namespace, per tranche, or per
@@ -124,15 +124,15 @@ the files it emits, and one that swept the output directory would delete its sib
 worth copying.** Nothing on these pages moves, renames, or post-processes a generated file, and no
 recipe should need to.
 
-## Why the showroom does it differently
+## The showroom's stamp file
 
 <!-- showroom-recipes: skip -->
 
 If you read `examples/showroom/CMakeLists.txt` and wondered why it uses a stamp file instead: there,
 `dsdlc` is a target of the very build that wants to query it, so it does not exist at configure time
 and `--list-outputs` cannot be run. That constraint is peculiar to building the compiler inside its
-own tree. Every recipe here consumes an *installed* `dsdlc` and is free of it, which is why these
-recipes are better than that one and should be preferred as models.
+own tree. Every recipe here consumes an *installed* `dsdlc` and is free of it; prefer these as
+models.
 
 ## The matrix
 
@@ -157,15 +157,14 @@ commands.
 
 Each recipe page lists the tools that recipe needs, and `run_recipe.py` skips a recipe whose tools
 are absent rather than failing it. No recipe installs anything into your system: the Python recipes
-each build a virtual environment and fetch their own build backend, which is both correct isolation
-and the only thing that works on a distribution that marks its interpreter externally managed (PEP
-668).
+each build a virtual environment and fetch their own build backend. That is correct isolation, and
+on a distribution that marks its interpreter externally managed (PEP 668) nothing else works.
 
 ## Toolchain availability in CI
 
 <!-- showroom-recipes: skip -->
 
-Measured against the toolshed image (`ts26.4.3`), which is what CI runs in:
+Measured against the toolshed image (`ts26.4.3`), the image CI runs in:
 
 | Tool | In the image | How a recipe gets it |
 |---|---|---|
@@ -179,9 +178,8 @@ Measured against the toolshed image (`ts26.4.3`), which is what CI runs in:
 
 Every recipe's toolchain now comes from the image. Bazel arrived in `ts26.4.3`, which installs
 bazelisk and pre-warms Bazel 9.2.0; the Bazel recipe pins that same version in its `.bazelversion`,
-so it neither downloads a compiler nor drifts off the one the image carries. `pnpm` is the only tool
-still provisioned in the job, by `corepack`, which is why `ts-pnpm` is the one recipe absent from
-the `--require` list.
+so it neither downloads a compiler nor drifts off the one the image carries. `pnpm` alone is still
+provisioned in the job, by `corepack`, and `ts-pnpm` alone is absent from the `--require` list.
 
 ## The recipe invariant
 
@@ -192,7 +190,7 @@ So the difference between the poetry recipe and the hatchling recipe is *only* t
 which is the comparison the recipes exist to support. `run_recipe.py --check-invariant` enforces
 it, and CI runs that check.
 
-## What the recipes build
+## Build scope
 
 Every recipe builds the whole `lanyard` namespace: thirty-six translation units in C once the
 standard types it reaches are counted, and it costs about four seconds across the whole matrix.
@@ -203,7 +201,7 @@ Between them the definitions force a real integration:
 
 | What | Why it matters |
 |---|---|
-| Twelve standard `uavcan` types, reached transitively | They resolve from the catalog compiled into dsdlc -- no checkout of `public_regulated_data_types` anywhere in the matrix |
+| Twelve standard `uavcan` types, reached transitively | They resolve from the catalogue compiled into dsdlc -- no checkout of `public_regulated_data_types` anywhere in the matrix |
 | Three different `Vector3` types in sibling namespaces | Same short name, different namespace: the case that breaks a naive import |
 | Two `@deprecated` definitions | A namespace containing them still has to compile clean |
 | Services, unions, multiple versions of one type | Each generates more than one type from one file |

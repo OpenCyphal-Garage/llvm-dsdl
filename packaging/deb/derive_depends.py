@@ -6,14 +6,14 @@
 #
 # ===----------------------------------------------------------------------===//
 
-"""Derive the Debian ``Depends`` list from what the binaries actually link.
+"""Derive the Debian ``Depends`` list from what the binaries link.
 
 ``dpkg-shlibdeps`` cannot be used here: it resolves every linked library against
 the dpkg database, and the vendored ``libLLVM`` belongs to no installed package,
 so it either fails or invents a wrong dependency. Hand-maintaining the list
 instead is worse -- it is invisible when wrong. A package whose ``Depends`` omits
-a transitively needed library installs perfectly and then dies on first run with
-a missing shared object, which is exactly what an unmaintained list produces.
+a transitively needed library installs and then dies on first run with
+a missing shared object, which an unmaintained list produces.
 
 So the list is derived from the binaries at package time: walk what the tools and
 the vendored library link, drop anything shipped inside the package, and map the
@@ -30,10 +30,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Applied only when something actually links a dynamic libc: ldd does not always
+# Applied only when something links a dynamic libc: ldd does not always
 # report it as a resolvable "=>" entry, so a dynamically linked binary needs it
-# added by hand. A statically linked binary genuinely has no libc dependency, and
-# asserting one there would contradict the point of linking statically.
+# added by hand. A statically linked binary has no libc dependency, and
+# asserting one there would be false.
 BASELINE = ("libc6",)
 
 _LDD_LINE = re.compile(r"^\s*\S+\s*=>\s*(?P<path>/\S+)")
@@ -46,7 +46,7 @@ def is_dynamic(binary: Path) -> bool:
     status, because ldd fails identically for a statically linked binary and
     for one it cannot process at all -- a foreign architecture, most likely.
     Those must not be conflated: the first contributes no dependencies because
-    it genuinely has none, and the second contributes none because we failed to
+    it has none, and the second contributes none because we failed to
     look, which would silently produce a package claiming to need nothing.
     """
     try:
@@ -127,7 +127,7 @@ def main(argv: list[str]) -> int:
              "library itself: its own dependencies are equally load-bearing, and "
              "missing them is what makes a package install cleanly and then fail.")
     # No default: whether libLLVM is vendored is the caller's decision, and
-    # excluding it by default would silently drop a genuine dependency from a
+    # excluding it by default would silently drop a dependency from a
     # build that links the system copy.
     parser.add_argument(
         "--vendored", action="append", default=[],

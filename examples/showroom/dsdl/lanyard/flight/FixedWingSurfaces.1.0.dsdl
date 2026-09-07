@@ -19,6 +19,6 @@ float16 rudder
 # Rudder deflection, -1.0 (full left) to +1.0 (full right).
 
 float16 throttle
-# Normalized thrust command, 0.0 (idle) to 1.0 (full).
+# Normalised thrust command, 0.0 (idle) to 1.0 (full).
 
 @sealed

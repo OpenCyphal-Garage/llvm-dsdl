@@ -11,8 +11,8 @@
 /// Public entry points and options for C backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_CEMITTER_H
-#define LLVMDSDL_CODEGEN_CEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_C_H
+#define LLVMDSDL_CODEGEN_EMITTER_C_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -28,6 +28,10 @@ namespace llvmdsdl
 {
 class DiagnosticEngine;
 struct SemanticModule;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::c
+{
 
 /// @file
 /// @brief C backend emission entry points.
@@ -36,17 +40,17 @@ struct SemanticModule;
 ///
 /// The API is the same either way -- the same headers, declaring the same symbols. What differs
 /// is whether the definitions arrive as C to be compiled or as objects already compiled.
-enum class CEmitArtifact : std::uint8_t
+enum class Artifact : std::uint8_t
 {
     Source,
     Object,
 };
 
 /// @brief Configuration options for C code generation.
-struct CEmitOptions final
+struct Options final
 {
     /// @brief Whether the definitions are delivered as sources or as objects.
-    CEmitArtifact artifact{CEmitArtifact::Source};
+    Artifact artifact{Artifact::Source};
 
     /// @brief The target an object is emitted for; the host's own when empty.
     std::string targetTriple;
@@ -63,7 +67,7 @@ struct CEmitOptions final
     /// @brief Emits C89-style top-of-block variable declarations when true.
     bool declareVariablesAtTop{false};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
@@ -93,10 +97,10 @@ struct CEmitOptions final
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emitC(const SemanticModule& semantic,
-                  mlir::ModuleOp        module,
-                  const CEmitOptions&   options,
-                  DiagnosticEngine&     diagnostics);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics);
 
 /// @brief What @p triple spells `size_t` at, in bits.
 ///
@@ -117,9 +121,9 @@ llvm::Error emitC(const SemanticModule& semantic,
 /// @return Success or detailed failure.
 llvm::Error emitObject(const SemanticModule& semantic,
                        mlir::ModuleOp        module,
-                       CEmitOptions          options,
+                       Options               options,
                        DiagnosticEngine&     diagnostics);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::c
 
-#endif  // LLVMDSDL_CODEGEN_CEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_C_H

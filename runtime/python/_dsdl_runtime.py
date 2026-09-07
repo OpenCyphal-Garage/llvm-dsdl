@@ -8,14 +8,14 @@
 #===----------------------------------------------------------------------===#
 #
 # @file
-# Pure-Python DSDL runtime primitives used by generated serializers/deserializers.
+# Pure-Python DSDL runtime primitives used by generated serialisers/deserializers.
 #
 # The module provides reference bit, integer, and floating-point helpers that
 # match the runtime contract used by generated Python packages.
 #
 #===----------------------------------------------------------------------===#
 
-"""Python DSDL runtime primitives used by generated serializers/deserializers."""
+"""Python DSDL runtime primitives used by generated serialisers/deserializers."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def set_bit(buf: bytearray, off_bits: int, value: bool) -> None:
     byte_index = off_bits // 8
     bit_index = off_bits % 8
     if byte_index < 0 or byte_index >= len(buf):
-        raise ValueError("serialization buffer too small")
+        raise ValueError("serialisation buffer too small")
     mask = 1 << bit_index
     if value:
         buf[byte_index] = (buf[byte_index] | mask) & 0xFF

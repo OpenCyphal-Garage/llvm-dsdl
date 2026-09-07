@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements shared diagnostic-text catalog for generated runtime contracts.
+/// Implements shared diagnostic-text catalogue for generated runtime contracts.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -29,7 +29,7 @@ std::string fieldLabel(const bool isUnionField)
 
 std::string serializationBufferTooSmall()
 {
-    return "serialization buffer too small";
+    return "serialisation buffer too small";
 }
 
 std::string invalidUnionTagPrefix()

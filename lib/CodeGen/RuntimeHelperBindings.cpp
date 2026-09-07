@@ -11,7 +11,7 @@
 /// Shared helper-binding lookup utilities for scripted runtime emitters.
 ///
 /// The implementation maps lowered helper symbols into emitter-local helper
-/// names and centralizes per-field helper descriptor resolution.
+/// names and centralises per-field helper descriptor resolution.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -1,5 +1,5 @@
 # The host owns this file. dsdlc also wrote a pyproject.toml beside the package it generated,
-# declaring setuptools; it is inert here because nothing builds that directory.
+# declaring setuptools; it is inert here.
 [build-system]
 requires = ["flit_core>=3.9"]
 build-backend = "flit_core.buildapi"

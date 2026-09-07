@@ -40,7 +40,7 @@ execute_process(
 if(NOT portable_result EQUAL 0)
   message(STATUS "portable generation stdout:\n${portable_stdout}")
   message(STATUS "portable generation stderr:\n${portable_stderr}")
-  message(FATAL_ERROR "failed to generate TypeScript portable runtime specialization output")
+  message(FATAL_ERROR "failed to generate TypeScript portable runtime specialisation output")
 endif()
 
 execute_process(
@@ -58,7 +58,7 @@ execute_process(
 if(NOT fast_result EQUAL 0)
   message(STATUS "fast generation stdout:\n${fast_stdout}")
   message(STATUS "fast generation stderr:\n${fast_stderr}")
-  message(FATAL_ERROR "failed to generate TypeScript fast runtime specialization output")
+  message(FATAL_ERROR "failed to generate TypeScript fast runtime specialisation output")
 endif()
 
 foreach(required
@@ -77,11 +77,11 @@ file(READ "${portable_out}/package.json" portable_package_json)
 file(READ "${fast_out}/package.json" fast_package_json)
 if(NOT portable_package_json MATCHES
       "\"tsRuntimeSpecialization\"[ \t\r\n]*:[ \t\r\n]*\"portable\"")
-  message(FATAL_ERROR "expected portable package.json metadata to record portable specialization")
+  message(FATAL_ERROR "expected portable package.json metadata to record portable specialisation")
 endif()
 if(NOT fast_package_json MATCHES
       "\"tsRuntimeSpecialization\"[ \t\r\n]*:[ \t\r\n]*\"fast\"")
-  message(FATAL_ERROR "expected fast package.json metadata to record fast specialization")
+  message(FATAL_ERROR "expected fast package.json metadata to record fast specialisation")
 endif()
 
 set(portable_src "${portable_out}")

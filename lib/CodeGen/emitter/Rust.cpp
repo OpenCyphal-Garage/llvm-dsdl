@@ -17,7 +17,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
-#include "llvmdsdl/CodeGen/RustEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Rust.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
@@ -67,16 +67,15 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::rust
 {
-class DiagnosticEngine;
 
 namespace
 {
 
-std::string rustMemoryModeVariantPath(const RustEmitOptions& options)
+std::string rustMemoryModeVariantPath(const Options& options)
 {
-    if (options.memoryMode == RustMemoryMode::InlineThenPool)
+    if (options.memoryMode == MemoryMode::InlineThenPool)
     {
         return "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool";
     }
@@ -755,7 +754,7 @@ private:
         void spellSerializeValidateTag() override
         {
             const auto validateHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
+                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
             owner_.trace(EmitTraceOp::ValidateTag);
             w_.line("let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
             w_.line("if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
@@ -763,10 +762,9 @@ private:
 
         void spellSerializeWriteMaskedTag() override
         {
-            const auto tagHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
-            const auto tagExpr = tagHelper + "(self._tag_ as u64)";
-            const auto tagErr  = owner_.nextName("err");
+            const auto tagHelper = FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
+            const auto tagErr    = owner_.nextName("err");
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::WriteTag, tagBits_);
             w_.line("let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + tagExpr + ", " +
@@ -780,8 +778,7 @@ private:
             owner_.trace(EmitTraceOp::ReadTag, tagBits_);
             w_.line("let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
                     std::to_string(tagBits_) + "u8);");
-            const auto tagHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
+            const auto tagHelper = FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
             owner_.trace(EmitTraceOp::MaskTag);
             owner_.trace(EmitTraceOp::StoreTag);
             w_.line("self._tag_ = (" + tagHelper + "(" + rawTag + ")) as " +
@@ -791,7 +788,7 @@ private:
         void spellDeserializeValidateTag() override
         {
             const auto validateHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
+                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
             owner_.trace(EmitTraceOp::ValidateTag);
             w_.line("let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
             w_.line("if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
@@ -897,7 +894,7 @@ private:
     ///
     /// Leaf statement idioms only; all cross-group and recursive ordering comes
     /// from renderFieldSteps. Constructed per field render with the direction and
-    /// (for deserialize) the pool-class expression.
+    /// (for deserialise) the pool-class expression.
     class FieldSpelling final : public FieldStepSpelling
     {
     public:
@@ -940,7 +937,7 @@ private:
             case FieldStepKind::ScalarUint: {
                 std::string valueExpr = expr + " as u64";
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 valueExpr         = helper + "(" + valueExpr + ")";
 
                 const auto err = owner_.nextName("err");
@@ -955,7 +952,7 @@ private:
             case FieldStepKind::ScalarSint: {
                 std::string valueExpr = expr + " as i64";
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 valueExpr         = helper + "(" + valueExpr + ")";
 
                 const auto err = owner_.nextName("err");
@@ -972,7 +969,7 @@ private:
                 const auto  floatType      = std::string(step.bits == 64 ? "f64" : "f32");
                 std::string normalizedExpr = expr + " as " + floatType;
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 normalizedExpr    = helper + "(" + normalizedExpr + ")";
                 std::string setCall;
                 if (step.bits == 16)
@@ -1014,7 +1011,7 @@ private:
                 const std::string getter =
                     "get_u" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 const auto raw    = owner_.nextName("raw");
                 owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
                 w_.line("let " + raw + " = crate::dsdl_runtime::" + getter + "(buffer, offset_bits, " +
@@ -1027,7 +1024,7 @@ private:
             }
             case FieldStepKind::ScalarSint: {
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 const auto raw    = owner_.nextName("raw");
                 owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
                 w_.line("let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
@@ -1040,7 +1037,7 @@ private:
             }
             case FieldStepKind::ScalarFloat: {
                 assert(!step.scalarHelperSymbol.empty());
-                const auto helper = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
+                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
                 owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
                 if (step.bits == 16)
                 {
@@ -1079,18 +1076,16 @@ private:
         {
             assert(step.arrayHelpers.has_value());
             assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc = owner_.nextName("len_rc");
+            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             w_.line("let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
             w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
             std::string prefixExpr = expr + ".len() as u64";
             assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto serPrefixHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            prefixExpr     = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err = owner_.nextName("err");
+            const auto serPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
+            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err             = owner_.nextName("err");
             owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
             w_.line("let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + prefixExpr + ", " +
                     std::to_string(step.prefixBits) + "u8);");
@@ -1112,14 +1107,12 @@ private:
             std::string countExpr = rawCount + " as usize";
             assert(step.arrayHelpers.has_value());
             assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto deserPrefixHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            countExpr = deserPrefixHelper + "(" + rawCount + ") as usize";
+            const auto deserPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
+            countExpr                    = deserPrefixHelper + "(" + rawCount + ") as usize";
             w_.line("let " + count + " = " + countExpr + ";");
             assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper =
-                llvmdsdl::FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc = owner_.nextName("len_rc");
+            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
+            const auto validateRc     = owner_.nextName("len_rc");
             owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
             w_.line("let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
             w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
@@ -1194,7 +1187,7 @@ private:
                         "buffer.len().saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
                         "buffer.len()));");
                 assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
+                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
                 const auto validateRc = owner_.nextName("rc");
                 w_.line("let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
                 w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
@@ -1231,7 +1224,7 @@ private:
                         "capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
                         "capacity_bytes));");
                 assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = llvmdsdl::FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
+                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
                 const auto validateRc = owner_.nextName("rc");
                 w_.line("let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
                 w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
@@ -1351,7 +1344,7 @@ void emitSectionType(SourceWriter&                    w,
                      const std::string&               typeName,
                      const SemanticSection&           section,
                      const EmitterContext&            ctx,
-                     const RustEmitOptions&           options,
+                     const Options&                   options,
                      const std::string&               fullName,
                      std::uint32_t                    majorVersion,
                      std::uint32_t                    minorVersion,
@@ -1575,7 +1568,7 @@ void emitSectionType(SourceWriter&                    w,
 std::string renderDefinitionFile(const SemanticDefinition& def,
                                  const EmitterContext&     ctx,
                                  const LoweredFactsMap&    loweredFacts,
-                                 const RustEmitOptions&    options)
+                                 const Options&            options)
 {
     std::ostringstream out;
     SourceWriter       w = makeRustWriter(out);
@@ -1688,16 +1681,16 @@ llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)
                                    fileName.c_str());
 }
 
-std::string renderCargoToml(const RustEmitOptions& options)
+std::string renderCargoToml(const Options& options)
 {
     const auto rustProfileName = [&options]() -> const char* {
-        return options.profile == RustProfile::Std ? "std" : "no-std-alloc";
+        return options.profile == Profile::Std ? "std" : "no-std-alloc";
     };
     const auto rustRuntimeSpecializationName = [&options]() -> const char* {
-        return options.runtimeSpecialization == RustRuntimeSpecialization::Fast ? "fast" : "portable";
+        return options.runtimeSpecialization == RuntimeSpecialization::Fast ? "fast" : "portable";
     };
     const auto rustMemoryModeName = [&options]() -> const char* {
-        return options.memoryMode == RustMemoryMode::InlineThenPool ? "inline-then-pool" : "max-inline";
+        return options.memoryMode == MemoryMode::InlineThenPool ? "inline-then-pool" : "max-inline";
     };
 
     std::ostringstream out;
@@ -1717,11 +1710,11 @@ std::string renderCargoToml(const RustEmitOptions& options)
 
     out << "[features]\n";
     std::vector<std::string> defaultFeatures;
-    if (options.profile == RustProfile::Std)
+    if (options.profile == Profile::Std)
     {
         defaultFeatures.emplace_back("std");
     }
-    if (options.runtimeSpecialization == RustRuntimeSpecialization::Fast)
+    if (options.runtimeSpecialization == RuntimeSpecialization::Fast)
     {
         defaultFeatures.emplace_back("runtime-fast");
     }
@@ -1742,11 +1735,11 @@ std::string renderCargoToml(const RustEmitOptions& options)
 
 }  // namespace
 
-llvm::Error emitRust(const SemanticModule&  semantic,
-                     mlir::ModuleOp         module,
-                     const RustEmitOptions& options,
-                     DiagnosticEngine&      diagnostics,
-                     EmitTraceSink*         traceSink)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1851,7 +1844,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
             parentRel = dirRel;
         }
 
-        const auto modName = llvmdsdl::EmitterContext::rustModuleName(def.info);
+        const auto modName = EmitterContext::rustModuleName(def.info);
         dirToFiles[dirRel].insert(modName);
 
         std::filesystem::path dir = srcRoot;
@@ -1945,4 +1938,4 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     return llvm::Error::success();
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::rust

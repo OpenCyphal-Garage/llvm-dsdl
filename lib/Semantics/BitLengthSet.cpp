@@ -12,10 +12,10 @@
 ///
 /// This engine supports arithmetic and union composition over bit-length expressions used by semantic extent reasoning.
 ///
-/// The authoritative behavioral contract (denotational semantics, value-domain preconditions,
+/// The authoritative behavioural contract (denotational semantics, value-domain preconditions,
 /// invariants I1..I4, algebraic laws, and the exactness model) lives in the class-level
 /// specification in BitLengthSet.h. The comments in this file document how each expression
-/// node realizes that contract, and in particular the per-node truncation policies of
+/// node realises that contract, and in particular the per-node truncation policies of
 /// `expand()`, which are implementation details deliberately left unspecified by the public
 /// contract.
 ///
@@ -50,9 +50,9 @@ namespace
 
 /// @brief Hard ceiling on any modulus used during symbolic residue evaluation (`modulo()`).
 ///
-/// Alignment-driven divisors in real DSDL are powers of two (<= 64), and the only operation
-/// that widens the working modulus is `Pad`, which lifts it to `lcm(alignment, divisor)` —
-/// still a small power of two. This cap is never approached in practice; it exists solely so
+/// Alignment-driven divisors in real DSDL are powers of two (<= 64), and `Pad` alone widens the
+/// working modulus, lifting it to `lcm(alignment, divisor)` —
+/// still a small power of two. Real DSDL never approaches this cap; it exists so
 /// the pathological case (a `Pad` whose alignment is coprime to a large divisor) bails out to
 /// the `expand()`-based fallback instead of allocating an enormous residue set. It also bounds a
 /// `ResidueSet` to `kResidueModulusCap` bits = 8 KiB.
@@ -149,7 +149,7 @@ struct ResidueSet final
     }
 };
 
-/// @brief Materializes a `ResidueSet` as the `FlatSet` the public `modulo()` API returns.
+/// @brief Materialises a `ResidueSet` as the `FlatSet` the public `modulo()` API returns.
 ///        `forEach` yields residues ascending, so each insert appends (no shift).
 FlatSet<std::int64_t> residueSetToFlatSet(const ResidueSet& s)
 {
@@ -372,7 +372,7 @@ struct BitLengthSet::Node final
     /// Per-kind derivation, exact on the non-negative value domain:
     ///   Leaf: smallest stored value. Add: min(lhs) + min(rhs). Union: min of the two minima.
     ///   Pad: roundUp(min(lhs), a) — correct because rounding-up is monotone.
-    ///   Repeat: param * min(lhs) — picking the minimum for every draw minimizes the sum.
+    ///   Repeat: param * min(lhs) — picking the minimum for every draw minimises the sum.
     ///   RepeatRange: 0 — the k = 0 term; the smallest element only for non-negative domains.
     /// Sums and products saturate at INT64_MAX rather than overflowing. The
     /// `values.empty()` guard on Leaf is defensive: public constructors never produce an empty
@@ -513,7 +513,7 @@ struct BitLengthSet::Node final
         return memo.at(this);
     }
 
-    /// @brief Materializes S bottom-up with a completeness flag, capping intermediates at `limit`.
+    /// @brief Materialises S bottom-up with a completeness flag, capping intermediates at `limit`.
     ///
     /// Returns `{values, exact}` where `values` is a subset of S with `|values| <= limit` and
     /// `exact` is true iff `values == S`. `limit` is assumed `>= 1` (the public entry point
@@ -746,7 +746,7 @@ struct BitLengthSet::Node final
         return {{0}, true};
     }
 
-    /// @brief Iterative, memoized driver for `expandNode`.
+    /// @brief Iterative, memoised driver for `expandNode`.
     [[nodiscard]] BitLengthSet::Expansion expandChecked(std::size_t limit) const
     {
         const auto                                               order = collectPostOrder(this);
@@ -778,7 +778,7 @@ struct BitLengthSet::Node final
     /// @return False when saturation is reachable or a required modulus exceeds
     ///         `kResidueModulusCap`; on false, `out` is left unchanged.
     ///
-    /// Iterative and memoized over `(node, modulus)` contexts (a `Pad` evaluates its child at the
+    /// Iterative and memoised over `(node, modulus)` contexts (a `Pad` evaluates its child at the
     /// widened modulus `lcm(a, modulus)`, so one node can appear at several moduli): this visits a
     /// shared subgraph once per distinct context and uses no call stack. The
     /// root's residues are unioned into `out` on success.
@@ -901,7 +901,7 @@ struct BitLengthSet::Node final
     /// @brief Renders the expression structure (not the expanded set); grammar in the header.
     ///
     /// Leaf values print ascending (std::set order); `param` prints post-clamping. Diagnostic
-    /// aid only — not a stable serialization format.
+    /// aid only — not a stable serialisation format.
     [[nodiscard]] std::string str() const
     {
         // Iterative token stack so a deep chain does not overflow the call stack. Each
@@ -1222,7 +1222,7 @@ std::optional<RunSet> BitLengthSet::runSet() const
     {
         return *runSetCache_;
     }
-    // Same iterative, memoized post-order shape as min()/expandChecked(): each distinct node is
+    // Same iterative, memoised post-order shape as min()/expandChecked(): each distinct node is
     // evaluated once from its children's RunSets. A nullopt anywhere (complexity budget or int64
     // range check inside a RunSet operation) poisons the result — exact or nothing.
     const auto                                             order = Node::collectPostOrder(root_.get());

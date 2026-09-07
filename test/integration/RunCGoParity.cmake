@@ -51,7 +51,7 @@ endif()
 # SANITIZE is a comma-separated -fsanitize list (e.g. "address,undefined"); the
 # generated C decoders + C harness are compiled with it, and the sanitizer
 # runtime is threaded into the CGo external link via -extldflags so ASan/UBSan
-# observe the C decode path over the harness's randomized + directed malformed
+# observe the C decode path over the harness's randomised + directed malformed
 # inputs. NOTE: the generated *Go* decoders are memory-safe by construction (a
 # malformed payload panics rather than corrupting memory, and the harness asserts
 # C<->Go parity, so any panic already fails the test); ASan/UBSan therefore only
@@ -87,10 +87,9 @@ file(MAKE_DIRECTORY "${go_out}")
 file(MAKE_DIRECTORY "${build_out}")
 file(MAKE_DIRECTORY "${harness_out}")
 
-# Go used to have no choice here -- uavcan carries 20 types at more than one version and a DSDL
-# namespace is one Go package, so unversioned names could not be generated at all. The newest
-# version of each type is now the default, so this harness runs with no naming flags. The
-# harness names no version that the default drops, which is what makes that safe.
+# uavcan carries 20 types at more than one version and a DSDL namespace is one Go package, so Go
+# can generate unversioned names only under the newest-version default. This harness runs with no
+# naming flags and names no version that the default drops.
 include("${SOURCE_ROOT}/cmake/HarnessTypeNameTokens.cmake")
 llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversioned")
 
@@ -479,7 +478,7 @@ set(required_directed_markers
   "PASS node_io_statistics_truncated_input directed"
   "PASS time_tai_info_truncated_input directed"
   "PASS get_sync_master_info_request_truncated_input directed"
-  # Serialize-capacity error parity.
+  # Serialise-capacity error parity.
   "PASS heartbeat_serialize_small_buffer directed"
   "PASS file_path_serialize_small_buffer directed"
   "PASS node_id_serialize_small_buffer directed"

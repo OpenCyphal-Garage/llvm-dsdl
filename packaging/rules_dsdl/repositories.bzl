@@ -84,7 +84,7 @@ def _dsdl_namespace_repository_impl(repository_ctx):
     # the ordinary case is that neither does: a developer rebuilds dsdlc, or a package upgrade drops
     # a new binary at the same install path. Without this, that build silently serves generated code
     # from the previous compiler -- a dsdlc that cannot even run still yields "up-to-date", because
-    # nothing in the graph refers to it. Cheap to get wrong and expensive to notice.
+    # nothing in the graph refers to it.
     repository_ctx.watch(dsdlc)
 
     # The anchor is a file in the calling module whose directory is the reference point for `root`.
@@ -153,7 +153,7 @@ dsdl_namespace_repository = repository_rule(
     environ = ["DSDLC", "PATH"],
     doc = """Generates a whole namespace at fetch time and exposes it as one cc_library.
 
-Everything the namespace reaches is generated, including the standard types from the catalog
+Everything the namespace reaches is generated, including the standard types from the catalogue
 compiled into dsdlc, so there is nothing to list and nothing to keep in step. Use this unless you
 specifically want generation to happen as a build action -- see defs.bzl for that.
 """,

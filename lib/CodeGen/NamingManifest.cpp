@@ -95,8 +95,8 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
                                                     def.info.minorVersion,
                                                     typeNameVersioning);
     }
-    // Exact for every backend: C and C++ name headers after the raw short name, which is what the
-    // FileStem role returns for them, and the other four fold it -- both go through this one call.
+    // Exact for every backend: the FileStem role returns the raw short name for C and C++ and the
+    // folded one for the other four -- both go through this one call.
     out["file_stem"] =
         renderVersionedFileStem(language, def.info.shortName, def.info.majorVersion, def.info.minorVersion);
     out["namespace"] = std::move(namespaceParts);

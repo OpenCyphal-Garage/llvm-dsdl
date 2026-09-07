@@ -10,7 +10,7 @@
 /// @file
 /// Implements lowering from semantic models to DSDL MLIR.
 ///
-/// The lowering pipeline maps analyzed types and sections into dialect operations suitable for downstream transforms.
+/// The lowering pipeline maps analysed types and sections into dialect operations suitable for downstream transforms.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -421,7 +421,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
     }
 
     // Proactively verify the lowered module here, in the lowering itself, so every op
-    // verifier (serialization plan / io / align / field / constant) fires for ALL backends
+    // verifier (serialisation plan / io / align / field / constant) fires for ALL backends
     // — not only the C path, which happens to verify via its pass manager. Malformed IR is
     // rejected loudly at construction rather than flowing silently into a backend.
     //

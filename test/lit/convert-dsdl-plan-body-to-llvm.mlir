@@ -19,8 +19,7 @@ func.func @widget_serialize(
   // CHECK: llvm.icmp "eq" %[[OBJ]], %[[NULL]]
   %n = dsdl.is_null %obj : !dsdl.ptr<!dsdl.opaque<"const fixtures__vendor__Widget">>
 
-  // The size arrives by pointer and is simply loaded; there is no cast between spellings
-  // because there are no spellings.
+  // The size arrives by pointer and is loaded; there is no cast between spellings.
   // CHECK: llvm.load %[[SZ]] : !llvm.ptr -> i64
   %cap = dsdl.load_scalar %sz : !dsdl.ptr<!dsdl.opaque<"size_t">> -> i64
 

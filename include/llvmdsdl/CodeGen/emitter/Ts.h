@@ -11,8 +11,8 @@
 /// Public entry points and options for TypeScript backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_TS_EMITTER_H
-#define LLVMDSDL_CODEGEN_TS_EMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_TS_H
+#define LLVMDSDL_CODEGEN_EMITTER_TS_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -32,12 +32,16 @@ namespace llvmdsdl
 class DiagnosticEngine;
 class EmitTraceSink;
 struct SemanticModule;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::ts
+{
 
 /// @file
 /// @brief TypeScript backend emission entry points.
 
-/// @brief TypeScript runtime specialization selection.
-enum class TsRuntimeSpecialization
+/// @brief TypeScript runtime specialisation selection.
+enum class RuntimeSpecialization
 {
     /// @brief Emit conservative portable runtime helpers.
     Portable,
@@ -47,7 +51,7 @@ enum class TsRuntimeSpecialization
 };
 
 /// @brief Configuration options for TypeScript code generation.
-struct TsEmitOptions final
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -64,10 +68,10 @@ struct TsEmitOptions final
     /// @brief Emits package metadata when true.
     bool emitPackageJson{true};
 
-    /// @brief Requested runtime helper specialization.
-    TsRuntimeSpecialization runtimeSpecialization{TsRuntimeSpecialization::Portable};
+    /// @brief Requested runtime helper specialisation.
+    RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Optional list of selected type keys to emit.
@@ -88,12 +92,12 @@ struct TsEmitOptions final
 /// @param[in] traceSink Optional emit-order trace sink (for the emit-order verifier); null (default) disables tracing
 /// at zero cost.
 /// @return Success or detailed failure.
-llvm::Error emitTs(const SemanticModule& semantic,
-                   mlir::ModuleOp        module,
-                   const TsEmitOptions&  options,
-                   DiagnosticEngine&     diagnostics,
-                   EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::ts
 
-#endif  // LLVMDSDL_CODEGEN_TS_EMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_TS_H

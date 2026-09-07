@@ -191,7 +191,7 @@ if(NOT tsc_result EQUAL 0)
   message(FATAL_ERROR "failed to compile fixture TypeScript runtime parity smoke")
 endif()
 
-# Generated TS package declares ESM at the root; force CommonJS just for the
+# Generated TS package declares ESM at the root; force CommonJS for the
 # compiled test harness output so `node runtime_parity_smoke.js` executes.
 file(WRITE "${ts_out}/js/package.json" "{\n  \"type\": \"commonjs\"\n}\n")
 

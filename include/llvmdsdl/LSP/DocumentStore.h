@@ -43,7 +43,7 @@ struct DocumentSnapshot final
 
 /// @brief Tracks open-document overlays keyed by URI.
 ///
-/// All operations are internally synchronized, so the store may be shared across the LSP's threads
+/// All operations are internally synchronised, so the store may be shared across the LSP's threads
 /// (the main message loop mutates it on didOpen/didChange/didClose; request/analysis work may read
 /// it). Read accessors return values (copies), never pointers into the map, so a result can outlive
 /// a concurrent mutation without dangling.

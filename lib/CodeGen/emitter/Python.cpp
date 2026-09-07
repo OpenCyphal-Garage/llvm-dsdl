@@ -10,7 +10,7 @@
 /// @file
 /// Implements Python backend code emission from lowered DSDL modules.
 ///
-/// This file emits Python dataclass models, serializer/deserializer methods,
+/// This file emits Python dataclass models, serialiser/deserializer methods,
 /// and runtime wiring from lowering contracts.
 ///
 /// The line-building concatenations here carry NOLINT for
@@ -22,7 +22,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
-#include "llvmdsdl/CodeGen/PythonEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Python.h"
 
 #include <algorithm>
 #include <cassert>
@@ -65,9 +65,8 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::python
 {
-class DiagnosticEngine;
 
 namespace
 {
@@ -80,7 +79,7 @@ std::string pyConstValue(const TypeExprAST& type, const Value& value)
 /// @brief Collision-free attribute names for one section's fields.
 ///
 /// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
-/// dataclass would silently declare one attribute for two DSDL fields and the (de)serializer would
+/// dataclass would silently declare one attribute for two DSDL fields and the (de)serialiser would
 /// read/write the wrong one with no error. Built from `section.fields` order so every site agrees.
 NamingScope makePyFieldIdents(const SemanticSection& section)
 {
@@ -173,9 +172,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
 /// @brief Python spelling of the helper body shapes (see HelperBodyPlan.h).
 ///
 /// The suites here get their depth from the writer like any other Python this
-/// backend emits. The shared renderer used to bake four spaces into the strings
-/// themselves, because indentation is semantic in Python and there was nowhere else
-/// to put it.
+/// backend emits.
 class PyHelperBodySpelling final : public HelperBodySpelling
 {
 public:
@@ -1304,7 +1301,7 @@ public:
         // The if / elif chain has no closing construct.
     }
 
-    /// @brief Selects the bad-tag diagnostic text (serialize vs decoded spelling).
+    /// @brief Selects the bad-tag diagnostic text (serialise vs decoded spelling).
     void setBadTagDiagnosticPrefix(std::string prefix)
     {
         badTagDiagnosticPrefix_ = std::move(prefix);
@@ -1714,12 +1711,12 @@ llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)
                                    fileName.c_str());
 }
 
-/// @brief Returns the runtime scaffold file name for a Python specialization.
-/// @param[in] runtimeSpecialization Runtime specialization profile.
+/// @brief Returns the runtime scaffold file name for a Python specialisation.
+/// @param[in] runtimeSpecialization Runtime specialisation profile.
 /// @return Source runtime scaffold file name under `runtime/python`.
-std::string runtimeFileForSpecialization(const PythonRuntimeSpecialization runtimeSpecialization)
+std::string runtimeFileForSpecialization(const RuntimeSpecialization runtimeSpecialization)
 {
-    if (runtimeSpecialization == PythonRuntimeSpecialization::Fast)
+    if (runtimeSpecialization == RuntimeSpecialization::Fast)
     {
         return "_dsdl_runtime_fast.py";
     }
@@ -1729,14 +1726,14 @@ std::string runtimeFileForSpecialization(const PythonRuntimeSpecialization runti
 /// @brief Renders backend metadata emitted with generated Python artifacts.
 /// @param[in] options Python emission options.
 /// @return Stable JSON metadata payload.
-std::string renderPackageMetadata(const PythonEmitOptions& options)
+std::string renderPackageMetadata(const Options& options)
 {
     std::ostringstream out;
     out << "{\n";
     out << "  \"llvmdsdl\": {\n";
     out << R"(    "generatorVersion": ")" << llvmdsdl::kVersionString << "\",\n";
     out << R"(    "pythonRuntimeSpecialization": ")";
-    out << (options.runtimeSpecialization == PythonRuntimeSpecialization::Fast ? "fast" : "portable");
+    out << (options.runtimeSpecialization == RuntimeSpecialization::Fast ? "fast" : "portable");
     out << "\"\n";
     out << "  }\n";
     out << "}\n";
@@ -1782,8 +1779,7 @@ std::string renderPyProjectToml(llvm::StringRef packageName, llvm::StringRef roo
 /// The leading generated-by comment stays where it is: a comment is not a statement, so the
 /// docstring is still the module's first statement and still its `__doc__`.
 ///
-/// `__version__` is the generator's version, which is what a generated package can honestly claim to
-/// be versioned by.
+/// `__version__` is the generator's version, the version a generated package can claim.
 std::string renderInitFile(llvm::StringRef dottedName, const bool isPackageRoot)
 {
     std::ostringstream out;
@@ -1856,11 +1852,11 @@ llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
 
 }  // namespace
 
-llvm::Error emitPython(const SemanticModule&    semantic,
-                       mlir::ModuleOp           module,
-                       const PythonEmitOptions& options,
-                       DiagnosticEngine&        diagnostics,
-                       EmitTraceSink*           traceSink)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink)
 {
     if (options.outDir.empty())
     {
@@ -1987,7 +1983,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath  = llvmdsdl::EmitterContext::relativeFilePath(def->info);
+        const auto                     relPath  = EmitterContext::relativeFilePath(def->info);
         const auto                     fullPath = packageRoot / relPath;
 
         if (auto err = ensurePackageInitChain(packageRoot,
@@ -2014,4 +2010,4 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     return llvm::Error::success();
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::python

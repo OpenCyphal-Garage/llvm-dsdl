@@ -611,7 +611,7 @@ public:
 
     [[nodiscard]] std::string title() const override
     {
-        return "Fixed arrays should avoid very large bounds";
+        return "Fixed arrays should avoid large bounds";
     }
 
     void run(const LintDocument& document, std::vector<LintFinding>& findings) const override
@@ -631,7 +631,7 @@ public:
             findings.push_back(makeFinding(id(),
                                            document,
                                            field->location,
-                                           "fixed array bound is very large (" + std::to_string(*capacity) + ")",
+                                           "fixed array bound is large (" + std::to_string(*capacity) + ")",
                                            LintSeverity::Warning));
         }
     }
@@ -647,7 +647,7 @@ public:
 
     [[nodiscard]] std::string title() const override
     {
-        return "Variable arrays should avoid very large bounds";
+        return "Variable arrays should avoid large bounds";
     }
 
     void run(const LintDocument& document, std::vector<LintFinding>& findings) const override
@@ -668,7 +668,7 @@ public:
             findings.push_back(makeFinding(id(),
                                            document,
                                            field->location,
-                                           "variable array bound is very large (" + std::to_string(*capacity) + ")",
+                                           "variable array bound is large (" + std::to_string(*capacity) + ")",
                                            LintSeverity::Warning));
         }
     }

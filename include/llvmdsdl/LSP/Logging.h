@@ -12,8 +12,7 @@
 ///
 /// Records are emitted as one JSON object per line so an operator can grep or feed them to a log
 /// processor after the fact ("which request was in flight when the editor stopped responding?").
-/// Verbosity is driven by the negotiated trace level (`$/setTrace` or the `trace` setting), which was
-/// previously parsed but unused.
+/// Verbosity is driven by the negotiated trace level (`$/setTrace` or the `trace` setting).
 ///
 /// The sink is injected rather than hard-wired to a stream: `dsdld` points it at **stderr** because
 /// stdout carries the JSON-RPC frames and must never be interleaved with log text, while tests capture

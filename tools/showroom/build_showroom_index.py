@@ -18,7 +18,7 @@ lines, and what a prospective user wants to see is the shape of the data structu
 documentation survived the trip. The full output is what the `showroom` build target produces.
 
 The index page is the showroom README rendered for the site rather than prose maintained here, so
-that a contributor editing the README -- the file they would naturally reach for -- also updates the
+that a contributor editing the README -- the file they would reach for -- also updates the
 documentation site, and the dirty-tree check in CI enforces the two staying in step.
 """
 
@@ -74,7 +74,7 @@ NAMESPACE_ROOT = "lanyard"
 
 # The documentation theme gives a code block about eighty monospace characters before it starts
 # scrolling horizontally, and that width does not grow with the window -- a wider viewport goes to the
-# sidebars. Generated *code* may exceed it and scroll; some serializer signatures are unavoidably long.
+# sidebars. Generated *code* may exceed it and scroll; some serialiser signatures are unavoidably long.
 # Comments may not: their width is chosen by whoever writes the DSDL, so a comment that scrolls is a
 # defect in the definition rather than a fact about the code.
 #
@@ -84,7 +84,7 @@ RENDERED_CODE_COLUMNS = 80
 MAX_COMMENT_PREFIX = 8
 DSDL_COMMENT_COLUMNS = RENDERED_CODE_COLUMNS - MAX_COMMENT_PREFIX
 
-# The marker the lanyard definitions actually write. It is prose, and the annotation is its first
+# The marker the lanyard definitions write. It is prose, and the annotation is its first
 # sentence: several definitions continue past it into commentary about why that transport is the
 # floor, which belongs on the page but not in a table cell.
 TRANSPORT_PATTERN = re.compile(r"^#\s*LEAST SUPPORTED TRANSPORT:\s*(.+?)\s*$", re.MULTILINE)
@@ -92,7 +92,7 @@ TRANSPORT_PATTERN = re.compile(r"^#\s*LEAST SUPPORTED TRANSPORT:\s*(.+?)\s*$", r
 
 @dataclasses.dataclass
 class SectionFacts:
-    """Wire-layout facts for one serializable section (a message, or a service request/response)."""
+    """Wire-layout facts for one serialisable section (a message, or a service request/response)."""
 
     label: str
     extent_bytes: int | None = None
@@ -147,7 +147,7 @@ class TypeInfo:
 
         The paragraph, not the first line: DSDL comments are hard-wrapped, so a first-line summary
         cuts wherever the author happened to hit the margin ("published by the flight controller at
-        50"). The paragraph ends at the first blank comment line, which is where the author actually
+        50"). The paragraph ends at the first blank comment line, which is where the author
         ended the thought.
         """
         paragraph: list[str] = []
@@ -191,14 +191,13 @@ def check_comment_widths(types: list[TypeInfo]) -> list[str]:
 def check_transport_declarations(types: list[TypeInfo]) -> list[str]:
     """Report published types that declare no least-supported transport.
 
-    A tripwire for a silent failure this table has already had once: the marker was renamed on one
-    side, nothing matched, and every row rendered as "unspecified" -- which reads as an answer, not
-    as an absence, so the page looked fine while saying nothing. A default that can quietly become
-    universal needs something asserting it stays rare.
+    A tripwire for a silent failure: if the marker is renamed on one side, nothing matches and every
+    row renders as "unspecified" -- which reads as an answer, not as an absence, so the page looks
+    fine while saying nothing. A default that can quietly become universal needs something asserting
+    it stays rare.
 
-    Scoped to types with a fixed port ID because those are exactly the ones the question applies to:
-    they are published on their own, so they have a transport to be sized for. A nested type is a
-    field of something else and inherits its budget.
+    Scoped to types with a fixed port ID: they are published on their own, so they have a transport
+    to be sized for. A nested type is a field of something else and inherits its budget.
     """
     return [
         f"{info.dsdl_path}: {info.versioned_name} has a fixed port ID but declares no "
@@ -300,7 +299,7 @@ def attach_facts(types: list[TypeInfo], facts: dict[str, SectionFacts]) -> None:
 # Declaration excerpts.
 #
 # Each extractor finds the aggregate declarations for a type, together with the documentation block
-# immediately above them, and stops before the serialization machinery. The openers are anchored at
+# immediately above them, and stops before the serialisation machinery. The openers are anchored at
 # column zero because every backend emits top-level declarations unindented.
 
 COMMENT_PREFIXES = ("//", "///", "/*", "*", "#")
@@ -450,7 +449,7 @@ def render_type_page(info: TypeInfo, generated_root: Path) -> str:
             out.append(f"| {section.label} | {extent} | {maximum} |")
         out.append("")
         out.append(
-            "A sealed type reports its extent as its exact serialized size; a delimited type reports the "
+            "A sealed type reports its extent as its exact serialised size; a delimited type reports the "
             "declared `@extent`, which bounds what a reader must be prepared to receive."
         )
         out.append("")
@@ -465,7 +464,7 @@ def render_type_page(info: TypeInfo, generated_root: Path) -> str:
     out.append("## Generated code")
     out.append("")
     out.append(
-        "Declaration excerpts only -- the serialization bodies are omitted for length. Build the "
+        "Declaration excerpts only -- the serialisation bodies are omitted for length. Build the "
         "`showroom` target for the complete output in every language and profile."
     )
     out.append("")

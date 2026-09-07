@@ -15,15 +15,15 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "llvmdsdl/CodeGen/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::c
 {
 
-std::vector<std::string> renderCTypeMetadataMacros(const CHeaderTypeMetadata& metadata)
+std::vector<std::string> renderTypeMetadataMacros(const HeaderTypeMetadata& metadata)
 {
     return {
         "#define " + metadata.typeName + "_FULL_NAME_ \"" + metadata.fullName + "\"",
@@ -35,10 +35,10 @@ std::vector<std::string> renderCTypeMetadataMacros(const CHeaderTypeMetadata& me
     };
 }
 
-std::vector<std::string> renderCServiceAliasIdentityMacros(const std::string&  baseTypeName,
-                                                           const std::string&  fullName,
-                                                           const std::uint32_t majorVersion,
-                                                           const std::uint32_t minorVersion)
+std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&  baseTypeName,
+                                                          const std::string&  fullName,
+                                                          const std::uint32_t majorVersion,
+                                                          const std::uint32_t minorVersion)
 {
     return {
         "#define " + baseTypeName + "_FULL_NAME_ \"" + fullName + "\"",
@@ -47,8 +47,8 @@ std::vector<std::string> renderCServiceAliasIdentityMacros(const std::string&  b
     };
 }
 
-std::vector<std::string> renderCServiceAliasBridgeLines(const std::string& baseTypeName,
-                                                        const std::string& requestTypeName)
+std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
+                                                       const std::string& requestTypeName)
 {
     return {
         "typedef " + requestTypeName + " " + baseTypeName + ";",
@@ -60,8 +60,8 @@ std::vector<std::string> renderCServiceAliasBridgeLines(const std::string& baseT
     };
 }
 
-std::vector<std::string> renderCServiceAliasWrapperLines(const std::string& baseTypeName,
-                                                         const std::string& requestTypeName)
+std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
+                                                        const std::string& requestTypeName)
 {
     return {
         "static inline int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
@@ -92,4 +92,4 @@ std::vector<std::string> renderCServiceAliasWrapperLines(const std::string& base
     };
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::c

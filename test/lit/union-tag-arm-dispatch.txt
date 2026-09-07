@@ -1,7 +1,7 @@
 # A union's arms are selected by the value the plan validated and wrote, not by what came off
-# the object. The tag is loaded, normalised through the serialize tag helper, and it is that
+# the object. The tag is loaded, normalised through the serialise tag helper, and it is that
 # result the validator sees, the wire receives and each arm's predicate compares against; the
-# deserialize side does the same with the value read off the wire.
+# deserialise side does the same with the value read off the wire.
 #
 # The two are equal only because a tag's storage is never wider than its bit count, an
 # invariant the analyser enforces. Selecting an arm on an unvalidated value would make the

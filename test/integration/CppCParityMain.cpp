@@ -10,8 +10,8 @@
 /// @file
 /// Differential parity harness comparing generated C++ and C bindings.
 ///
-/// The test executes randomized roundtrips and checks deserialize/serialize
-/// return codes, consumed sizes, and serialized byte equivalence.
+/// The test executes randomised roundtrips and checks deserialise/serialize
+/// return codes, consumed sizes, and serialised byte equivalence.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -235,7 +235,7 @@ std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@V1_0@
 int runDirectedErrorCases()
 {
     {
-        // Truncated Heartbeat deserialization should succeed via implicit zero-extension.
+        // Truncated Heartbeat deserialisation should succeed via implicit zero-extension.
         const std::uint8_t      input[1] = {0x00U};
         uavcan__node__Heartbeat@CV1_0@ cObj{};
         uavcan::node::Heartbeat@V1_0@ cppObj{};
@@ -259,7 +259,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Invalid union tag in Frame deserialization.
+        // Invalid union tag in Frame deserialisation.
         const std::uint8_t                    input[1] = {0xFFU};
         uavcan__metatransport__can__Frame@CV0_2@     cObj{};
         uavcan::metatransport::can::Frame@V0_2@ cppObj{};
@@ -284,7 +284,7 @@ int runDirectedErrorCases()
 
     {
         // Service request mixed-path case: declared parameter length exceeds provided payload bytes.
-        // Deserialization should succeed via implicit truncation/zero-extension.
+        // Deserialisation should succeed via implicit truncation/zero-extension.
         const std::uint8_t input[4] = {0x34U, 0x12U, 0x02U, 0xAAU};  // command=0x1234, parameter.count=2
         uavcan__node__ExecuteCommand@CV1_3@__Request     cObj{};
         uavcan::node::ExecuteCommand@CV1_3@_Request cppObj{};
@@ -331,7 +331,7 @@ int runDirectedErrorCases()
 
     {
         // Service response mixed-path case: declared output length exceeds provided payload bytes.
-        // This should deserialize successfully via implicit truncation/zero-extension.
+        // This should deserialise successfully via implicit truncation/zero-extension.
         const std::uint8_t input[3] = {0x01U, 0x02U, 0xAAU};  // status=1, output.count=2, payload[0]=0xAA
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
         uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
@@ -377,7 +377,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Invalid variable-array length in ExecuteCommand.Response deserialization.
+        // Invalid variable-array length in ExecuteCommand.Response deserialisation.
         const std::uint8_t                         input[2] = {0x00U, 0xFFU};  // status=0, output.count=255
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
         uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
@@ -401,7 +401,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Invalid delimiter header in List deserialization.
+        // Invalid delimiter header in List deserialisation.
         const std::uint8_t           input[4] = {0xFFU, 0xFFU, 0xFFU, 0x7FU};
         uavcan__node__port__List@CV1_0@     cObj{};
         uavcan::node::port::List@V1_0@ cppObj{};
@@ -572,7 +572,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Invalid union tag in Frame serialization.
+        // Invalid union tag in Frame serialisation.
         uavcan__metatransport__can__Frame@CV0_2@     cObj{};
         uavcan::metatransport::can::Frame@V0_2@ cppObj{};
         cObj._tag_   = 0xFFU;
@@ -600,7 +600,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Service request-path failure: too-small buffer on serialization.
+        // Service request-path failure: too-small buffer on serialisation.
         uavcan__node__ExecuteCommand@CV1_3@__Request     cObj{};
         uavcan::node::ExecuteCommand@CV1_3@_Request cppObj{};
         std::uint8_t                              cBuffer[300]{};
@@ -657,7 +657,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Invalid variable-array length in ExecuteCommand.Response serialization.
+        // Invalid variable-array length in ExecuteCommand.Response serialisation.
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
         uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
         cObj.status = 0U;
@@ -688,7 +688,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Too-small buffer in Heartbeat serialization.
+        // Too-small buffer in Heartbeat serialisation.
         uavcan__node__Heartbeat@CV1_0@ cObj{};
         uavcan::node::Heartbeat@V1_0@ cppObj{};
         std::uint8_t            cBuffer[8]{};
@@ -713,7 +713,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Saturating serialize edge: Health.value is saturated uint2, so 0xFF must clamp to 0x03.
+        // Saturating serialise edge: Health.value is saturated uint2, so 0xFF must clamp to 0x03.
         uavcan__node__Health@CV1_0@ cObj{};
         uavcan::node::Health@V1_0@ cppObj{};
         cObj.value   = 0xFFU;
@@ -742,7 +742,7 @@ int runDirectedErrorCases()
     }
 
     {
-        // Truncating serialize edge: SynchronizedTimestamp.microsecond is truncated uint56.
+        // Truncating serialise edge: SynchronizedTimestamp.microsecond is truncated uint56.
         constexpr std::uint64_t             kInput      = UINT64_C(0xFEDCBA9876543210);
         const std::uint8_t                  expected[7] = {0x10U, 0x32U, 0x54U, 0x76U, 0x98U, 0xBAU, 0xDCU};
         uavcan__time__SynchronizedTimestamp@CV1_0@ cObj{};
@@ -826,10 +826,10 @@ int runDirectedErrorCases()
     }
 
     {
-        // Float32 signaling-NaN payload must survive deserialize->serialize byte-exactly in both C
+        // Float32 signalling-NaN payload must survive deserialise->serialize byte-exactly in both C
         // and C++. Regression guard for the float32 -> double -> float32 round-trip that quieted
-        // signaling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
-        // float16 is intentionally excluded: the shared runtime canonicalizes half-precision NaN
+        // signalling NaNs (the quiet bit 0x40 in byte[2] must stay clear, i.e. 0x80 not 0xC0).
+        // float16 is intentionally excluded: the shared runtime canonicalises half-precision NaN
         // payloads to 0x7E00 for every backend, so there is no stable payload to preserve there.
         const std::uint8_t                golden[4] = {0x01U, 0x00U, 0x80U, 0x7FU};  // float32 sNaN
         uavcan__primitive__scalar__Real32@CV1_0@ cObj{};
@@ -849,7 +849,7 @@ int runDirectedErrorCases()
             (std::memcmp(cppOut, golden, 4U) != 0))
         {
             std::fprintf(stderr,
-                         "Directed mismatch (Real32 signaling-NaN payload roundtrip): "
+                         "Directed mismatch (Real32 signalling-NaN payload roundtrip): "
                          "C(rc=%d,size=%zu) C++(rc=%d,size=%zu)\n",
                          static_cast<int>(cSerRc),
                          cSize,

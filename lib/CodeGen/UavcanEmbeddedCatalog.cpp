@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Embedded UAVCAN catalog loader implementation.
+/// Embedded UAVCAN catalogue loader implementation.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -488,7 +488,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
             if (it->second.seenPlan)
             {
                 diagnostics.error({"<embedded-uavcan>", 1, 1},
-                                  "duplicate embedded serialization plan for section '" + sectionName + "'");
+                                  "duplicate embedded serialisation plan for section '" + sectionName + "'");
                 return false;
             }
 
@@ -537,7 +537,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
         if (!sections["request"].seenPlan || !sections["response"].seenPlan)
         {
             diagnostics.error({"<embedded-uavcan>", 1, 1},
-                              "embedded service schema missing request/response serialization plans for " +
+                              "embedded service schema missing request/response serialisation plans for " +
                                   out.info.fullName);
             return false;
         }
@@ -553,7 +553,7 @@ bool parseSemanticDefinition(mlir::dsdl::SchemaOp schema, SemanticDefinition& ou
         if (!sections[""].seenPlan)
         {
             diagnostics.error({"<embedded-uavcan>", 1, 1},
-                              "embedded message schema missing primary serialization plan for " + out.info.fullName);
+                              "embedded message schema missing primary serialisation plan for " + out.info.fullName);
             return false;
         }
         out.request = sections[""].section;
@@ -599,7 +599,7 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
     if (!embeddedUavcanCatalogIntegrityOk())
     {
         const SourceLocation here{"<embedded-uavcan>", 1, 1};
-        diagnostics.error(here, "embedded UAVCAN catalog failed SHA-256 integrity verification");
+        diagnostics.error(here, "embedded UAVCAN catalogue failed SHA-256 integrity verification");
         diagnostics.note(here,
                          "recorded " + embeddedUavcanCatalogRecordedSha256().str() + ", computed " +
                              embeddedUavcanCatalogComputedSha256());
@@ -612,10 +612,10 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
                              "', or regenerate it with 'python3 tools/dsdlc/generate_embedded_uavcan_mlir.py "
                              "--dsdlc <path-to-dsdlc>', then rebuild");
         diagnostics.note(here,
-                         "to build without the compiled-in catalog, pass --no-embedded-uavcan and add "
+                         "to build without the compiled-in catalogue, pass --no-embedded-uavcan and add "
                          "--lookup-dir <checkout>/public_regulated_data_types/uavcan");
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "embedded UAVCAN catalog failed SHA-256 integrity verification");
+                                       "embedded UAVCAN catalogue failed SHA-256 integrity verification");
     }
 
     auto module = mlir::parseSourceString<mlir::ModuleOp>(uavcan_embedded_mlir::kEmbeddedUavcanMlirText, &context);
@@ -729,7 +729,7 @@ bool isAtOrUnderNamespace(llvm::StringRef fullName, llvm::StringRef prefix)
 
 std::vector<std::string> suggestionsForSelector(const UavcanEmbeddedCatalog& catalog, llvm::StringRef selector)
 {
-    // A well-formed type name carrying a version the catalog lacks is the common near-miss, and the
+    // A well-formed type name carrying a version the catalogue lacks is the common near-miss, and the
     // useful answer is the versions that do exist rather than a spelling guess.
     if (const auto versioned = keyFromVersionedSelector(selector); versioned.has_value())
     {
@@ -797,7 +797,7 @@ EmbeddedSelectorExpansion expandEmbeddedCatalogSelector(const UavcanEmbeddedCata
         return expansion;
     }
 
-    // Exact version first: no catalog full name ever equals `<name>.<major>.<minor>`, so this can
+    // Exact version first: no catalogue full name ever equals `<name>.<major>.<minor>`, so this can
     // never race the namespace interpretation below.
     if (const auto versioned = keyFromVersionedSelector(selector); versioned.has_value())
     {

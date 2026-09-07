@@ -65,7 +65,7 @@ bool runTargetLanguagesTests()
         t.expect(isCodegenLanguage(spelled), "library language '" + spelled + "' is a codegen lane");
     }
 
-    // The table is the only place the set is written down, so nothing in it may repeat.
+    // The set is written down only in the table, so nothing in it may repeat.
     std::vector<std::string> names;
     for (const auto& entry : allTargetLanguages())
     {

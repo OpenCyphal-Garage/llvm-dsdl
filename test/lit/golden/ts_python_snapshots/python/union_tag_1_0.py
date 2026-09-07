@@ -62,7 +62,7 @@ def _serialize_UnionTag(value: UnionTag) -> bytes:
         return raw
 
     if not mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(len(out) * 8):
-        raise ValueError("serialization buffer too small")
+        raise ValueError("serialisation buffer too small")
     tag = int(value._tag)
     if not mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag):
         raise ValueError(f"invalid union tag {tag}")

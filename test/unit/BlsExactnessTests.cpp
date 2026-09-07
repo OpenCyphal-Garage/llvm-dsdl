@@ -441,7 +441,7 @@ void testSignedBoundaries(Tests& tests)
     }
 
     // Non-vacuity floor: the battery exists to pin exact boundary behaviour, so the representable
-    // cases must actually have produced results — a kernel regression that starts refusing them
+    // cases must have produced results — a kernel regression that starts refusing them
     // would otherwise satisfy every expectRunOrRefusal above vacuously. 6625 exact results were
     // observed at the time of writing; the floor leaves ~10% slack for legitimate budget
     // tightening while still catching a kernel whose boundary cases collapse into refusals.

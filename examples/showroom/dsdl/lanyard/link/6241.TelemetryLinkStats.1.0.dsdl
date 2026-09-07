@@ -4,15 +4,12 @@
 # LEAST SUPPORTED TRANSPORT: CAN FD.
 
 uavcan.time.SynchronizedTimestamp.1.0 timestamp
-# Moment the counters below were sampled. Because every node timestamps
-# against the same synchronized clock, a ground station can align this
-# sample with the vehicle state that produced it without assuming
-# anything about bus latency.
+# Moment the counters below were sampled, on the synchronised clock
+# every node shares, so a ground station can align this sample with the
+# vehicle state that produced it.
 
 int8 rssi_dbm
-# Received signal strength in dBm at the air end of the link. Signed and
-# in real units, unlike the receiver-specific scale in RcInput.1.0,
-# because a modem reports a calibrated figure.
+# Received signal strength in dBm at the air end of the link.
 
 int8 noise_floor_dbm
 # Measured noise floor in dBm. The difference between this and rssi_dbm

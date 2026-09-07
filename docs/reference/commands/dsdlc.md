@@ -39,7 +39,7 @@ Under `never`, Python still writes the `__init__.py` chain its generated modules
 from: its own definition plus the transitive closure of the composite types it references.
 
 Some outputs have no `.dsdl` source to name: definitions from the [embedded `uavcan`
-catalog](#embedded-uavcan-catalog) and all [support code](#support-code) are compiled into the
+catalogue](#embedded-uavcan-catalogue) and all [support code](#support-code) are compiled into the
 binary. Those rules name **the `dsdlc` executable** as their prerequisite instead — upgrading the
 compiler rebuilds what it produced. An output mixing local and embedded definitions lists its real
 inputs and the executable.
@@ -59,7 +59,7 @@ by pruning are removed too, so a deleted namespace leaves no shape behind.
 
 **One manifest per invocation, not per output directory.** Generation
 [decomposes](#support-code) — a build may split one namespace across several runs for support, the
-embedded catalog, and definitions — and a run owns only the files it emits. A run that swept
+embedded catalogue, and definitions — and a run owns only the files it emits. A run that swept
 `--outdir` would delete the files its siblings had just written, so each tranche is given its own
 manifest and prunes only what it owns:
 
@@ -78,13 +78,13 @@ format change should cost one stale file, not every configured tree.
 The flag is ignored under `--dry-run` and the `--list-*` modes, which imply it. A dry run that
 deleted files while reporting that it wrote none would be worse than either.
 
-## Embedded uavcan catalog
+## Embedded uavcan catalogue
 
-For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog used by the `mlir` and
+For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalogue used by the `mlir` and
 codegen targets. Types referencing core `uavcan` definitions resolve without external `uavcan`
 source roots.
 
-The catalog is consulted automatically during dependency resolution, and can be named directly as a
+The catalogue is consulted automatically during dependency resolution, and can be named directly as a
 target with the `+` sigil.
 
 `+` targets behave as explicit targets: their dependency closure is generated too, and
@@ -93,7 +93,7 @@ and a local definition sharing a type key shadows the embedded one.
 
 Namespace matching is anchored at a dot boundary, so `+uavcan.n` selects nothing rather than
 standing in for `+uavcan.node`. A selector matching nothing is an error with a did-you-mean; an
-unavailable version reports the versions the catalog carries.
+unavailable version reports the versions the catalogue carries.
 
 ## Type versions
 
@@ -129,7 +129,7 @@ keep their own guards, described below.
 
 ### Deprecated types
 
-A definition is deprecated because a newer version replaced it, so this default drops almost every
+A deprecated definition is usually one a newer version replaced, so this default drops almost every
 `@deprecated` type as a side effect. Generating every version brings them back, with the deprecation
 attributes and notices described under [Deprecation](#deprecation).
 

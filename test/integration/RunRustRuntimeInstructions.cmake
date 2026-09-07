@@ -1,14 +1,14 @@
-# Instruction-count regression gate for the generated Rust serializer.
+# Instruction-count regression gate for the generated Rust serialiser.
 #
 # The sibling benchmark measures seconds, which is the honest unit for "how fast is this" and a
 # hopeless one for "did this get slower". A second is a property of the machine that measured it:
-# the same binary, unchanged, spread 1.41x across twenty runs on a contended box, which is why that
-# benchmark's thresholds have never been enforceable anywhere but one developer's desk.
+# the same binary, unchanged, spread 1.41x across twenty runs on a contended box, so that benchmark's
+# thresholds are enforceable nowhere but one developer's desk.
 #
 # An instruction count is a property of the code. Measured under cachegrind, three idle runs and
 # three runs on a deliberately oversubscribed container reported the generated `deserialize` at
-# 8,172,350,000 instructions -- the same number, to the digit, six times. That is what a regression
-# gate needs, and no amount of budget-widening gets wall-clock there.
+# 8,172,350,000 instructions -- the same number, to the digit, six times. A regression gate needs
+# that, and no amount of budget-widening gets wall-clock there.
 #
 # What this therefore does NOT protect against, stated so nobody assumes otherwise: a change that
 # executes the same instructions with worse locality is invisible here. Cachegrind can simulate the
@@ -35,9 +35,9 @@ foreach(var DSDLC OUT_DIR RUST_BENCH_ROOT CARGO_EXECUTABLE BASELINE_JSON)
   endif()
 endforeach()
 
-# Valgrind does not exist on every host this suite runs on -- notably not on Apple Silicon, which it
-# has never supported. A skip is the right answer there; a failure would say the code regressed when
-# what actually happened is that the tool is absent.
+# Valgrind does not exist on every host this suite runs on -- not on Apple Silicon, which it
+# has never supported. A skip is the answer there; a failure would say the code regressed when the
+# tool is absent.
 find_program(VALGRIND_EXECUTABLE valgrind)
 find_program(CG_ANNOTATE_EXECUTABLE cg_annotate)
 if(NOT VALGRIND_EXECUTABLE OR NOT CG_ANNOTATE_EXECUTABLE)
@@ -56,7 +56,7 @@ if(NOT DEFINED BENCH_ITERATIONS_LARGE OR "${BENCH_ITERATIONS_LARGE}" STREQUAL ""
   set(BENCH_ITERATIONS_LARGE 500)
 endif()
 
-# The memory mode is fixed rather than swept. Both modes share the generated serializer; sweeping
+# The memory mode is fixed rather than swept. Both modes share the generated serialiser; sweeping
 # them would double a 77x-slowed run to re-measure the same functions.
 set(mode "max-inline")
 

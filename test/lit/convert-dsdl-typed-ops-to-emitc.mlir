@@ -1,6 +1,6 @@
 // RUN: %dsdl-opt --convert-dsdl-to-emitc %s | FileCheck %s
 
-// The operations a typed serialization plan is made of. The runtime spells one primitive per
+// The operations a typed serialisation plan is made of. The runtime spells one primitive per
 // value shape rather than one generic call, so the conversion selects on value type, width and
 // signedness together, and these cases pin that selection.
 

@@ -24,4 +24,4 @@ ctest --preset test-ci-smoke
 - `check-clang-tidy`
 - integration and release-blocking presets
 
-Keep behavioral parity and matrix CI green before merge.
+Keep behavioural parity and matrix CI green before merge.

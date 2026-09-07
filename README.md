@@ -174,12 +174,12 @@ dsdlc --target-language c path/to/root_namespace \
 
 `dsdlc` also reads `DSDL_INCLUDE_PATH` and `CYPHAL_PATH`.
 
-For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog for
+For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalogue for
 `mlir` and codegen targets (`c`, `cpp`, `rust`, `go`, `ts`, `python`, `obj`). Types
 that reference core `uavcan` definitions resolve without needing external
 `uavcan` source roots. Use `--no-embedded-uavcan` to disable this behaviour.
 
-A `+` target names that catalog directly, generating standard types without a
+A `+` target names that catalogue directly, generating standard types without a
 `public_regulated_data_types` checkout:
 
 ```bash

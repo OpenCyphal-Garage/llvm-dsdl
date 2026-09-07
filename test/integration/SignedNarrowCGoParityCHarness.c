@@ -10,7 +10,7 @@
 /// @file
 /// C ABI harness for signed-narrow C-vs-Go parity integration tests.
 ///
-/// This harness exports randomized and directed entry points for the signed
+/// This harness exports randomised and directed entry points for the signed
 /// 3-bit saturation/truncation fixtures used by the Go parity driver.
 ///
 //===----------------------------------------------------------------------===//

@@ -5,11 +5,9 @@ cmake_minimum_required(VERSION 3.24)
 # inside the bundle. The result runs from anywhere, on a machine that has neither
 # Homebrew nor apt.llvm.org installed.
 #
-# Layout is bin/ + lib/ rather than one flat directory, because this tree is what
-# the macOS release tarball ships: a flat pile of executables and dylibs is a
-# poor thing to hand someone, and separating them lets the executables carry a
-# single relative reference (../lib) instead of depending on their own directory
-# also being the library directory.
+# Layout is bin/ + lib/, the tree the macOS release tarball ships. The
+# executables carry a single relative reference (../lib) instead of depending
+# on their own directory also being the library directory.
 
 foreach(var TOOLS OUTPUT_DIR)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
@@ -71,8 +69,8 @@ function(_llvmdsdl_codesign_macos target_file)
   # Ad-hoc, because a Developer ID signature would need a paid certificate and
   # notarisation. Rewriting a Mach-O invalidates any existing signature, and an
   # invalid signature is worse than an ad-hoc one: the loader refuses it
-  # outright. See docs/development/release-packaging.md §5 for what this means for
-  # Gatekeeper (short version: fine via `tar`, blocked via Finder).
+  # outright. See docs/development/release-packaging.md §5 for the Gatekeeper
+  # consequences (fine via `tar`, blocked via Finder).
   execute_process(
     COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - --timestamp=none "${target_file}"
     RESULT_VARIABLE codesign_result
@@ -283,7 +281,7 @@ elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   endforeach()
 else()
   message(FATAL_ERROR
-    "BundleSelfContainedTools.cmake currently supports macOS and Linux only.")
+    "BundleSelfContainedTools.cmake supports macOS and Linux only.")
 endif()
 
 set(manifest "${bundle_dir}/MANIFEST.txt")

@@ -55,7 +55,7 @@
 # RUN: test -f %t/python-portable/demo_py_smoke/llvmdsdl_codegen.json
 # RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py
 # RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/widget_1_0.py
-# Generated packages carry a docstring and __version__. This is not cosmetic: several Python build
+# Generated packages carry a docstring and __version__. Several Python build
 # backends read a package's metadata out of the module, and flit refuses outright to package a
 # module whose docstring is missing or empty -- so without these, a user cannot build the generated
 # tree with the backend of their choice. The generated-by comment stays first in the file; a comment

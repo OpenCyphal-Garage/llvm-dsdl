@@ -23,8 +23,8 @@ target_link_libraries(roundtrip PRIVATE lanyard)
 # The obj backend: the same types as a prebuilt archive rather than as sources.
 #
 # `-l obj` lowers the schema to LLVM IR and assembles it, handing back the headers and the
-# objects. No C is written and no compiler is invoked, which is what you want when the generated
-# code should be built once -- for a target that is not this host, or by a party who ships the
+# objects. No C is written and no compiler is invoked, so the generated code is built once -- for a
+# target that is not this host, or by a party who ships the
 # objects rather than the schema.
 #
 # One call, like the source build above: the headers are declared outputs published beside the

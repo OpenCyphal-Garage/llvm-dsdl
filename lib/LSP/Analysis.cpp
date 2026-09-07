@@ -1001,9 +1001,8 @@ namespace
 
 /// @brief Renders "emits as X (c, cpp) - Y (go)" for one attribute.
 ///
-/// Languages are grouped by the identifier they produce, because listing six rows for a name that
-/// is the same in five of them is noise. The scope is rebuilt from the attribute names in
-/// declaration order, which is how the emitters build theirs, so a name that had to be
+/// Languages are grouped by the identifier they produce. The scope is rebuilt from the attribute names in
+/// declaration order, as the emitters build theirs, so a name that had to be
 /// disambiguated reads the same here as it will in the generated source.
 std::string renderGeneratedNames(const std::vector<std::string>& orderedNames,
                                  const std::string&              hovered,
@@ -2080,7 +2079,7 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
             }
 
             if (diagnostic.message == "extent must be a multiple of 8 bits" ||
-                diagnostic.message == "extent smaller than maximal serialized length" ||
+                diagnostic.message == "extent smaller than maximal serialised length" ||
                 diagnostic.message == "@extent must define non-negative extent bits")
             {
                 const std::uint32_t line      = diagnostic.location.line == 0 ? 0U : diagnostic.location.line - 1U;
@@ -2311,7 +2310,7 @@ std::vector<CodeActionData> AnalysisPipeline::codeActions(const std::string&    
     if (!normalizeEdits.empty())
     {
         actions.push_back(CodeActionData{
-            "Normalize versioned type references",
+            "Normalise versioned type references",
             "refactor.rewrite",
             false,
             {},

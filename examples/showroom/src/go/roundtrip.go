@@ -32,7 +32,7 @@ func fail(format string, args ...any) {
 
 func main() {
 	// Deliberately not the zero value: an integration that serialised nothing and deserialised
-	// nothing would round-trip a zero struct perfectly and prove nothing at all.
+	// nothing would round-trip a zero struct and prove nothing.
 	var original health.SystemHealth_1_0
 	original.Timestamp.Microsecond = 1234567890123
 	original.AggregateHealth.Value = 2 // CAUTION, on the standard four-level scale

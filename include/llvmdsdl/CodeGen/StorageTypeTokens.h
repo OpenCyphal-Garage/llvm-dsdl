@@ -11,7 +11,7 @@
 /// Shared scalar storage token rendering for native codegen backends.
 ///
 /// This header provides backend-specific scalar token selection derived from
-/// normalized storage widths.
+/// normalised storage widths.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_STORAGE_TYPE_TOKENS_H

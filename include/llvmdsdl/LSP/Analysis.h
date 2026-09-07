@@ -225,9 +225,9 @@ struct CodeActionData final
     bool hasEdit{false};
 };
 
-/// @brief Converts a `file://` URI to a normalized filesystem path.
+/// @brief Converts a `file://` URI to a normalised filesystem path.
 /// @param[in] uri File URI.
-/// @return Normalized absolute path when possible.
+/// @return Normalised absolute path when possible.
 [[nodiscard]] std::string uriToNormalizedPath(const std::string& uri);
 
 /// @brief Converts a filesystem path to a `file://` URI.

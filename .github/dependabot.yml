@@ -9,7 +9,7 @@ updates:
   # generated-code harnesses; their versions are part of what those tests pin.
   #
   # Actions are the opposite: pinned by tag, updated by GitHub, and the place a
-  # supply-chain advisory would actually land.
+  # supply-chain advisory would land.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

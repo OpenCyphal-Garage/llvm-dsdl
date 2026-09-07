@@ -1,6 +1,6 @@
 // RUN: %dsdl-opt --convert-dsdl-to-emitc %s | FileCheck %s
 
-// A nested composite is not inlined into its container's layout. It is serialized by handing
+// A nested composite is not inlined into its container's layout. It is serialised by handing
 // its own entry point a pointer to the member, the point in the buffer the container's
 // encoding reached, and the space left -- which is why a plan needs addresses rather than
 // values, and a local to receive what the callee used.

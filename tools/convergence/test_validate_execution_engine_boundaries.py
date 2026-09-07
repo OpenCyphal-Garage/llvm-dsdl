@@ -23,12 +23,12 @@ from typing import List
 class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
     REQUIRED_PATHS = [
         "tools/convergence/validate_execution_engine_boundaries.py",
-        "lib/CodeGen/CEmitter.cpp",
-        "lib/CodeGen/CppEmitter.cpp",
-        "lib/CodeGen/RustEmitter.cpp",
-        "lib/CodeGen/GoEmitter.cpp",
-        "lib/CodeGen/TsEmitter.cpp",
-        "lib/CodeGen/PythonEmitter.cpp",
+        "lib/CodeGen/emitter/C.cpp",
+        "lib/CodeGen/emitter/Cpp.cpp",
+        "lib/CodeGen/emitter/Rust.cpp",
+        "lib/CodeGen/emitter/Go.cpp",
+        "lib/CodeGen/emitter/Ts.cpp",
+        "lib/CodeGen/emitter/Python.cpp",
         "test/integration/RunUavcanGeneration.cmake",
         "test/integration/RunUavcanCppGeneration.cmake",
         "test/integration/RunUavcanRustGeneration.cmake",
@@ -71,7 +71,7 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
     def test_missing_native_skeleton_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-exec-boundary-test-") as tmp_dir:
             snapshot = self._create_snapshot(Path(tmp_dir) / "snapshot")
-            target = snapshot / "lib/CodeGen/CppEmitter.cpp"
+            target = snapshot / "lib/CodeGen/emitter/Cpp.cpp"
             text = target.read_text(encoding="utf-8")
             self.assertIn("emitNativeFunctionSkeleton(", text)
             target.write_text(text.replace("emitNativeFunctionSkeleton(", "emitNativeFunctionSkeleton_REMOVED("),
@@ -81,7 +81,7 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, msg="expected missing native skeleton marker regression failure")
         self.assertIn("execution-engine regression:", result.stderr)
         self.assertIn("missing required source marker", result.stderr)
-        self.assertIn("lib/CodeGen/CppEmitter.cpp", result.stderr)
+        self.assertIn("lib/CodeGen/emitter/Cpp.cpp", result.stderr)
 
     def test_missing_fallback_guard_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-exec-boundary-test-") as tmp_dir:
@@ -102,7 +102,7 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
     def test_forbidden_direct_render_ir_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-exec-boundary-test-") as tmp_dir:
             snapshot = self._create_snapshot(Path(tmp_dir) / "snapshot")
-            target = snapshot / "lib/CodeGen/PythonEmitter.cpp"
+            target = snapshot / "lib/CodeGen/emitter/Python.cpp"
             text = target.read_text(encoding="utf-8")
             text += "\n// regression injection: buildLoweredBodyRenderIR(\n"
             target.write_text(text, encoding="utf-8")
@@ -111,12 +111,12 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, msg="expected forbidden marker regression failure")
         self.assertIn("execution-engine regression:", result.stderr)
         self.assertIn("forbidden source marker present", result.stderr)
-        self.assertIn("lib/CodeGen/PythonEmitter.cpp", result.stderr)
+        self.assertIn("lib/CodeGen/emitter/Python.cpp", result.stderr)
 
     def test_missing_uniform_preflight_contract_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-exec-boundary-test-") as tmp_dir:
             snapshot = self._create_snapshot(Path(tmp_dir) / "snapshot")
-            target = snapshot / "lib/CodeGen/GoEmitter.cpp"
+            target = snapshot / "lib/CodeGen/emitter/Go.cpp"
             text = target.read_text(encoding="utf-8")
             marker = 'mlirSchemaCoverageValidationFailedForEmission("Go")'
             self.assertIn(marker, text)
@@ -127,7 +127,7 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, msg="expected missing uniform preflight marker regression failure")
         self.assertIn("execution-engine regression:", result.stderr)
         self.assertIn("missing required source marker", result.stderr)
-        self.assertIn("lib/CodeGen/GoEmitter.cpp", result.stderr)
+        self.assertIn("lib/CodeGen/emitter/Go.cpp", result.stderr)
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:

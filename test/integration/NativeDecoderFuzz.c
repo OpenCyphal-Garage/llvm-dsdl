@@ -5,10 +5,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Coverage-guided fuzz harness over the *generated native C deserializers*.
+// Coverage-guided fuzz harness over the *generated native C deserialisers*.
 //
-// This is the load-bearing safety test the project previously lacked: it feeds
-// arbitrary attacker-controlled bytes straight into the generated `deserialize_`
+// It feeds arbitrary attacker-controlled bytes straight into the generated `deserialize_`
 // entrypoints (the code path that consumes untrusted wire payloads) while the
 // whole translation set is compiled under AddressSanitizer + UndefinedBehavior
 // Sanitizer. Any out-of-bounds read, signed-overflow, or misaligned access in a
@@ -17,7 +16,7 @@
 // The curated type set deliberately covers the adversarial shapes called out in
 // the architecture review:
 //   * Heartbeat            — simple fixed-size message (baseline).
-//   * Health / Integer8    — narrow scalar width + signedness normalization.
+//   * Health / Integer8    — narrow scalar width + signedness normalisation.
 //   * Frame (union)        — tagged union dispatch (invalid tag rejection).
 //   * ExecuteCommand.{Req,Resp} — variable-length arrays with length prefixes.
 //   * port.List            — nested delimited composites + union-of-composites
@@ -44,13 +43,13 @@
 #include "uavcan/node/port/List_1_0.h"
 #include "uavcan/primitive/scalar/Integer8_1_0.h"
 
-// Largest generated serialization buffer across the curated set (port.List is by
+// Largest generated serialisation buffer across the curated set (port.List is by
 // far the biggest). A compile-time check below guards against this drifting.
 #define NDF_SCRATCH_BYTES 65536U
 
-// Round-trip one decoded object through serialize_ so the serialize path is also
+// Round-trip one decoded object through serialize_ so the serialise path is also
 // exercised on adversarially-shaped-but-accepted inputs. `capacity` is the
-// type's own SERIALIZATION_BUFFER_SIZE macro so serialize never legitimately
+// type's own SERIALIZATION_BUFFER_SIZE macro so serialise never legitimately
 // overflows; ASan catches it if the generated code does.
 #define NDF_HANDLE(TYPE, DESER, SER, BUFSZ)                                        \
     do {                                                                           \
@@ -140,7 +139,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 
 #if defined(NDF_MODE_SEEDS)
 // Emit one valid seed per curated target: a default-constructed object,
-// serialized, prefixed with the selector byte so it routes to its own decoder.
+// serialised, prefixed with the selector byte so it routes to its own decoder.
 static int ndf_emit_seed(const char* dir, unsigned target, const uint8_t* body, size_t body_len)
 {
     char path[4096];

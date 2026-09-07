@@ -79,22 +79,22 @@ struct ArrayLengthHelperDescriptor final
 /// @brief Scalar helper symbol set used to resolve directional bindings.
 struct ScalarHelperSymbols final
 {
-    /// @brief Serialize unsigned helper symbol.
+    /// @brief Serialise unsigned helper symbol.
     std::string serUnsignedSymbol;
 
-    /// @brief Deserialize unsigned helper symbol.
+    /// @brief Deserialise unsigned helper symbol.
     std::string deserUnsignedSymbol;
 
-    /// @brief Serialize signed helper symbol.
+    /// @brief Serialise signed helper symbol.
     std::string serSignedSymbol;
 
-    /// @brief Deserialize signed helper symbol.
+    /// @brief Deserialise signed helper symbol.
     std::string deserSignedSymbol;
 
-    /// @brief Serialize float helper symbol.
+    /// @brief Serialise float helper symbol.
     std::string serFloatSymbol;
 
-    /// @brief Deserialize float helper symbol.
+    /// @brief Deserialise float helper symbol.
     std::string deserFloatSymbol;
 };
 
@@ -118,10 +118,10 @@ struct ScalarHelperDescriptor final
     /// @brief Helper family.
     ScalarHelperKind kind{ScalarHelperKind::Unsigned};
 
-    /// @brief Serialize helper symbol.
+    /// @brief Serialise helper symbol.
     std::string serSymbol;
 
-    /// @brief Deserialize helper symbol.
+    /// @brief Deserialise helper symbol.
     std::string deserSymbol;
 
     /// @brief Scalar bit width.

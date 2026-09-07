@@ -91,7 +91,7 @@ foreach(spec IN LISTS BENCH_SPECIALIZATIONS)
   if(NOT gen_result EQUAL 0)
     message(STATUS "dsdlc python (${spec}) stdout:\n${gen_stdout}")
     message(STATUS "dsdlc python (${spec}) stderr:\n${gen_stderr}")
-    message(FATAL_ERROR "Python runtime benchmark generation failed for specialization=${spec}")
+    message(FATAL_ERROR "Python runtime benchmark generation failed for specialisation=${spec}")
   endif()
 
   if(DEFINED ACCEL_MODULE AND NOT "${ACCEL_MODULE}" STREQUAL "" AND EXISTS "${ACCEL_MODULE}")

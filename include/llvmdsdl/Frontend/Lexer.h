@@ -25,9 +25,9 @@ namespace llvmdsdl
 {
 
 /// @file
-/// @brief Tokenization interfaces for DSDL source text.
+/// @brief Tokenisation interfaces for DSDL source text.
 
-/// @brief Token categories recognized by the lexer.
+/// @brief Token categories recognised by the lexer.
 enum class TokenKind
 {
 
@@ -177,10 +177,10 @@ class Lexer final
 public:
     /// @brief Constructs a lexer for one source file.
     /// @param[in] file Logical file name used in token locations.
-    /// @param[in] text Full source text to tokenize.
+    /// @param[in] text Full source text to tokenise.
     Lexer(std::string file, std::string text);
 
-    /// @brief Tokenizes the input source.
+    /// @brief Tokenises the input source.
     /// @return Token sequence terminated by @ref TokenKind::Eof.
     [[nodiscard]] std::vector<Token> lex();
 
@@ -244,7 +244,7 @@ private:
     /// @brief Output token buffer.
     std::vector<Token> tokens_;
 
-    /// @brief Lexical errors recorded during tokenization.
+    /// @brief Lexical errors recorded during tokenisation.
     std::vector<LexerError> errors_;
 };
 

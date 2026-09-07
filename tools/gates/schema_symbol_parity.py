@@ -8,14 +8,14 @@ weak or duplicate declaration absorbs it, the wrong function at worst.
 
 Lowering cannot know these names: they move with the backend's naming options, so it stamps
 the unversioned spelling and a backend rewrites it. This checks that the rewrite happened and
-landed on what the header says, which is the only place the two are made to agree.
+landed on what the header says; nowhere else are the two made to agree.
 
 Four things are held against the header:
 
   * every `c_serialize_symbol` and `c_deserialize_symbol` is a function it declares;
   * every plan's `c_type_name` is a type it defines;
   * every `composite_c_type_name` -- the callee a nested type is serialised through -- names a
-    type it defines, since that is what resolves the call across translation units;
+    type it defines, the name that resolves the call across translation units;
   * the schema names at least as many types as the corpus has headers, so a run that stamped
     nothing cannot pass by having nothing to disagree about.
 """
@@ -35,7 +35,7 @@ COMPOSITE = re.compile(r'composite_c_type_name = "([^"]+)"')
 
 # `int8_t name__serialize_(` -- the declaration the header publishes.
 DECLARED_FN = re.compile(r'\b([A-Za-z_]\w*__(?:de)?serialize_)\s*\(')
-# `} name;` closing a typedef, which is how every generated type is introduced. A deprecated
+# `} name;` closing a typedef, the form every generated type is introduced with. A deprecated
 # type carries its attribute after the name, where GCC needs it to warn on use.
 DEFINED_TYPE = re.compile(r'^\}\s*([A-Za-z_]\w*)\b[^;]*;', re.M)
 

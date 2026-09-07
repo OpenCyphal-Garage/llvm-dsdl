@@ -45,7 +45,7 @@
 # RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/map/nested_1_0.py
 
 # Two DSDL names, one identifier after the keyword strop. The scope repairs it, and what matters is
-# that the repair reaches the serializer too: in C the declaration and the body are produced by two
+# that the repair reaches the serialiser too: in C the declaration and the body are produced by two
 # different layers, and the body only agrees because the emitter stamps the scope onto the IR.
 # RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.h | FileCheck %s --check-prefix=C_STROPPED
 # RUN: cat %t/c/fixtures_naming/naming/Stropped_1_0.c | FileCheck %s --check-prefix=C_STROPPED_BODY
@@ -63,7 +63,7 @@
 # RUN: cat %t/cpp/fixtures_naming/naming/MemberPool_1_0.hpp | FileCheck %s --check-prefix=CPP_POOL
 # RUN: cat %t/go/fixtures_naming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
 
-# Every repair is reported, because it changes a name the author wrote.
+# Every repair is reported.
 # RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
 
 # RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
@@ -179,7 +179,7 @@
 # PY_FOLDS: foo_bar_3: int = 0
 
 # C builds macro tokens by upper-casing the raw name, so `fooBar` becomes FOOBAR rather than
-# FOO_BAR and does not collide with the constant actually spelled FOO_BAR. C also skips the keyword
+# FOO_BAR and does not collide with the constant spelled FOO_BAR. C also skips the keyword
 # escape for macros -- `break` is not a macro-namespace hazard in C -- so this reads BREAK, not
 # BREAK_. Both are the `strop: no` cell of the role table in test/unit/golden/naming-roles.txt.
 # C_CONSTANTS: #define fixtures_naming__naming__Constants_FOO_BAR (1)
@@ -199,7 +199,7 @@
 # PY_CONSTANTS: CONSTANTS_BREAK_ = 3
 
 # ---------------------------------------------------------------------------------------------
-# Phase 3: two distinct DSDL types that project onto one generated name are rejected, and the
+# Colliding projections: two distinct DSDL types that project onto one generated name are rejected, and the
 # check covers only the backends this invocation emits for.
 # ---------------------------------------------------------------------------------------------
 
@@ -207,8 +207,8 @@
 # RUN: printf 'uint8 c\n@sealed\n' > %t/collide/root/ns/Break.1.0.dsdl
 # RUN: printf 'uint8 d\n@sealed\n' > %t/collide/root/ns/Break_.1.0.dsdl
 
-# The keyword escape makes both stems `break__1_0`; before phase 3 the second type silently
-# overwrote the first, because the frontend folded names without modelling the escape.
+# The keyword escape makes both stems `break__1_0`; unchecked, the second type would silently
+# overwrite the first.
 # RUN: not %dsdlc --target-language go %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
 # STEM_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
 
@@ -225,20 +225,20 @@
 
 # The other half of the pair: `_foo` and `foo_` take two different files but one type name, because
 # the stem projection keeps underscores and the type-name projection drops them. Go puts one
-# directory in one package, so before phase 3 this produced a package that would not compile.
+# directory in one package, so unchecked this produces a package that would not compile.
 # RUN: rm -rf %t/typecollide && mkdir -p %t/typecollide/root/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/typecollide/root/ns/_foo.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
 # RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
 # TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same generated type name for target language 'go'
 
-# The same pair under an AST dump reports the three backends whose type names actually collide --
+# The same pair under an AST dump reports the three backends whose type names collide --
 # C, C++ and Rust build namespace-qualified symbols and are unaffected.
 # RUN: not %dsdlc --target-language ast %t/typecollide/root 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE_AST
 # TYPE_COLLIDE_AST: error: {{.*}} map to the same generated type name for target languages 'go', 'ts', 'python'
 
 # ---------------------------------------------------------------------------------------------
-# Phase 4: names the generated code already claims. Claimed.1.0 names its constants after every
+# Names the generated code already claims. Claimed.1.0 names its constants after every
 # per-type constant the backends emit and its field after a generated method, so a regression here
 # is a duplicate declaration in a language that has to compile.
 # ---------------------------------------------------------------------------------------------
@@ -272,12 +272,12 @@
 
 # C needs no escape at all: its metadata macros carry a trailing underscore, so `<Type>_FULL_NAME`
 # and `<Type>_FULL_NAME_` cannot meet. The macro is also left unstropped -- a macro is not an
-# identifier in C's namespace -- which is why this reads FULL_NAME and not FULL_NAME_.
+# identifier in C's namespace ; this reads FULL_NAME, not FULL_NAME_.
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)
 
 # ---------------------------------------------------------------------------------------------
-# Phase 5: the naming manifest and the path-level rename note.
+# The naming manifest and the path-level rename note.
 # ---------------------------------------------------------------------------------------------
 
 # A path-level rename is reported without being asked for; a rename inside a file is not.
@@ -286,7 +286,7 @@
 # RENAME_NOTE-DAG: note: 'map' is emitted as 'map_' for target language 'go'
 # RENAME_NOTE-NOT: note: 'break' is emitted as
 
-# The manifest reports the identifiers the backend actually writes, so the stems it names are the
+# The manifest reports the identifiers the backend writes, so the stems it names are the
 # files on disk. An analysis target reports every language at once.
 # RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
 # RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note

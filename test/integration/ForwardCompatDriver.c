@@ -5,12 +5,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Runtime forward/backward compatibility test for the generated C serializers.
+// Runtime forward/backward compatibility test for the generated C serialisers.
 //
 // The existing round-trip tests always decode a buffer with the SAME type version that produced it,
 // so consumed == the delimiter header and the version-skew skip is never exercised. This driver decodes
 // across two versions of a delimited composite (`wire.nar.Inner` has one field; `wire.wid.Inner`
-// appends a second), which is the only shape that catches a decoder that advances the outer offset by
+// appends a second); no other shape catches a decoder that advances the outer offset by
 // the nested's consumed count instead of the delimiter-header size.
 //
 //   forward compat : a wide (newer) writer's buffer decoded by a narrow (older) reader must skip the

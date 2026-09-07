@@ -2,7 +2,7 @@
 # style (`FooBar.1.0` and `Foo_bar.1.0`) both snake_case to the same generated file/module stem
 # (`foo_bar_1_0`) in the Go/Rust/TypeScript/Python backends, so one output file silently overwrote the
 # other and an entire type was lost. The frontend now rejects the pair up front (the case-insensitive
-# filesystem check does not catch underscore-only differences). Types whose snake_case stems actually
+# filesystem check does not catch underscore-only differences). Types whose snake_case stems
 # differ (`foobar` vs `foo_bar`) must still be accepted. See the type-filename-collision finding.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns

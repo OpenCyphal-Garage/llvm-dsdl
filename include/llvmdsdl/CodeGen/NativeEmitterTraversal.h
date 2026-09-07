@@ -10,7 +10,7 @@
 /// @file
 /// Shared lowered-step traversal helpers for native emitters.
 ///
-/// This utility centralizes the common orchestration pattern used by C++,
+/// This utility centralises the common orchestration pattern used by C++,
 /// Rust, and Go emitters: dispatch lowered union steps and apply field or
 /// padding alignment callbacks before value-emission callbacks.
 ///

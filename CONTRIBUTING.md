@@ -49,7 +49,7 @@ Common optional tools (enable more checks/lanes):
 - MkDocs, to preview the documentation site — installed into its own virtualenv from
   [`docs/requirements.txt`](./docs/requirements.txt), not needed by the CMake build; see section 11
 
-## 4. Clone and Initialize
+## 4. Clone and Initialise
 
 ```bash
 git clone <repo-url> llvm-dsdl
@@ -294,8 +294,7 @@ cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target forma
 Convergence/parity/contract report targets. Each writes two things: the JSON the gate consumes, into
 the build tree, and the markdown *page* it produces, into `docs/` — `parity-matrix.md`,
 `malformed-input.md`, and `determinism.md` under `docs/reference/guarantees/`, and
-`docs/development/convergence-scorecard.md`. Those pages are generated, gitignored, and never edited
-by hand; running a target overwrites them.
+`docs/development/convergence-scorecard.md`. Those pages are generated and gitignored.
 
 ```bash
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target convergence-report
@@ -338,7 +337,7 @@ python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
 ## 9. Where This Project Lives
 
-`project-identity.json` at the repository root is the only place that names the owner. Everything
+Only `project-identity.json` at the repository root names the owner. Everything
 else that mentions it — documentation links, the README badge, `mkdocs.yml`, the packaging homepage,
 the manpage bug address — is derived from it:
 
@@ -493,11 +492,11 @@ talk to GitHub — `configure-pages`, `upload-pages-artifact`, and the deploy jo
 guarded with `if: ${{ !env.ACT }}` and skip, which costs nothing: none of them affect what is built,
 since `mkdocs` takes `site_url` from `mkdocs.yml`. Under `act push` the upload and the whole deploy
 job are also outside their own event conditions (section 11.7), so a push simulation exercises
-exactly the build. Everything that can actually fail still runs: the CMake configure, the
+exactly the build. Everything that can fail still runs: the CMake configure, the
 `docs-generate` build, the pinned pip install, `mkdocs build --strict`, and the rendered-mermaid
 check.
 
-It is a genuine from-scratch *build*, not a reuse of your build tree. `act` honours `.gitignore` when
+It is a from-scratch *build*, not a reuse of your build tree. `act` honours `.gitignore` when
 it copies the repository into the container, so `build/` and `.venv-docs/` are left behind — about
 90 MB goes in, and `dsdlc` is compiled inside the container from nothing. That is also why it cannot
 be made faster by building first.
@@ -530,14 +529,13 @@ Building and publishing are separate events in
 | Release published | yes | yes | the release tag |
 | `workflow_dispatch` | yes | only with `publish=true` | the ref you select |
 
-The main-push build is a pure check, and it is the one that has to stay green: it is what stops
+The main-push build is a pure check, and it has to stay green: it is what stops
 release day from being the first time anyone found out the site does not build. Prereleases are not
 excluded — every release so far has been one — so publishing a prerelease does update the site.
 
 #### Publishing a patch between releases
 
-The manual path exists because a released doc page can be wrong, and waiting for the next release to
-fix it is not always acceptable:
+The manual path publishes a fix to a released doc page without waiting for the next release:
 
 ```bash
 gh workflow run Docs --repo OpenCyphal-Garage/llvm-dsdl --ref <ref> -f publish=true
@@ -564,12 +562,12 @@ moved, and moving it would invalidate the release attestation — so the branch 
 what is live; keep it until the next release supersedes it. And the fix has to land on `main`
 separately, or the next release republishes the broken page.
 
-Dispatching with `publish=false` (the default) just builds the selected ref, which is a cheap way to
+Dispatching with `publish=false` (the default) builds the selected ref, which is a cheap way to
 check that a tag or branch still produces a site before you publish it.
 
 ## 12. Development Expectations
 
-### 12.1 Keep behaviour centralized
+### 12.1 Keep behaviour centralised
 
 When touching backend code generation semantics, prefer shared planning and
 helper layers in [`lib/CodeGen`](./lib/CodeGen) and avoid re-introducing backend-local duplicate
@@ -610,7 +608,7 @@ Before opening a PR:
 2. Run at least one full preset lane relevant to your change.
 3. Run focused tests for touched areas.
 4. Run formatting/lint checks when applicable.
-5. Summarize exactly what was validated in the PR description.
+5. Summarise exactly what was validated in the PR description.
 
 In the PR description, include:
 
@@ -648,9 +646,8 @@ anything is built.
 This project builds the LLVM it links against rather than taking a
 distribution's. `packaging/toolchain/llvm.pin` names the revision; the Toolchain
 workflow builds it and publishes the result under names derived from that line.
-The release pulls what Toolchain published — it never builds LLVM itself,
-because that takes about forty minutes per architecture and once exceeded the
-job's timeout. A missing artifact fails the job with
+The release pulls what Toolchain published and never builds LLVM itself. A
+missing artifact fails the job with
 `No published toolchain for pin <ref>` rather than quietly rebuilding.
 
 So:
@@ -691,22 +688,12 @@ script asks GitHub for the tags that already exist. `--offline` skips the
 question for a machine that cannot reach GitHub — it does not make the collision
 safe.
 
-The git flags differ in how much they switch off:
+`prepare_release.py --help` lists the git flags and how much each one switches
+off. Under `--dry-run` a dirty tree is a warning rather than an abort, and the
+rest of the plan still prints — a dry run writes nothing, so there is nothing to
+protect.
 
-| Flag | Clean-tree check | Stages | Commits |
-|---|:--:|:--:|:--:|
-| *(default)* | yes | yes | no |
-| `--commit` | yes | yes | yes |
-| `--no-stage` | yes | no | no |
-| `--no-git` | **no** | no | no |
-
-`--no-git` issues no git commands at all, which is what disables the check;
-`--no-stage` only declines to stage. `--commit` combines with neither. Under
-`--dry-run` a dirty tree is a warning rather than an abort, and the rest of the
-plan still prints — a dry run writes nothing, so there is nothing to protect.
-
-The entry it drafts reads like a list of commit subjects, because that is what
-it is. Edit it into prose before merging.
+The entry it drafts is a list of commit subjects. Edit it into prose before merging.
 
 The rest of this section is what the script does, and what to do by hand
 without it.
@@ -740,8 +727,7 @@ gh workflow run Release --repo OpenCyphal-Garage/llvm-dsdl --ref main -f dry_run
 
 This builds and verifies everything and publishes nothing: both `.deb`
 architectures, both macOS tarballs, the pristine-container install check, and
-the macOS linkage assertions. Worth doing before tagging, because a pushed tag that
-fails is more annoying to unwind than a workflow run that does.
+the macOS linkage assertions. Run it before tagging.
 
 ### 14.4 Tag
 

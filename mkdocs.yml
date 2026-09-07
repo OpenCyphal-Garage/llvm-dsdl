@@ -32,6 +32,7 @@ nav:
       - Overview: reference/index.md
       - Commands:
           - dsdlc: reference/commands/dsdlc.md
+          - dsdlc Options: reference/commands/dsdlc-options.md
           - dsdl-opt: reference/commands/dsdl-opt.md
           - dsdld: reference/commands/dsdld.md
       - Code Generation:
@@ -71,8 +72,8 @@ nav:
 
 # The nav is the page map, and this makes it true rather than aspirational: a page under docs/ that
 # nobody filed fails the build instead of quietly becoming unreachable, as do a link to a page that
-# does not exist and a link to a heading that does not exist. Under `--strict` each of these is an
-# error, which is how the site is built in CI and on publish.
+# does not exist and a link to a heading that does not exist. Under `--strict`, which CI and publish
+# build with, each of these is an error.
 #
 # `not_in_nav` is the sanctioned exception, for pages that should stay in the repository without
 # adding density to what readers browse: two dozen generated type pages would drown the dropdown
@@ -108,8 +109,8 @@ theme:
   highlightjs: true
   # Every language that appears in a fenced block anywhere under docs/, the generated showroom
   # pages included. Most of these are in the highlight.js "common" bundle the theme already loads,
-  # so naming them is belt-and-braces against that bundle changing; `cmake` is the one that
-  # genuinely is not in it, and without it the CMake recipes render as unstyled text.
+  # so naming them is belt-and-braces against that bundle changing; `cmake` alone is not in it,
+  # and without it the CMake recipes render as unstyled text.
   #
   # These are file names on the CDN (`languages/<name>.min.js`), not fence aliases. The fences say
   # ```console, ```toml and ```text; the packs that back them are `shell`, `ini` and `plaintext`,
@@ -149,13 +150,13 @@ markdown_extensions:
           # `pre.mermaid > code` by its textContent. Vanilla mermaid does not: it reads the element's
           # innerHTML, so the `<code>` wrapper ends up inside the diagram source and every diagram
           # fails with "No diagram type detected ... for text: <code>flowchart LR". The div format
-          # puts the text directly in the element, which is what mermaid expects. (Entities are fine
+          # puts the text directly in the element, as mermaid expects. (Entities are fine
           # either way -- mermaid decodes `--&gt;` itself.)
           format: !!python/name:pymdownx.superfences.fence_div_format
   # Highlighting is the theme's job, in the browser. Left at its default, superfences would render
   # code through Pygments instead, and this theme ships no Pygments stylesheet -- every code block
   # would come out as unstyled spans. Turning Pygments off makes superfences emit plain
-  # `<code class="language-...">`, which is exactly what highlight.js consumes.
+  # `<code class="language-...">`, which highlight.js consumes.
   - pymdownx.highlight:
       use_pygments: false
   - pymdownx.inlinehilite

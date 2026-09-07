@@ -11,8 +11,8 @@
 /// Public entry points and options for Python backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
-#define LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_PYTHON_H
+#define LLVMDSDL_CODEGEN_EMITTER_PYTHON_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -32,19 +32,23 @@ namespace llvmdsdl
 class DiagnosticEngine;
 struct SemanticModule;
 class EmitTraceSink;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::python
+{
 
 /// @file
 /// @brief Python backend emission entry points.
 
-/// @brief Runtime specialization profile for generated Python runtime helpers.
-enum class PythonRuntimeSpecialization
+/// @brief Runtime specialisation profile for generated Python runtime helpers.
+enum class RuntimeSpecialization
 {
     Portable,  ///< Conservative bit-level runtime helper implementation.
     Fast       ///< Enables byte-aligned runtime helper fast paths.
 };
 
 /// @brief Configuration options for Python code generation.
-struct PythonEmitOptions final
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -58,10 +62,10 @@ struct PythonEmitOptions final
     /// @brief Generated Python package name.
     std::string packageName{"dsdl_gen"};
 
-    /// @brief Runtime helper specialization profile.
-    PythonRuntimeSpecialization runtimeSpecialization{PythonRuntimeSpecialization::Portable};
+    /// @brief Runtime helper specialisation profile.
+    RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Optional list of selected type keys to emit.
@@ -82,12 +86,12 @@ struct PythonEmitOptions final
 /// @param[in] traceSink Optional emit-order trace sink (for the emit-order verifier); null (default) disables tracing
 /// at zero cost.
 /// @return Success or detailed failure.
-llvm::Error emitPython(const SemanticModule&    semantic,
-                       mlir::ModuleOp           module,
-                       const PythonEmitOptions& options,
-                       DiagnosticEngine&        diagnostics,
-                       EmitTraceSink*           traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::python
 
-#endif  // LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_PYTHON_H

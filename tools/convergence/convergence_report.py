@@ -23,7 +23,7 @@ SEMANTIC_CLASSES: List[Tuple[str, str]] = [
     ("field_step_ordering", "Field step ordering"),
     ("union_tag_mask_validate", "Union tag mask and validation"),
     ("scalar_normalize_sign_extend", "Scalar cast/normalize and sign extension"),
-    ("variable_array_prefix_validate", "Variable array prefix normalize and length validation"),
+    ("variable_array_prefix_validate", "Variable array prefix normalise and length validation"),
     ("fixed_array_cardinality_validate", "Fixed array cardinality validation"),
     ("delimited_payload_validate", "Delimited payload header validation"),
     ("section_capacity_precheck", "Section capacity pre-check"),
@@ -39,7 +39,7 @@ SEMANTIC_CLASSES: List[Tuple[str, str]] = [
 BACKEND_CONFIG = {
     "c": {
         "kind": "c",
-        "path": "lib/CodeGen/CEmitter.cpp",
+        "path": "lib/CodeGen/emitter/C.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanGeneration.cmake",
             "helper_patterns": [
@@ -59,7 +59,7 @@ BACKEND_CONFIG = {
     },
     "cpp": {
         "kind": "native",
-        "path": "lib/CodeGen/CppEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Cpp.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanCppGeneration.cmake",
             "helper_patterns": [
@@ -80,7 +80,7 @@ BACKEND_CONFIG = {
     },
     "rust": {
         "kind": "native",
-        "path": "lib/CodeGen/RustEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Rust.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanRustGeneration.cmake",
             "helper_patterns": [
@@ -101,7 +101,7 @@ BACKEND_CONFIG = {
     },
     "go": {
         "kind": "native",
-        "path": "lib/CodeGen/GoEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Go.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanGoGeneration.cmake",
             "helper_patterns": [
@@ -122,7 +122,7 @@ BACKEND_CONFIG = {
     },
     "ts": {
         "kind": "scripted",
-        "path": "lib/CodeGen/TsEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Ts.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanTsGeneration.cmake",
             "helper_patterns": [
@@ -143,7 +143,7 @@ BACKEND_CONFIG = {
     },
     "python": {
         "kind": "scripted",
-        "path": "lib/CodeGen/PythonEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Python.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanPythonGeneration.cmake",
             "helper_patterns": [
@@ -551,7 +551,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         "the shared planning/lowering helpers and gates (field-step ordering, union-tag "
         "validation, lowered-contract validation, and so on). A `shared` mark means the "
         "marker for that class is present in the emitter source: it certifies "
-        "**infrastructure consistency, not runtime behavioral equivalence.** Behavioral "
+        "**infrastructure consistency, not runtime behavioural equivalence.** Behavioural "
         "equivalence is enforced separately: emitted *step order* by the **emit-order "
         "verifier** (`tools/convergence/emit_order_verifier.py`, ctest "
         "`llvmdsdl-emit-order-verifier`), which compares each string backend's abstract "

@@ -96,8 +96,7 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 ///
 /// ### What it rejects
 ///
-/// Discovery is also where a corpus is checked for names that cannot coexist, because it is the
-/// first point that has seen all of them:
+/// Discovery is also where a corpus is checked for names that cannot coexist:
 ///
 /// - **Duplicate versions.** Two files claiming one `name.major.minor`.
 /// - **Case-insensitive filesystem collisions.** `ns.Foo` beside `ns.foo`, which are distinct in
@@ -107,7 +106,7 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 ///   differently -- `FooBar`/`Foo_bar` meet as file names, `Break`/`Break_` meet once the keyword
 ///   escape fires -- so whichever half collides, one type would be lost or the output would not
 ///   compile. The keys come from the same engine the emitters name with, so the check cannot drift
-///   from what is actually written.
+///   from what is written.
 ///
 /// It does *not* catch a service section colliding with a sibling type, because that needs to know
 /// which definitions are services and this runs before parsing. See
@@ -122,8 +121,7 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 /// @param[in] outputLanguages Languages whose output names are checked. A source-emitting invocation
 ///            passes the language it emits, so a build never fails over a hazard in output it was
 ///            not going to produce; an analysis invocation that emits nothing passes
-///            @ref allOutputLanguages, because there is no build to fail and the diagnostic is pure
-///            information. Empty disables the check entirely.
+///            @ref allOutputLanguages. Empty disables the check entirely.
 /// @return Every definition found, sorted as described. Definitions are returned even when a check
 ///         above reported an error, so a caller that tolerates diagnostics still sees the corpus;
 ///         callers that must not proceed test @ref DiagnosticEngine::hasErrors.

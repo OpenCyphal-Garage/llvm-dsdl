@@ -104,9 +104,9 @@ set(CPACK_COMPONENT_DEV_DEPENDS ${LLVMDSDL_INSTALL_COMPONENT_BIN})
 #===----------------------------------------------------------------------===#
 # Generators
 #
-# The archive is deliberately NOT component-split: the pipeline wants exactly one
-# tarball per platform. DEB is component-split, which is what yields the
-# llvm-dsdl / llvm-dsdl-dev pair. The two knobs are independent.
+# The archive is not component-split: the pipeline wants exactly one
+# tarball per platform. DEB is component-split into the llvm-dsdl / llvm-dsdl-dev
+# pair. The two knobs are independent.
 #===----------------------------------------------------------------------===#
 
 set(CPACK_GENERATOR "TGZ")
@@ -164,7 +164,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${LLVMDSDL_PACKAGE_ARCH}")
 set(LLVMDSDL_DEB_DEPENDS "" CACHE STRING
     "Debian Depends: for the llvm-dsdl package. Empty means derive it from the built \
-binaries at package time, which is what you want; set it only to pin a list deliberately.")
+binaries at package time; set it only to pin a list.")
 set(CPACK_DEBIAN_BIN_PACKAGE_DEPENDS "${LLVMDSDL_DEB_DEPENDS}")
 
 # Deriving the list needs the binaries, which do not exist at configure time, so

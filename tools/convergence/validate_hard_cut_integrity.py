@@ -25,7 +25,7 @@ SURFACE_ROOTS: Sequence[str] = (
 )
 SURFACE_SUFFIXES = {".h", ".cpp", ".td"}
 
-# Phrases signaling re-introduction of compatibility shim machinery in
+# Phrases signalling re-introduction of compatibility shim machinery in
 # codegen/planning surfaces.
 FORBIDDEN_PHRASES: Sequence[Tuple[str, str]] = (
     ("compatibility shim/layer/wrapper", r"\bcompatibility\s+(?:shim|layer|wrapper|alias)\b"),

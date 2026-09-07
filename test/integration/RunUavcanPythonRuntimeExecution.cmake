@@ -161,7 +161,7 @@ except ValueError:
 assert invalid_union_failed
 print("uavcan-python-runtime invalid-union-tag-ok")
 
-# Negative path: array length violations should fail clearly.
+# Negative path: array length violations fail.
 oversized_req_failed = False
 try:
     ExecuteCommandMod.ExecuteCommand_1_3_Request(command=1, parameter=[0] * 256).serialize()

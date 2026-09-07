@@ -56,6 +56,7 @@ site/
 # time with `cmake --build <dir> --target docs-generate`; run that locally before previewing the
 # site, or mkdocs --strict will fail on the nav entries with nothing behind them.
 docs/showroom/
+docs/reference/commands/dsdlc-options.md
 docs/reference/guarantees/parity-matrix.md
 docs/reference/guarantees/malformed-input.md
 docs/reference/guarantees/determinism.md

@@ -9,12 +9,12 @@
 #
 # A harness that names a generated type has to spell it the way the backend emitted it, and whether
 # that spelling carries the type's version is a generator choice. Rather than hard-code one answer,
-# the harness templates write `Heartbeat@V1_0@` and this file decides what the token expands to --
-# which is what lets one harness run under either scheme.
+# the harness templates write `Heartbeat@V1_0@` and this file decides what the token expands to, and
+# one harness runs under either scheme.
 #
 # There are two families because a cross-language harness names types in both of its halves and the
 # two halves need not agree. `@CV*@` decorates C names, `@V*@` the other five. They default the same
-# way today; they are separate so that a lane can cover one scheme against the other, and so that
+# way; they are separate so that a lane can cover one scheme against the other, and so that
 # changing one scheme's default does not silently move the other.
 #
 # Only the identifiers move. File and module names come from `IdentifierRole::FileStem`, which no
@@ -28,7 +28,7 @@
 #   execute_process(COMMAND "${DSDLC}" --target-language c ${c_scheme_args} ...)
 #   configure_file("${template}" "${out}" @ONLY)
 
-# The version pairs the harnesses actually name. A new one here is a one-line addition; leaving it
+# The version pairs the harnesses name. A new one here is a one-line addition; leaving it
 # out shows up as an unsubstituted `@V9_9@` in the generated source, which fails to compile rather
 # than passing quietly.
 set(LLVMDSDL_HARNESS_VERSION_PAIRS 0_1 0_2 1_0 1_1 1_2 1_3 2_0)
@@ -37,11 +37,10 @@ set(LLVMDSDL_HARNESS_VERSION_PAIRS 0_1 0_2 1_0 1_1 1_2 1_3 2_0)
 #
 # The three have to agree or the harness is testing nothing -- a script that expands its tokens
 # versioned while invoking dsdlc unversioned fails to compile, and the reverse fails only sometimes.
-# They are derived from one variable here so that they cannot be set separately, which is a mistake
-# that was made more than once before this existed.
+# They are derived from one variable here so that they cannot be set separately.
 #
-# Each scheme variable is settable from the caller's `add_test` with a `-D`, which is how one harness
-# is registered twice to cover both schemes.
+# Each scheme variable is settable from the caller's `add_test` with a `-D`; a harness registered
+# twice covers both schemes.
 #
 # @param C_DEFAULT     Scheme for C names when C_TYPE_NAME_SCHEME is unset. Default "unversioned".
 # @param OTHER_DEFAULT Scheme for the other five when TYPE_NAME_SCHEME is unset. Default "unversioned".

@@ -20,10 +20,7 @@ uavcan.si.unit.electric_current.Scalar.1.0 current
 # Pack current in amperes. Positive is discharge, negative is charge.
 
 uavcan.si.unit.temperature.Scalar.1.0 temperature
-# Hottest cell temperature in kelvin. Kelvin, not Celsius, because that
-# is the SI unit the standard type carries; using the standard type
-# means a generic consumer needs no per-vendor conversion, and the
-# arithmetic to display Celsius belongs in the display layer.
+# Hottest cell temperature in kelvin.
 
 float16 remaining_capacity_ratio
 # State of charge, 0.0 (empty) to 1.0 (full).

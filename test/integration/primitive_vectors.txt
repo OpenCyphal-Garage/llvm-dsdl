@@ -28,7 +28,7 @@ f16pack 80000000 8000   # -0.0
 f16pack 7f800000 7c00   # +inf
 f16pack ff800000 fc00   # -inf
 f16pack 7fc00000 7e00   # quiet NaN -> canonical half NaN
-f16pack 7f800001 7e00   # signaling NaN -> canonical half NaN (payload not representable)
+f16pack 7f800001 7e00   # signalling NaN -> canonical half NaN (payload not representable)
 f16pack 3e000000 3000   # 0.125
 f16pack 477fe000 7bff   # 65504.0 (largest finite half)
 f16pack 47800000 7c00   # 65536.0 overflows to +inf under saturation
@@ -45,7 +45,7 @@ f16unpack 8000 80000000 # -0.0
 f16unpack 7c00 7f800000 # +inf
 f16unpack fc00 ff800000 # -inf
 f16unpack 7e00 7fc00000 # canonical quiet half NaN -> float32 qNaN
-f16unpack 7c01 7f802000 # signaling half NaN widens to a float32 NaN
+f16unpack 7c01 7f802000 # signalling half NaN widens to a float32 NaN
 f16unpack 0400 38800000 # smallest normal half
 f16unpack 0001 33800000 # smallest subnormal half
 f16unpack 3555 3eaaa000 # ~0.333

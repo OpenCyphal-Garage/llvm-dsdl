@@ -10,7 +10,7 @@
 /// @file
 /// Shared native-emitter function skeleton orchestration declarations.
 ///
-/// This utility centralizes common C++/Rust/Go serialize and deserialize body
+/// This utility centralises common C++/Rust/Go serialise and deserialise body
 /// sequencing around lowered render-IR construction, helper-contract
 /// validation, traversal dispatch, and epilogue emission.
 ///
@@ -51,7 +51,7 @@ struct NativeFunctionSkeletonCallbacks final
 /// @brief Emits shared native function body skeleton steps.
 /// @param[in] section Semantic section for helper requirements.
 /// @param[in] sectionFacts Optional lowered section facts.
-/// @param[in] direction Serialize or deserialize.
+/// @param[in] direction Serialise or deserialise.
 /// @param[in] callbacks Language-specific callback bundle.
 /// @return `true` when helper contract is satisfied and traversal was emitted.
 /// @return `false` when required helper contracts are missing.

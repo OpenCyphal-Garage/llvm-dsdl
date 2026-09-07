@@ -10,7 +10,7 @@
 /// @file
 /// Shared render template for section bodies.
 ///
-/// The canonical serialize/deserialize step order
+/// The canonical serialise/deserialize step order
 /// (docs/reference/codegen/emit-order.md, proven safe by
 /// spec/dafny/CyphalSerdes.dfy) lives in exactly one place per construct:
 /// @ref buildUnionSectionSteps for the union prologue/dispatch, and
@@ -21,7 +21,7 @@
 /// EmitTraceOp events at the spelling site, so the emit-order verifier proves
 /// the template preserved behaviour.
 ///
-/// A backend can no longer reorder emission on its own: the order is produced
+/// A backend cannot reorder emission on its own: the order is produced
 /// by construction here, and the verifier pins it independently. The two
 /// accepted structural deviations are explicit interface points, not scattered
 /// conditionals: D2 (fixed-array length guard may be type-system-subsumed) is
@@ -35,7 +35,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,7 +51,7 @@ struct LoweredFieldFacts;
 /// @brief One union option arm: its wire tag value plus the backend-rendered body.
 ///
 /// The body closure renders option alignment plus the option field's
-/// serialize/deserialize ops (and any backend-specific guards, e.g. the
+/// serialise/deserialize ops (and any backend-specific guards, e.g. the
 /// scripted backends' option-missing checks). It is opaque to the template,
 /// which shares the *prologue* only; field rendering is per backend.
 struct UnionCaseRender final
@@ -66,13 +65,13 @@ struct UnionCaseRender final
 /// Each method renders one canonical step in the backend's idiom and records
 /// the abstract EmitTraceOp events for exactly what it emits. Methods are
 /// invoked by @ref renderUnionSection in canonical order only — a spelling
-/// cannot change the step order, just the surface text.
+/// cannot change the step order, only the surface text.
 class UnionSectionSpelling
 {
 public:
     virtual ~UnionSectionSpelling() = default;
 
-    // ---- serialize-only steps ----
+    // ---- serialise-only steps ----
 
     /// @brief VALIDATE_TAG: validate the caller-set tag; error-branch on failure.
     virtual void spellSerializeValidateTag() = 0;
@@ -81,7 +80,7 @@ public:
     ///        write argument or spelled as its own statement — D1 spelling freedom).
     virtual void spellSerializeWriteMaskedTag() = 0;
 
-    // ---- deserialize-only steps ----
+    // ---- deserialise-only steps ----
 
     /// @brief READ_TAG + MASK_TAG + STORE_TAG: read raw tag bits, mask, store.
     virtual void spellDeserializeReadMaskStoreTag() = 0;
@@ -136,12 +135,12 @@ struct UnionEmitStep final
 /// @brief Builds the canonical ordered step list for a union section.
 ///
 /// THE single in-code statement of the canonical union prologue order:
-///   serialize:   VALIDATE_TAG, MASK+WRITE_TAG, ADVANCE, SWITCH,
+///   serialise:   VALIDATE_TAG, MASK+WRITE_TAG, ADVANCE, SWITCH,
 ///                (CASE, body, end-case)*, DEFAULT_BAD_TAG, end-switch
-///   deserialize: READ+MASK+STORE_TAG, VALIDATE_TAG, ADVANCE, SWITCH,
+///   deserialise: READ+MASK+STORE_TAG, VALIDATE_TAG, ADVANCE, SWITCH,
 ///                (CASE, body, end-case)*, DEFAULT_BAD_TAG, end-switch
 ///
-/// @param[in] direction Serialize or deserialize.
+/// @param[in] direction Serialise or deserialise.
 /// @param[in] caseCount Number of union option arms.
 /// @return The ordered steps @ref renderUnionSection walks.
 std::vector<UnionEmitStep> buildUnionSectionSteps(EmitTraceDirection direction, std::size_t caseCount);
@@ -152,7 +151,7 @@ std::vector<UnionEmitStep> buildUnionSectionSteps(EmitTraceDirection direction, 
 /// (case bodies to the corresponding @ref UnionCaseRender). All five string
 /// backends' union emission funnels through here.
 ///
-/// @param[in] direction Serialize or deserialize.
+/// @param[in] direction Serialise or deserialise.
 /// @param[in] cases Union option arms in lowered order.
 /// @param[in,out] spelling Backend spelling that renders each step.
 void renderUnionSection(EmitTraceDirection                  direction,
@@ -172,7 +171,7 @@ enum class FieldStepKind
     ScalarSint,     ///< signed: helper + WRITE/READ_SCALAR_SINT + ADVANCE.
     ScalarFloat,    ///< float16/32/64: width-matched helper + WRITE/READ_SCALAR_FLOAT + ADVANCE.
     FixedArray,     ///< LEN_CHECK (D2) then ELEM_LOOP { child }; D3 bulk hook may replace the loop.
-    VariableArray,  ///< serialize LEN_VALIDATE+LEN_WRITE+ADVANCE / deserialize LEN_READ+ADVANCE+
+    VariableArray,  ///< serialise LEN_VALIDATE+LEN_WRITE+ADVANCE / deserialise LEN_READ+ADVANCE+
                     ///< LEN_VALIDATE then ELEM_LOOP { child }.
     Composite,      ///< COMPOSITE_INLINE (sealed) or COMPOSITE_DELIM_HEADER (delimited) nested call.
 };
@@ -200,10 +199,10 @@ struct FieldEmitStep final
     /// @brief Variable-array length-prefix width in bits.
     std::uint32_t prefixBits{0};
 
-    /// @brief Direction-resolved scalar normalize/mask/saturate helper symbol (scalar kinds).
+    /// @brief Direction-resolved scalar normalise/mask/saturate helper symbol (scalar kinds).
     std::string scalarHelperSymbol;
 
-    /// @brief Variable-array length helper descriptors (validate + prefix normalize).
+    /// @brief Variable-array length helper descriptors (validate + prefix normalise).
     std::optional<ArrayLengthHelperDescriptor> arrayHelpers;
 
     /// @brief Delimited-composite header validate helper symbol (Composite, non-sealed).
@@ -238,10 +237,10 @@ public:
     /// @brief PAD + ADVANCE for a void field.
     virtual void spellPad(const FieldEmitStep& step) = 0;
 
-    /// @brief Scalar serialize: cast/helper + WRITE_SCALAR_* + error branch + ADVANCE.
+    /// @brief Scalar serialise: cast/helper + WRITE_SCALAR_* + error branch + ADVANCE.
     virtual void spellScalarSerialize(const FieldEmitStep& step, const std::string& valueExpr) = 0;
 
-    /// @brief Scalar deserialize: READ_SCALAR_* + helper + store + ADVANCE.
+    /// @brief Scalar deserialise: READ_SCALAR_* + helper + store + ADVANCE.
     virtual void spellScalarDeserialize(const FieldEmitStep& step, const std::string& targetExpr) = 0;
 
     /// @brief D2 point — fixed-array exact-length guard (LEN_CHECK).
@@ -266,37 +265,37 @@ public:
         return false;
     }
 
-    /// @brief Variable-array serialize length group: LEN_VALIDATE + LEN_WRITE + ADVANCE.
+    /// @brief Variable-array serialise length group: LEN_VALIDATE + LEN_WRITE + ADVANCE.
     virtual void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief Variable-array deserialize length group: LEN_READ + ADVANCE + normalize +
+    /// @brief Variable-array deserialise length group: LEN_READ + ADVANCE + normalise +
     ///        LEN_VALIDATE + storage prep (clear/reserve/resize).
     /// @return The element-count expression the loop bounds on.
     virtual std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief Fixed-array deserialize storage prep (may emit nothing).
+    /// @brief Fixed-array deserialise storage prep (may emit nothing).
     /// @return The element-count expression the loop bounds on.
     virtual std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief ELEM_LOOP open (serialize). @return The element value expression for the body.
+    /// @brief ELEM_LOOP open (serialise). @return The element value expression for the body.
     virtual std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief ELEM_LOOP open (deserialize). @return The element target expression for the body.
+    /// @brief ELEM_LOOP open (deserialise). @return The element target expression for the body.
     virtual std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
                                                       const std::string&   expr,
                                                       const std::string&   countExpr) = 0;
 
-    /// @brief Close the serialize element loop.
+    /// @brief Close the serialise element loop.
     virtual void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief Close the deserialize element loop (append/push if the backend needs it).
+    /// @brief Close the deserialise element loop (append/push if the backend needs it).
     virtual void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief Composite serialize: COMPOSITE_INLINE/COMPOSITE_DELIM_HEADER + nested call
+    /// @brief Composite serialise: COMPOSITE_INLINE/COMPOSITE_DELIM_HEADER + nested call
     ///        (+ delimiter backpatch) + ADVANCE.
     virtual void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) = 0;
 
-    /// @brief Composite deserialize: header read/validate (delimited) + nested call + ADVANCE.
+    /// @brief Composite deserialise: header read/validate (delimited) + nested call + ADVANCE.
     virtual void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) = 0;
 };
 
@@ -309,7 +308,7 @@ public:
 /// @param[in] type Resolved field type.
 /// @param[in] fieldFacts Lowered field facts (helper symbols, prefix widths).
 /// @param[in] prefixBitsOverride Optional lowered array-prefix override.
-/// @param[in] direction Serialize or deserialize (helper symbols differ).
+/// @param[in] direction Serialise or deserialize (helper symbols differ).
 /// @return Root of the field's step tree.
 FieldEmitStep buildFieldEmitSteps(const SemanticFieldType&     type,
                                   const LoweredFieldFacts*     fieldFacts,
@@ -325,7 +324,7 @@ FieldEmitStep buildFieldEmitSteps(const SemanticFieldType&     type,
 ///
 /// @param[in] step Field step tree (from @ref buildFieldEmitSteps).
 /// @param[in] expr Backend value/target expression for this node.
-/// @param[in] direction Serialize or deserialize.
+/// @param[in] direction Serialise or deserialise.
 /// @param[in,out] spelling Backend spelling.
 void renderFieldSteps(const FieldEmitStep&   step,
                       const std::string&     expr,

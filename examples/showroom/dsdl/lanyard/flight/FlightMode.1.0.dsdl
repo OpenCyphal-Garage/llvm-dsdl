@@ -17,10 +17,10 @@ uint8 value
 
 uint8 MANUAL = 0
 # Direct passthrough of pilot stick positions to the mixer. No
-# stabilization.
+# stabilisation.
 
 uint8 STABILIZE = 1
-# Attitude is stabilized; stick position commands lean angle. Altitude
+# Attitude is stabilised; stick position commands lean angle. Altitude
 # is not held.
 
 uint8 ALTITUDE_HOLD = 2

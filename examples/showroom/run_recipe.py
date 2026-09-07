@@ -11,22 +11,22 @@ Each recipe under recipes/ is one (language, build system) pair. A recipe owns n
 its round-trip program comes from src/ and its schema from dsdl/, both shared by every recipe in the
 row -- so the difference between two recipes is exactly the thing the documentation is about.
 
-Three properties of this runner are deliberate:
+Three properties of this runner:
 
 Recipes are STAGED, not run in place. Every run copies the recipe directory together with dsdl/ and src/
-into a scratch directory and runs there. That keeps the source tree clean, but the real reason is
-that it continuously proves the property the documentation promises: a reader who copies one recipe
-directory plus dsdl/ and src/ has everything, because that is literally what CI runs. A recipe that
+into a scratch directory and runs there. That keeps the source tree clean and proves the property the
+documentation promises: a reader who copies one recipe directory plus dsdl/ and src/ has everything,
+since CI runs exactly that. A recipe that
 reached back into this repository would fail here rather than in a user's checkout.
 
 Steps are DECLARED, not scripted. recipe.json lists the commands verbatim, and the documentation
 generator renders that same list onto the recipe's page. A recipe in the manual cannot drift from the
-recipe CI runs because there is only one of them.
+recipe CI runs.
 
 A missing toolchain SKIPS, loudly. Thirteen recipes span six ecosystems and no single machine has all
 of them; a recipe that cannot run must say so rather than fail. But "everything skipped" must never
-read as success, which is what --require is for: the core recipes named there turn a skip into a
-failure, so an image or runner that quietly lost a toolchain is caught instead of being congratulated.
+read as success: --require names the core recipes whose skip is a failure, so an image or runner
+that quietly lost a toolchain is caught instead of being congratulated.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ SRC_ROOT = EXAMPLE_ROOT / "src"
 
 # The recipe invariant: build wiring only. A recipe directory that carried its own round-trip program
 # would make two recipes in the same row differ by more than their build files, which is precisely the
-# comparison the showroom exists to support. The allowlist below is for files that are genuinely
+# comparison the showroom exists to support. The allowlist below is for files that are
 # build wiring despite their extension -- a Cargo build script is Rust, but it is not the program
 # under test.
 SOURCE_SUFFIXES = frozenset(
@@ -98,7 +98,7 @@ class Step:
     # Extra environment for this step, with the same {dsdlc}/{python}/{prefix} substitutions applied
     # to the values. Some build systems take the path to a code generator through the environment
     # rather than the command line -- `//go:generate $DSDLC ...` is the motivating case -- and
-    # forcing those into argv would misrepresent how the tool is actually driven.
+    # forcing those into argv would misrepresent how the tool is driven.
     env: tuple[tuple[str, str], ...] = ()
 
 
@@ -232,7 +232,7 @@ def check_invariant(recipe: Recipe) -> list[str]:
             rel = path.relative_to(recipe.directory)
             violations.append(
                 f"{recipe.name}/{rel}: recipes carry build wiring only; shared round-trip sources "
-                f"live in src/ (add to BUILD_WIRING_ALLOWLIST if this really is build wiring)"
+                f"live in src/ (add to BUILD_WIRING_ALLOWLIST if this is build wiring)"
             )
     return violations
 
@@ -298,8 +298,8 @@ def run_recipe(recipe: Recipe, dsdlc: Path, work_root: Path, verbose: bool,
         return Result(recipe.name, SKIP, "; ".join(unmet), 0.0)
 
     # A recipe that calls find_package(llvm-dsdl) needs an install tree, not just the binary. Skipping
-    # is right rather than falling back to the raw binary: the point of such a recipe is to exercise
-    # the installed package, and a fallback would let a broken package config pass unnoticed.
+    # is the answer rather than a fallback to the raw binary: such a recipe exercises the installed
+    # package, and a fallback would let a broken package config pass unnoticed.
     if needs_prefix(recipe) and prefix is None:
         return Result(recipe.name, SKIP, "needs an installed llvm-dsdl (--prefix)", 0.0)
 

@@ -10,7 +10,7 @@
 /// @file
 /// Shared naming helpers for lowered helper-binding symbols.
 ///
-/// This utility centralizes helper binding symbol projection so emitters do not
+/// This utility centralises helper binding symbol projection so emitters do not
 /// duplicate `mlir_` prefix and language sanitization logic.
 ///
 //===----------------------------------------------------------------------===//

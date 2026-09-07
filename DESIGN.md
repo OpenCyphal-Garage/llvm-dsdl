@@ -2,12 +2,12 @@
 
 ## 1. Purpose
 
-`llvm-dsdl` is a compiler toolchain for [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl), built to make one semantic interpretation of `.dsdl` definitions reusable across many target languages. DSDL describes message/service data contracts and wire behaviour. In practice, this project turns those contracts into language artifacts that can serialize and deserialize bytes consistently.
+`llvm-dsdl` is a compiler toolchain for [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl), built to make one semantic interpretation of `.dsdl` definitions reusable across many target languages. DSDL describes message/service data contracts and wire behaviour. This project turns those contracts into language artifacts that can serialise and deserialise bytes consistently.
 
 The project deliberately combines three ideas:
 
 - DSDL as the domain language and source of truth for data contracts.
-- LLVM/MLIR as compiler infrastructure for normalized IR and pass-managed transformations.
+- LLVM/MLIR as compiler infrastructure for normalised IR and pass-managed transformations.
 - Multi-language emitters that share lowered wire-semantics rather than re-implementing rules backend-by-backend.
 
 This repo ships three user-facing tools:
@@ -18,7 +18,7 @@ This repo ships three user-facing tools:
 
 Supported `dsdlc --target-language` values are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`, and `obj`.
 
-## 2. Realized Architecture
+## 2. Realised Architecture
 
 The architecture described here is what the build and tests execute. Frontend parsing and semantic analysis are shared once, lowered to a DSDL-specific MLIR representation, then consumed by backend codegen paths. The C path goes deepest through EmitC conversion; other language backends consume shared lowered contracts/facts and render native or scripted source.
 
@@ -40,7 +40,7 @@ flowchart LR
   O --> M
 ```
 
-A useful way to read this diagram is: syntax and semantics happen once, wire-layout intent is normalized once, then that normalized intent is reused broadly.
+A useful way to read this diagram is: syntax and semantics happen once, wire-layout intent is normalised once, then that normalised intent is reused broadly.
 
 ## 3. Layered Modules
 
@@ -77,7 +77,7 @@ Primary entry point:
 
 ### 3.3 IR Dialect ([`include/llvmdsdl/IR`](./include/llvmdsdl/IR), [`lib/IR`](./lib/IR))
 
-The custom `dsdl` dialect is the project’s canonical intermediate boundary. Instead of each backend consuming raw semantic objects directly, this project materializes explicit schema/serialization-plan operations first. That makes transformations inspectable and contract-checkable.
+The custom `dsdl` dialect is the project’s canonical intermediate boundary. Instead of each backend consuming raw semantic objects directly, this project materialises explicit schema/serialization-plan operations first. That makes transformations inspectable and contract-checkable.
 
 Relevant dialect files:
 
@@ -105,7 +105,7 @@ This stage is the bridge where DSDL-specific semantic facts become compiler IR f
 
 ### 3.5 MLIR Transforms ([`include/llvmdsdl/Transforms`](./include/llvmdsdl/Transforms), [`lib/Transforms`](./lib/Transforms))
 
-Transforms are where normalization and contract hardening happen. The pass set includes:
+Transforms are where normalisation and contract hardening happen. The pass set includes:
 
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
@@ -125,11 +125,13 @@ Key files:
 - [`lib/Transforms/ConvertDSDLToEmitC.cpp`](lib/Transforms/ConvertDSDLToEmitC.cpp)
 - [`lib/Transforms/ConvertDSDLToLLVM.cpp`](lib/Transforms/ConvertDSDLToLLVM.cpp)
 
-The lowered contract attributes are an explicit handshake between producers and consumers. Backends validate contract version/producer and helper availability before rendering code. This is a major reliability property of the current design.
+The lowered contract attributes are an explicit handshake between producers and consumers. Backends validate contract version/producer and helper availability before rendering code. This is a major reliability property of the design.
 
 ### 3.6 Codegen ([`include/llvmdsdl/CodeGen`](./include/llvmdsdl/CodeGen), [`lib/CodeGen`](./lib/CodeGen))
 
 Code generation is split into backend-specific rendering plus shared convergence layers. All backends receive both semantic and MLIR module inputs. Shared planners/helpers reduce divergence in behaviour across languages.
+
+The backend emitters live in [`include/llvmdsdl/CodeGen/emitter`](./include/llvmdsdl/CodeGen/emitter) and [`lib/CodeGen/emitter`](./lib/CodeGen/emitter), one translation unit per language, each in the namespace `llvmdsdl::emitter::<language>`.
 
 Representative shared layers:
 
@@ -145,29 +147,29 @@ This structure is the core of the “shared semantics, multiple syntaxes” stra
 
 ## 4. Backend Architecture (As Implemented)
 
-### 4.1 C backend (`emitC`)
+### 4.1 C backend (`emitter::c::emit`)
 
 The C backend is the most MLIR-native path. For each selected definition, it runs lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
 
 Key file:
 
-- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
+- [`lib/CodeGen/emitter/C.cpp`](lib/CodeGen/emitter/C.cpp)
 
 Current path:
 
 1. Validate lowered contract coverage.
 2. Clone per-definition schema into a working module.
-3. Run pass pipeline (`lower-dsdl-serialization`, optional optimize, `convert-dsdl-to-emitc`, canonicalization/CSE, emitc conversions).
+3. Run pass pipeline (`lower-dsdl-serialization`, optional optimise, `convert-dsdl-to-emitc`, canonicalisation/CSE, emitc conversions).
 4. Emit body using `mlir::emitc::translateToCpp(...)`.
 5. Emit matching `.h` API and `dsdl_runtime.h`.
 
-### 4.2 C++ backend (`emitCpp`)
+### 4.2 C++ backend (`emitter::cpp::emit`)
 
-The C++ backend renders modern namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
+The C++ backend renders namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
 
 Key file:
 
-- [`lib/CodeGen/CppEmitter.cpp`](lib/CodeGen/CppEmitter.cpp)
+- [`lib/CodeGen/emitter/Cpp.cpp`](lib/CodeGen/emitter/Cpp.cpp)
 
 `pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
 
@@ -175,39 +177,39 @@ Key file:
 
 `both` remains a convenience output that emits only the `std` and `pmr` trees.
 
-### 4.3 Rust backend (`emitRust`)
+### 4.3 Rust backend (`emitter::rust::emit`)
 
-Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialization modes, and configurable memory-mode contracts.
+Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialisation modes, and configurable memory-mode contracts.
 
 Key file:
 
-- [`lib/CodeGen/RustEmitter.cpp`](lib/CodeGen/RustEmitter.cpp)
+- [`lib/CodeGen/emitter/Rust.cpp`](lib/CodeGen/emitter/Rust.cpp)
 
-The design emphasizes explicit memory/runtime contracts because Rust deployments span both desktop and constrained embedded environments.
+The design emphasises explicit memory/runtime contracts because Rust deployments span both desktop and constrained embedded environments.
 
-### 4.4 Go backend (`emitGo`)
+### 4.4 Go backend (`emitter::go::emit`)
 
 Go emission produces a module root, runtime package, and namespace-organized type files. It reuses native traversal/helper contract layers shared with C++ and Rust.
 
 Key file:
 
-- [`lib/CodeGen/GoEmitter.cpp`](lib/CodeGen/GoEmitter.cpp)
+- [`lib/CodeGen/emitter/Go.cpp`](lib/CodeGen/emitter/Go.cpp)
 
-### 4.5 TypeScript backend (`emitTs`)
+### 4.5 TypeScript backend (`emitter::ts::emit`)
 
 TypeScript emission is a scripted backend that uses runtime/body operation plans to produce typed model declarations and runtime-backed SerDes functions. It supports `portable` and `fast` runtime variants.
 
 Key file:
 
-- [`lib/CodeGen/TsEmitter.cpp`](lib/CodeGen/TsEmitter.cpp)
+- [`lib/CodeGen/emitter/Ts.cpp`](lib/CodeGen/emitter/Ts.cpp)
 
-### 4.6 Python backend (`emitPython`)
+### 4.6 Python backend (`emitter::python::emit`)
 
 Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. It mirrors the scripted-backend planning model used by TypeScript.
 
 Key file:
 
-- [`lib/CodeGen/PythonEmitter.cpp`](lib/CodeGen/PythonEmitter.cpp)
+- [`lib/CodeGen/emitter/Python.cpp`](lib/CodeGen/emitter/Python.cpp)
 
 ### 4.7 Object backend (`obj`)
 
@@ -219,7 +221,7 @@ its acceptance gates are in [Direct Object Lowering](docs/development/direct-obj
 
 Key file:
 
-- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
+- [`lib/CodeGen/emitter/C.cpp`](lib/CodeGen/emitter/C.cpp)
 
 ## 5. Runtime Design
 
@@ -273,7 +275,7 @@ Entry points:
 
 ## 7. Build and Automation Model
 
-The build is out-of-tree against installed LLVM/MLIR packages using CMake + Ninja Multi-Config. Presets and workflows are first-class in this repo, so build/test/generation lanes are reproducible and scriptable.
+The build is out-of-tree against installed LLVM/MLIR packages using CMake + Ninja Multi-Config. CMake presets and workflows drive the build, test and generation lanes, so each is reproducible and scriptable.
 
 Core build files:
 
@@ -303,10 +305,10 @@ Important characteristics of the current suite:
 
 This project uses [LLVM](https://llvm.org/) and [MLIR](https://mlir.llvm.org/) not because DSDL requires LLVM IR output, but because MLIR provides disciplined compiler infrastructure for representation, validation, and staged transformation.
 
-What this gives the project today:
+This yields:
 
 - A clear IR boundary (`dsdl` dialect) between semantic analysis and backend rendering.
-- Pass-managed normalization/hardening (`lower-dsdl-serialization`) rather than ad-hoc per-backend logic.
+- Pass-managed normalisation/hardening (`lower-dsdl-serialization`) rather than ad-hoc per-backend logic.
 - Contract versioning/producer checks across pipeline stages.
 - A concrete C emission path via [EmitC](https://mlir.llvm.org/docs/Dialects/EmitC/).
 - Shared lowered-facts extraction for non-C backends, improving cross-language consistency.
@@ -323,7 +325,7 @@ Current tradeoffs:
   [Direct Object Lowering](docs/development/direct-object-lowering.md).
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
-- Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.
+- Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalogue; `ast` remains source-only.
 - Guardrails are intentionally strict: convergence/parity/malformed/determinism and runtime/architecture gates are release-blocking.
 
 This gives the project a stable multi-backend compiler with one canonical semantic flow and explicit boundaries for where backend-specific code is allowed.

@@ -1,5 +1,5 @@
 # Generates the C and the schema for the same corpus and holds their member orders against each
-# other, then asks the compiler what the layout actually is.
+# other, then asks the compiler what the layout is.
 
 if(NOT DEFINED DSDLC OR NOT DEFINED OUT_DIR OR NOT DEFINED PYTHON_EXECUTABLE)
   message(FATAL_ERROR "DSDLC, OUT_DIR and PYTHON_EXECUTABLE are required")

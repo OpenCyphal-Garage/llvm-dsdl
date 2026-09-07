@@ -21,7 +21,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/IR/DSDLOps.h"
@@ -50,7 +50,7 @@
 #include <cstdint>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
@@ -98,7 +98,7 @@
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-namespace llvmdsdl
+namespace llvmdsdl::emitter::c
 {
 namespace
 {
@@ -265,15 +265,14 @@ std::string generatedCommentLine(llvm::StringRef detail)
 /// @brief Makes one line of documentation safe to place inside a C block comment.
 ///
 /// @details
-/// Both delimiters have to go, not just the closing one. `*/` obviously ends the comment early and
+/// Both delimiters have to go, not just the closing one. `*/` ends the comment early and
 /// spills the rest of the sentence into code position. `/*` is subtler: the comment still ends where
 /// it should, so the file compiles -- but it warns under `-Wcomment`, which is an error under
 /// `-Werror`, and generated code that cannot be compiled with warnings as errors is generated code
 /// somebody has to work around. Definitions do write both: the standard namespace and the showroom
 /// both carry doc comments that quote C and JSDoc syntax.
 ///
-/// A space is inserted rather than a backslash or an entity, because the text ends up in front of a
-/// human reading a header and `* /` reads as what it is.
+/// A space is inserted rather than a backslash or an entity.
 std::string sanitizeCCommentText(std::string text)
 {
     const auto separate = [&text](const char* delimiter, const char* replacement) {
@@ -358,7 +357,7 @@ void emitSectionTypedef(SourceWriter&          w,
                         const bool             deprecatedAttribute)
 {
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
-    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serializer
+    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
     // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
     w.open("typedef struct " + typeName + " {");
@@ -490,14 +489,14 @@ void emitSectionMetadata(SourceWriter&                    w,
                          const SemanticSection&           section,
                          const LoweredSectionFacts* const sectionFacts)
 {
-    CHeaderTypeMetadata metadata;
+    HeaderTypeMetadata metadata;
     metadata.typeName                     = typeName;
     metadata.fullName                     = fullName;
     metadata.majorVersion                 = majorVersion;
     metadata.minorVersion                 = minorVersion;
     metadata.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
     metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
-    for (const auto& line : renderCTypeMetadataMacros(metadata))
+    for (const auto& line : renderTypeMetadataMacros(metadata))
     {
         w.line(line);
     }
@@ -674,13 +673,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     {
         if (const auto* dep = ctx.find(depRef))
         {
-            out << "#include \"" << llvmdsdl::EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
         }
     }
     w.blank();
 
     // Generated code must never warn about itself. A deprecated typedef is referenced by this very
-    // header -- in its own declaration, in its serializer signatures, and, when a deprecated type is
+    // header -- in its own declaration, in its serialiser signatures, and, when a deprecated type is
     // used as a field, in the struct body of an unrelated type (uavcan.file.Path.1.0 is deprecated and
     // embedded by five other definitions). Suppressing across the whole body covers all three. The
     // region ends before the include guard closes, so a user naming the type still gets the warning.
@@ -695,10 +694,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
         const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
 
-        for (const auto& line : renderCServiceAliasIdentityMacros(baseTypeName,
-                                                                  def.info.fullName,
-                                                                  def.info.majorVersion,
-                                                                  def.info.minorVersion))
+        for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
+                                                                 def.info.fullName,
+                                                                 def.info.majorVersion,
+                                                                 def.info.minorVersion))
         {
             w.line(line);
         }
@@ -725,13 +724,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                         def.doc,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
-        for (const auto& line : renderCServiceAliasBridgeLines(baseTypeName, requestType))
+        for (const auto& line : renderServiceAliasBridgeLines(baseTypeName, requestType))
         {
             w.line(line);
         }
         w.blank();
 
-        for (const auto& line : renderCServiceAliasWrapperLines(baseTypeName, requestType))
+        for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
         {
             w.line(line);
         }
@@ -882,10 +881,10 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
 
 }  // namespace
 
-llvm::Error emitC(const SemanticModule& semantic,
-                  mlir::ModuleOp        module,
-                  const CEmitOptions&   options,
-                  DiagnosticEngine&     diagnostics)
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics)
 {
     if (options.outDir.empty())
     {
@@ -934,7 +933,7 @@ llvm::Error emitC(const SemanticModule& semantic,
     }
 
     unsigned objectSizeBits = 64U;
-    if (options.artifact == CEmitArtifact::Object)
+    if (options.artifact == Artifact::Object)
     {
         auto width = targetSizeBits(options.targetTriple);
         if (!width)
@@ -957,7 +956,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         perDefModule->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string targetHeaderPath = llvmdsdl::EmitterContext::relativeHeaderPath(def);
+        const std::string targetHeaderPath = EmitterContext::relativeHeaderPath(def);
         const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
         if (targetIt == schemaByHeaderPath.end())
         {
@@ -968,7 +967,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
         stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
-        if (options.artifact == CEmitArtifact::Object)
+        if (options.artifact == Artifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
             // The clones carry lowering's guesses; the module overload matches each to its own
@@ -983,7 +982,7 @@ llvm::Error emitC(const SemanticModule& semantic,
             addOptimizeLoweredSerDesPipeline(pm);
         }
         pm.addPass(createBuildDSDLPlanBodiesPass());
-        if (options.artifact == CEmitArtifact::Object)
+        if (options.artifact == Artifact::Object)
         {
             pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));
             pm.addPass(createEmitDSDLRuntimePass());
@@ -1046,7 +1045,7 @@ llvm::Error emitC(const SemanticModule& semantic,
             std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + " */\n\n";
         // The header suppresses deprecation diagnostics across its own body, and this translation unit
         // needs the same treatment for the same reason: it names the deprecated typedef in every
-        // serializer signature it defines. The region opens before the includes so that a deprecated
+        // serialiser signature it defines. The region opens before the includes so that a deprecated
         // type pulled in as a field is covered too, and closes at end of file, which is where this
         // translation unit stops being generated code.
         const std::string implGuardOpen =
@@ -1131,8 +1130,8 @@ void registerTargets()
 /// @brief What @p triple spells `size_t` at, in bits.
 ///
 /// A variable-length array holds its count in one, so the struct a member is addressed within
-/// depends on it. The per-definition module carries no data layout of its own, which is why this
-/// is asked of the target rather than read off the module.
+/// depends on it. The per-definition module carries no data layout of its own, so this is asked
+/// of the target rather than read off the module.
 /// @param[in] triple The target, or empty for the host's own.
 /// @return The width in bits, or an error naming the target when no backend knows it.
 llvm::Expected<unsigned> targetSizeBits(const std::string& triple)
@@ -1158,12 +1157,12 @@ llvm::Expected<unsigned> targetSizeBits(const std::string& triple)
 
 llvm::Error emitObject(const SemanticModule& semantic,
                        mlir::ModuleOp        module,
-                       CEmitOptions          options,
+                       Options               options,
                        DiagnosticEngine&     diagnostics)
 {
     registerTargets();
-    options.artifact = CEmitArtifact::Object;
-    return emitC(semantic, module, options, diagnostics);
+    options.artifact = Artifact::Object;
+    return emit(semantic, module, options, diagnostics);
 }
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::c

@@ -1,6 +1,6 @@
 foreach(var PYTHON_EXECUTABLE REPO_ROOT DSDLC)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
-    message(FATAL_ERROR "${var} is required for embedded UAVCAN catalog guard")
+    message(FATAL_ERROR "${var} is required for embedded UAVCAN catalogue guard")
   endif()
 endforeach()
 
@@ -14,7 +14,7 @@ if(NOT EXISTS "${generator_script}")
 endif()
 
 if(NOT EXISTS "${UAVCAN_ROOT}")
-  message(FATAL_ERROR "embedded UAVCAN catalog root not found: ${UAVCAN_ROOT}")
+  message(FATAL_ERROR "embedded UAVCAN catalogue root not found: ${UAVCAN_ROOT}")
 endif()
 
 execute_process(
@@ -30,16 +30,16 @@ execute_process(
 )
 
 if(guard_stdout)
-  message(STATUS "embedded UAVCAN catalog guard output:\n${guard_stdout}")
+  message(STATUS "embedded UAVCAN catalogue guard output:\n${guard_stdout}")
 endif()
 
 if(guard_result AND NOT guard_result EQUAL 0)
   message(FATAL_ERROR
-    "embedded UAVCAN catalog guard failed with exit code ${guard_result}\n${guard_stderr}")
+    "embedded UAVCAN catalogue guard failed with exit code ${guard_result}\n${guard_stderr}")
 endif()
 
 if(guard_stderr)
-  message(STATUS "embedded UAVCAN catalog guard diagnostics:\n${guard_stderr}")
+  message(STATUS "embedded UAVCAN catalogue guard diagnostics:\n${guard_stderr}")
 endif()
 
-message(STATUS "embedded UAVCAN catalog guard passed")
+message(STATUS "embedded UAVCAN catalogue guard passed")

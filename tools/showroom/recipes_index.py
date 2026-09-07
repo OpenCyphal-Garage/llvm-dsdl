@@ -9,15 +9,14 @@
 
 Every recipe on the generated pages is read out of the recipe's own `recipe.json` and its own build
 files -- the same `recipe.json` that `run_recipe.py` executes, and the same build files it stages. A
-snippet in the manual therefore cannot drift from the snippet CI runs, because there is only one of
-them and this script copies rather than restates it.
+snippet in the manual therefore cannot drift from the snippet CI runs.
 
 Unlike the showroom generator, this one needs no compiler and no generated tree: recipes are described
 by their manifests and their build files, both of which are committed. It runs anywhere, which is
 why the docs target for this section has no dependency on building dsdlc.
 
 The index page is the example's README rendered for the site, so that the file a contributor would
-naturally edit is the file the site shows.
+edit is the file the site shows.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ SKIP_MARKER = "<!-- showroom-recipes: skip -->"
 
 # The runner substitutes these with the binary under test, which is an absolute path into a build
 # tree. A reader has neither, and pasting `{dsdlc}` into a shell does nothing -- so the page shows
-# the names a reader would actually have on PATH.
+# the names a reader would have on PATH.
 DISPLAY_SUBSTITUTIONS = {
     "dsdlc": "dsdlc",
     "python": "python3",

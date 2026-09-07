@@ -31,12 +31,12 @@ def _write_json(path: Path, data: Dict[str, object]) -> None:
 
 class ConvergenceReportRegressionTest(unittest.TestCase):
     CONVERGENCE_REPORT_REQUIRED_PATHS = [
-        "lib/CodeGen/CEmitter.cpp",
-        "lib/CodeGen/CppEmitter.cpp",
-        "lib/CodeGen/RustEmitter.cpp",
-        "lib/CodeGen/GoEmitter.cpp",
-        "lib/CodeGen/TsEmitter.cpp",
-        "lib/CodeGen/PythonEmitter.cpp",
+        "lib/CodeGen/emitter/C.cpp",
+        "lib/CodeGen/emitter/Cpp.cpp",
+        "lib/CodeGen/emitter/Rust.cpp",
+        "lib/CodeGen/emitter/Go.cpp",
+        "lib/CodeGen/emitter/Ts.cpp",
+        "lib/CodeGen/emitter/Python.cpp",
         "test/integration/RunUavcanGeneration.cmake",
         "test/integration/RunUavcanCppGeneration.cmake",
         "test/integration/RunUavcanRustGeneration.cmake",

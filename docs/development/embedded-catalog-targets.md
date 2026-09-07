@@ -1,6 +1,6 @@
-# Addressing the embedded catalog (design)
+# Addressing the embedded catalogue (design)
 
-`dsdlc` compiles the standard `uavcan` namespace into the binary as an MLIR catalog, but there is
+`dsdlc` compiles the standard `uavcan` namespace into the binary as an MLIR catalogue, but there is
 no way to *name* it on the command line. This note specifies the `+` target sigil that closes that
 gap, and the depfile correctness fix that has to land with it.
 
@@ -12,7 +12,7 @@ description lives in [the `dsdlc` reference](../reference/commands/dsdlc.md).
 
 ## 1. The gap
 
-The embedded catalog is reachable only by accident of reference. It is installed as
+The embedded catalogue is reachable only by accident of reference. It is installed as
 `analyzeOptions.externalSemanticCatalog` and merged into the MLIR module for whatever falls inside
 the dependency closure of the explicit targets
 ([`main.cpp:1238`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/dsdlc/main.cpp)).
@@ -25,7 +25,7 @@ files generated: 0
 
 Two separate reasons produce that empty result. There are no positional targets, so
 `resolveTargets` returns an empty `explicitTargetFiles` and `main.cpp:1204` short-circuits before
-the catalog is even loaded. And even with a target, only referenced types materialize:
+the catalogue is even loaded. And even with a target, only referenced types materialise:
 
 ```console
 $ dsdlc --target-language c --list-outputs test/lit/fixtures_embedded_uavcan/demo
@@ -34,14 +34,14 @@ $ dsdlc --target-language c --list-outputs test/lit/fixtures_embedded_uavcan/dem
 
 Heartbeat and its two transitive dependencies — not the namespace.
 
-The practical cost is that the embedded catalog only removes the `public_regulated_data_types`
+The practical cost is that the embedded catalogue only removes the `public_regulated_data_types`
 checkout for *dependency resolution*. A project that wants the standard namespace generated —
 vendoring it into a shared library, which is the common build-integration shape — still needs the
 submodule it was supposed to make unnecessary.
 
 ## 2. Syntax
 
-A positional target beginning with `+` names the embedded catalog rather than the filesystem.
+A positional target beginning with `+` names the embedded catalogue rather than the filesystem.
 
 ```console
 dsdlc --target-language c --list-outputs +uavcan
@@ -49,7 +49,7 @@ dsdlc --target-language c +uavcan.node --outdir out/c
 dsdlc --target-language c +uavcan.node.Heartbeat.1.0 --outdir out/c
 ```
 
-### Why `+`
+### Sigil selection
 
 Sigil candidates were tested for pass-through in `zsh` and `bash`:
 
@@ -69,7 +69,7 @@ colon syntax ([`TargetResolution.cpp:264`](https://github.com/OpenCyphal-Garage/
 suggests spelling the builtin root as the empty root, `:uavcan/time/TimeSystem.0.1.dsdl`. But
 consider a build system that means to emit `myroot:uavcan/time/TimeSystem.0.1.dsdl` — a project
 deliberately *overriding* the standard type with its own — and whose `myroot` variable comes back
-empty. Under empty-root-means-builtin, that bug resolves cleanly against the embedded catalog and
+empty. Under empty-root-means-builtin, that bug resolves cleanly against the embedded catalogue and
 silently generates the original type. The build succeeds and ships the wrong definition.
 
 `+` inverts that. Truncating `myroot+uavcan/time/TimeSystem.0.1.dsdl` yields
@@ -146,7 +146,7 @@ have amplified it from a handful of stray files to an entire namespace.
 Two things combined to produce it. Embedded definitions are excluded from depfile prerequisites
 because their synthetic paths name no file a build system can `stat`. And the planner was built
 from the *local* semantic module, so embedded types had no node at all — making "resolved from the
-compiled-in catalog" indistinguishable from "unknown type", with both yielding no dependencies. The
+compiled-in catalogue" indistinguishable from "unknown type", with both yielding no dependencies. The
 `.d` file was still written, so the output was a rule with no prerequisites:
 
 ```console
@@ -155,22 +155,22 @@ $ cat out/uavcan/node/Heartbeat_1_0.h.d
 /…/out/uavcan/node/Heartbeat_1_0.h:
 ```
 
-Nothing rebuilds that header, ever. Upgrade `dsdlc` to a build carrying a newer catalog and the
+Nothing rebuilds that header, ever. Upgrade `dsdlc` to a build carrying a newer catalogue and the
 stale generated sources survive.
 
-The correct prerequisite is **the `dsdlc` executable itself**: the catalog is compiled into the
+The correct prerequisite is **the `dsdlc` executable itself**: the catalogue is compiled into the
 binary, which is precisely why it has no source file.
 
 As implemented, `DepfilePlanner` takes a `toolchainStampPath` and records it for any output whose
 closure reaches an embedded definition. Outputs mixing local and embedded sources list their real
-inputs plus the binary; outputs that never touch the catalog are untouched, so a compiler upgrade
-does not rebuild work that owes the catalog nothing. `main.cpp` resolves the path with
+inputs plus the binary; outputs that never touch the catalogue are untouched, so a compiler upgrade
+does not rebuild work that owes the catalogue nothing. `main.cpp` resolves the path with
 `llvm::sys::fs::getMainExecutable` rather than trusting `argv[0]`, and builds the planner from
 the closure over the *merged* module so embedded definitions are present as nodes.
 
 This makes the dependency graph honest — a toolchain upgrade is a real input change — at the cost
 of rebuilding embedded-sourced files when `dsdlc` is rebuilt, which is what a compiler upgrade
-should do. The catalog's identity is already tracked as `kEmbeddedUavcanMlirSha256` with a
+should do. The catalogue's identity is already tracked as `kEmbeddedUavcanMlirSha256` with a
 load-time integrity check
 ([`UavcanEmbeddedCatalog.h:67`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h)),
 so a finer-grained stamp file remains available later if binary-granularity rebuilds prove too
@@ -202,7 +202,7 @@ filesystem-truthful. The binary lands in the depfile instead.
 | `main.cpp` `addTargetToken` | Partitions target tokens: `+` prefix → `builtinTargets`, else `positionalTargets`. Shared by the normal loop and the post-`--` drain, which is what keeps the sigil significant after `--`. |
 | `main.cpp` `validateLanguageGatedOptions` | Gates `+` on language and on `--no-embedded-uavcan`, alongside the existing per-language option gates. |
 | `main.cpp` empty-target short-circuit | Requires `builtinTargets` to be empty as well, or `+uavcan` alone would exit 0 silently. |
-| `main.cpp` after catalog load | Expands each selector and fails with a did-you-mean on zero matches, before analysis. |
+| `main.cpp` after catalogue load | Expands each selector and fails with a did-you-mean on zero matches, before analysis. |
 | `main.cpp` `explicitKeys` | Unions the expanded builtin keys into the explicit set. |
 | `UavcanEmbeddedCatalog.{h,cpp}` | `expandEmbeddedCatalogSelector` → `EmbeddedSelectorExpansion{typeKeys, suggestions}`. |
 | `DepfilePlanner.{h,cpp}` | Done in §4; needed no further change for `+`. |
@@ -213,7 +213,7 @@ Two things the design predicted and the implementation did **not** need:
 
 - **No `TargetResolution` change.** Selectors never touch the filesystem, so threading them through
   `ResolvedTargets` would have been plumbing for its own sake. They go straight from `CliOptions` to
-  the catalog.
+  the catalogue.
 - **No key-based `isExplicitTarget` marking.** `isExplicitTarget` has exactly one reader,
   `collectExplicitKeys`, so unioning the expanded keys into `explicitKeys` is equivalent and does
   not require mutating definitions that were never parsed from a file. Shadowing then falls out of
@@ -240,13 +240,13 @@ toolchain stamp.
 
 ## 8. Open questions
 
-1. **Does `+uavcan` include deprecated types?** It does — the catalog carries whatever
+1. **Does `+uavcan` include deprecated types?** It does — the catalogue carries whatever
    `public_regulated_data_types` ships, and `+uavcan` selects all 189 schemas in it, so generating
    the whole namespace emits deprecation notices for types the user never named. A
    `--no-deprecated-builtins` filter may be wanted; still deferred until the noise is observed in a
    real build.
-2. **Should `--version` report the catalog identity?** `kEmbeddedUavcanMlirSha256` and the upstream
+2. **Should `--version` report the catalogue identity?** `kEmbeddedUavcanMlirSha256` and the upstream
    revision are both known at build time. Cheap, and it makes "which standard types does this
    binary carry" answerable without generating anything. Probably yes, separately.
 3. **Is `+` right for future non-`uavcan` builtins?** The sigil is namespace-generic by
-   construction, so a second embedded catalog needs no new syntax. Nothing to decide.
+   construction, so a second embedded catalogue needs no new syntax. Nothing to decide.

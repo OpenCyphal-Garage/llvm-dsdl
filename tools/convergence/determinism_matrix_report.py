@@ -111,7 +111,7 @@ def _build_report(
         evidence = _matches(test_names, patterns)
         failed_evidence = _matches(failed_names, patterns) if behavioral else []
         skipped_evidence = _matches(skipped_names, patterns) if behavioral else []
-        # Behavioral rule: covered iff a matching test passed AND none failed.
+        # Behavioural rule: covered iff a matching test passed AND none failed.
         covered = len(evidence) > 0 and len(failed_evidence) == 0
         if covered:
             covered_backends += 1
@@ -192,18 +192,18 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append(f"Test-source scan: `{report['test_source']}`")
     if report.get("behavioral"):
         lines.append(
-            "Gating mode: **behavioral** — a backend is `covered` only if its determinism "
+            "Gating mode: **behavioural** — a backend is `covered` only if its determinism "
             "test executed and passed; a failed/skipped/absent test leaves it uncovered."
         )
     else:
         lines.append(
             "Gating mode: **structural** — coverage is inferred from registered test names. "
-            "Supply `--ctest-junit` for behavioral (executed pass/fail) gating."
+            "Supply `--ctest-junit` for behavioural (executed pass/fail) gating."
         )
     lines.append("")
 
     if report.get("behavioral") and report.get("coverage_manifest"):
-        lines.append("## Coverage Manifest (behavioral)")
+        lines.append("## Coverage Manifest (behavioural)")
         lines.append("")
         lines.append("| Backend | Covered | Reason | Failed | Skipped |")
         lines.append("| --- | :---: | --- | --- | --- |")
@@ -283,7 +283,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         "--ctest-junit",
         action="append",
         default=[],
-        help="JUnit XML result file from an executed ctest run; enables behavioral "
+        help="JUnit XML result file from an executed ctest run; enables behavioural "
         "(executed pass/fail) gating. Repeatable.",
     )
     parser.add_argument("--baseline", help="Path to baseline JSON used for strict regression checks.")
@@ -318,7 +318,7 @@ def main(argv: List[str]) -> int:
     if args.check_regressions and junit is None:
         print(
             "warning: determinism gate running in STRUCTURAL mode (test-name presence); "
-            "supply --ctest-junit for behavioral gating",
+            "supply --ctest-junit for behavioural gating",
             file=sys.stderr,
         )
 

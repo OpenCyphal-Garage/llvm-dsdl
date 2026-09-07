@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Shared diagnostic-text catalog for generated runtime contracts.
+/// Shared diagnostic-text catalogue for generated runtime contracts.
 ///
 /// The functions in this file provide parity-locked diagnostic text fragments
 /// used across multiple language emitters. Emitters remain responsible for
@@ -23,7 +23,7 @@
 namespace llvmdsdl::codegen_diagnostic_text
 {
 
-/// @brief Returns canonical serialization buffer-capacity failure text.
+/// @brief Returns canonical serialisation buffer-capacity failure text.
 /// @return Diagnostic text.
 std::string serializationBufferTooSmall();
 

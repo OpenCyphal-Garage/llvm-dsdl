@@ -89,8 +89,8 @@ foreach(_unit IN LISTS _c_units)
 endforeach()
 
 # One translation unit including every generated header. Compiling each unit on its own says nothing
-# about two headers meeting, which is where a type name shared by two definitions actually bites: the
-# per-unit loop above would pass a corpus that cannot be used. The C++ leg has always done this.
+# about two headers meeting, which is where a type name shared by two definitions becomes problematic:
+# the per-unit loop above would pass a corpus that cannot be used.
 file(GLOB_RECURSE _c_headers RELATIVE "${WORK_DIR}/c" "${WORK_DIR}/c/*.h")
 if(_c_headers STREQUAL "")
   message(FATAL_ERROR "no C headers were generated from the naming corpus")
@@ -132,7 +132,7 @@ llvmdsdl_run_or_fail("C++ compile of the naming corpus under -Werror"
 
 # ---------------------------------------------------------------------------------------------------
 # C++ again, under the PMR profile. The profile adds two members to every struct, and a claimed-name
-# omission there is invisible to the std run above -- which is how both of them came to be missing.
+# omission there is invisible to the std run above.
 
 llvmdsdl_run_or_fail("dsdlc C++ PMR generation"
   "${DSDLC}" --target-language cpp ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")

@@ -50,7 +50,7 @@ namespace autosar
 
 /// @brief Deterministic fixed-capacity vector with logical size tracking.
 /// @tparam T Element type.
-/// @tparam Capacity Maximum number of materialized elements.
+/// @tparam Capacity Maximum number of materialised elements.
 template <typename T, std::size_t Capacity>
 class BoundedVector final
 {

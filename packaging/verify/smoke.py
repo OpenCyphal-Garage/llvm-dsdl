@@ -6,7 +6,7 @@
 #
 # ===----------------------------------------------------------------------===//
 
-"""Install a built .deb on a pristine system and prove the tools actually work.
+"""Install a built .deb on a pristine system and prove the tools work.
 
 The package this checks is a *downloadable file*: users fetch it and run
 ``apt install ./llvm-dsdl_*.deb`` against stock Ubuntu, with no repository of
@@ -49,7 +49,7 @@ CONTAINER_SCRIPT = r"""
 set -uo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-# Ubuntu's container images are minimized: /etc/dpkg/dpkg.cfg.d/excludes tells
+# Ubuntu's container images are minimised: /etc/dpkg/dpkg.cfg.d/excludes tells
 # dpkg to discard man pages and most documentation as packages are unpacked. A
 # real Ubuntu install does no such thing, so leaving it in place would make this
 # test report our own package as missing files it demonstrably ships.

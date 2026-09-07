@@ -200,7 +200,7 @@ bool runDepfilePlannerTests()
         return false;
     }
 
-    // With no stamp configured, a type supplied entirely by the embedded catalog has nothing to
+    // With no stamp configured, a type supplied entirely by the embedded catalogue has nothing to
     // depend on. That is the defect the stamp exists to fix: the rule would never rebuild.
     const auto& embeddedOnlyWithoutStamp = planner.depsForTypeKey("uavcan.node.Heartbeat:1:0");
     if (!embeddedOnlyWithoutStamp.empty())
@@ -211,7 +211,7 @@ bool runDepfilePlannerTests()
 
     llvmdsdl::DepfilePlanner stamped(module, "/tmp/depfile_planner/bin/dsdlc");
 
-    // The regression pin: an output generated purely from the compiled-in catalog must carry the
+    // The regression pin: an output generated purely from the compiled-in catalogue must carry the
     // toolchain stamp, so upgrading the compiler rebuilds it.
     const auto& stampedEmbeddedOnly = stamped.depsForTypeKey("uavcan.node.Heartbeat:1:0");
     if (stampedEmbeddedOnly.size() != 1U || !containsSuffix(stampedEmbeddedOnly, "/dsdlc"))
@@ -239,8 +239,8 @@ bool runDepfilePlannerTests()
         return false;
     }
 
-    // A closure that never touches the catalog must not gain the stamp; a compiler upgrade is not a
-    // reason to rebuild output that owes the catalog nothing.
+    // A closure that never touches the catalogue must not gain the stamp; a compiler upgrade is not a
+    // reason to rebuild output that owes the catalogue nothing.
     const auto& stampedLocalOnly = stamped.depsForTypeKey("ns.B:1:0");
     if (containsSuffix(stampedLocalOnly, "/dsdlc"))
     {

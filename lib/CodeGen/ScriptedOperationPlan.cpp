@@ -11,7 +11,7 @@
 /// Builds shared scripted operation plans from helper-bound body metadata.
 ///
 /// This component classifies each field into operation categories consumed by
-/// TS/Python emitters so orchestration decisions remain centralized.
+/// TS/Python emitters so orchestration decisions remain centralised.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -8,7 +8,7 @@ bazel_dep(name = "rules_cc", version = "0.1.1")
 dsdlc = use_extension("@rules_dsdl//:extensions.bzl", "dsdlc")
 
 # One line per namespace, and nothing to keep in step. Everything the namespace reaches -- including
-# the standard types from the catalog compiled into dsdlc -- is generated at fetch time, so there is
+# the standard types from the catalogue compiled into dsdlc -- is generated at fetch time, so there is
 # no list of transitive dependencies to maintain and no way to leave one out.
 dsdlc.namespace(name = "lanyard", root = "dsdl/lanyard")
 

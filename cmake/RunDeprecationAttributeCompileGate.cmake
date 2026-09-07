@@ -8,7 +8,7 @@
 # Compile gate for the language-native deprecation attributes.
 #
 # A language-native deprecation attribute makes the *generated* code warn about itself: the deprecated
-# name is referenced by its own declaration, by its serializer signatures, and by any struct that
+# name is referenced by its own declaration, by its serialiser signatures, and by any struct that
 # embeds it. The backends suppress those diagnostics across each generated file, and this test is what
 # keeps that suppression honest -- without it a misplaced pragma only shows up in a downstream
 # -Werror build.
@@ -56,11 +56,10 @@ function(llvmdsdl_run_or_fail description)
   endif()
 endfunction()
 
-# Every invocation below asks for the whole corpus. A definition is deprecated because a newer
-# version replaced it, so the newest-version default -- which is what a user gets -- drops precisely
-# the types this gate is about. That the default drops them is worth knowing and is pinned in
-# test/lit/newest-version-only.txt; what this gate tests is that the attribute reaches user code when
-# such a type *is* generated, which needs the type to exist.
+# Every invocation below asks for the whole corpus. A deprecated definition is usually one a newer
+# version replaced, so the newest-version default drops the types this gate is about. That the
+# default drops them is pinned in test/lit/newest-version-only.txt; what this gate tests is that the
+# attribute reaches user code when such a type *is* generated, which needs the type to exist.
 
 # ---------------------------------------------------------------------------------------------------
 # C
@@ -83,7 +82,7 @@ llvmdsdl_run_or_fail("C include-only compile under -Werror"
                   -o "${WORK_DIR}/c_include_probe.o")
 
 # The generated .c translation units need the same clean bill of health as the headers, and for a
-# separate reason: each one defines the serializer functions, so it names the deprecated typedef in
+# separate reason: each one defines the serialiser functions, so it names the deprecated typedef in
 # every signature it emits. Including a header exercises the header's suppression only -- compiling
 # the implementation is what proves the .c carries its own.
 foreach(_tu IN ITEMS "uavcan/file/Read_1_0" "uavcan/file/Path_1_0" "uavcan/node/Health_1_0")

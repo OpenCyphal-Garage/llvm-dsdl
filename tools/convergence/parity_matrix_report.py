@@ -162,9 +162,9 @@ def _build_report(
     ctest_config: str | None,
     junit: "ctest_results.TestResults | None" = None,
 ) -> Dict[str, object]:
-    # Behavioral mode: a cell is covered only if a matching test EXECUTED and PASSED.
+    # Behavioural mode: a cell is covered only if a matching test EXECUTED and PASSED.
     # Structural mode (no junit): a cell is covered if a matching test NAME is merely
-    # registered — retained for local doc generation, not for behavioral gating.
+    # registered — retained for local doc generation, not for behavioural gating.
     failed_names: Set[str] = set()
     skipped_names: Set[str] = set()
     if junit is not None:
@@ -209,7 +209,7 @@ def _build_report(
             matches = _matches(test_names, cell["patterns"])
             failed_evidence = _matches(failed_names, cell["patterns"]) if behavioral else []
             skipped_evidence = _matches(skipped_names, cell["patterns"]) if behavioral else []
-            # Behavioral rule: covered iff a matching test passed AND none failed.
+            # Behavioural rule: covered iff a matching test passed AND none failed.
             covered = len(matches) > 0 and len(failed_evidence) == 0
             if covered:
                 backend_covered += 1
@@ -281,7 +281,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append("# Parity Matrix Coverage")
     lines.append("")
     lines.append(
-        "Which serialization behaviours are covered by tests in every target language, and which "
+        "Which serialisation behaviours are covered by tests in every target language, and which "
         "are not. A cell is a (backend, behaviour) pair."
     )
     lines.append("")
@@ -300,13 +300,13 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     lines.append(f"Test-source scan: `{report['test_source']}`")
     if report.get("behavioral"):
         lines.append(
-            "Gating mode: **behavioral** — a cell is `covered` only if a matching test "
+            "Gating mode: **behavioural** — a cell is `covered` only if a matching test "
             "executed and passed; failed/skipped/absent evidence leaves the cell uncovered."
         )
     else:
         lines.append(
             "Gating mode: **structural** — coverage is inferred from registered test names. "
-            "Supply `--ctest-junit` for behavioral (executed pass/fail) gating."
+            "Supply `--ctest-junit` for behavioural (executed pass/fail) gating."
         )
     lines.append("")
     lines.append("`Mode` meanings:")
@@ -329,7 +329,7 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         lines.append("")
 
     if report.get("behavioral"):
-        lines.append("## Coverage Manifest (behavioral)")
+        lines.append("## Coverage Manifest (behavioural)")
         lines.append("")
         manifest = report.get("coverage_manifest", [])
         if manifest:
@@ -420,7 +420,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         "--ctest-junit",
         action="append",
         default=[],
-        help="JUnit XML result file from an executed ctest run; enables behavioral "
+        help="JUnit XML result file from an executed ctest run; enables behavioural "
         "(executed pass/fail) gating. Repeatable.",
     )
     parser.add_argument("--baseline", help="Path to baseline JSON used for strict regression checks.")
@@ -454,7 +454,7 @@ def main(argv: List[str]) -> int:
 
     if args.check_regressions and args.baseline and junit is None and ctest_test_dir is None:
         print(
-            "error: --check-regressions with --baseline requires --ctest-junit (behavioral) "
+            "error: --check-regressions with --baseline requires --ctest-junit (behavioural) "
             "or --ctest-test-dir (structural)",
             file=sys.stderr,
         )
@@ -462,7 +462,7 @@ def main(argv: List[str]) -> int:
     if args.check_regressions and junit is None:
         print(
             "warning: parity gate running in STRUCTURAL mode (test-name presence); "
-            "supply --ctest-junit for behavioral gating",
+            "supply --ctest-junit for behavioural gating",
             file=sys.stderr,
         )
 

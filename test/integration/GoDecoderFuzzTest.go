@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Coverage-guided fuzz harness over the *generated Go deserializers* — the Go
+// Coverage-guided fuzz harness over the *generated Go deserialisers* — the Go
 // analogue of test/integration/NativeDecoderFuzz.c.
 //
 // Go is memory-safe, so the failure class differs from C: there is no OOB/UB to
@@ -13,13 +13,13 @@
 // otherwise PANICS on attacker-controlled wire bytes is a real robustness / DoS
 // defect. This harness feeds arbitrary bytes straight into each generated
 // Deserialize entrypoint; the Go fuzzer turns any panic into a hard failure
-// (and minimizes the reproducer). Accepted objects are round-tripped back
+// (and minimises the reproducer). Accepted objects are round-tripped back
 // through Serialize so that path is exercised on adversarially-shaped-but-valid
 // inputs too.
 //
 // The curated type set mirrors the C fuzzer's adversarial shapes:
 //   * Heartbeat            — simple fixed-size message (baseline)
-//   * Health / Integer8    — narrow scalar width + signedness normalization
+//   * Health / Integer8    — narrow scalar width + signedness normalisation
 //   * Frame (union)        — tagged union dispatch (invalid tag rejection)
 //   * ExecuteCommand.{Req,Resp} — variable-length arrays with length prefixes
 //   * port.List            — nested delimited composites + union-of-composites

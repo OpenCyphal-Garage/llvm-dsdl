@@ -24,7 +24,7 @@ It checks two things:
        no direction-mismatched ops (a READ_* in a serialize segment, etc.)
      These are tolerant of where the *bookkeeping* ops (ADVANCE / STORE_TAG) sit, which is
      exactly why the safe D4 backends (TS/Python advance-early, Python validate-before-store)
-     pass while a genuine mask-before-validate reorder fails.
+     pass while a mask-before-validate reorder fails.
 
   2. Cross-backend skeleton agreement (the consistency property):
      per (type, direction), after removing the accepted-difference ops and applying the
@@ -191,7 +191,7 @@ def run_dsdlc(dsdlc, lang, fixture_root, trace_path, out_dir, extra_env=None):
     if lang == "go":
         # Go compiles a namespace as one package, so the uavcan corpus -- which carries several
         # types at two or more versions -- cannot be expressed with unversioned names at all. The
-        # emit order this verifies is the same either way; this just makes the corpus generable.
+        # emit order this verifies is the same either way; this makes the corpus generable.
         cmd += ["--versioned-type-names"]
     env = dict(os.environ, LLVMDSDL_EMIT_TRACE=trace_path)
     if extra_env:
@@ -329,7 +329,7 @@ def mutation_test(dsdlc):
 
     dsdlc honors LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate by swapping each recorded
     VALIDATE_TAG with the MASK_TAG that follows it before the trace file is written --
-    a genuine mask-before-validate reorder flowing through the entire pipeline (real
+    a mask-before-validate reorder flowing through the entire pipeline (real
     emitter run -> trace side channel -> parser -> membership check). This proves the
     pipeline detects the reorder, not merely that check_membership rejects a hand-written
     list (that is --selftest's job).

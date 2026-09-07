@@ -25,7 +25,7 @@ Supported modes:
 1. `off`: AI disabled.
 2. `suggest`: non-edit suggestions and explanations.
 3. `assist`: richer suggestions and optional confirmation-required edit proposals.
-4. `apply_with_confirmation`: allows edit materialization only with explicit confirmation.
+4. `apply_with_confirmation`: allows edit materialisation only with explicit confirmation.
 
 Recommended default for shared repos:
 
@@ -120,4 +120,4 @@ Before release, verify:
 2. Confirmation gate behaviour passes.
 3. Tool allow-list rejects unsupported tools.
 4. Redaction tests pass.
-5. `docs/reference/lsp/ai-operation.md` matches current behaviour.
+5. `docs/reference/lsp/ai-operation.md` matches the behaviour.

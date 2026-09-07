@@ -95,7 +95,7 @@ void StructuredLogger::log(const LogLevel level, const llvm::StringRef event, ll
         return;
     }
     // Serialise formatting and the sink write: records are emitted from both the main thread and the
-    // request-scheduler worker, and an interleaved line would defeat the point of a post-mortem log.
+    // request-scheduler worker, and an interleaved line would corrupt a post-mortem log.
     const std::scoped_lock<std::mutex> lock(mutex_);
     if (!passes(level_, level))
     {

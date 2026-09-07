@@ -142,7 +142,7 @@ set(py_skipped "${CMAKE_MATCH_1}")
 # ------------------------------------------------------- TypeScript driver ----
 # Optional: only runs when tsc, node, and dsdlc are all available (the generated
 # TS runtime must be produced by dsdlc first). TS is double-typed like Python, so
-# float16 unpack results that are NaN are SKIPPED (JS numbers canonicalize NaN
+# float16 unpack results that are NaN are SKIPPED (JS numbers canonicalise NaN
 # payloads); everything else is exact.
 set(ts_ran FALSE)
 if(DEFINED TSC_EXECUTABLE AND EXISTS "${TSC_EXECUTABLE}"

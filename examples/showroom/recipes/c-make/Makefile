@@ -14,7 +14,7 @@ $(error This Makefile needs GNU Make 4.3 or newer for grouped targets; this is $
 endif
 
 # --------------------------------------------------------------------------------------------------
-# Three tranches, because dsdlc decomposes its own output along exactly these lines.
+# Three tranches, along the lines dsdlc decomposes its own output.
 #
 # `--generate-support` splits everything dsdlc can emit into code derived from a definition and code
 # that is not -- runtime headers, package manifests, scaffolding. `+uavcan...` names the standard
@@ -29,7 +29,7 @@ endif
 # 1. Support: everything not derived from a definition. Needs no positional target.
 SUPPORT_OUT := $(subst ;, ,$(shell $(DSDLC) $(BASE) --generate-support only --list-outputs))
 
-# 2. The standard types this namespace refers to, taken from the catalog compiled into dsdlc and
+# 2. The standard types this namespace refers to, taken from the catalogue compiled into dsdlc and
 #    named with the `+` sigil rather than through a checkout of public_regulated_data_types.
 # Every standard type the namespace reaches, listed exactly. `+uavcan.si.unit` would cover nine of
 # these in one line, but it generates all forty-five types in that namespace -- five times the work
@@ -133,7 +133,7 @@ $(BUILTIN_OBJS) $(TYPES_OBJS) src/c/roundtrip.o: | $(GEN_HDRS)
 # Two independent sets of depfiles, answering two different questions.
 #
 # dsdlc's -MD files say which definitions each generated file came from, transitively: the rule for
-# SensorFrame_1_0.c lists Mode.1.0.dsdl because the type embeds a type that embeds Mode. For the
+# SensorFrame_1_0.c lists Mode.1.0.dsdl, reached through an embedded type. For the
 # builtin tranche they name the dsdlc binary instead, for the reason above. No compiler could work
 # either of those out.
 -include $(addsuffix .d,$(SUPPORT_OUT) $(BUILTIN_OUT) $(TYPES_OUT))

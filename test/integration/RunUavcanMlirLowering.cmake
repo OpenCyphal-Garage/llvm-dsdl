@@ -65,7 +65,7 @@ execute_process(
   ERROR_VARIABLE lower_optimized_stderr
 )
 if(NOT lower_optimized_result EQUAL 0)
-  message(STATUS "dsdl-opt optimized lower stderr:\n${lower_optimized_stderr}")
+  message(STATUS "dsdl-opt optimised lower stderr:\n${lower_optimized_stderr}")
   message(FATAL_ERROR
     "full uavcan optimized lower-dsdl-serialization pipeline failed")
 endif()
@@ -136,7 +136,7 @@ execute_process(
   ERROR_VARIABLE convert_optimized_stderr
 )
 if(NOT convert_optimized_result EQUAL 0)
-  message(STATUS "dsdl-opt optimized convert stderr:\n${convert_optimized_stderr}")
+  message(STATUS "dsdl-opt optimised convert stderr:\n${convert_optimized_stderr}")
   message(FATAL_ERROR
     "full uavcan optimized convert-dsdl-to-emitc pass failed")
 endif()
@@ -199,4 +199,4 @@ if(NOT converted_optimized_sha STREQUAL converted_optimized_again_sha)
     "full uavcan optimized convert pipeline is not deterministic across repeated runs")
 endif()
 
-message(STATUS "full uavcan MLIR lowering + convert check passed (baseline + optimized pipelines)")
+message(STATUS "full uavcan MLIR lowering + convert check passed (baseline + optimised pipelines)")

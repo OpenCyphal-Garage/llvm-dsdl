@@ -10,7 +10,7 @@
 /// @file
 /// Implements scalar storage-width resolution helpers for emitters.
 ///
-/// These helpers normalize bit-length decisions into portable storage classes shared across language backends.
+/// These helpers normalise bit-length decisions into portable storage classes shared across language backends.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -54,7 +54,7 @@ The checks in §7 conflate two questions that scale differently:
 
 - **Is the generated output correct** — that the emitted C compiles, that a non-C backend emits.
   The output is portable text, so this is architecture-independent and runs once, on the host.
-- **Does the binary run on the target** — this genuinely needs the target.
+- **Does the binary run on the target** — this needs the target.
 
 A fully static CLI binary is the ideal `qemu-user` case: no dynamic loader, no sysroot. Running
 corpus generation under emulation and comparing the hash against the host's — the comparison
@@ -77,12 +77,11 @@ Homebrew fetches over curl, which does not set `com.apple.quarantine` (§5). Gat
 never engages on this path, and `brew install` works without notarisation. That makes the tap the
 recommended macOS channel, and confines notarisation to the direct tarball download.
 
-That last clause carries more weight than it did when this was written. §5 used to hold that `tar`
-does not propagate quarantine, so only a Finder double-click was affected; that is false — a
-browser-downloaded archive extracted with `tar -xzf` yields quarantined binaries and a Gatekeeper
-block. So the unnotarised tarball is broken for every reader who clicks the release page rather
+`tar` propagates quarantine: a browser-downloaded archive extracted with `tar -xzf` yields
+quarantined binaries and a Gatekeeper block. So the unnotarised tarball is broken for every reader
+who clicks the release page rather
 than reaching for `curl`, which is most of them on a first visit. The tap does not merely improve
-on that path, it is the only macOS channel that works without the reader knowing about `xattr`,
+on that path: no other macOS channel works without the reader knowing about `xattr`,
 and that raises the priority of both this section and notarisation itself.
 
 Run `brew style` and `brew audit --strict --online` in the package job.
@@ -98,7 +97,7 @@ runtime keg and no rebuild cascade when `llvm` bumps. The residual is a policy m
 homebrew-core discourages new formulae pinned to versioned LLVM and prunes old `llvm@N`.
 
 What the tap costs is discoverability — `brew install llvm-dsdl` requires `brew tap` first.
-Weighed against a notability bar this project does not yet clear, and against carrying a
+Weighed against a notability bar this project does not clear, and against carrying a
 source-build path, the tap wins. D5 resolves accordingly.
 
 ## 5. apt repository

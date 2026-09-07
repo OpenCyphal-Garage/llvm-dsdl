@@ -9,4 +9,4 @@ module {
   }
 }
 
-// CHECK: error: unsupported operation in serialization plan body
+// CHECK: error: unsupported operation in serialisation plan body

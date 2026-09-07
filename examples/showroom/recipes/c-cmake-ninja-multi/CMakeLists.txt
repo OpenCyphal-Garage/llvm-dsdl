@@ -11,11 +11,10 @@ find_package(llvm-dsdl REQUIRED)
 # as the generator wants to.
 set(GEN "${CMAKE_BINARY_DIR}/generated")
 
-# Three calls into that one tree, because several calls sharing an output directory is exactly the
-# situation Ninja refuses when two of them claim the same file. Left alone, every call would emit the
-# runtime header and the namespace call would pull in the standard types it reaches, so the work is
-# divided up front along the seams dsdlc already has. dsdlc_generate() checks for overlap itself and
-# fails at configure time naming both claimants.
+# Three calls into that one tree. Left alone, every call would emit the runtime header and the
+# namespace call would pull in the standard types it reaches, and Ninja refuses two rules that claim
+# the same file; so the work is divided up front along the seams dsdlc already has. dsdlc_generate()
+# checks for overlap itself and fails at configure time naming both claimants.
 
 # The runtime header has exactly one owner.
 dsdlc_generate(dsdl_support
@@ -23,7 +22,7 @@ dsdlc_generate(dsdl_support
   SUPPORT  only
   OUTDIR   "${GEN}")
 
-# So do the standard types this namespace reaches. `+` names the catalog compiled into dsdlc, so
+# So do the standard types this namespace reaches. `+` names the catalogue compiled into dsdlc, so
 # none of this needs a checkout of public_regulated_data_types.
 #
 # They are listed exactly rather than by namespace selector: `+uavcan.si.unit` would cover nine of

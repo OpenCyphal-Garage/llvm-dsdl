@@ -149,7 +149,7 @@ bool runAnalyzerTests()
     bool sawExtentDiagnosticAtExtentValue = false;
     for (const llvmdsdl::Diagnostic& diagnostic : extentSemDiag.diagnostics())
     {
-        if (diagnostic.message == "extent smaller than maximal serialized length" && diagnostic.location.line == 2 &&
+        if (diagnostic.message == "extent smaller than maximal serialised length" && diagnostic.location.line == 2 &&
             diagnostic.location.column == 9 && diagnostic.length == 1)
         {
             sawExtentDiagnosticAtExtentValue = true;
@@ -331,7 +331,7 @@ bool runAnalyzerTests()
         }
     }
 
-    // The analyzer rejects reserved attribute names (section 3.5.1) but accepts
+    // The analyser rejects reserved attribute names (section 3.5.1) but accepts
     // ordinary ones, and a padding field (no name) is exempt.
     {
         const auto analyzerRejects = [](const std::string& body) -> bool {
@@ -389,11 +389,11 @@ bool runAnalyzerTests()
         }
     }
 
-    // Exactness contract for `_offset_` (supersedes the BLS-D2 truncation warning): the analyzer
+    // Exactness contract for `_offset_` (supersedes the BLS-D2 truncation warning): the analyser
     // binds `_offset_` symbolically, `.min`/`.max`/`% k` and singleton comparisons are exact at
     // any cardinality, and an expression that cannot be evaluated exactly is a hard error — an
     // assertion is never evaluated against a truncated offset set, so no `_offset_` warning may
-    // exist at all anymore.
+    // exist.
     {
         struct OffsetOutcome final
         {
@@ -471,7 +471,7 @@ bool runAnalyzerTests()
             const auto outcome = analyzeOffsets(stale);
             if (outcome.succeeded || !outcome.errors.contains("assertion failed"))
             {
-                std::cerr << "the formerly-truncated .max answer must now fail its assertion\n";
+                std::cerr << "the .max answer must fail its assertion\n";
                 return false;
             }
         }
@@ -501,7 +501,7 @@ bool runAnalyzerTests()
             }
         }
 
-        // ...a singleton comparison is disproved exactly without materializing...
+        // ...a singleton comparison is disproved exactly without materialising...
         const std::string unequal = "uint8[<=20000] payload\n@assert _offset_ == {0}\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(unequal);
@@ -514,7 +514,7 @@ bool runAnalyzerTests()
         }
 
         // ...elementwise addition of a non-negative scalar stays symbolic (it is the algebra's
-        // own Add node), so it is exact beyond the materialization capacity instead of failing
+        // own Add node), so it is exact beyond the materialisation capacity instead of failing
         // (the 16-bit array-length prefix puts the minimum offset at 16; +8 gives 24)...
         const std::string shifted = "uint8[<=20000] payload\n@assert (_offset_ + 8).min == 24\n@sealed\n";
         {
@@ -527,14 +527,14 @@ bool runAnalyzerTests()
             }
         }
 
-        // ...and an operation that genuinely requires materializing the full contents (an
+        // ...and an operation that requires materialising the full contents (an
         // elementwise transform of a beyond-capacity set) is a hard error, never an approximate
         // answer (and never a mere warning).
         const std::string unmaterializable =
             "uint8[<=20000] payload\n@assert (_offset_ * 2).max == 2 * (16 + 20000 * 8)\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(unmaterializable);
-            if (outcome.succeeded || !outcome.errors.contains("cannot be materialized exactly"))
+            if (outcome.succeeded || !outcome.errors.contains("cannot be materialised exactly"))
             {
                 std::cerr << "an elementwise offset transform beyond exact capacity must hard-fail; errors: "
                           << outcome.errors << "\n";
@@ -548,7 +548,7 @@ bool runAnalyzerTests()
         const std::string hugeMod = "uint8[<=70000] payload\n@assert (_offset_ % 1000000007).count == 70001\n@sealed\n";
         {
             const auto outcome = analyzeOffsets(hugeMod);
-            if (outcome.succeeded || !outcome.errors.contains("cannot be materialized exactly"))
+            if (outcome.succeeded || !outcome.errors.contains("cannot be materialised exactly"))
             {
                 std::cerr << "a beyond-budget modulo must hard-fail, never truncate; errors: " << outcome.errors
                           << "\n";
@@ -569,8 +569,8 @@ bool runAnalyzerTests()
     }
 
     // Capacity overflow guard (P1 #1): an adversarial INT64_MAX array capacity must not overflow the
-    // length-prefix width computation (previously `ceilLog2(capacity + 1)`) or the bit-length-set
-    // repeat math. The analyzer must terminate cleanly with diagnostics, never crash, hang, or
+    // length-prefix width computation or the bit-length-set
+    // repeat math. The analyser must terminate cleanly with diagnostics, never crash, hang, or
     // invoke signed-overflow UB (the latter is caught by the UBSan lane, which exercises this path).
     {
         const auto analyzeCompletes = [](const std::string& body) -> bool {

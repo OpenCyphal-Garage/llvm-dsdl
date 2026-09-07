@@ -30,7 +30,7 @@ import sys
 
 # Names the parser might plausibly grow, used to catch a lane wired into the parser but never
 # advertised. Not a second copy of the table: nothing here has to be true, and a name the parser
-# rejects is simply skipped.
+# rejects is skipped.
 CANDIDATE_NAMES = [
     "ast", "mlir", "c", "cpp", "rust", "go", "ts", "python", "obj",
     "zig", "java", "csharp", "swift", "kotlin", "nim", "d", "ada", "js", "wasm", "llvm", "asm",

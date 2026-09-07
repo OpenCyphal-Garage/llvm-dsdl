@@ -44,8 +44,7 @@
 # NAMED-DAG: Multi_1_0.h
 # NAMED-DAG: Multi_2_0.h
 
-# Go is the backend that cannot express two versions of a type in one package. Under the default it
-# no longer has to: this is the case that used to be a hard refusal.
+# Go cannot express two versions of a type in one package. Under the default it does not have to.
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module m
 # RUN: ls %t/go/dsdl/ns | FileCheck %s --check-prefix=GO
 # GO-NOT: multi_1_0
@@ -58,9 +57,9 @@
 # GOREFUSE: error: 'dsdl.ns.Multi' has 3 versions
 
 # The narrowing applies to the seed, not the result. A version that survives and still references an
-# older one keeps it -- dropping a version nothing asked for is the point; dropping one a surviving
-# type needs would be a bug. The output can therefore still hold two versions, which is why the
-# backends' own guards stay.
+# older one keeps it -- dropping a version nothing asked for is intended; dropping one a surviving
+# type needs would be a bug. The output can therefore still hold two versions, so the backends' own
+# guards stay.
 # RUN: rm -rf %t/pin && mkdir -p %t/pin/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/pin/ns/Dep.1.0.dsdl
 # RUN: printf 'uint8 a\nuint8 b\n@sealed\n' > %t/pin/ns/Dep.2.0.dsdl
@@ -71,8 +70,7 @@
 # KEPTFILES-DAG: Dep_1_0.h
 # KEPTFILES-DAG: Dep_2_0.h
 
-# A definition is deprecated because a newer version replaced it, so the default drops precisely the
-# deprecated types. Worth pinning: it is the most user-visible consequence of the rule.
+# A deprecated definition is usually one a newer version replaced, so the default drops them.
 # RUN: rm -rf %t/dep && mkdir -p %t/dep/ns
 # RUN: printf '@deprecated\nuint8 a\n@extent 64\n' > %t/dep/ns/Aging.1.0.dsdl
 # RUN: printf 'uint8 a\nuint8 b\n@extent 64\n' > %t/dep/ns/Aging.1.1.dsdl

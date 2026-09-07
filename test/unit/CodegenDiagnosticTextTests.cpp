@@ -16,7 +16,7 @@ bool runCodegenDiagnosticTextTests()
 {
     namespace text = llvmdsdl::codegen_diagnostic_text;
 
-    if (text::serializationBufferTooSmall() != "serialization buffer too small")
+    if (text::serializationBufferTooSmall() != "serialisation buffer too small")
     {
         std::cerr << "serializationBufferTooSmall mismatch\n";
         return false;

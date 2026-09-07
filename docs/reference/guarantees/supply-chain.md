@@ -17,9 +17,9 @@ Every build emits a [CycloneDX 1.5](https://cyclonedx.org/) SBOM describing the 
 | Component | Scope | Why |
 | --- | --- | --- |
 | `llvm-dsdl` (metadata component) | — | Tool version (from `VERSION`), MIT, the shipped tool names, and the **exact source commit** under `pedigree.commits` |
-| `llvm`, `mlir` | `required` | The LLVM/MLIR actually found by `find_package` and linked into the tools |
+| `llvm`, `mlir` | `required` | The LLVM/MLIR found by `find_package` and linked into the tools |
 | `zstd` | `required` (when found) | Pulled in transitively by LLVM |
-| `llvm-dsdl-runtime` | `required` | First-party serialization runtime shipped as headers/sources alongside generated code |
+| `llvm-dsdl-runtime` | `required` | First-party serialisation runtime shipped as headers/sources alongside generated code |
 | `public_regulated_data_types`, `libudpard` | `excluded` | Submodules pinned to exact commits. They are **build/test inputs** (the DSDL corpus; libudpard for the examples) and are *not* linked into shipped artifacts — recorded for provenance, scoped out of the shipped dependency set |
 
 ### Determinism
@@ -35,14 +35,14 @@ commit is recorded as `unknown` and submodule entries are omitted.
 
 **Policy: the LLVM/MLIR major version is locked to 22.**
 
-### Why
+### Rationale
 
 The C backend is routed through MLIR/EmitC, whose printed output can legitimately vary across MLIR
 majors. The same DSDL compiled against two different MLIR majors may produce C that differs textually
 while remaining semantically equivalent, which makes the LLVM major a semantic input to the output
 rather than a build detail.
 
-### Where it is enforced
+### Enforcement
 
 The lock is enforced **at configure time** by the build system and **again** by CI.
 
@@ -67,13 +67,13 @@ The lock is enforced **at configure time** by the build system and **again** by 
 
 Comparing two *standard libraries* instead — libstdc++ against libc++ — is the obvious-looking
 alternative and does not work here: a project shipping one toolchain has no such divergence to
-measure. The architecture pair covers what is actually released.
+measure. The architecture pair covers what is released.
 `tools/determinism/corpus_determinism.py` serves the gate, and is equally the tool for
 comparing any two builds' corpora by hand.
 
 ### Consequences
 
 - Build against the locked major to reproduce released artifacts byte-for-byte.
-- The SBOM records the LLVM/MLIR version *actually linked*.
+- The SBOM records the LLVM/MLIR version linked.
 - To raise the lock: bump `LLVMDSDL_REQUIRED_LLVM_MAJOR` and `packaging/toolchain/llvm.pin` together,
   let the Toolchain workflow republish, then re-baseline the determinism corpus hashes.

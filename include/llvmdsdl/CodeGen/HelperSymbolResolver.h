@@ -42,7 +42,7 @@ std::string resolveSectionUnionTagValidateHelperSymbol(const LoweredSectionFacts
 
 /// @brief Resolves section union-tag mask helper symbol.
 /// @param[in] sectionFacts Lowered section facts.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Union-tag helper symbol or empty string.
 std::string resolveSectionUnionTagMaskHelperSymbol(const LoweredSectionFacts* sectionFacts,
                                                    HelperBindingDirection     direction);
@@ -50,7 +50,7 @@ std::string resolveSectionUnionTagMaskHelperSymbol(const LoweredSectionFacts* se
 /// @brief Resolves scalar helper symbol.
 /// @param[in] type Semantic field type.
 /// @param[in] fieldFacts Lowered field facts.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Scalar helper symbol or empty string.
 std::string resolveScalarHelperSymbol(const SemanticFieldType& type,
                                       const LoweredFieldFacts* fieldFacts,
@@ -60,7 +60,7 @@ std::string resolveScalarHelperSymbol(const SemanticFieldType& type,
 /// @param[in] type Semantic field type.
 /// @param[in] fieldFacts Lowered field facts.
 /// @param[in] prefixBitsOverride Optional prefix width override.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Helper descriptor when variable-array helpers apply.
 std::optional<ArrayLengthHelperDescriptor> resolveArrayLengthHelperDescriptor(
     const SemanticFieldType&     type,

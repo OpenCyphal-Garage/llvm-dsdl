@@ -182,7 +182,7 @@ bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string&
         parseStream.flush();
         error = "invalid JSON payload: " + parseMessage;
         // The frame was well-formed and its payload fully consumed, so the stream is still
-        // synchronized at the next frame — the caller can reply with a parse error and
+        // synchronised at the next frame — the caller can reply with a parse error and
         // keep serving rather than terminate on a single bad message.
         if (recoverable != nullptr)
         {

@@ -31,7 +31,7 @@ struct AnalyzeOptions final
     /// @brief Allow fixed port IDs outside regulated ranges.
     bool allowUnregulatedFixedPortId{false};
 
-    /// @brief Optional external semantic catalog consulted for composite resolution.
+    /// @brief Optional external semantic catalogue consulted for composite resolution.
     ///
     /// Local definitions remain authoritative when keys collide.
     const SemanticModule* externalSemanticCatalog{nullptr};

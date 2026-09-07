@@ -10,7 +10,7 @@
 /// @file
 /// Builds shared scripted-backend body plans from lowered helper metadata.
 ///
-/// The resulting plan centralizes field helper lookup and section helper
+/// The resulting plan centralises field helper lookup and section helper
 /// wiring for TypeScript/Python emitters.
 ///
 //===----------------------------------------------------------------------===//

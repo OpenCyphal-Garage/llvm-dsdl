@@ -11,7 +11,7 @@
 /// Workspace indexing model and persistence helpers for the DSDL LSP server.
 ///
 /// The index stores per-file symbol/reference shards, supports deterministic
-/// serialization, and provides background maintenance/query surfaces for
+/// serialisation, and provides background maintenance/query surfaces for
 /// `workspace/symbol`.
 ///
 //===----------------------------------------------------------------------===//
@@ -74,7 +74,7 @@ struct IndexSymbolRecord final
     /// @brief LSP SymbolKind numeric value.
     std::int64_t kind{13};
 
-    /// @brief Source-file normalized path.
+    /// @brief Source-file normalised path.
     std::string filePath;
 
     /// @brief Source location.
@@ -87,7 +87,7 @@ struct IndexReferenceRecord final
     /// @brief Target symbol USR.
     std::string targetUsr;
 
-    /// @brief Source-file normalized path.
+    /// @brief Source-file normalised path.
     std::string filePath;
 
     /// @brief Source location.
@@ -103,7 +103,7 @@ struct IndexShardMetadata final
     /// @brief Schema version of this shard.
     std::uint32_t schemaVersion{LspIndexSchemaVersion};
 
-    /// @brief Normalized source path this shard represents.
+    /// @brief Normalised source path this shard represents.
     std::string filePath;
 
     /// @brief Source URI used by editor-facing payloads.
@@ -206,7 +206,7 @@ public:
     /// @return `true` when write succeeds.
     [[nodiscard]] bool writeShard(const IndexFileShard& shard, std::string* errorMessage = nullptr) const;
 
-    /// @brief Loads shard for a normalized file path.
+    /// @brief Loads shard for a normalised file path.
     /// @param[in] normalizedPath Source path key.
     /// @param[out] errorMessage Optional failure message.
     /// @return Shard when present and parseable.
@@ -219,7 +219,7 @@ public:
     [[nodiscard]] std::vector<IndexFileShard> loadAllShards(
         std::vector<std::string>* invalidShardPaths = nullptr) const;
 
-    /// @brief Removes shard file associated with a normalized source path.
+    /// @brief Removes shard file associated with a normalised source path.
     /// @param[in] normalizedPath Source path key.
     /// @return `true` when a file was removed.
     [[nodiscard]] bool removeShardForPath(const std::string& normalizedPath) const;

@@ -21,10 +21,10 @@ Two help dialects are in play, so the parser handles both rather than assuming o
   then option groups.
 
 What cannot be mapped structurally is emitted verbatim inside a ``.nf``/``.fi``
-block. That is deliberate: a fragile parser producing subtly wrong roff is worse
-than a faithful preformatted rendering of text the tool actually printed.
+block: a fragile parser producing subtly wrong roff is worse
+than a faithful preformatted rendering of text the tool printed.
 
-Note that this runs the tool it documents, so it needs a host-executable binary.
+This runs the tool it documents, so it needs a host-executable binary.
 That is fine for native builds; a cross-build would need the pages generated on
 the host side or shipped pre-built.
 """
@@ -115,7 +115,7 @@ def _summary_from(
         for line in sections["NAME"]:
             if line.strip():
                 return line.strip()
-    # LLVM dialect: "OVERVIEW: dsdl-opt" -- which for dsdl-opt just repeats the
+    # LLVM dialect: "OVERVIEW: dsdl-opt" -- which for dsdl-opt repeats the
     # program name and says nothing, hence the caller-supplied description.
     m = re.search(r"^OVERVIEW:\s*(.+)$", help_text, re.MULTILINE)
     if m:

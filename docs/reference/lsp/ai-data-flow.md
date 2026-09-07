@@ -26,7 +26,7 @@ Only four LSP methods reach the AI surface, each behind a policy gate:
 | --- | --- | --- |
 | `textDocument/codeAction` | `AiPolicyGate::canSuggest` | `appendAiCodeActions` → packer → provider |
 | `codeAction/resolve` | `canSuggest` | suggestion resolution |
-| `dsdld/ai/resolveEdit` | `canApplyConfirmedEdits` — **only** `ApplyWithConfirmation` | edit materialization |
+| `dsdld/ai/resolveEdit` | `canApplyConfirmedEdits` — **only** `ApplyWithConfirmation` | edit materialisation |
 | `dsdld/ai/toolUse` | `isEnabled` **and** `isToolAllowed` | read-only introspection tools |
 
 Nothing else in the server consults `aiProvider_`.
@@ -39,7 +39,7 @@ On a code-action request the server reads the document from its **in-memory over
 
 | Field | Content | Bound (`lib/LSP/AI.cpp`) |
 | --- | --- | --- |
-| `selectionSnippet` | **Actual document text** around the selection — the only raw source that enters | `MaxSnippetBytes = 640` (truncated) |
+| `selectionSnippet` | **Actual document text** around the selection; no other raw source enters | `MaxSnippetBytes = 640` (truncated) |
 | `diagnostics` | Diagnostic *messages* for the range | `MaxDiagnosticMessages = 8` |
 | `symbolHints` | Symbol names from `analysis_.documentSymbols(uri)` | `MaxSymbolHints = 24` |
 | `uri`, selection range | File URI and start/end line·character | — |
@@ -55,8 +55,8 @@ The provider returns `AiCodeActionSuggestion` values (`id`, `title`, `kind`, `ex
 `diagnosticMessage`, `hasEdit`, `requiresConfirmation`). These become code actions in the editor.
 
 A suggestion **cannot silently modify your files**. `requiresConfirmation` defaults to `true`, and edit
-materialization is gated by `AiPolicyGate::canApplyConfirmedEdits`, which is true for exactly one mode —
-`ApplyWithConfirmation`. In `Suggest` and `Assist`, edits can be described but never materialized.
+materialisation is gated by `AiPolicyGate::canApplyConfirmedEdits`, which is true for exactly one mode —
+`ApplyWithConfirmation`. In `Suggest` and `Assist`, edits can be described but never materialised.
 
 ### Tool surface
 

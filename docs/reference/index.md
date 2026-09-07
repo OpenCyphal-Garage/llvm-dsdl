@@ -6,7 +6,7 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 |---|---|
 | [Commands](commands/dsdlc.md) | Switch names, accepted values, and what each tool does with them. |
 | [Code Generation](codegen/backends.md) | What each target language emits, and the ordering contract the emitters hold to. |
-| [Language Server](lsp/lint-rules.md) | `dsdld`'s rule catalog, index schema, ranking, logging, and AI surface. |
+| [Language Server](lsp/lint-rules.md) | `dsdld`'s rule catalogue, index schema, ranking, logging, and AI surface. |
 | [Guarantees](guarantees/parity-matrix.md) | What holds across languages, what happens on malformed input, what is reproducible, and what you can verify about a downloaded artifact. |
 | [Showroom](../showroom/index.md) | Real definitions compiled into every language and profile, with their wire layout. |
 
@@ -15,16 +15,17 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 - [`dsdlc`](commands/dsdlc.md) — the compiler and codegen driver
 - [`dsdl-opt`](commands/dsdl-opt.md) — dialect and pass-pipeline work
 - [`dsdld`](commands/dsdld.md) — the language server
+- [`dsdlc` Options](commands/dsdlc-options.md) — every switch `dsdlc` accepts, from its own `--help`
 
 ## Code generation
 
 - [Backends](codegen/backends.md) — the target languages and what each produces
 - [Object Backend](codegen/object.md) — the `obj` lane: C headers beside objects assembled inside `dsdlc`
-- [Emit Order](codegen/emit-order.md) — the canonical serialize/deserialize step order every backend renders
+- [Emit Order](codegen/emit-order.md) — the canonical serialise/deserialize step order every backend renders
 
 ## Language server
 
-- [Lint Rules](lsp/lint-rules.md) — the rule catalog and suppression schema
+- [Lint Rules](lsp/lint-rules.md) — the rule catalogue and suppression schema
 - [Index Schema](lsp/index-schema.md) — what the workspace index stores
 - [Ranking Model](lsp/ranking-model.md) — how completions and symbol results are ordered
 - [Logging](lsp/logging.md) — the structured log channel

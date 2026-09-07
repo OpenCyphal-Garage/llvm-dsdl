@@ -11,8 +11,8 @@
 /// Public entry points and options for Go backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_GO_EMITTER_H
-#define LLVMDSDL_CODEGEN_GO_EMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_GO_H
+#define LLVMDSDL_CODEGEN_EMITTER_GO_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -32,12 +32,16 @@ namespace llvmdsdl
 class DiagnosticEngine;
 class EmitTraceSink;
 struct SemanticModule;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::go
+{
 
 /// @file
 /// @brief Go backend emission entry points.
 
 /// @brief Configuration options for Go code generation.
-struct GoEmitOptions final
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -54,7 +58,7 @@ struct GoEmitOptions final
     /// @brief Emits `go.mod` when true.
     bool emitGoMod{true};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Optional list of selected type keys to emit.
@@ -73,12 +77,12 @@ struct GoEmitOptions final
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emitGo(const SemanticModule& semantic,
-                   mlir::ModuleOp        module,
-                   const GoEmitOptions&  options,
-                   DiagnosticEngine&     diagnostics,
-                   EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::go
 
-#endif  // LLVMDSDL_CODEGEN_GO_EMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_GO_H

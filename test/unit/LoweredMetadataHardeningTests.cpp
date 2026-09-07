@@ -27,7 +27,7 @@
 #include <vector>
 #include <system_error>
 
-#include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
@@ -207,14 +207,14 @@ bool expectCEmitterFailure(llvmdsdl::SemanticModule& semantic,
                            mlir::ModuleOp            module,
                            const std::string&        expectedDiagnostic)
 {
-    llvmdsdl::DiagnosticEngine diagnostics;
-    llvmdsdl::CEmitOptions     options;
+    llvmdsdl::DiagnosticEngine    diagnostics;
+    llvmdsdl::emitter::c::Options options;
     options.outDir = (std::filesystem::temp_directory_path() / "llvmdsdl-lowered-metadata-c-emitter").string();
 
     std::error_code fsError;
     std::filesystem::remove_all(options.outDir, fsError);
 
-    llvm::Error err = llvmdsdl::emitC(semantic, module, options, diagnostics);
+    llvm::Error err = llvmdsdl::emitter::c::emit(semantic, module, options, diagnostics);
     if (!err)
     {
         std::cerr << "C emission unexpectedly succeeded on malformed metadata fixture\n";

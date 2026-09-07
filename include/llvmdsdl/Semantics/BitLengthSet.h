@@ -34,20 +34,20 @@ namespace llvmdsdl
 // SPECIFICATION
 //===----------------------------------------------------------------------===//
 ///
-/// @brief Persistent symbolic set of possible serialized bit lengths.
+/// @brief Persistent symbolic set of possible serialised bit lengths.
 ///
 /// ## Purpose and model
 ///
 /// A `BitLengthSet` denotes a finite, non-empty set of integers `S`, where each element is a
-/// possible length, in bits, of the serialized representation of a DSDL entity (a field, a
+/// possible length, in bits, of the serialised representation of a DSDL entity (a field, a
 /// section, or a whole definition). It is the C++ analogue of pydsdl's `BitLengthSet` and
-/// implements the length algebra required by the OpenCyphal Specification's serialization
+/// implements the length algebra required by the OpenCyphal Specification's serialisation
 /// rules (composition of fields, tagged unions, arrays, and alignment padding).
 ///
-/// The representation is *symbolic*: operations do not materialize value sets, they build an
+/// The representation is *symbolic*: operations do not materialise value sets, they build an
 /// immutable expression graph (leaves hold explicit value sets; interior nodes denote sum,
 /// union, padding, and repetition). `min()`, `max()`, and `fixed()` are answered from the
-/// symbolic form without enumeration; `expand()` and `modulo()` materialize concrete values
+/// symbolic form without enumeration; `expand()` and `modulo()` materialise concrete values
 /// subject to an expansion limit (see "Exactness model" below).
 ///
 /// Denotationally, with `S(x)` the set denoted by object `x`:
@@ -74,12 +74,12 @@ namespace llvmdsdl
 /// `max(x) * k`, or an alignment round-up — clamps to `INT64_MAX` rather than invoking
 /// signed-overflow undefined behaviour. Bit lengths of real definitions are far below the ceiling,
 /// so saturation is a safety net, not an expected result; when it does engage, a saturated `max()`
-/// simply reads as "astronomically large" to callers (e.g. extent checks).
+/// reads as "astronomically large" to callers (e.g. extent checks).
 ///
 /// The out-of-domain clamps throughout the API — negative element -> 0, `alignment < 1` -> 1,
-/// `count < 0` -> 0, `divisor <= 0` -> `{0}` — are INTENTIONAL, defined recovery. This layer has no
+/// `count < 0` -> 0, `divisor <= 0` -> `{0}` — are defined recovery. This layer has no
 /// diagnostic channel; validating inputs against DSDL limits is the caller's responsibility (e.g.
-/// the analyzer), and the clamps guarantee this class stays well-defined regardless.
+/// the analyser), and the clamps guarantee this class stays well-defined regardless.
 ///
 /// ## Invariants
 ///
@@ -216,7 +216,7 @@ public:
     /// @return `|S| == 1`, computed as `min() == max()` (exact on the specified domain).
     ///
     /// Used by layout analysis to classify fixed-size types; a fixed set means the entity
-    /// serializes to the same number of bits in every case.
+    /// serialises to the same number of bits in every case.
     [[nodiscard]] bool fixed() const;
 
     /// @brief Reports whether every possible length is a multiple of `alignment`.
@@ -299,7 +299,7 @@ public:
         bool exact{true};
     };
 
-    /// @brief Materializes the denoted set as concrete values.
+    /// @brief Materialises the denoted set as concrete values.
     /// @param[in] limit Expansion safety limit; values `< 1` are clamped to 1.
     /// @return A subset of S (sound under-approximation), never empty and never larger than the
     ///         clamped limit: exactly S when every intermediate subexpression's cardinality is
@@ -340,21 +340,21 @@ public:
     ///                 | 'repeat_range(' expr ',' int ')'`
     ///         where leaf values print in ascending order and parameters are the
     ///         post-clamping values.
-    /// @note The format is a debugging aid, not a stable serialization; it renders the
+    /// @note The format is a debugging aid, not a stable serialisation; it renders the
     ///       expression structure, not the expanded value set.
     [[nodiscard]] std::string str() const;
 
     /// @brief Pointwise additive combination (Minkowski sum) of two sets.
     ///
     /// Denotes `{ x + y : x in S(lhs), y in S(rhs) }` — the bit-length set of two entities
-    /// serialized back-to-back. Commutative and associative in value-set semantics;
+    /// serialised back-to-back. Commutative and associative in value-set semantics;
     /// `BitLengthSet(0)` is the identity. O(1): allocates one node, shares operand structure.
     /// @note Derived sums saturate at `INT64_MAX` rather than overflowing (see "Value domain").
     friend BitLengthSet operator+(const BitLengthSet& lhs, const BitLengthSet& rhs);
 
     /// @brief Set union of two symbolic sets.
     ///
-    /// Denotes `S(lhs) union S(rhs)` — the bit-length set of an entity that serializes as
+    /// Denotes `S(lhs) union S(rhs)` — the bit-length set of an entity that serialises as
     /// either alternative (e.g. tagged-union options). Commutative, associative, idempotent
     /// in value-set semantics. O(1): allocates one node, shares operand structure.
     friend BitLengthSet operator|(const BitLengthSet& lhs, const BitLengthSet& rhs);

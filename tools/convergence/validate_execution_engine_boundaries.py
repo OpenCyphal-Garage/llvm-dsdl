@@ -19,7 +19,7 @@ from typing import Iterable, List, Sequence
 
 SOURCE_RULES = [
     {
-        "path": "lib/CodeGen/CEmitter.cpp",
+        "path": "lib/CodeGen/emitter/C.cpp",
         "required": [
             r"createLowerDSDL(?:Serialization|Exec)Pass\(",
             r"createConvertDSDLToEmitCPass\(",
@@ -33,7 +33,7 @@ SOURCE_RULES = [
         ],
     },
     {
-        "path": "lib/CodeGen/CppEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Cpp.cpp",
         "required": [
             r"emitNativeFunctionSkeleton\(",
             r"collectLoweredFactsFromMlir\(",
@@ -42,7 +42,7 @@ SOURCE_RULES = [
         "forbidden": [r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\(", r"validateNativeSectionHelperContract\("],
     },
     {
-        "path": "lib/CodeGen/RustEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Rust.cpp",
         "required": [
             r"emitNativeFunctionSkeleton\(",
             r"collectLoweredFactsFromMlir\(",
@@ -51,7 +51,7 @@ SOURCE_RULES = [
         "forbidden": [r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\(", r"validateNativeSectionHelperContract\("],
     },
     {
-        "path": "lib/CodeGen/GoEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Go.cpp",
         "required": [
             r"emitNativeFunctionSkeleton\(",
             r"collectLoweredFactsFromMlir\(",
@@ -60,7 +60,7 @@ SOURCE_RULES = [
         "forbidden": [r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\(", r"validateNativeSectionHelperContract\("],
     },
     {
-        "path": "lib/CodeGen/TsEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Ts.cpp",
         "required": [
             r"buildScriptedSectionOperationPlan\(",
             r"operationPlan\.takeError\(\)",
@@ -70,7 +70,7 @@ SOURCE_RULES = [
         "forbidden": [r"buildScriptedSectionBodyPlan\(", r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\("],
     },
     {
-        "path": "lib/CodeGen/PythonEmitter.cpp",
+        "path": "lib/CodeGen/emitter/Python.cpp",
         "required": [
             r"buildScriptedSectionOperationPlan\(",
             r"operationPlan\.takeError\(\)",

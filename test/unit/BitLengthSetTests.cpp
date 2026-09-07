@@ -14,8 +14,8 @@
 /// algebraic laws, and the exactness model — rather than any implementation detail. Expected
 /// values come from an independent reference model (`refAdd`, `refPad`, `refRepeat`, ...) that
 /// transcribes the specification directly, so a regression in either the class or the reference
-/// shows up as a mismatch. Coverage also includes the robustness properties that are easy to get
-/// wrong: value-domain clamping and saturation, exactness signalling, bounded expansion of huge
+/// shows up as a mismatch. Coverage also includes the robustness properties: value-domain clamping
+/// and saturation, exactness signalling, bounded expansion of huge
 /// repeat counts, iterative/memoized evaluation of deep and heavily-shared graphs, and moved-from
 /// usability.
 ///
@@ -409,7 +409,7 @@ void testModulo(TestContext& t)
     t.expectSetEq(BitLengthSet(3).repeat(1000000).modulo(8),
                   refModulo({3000000}, 8),
                   "modulo of a 1e6-count repeat matches the single reachable value");
-    // Residue union stabilizes by small k, so a small reference count matches the 1e6 query.
+    // Residue union stabilises by small k, so a small reference count matches the 1e6 query.
     t.expectSetEq(BitLengthSet(ValueSet{1, 3}).repeatRange(1000000).modulo(8),
                   refModulo(refRepeatRange({1, 3}, 8), 8),
                   "modulo of a 1e6-cap repeatRange saturates to all residues");
@@ -539,7 +539,7 @@ void testExpandBoundedRepeat(TestContext& t)
 }
 
 // Value-domain safety — negatives clamp to 0, and arithmetic saturates instead of
-// overflowing (no UB). Realistic inputs never reach these regimes; the point is defined behaviour.
+// overflowing (no UB). Realistic inputs never reach these regimes; the property under test is defined behaviour.
 void testValueDomainSafety(TestContext& t)
 {
     // Negative construction values are clamped to 0, keeping the set in-domain.
@@ -632,7 +632,7 @@ void testAlignmentAndEquality(TestContext& t)
 void testDeepAndSharedGraphs(TestContext& t)
 {
     // `s = s + s` for n levels denotes 2^n paths to the leaf. Correct results at n = 40
-    // are only reachable with memoization — a per-path walk would not finish. A timing guard
+    // are only reachable with memoisation — a per-path walk would not finish. A timing guard
     // pins down that it is sub-exponential.
     const auto   dagStart = std::chrono::steady_clock::now();
     BitLengthSet dag(ValueSet{0, 1});
@@ -720,7 +720,7 @@ void testPersistence(TestContext& t)
     // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 }
 
-// Spec examples: the composition patterns the semantic analyzer builds (structs, unions,
+// Spec examples: the composition patterns the semantic analyser builds (structs, unions,
 // arrays, delimited composites) — the class's reason to exist.
 void testDsdlCompositionPatterns(TestContext& t)
 {
@@ -766,7 +766,7 @@ void testRunSet(TestContext& t)
     using llvmdsdl::RunSet;
 
     // Differential battery: parallel (symbolic, reference) composition, then compare the
-    // materialized RunSet against the reference model for every case.
+    // materialised RunSet against the reference model for every case.
     struct Case final
     {
         BitLengthSet bls;
@@ -888,7 +888,7 @@ void testRunSet(TestContext& t)
         // Residue budget applies to the UNIQUE result: two disjoint dense runs whose residue
         // images coincide used to blow the pre-dedup budget (80000 raw walks) even though the
         // unique residue set (40000) is comfortably within it. The divisor must exceed the
-        // symbolic-residue cap (65536) so the query actually routes through RunSet::residues —
+        // symbolic-residue cap (65536) so the query routes through RunSet::residues —
         // the code this regression pins; a smaller divisor is answered symbolically and never
         // reaches it.
         const BitLengthSet twoRuns =

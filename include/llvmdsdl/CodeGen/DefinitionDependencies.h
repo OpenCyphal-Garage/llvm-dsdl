@@ -31,12 +31,12 @@ namespace llvmdsdl
 std::string renderDefinitionDependencyKey(const SemanticTypeRef& ref);
 
 /// @brief Collects deterministic, deduplicated composite dependencies in one section.
-/// @param[in] section Section to analyze.
+/// @param[in] section Section to analyse.
 /// @return Composite type references sorted by stable key.
 std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticSection& section);
 
 /// @brief Collects deterministic, deduplicated composite dependencies in one definition.
-/// @param[in] def Definition to analyze.
+/// @param[in] def Definition to analyse.
 /// @return Composite type references sorted by stable key.
 std::vector<SemanticTypeRef> collectDefinitionCompositeDependencies(const SemanticDefinition& def);
 

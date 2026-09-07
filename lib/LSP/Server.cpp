@@ -1792,7 +1792,7 @@ void Server::sendResult(const llvm::json::Value& id, llvm::json::Value result)
 void Server::sendError(const llvm::json::Value& id, const int code, std::string message)
 {
     // Log before moving `message` into the response. Cancellations are routine flow control, not
-    // faults, so they stay at Info while genuine failures surface as warnings.
+    // faults, so they stay at Info while failures surface as warnings.
     logger_.log(code == JsonRpcErrorRequestCancelled ? LogLevel::Info : LogLevel::Warn,
                 "error_response",
                 llvm::json::Object{{"code", code}, {"message", message}});
@@ -2140,8 +2140,8 @@ void Server::recordRequestTelemetry(const llvm::StringRef method,
                                     const bool            cancelled)
 {
     telemetry_.record(method.str(), latencyMicros, cancelled);
-    // Every request -- synchronous and scheduler-completed alike -- funnels through here, so this is
-    // the one place that yields a complete request trail for a post-mortem.
+    // Every request -- synchronous and scheduler-completed alike -- funnels through here, so the log
+    // written here is the complete request trail for a post-mortem.
     logger_.log(LogLevel::Info,
                 "request",
                 llvm::json::Object{{"method", method},

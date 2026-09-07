@@ -17,8 +17,8 @@ multi-language code generation throughput.
   - `ts`
   - `python`
   - optional C A/B experiment lanes:
-    - `embedC`: embedded `uavcan` MLIR catalog enabled (no lookup dirs passed to `dsdlc`)
-    - `noEmbedC`: embedded `uavcan` MLIR catalog disabled (`--no-embedded-uavcan`)
+    - `embedC`: embedded `uavcan` MLIR catalogue enabled (no lookup dirs passed to `dsdlc`)
+    - `noEmbedC`: embedded `uavcan` MLIR catalogue disabled (`--no-embedded-uavcan`)
 - `benchmark_lsp.py` benchmarks `dsdld` request latency for:
   - mixed request replay (`replay`)
   - workspace index cold/warm runs (`index-bench`)
@@ -35,8 +35,8 @@ multi-language code generation throughput.
 2. Generate/update threshold config with desired margins.
 3. Run checks against `dev_ab` and/or `ci_oom`.
 
-The committed threshold file starts as a template with zero baselines.
-You must calibrate it before `check` mode can run.
+The committed threshold file starts as a template with zero baselines; `check` mode needs it
+calibrated first.
 
 CMake utility targets are available:
 

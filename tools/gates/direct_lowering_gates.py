@@ -13,8 +13,7 @@ A gate reports one of three states:
 
 NOT_IMPLEMENTED is a passing exit unless --strict is given, so the suite stays green until
 the backend exists and turns red the moment it exists and is wrong. A gate never reports
-NOT_IMPLEMENTED because a probe crashed or answered unexpectedly: those are FAIL, so that a
-gate cannot be satisfied by breaking the thing it measures.
+NOT_IMPLEMENTED because a probe crashed or answered unexpectedly: those are FAIL.
 """
 
 from __future__ import annotations
@@ -126,7 +125,7 @@ def gate_ir_has_no_emitc(args: argparse.Namespace, workdir: Path) -> str:
     # being wrong. Told apart here so that the gate reports the one that is true.
     if "_ir_" not in lowered.out:
         raise NotImplementedYet(
-            "the pipeline produced no plan bodies to convert; the object lane does not yet "
+            "the pipeline produced no plan bodies to convert; the object lane did not "
             "supply the member names a body is built from")
 
     emitc = lowered.out.count("emitc.")
@@ -138,7 +137,7 @@ def gate_ir_has_no_emitc(args: argparse.Namespace, workdir: Path) -> str:
             f"{emitc} emitc op(s) survived the LLVM conversion, {verbatim} of them emitc.verbatim; "
             "serialisation expressed as C text is not lowered")
     if residual:
-        # Counting emitc alone would pass a conversion that simply declined to touch the
+        # Counting emitc alone would pass a conversion that declined to touch the
         # plan: what is left behind is dsdl, not emitc, and the module is no closer to an
         # object for it.
         kinds = sorted(set(re.findall(r"\bdsdl\.[a-z_]+", lowered.out)))

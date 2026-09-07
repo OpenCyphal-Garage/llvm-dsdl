@@ -35,10 +35,9 @@ uint16 height_px
 # Frame height in pixels.
 
 saturated uint32 exposure_us
-# Exposure time in microseconds. Explicitly saturated even though
-# saturation is the default, because the contrast with `frame_index`
-# above is the point: an over-range exposure should clamp to the longest
-# representable exposure, never wrap around to a near-zero one.
+# Exposure time in microseconds. Saturated: an over-range exposure
+# clamps to the longest representable exposure rather than wrapping to
+# a near-zero one.
 
 saturated float32 gain_db
 # Sensor analog gain in decibels.

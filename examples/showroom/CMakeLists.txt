@@ -15,7 +15,7 @@
 # another thing that can fail for reasons unrelated to what it is showing.
 #
 # Unlike the other two examples, this one has no submodule dependency: the lanyard namespace refers
-# only to uavcan types, which dsdlc carries in its embedded catalog.
+# only to uavcan types, which dsdlc carries in its embedded catalogue.
 
 set(LLVMDSDL_SHOWROOM_DSDL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dsdl/lanyard")
 set(LLVMDSDL_SHOWROOM_OUT_ROOT "${LLVMDSDL_BINARY_DIR}/showroom")
@@ -35,11 +35,11 @@ set(LLVMDSDL_SHOWROOM_VARIANT_STAMPS "")
 
 # Each variant is one dsdlc invocation into its own output directory.
 #
-# The custom command's OUTPUT is a stamp file rather than the ~70 generated files it actually
+# The custom command's OUTPUT is a stamp file rather than the ~70 generated files it
 # produces. Enumerating them in CMake would mean either hand-maintaining a list that grows with every
 # new type (what the other examples do, and what does not scale past a handful) or running dsdlc at
-# configure time to ask -- which is impossible, because the tool is a target of this very build and
-# does not exist yet when configure runs. Since nothing downstream consumes these files as build
+# configure time to ask -- and the tool, a target of this very build, does not exist yet when
+# configure runs. Since nothing downstream consumes these files as build
 # inputs, a stamp expresses the dependency correctly and cheaply.
 function(llvmdsdl_add_showroom_variant variant_name)
   cmake_parse_arguments(ARG "" "LANGUAGE" "OPTIONS" ${ARGN})
@@ -115,8 +115,7 @@ llvmdsdl_add_showroom_variant(python
   OPTIONS --py-package lanyard_showroom)
 
 # The MLIR module is not a target language, but it is where the wire-layout facts and the schema
-# attributes live -- including `deprecated`, which no language backend currently renders. It is worth
-# showing for exactly that reason.
+# attributes live.
 set(LLVMDSDL_SHOWROOM_MLIR_FILE "${LLVMDSDL_SHOWROOM_OUT_ROOT}/mlir/lanyard.mlir")
 set(LLVMDSDL_SHOWROOM_MLIR_STAMP "${LLVMDSDL_SHOWROOM_STAMP_DIR}/mlir.stamp")
 

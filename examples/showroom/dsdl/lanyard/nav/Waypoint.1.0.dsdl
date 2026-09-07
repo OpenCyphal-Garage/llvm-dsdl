@@ -57,7 +57,6 @@ uint8 COMMAND_TRIGGER_PAYLOAD = 4
 
 uint8[<=16] label
 # Short human-readable label shown in the ground station, UTF-8, not
-# null-terminated. Bounded at 16 bytes because the array is replicated
-# up to 256 times inside a mission plan.
+# null-terminated.
 
 @extent 64 * 8

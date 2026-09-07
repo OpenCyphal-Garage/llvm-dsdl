@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Array wire-plan declarations used to emit array serialization and deserialization paths.
+/// Array wire-plan declarations used to emit array serialisation and deserialisation paths.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_ARRAY_WIRE_PLAN_H
@@ -28,7 +28,7 @@ struct SemanticFieldType;
 /// @file
 /// @brief Array wire-layout helper planning utilities.
 
-/// @brief Resolved wire plan for array serialization/deserialization.
+/// @brief Resolved wire plan for array serialisation/deserialization.
 struct ArrayWirePlan final
 {
     /// @brief True when the array is variable-length.
@@ -45,7 +45,7 @@ struct ArrayWirePlan final
 /// @param[in] type Resolved field type.
 /// @param[in] fieldFacts Lowered field facts.
 /// @param[in] prefixBitsOverride Optional prefix width override.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Array wire plan.
 ArrayWirePlan buildArrayWirePlan(const SemanticFieldType&     type,
                                  const LoweredFieldFacts*     fieldFacts,

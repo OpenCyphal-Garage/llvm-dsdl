@@ -12,10 +12,9 @@
 #
 # WHERE THE OUTPUT LIST COMES FROM
 #
-# The hard part of generating code in CMake is telling the build what will appear before it appears.
-# The usual answers are all bad: globbing after the fact misses the first build, listing outputs by
-# hand rots the moment somebody adds a type, and a stamp file makes every consumer depend on all of
-# the output whether or not it uses any of it.
+# CMake needs the list of generated files before anything has generated them. Globbing after the
+# fact misses the first build, listing outputs by hand rots the moment somebody adds a type, and a
+# stamp file makes every consumer depend on all of the output whether or not it uses any of it.
 #
 # dsdlc answers the question directly. `--list-outputs` prints exactly what a run would produce and
 # `--list-inputs` prints exactly what it would read, both implying --dry-run and both writing the
@@ -38,13 +37,12 @@
 #   dsdlc_generate(alpha  LANGUAGE c SUPPORT never OMIT_DEPENDENCIES OUTDIR ${gen} NAMESPACE ${a})
 #   dsdlc_generate(beta   LANGUAGE c SUPPORT never OMIT_DEPENDENCIES OUTDIR ${gen} NAMESPACE ${b})
 #
-# Getting that wrong is easy and the generator's own error message is obscure, so this function
-# checks for overlap itself and fails at configure time naming both claimants.
+# This function checks for overlap and fails at configure time naming both claimants.
 
 # `--list-inputs --list-outputs` in one call emits inputs, then an empty element, then outputs. That
 # is fine for a shell but awkward in CMake, where the list separator IS the semicolon and an empty
 # element does not survive being split. Two calls cost about twenty milliseconds each at configure
-# time and need no parsing at all, so that is what this does.
+# time and need no parsing.
 function(_dsdlc_query out_var)
   cmake_parse_arguments(Q "" "MODE" "ARGV" ${ARGN})
 
@@ -84,7 +82,7 @@ function(_dsdlc_claim_outputs name outputs)
         "one owner;\n"
         "  - OMIT_DEPENDENCIES on namespace calls, plus one BUILTIN call owning the shared "
         "standard types;\n"
-        "  - or a separate OUTDIR per call, if the trees really are independent.")
+        "  - or a separate OUTDIR per call, if the trees are independent.")
     endif()
     list(APPEND _claimed "${_file}")
     list(APPEND _owners "${name}")
@@ -167,7 +165,7 @@ function(dsdlc_generate name)
   foreach(_selector IN LISTS ARG_BUILTIN)
     if(NOT _selector MATCHES "^\\+")
       message(FATAL_ERROR
-        "dsdlc_generate(${name}): BUILTIN selectors name the compiled-in catalog and begin with "
+        "dsdlc_generate(${name}): BUILTIN selectors name the compiled-in catalogue and begin with "
         "'+', for example +uavcan.node; got '${_selector}'")
     endif()
   endforeach()
@@ -222,12 +220,12 @@ function(dsdlc_generate name)
 
   # Addition or removal of a definition: the list above cannot see it, because a new file has not
   # modified any file already in the list. CMake re-evaluates a CONFIGURE_DEPENDS glob at build time
-  # and reconfigures when the result differs, which is the only mechanism that catches this.
+  # and reconfigures when the result differs; nothing else catches this.
   foreach(_ns IN LISTS ARG_NAMESPACE)
     if(IS_DIRECTORY "${_ns}")
       file(GLOB_RECURSE _ns_definitions CONFIGURE_DEPENDS "${_ns}/*.dsdl")
-      # Result deliberately unused: registering the glob is the whole point, and the authoritative
-      # dependency list is _inputs, which dsdlc resolved rather than guessed.
+      # Result unused: the call registers the CONFIGURE_DEPENDS glob; the authoritative dependency
+      # list is _inputs, which dsdlc resolved rather than guessed.
       unset(_ns_definitions)
     endif()
   endforeach()
@@ -241,7 +239,7 @@ function(dsdlc_generate name)
   # Pruning happens when dsdlc runs, so deleting a definition has to make it run. Removing an input
   # does not by itself: every surviving output is still newer than every surviving input. This file
   # closes that gap -- its content is the input list, configure_file rewrites it only when that list
-  # actually changes, and the command depends on it.
+  # changes, and the command depends on it.
   set(_signature "${CMAKE_CURRENT_BINARY_DIR}/${name}.dsdlc-inputs")
   string(REPLACE ";" "\n" _signature_body "${_inputs}")
   file(WRITE "${_signature}.in" "${_signature_body}\n")

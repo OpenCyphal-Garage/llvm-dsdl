@@ -16,9 +16,7 @@ uavcan.si.unit.length.Scalar.1.0 altitude_amsl
 # Altitude above mean sea level, in meters.
 
 uavcan.si.unit.length.Scalar.1.0 altitude_ellipsoid
-# Altitude above the WGS 84 reference ellipsoid, in meters. Both
-# altitudes are carried because the geoid separation is not constant and
-# consumers differ in which datum they expect.
+# Altitude above the WGS 84 reference ellipsoid, in meters.
 
 float16[9] position_covariance
 # Row-major 3x3 position covariance in the North-East-Down frame, in
@@ -27,9 +25,7 @@ float16[9] position_covariance
 # A fixed-size array, unlike the variable-length arrays elsewhere in
 # this namespace: the length is part of the type, so nothing is
 # transmitted to describe it and generated code exposes it as a plain
-# nine-element array rather than a length-carrying container. float16 is
-# adequate here because a covariance is only ever consumed as an
-# order-of-magnitude confidence estimate.
+# nine-element array rather than a length-carrying container.
 
 uint8 satellites_visible
 # Number of satellites contributing to the solution.
@@ -65,7 +61,7 @@ void4
 # most likely to break this.
 
 @print _offset_.max / 8
-# Compile-time diagnostic: prints the worst-case serialized size of this
+# Compile-time diagnostic: prints the worst-case serialised size of this
 # definition, in bytes, while the namespace is being compiled. @print is
 # evaluated by the frontend and contributes nothing to the generated
 # code -- it is a build-log message, useful when tuning a layout against

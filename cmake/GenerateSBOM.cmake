@@ -21,7 +21,7 @@ foreach(var OUTPUT_FILE TOOL_VERSION LLVM_VERSION SOURCE_ROOT TOOLS)
 endforeach()
 
 # --- Provenance: exact source revision and the pinned submodule commits ------------------------------
-# Best-effort: a source tarball (no .git) still produces a valid SBOM, just without VCS pedigree.
+# Best-effort: a source tarball (no .git) still produces a valid SBOM, without VCS pedigree.
 set(source_commit "unknown")
 set(submodule_components "")
 find_program(SBOM_GIT_EXECUTABLE git QUIET)
@@ -132,7 +132,7 @@ ${zstd_component}${submodule_components}    {
       \"version\": \"${TOOL_VERSION}\",
       \"scope\": \"required\",
       \"licenses\": [ { \"license\": { \"id\": \"MIT\" } } ],
-      \"description\": \"First-party serialization runtime shipped as headers/sources alongside generated code.\"
+      \"description\": \"First-party serialisation runtime shipped as headers/sources alongside generated code.\"
     }
   ]
 }

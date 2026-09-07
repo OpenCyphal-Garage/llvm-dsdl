@@ -9,22 +9,18 @@
 #
 # A parity lane generates two languages, compiles both, links a harness against them and runs it.
 # That is a lot of tree, and on a pass none of it is wanted -- so it goes in a directory named for
-# the run and is deleted at the end. On a failure it stays, which is how such a lane is debugged.
+# the run and is deleted at the end. On a failure it stays.
 #
-# Keeping it on a *pass* is opt-in, because it is the only way to see what the harness was actually
-# compiled against. The harness sources are checked in with `@V1_0@`-style tokens that resolve to a
-# version suffix or to nothing depending on the scheme under test (see HarnessTypeNameTokens.cmake),
-# so the source tree does not tell you.
-#
-# This lives in one file because the two lanes that use it had already drifted while it was copied
-# into both: the same block carried two different warning messages, and a usage example naming the
-# wrong lane.
+# Keeping it on a *pass* is opt-in. The harness sources are checked in with `@V1_0@`-style tokens
+# that resolve to a version suffix or to nothing depending on the scheme under test (see
+# HarnessTypeNameTokens.cmake), so the source tree does not show what the harness was compiled
+# against; the kept output does.
 
 # @brief Prepares a run-scoped scratch directory under @p out_dir.
 #
 # Resolves the keep-output opt-in, clears anything left by previous runs, and creates a fresh
-# directory named for this one. The opt-in is settable either way; the environment variable is the
-# useful one, because it reaches the script through ctest without editing a registration:
+# directory named for this one. The opt-in is settable either way; the environment variable reaches
+# the script through ctest without editing a registration:
 #
 #   LLVMDSDL_KEEP_RUN_OUTPUT=1 ctest --test-dir <build> -R <lane>
 #
@@ -40,9 +36,8 @@ function(llvmdsdl_harness_scratch_begin out_dir out_var)
 
   file(MAKE_DIRECTORY "${out_dir}")
 
-  # Previous run directories go. A failed run leaves its tree behind by design, and without this they
-  # accumulate silently -- which is how a July directory came to sit beside an August one, both
-  # looking equally current to anyone reading the output.
+  # Previous run directories go. A failed run leaves its tree behind, and without this they
+  # accumulate silently, each looking as current as the last.
   file(GLOB _stale_runs "${out_dir}/run-*")
   foreach(_stale_run IN LISTS _stale_runs)
     if(IS_DIRECTORY "${_stale_run}")
@@ -64,7 +59,6 @@ endfunction()
 # @param label   The lane's name, for the message when removal fails.
 function(llvmdsdl_harness_scratch_finish run_dir label)
   if(KEEP_RUN_OUTPUT)
-    # Said loudly, and with the parts named, because the directory is the whole point of asking.
     message(STATUS
       "KEEP_RUN_OUTPUT: ${label} scratch tree kept at ${run_dir}\n"
       "  ${run_dir}/c        generated C\n"

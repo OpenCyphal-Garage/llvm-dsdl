@@ -8,15 +8,14 @@ field by field, and exit zero. Nothing more -- correctness of the serialiser is 
 `test/integration` are for. What these programs prove is that the generated code was found,
 compiled, linked, and could be called, which is the entire claim a build integration makes.
 
-They live here rather than in the recipes because of the invariant described in the example README:
-recipes carry build wiring and nothing else, so that two recipes in the same row differ only by the thing
-you are comparing them for. Five Python recipes share one `test_roundtrip.py`; four C and C++ recipes
+They live here rather than in the recipes: recipes carry build wiring and nothing else, so that two
+recipes in the same row differ only by the thing you are comparing them for. Five Python recipes share one `test_roundtrip.py`; four C and C++ recipes
 share one `roundtrip.c` and one `roundtrip.cpp`.
 
 Each recipe stages this directory next to itself as `src/`, so a recipe's build files refer to
 `src/c/roundtrip.c` and friends by that relative path.
 
-## Why one subdirectory per language
+## One subdirectory per language
 
 The programs started out flat -- `src/roundtrip.c` beside `src/roundtrip.go` -- and Go put a stop to
 it: a directory is a package, and `go build` refuses one containing C sources it has not been told to

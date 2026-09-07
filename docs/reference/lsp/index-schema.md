@@ -63,7 +63,7 @@ Each shard is a JSON object:
 ## Schema Guarantees
 
 1. `schema_version` is required and must match the runtime schema constant.
-2. Serialization is deterministic for identical shard content.
+2. Serialisation is deterministic for identical shard content.
 3. Symbol/reference rows are sorted before persistence.
 4. Duplicate logical shards (same `metadata.file_path`) are considered invalid.
 5. Invalid shards are reported by verification and can be removed by repair.

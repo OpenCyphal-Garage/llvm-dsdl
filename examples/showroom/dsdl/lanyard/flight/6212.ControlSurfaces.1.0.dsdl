@@ -5,7 +5,7 @@
 # WHY A UNION: the three airframe classes in the fleet need disjoint
 # actuator sets, and a message that carried all of them would waste
 # bandwidth on every flight and would leave a receiver guessing which
-# half of the payload is meaningful. A @union serializes a tag plus
+# half of the payload is meaningful. A @union serialises a tag plus
 # exactly one option, so the wire cost is that of the selected variant
 # rather than the sum of all three.
 #

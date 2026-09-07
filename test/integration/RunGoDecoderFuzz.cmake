@@ -1,4 +1,4 @@
-# Coverage-guided fuzz lane over the generated Go deserializers.
+# Coverage-guided fuzz lane over the generated Go deserialisers.
 #
 # Generates Go for the UAVCAN corpus, drops the FuzzDecoders harness
 # (test/integration/GoDecoderFuzzTest.go) into the module, and runs Go's native

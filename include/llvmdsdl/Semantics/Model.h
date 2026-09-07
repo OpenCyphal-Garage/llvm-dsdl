@@ -100,7 +100,7 @@ struct SemanticFieldType final
     /// @brief Required alignment in bits.
     std::int64_t alignmentBits{1};
 
-    /// @brief Possible serialized bit-length set.
+    /// @brief Possible serialised bit-length set.
     BitLengthSet bitLengthSet;
 
     /// @brief Target composite type for composite fields.
@@ -157,7 +157,7 @@ struct SemanticConstant final
     Value value;
 };
 
-/// @brief Semantic representation of one serialization section.
+/// @brief Semantic representation of one serialisation section.
 struct SemanticSection final
 {
     /// @brief True when the section is a union.
@@ -181,16 +181,16 @@ struct SemanticSection final
     /// @brief Possible final offsets at section end.
     BitLengthSet offsetAtEnd;
 
-    /// @brief Minimum serialized bit length.
+    /// @brief Minimum serialised bit length.
     std::int64_t minBitLength{0};
 
-    /// @brief Maximum serialized bit length.
+    /// @brief Maximum serialised bit length.
     std::int64_t maxBitLength{0};
 
-    /// @brief True when serialized bit length is invariant.
+    /// @brief True when serialised bit length is invariant.
     bool fixedSize{true};
 
-    /// @brief Required serialization buffer size in bits.
+    /// @brief Required serialisation buffer size in bits.
     std::int64_t serializationBufferSizeBits{0};
 };
 

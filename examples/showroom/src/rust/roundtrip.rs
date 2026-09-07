@@ -4,9 +4,8 @@
 // Shared by every Rust recipe in the matrix. See src/README.md for what these programs are for and
 // what they deliberately do not test.
 //
-// Rust gets the shortest of the five, because the generated types derive PartialEq and Debug: the
-// whole field-by-field comparison the C version spells out is one assert_eq!, and a mismatch prints
-// both values without any help from here.
+// The generated types derive PartialEq and Debug, so the whole field-by-field comparison the C
+// version spells out is one assert_eq! and a mismatch prints both values.
 
 use lanyard::lanyard::health::subsystem_report_1_0::lanyard_health_SubsystemReport_1_0;
 use lanyard::lanyard::health::system_health_1_0::lanyard_health_SystemHealth_1_0;
@@ -26,7 +25,7 @@ fn main() {
     let mut original = lanyard_health_SystemHealth_1_0::default();
 
     // Deliberately not the default value: a broken integration that serialised nothing and
-    // deserialised nothing would round-trip a default struct perfectly and prove nothing.
+    // deserialised nothing would round-trip a default struct and prove nothing.
     original.timestamp.microsecond = 1_234_567_890_123;
     original.aggregate_health.value = 2; // CAUTION, on the standard four-level scale
 

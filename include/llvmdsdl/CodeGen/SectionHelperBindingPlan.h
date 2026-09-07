@@ -28,16 +28,16 @@ struct LoweredSectionFacts;
 struct SemanticSection;
 
 /// @file
-/// @brief Helper binding plans for section serialize/deserialize bodies.
+/// @brief Helper binding plans for section serialise/deserialize bodies.
 
 /// @brief Direction for helper binding resolution.
 enum class HelperBindingDirection
 {
 
-    /// @brief Serialize helper bindings.
+    /// @brief Serialise helper bindings.
     Serialize,
 
-    /// @brief Deserialize helper bindings.
+    /// @brief Deserialise helper bindings.
     Deserialize,
 };
 
@@ -116,14 +116,14 @@ struct SectionHelperBindingPlan final
 /// @brief Builds helper-binding plan for a section and direction.
 /// @param[in] section Semantic section.
 /// @param[in] sectionFacts Lowered section metadata.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @return Section helper-binding plan.
 SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&     section,
                                                        const LoweredSectionFacts* sectionFacts,
                                                        HelperBindingDirection     direction);
 
 /// @brief Returns the array-length prefix helper symbol for one direction.
-/// @param[in] direction Serialize/deserialize direction.
+/// @param[in] direction Serialise/deserialize direction.
 /// @param[in] fieldFacts Lowered field metadata, or `nullptr` when the field has none.
 /// @return Helper symbol, empty when there are no facts for the field.
 [[nodiscard]] std::string arrayLengthPrefixHelper(HelperBindingDirection   direction,

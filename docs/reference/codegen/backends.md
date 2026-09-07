@@ -27,7 +27,7 @@ collides with a constant every generated type already carries. `dsdlc` renames o
 by one rule per language, and tells you when it does.
 
 Renames that change a **path** — an output file name or a package directory — are reported without
-being asked for, because nothing else would tell you:
+being asked for:
 
 ```console
 $ dsdlc --target-language go my_dsdl --go-module example.com/m --outdir out

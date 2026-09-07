@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// The steps of a serialization plan, read once for every target.
+/// The steps of a serialisation plan, read once for every target.
 ///
 /// A `dsdl.serialization_plan` is a sequence of `dsdl.align` and `dsdl.io` operations carrying
 /// their facts as attributes. This is the view the body builder and the conversions read them
@@ -77,7 +77,7 @@ enum class PlanStepKind
     Field
 };
 
-/// @brief One step of a serialization plan, with every fact the lowering stamped on it.
+/// @brief One step of a serialisation plan, with every fact the lowering stamped on it.
 struct PlanStep final
 {
     /// @brief What the step does.

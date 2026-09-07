@@ -104,11 +104,11 @@ struct AiCodeActionSuggestion final
     /// @brief True when @ref edit is populated.
     bool hasEdit{false};
 
-    /// @brief True when explicit confirmation is required before materializing edits.
+    /// @brief True when explicit confirmation is required before materialising edits.
     bool requiresConfirmation{true};
 };
 
-/// @brief Result of trying to materialize a pending AI edit.
+/// @brief Result of trying to materialise a pending AI edit.
 struct AiResolveEditResult final
 {
     /// @brief True when the request can be fulfilled.
@@ -161,7 +161,7 @@ public:
     /// @return `true` when suggestions may be emitted.
     [[nodiscard]] static bool canSuggest(AiMode mode);
 
-    /// @brief Returns whether explicit confirmation can materialize edits.
+    /// @brief Returns whether explicit confirmation can materialise edits.
     /// @param[in] mode Current AI mode.
     /// @return `true` only for `ApplyWithConfirmation`.
     [[nodiscard]] static bool canApplyConfirmedEdits(AiMode mode);

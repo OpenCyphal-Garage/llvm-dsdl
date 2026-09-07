@@ -14,11 +14,11 @@ in the shape the threshold files want -- `max_elapsed_sec`, keyed the same way -
 so that calibrating a runner is reading a table rather than writing a script.
 
 Ratios are reported separately and deliberately. `fastVsPortableRatio` compares
-two specializations measured in the same process on the same machine, so it is
+two specialisations measured in the same process on the same machine, so it is
 invariant to how fast that machine happens to be. An absolute second is not: it
 encodes the host's CPU, its standard library, and in the Python case the exact
-interpreter build. That difference is the whole reason the absolute thresholds
-in this repository are calibrated on one developer machine and enforced nowhere.
+interpreter build. So the absolute thresholds in this repository are calibrated on
+one developer machine and enforced nowhere.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def _rust_rows(report: dict) -> list[tuple[str, str, str, dict]]:
 
 
 def _python_rows(report: dict) -> list[tuple[str, str, str, dict]]:
-    """Flattens the Python report to (specialization, runtime mode, family, metrics).
+    """Flattens the Python report to (specialisation, runtime mode, family, metrics).
 
     A mode whose backend is unavailable carries an `error` rather than timings --
     the accelerator is optional and `accel` is absent wherever it was not built --
@@ -114,7 +114,7 @@ def _render_python(report: dict | None, out: list[str]) -> None:
     # CPU seconds beside wall seconds. They agree on an idle machine and diverge by exactly the
     # amount the process spent waiting for a CPU, which makes the pair readable as "was this
     # measurement taken on a busy box" without needing to know anything about the runner.
-    out.append("| specialization | runtime mode | family | wall (s) | CPU (s) | CPU/wall | ops/sec |")
+    out.append("| specialisation | runtime mode | family | wall (s) | CPU (s) | CPU/wall | ops/sec |")
     out.append("|---|---|---|---:|---:|---:|---:|")
     for spec, mode, family, m in _python_rows(report):
         wall = m.get("elapsedSec", 0.0)
@@ -126,7 +126,7 @@ def _render_python(report: dict | None, out: list[str]) -> None:
             f"{m.get('operationsPerSec', 0):,.0f} |"
         )
 
-    # The scale-invariant half. A ratio between two specializations measured in
+    # The scale-invariant half. A ratio between two specialisations measured in
     # one process says something about the generated code; an absolute second
     # says something about the runner.
     comparisons = report.get("comparisons", {})

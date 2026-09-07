@@ -2,14 +2,14 @@
 # (`fooBar` and `foo_bar`) must NOT collide in a generated type. The case-folding backends fold both
 # to one identifier -- Go PascalCase `FooBar`, TypeScript/Python snake_case `foo_bar` -- which produced
 # a duplicate struct field / object key (Go/TS compile error) or, worst, a silently merged Python
-# dataclass attribute so the (de)serializer read/wrote the wrong field with no error. The fix assigns
+# dataclass attribute so the (de)serialiser read/wrote the wrong field with no error. The fix assigns
 # collision-free identifiers per section (a `_2` suffix on the second colliding name). C/C++/Rust
 # preserve the raw DSDL name and were already safe. See the naming/identifier sanitization audit.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/cx
 # RUN: printf 'uint8 barBaz = 1\nuint8 bar_baz = 2\nuint8 fooBar\nuint8 foo_bar\n@sealed\n' > %t/dsdl/cx/C.1.0.dsdl
 
-# Go: two distinct exported fields, each referenced by the matching (de)serialize step.
+# Go: two distinct exported fields, each referenced by the matching (de)serialise step.
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module cx
 # RUN: cat %t/go/dsdl/cx/c_1_0.go | FileCheck %s --check-prefix=GO
 # GO-DAG: FooBar uint8

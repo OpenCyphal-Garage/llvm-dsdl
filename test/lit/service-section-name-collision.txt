@@ -7,8 +7,7 @@
 #
 # The version is not what separates them -- under the default scheme it is not in the type name at
 # all, so the pair collides whatever versions they carry. `--versioned-type-names` does separate
-# them (`Foo_1_0_Request` against `Foo_Request_1_0`), which is why it is what the diagnostic
-# suggests. See D5 in STROPPING_DEFECTS.md.
+# them (`Foo_1_0_Request` against `Foo_Request_1_0`), and the diagnostic suggests it.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/dsdl/ns/Foo.1.0.dsdl

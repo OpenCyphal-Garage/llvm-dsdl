@@ -132,7 +132,7 @@ bool runLspJsonRpcFuzzTests()
 
     {
         // A malformed-JSON frame must be RECOVERABLE: the payload was consumed exactly, so
-        // the stream stays synchronized and a following valid frame still parses. This is
+        // the stream stays synchronised and a following valid frame still parses. This is
         // what lets the server reply with a parse error and keep serving instead of dying
         // on one bad message.
         const std::string                    badFrame  = encodeLspFrame(R"({"jsonrpc":2.0)");
@@ -150,7 +150,7 @@ bool runLspJsonRpcFuzzTests()
             return false;
         }
 
-        // The next frame must still read cleanly (stream stayed synchronized).
+        // The next frame must still read cleanly (stream stayed synchronised).
         llvm::json::Value nextMessage(llvm::json::Object{});
         std::string       nextError;
         bool              nextRecoverable = false;

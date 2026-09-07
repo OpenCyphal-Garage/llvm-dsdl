@@ -181,7 +181,7 @@ if(LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS)
     DEPENDS dsdlc benchmark-corpus
     USES_TERMINAL
     VERBATIM
-    COMMENT "Recording C benchmark A/B with embedded UAVCAN catalog vs --no-embedded-uavcan"
+    COMMENT "Recording C benchmark A/B with embedded UAVCAN catalogue vs --no-embedded-uavcan"
   )
 else()
   message(STATUS

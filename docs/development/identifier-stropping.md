@@ -107,13 +107,13 @@ It takes parts rather than a `DiscoveredDefinition` because `llvmdsdlFrontend` l
 -- is in the frontend. `CodeGen/DefinitionPathProjection.h` holds the overloads that take the richer
 types and delegates to it.
 
-Before this existed each emitter composed its own. That is how `mangleSymbol` came to exist three
-times verbatim across three libraries, with the C backend linking only because all three agreed with
-their consumer by coincidence of identical source text; and how C, C++ and the object backend arrived
-at three different answers to whether a type name carries its version.
+Without it each emitter composes its own: `mangleSymbol` would exist three times verbatim across
+three libraries, with the C backend linking only because all three agreed with their consumer by
+coincidence of identical source text, and C, C++ and the object backend could each answer
+differently whether a type name carries its version.
 
-The C backend is the one place where a scope crosses a layer. Its struct declaration reads the scope
-directly; its serializer bodies are emitted from MLIR by `convert-dsdl-to-emitc`, which reads member
+Only in the C backend does a scope cross a layer. Its struct declaration reads the scope
+directly; its serialiser bodies are emitted from MLIR by `convert-dsdl-to-emitc`, which reads member
 names from the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
 the C emitter stamps the scoped name over it on its own clone of the schema before the conversion
 runs -- so the declaration and the references cannot disagree, and hand-driven `dsdl-opt` runs still
@@ -190,7 +190,7 @@ One `LanguageNamingPolicy` per language, data only:
 
 Generated C is compiled as C++ more often than not. The object backend does it to its own staged
 headers, and the `c_shim` header it publishes is a dual-language surface -- written C-clean, compiled
-as C by the test suite and as C++ by the lane. `extern "C"` changes linkage, not tokenization, so a
+as C by the test suite and as C++ by the lane. `extern "C"` changes linkage, not tokenisation, so a
 member named `class` is a parse error there whatever the linkage says.
 
 So C's keyword set is the union of C's and C++'s. The cost is a trailing `_` on the DSDL names that
@@ -262,12 +262,12 @@ and `_2` means "the second name competing for this identifier", which is untrue 
 field wanted.
 
 There is no `predeclared` field for the shadowable-but-legal names — Go's `len` and `cap`, Python's
-`str` and `list`. Shadowing them bites only where the name is later used unqualified, which is to say
-in a local or a function name, and no DSDL name reaches either: `FunctionName` has no call site, and
-`LocalName` has two, both C++, both naming a token this generator built. Leaving them alone is the
-point of difference with nunavut, which escapes every Python builtin in every position because its
-reserved set is `keyword.kwlist + dir(builtins)` — a set that also makes its output depend on the
-interpreter running the generator. A DSDL field named `str` is `str_` there and `str` here.
+`str` and `list`. Shadowing them becomes problematic only where the name is later used unqualified, 
+as in a local or a function name, and no DSDL name reaches either: `FunctionName` has no call site, 
+and `LocalName` has two, both C++, both naming a token this generator built. Leaving them alone is
+the point of difference with nunavut, which escapes every Python builtin in every position because
+its reserved set is `keyword.kwlist + dir(builtins)` — a set that also makes its output depend on
+the interpreter running the generator. A DSDL field named `str` is `str_` there and `str` here.
 
 There is no `fileStemAvoid` field either. The MS-DOS device names are rejected by the frontend as
 DSDL reserved identifiers, and stdlib shadowing is a packaging constraint rather than a naming one
@@ -426,15 +426,15 @@ every language, because there is no build to fail — the diagnostic is informat
 people use to ask whether a namespace is sound.
 
 Extending "only the selected backend" to the analysis modes is the consistent-looking reading: they
-select nothing, so they would check nothing. It removes the only cheap way to ask whether a namespace
+select nothing, so they would check nothing. Nothing else asks cheaply whether a namespace
 survives every backend. State the rule as *never fail a build over output it will not produce*; the
 two readings diverge only where nothing is produced.
 
 ### 8.2 Python stdlib shadowing is a packaging constraint
 
 `uavcan.time` generates a package directory named `time`. Under absolute imports that is harmless. It
-bites only if the output directory itself is placed on `sys.path`, at which point `import time` may
-resolve to the generated package.
+becomes a problem only if the output directory itself is placed on `sys.path`, at which point `import time`
+may resolve to the generated package.
 
 That is a property of how the output is installed, not of the name. Renaming the directory to `time_`
 would rename a namespace that is correct, propagate into every import path, and diverge from the

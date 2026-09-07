@@ -131,7 +131,7 @@ def dsdl_support_library(name, visibility = None):
     )
 
 def dsdl_builtin_library(name, types, deps = [], visibility = None):
-    """Standard types from the catalog compiled into dsdlc, named as `uavcan.node.Heartbeat.1.0`.
+    """Standard types from the catalogue compiled into dsdlc, named as `uavcan.node.Heartbeat.1.0`.
 
     Give shared standard types one owner here. Each namespace is generated with
     --omit-dependencies, so nothing else will produce them, and a type nobody owns shows up as a

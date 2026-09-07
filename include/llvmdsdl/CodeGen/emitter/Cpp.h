@@ -11,8 +11,8 @@
 /// Public entry points and options for C++ backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_CPPEMITTER_H
-#define LLVMDSDL_CODEGEN_CPPEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_EMITTER_CPP_H
+#define LLVMDSDL_CODEGEN_EMITTER_CPP_H
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
@@ -32,12 +32,16 @@ namespace llvmdsdl
 class DiagnosticEngine;
 class EmitTraceSink;
 struct SemanticModule;
+}  // namespace llvmdsdl
+
+namespace llvmdsdl::emitter::cpp
+{
 
 /// @file
 /// @brief C++ backend emission entry points.
 
 /// @brief C++ runtime profile selection.
-enum class CppProfile
+enum class Profile
 {
 
     /// @brief Emit `std` profile only.
@@ -54,7 +58,7 @@ enum class CppProfile
 };
 
 /// @brief Configuration options for C++ code generation.
-struct CppEmitOptions final
+struct Options final
 {
     /// @brief Whether generated type names carry the definition's version.
     ///
@@ -66,9 +70,9 @@ struct CppEmitOptions final
     std::string outDir;
 
     /// @brief Requested C++ profile.
-    CppProfile profile{CppProfile::Both};
+    Profile profile{Profile::Both};
 
-    /// @brief Enables optional lowered-serdes optimization before emission.
+    /// @brief Enables optional lowered-serdes optimisation before emission.
     bool optimizeLoweredSerDes{false};
 
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
@@ -98,12 +102,12 @@ struct CppEmitOptions final
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emitCpp(const SemanticModule& semantic,
-                    mlir::ModuleOp        module,
-                    const CppEmitOptions& options,
-                    DiagnosticEngine&     diagnostics,
-                    EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic,
+                 mlir::ModuleOp        module,
+                 const Options&        options,
+                 DiagnosticEngine&     diagnostics,
+                 EmitTraceSink*        traceSink = nullptr);
 
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::emitter::cpp
 
-#endif  // LLVMDSDL_CODEGEN_CPPEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_EMITTER_CPP_H

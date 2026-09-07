@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Checks the member positions a plan carries against the struct the C backend emits.
 
-An object lowering addresses a member by its position, because it has no name to use. That
-position is computed from the schema -- the non-padding fields in declaration order, and a
-union's options before its `_tag_` -- while the struct it has to agree with is emitted from
-the semantic model by a different piece of code. Nothing makes the two agree; they are simply
+An object lowering addresses a member by its position. That position is computed from the
+schema -- the non-padding fields in declaration order, and a union's options before its
+`_tag_` -- while the struct it has to agree with is emitted from the semantic model by a
+different piece of code. Nothing makes the two agree; they are
 expected to, and an offset that disagrees is not a crash but a field read from the wrong
 bytes.
 
@@ -21,7 +21,7 @@ So this compares them, three ways:
     computed from a wrong width lands between fields rather than on one.
 
 The first two are read off the two generated artefacts. The third is compiled and run, because
-`offsetof` is the only thing that answers what the layout actually is.
+only `offsetof` answers what the layout is.
 """
 
 from __future__ import annotations
@@ -235,8 +235,8 @@ def main() -> int:
             lines.append(f"    previous = offsetof({name}, {member});")
 
     # And what each member is made of. A scalar is held in its holder width, an array element
-    # in one element's worth, and a bool array bitpacked -- which is why it is measured as
-    # bytes of storage rather than as a count of elements.
+    # in one element's worth, and a bool array bitpacked, so it is measured as bytes of storage
+    # rather than as a count of elements.
     for name, members, _ in width_cases:
         for member in members:
             if not member.kind:

@@ -1,9 +1,8 @@
-# Evaluated by CPack once per generator, after the build. That timing is the
-# point: the Depends list is derived from the binaries that were actually built,
-# which cannot be done at configure time because they do not exist yet.
+# Evaluated by CPack once per generator, after the build: the Depends list is
+# derived from the binaries that were built, which do not exist at configure
+# time.
 #
-# Generated from cmake/PackagingProjectConfig.cmake.in -- do not edit the copy in
-# the build tree.
+# Generated from cmake/PackagingProjectConfig.cmake.in.
 
 if(NOT CPACK_GENERATOR STREQUAL "DEB")
   return()
@@ -22,7 +21,7 @@ endif()
 # with a stale list -- it claims to need nothing.
 #
 # The two cases differ only in whether libLLVM itself counts. Vendored, it ships
-# inside the package and must not appear; not vendored, it is a genuine external
+# inside the package and must not appear; not vendored, it is an external
 # dependency and must.
 #
 # The binaries to analyse are read from a per-configuration file rather than

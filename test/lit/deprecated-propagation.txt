@@ -1,7 +1,6 @@
-# `@deprecated` reaches MLIR as a schema attribute but used to be dropped by every language backend,
-# so a definition marked retired generated code that said nothing about it. Two dozen definitions in
-# the standard uavcan namespace are deprecated, including all of uavcan.file, so this was not a
-# hypothetical gap.
+# `@deprecated` reaches MLIR as a schema attribute and every language backend renders it, so a
+# definition marked retired says so in its generated code. Two dozen definitions in the standard
+# uavcan namespace are deprecated, including all of uavcan.file.
 #
 # Two layers are checked here:
 #   * the notice and the IS_DEPRECATED constant, emitted unconditionally in every backend;
@@ -45,7 +44,7 @@
 # RUN: cat %t/py/dep_fixture/dep/current_1_0.py | FileCheck %s --check-prefix=PY_OK
 
 # The suppression region must open before the first declaration and close after the last generated
-# function: the deprecated name is referenced by its own declaration, by the serializer signatures,
+# function: the deprecated name is referenced by its own declaration, by the serialiser signatures,
 # and by any struct that embeds it. Generated code must never warn about itself.
 #
 # The notice names the type, never the section: a service's request and response are two halves of one

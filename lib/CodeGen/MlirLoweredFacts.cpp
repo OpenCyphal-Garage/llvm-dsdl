@@ -166,20 +166,20 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                 {
                 case LoweredContractEnvelopeViolationKind::MissingVersion:
                     diagnostics.error({"<mlir>", 1, 1},
-                                      "serialization plan missing lowered contract "
+                                      "serialisation plan missing lowered contract "
                                       "attribute '" +
                                           std::string(kLoweredSerDesContractVersionAttr) + "' for " + fullName);
                     break;
                 case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
                     diagnostics.error({"<mlir>", 1, 1},
-                                      "serialization plan unsupported lowered contract major version for " + fullName +
+                                      "serialisation plan unsupported lowered contract major version for " + fullName +
                                           ": " +
                                           loweredSerDesUnsupportedMajorVersionDiagnosticDetail(
                                               envelopeViolation->encodedVersion));
                     break;
                 case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                     diagnostics.error({"<mlir>", 1, 1},
-                                      "serialization plan lowered contract producer mismatch for " + fullName +
+                                      "serialisation plan lowered contract producer mismatch for " + fullName +
                                           ": expected '" + std::string(kLoweredSerDesContractProducer) + "'");
                     break;
                 }
@@ -198,7 +198,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
             if (const auto violation = findLoweredPlanContractViolation(*loweredModule, child.getOperation()))
             {
                 diagnostics.error({"<mlir>", 1, 1},
-                                  "serialization plan contract violation for " + op.getFullName().str() + ": " +
+                                  "serialisation plan contract violation for " + op.getFullName().str() + ": " +
                                       violation->message);
                 return false;
             }

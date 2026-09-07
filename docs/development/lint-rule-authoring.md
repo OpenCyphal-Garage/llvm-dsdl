@@ -1,7 +1,7 @@
 # LSP Lint Rule Authoring Guide
 
 This guide explains how to add, test, and ship lint rules for `dsdld`.
-For baseline rule catalog and suppression schema, see `docs/reference/lsp/lint-rules.md`.
+For baseline rule catalogue and suppression schema, see `docs/reference/lsp/lint-rules.md`.
 
 ## 1. Architecture
 
@@ -132,7 +132,7 @@ Runtime configuration path:
 1. Set `lint.pluginLibraries` in `workspace/didChangeConfiguration`.
 2. `LintEngine` loads the libraries during construction.
 
-Current implementation uses `dlopen`/`dlsym` (POSIX dynamic loading).
+Loading is by `dlopen`/`dlsym` (POSIX dynamic loading).
 
 ## 8. Documentation Requirements For New Rules
 

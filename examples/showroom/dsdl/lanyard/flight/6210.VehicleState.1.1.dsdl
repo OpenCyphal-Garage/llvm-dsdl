@@ -9,9 +9,9 @@
 # changes nothing else. That is permissible without a major version bump
 # because:
 #
-#   1. The type is delimited (@extent), so every serialized value is
+#   1. The type is delimited (@extent), so every serialised value is
 #      preceded by a length header and a reader may skip a tail it does
-#      not recognize.
+#      not recognise.
 #   2. The extent is unchanged, so a 1.0 reader's buffer is still large
 #      enough for a 1.1 message.
 #   3. Existing fields keep their order, type, and meaning, so a 1.0

@@ -26,7 +26,7 @@ export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
   const mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1 = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && (payloadBytes <= remainingBytes);
 
   if (!mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(out.length * 8)) {
-    throw new Error("serialization buffer too small");
+    throw new Error("serialisation buffer too small");
   }
   const nestedAlignedOffsetBits = Math.trunc((offsetBits + 7) / 8) * 8;
   for (let nestedAlignBit = offsetBits; nestedAlignBit < nestedAlignedOffsetBits; ++nestedAlignBit) {

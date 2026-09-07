@@ -1,4 +1,4 @@
-# Runtime forward/backward compatibility lane for the generated C, Rust, and Go serializers.
+# Runtime forward/backward compatibility lane for the generated C, Rust, and Go serialisers.
 #
 # The rest of the suite only ever decodes a buffer with the SAME type version that produced it, so a
 # delimited composite's version-skew skip (advance the outer offset by the delimiter header, not by the
@@ -207,6 +207,6 @@ if(TSC_EXECUTABLE AND NOT "${TSC_EXECUTABLE}" STREQUAL "" AND NODE_EXECUTABLE AN
 endif()
 
 # Each backend above is asserted equal to `expected_output`, so they are equal to each other; the run
-# list records which backends actually participated (Python/TS are skipped if their tools are absent).
+# list records which backends participated (Python/TS are skipped if their tools are absent).
 string(REPLACE ";" ", " ran_backends_pretty "${ran_backends}")
 message(STATUS "forward/backward compatibility lane passed (${ran_backends_pretty})")

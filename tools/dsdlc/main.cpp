@@ -41,17 +41,17 @@
 #include <system_error>
 
 #include "TargetLanguages.h"
-#include "llvmdsdl/CodeGen/CEmitter.h"
-#include "llvmdsdl/CodeGen/CppEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/C.h"
+#include "llvmdsdl/CodeGen/emitter/Cpp.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/GoEmitter.h"
-#include "llvmdsdl/CodeGen/PythonEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Go.h"
+#include "llvmdsdl/CodeGen/emitter/Python.h"
 #include "llvmdsdl/CodeGen/EmitTrace.h"
-#include "llvmdsdl/CodeGen/RustEmitter.h"
-#include "llvmdsdl/CodeGen/TsEmitter.h"
+#include "llvmdsdl/CodeGen/emitter/Rust.h"
+#include "llvmdsdl/CodeGen/emitter/Ts.h"
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/DepfilePlanner.h"
@@ -87,7 +87,7 @@ namespace
 //
 // LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate additionally swaps each VALIDATE_TAG with the
 // MASK_TAG that follows it before writing — the verifier's end-to-end mutation negative
-// control (a genuine mask-before-validate reorder flowing through the real pipeline). It
+// control (a mask-before-validate reorder flowing through the real pipeline). It
 // affects only this diagnostic trace file, never the generated code.
 void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink)
 {
@@ -134,7 +134,7 @@ struct CliOptions final
 {
     std::vector<std::string> positionalTargets;
 
-    /// `+`-sigil targets naming the embedded catalog, with the sigil stripped.
+    /// `+`-sigil targets naming the embedded catalogue, with the sigil stripped.
     std::vector<std::string> builtinTargets;
 
     std::vector<std::string> lookupDirs;
@@ -184,18 +184,21 @@ struct CliOptions final
 
     int verbose{0};
 
-    llvmdsdl::CppProfile                  cppProfile{llvmdsdl::CppProfile::Both};
-    std::string                           rustCrateName{"llvmdsdl_generated"};
-    llvmdsdl::RustProfile                 rustProfile{llvmdsdl::RustProfile::Std};
-    llvmdsdl::RustRuntimeSpecialization   rustRuntimeSpecialization{llvmdsdl::RustRuntimeSpecialization::Portable};
-    llvmdsdl::RustMemoryMode              rustMemoryMode{llvmdsdl::RustMemoryMode::MaxInline};
-    std::uint32_t                         rustInlineThresholdBytes{256U};
-    std::string                           goModuleName{"llvmdsdl_generated"};
-    std::string                           tsModuleName{"llvmdsdl_generated"};
-    llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization{llvmdsdl::TsRuntimeSpecialization::Portable};
-    llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization{llvmdsdl::PythonRuntimeSpecialization::Portable};
-    std::string                           pyPackageName{"dsdl_gen"};
-    std::uint32_t                         jobs{0U};
+    llvmdsdl::emitter::cpp::Profile                cppProfile{llvmdsdl::emitter::cpp::Profile::Both};
+    std::string                                    rustCrateName{"llvmdsdl_generated"};
+    llvmdsdl::emitter::rust::Profile               rustProfile{llvmdsdl::emitter::rust::Profile::Std};
+    llvmdsdl::emitter::rust::RuntimeSpecialization rustRuntimeSpecialization{
+        llvmdsdl::emitter::rust::RuntimeSpecialization::Portable};
+    llvmdsdl::emitter::rust::MemoryMode          rustMemoryMode{llvmdsdl::emitter::rust::MemoryMode::MaxInline};
+    std::uint32_t                                rustInlineThresholdBytes{256U};
+    std::string                                  goModuleName{"llvmdsdl_generated"};
+    std::string                                  tsModuleName{"llvmdsdl_generated"};
+    llvmdsdl::emitter::ts::RuntimeSpecialization tsRuntimeSpecialization{
+        llvmdsdl::emitter::ts::RuntimeSpecialization::Portable};
+    llvmdsdl::emitter::python::RuntimeSpecialization pyRuntimeSpecialization{
+        llvmdsdl::emitter::python::RuntimeSpecialization::Portable};
+    std::string   pyPackageName{"dsdl_gen"};
+    std::uint32_t jobs{0U};
 
     bool sawCppProfile{false};
     bool sawRustCrateName{false};
@@ -290,7 +293,7 @@ void printHelp()
                  << "      Folder targets expand recursively to .dsdl files unless --no-target-namespaces.\n"
                  << "      Colon syntax is supported: <root>:<relative/path/Type.1.0.dsdl>.\n"
                  << "  +<selector>\n"
-                 << "      Target the embedded uavcan catalog: a namespace (+uavcan.node), a type\n"
+                 << "      Target the embedded uavcan catalogue: a namespace (+uavcan.node), a type\n"
                  << "      (+uavcan.node.Heartbeat), or a version (+uavcan.node.Heartbeat.1.0).\n"
                  << "      Requires --target-language 'mlir' or a codegen language.\n"
                  << "  --lookup-dir, -I <dir>\n"
@@ -338,7 +341,7 @@ void printHelp()
                  << "        never               - never generate support code.\n"
                  << "        only                - only generate support code.\n"
                  << "  --omit-dependencies\n"
-                 << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
+                 << "      Emit only explicit targets; dependencies are still resolved and analysed.\n"
                  << "  --naming-manifest <file>\n"
                  << "      Write a JSON map from each DSDL name to the identifier it is generated\n"
                  << "      as, for every target language this invocation names.\n"
@@ -354,7 +357,7 @@ void printHelp()
                  << "      File mode for generated files using auto-base parsing (default: 0o444).\n"
                  << "  --jobs, -j <N>\n"
                  << "      Worker parallelism hint (N>=1). -j1 ensures no parallelism, however, the inverse\n"
-                 << "      does not hold: not all backends utilize parallel processing.\n"
+                 << "      does not hold: not all backends utilise parallel processing.\n"
                  << "  -MD\n"
                  << "      Emit make-style .d dependency files alongside generated outputs.\n"
                  << "  --list-inputs\n"
@@ -367,9 +370,9 @@ void printHelp()
                  << "  --no-target-namespaces\n"
                  << "      Reject folder positional targets.\n"
                  << "  --no-embedded-uavcan\n"
-                 << "      Disable automatic embedded uavcan dependency catalog for mlir/codegen targets.\n"
+                 << "      Disable automatic embedded uavcan dependency catalogue for mlir/codegen targets.\n"
                  << "  --optimize-lowered-serdes\n"
-                 << "      Enable optional MLIR optimization for lowered serialization plans.\n"
+                 << "      Enable optional MLIR optimisation for lowered serialisation plans.\n"
                  << "  --encode-reserved-identifiers\n"
                  << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
                  << "      namespace, encoding the offending characters instead of rejecting the\n"
@@ -400,7 +403,8 @@ void printHelp()
                  << "  TS:     --ts-module <name>\n"
                  << "          --ts-runtime-specialization <portable|fast>\n"
                  << "  Python: --py-package <name>\n"
-                 << "          --py-runtime-specialization <portable|fast>\n";
+                 << "          --py-runtime-specialization <portable|fast>\n"
+                 << "  Object: --target-triple <triple> (default: the host's own)\n";
 }
 
 void printDiagnostics(const llvmdsdl::DiagnosticEngine& diagnostics)
@@ -586,7 +590,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         return std::string(argv[++i]);
     };
 
-    // A leading '+' names the embedded catalog rather than the filesystem. This is target-token
+    // A leading '+' names the embedded catalogue rather than the filesystem. This is target-token
     // syntax, not option syntax, so it stays significant after `--`; a real file whose name starts
     // with '+' is reached as `./+name`.
     const auto addTargetToken = [&options](llvm::StringRef token) {
@@ -840,19 +844,19 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawCppProfile = true;
             if (*value == "std")
             {
-                options.cppProfile = llvmdsdl::CppProfile::Std;
+                options.cppProfile = llvmdsdl::emitter::cpp::Profile::Std;
             }
             else if (*value == "pmr")
             {
-                options.cppProfile = llvmdsdl::CppProfile::Pmr;
+                options.cppProfile = llvmdsdl::emitter::cpp::Profile::Pmr;
             }
             else if (*value == "both")
             {
-                options.cppProfile = llvmdsdl::CppProfile::Both;
+                options.cppProfile = llvmdsdl::emitter::cpp::Profile::Both;
             }
             else if (*value == "autosar")
             {
-                options.cppProfile = llvmdsdl::CppProfile::Autosar;
+                options.cppProfile = llvmdsdl::emitter::cpp::Profile::Autosar;
             }
             else
             {
@@ -883,11 +887,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawRustProfile = true;
             if (*value == "std")
             {
-                options.rustProfile = llvmdsdl::RustProfile::Std;
+                options.rustProfile = llvmdsdl::emitter::rust::Profile::Std;
             }
             else if (*value == "no-std-alloc")
             {
-                options.rustProfile = llvmdsdl::RustProfile::NoStdAlloc;
+                options.rustProfile = llvmdsdl::emitter::rust::Profile::NoStdAlloc;
             }
             else
             {
@@ -907,11 +911,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawRustRuntimeSpecialization = true;
             if (*value == "portable")
             {
-                options.rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
+                options.rustRuntimeSpecialization = llvmdsdl::emitter::rust::RuntimeSpecialization::Portable;
             }
             else if (*value == "fast")
             {
-                options.rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Fast;
+                options.rustRuntimeSpecialization = llvmdsdl::emitter::rust::RuntimeSpecialization::Fast;
             }
             else
             {
@@ -931,11 +935,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawRustMemoryMode = true;
             if (*value == "max-inline")
             {
-                options.rustMemoryMode = llvmdsdl::RustMemoryMode::MaxInline;
+                options.rustMemoryMode = llvmdsdl::emitter::rust::MemoryMode::MaxInline;
             }
             else if (*value == "inline-then-pool")
             {
-                options.rustMemoryMode = llvmdsdl::RustMemoryMode::InlineThenPool;
+                options.rustMemoryMode = llvmdsdl::emitter::rust::MemoryMode::InlineThenPool;
             }
             else
             {
@@ -996,11 +1000,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawTsRuntimeSpecialization = true;
             if (*value == "portable")
             {
-                options.tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Portable;
+                options.tsRuntimeSpecialization = llvmdsdl::emitter::ts::RuntimeSpecialization::Portable;
             }
             else if (*value == "fast")
             {
-                options.tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Fast;
+                options.tsRuntimeSpecialization = llvmdsdl::emitter::ts::RuntimeSpecialization::Fast;
             }
             else
             {
@@ -1031,11 +1035,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.sawPyRuntimeSpecialization = true;
             if (*value == "portable")
             {
-                options.pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Portable;
+                options.pyRuntimeSpecialization = llvmdsdl::emitter::python::RuntimeSpecialization::Portable;
             }
             else if (*value == "fast")
             {
-                options.pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Fast;
+                options.pyRuntimeSpecialization = llvmdsdl::emitter::python::RuntimeSpecialization::Fast;
             }
             else
             {
@@ -1075,7 +1079,7 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
                                        expectedLang.data());
     };
 
-    // Embedded targets are gated the same way the catalog itself is. Both of these must fail rather
+    // Embedded targets are gated the same way the catalogue itself is. Both of these must fail rather
     // than resolve to nothing: a build that silently generates no files is the failure mode the
     // whole '+' design exists to avoid.
     if (!options.builtinTargets.empty())
@@ -1238,9 +1242,9 @@ std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::Semanti
     return closure;
 }
 
-// Path recorded as the depfile prerequisite for outputs generated from the embedded uavcan catalog.
-// The catalog is compiled into this binary and has no source file to name, so the binary is the
-// honest stand-in: upgrading dsdlc genuinely changes those outputs' inputs.
+// Path recorded as the depfile prerequisite for outputs generated from the embedded uavcan catalogue.
+// The catalogue is compiled into this binary and has no source file to name, so the binary is the
+// honest stand-in: upgrading dsdlc changes those outputs' inputs.
 //
 // argv[0] alone is not a reliable path (PATH lookup, symlinks, some platforms), so this defers to
 // getMainExecutable, which additionally needs the address of a symbol in this image to locate it.
@@ -1525,7 +1529,7 @@ int runDsdlc(int argc, char** argv)
     std::optional<llvmdsdl::UavcanEmbeddedCatalog> embeddedCatalog;
     if (useEmbeddedUavcan)
     {
-        logVerbose(1, "loading embedded uavcan catalog");
+        logVerbose(1, "loading embedded uavcan catalogue");
         auto loadedCatalog = llvmdsdl::loadUavcanEmbeddedCatalog(context, diagnostics);
         if (!loadedCatalog)
         {
@@ -1554,7 +1558,7 @@ int runDsdlc(int argc, char** argv)
     std::unordered_set<std::string> builtinNamedKeys;
     if (!options.builtinTargets.empty() && !embeddedCatalog)
     {
-        diagnostics.error({"<cli>", 1, 1}, "embedded targets were requested but no embedded catalog is loaded");
+        diagnostics.error({"<cli>", 1, 1}, "embedded targets were requested but no embedded catalogue is loaded");
         printDiagnostics(diagnostics);
         return 1;
     }
@@ -1612,8 +1616,8 @@ int runDsdlc(int argc, char** argv)
     const auto mergedSemantic =
         embeddedCatalog ? mergeSemanticModulesPreferPrimary(localSemantic, embeddedCatalog->semantic) : localSemantic;
 
-    // '+' targets are explicit in exactly the sense filesystem targets are; they just cannot be
-    // marked by path, since embedded definitions have none. Note that a local definition sharing a
+    // '+' targets are explicit in exactly the sense filesystem targets are; they cannot be
+    // marked by path, since embedded definitions have none. A local definition sharing a
     // key shadows the embedded one here, because `mergedSemantic` prefers local.
     auto explicitKeys = collectExplicitKeys(localSemantic);
     // determinism-ok: the destination is itself a set, so the order these
@@ -1621,7 +1625,7 @@ int runDsdlc(int argc, char** argv)
     explicitKeys.insert(builtinExplicitKeys.begin(), builtinExplicitKeys.end());
     if (explicitKeys.empty() && !supportIsSelfSufficient)
     {
-        diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
+        diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analysed semantic graph");
         printDiagnostics(diagnostics);
         return 1;
     }
@@ -1645,8 +1649,7 @@ int runDsdlc(int argc, char** argv)
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
 
     // Reported only now, because the closure has the last word: a version dropped from the seed
-    // comes back if something that survived still references it, and saying it was not generated
-    // when it was would be worse than saying nothing.
+    // comes back if something that survived still references it.
     if (!narrowedAwayKeys.empty())
     {
         std::vector<std::string> absent;
@@ -1662,7 +1665,7 @@ int runDsdlc(int argc, char** argv)
             diagnostics.note({"<cli>", 1, 1},
                              "generating the newest version of each type; " + std::to_string(absent.size()) +
                                  " older version(s) were not generated. Pass --all-type-versions for all of "
-                                 "them, or name one to keep just it");
+                                 "them, or name one to keep only it");
             for (const auto& key : absent)
             {
                 logVerbose(1, "not generating older version " + key);
@@ -1670,8 +1673,8 @@ int runDsdlc(int argc, char** argv)
         }
         if (!restored.empty())
         {
-            // Worth its own note: this is why the output can still hold two versions of a type, and
-            // therefore why a backend that cannot express that may still refuse.
+            // The output can still hold two versions of a type, so a backend that cannot express
+            // that may still refuse.
             std::string list;
             for (const auto& key : restored)
             {
@@ -1694,7 +1697,7 @@ int runDsdlc(int argc, char** argv)
             {
                 emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
             }
-            // After the outputs are final and only when this run actually wrote them. The listing
+            // After the outputs are final and only when this run wrote them. The listing
             // modes imply --dry-run, and pruning on a dry run would delete files while claiming to
             // have touched nothing.
             bool pruneFailed = false;
@@ -1927,7 +1930,7 @@ int runDsdlc(int argc, char** argv)
         // emits. Stamping them here is what makes the printed symbols the ones a generated
         // header declares, and what lets a lowering pass build bodies over this module.
         //
-        // The merged model, because the embedded catalog contributes schemas of its own and a
+        // The merged model, because the embedded catalogue contributes schemas of its own and a
         // module stamped over only some of them names both what a backend emits and what it
         // does not.
         const auto        stampSemantic = filterSemanticModule(mergedSemantic, selectedKeys);
@@ -1984,9 +1987,9 @@ int runDsdlc(int argc, char** argv)
     {
         const auto plannerBuildStart = std::chrono::steady_clock::now();
         // Built from the closure over the *merged* module, not the local one: embedded definitions
-        // must be present as nodes for the planner to tell "resolved from the compiled-in catalog"
-        // apart from "unknown type". Both used to produce an empty dependency list, so generated
-        // uavcan sources were pinned to a rule with no prerequisites and never rebuilt.
+        // must be present as nodes for the planner to tell "resolved from the compiled-in catalogue"
+        // apart from "unknown type". Conflating them yields an empty dependency list, which pins
+        // generated uavcan sources to a rule with no prerequisites that never rebuilds.
         depfilePlanner =
             std::make_unique<llvmdsdl::DepfilePlanner>(closureSemantic, resolveToolchainStampPath(argv[0]));
         if (options.verbose >= 2)
@@ -2052,7 +2055,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "c")
     {
-        llvmdsdl::CEmitOptions emitOptions;
+        llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
@@ -2061,7 +2064,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::c::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2077,7 +2080,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "obj")
     {
-        llvmdsdl::CEmitOptions emitOptions;
+        llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
@@ -2086,7 +2089,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
         emitOptions.targetTriple              = options.targetTriple;
-        auto sizeBits                         = llvmdsdl::targetSizeBits(options.targetTriple);
+        auto sizeBits                         = llvmdsdl::emitter::c::targetSizeBits(options.targetTriple);
         if (!sizeBits)
         {
             llvm::errs() << llvm::toString(sizeBits.takeError()) << "\n";
@@ -2094,7 +2097,7 @@ int runDsdlc(int argc, char** argv)
         }
         logVerbose(1, "target size_t: " + std::to_string(*sizeBits) + " bits");
 
-        if (auto err = llvmdsdl::emitObject(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::c::emitObject(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2104,7 +2107,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "cpp")
     {
-        llvmdsdl::CppEmitOptions emitOptions;
+        llvmdsdl::emitter::cpp::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
@@ -2114,7 +2117,8 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err =
+                llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2134,7 +2138,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "rust")
     {
-        llvmdsdl::RustEmitOptions emitOptions;
+        llvmdsdl::emitter::rust::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.crateName                 = options.rustCrateName;
@@ -2148,7 +2152,8 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err =
+                llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2168,7 +2173,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "go")
     {
-        llvmdsdl::GoEmitOptions emitOptions;
+        llvmdsdl::emitter::go::Options emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.goModuleName;
@@ -2177,7 +2182,8 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err =
+                llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2197,7 +2203,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "ts")
     {
-        llvmdsdl::TsEmitOptions emitOptions;
+        llvmdsdl::emitter::ts::Options emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
@@ -2207,7 +2213,8 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitTs(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err =
+                llvmdsdl::emitter::ts::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2227,7 +2234,7 @@ int runDsdlc(int argc, char** argv)
 
     if (options.targetLanguage == "python")
     {
-        llvmdsdl::PythonEmitOptions emitOptions;
+        llvmdsdl::emitter::python::Options emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
@@ -2237,7 +2244,11 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::python::emit(closureSemantic,
+                                                       *mlirModule,
+                                                       emitOptions,
+                                                       diagnostics,
+                                                       emitTraceSinkPtr))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);

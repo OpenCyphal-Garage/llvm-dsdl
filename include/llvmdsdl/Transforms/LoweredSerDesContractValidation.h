@@ -60,7 +60,7 @@ struct LoweredContractEnvelopeViolation final
 /// @return Violation details on failure; `std::nullopt` on success.
 std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViolation(mlir::Operation* operation);
 
-/// @brief Validates lowered metadata and helper references for a serialization plan.
+/// @brief Validates lowered metadata and helper references for a serialisation plan.
 /// @param[in] module Module containing helper symbols.
 /// @param[in] operation The `dsdl.serialization_plan` to validate.
 /// @return Violation details on failure; `std::nullopt` on success.

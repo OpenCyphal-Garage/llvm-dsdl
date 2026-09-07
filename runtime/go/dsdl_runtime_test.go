@@ -85,7 +85,7 @@ func TestCopyBitsUnalignedMatchesReference(t *testing.T) {
 }
 
 // TestCopyBitsRandomizedAgainstReference validates CopyBits against a stable
-// reference implementation across randomized inputs.
+// reference implementation across randomised inputs.
 func TestCopyBitsRandomizedAgainstReference(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x5EEDC0DE))
 	for iter := 0; iter < 1000; iter++ {

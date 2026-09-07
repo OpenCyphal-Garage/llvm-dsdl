@@ -228,8 +228,8 @@ mlir::Block* begin(mlir::OpBuilder& b, mlir::LLVM::LLVMFuncOp fn)
 /// up to eight bits, each piece being what is left before the nearer of the two bytes ends.
 ///
 /// The header spells the aligned path with `memmove`. A loop is written here instead so that an
-/// object carries no undefined symbol: the point of this lane is that what it emits needs nothing
-/// linked in behind it. Overlapping buffers are outside the contract either way -- the header
+/// object carries no undefined symbol; what this lane emits needs nothing linked in behind it.
+/// Overlapping buffers are outside the contract either way -- the header
 /// asserts the two differ.
 void buildCopyBits(mlir::OpBuilder& b, mlir::ModuleOp module, mlir::Type sizeTy)
 {

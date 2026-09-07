@@ -35,7 +35,7 @@ DEFAULT_VISION_WORKLOAD_COUNT = 500
 DEFAULT_MEGABUNDLE_COUNT = 180
 
 # Subsystems of the vehicle. Each gets ten types with the same internal shape,
-# which is what makes a cross-domain reference in the workload family valid
+# so a cross-domain reference in the workload family is valid
 # whichever domains the arithmetic lands on.
 DOMAINS = [
     "airframe", "mission", "navigation", "estimation", "control", "propulsion",

@@ -1,6 +1,6 @@
 # CyphalSerdes — formal control-flow / round-trip model (Dafny)
 
-A Dafny model of Cyphal DSDL serialize/deserialize as functions over an abstract wire,
+A Dafny model of Cyphal DSDL serialise/deserialize as functions over an abstract wire,
 with machine-checked proofs. It is the normative **oracle** for the emit-order verifier
 (B1): the op-orderings established here are what each generated backend
 (C/C++/Rust/Go/TS/Python) is checked against. The prose
@@ -10,7 +10,7 @@ human-readable projection of this module.
 ## Scope (deliberate)
 
 Models the **sequence of wire operations** and the **structural invertibility** of
-serialize/deserialize. The wire is an ordered stream of typed *tokens*; a scalar's value is
+serialise/deserialize. The wire is an ordered stream of typed *tokens*; a scalar's value is
 an opaque tag that must survive the round trip.
 
 **Token granularity:** tokens are atomic — the model never splits a field. This is exact for
@@ -50,7 +50,7 @@ pinned Nunavut lane as *corroboration*.
 | **Tolerant decoding** — DSDL implicit truncation + zero extension, at token granularity: exhausted wire reads as zeros, delimited sections consume exactly their declared length, present-but-wrong data still errors | `DeCompat`; `DeCompatConservative` — agrees with `De` on every wire `De` accepts; `DeCompatRoundTrip`; `ZeroExtension` + `ZeroValueConforms`; `DeCompatConforms`; concrete `CompatTolerates`/`CompatStillRejects` bounds | Conservative extension is **unbounded**; the tolerance shape is pinned by CI-enforced concrete checks |
 | **Version-skew compatibility** — the extensibility contract: for `Evolves(tNew, tOld)` (field append at *delimited* boundaries only), a new reader decodes an old wire to `Upgrade(v)` (appended fields read as zeros) and an old reader decodes a new wire to `Downgrade(v)` (appended fields skipped via the delimiter) | `lemma OldWireNewReader` / `lemma NewWireOldReader` (+ seq/elems/section-body lemmas and zero-footprint support); `UpgradeConforms`/`DowngradeConforms`; `VersionSkewExample` is the concrete CI-enforced bookend | **Unbounded**, both directions; sealed layouts admit **no** append rule — adding one breaks the proofs (mutation-tested) |
 | **Bounds safety** — `De` never reads past the buffer on any wire (truncated, empty, adversarial) | `De` is a **total** `function` with no precondition; Dafny rejects any unguarded token access | By construction |
-| **Emit-order oracle** — the accepted serialize/deserialize op orderings | `SerOrderOK` / `DeOrderOK` predicates; `SerOps` / `DeOps` are the canonical traces | Predicates are the definition B1 applies to real backend traces; `CanonicalTracesOrderOK` proves the canonical traces satisfy them — **unbounded**, for *all* values (concat-closure lemmas + structural induction) |
+| **Emit-order oracle** — the accepted serialise/deserialize op orderings | `SerOrderOK` / `DeOrderOK` predicates; `SerOps` / `DeOps` are the canonical traces | Predicates are the definition B1 applies to real backend traces; `CanonicalTracesOrderOK` proves the canonical traces satisfy them — **unbounded**, for *all* values (concat-closure lemmas + structural induction) |
 
 This is the key upgrade over a bounded model checker: `RoundTrip`, `DeCanonical`, and
 `CanonicalTracesOrderOK` are **proofs for all inputs**, and bounds-safety is not tested but
@@ -58,7 +58,7 @@ This is the key upgrade over a bounded model checker: `RoundTrip`, `DeCanonical`
 
 ### Negative control (the model has teeth)
 
-Reordering the serialize union trace to mask-before-validate (the exact bug class this effort
+Reordering the serialise union trace to mask-before-validate (the exact bug class this effort
 targets) makes `dafny verify` fail inside `SerOpsOrderOK` — at the union head-block assert if
 the lemma's block literal is reordered to match, or on the lemma's postcondition if only
 `SerOps` is changed. Both variants are checked; the proofs are not vacuous.
@@ -72,7 +72,7 @@ The predicates are *ordering* constraints only: they say nothing about an op bei
 This proves the **abstract model**, *not* the emitted C++/Rust/Go/TS/Python code. The link
 from model to code is **B1** — testing each backend's recorded op-trace against the orderings
 here — not a refinement proof. Cite it precisely: *"the wire-format model is machine-checked;
-the generators are checked against it by B1."* Do not call it "proven serialization." (The
+the generators are checked against it by B1."* Do not call it "proven serialisation." (The
 project's stated top risk is claiming proofs the code doesn't deliver.)
 
 `DeCanonical` is a statement about the **abstract token wire**: the model's wire grammar is
@@ -132,15 +132,15 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   RunSet/residue kernels and saturated int64 semantics are checked by the exhaustive C++ gate,
   the arbitrary-precision Python differential, and UBSan.
 - `BitLengthBridge.dfy` — the length-semantics bridge (hardening rung 4): `BridgeTheorem`
-  proves, for every type in the grammar the analyzer compiles, that the algebra expression the
-  analyzer builds (`BlsOf`, transcribing the Analyzer.cpp construction sites) denotes EXACTLY
-  the set of serialized bit lengths achievable by conforming values (`BitLen` — five lines of
-  arithmetic, one per Specification serialization rule). This closes the circularity the
+  proves, for every type in the grammar the analyser compiles, that the algebra expression the
+  analyser builds (`BlsOf`, transcribing the Analyzer.cpp construction sites) denotes EXACTLY
+  the set of serialised bit lengths achievable by conforming values (`BitLen` — five lines of
+  arithmetic, one per Specification serialisation rule). This closes the circularity the
   earlier stages could not: `Sem` stops being an axiom transcribed from our own header and
-  becomes a theorem about serialization; what remains to trust is the one-line-per-rule length
+  becomes a theorem about serialisation; what remains to trust is the one-line-per-rule length
   semantics, auditable directly against the Specification. Both proof directions construct
   explicit witnesses — Minkowski sums are licensed by the independence of field/element
-  choices, and every algebra value is realized by an actual conforming value. Delimited
+  choices, and every algebra value is realised by an actual conforming value. Delimited
   composites enter as their forward-compat envelope (header + any payload up to the extent,
-  the DeCompat tolerance domain), matching the analyzer deliberately. Mutation-checked:
+  the DeCompat tolerance domain), matching the analyser deliberately. Mutation-checked:
   dropping the array length prefix or confusing fixed/variable repetition breaks the theorem.

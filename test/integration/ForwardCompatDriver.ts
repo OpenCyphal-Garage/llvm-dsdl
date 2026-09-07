@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Runtime forward/backward compatibility test for the generated TypeScript serializers. See
+// Runtime forward/backward compatibility test for the generated TypeScript serialisers. See
 // ForwardCompatDriver.c for the rationale: round-trip tests only decode a buffer with the same type
 // version that wrote it, so the delimited version-skew skip is never exercised. This decodes across two
 // versions of a delimited composite (wire.nar.Inner has one field; wire.wid.Inner appends a second).

@@ -1,4 +1,4 @@
-# Targeting the embedded uavcan catalog with the '+' sigil.
+# Targeting the embedded uavcan catalogue with the '+' sigil.
 
 # Granularity: exact version pulls its dependency closure.
 # RUN: rm -rf %t.exact && %dsdlc --target-language c --outdir %t.exact +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
@@ -6,7 +6,7 @@
 # RUN: test -f %t.exact/uavcan/node/Health_1_0.h
 # RUN: test -f %t.exact/uavcan/node/Mode_1_0.h
 
-# ...and --omit-dependencies restricts to what was actually named.
+#...and --omit-dependencies restricts to what was named.
 # RUN: rm -rf %t.omit && %dsdlc --target-language c --omit-dependencies --outdir %t.omit +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
 # RUN: test -f %t.omit/uavcan/node/Heartbeat_1_0.h
 # RUN: not test -f %t.omit/uavcan/node/Health_1_0.h
@@ -29,7 +29,7 @@
 # RUN: %dsdlc --target-language c --list-inputs +uavcan.node.Heartbeat.1.0 >%t.inputs 2>/dev/null
 # RUN: not test -s %t.inputs
 
-# The dependency that does get recorded is the binary carrying the catalog.
+# The dependency that does get recorded is the binary carrying the catalogue.
 # RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
 # RUN: cat %t.md/uavcan/node/Heartbeat_1_0.h.d | FileCheck %s --check-prefix=PLUS_DEPFILE
 
@@ -40,8 +40,7 @@
 # RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h | FileCheck %s --check-prefix=SHADOWED
 # RUN: cat %t.shadow.out/uavcan/node/Heartbeat_1_0.h.d 2>/dev/null | FileCheck %s --check-prefix=SHADOWED_DEPS --allow-empty
 
-# Nothing resolves silently to zero targets. Each of these must be a diagnostic, because a build
-# that succeeds while generating nothing is the failure this syntax exists to prevent.
+# Nothing resolves silently to zero targets; each of these is a diagnostic.
 # RUN: not %dsdlc --target-language c --outdir %t.typo +uavcna 2>&1 | FileCheck %s --check-prefix=TYPO_NS
 # RUN: not %dsdlc --target-language c --outdir %t.typo2 +uavcan.node.Hartbeat.1.0 2>&1 | FileCheck %s --check-prefix=TYPO_TYPE
 # RUN: not %dsdlc --target-language c --outdir %t.ver +uavcan.node.Heartbeat.9.9 2>&1 | FileCheck %s --check-prefix=BAD_VERSION
@@ -57,7 +56,7 @@
 
 # Empty-root colon syntax stays an error. '+' was chosen over spelling the builtin root as ':name'
 # precisely so a build system that drops a variable fails here instead of silently resolving to the
-# embedded catalog and shipping the wrong definition.
+# embedded catalogue and shipping the wrong definition.
 # RUN: not %dsdlc --target-language c --outdir %t.colon :uavcan/node/Heartbeat.1.0.dsdl 2>&1 | FileCheck %s --check-prefix=EMPTY_ROOT
 
 # MLIR_PLUS: full_name = "uavcan.node.Heartbeat"

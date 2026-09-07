@@ -39,7 +39,7 @@ enum class AiMode
     /// @brief Offer deeper suggestions while still requiring explicit edit confirmation.
     Assist,
 
-    /// @brief Allow edit materialization only after explicit confirmation.
+    /// @brief Allow edit materialisation only after explicit confirmation.
     ApplyWithConfirmation,
 };
 
@@ -74,7 +74,7 @@ struct ServerConfig final
     /// @brief Workspace-level disabled lint rule IDs.
     std::unordered_set<std::string> lintDisabledRules;
 
-    /// @brief Per-file disabled lint rule IDs keyed by URI or normalized path.
+    /// @brief Per-file disabled lint rule IDs keyed by URI or normalised path.
     std::unordered_map<std::string, std::unordered_set<std::string>> lintFileDisabledRules;
 
     /// @brief Dynamic lint rule-pack library paths.

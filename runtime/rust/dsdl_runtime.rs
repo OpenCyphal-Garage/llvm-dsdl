@@ -3,8 +3,8 @@
 
 //! Portable bit-level runtime helpers for generated DSDL Rust bindings.
 //!
-//! This module provides integer/float serialization primitives and bounded
-//! bit-copy helpers shared by generated serializers and deserializers.
+//! This module provides integer/float serialisation primitives and bounded
+//! bit-copy helpers shared by generated serialisers and deserialisers.
 
 use core::fmt;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
@@ -66,7 +66,7 @@ fn copy_bits_portable(
 
 #[inline]
 #[cfg(feature = "runtime-fast")]
-/// Optimized bit-copy implementation with aligned-copy fast path.
+/// Optimised bit-copy implementation with aligned-copy fast path.
 fn copy_bits_runtime_fast(
     dst: &mut [u8],
     dst_offset_bits: usize,
@@ -130,7 +130,7 @@ pub fn get_bits(output: &mut [u8], buf: &[u8], off_bits: usize, len_bits: usize)
 }
 
 #[inline]
-/// Serializes one boolean bit into `buf` at `off_bits`.
+/// Serialises one boolean bit into `buf` at `off_bits`.
 ///
 /// Returns [`DSDL_RUNTIME_SUCCESS`] on success or a negative error code.
 pub fn set_bit(buf: &mut [u8], off_bits: usize, value: bool) -> i8 {
@@ -143,7 +143,7 @@ pub fn set_bit(buf: &mut [u8], off_bits: usize, value: bool) -> i8 {
 }
 
 #[inline]
-/// Serializes an unsigned integer fragment of `len_bits` width.
+/// Serialises an unsigned integer fragment of `len_bits` width.
 ///
 /// Returns [`DSDL_RUNTIME_SUCCESS`] on success or a negative error code.
 pub fn set_uxx(buf: &mut [u8], off_bits: usize, value: u64, len_bits: u8) -> i8 {
@@ -157,19 +157,19 @@ pub fn set_uxx(buf: &mut [u8], off_bits: usize, value: u64, len_bits: u8) -> i8 
 }
 
 #[inline]
-/// Serializes a signed integer fragment of `len_bits` width.
+/// Serialises a signed integer fragment of `len_bits` width.
 pub fn set_ixx(buf: &mut [u8], off_bits: usize, value: i64, len_bits: u8) -> i8 {
     set_uxx(buf, off_bits, value as u64, len_bits)
 }
 
 #[inline]
-/// Deserializes one bit as boolean.
+/// Deserialises one bit as boolean.
 pub fn get_bit(buf: &[u8], off_bits: usize) -> bool {
     get_u8(buf, off_bits, 1) == 1
 }
 
 #[inline]
-/// Deserializes up to 8 bits as an unsigned integer.
+/// Deserialises up to 8 bits as an unsigned integer.
 pub fn get_u8(buf: &[u8], off_bits: usize, len_bits: u8) -> u8 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 8));
     let mut out = [0u8; 1];
@@ -178,7 +178,7 @@ pub fn get_u8(buf: &[u8], off_bits: usize, len_bits: u8) -> u8 {
 }
 
 #[inline]
-/// Deserializes up to 16 bits as an unsigned integer.
+/// Deserialises up to 16 bits as an unsigned integer.
 pub fn get_u16(buf: &[u8], off_bits: usize, len_bits: u8) -> u16 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 16));
     let mut out = [0u8; 2];
@@ -187,7 +187,7 @@ pub fn get_u16(buf: &[u8], off_bits: usize, len_bits: u8) -> u16 {
 }
 
 #[inline]
-/// Deserializes up to 32 bits as an unsigned integer.
+/// Deserialises up to 32 bits as an unsigned integer.
 pub fn get_u32(buf: &[u8], off_bits: usize, len_bits: u8) -> u32 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 32));
     let mut out = [0u8; 4];
@@ -196,7 +196,7 @@ pub fn get_u32(buf: &[u8], off_bits: usize, len_bits: u8) -> u32 {
 }
 
 #[inline]
-/// Deserializes up to 64 bits as an unsigned integer.
+/// Deserialises up to 64 bits as an unsigned integer.
 pub fn get_u64(buf: &[u8], off_bits: usize, len_bits: u8) -> u64 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 64));
     let mut out = [0u8; 8];
@@ -218,7 +218,7 @@ fn sign_extend_u64(value: u64, sat: u8) -> u64 {
 }
 
 #[inline]
-/// Deserializes up to 8 bits as a signed integer.
+/// Deserialises up to 8 bits as a signed integer.
 pub fn get_i8(buf: &[u8], off_bits: usize, len_bits: u8) -> i8 {
     let sat = choose_min(len_bits as usize, 8) as u8;
     let val = get_u8(buf, off_bits, sat) as u64;
@@ -226,7 +226,7 @@ pub fn get_i8(buf: &[u8], off_bits: usize, len_bits: u8) -> i8 {
 }
 
 #[inline]
-/// Deserializes up to 16 bits as a signed integer.
+/// Deserialises up to 16 bits as a signed integer.
 pub fn get_i16(buf: &[u8], off_bits: usize, len_bits: u8) -> i16 {
     let sat = choose_min(len_bits as usize, 16) as u8;
     let val = get_u16(buf, off_bits, sat) as u64;
@@ -234,7 +234,7 @@ pub fn get_i16(buf: &[u8], off_bits: usize, len_bits: u8) -> i16 {
 }
 
 #[inline]
-/// Deserializes up to 32 bits as a signed integer.
+/// Deserialises up to 32 bits as a signed integer.
 pub fn get_i32(buf: &[u8], off_bits: usize, len_bits: u8) -> i32 {
     let sat = choose_min(len_bits as usize, 32) as u8;
     let val = get_u32(buf, off_bits, sat) as u64;
@@ -242,7 +242,7 @@ pub fn get_i32(buf: &[u8], off_bits: usize, len_bits: u8) -> i32 {
 }
 
 #[inline]
-/// Deserializes up to 64 bits as a signed integer.
+/// Deserialises up to 64 bits as a signed integer.
 pub fn get_i64(buf: &[u8], off_bits: usize, len_bits: u8) -> i64 {
     let sat = choose_min(len_bits as usize, 64) as u8;
     let val = get_u64(buf, off_bits, sat);
@@ -302,37 +302,37 @@ pub fn float16_unpack(value: u16) -> f32 {
 }
 
 #[inline]
-/// Serializes `value` as binary16 at `off_bits`.
+/// Serialises `value` as binary16 at `off_bits`.
 pub fn set_f16(buf: &mut [u8], off_bits: usize, value: f32) -> i8 {
     set_uxx(buf, off_bits, float16_pack(value) as u64, 16)
 }
 
 #[inline]
-/// Deserializes a binary16 value at `off_bits`.
+/// Deserialises a binary16 value at `off_bits`.
 pub fn get_f16(buf: &[u8], off_bits: usize) -> f32 {
     float16_unpack(get_u16(buf, off_bits, 16))
 }
 
 #[inline]
-/// Serializes `value` as IEEE-754 binary32 at `off_bits`.
+/// Serialises `value` as IEEE-754 binary32 at `off_bits`.
 pub fn set_f32(buf: &mut [u8], off_bits: usize, value: f32) -> i8 {
     set_uxx(buf, off_bits, value.to_bits() as u64, 32)
 }
 
 #[inline]
-/// Deserializes an IEEE-754 binary32 value at `off_bits`.
+/// Deserialises an IEEE-754 binary32 value at `off_bits`.
 pub fn get_f32(buf: &[u8], off_bits: usize) -> f32 {
     f32::from_bits(get_u32(buf, off_bits, 32))
 }
 
 #[inline]
-/// Serializes `value` as IEEE-754 binary64 at `off_bits`.
+/// Serialises `value` as IEEE-754 binary64 at `off_bits`.
 pub fn set_f64(buf: &mut [u8], off_bits: usize, value: f64) -> i8 {
     set_uxx(buf, off_bits, value.to_bits(), 64)
 }
 
 #[inline]
-/// Deserializes an IEEE-754 binary64 value at `off_bits`.
+/// Deserialises an IEEE-754 binary64 value at `off_bits`.
 pub fn get_f64(buf: &[u8], off_bits: usize) -> f64 {
     f64::from_bits(get_u64(buf, off_bits, 64))
 }

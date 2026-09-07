@@ -20,19 +20,17 @@
 /// to the standalone libFuzzer harness, so coverage-guided fuzzing and the
 /// in-tree CTest run exercise the same properties.
 ///
-/// Design note discovered while building these tests: unlike every other
-/// token, the @ref llvmdsdl::TokenKind::Newline token does not carry its
+/// Unlike every other token, the @ref llvmdsdl::TokenKind::Newline token does not carry its
 /// verbatim source spelling. The lexer emits the synthetic two-character
 /// literal "\n" (backslash + 'n') for it, so its @c text is longer than the
 /// single source byte it consumed. The text-length invariant below therefore
 /// exempts Newline tokens explicitly.
 ///
-/// Known conformance gap (documented, not yet fixed): DSDL spec v1.0 section
-/// 3.2.4 permits `.5` and `3.` as real literals, but this context-free lexer
-/// emits `Dot Integer(5)` and `Integer(3) Dot` respectively (see lexNumber in
-/// lib/Frontend/Lexer.cpp). These fuzz invariants are structural only, so they
-/// do not assert literal semantics; the decision is to resolve `.5` / `3.` in
-/// the parser, where literal-vs-version-vs-attribute context is available.
+/// The lexer is context-free: for the real literals `.5` and `3.` that DSDL spec v1.0 section
+/// 3.2.4 permits, it emits `Dot Integer(5)` and `Integer(3) Dot` (see lexNumber in
+/// lib/Frontend/Lexer.cpp) and the parser reassembles them, where literal-vs-version-vs-attribute
+/// context is available. These fuzz invariants are structural only, so they do not assert literal
+/// semantics.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -57,7 +55,7 @@ using llvmdsdl::TokenKind;
 
 /// @brief Runs the lexer over @p input and verifies structural invariants.
 /// @param[in] context Human-readable label for diagnostics on failure.
-/// @param[in] input Source text to tokenize.
+/// @param[in] input Source text to tokenise.
 /// @return True when every invariant holds; false (with a logged reason) otherwise.
 bool lexAndCheck(std::string_view context, std::string_view input)
 {

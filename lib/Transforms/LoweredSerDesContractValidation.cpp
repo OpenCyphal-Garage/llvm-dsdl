@@ -56,7 +56,7 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
     auto plan = mlir::dyn_cast<mlir::dsdl::SerializationPlanOp>(operation);
     if (!plan)
     {
-        return LoweredPlanContractViolation{operation, "not a serialization plan"};
+        return LoweredPlanContractViolation{operation, "not a serialisation plan"};
     }
     if (!plan.getLowered())
     {

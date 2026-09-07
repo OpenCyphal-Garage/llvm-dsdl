@@ -32,8 +32,8 @@ extern const DifferentialCaseInfo g_nv_case_sync_timestamp;
 // Every case is compared byte-for-byte against the reference compiler. This
 // includes the float-carrying types (Real32, and register.Value's real16/32/64
 // union variants): our C codegen keeps floats in their native storage width
-// end-to-end, so a signaling NaN's mantissa payload is preserved exactly as the
-// reference does (no float->double->float canonicalization).
+// end-to-end, so a signalling NaN's mantissa payload is preserved exactly as the
+// reference does (no float->double->float canonicalisation).
 typedef struct {
   const char *name;
   const DifferentialCaseInfo *ours;
@@ -99,8 +99,8 @@ static void dumpBytes(const char *const label, const uint8_t *const data,
 }
 
 static int runCase(const CasePair *const testCase, const size_t iterations) {
-  // Sized for the largest case currently exercised: SubjectIDList.1.0 carries a
-  // bool[8192] bitset variant (~8.2 KiB object, 1025-byte serialized form).
+  // Sized for the largest case exercised: SubjectIDList.1.0 carries a
+  // bool[8192] bitset variant (~8.2 KiB object, 1025-byte serialised form).
   uint8_t input[4096];
   uint8_t oursObject[16384];
   uint8_t nvObject[16384];
@@ -117,8 +117,8 @@ static int runCase(const CasePair *const testCase, const size_t iterations) {
       maxSize(testCase->ours->max_serialized_size,
               testCase->nv->max_serialized_size) +
       16U;
-  // Serialize into a buffer large enough for this case's full wire image so the
-  // maximum-size representation is actually exercised (not capped short).
+  // Serialise into a buffer large enough for this case's full wire image so the
+  // maximum-size representation is exercised (not capped short).
   const size_t maxOutput = maxSize(testCase->ours->max_serialized_size,
                                    testCase->nv->max_serialized_size);
   if (maxInput > sizeof(input) || maxOutput > sizeof(oursSerialized) ||

@@ -7,15 +7,12 @@
 # ===----------------------------------------------------------------------===#
 """Keep every mention of where this project lives true to ``project-identity.json``.
 
-The repository moves. It began in a personal fork, lives in OpenCyphal-Garage today, and is promoted
-to OpenCyphal at v1.0. Before this script there were 49 places that had to be edited by hand for that
-to be true, and the tree had already drifted: the Debian packaging, the manpage, and CPack said
-OpenCyphal-Garage while the documentation, the README, and mkdocs said something else.
+The repository moves: it lives in OpenCyphal-Garage and is promoted to OpenCyphal at v1.0.
 
 The approach is normalisation rather than templating. The URLs stay written out in full, because
 ``docs/*.md`` is read directly on GitHub and its raw text is what ``llms-full.txt`` ships to agents;
-a ``{repo}`` placeholder would be visible, and wrong, in both. So the literals remain -- they just
-stop being *maintained*. This script rewrites them from one file, and running it in CI means a stale
+a ``{repo}`` placeholder would be visible, and wrong, in both. So the literals remain and stop
+being *maintained*. This script rewrites them from one file, and running it in CI means a stale
 one cannot survive a pull request.
 
     python3 tools/repo_identity.py            # report anything that disagrees (exit 1 if so)
@@ -32,12 +29,10 @@ Three things are reported:
    wrong for every reader but the person who wrote it. These are reported, never rewritten: the
    right replacement is a relative path or ``$PWD``, and only a human knows which. Written with the
    name in angle brackets here because this paragraph is scanned like any other line -- the rule
-   exempts the placeholder form, which is what prose describing a path should use anyway.
+   exempts the placeholder form, the form prose describing a path should use.
 
 3. **No unrecognised hosts.** A URL naming this repository somewhere the rules do not reach -- a
-   badge service nobody has taught this script -- is reported, because otherwise it would sit there
-   looking maintained while being the one thing a move leaves behind. That is how the shields.io
-   badge in the README was caught: rule 1 fixed the link around it and left the image URL stale.
+   badge service nobody has taught this script -- is reported.
 
 Deliberately not covered: ``runtime/go/go.mod``. A Go module path is an identity rather than a
 location, and that one is ``opencyphal.org/...`` precisely so that it encodes no GitHub owner and
@@ -70,7 +65,7 @@ def rule_location(marker: str) -> str:
     usually to go and look at it -- to widen it, to teach it a new host, or to decide the rule is
     wrong. Naming the rule without saying where it lives leaves them grepping. The line is found by
     reading this file rather than written down, because a written-down line number is wrong the first
-    time anything above it moves, and wrong in a way nobody notices.
+    time anything above it moves.
     """
     try:
         for number, line in enumerate(SOURCE.read_text(encoding="utf-8").splitlines(), start=1):
@@ -128,9 +123,8 @@ class Identity:
 def load_identity(root: Path) -> Identity:
     """Reads the identity file, reporting where and what rather than raising into pathlib or json.
 
-    A stack trace ending in ``io.open`` names a Python internal and not the file the reader has to
-    edit, which is the one thing they need. Each failure here says which path was read and what to
-    put in it.
+    A stack trace ending in ``io.open`` names a Python internal, not the file the reader has to
+    edit. Each failure here says which path was read and what to put in it.
     """
     path = root / IDENTITY_FILE
     try:

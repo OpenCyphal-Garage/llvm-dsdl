@@ -54,7 +54,7 @@ endif()
 # Optional sanitizer instrumentation of the generated C/C++ decoders. SANITIZE is
 # a comma-separated -fsanitize list (e.g. "address,undefined"); empty = off. When
 # set, both the generated-code objects and the harness main are built and linked
-# with the sanitizer so ASan/UBSan observe the decode path over the randomized +
+# with the sanitizer so ASan/UBSan observe the decode path over the randomised +
 # directed malformed inputs the harness already drives. -fno-sanitize-recover=all
 # makes UBSan findings fatal (nonzero exit) instead of merely logged.
 set(san_compile_flags "")

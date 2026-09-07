@@ -24,11 +24,11 @@ CMAKE_FLAGS = [
 
     # MLIR is the only project we need. Note this still builds every MLIR
     # dialect -- XeGPU, NVVM, ArmSVE and the rest -- because MLIR has no
-    # dialect-subsetting knob. We link 13 of them. That is now the dominant
-    # cost of this build, not LLVM.
+    # dialect-subsetting knob. We link 13 of them. That is the dominant cost of
+    # this build, not LLVM.
     "-DLLVM_ENABLE_PROJECTS=mlir",
 
-    # Required, and the one setting here that adds rather than removes. LLVM
+    # Required; the other settings here switch features off, this one on. LLVM
     # defaults it OFF; apt.llvm.org and Homebrew both ship it ON, so the
     # project has always depended on it without declaring it. llvmdsdl derives
     # from mlir::Dialect and mlir::Pass, and deriving from them emits typeinfo
@@ -44,7 +44,7 @@ CMAKE_FLAGS = [
     # target this compiler is asked for.
     "-DLLVM_TARGETS_TO_BUILD=X86;AArch64;ARM;RISCV;AVR;Mips;WebAssembly",
 
-    # The point of the exercise: no shared libLLVM to vendor, sign or resolve.
+    # No shared libLLVM to vendor, sign or resolve.
     "-DLLVM_BUILD_LLVM_DYLIB=OFF",
     "-DLLVM_LINK_LLVM_DYLIB=OFF",
 

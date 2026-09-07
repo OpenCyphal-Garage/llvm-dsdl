@@ -16,7 +16,7 @@ func.func @read_count(%obj: !dsdl.ptr<!dsdl.opaque<"const vendor__Msg">>) -> i64
 
 // CHECK-LABEL: func.func @read_element
 func.func @read_element(%obj: !dsdl.ptr<!dsdl.opaque<"const vendor__Msg">>, %i: i64) -> i64 {
-  // The storage is reached at the qualification it is declared with -- a serializer holds the
+  // The storage is reached at the qualification it is declared with -- a serialiser holds the
   // object by pointer-to-const -- and then taken unqualified, because the element read out of
   // it is assigned to a variable that a const declaration would not survive.
   // CHECK: "emitc.member"({{.*}}) <{member = "elements"}>
