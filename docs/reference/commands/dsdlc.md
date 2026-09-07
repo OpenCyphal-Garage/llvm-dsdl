@@ -161,8 +161,9 @@ an `IS_DEPRECATED` metadata constant (`DSDL_IS_DEPRECATED` in TypeScript and Pyt
 TypeScript is additionally given a `/** @deprecated … */` JSDoc block.
 
 C, C++, and Rust additionally get a language-native attribute — `__attribute__((deprecated))`,
-`[[deprecated]]`, and `#[deprecated]` respectively — so naming the type produces a compiler
-diagnostic. This is **on by default**.
+`[[deprecated]]`, and `#[deprecated(note = …)]` respectively — so naming the type produces a compiler
+diagnostic. The Rust attribute carries the notice as its message, which rustc prints in the warning.
+This is **on by default**.
 
 Generated code does not trip its own attribute. In C the attribute is on the typedef, and generated
 code names the type through its struct tag, `struct <name>`, which carries no attribute. In C++ and

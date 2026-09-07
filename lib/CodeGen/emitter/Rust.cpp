@@ -468,6 +468,21 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
     return "0";
 }
 
+/// @brief The `#[deprecated]` attribute for a definition, carrying the shared notice as its message.
+///
+/// rustc prints the message after its own diagnostic, so the user sees which DSDL definition is
+/// deprecated without opening the generated source. The notice's `Deprecated: ` prefix is Go's and
+/// is dropped here: rustc already says "use of deprecated".
+std::string rustDeprecatedAttribute(const std::string&  fullName,
+                                    const std::uint32_t majorVersion,
+                                    const std::uint32_t minorVersion)
+{
+    const std::string notice  = deprecationNotice(fullName, majorVersion, minorVersion);
+    const std::string prefix  = "Deprecated: ";
+    const std::string message = notice.starts_with(prefix) ? notice.substr(prefix.size()) : notice;
+    return "#[deprecated(note = \"" + message + "\")]";
+}
+
 class FunctionBodyEmitter final
 {
 public:
@@ -1436,7 +1451,7 @@ void emitSectionType(SourceWriter&                    w,
     {
         if (options.emitDeprecationAttributes)
         {
-            w.line("#[deprecated]");
+            w.line(rustDeprecatedAttribute(definitionFullName, majorVersion, minorVersion));
         }
         w.line("pub type " + typeName + " = " + declaredName + ";");
         w.blank();
@@ -1687,7 +1702,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
     out << "\n";
     if (def.request.deprecated && options.emitDeprecationAttributes)
     {
-        w.line("#[deprecated]");
+        w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
     }
     w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
 

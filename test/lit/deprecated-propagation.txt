@@ -99,18 +99,19 @@
 # CPP_OK_NEG-NOT: using Current
 
 # The same shape as C++: rustc lints every mention of a deprecated struct, its own impl blocks
-# included, so nothing generated may name it. The attribute is on the alias alone.
+# included, so nothing generated may name it. The attribute is on the alias alone, and it carries the
+# notice as its message, which rustc prints after "use of deprecated type alias".
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
 # RUST_DEP: #[derive(Clone, Debug, PartialEq)]
 # RUST_DEP-NEXT: pub struct dep_Retired_Request_ {
-# RUST_DEP: #[deprecated]
+# RUST_DEP: #[deprecated(note = "dep.Retired.1.0 is marked @deprecated in its DSDL definition and is scheduled for removal; migrate to a newer version of this type.")]
 # RUST_DEP-NEXT: pub type dep_Retired_Request = dep_Retired_Request_;
 # RUST_DEP: impl Default for dep_Retired_Request_ {
 # RUST_DEP: impl dep_Retired_Request_ {
 # RUST_DEP: IS_DEPRECATED: bool = true;
 # RUST_DEP: pub type dep_Retired_Response = dep_Retired_Response_;
 # The service alias is deprecated the same way.
-# RUST_DEP: #[deprecated]
+# RUST_DEP: #[deprecated(note = "dep.Retired.1.0 is marked @deprecated
 # RUST_DEP-NEXT: pub type dep_Retired = dep_Retired_Request_;
 # RUST_DEP_NEG-NOT: #![allow(deprecated)]
 
