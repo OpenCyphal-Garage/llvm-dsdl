@@ -165,9 +165,10 @@ C, C++, and Rust additionally get a language-native attribute — `__attribute__
 diagnostic. This is **on by default**.
 
 Generated code does not trip its own attribute. In C the attribute is on the typedef, and generated
-code names the type through its struct tag, `struct <name>`, which carries no attribute. C++ and Rust
-suppress the diagnostic across each generated file (`#pragma GCC diagnostic ignored
-"-Wdeprecated-declarations"`, `#![allow(deprecated)]`). Either way, compiling generated code is clean
-under `-Werror`, and only your own code naming a deprecated type is diagnosed.
+code names the type through its struct tag, `struct <name>`, which carries no attribute. In C++ the
+struct is declared as `<name>_` and `<name>` is a deprecated alias of it; generated code names the
+struct. Rust suppresses the lint across each generated module (`#![allow(deprecated)]`). Compiling
+generated code is clean under `-Werror`, and only your own code naming a deprecated type is
+diagnosed.
 
 The `obj` backend never emits these attributes.

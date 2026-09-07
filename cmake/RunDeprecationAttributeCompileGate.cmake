@@ -9,10 +9,10 @@
 #
 # A language-native deprecation attribute makes generated code warn about itself unless the emitter
 # takes care: the deprecated name is referenced by its own serialiser signatures and by any struct
-# that embeds it. C names the type through its struct tag, which carries no attribute; C++ and Rust
-# suppress the diagnostic across each generated file. This test is what keeps that honest -- without
-# it a reference spelled through the typedef, or a misplaced pragma, only shows up in a downstream
-# -Werror build.
+# that embeds it. C names the type through its struct tag, which carries no attribute; C++ declares
+# the struct under a name of its own and deprecates the public name as an alias of it; Rust
+# suppresses the lint across each generated module. This test is what keeps that honest -- without
+# it a reference spelled through the deprecated name only shows up in a downstream -Werror build.
 #
 # The attributes are on by default, so no generation run here passes a flag: the default is exactly
 # what needs guarding.
@@ -199,6 +199,10 @@ endforeach()
 llvmdsdl_run_or_fail("dsdlc C++ generation"
   "${DSDLC}" --target-language cpp --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
+llvmdsdl_run_or_fail("dsdlc C++ generation with --no-deprecation-attributes"
+  "${DSDLC}" --target-language cpp --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std
+             --no-deprecation-attributes --outdir "${WORK_DIR}/cpp-noattr")
+
 file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
 #include \"uavcan/file/Path_1_0.hpp\"
@@ -206,9 +210,15 @@ file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
 int main() { return 0; }
 ")
 
+# User code naming a deprecated type: the section alias, and the service alias.
 file(WRITE "${WORK_DIR}/cpp_use_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
 static uavcan::file::Read_Request req;
+int main() { (void)req; return 0; }
+")
+file(WRITE "${WORK_DIR}/cpp_alias_probe.cpp"
+"#include \"uavcan/file/Read_1_0.hpp\"
+static uavcan::file::Read req;
 int main() { (void)req; return 0; }
 ")
 
@@ -220,21 +230,28 @@ foreach(_cxx IN LISTS _cxx_compilers)
               -I "${WORK_DIR}/cpp" -c "${WORK_DIR}/cpp_include_probe.cpp"
               -o "${WORK_DIR}/cpp_include_probe.${_label}.o")
 
-  execute_process(
-    COMMAND "${_cxx}" -std=c++20 -Wall -Wextra
-                      -I "${WORK_DIR}/cpp" -c "${WORK_DIR}/cpp_use_probe.cpp"
-                      -o "${WORK_DIR}/cpp_use_probe.${_label}.o"
-    RESULT_VARIABLE _cpp_use_result
-    OUTPUT_VARIABLE _cpp_use_stdout
-    ERROR_VARIABLE _cpp_use_stderr)
-  if(NOT _cpp_use_result EQUAL 0)
-    message(FATAL_ERROR "C++ use-probe failed to compile (${_label}):\n${_cpp_use_stdout}\n${_cpp_use_stderr}")
-  endif()
-  if(NOT _cpp_use_stderr MATCHES "deprecated")
-    message(FATAL_ERROR
-      "C++ use-probe produced no deprecation diagnostic (${_label}); the attribute is not reaching user "
-      "code:\n${_cpp_use_stderr}")
-  endif()
+  foreach(_probe IN ITEMS cpp_use_probe cpp_alias_probe)
+    execute_process(
+      COMMAND "${_cxx}" -std=c++20 -Wall -Wextra
+                        -I "${WORK_DIR}/cpp" -c "${WORK_DIR}/${_probe}.cpp"
+                        -o "${WORK_DIR}/${_probe}.${_label}.o"
+      RESULT_VARIABLE _probe_result
+      OUTPUT_VARIABLE _probe_stdout
+      ERROR_VARIABLE _probe_stderr)
+    if(NOT _probe_result EQUAL 0)
+      message(FATAL_ERROR "${_probe} failed to compile (${_label}):\n${_probe_stdout}\n${_probe_stderr}")
+    endif()
+    if(NOT _probe_stderr MATCHES "deprecated")
+      message(FATAL_ERROR
+        "${_probe} produced no deprecation diagnostic (${_label}); the attribute is not reaching user "
+        "code:\n${_probe_stderr}")
+    endif()
+
+    llvmdsdl_run_or_fail("${_probe} compile under -Werror with --no-deprecation-attributes (${_label})"
+      "${_cxx}" -std=c++20 -Wall -Wextra -Werror
+                -I "${WORK_DIR}/cpp-noattr" -c "${WORK_DIR}/${_probe}.cpp"
+                -o "${WORK_DIR}/${_probe}_noattr.${_label}.o")
+  endforeach()
 endforeach()
 
 # ---------------------------------------------------------------------------------------------------

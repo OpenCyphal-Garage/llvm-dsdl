@@ -398,16 +398,15 @@ public:
                                         typeNameVersioning_);
     }
 
+    /// @brief The name @p def's struct is declared under; see renderCppDeclaredTypeName.
+    std::string cppDeclaredTypeName(const SemanticDefinition& def) const
+    {
+        return renderCppDeclaredTypeName(cppTypeName(def), def.request.deprecated);
+    }
+
     std::string cppQualifiedTypeName(const SemanticDefinition& def) const
     {
-        std::string out = "::";
-        const auto  ns  = cppNamespacePath(def.info.namespaceComponents);
-        if (!ns.empty())
-        {
-            out += ns + "::";
-        }
-        out += cppTypeName(def);
-        return out;
+        return qualify(def.info.namespaceComponents, cppTypeName(def));
     }
 
     std::string cppQualifiedTypeName(const SemanticTypeRef& ref) const
@@ -416,15 +415,21 @@ public:
         {
             return cppQualifiedTypeName(*def);
         }
+        return qualify(ref.namespaceComponents, cppTypeName(ref));
+    }
 
-        std::string out = "::";
-        const auto  ns  = cppNamespacePath(ref.namespaceComponents);
-        if (!ns.empty())
+    /// @brief The qualified declared name of the definition @p ref names, for spelling its type.
+    ///
+    /// The public name composes function names; the declared name is what a field or a pointer is
+    /// spelled with. A reference that resolves to nothing is spelled with its public name: nothing
+    /// says it is deprecated.
+    std::string cppQualifiedDeclaredTypeName(const SemanticTypeRef& ref) const
+    {
+        if (const auto* def = find(ref))
         {
-            out += ns + "::";
+            return qualify(def->info.namespaceComponents, cppDeclaredTypeName(*def));
         }
-        out += cppTypeName(ref);
-        return out;
+        return qualify(ref.namespaceComponents, cppTypeName(ref));
     }
 
     static std::string relativeHeaderPath(const SemanticDefinition& def)
@@ -439,6 +444,18 @@ public:
     }
 
 private:
+    static std::string qualify(const std::vector<std::string>& namespaceComponents, const std::string& name)
+    {
+        std::string out = "::";
+        const auto  ns  = cppNamespacePath(namespaceComponents);
+        if (!ns.empty())
+        {
+            out += ns + "::";
+        }
+        out += name;
+        return out;
+    }
+
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     EmitTraceSink*     traceSink_ = nullptr;
@@ -485,11 +502,12 @@ public:
 
     void emitSerializeFunction(SourceWriter&                    w,
                                const std::string&               typeName,
+                               const std::string&               declaredName,
                                const SemanticSection&           section,
                                const LoweredSectionFacts* const sectionFacts)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
-        w.line("inline std::int8_t " + typeName + "_serialize_(const " + typeName +
+        w.line("inline std::int8_t " + typeName + "_serialize_(const " + declaredName +
                "* const obj, std::uint8_t* const buffer, std::size_t* const "
                "inout_buffer_size_bytes" +
                (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -585,11 +603,12 @@ public:
 
     void emitDeserializeFunction(SourceWriter&                    w,
                                  const std::string&               typeName,
+                                 const std::string&               declaredName,
                                  const SemanticSection&           section,
                                  const LoweredSectionFacts* const sectionFacts)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
-        w.line("inline std::int8_t " + typeName + "_deserialize_(" + typeName +
+        w.line("inline std::int8_t " + typeName + "_deserialize_(" + declaredName +
                "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                "inout_buffer_size_bytes" +
                (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
@@ -1500,7 +1519,7 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.cppQualifiedTypeName(*type.compositeType);
+            return ctx.cppQualifiedDeclaredTypeName(*type.compositeType);
         }
         return "std::uint8_t";
     }
@@ -1527,13 +1546,16 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
     }
 }
 
-void emitFunctionPrototypes(SourceWriter& w, const std::string& typeName, const CppFlavor flavor)
+void emitFunctionPrototypes(SourceWriter&      w,
+                            const std::string& typeName,
+                            const std::string& declaredName,
+                            const CppFlavor    flavor)
 {
-    w.line("struct " + typeName + ";");
-    w.line("inline std::int8_t " + typeName + "_serialize_(const " + typeName +
+    w.line("struct " + declaredName + ";");
+    w.line("inline std::int8_t " + typeName + "_serialize_(const " + declaredName +
            "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
            (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
-    w.line("inline std::int8_t " + typeName + "_deserialize_(" + typeName +
+    w.line("inline std::int8_t " + typeName + "_deserialize_(" + declaredName +
            "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
            (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     w.line("inline std::int8_t " + typeName +
@@ -1547,6 +1569,7 @@ void emitFunctionPrototypes(SourceWriter& w, const std::string& typeName, const 
 
 void emitSectionStruct(SourceWriter&                    w,
                        const std::string&               typeName,
+                       const std::string&               declaredName,
                        const std::string&               fullName,
                        std::uint32_t                    majorVersion,
                        std::uint32_t                    minorVersion,
@@ -1558,9 +1581,7 @@ void emitSectionStruct(SourceWriter&                    w,
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     emitAttachedDocCpp(w, typeDoc);
-    const std::string structAttribute =
-        (section.deprecated && ctx.emitDeprecationAttributes()) ? "[[deprecated]] " : "";
-    w.open("struct " + structAttribute + typeName + " {");
+    w.open("struct " + declaredName + " {");
 
     std::size_t              emitted = 0;
     std::vector<std::string> variableArrayMembers;
@@ -1650,8 +1671,8 @@ void emitSectionStruct(SourceWriter&                    w,
     if (isPmrFlavor(flavor))
     {
         w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
-        w.line(typeName + "() = default;");
-        w.line("explicit " + typeName +
+        w.line(declaredName + "() = default;");
+        w.line("explicit " + declaredName +
                "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
         w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
         w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
@@ -1787,9 +1808,16 @@ void emitSectionStruct(SourceWriter&                    w,
 
     w.close("};");
     w.blank();
+
+    if (section.deprecated)
+    {
+        w.line("using " + typeName + (ctx.emitDeprecationAttributes() ? " [[deprecated]]" : "") + " = " + declaredName +
+               ";");
+        w.blank();
+    }
 }
 
-void emitViewFunctions(SourceWriter& w, const std::string& typeName)
+void emitViewFunctions(SourceWriter& w, const std::string& typeName, const std::string& declaredName)
 {
     w.line("inline std::int8_t " + typeName +
            "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
@@ -1799,7 +1827,7 @@ void emitViewFunctions(SourceWriter& w, const std::string& typeName)
     w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     w.close("}");
     w.line("*out_view_bytes = nullptr;");
-    w.line("constexpr std::size_t required = " + typeName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
     w.open("if (*inout_buffer_size_bytes < required) {");
     w.line("*inout_buffer_size_bytes = required;");
     w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
@@ -1808,7 +1836,7 @@ void emitViewFunctions(SourceWriter& w, const std::string& typeName)
     w.line("*inout_buffer_size_bytes = 0U;");
     w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     w.midway("#else");
-    w.open("if (" + typeName + "::ZOH_ALIAS_ELIGIBLE) {");
+    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
     w.line("*out_view_bytes = buffer;");
     w.line("*inout_buffer_size_bytes = required;");
     w.line("return DSDL_RUNTIME_SUCCESS;");
@@ -1826,7 +1854,7 @@ void emitViewFunctions(SourceWriter& w, const std::string& typeName)
     w.open("if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
     w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     w.close("}");
-    w.line("constexpr std::size_t required = " + typeName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
     w.open("if (view_size_bytes != required) {");
     w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     w.close("}");
@@ -1838,7 +1866,7 @@ void emitViewFunctions(SourceWriter& w, const std::string& typeName)
     w.line("*inout_buffer_size_bytes = 0U;");
     w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
     w.midway("#else");
-    w.open("if (" + typeName + "::ZOH_ALIAS_ELIGIBLE) {");
+    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
     w.line("std::memcpy(buffer, view_bytes, required);");
     w.line("*inout_buffer_size_bytes = required;");
     w.line("return DSDL_RUNTIME_SUCCESS;");
@@ -1860,9 +1888,11 @@ void emitSection(SourceWriter&                    w,
                  const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
-    emitFunctionPrototypes(w, typeName, flavor);
+    const auto declaredName = renderCppDeclaredTypeName(typeName, section.deprecated);
+    emitFunctionPrototypes(w, typeName, declaredName, flavor);
     emitSectionStruct(w,
                       typeName,
+                      declaredName,
                       fullName,
                       def.info.majorVersion,
                       def.info.minorVersion,
@@ -1880,10 +1910,10 @@ void emitSection(SourceWriter&                    w,
         fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
     FunctionBodyEmitter bodyEmitter(ctx, flavor);
     ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
-    bodyEmitter.emitSerializeFunction(w, typeName, section, sectionFacts);
+    bodyEmitter.emitSerializeFunction(w, typeName, declaredName, section, sectionFacts);
     ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
-    bodyEmitter.emitDeserializeFunction(w, typeName, section, sectionFacts);
-    emitViewFunctions(w, typeName);
+    bodyEmitter.emitDeserializeFunction(w, typeName, declaredName, section, sectionFacts);
+    emitViewFunctions(w, typeName, declaredName);
 }
 
 llvm::Expected<std::string> loadCRuntimeHeader()
@@ -1965,15 +1995,6 @@ std::string renderHeader(const SemanticDefinition& def,
     }
     w.blank();
 
-    // Generated code must never warn about itself; see the C backend for the three ways a deprecated
-    // type is referenced from within its own generated file. The region closes before the include
-    // guard, so user code naming the type still gets the diagnostic.
-    if (ctx.emitDeprecationAttributes())
-    {
-        out << "#pragma GCC diagnostic push\n";
-        out << "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n\n";
-    }
-
     emitNamespaceOpen(w, def.info.namespaceComponents);
 
     if (def.isService)
@@ -1982,6 +2003,11 @@ std::string renderHeader(const SemanticDefinition& def,
         // structs. The C emitter keeps `__` for its own service section types, where it is legal.
         const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "request");
         const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "response");
+        // The service alias and its wrappers name the request struct, never the request's public
+        // name, which is a deprecated alias when the service is.
+        const auto        requestDeclared = renderCppDeclaredTypeName(requestType, def.request.deprecated);
+        const std::string aliasAttribute =
+            (def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "";
 
         w.line("constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
         w.line("constexpr const char* " + baseTypeName + "_FULL_NAME_AND_VERSION = \"" + def.info.fullName + "." +
@@ -2010,32 +2036,32 @@ std::string renderHeader(const SemanticDefinition& def,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
 
-        w.line("using " + baseTypeName + " = " + requestType + ";");
-        w.line("constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestType + "::EXTENT_BYTES;");
-        w.line("constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestType +
+        w.line("using " + baseTypeName + aliasAttribute + " = " + requestDeclared + ";");
+        w.line("constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared + "::EXTENT_BYTES;");
+        w.line("constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared +
                "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-        w.line("constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestType + "::ZOH_ALIAS_ELIGIBLE;");
-        w.line("constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType + "::ZOH_ALIAS_REASON;");
+        w.line("constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestDeclared + "::ZOH_ALIAS_ELIGIBLE;");
+        w.line("constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestDeclared +
+               "::ZOH_ALIAS_REASON;");
         w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + baseTypeName +
+        w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
                "* const obj, std::uint8_t* const buffer, std::size_t* const "
                "inout_buffer_size_bytes" +
                (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         w.open("{");
-        w.line("return " + requestType + "_serialize_(reinterpret_cast<const " + requestType +
-               "*>(obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+        w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
+               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
         w.close("}");
         w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + baseTypeName +
+        w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
                "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                "inout_buffer_size_bytes" +
                (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         w.open("{");
-        w.line("return " + requestType + "_deserialize_(reinterpret_cast<" + requestType +
-               "*>(out_obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
-               ");");
+        w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
+               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
         w.close("}");
         w.blank();
 
@@ -2069,10 +2095,6 @@ std::string renderHeader(const SemanticDefinition& def,
     }
 
     emitNamespaceClose(w, def.info.namespaceComponents);
-    if (ctx.emitDeprecationAttributes())
-    {
-        out << "\n#pragma GCC diagnostic pop\n";
-    }
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
 }

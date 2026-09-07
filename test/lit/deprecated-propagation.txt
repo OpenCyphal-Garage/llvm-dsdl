@@ -25,6 +25,7 @@
 
 # RUN: %dsdlc --target-language cpp %S/fixtures_deprecated/dep --cpp-profile std --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_DEP
+# RUN: cat %t/cpp/dep/Retired_1_0.hpp | FileCheck %s --check-prefix=CPP_DEP_NEG
 # RUN: cat %t/cpp/dep/Current_1_0.hpp | FileCheck %s --check-prefix=CPP_OK
 # RUN: cat %t/cpp/dep/Current_1_0.hpp | FileCheck %s --check-prefix=CPP_OK_NEG
 
@@ -74,19 +75,27 @@
 # C_OK_NEG-NOT: __attribute__((deprecated))
 # C_OK_NEG-NOT: #pragma GCC diagnostic
 
-# The suppression region must open before the first declaration and close after the last generated
-# function: the deprecated name is referenced by its own declaration, by the serialiser signatures,
-# and by any struct that embeds it. Generated code must never warn about itself.
-# CPP_DEP: #pragma GCC diagnostic push
-# CPP_DEP: #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+# The struct is declared under a name of its own and the public name is a deprecated alias of it, so
+# the header's own prototypes, free functions and embedding structs never mention the deprecated
+# name; only user code, which names the alias, is diagnosed.
+# CPP_DEP: struct Retired_Request_;
+# CPP_DEP: inline std::int8_t Retired_Request_serialize_(const Retired_Request_* obj,
 # CPP_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# CPP_DEP: struct {{\[\[}}deprecated{{\]\]}} Retired_Request {
+# CPP_DEP: struct Retired_Request_ {
 # CPP_DEP: IS_DEPRECATED = true
-# CPP_DEP: #pragma GCC diagnostic pop
+# CPP_DEP: using Retired_Request {{\[\[}}deprecated{{\]\]}} = Retired_Request_;
+# The service alias is deprecated the same way, and its wrappers take the request struct.
+# CPP_DEP: using Retired {{\[\[}}deprecated{{\]\]}} = Retired_Request_;
+# CPP_DEP: inline std::int8_t Retired_serialize_(const Retired_Request_* const obj,
+# CPP_DEP_NEG-NOT: #pragma GCC diagnostic
+# CPP_DEP_NEG-NOT: struct {{\[\[}}deprecated{{\]\]}}
 
+# CPP_OK: struct Current {
 # CPP_OK: IS_DEPRECATED = false
 # CPP_OK_NEG-NOT: Deprecated:
 # CPP_OK_NEG-NOT: {{\[\[}}deprecated{{\]\]}}
+# CPP_OK_NEG-NOT: #pragma GCC diagnostic
+# CPP_OK_NEG-NOT: using Current
 
 # RUST_DEP: #![allow(deprecated)]
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
@@ -124,8 +133,9 @@
 # PY_OK-NOT: Deprecated:
 
 # --------------------------------------------------------------------------------------------------
-# Opt-out mode: --no-deprecation-attributes drops the attribute -- and in C++ and Rust the suppression
-# guard with it -- and must leave the notice and the constant untouched.
+# Opt-out mode: --no-deprecation-attributes drops the attribute -- and in Rust the suppression guard
+# with it -- and must leave the notice and the constant untouched. The C++ struct keeps its own name
+# and the public name stays an alias of it, so a type has one shape whichever way it is generated.
 
 # RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --no-deprecation-attributes --outdir %t/c-noattr >/dev/null 2>&1
 # RUN: cat %t/c-noattr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_NOATTR
@@ -146,8 +156,9 @@
 # C_NOATTR_DOC: typedef struct dep__Retired__Request dep__Retired;
 
 # CPP_NOATTR-NOT: {{\[\[}}deprecated{{\]\]}}
-# CPP_NOATTR-NOT: -Wdeprecated-declarations
+# CPP_NOATTR-NOT: #pragma GCC diagnostic
 # CPP_NOATTR_DOC: IS_DEPRECATED = true
+# CPP_NOATTR_DOC: using Retired_Request = Retired_Request_;
 # CPP_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
 
 # RUST_NOATTR-NOT: #[deprecated]
