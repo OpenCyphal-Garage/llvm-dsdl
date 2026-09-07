@@ -58,3 +58,20 @@
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/twover/ns/Dup.1.0.dsdl
 # RUN: printf 'uint8 a\nuint8 b\n@sealed\n---\nuint8 c\n@sealed\n' > %t/twover/ns/Dup.2.0.dsdl
 # RUN: %dsdlc --target-language cpp --cpp-profile std %t/twover/ns --outdir %t/twoverout
+
+# A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
+# it, so a sibling called `<name>_` meets it there. C keeps the deprecated typedef under its own name
+# and is unaffected.
+# RUN: rm -rf %t/declared && mkdir -p %t/declared/ns
+# RUN: printf '@deprecated\nuint8 a\n@sealed\n' > %t/declared/ns/Old.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/declared/ns/Old_.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/declared/ns --outdir %t/declaredout 2>&1 | FileCheck %s --check-prefix=DECLARED
+# DECLARED: type name collision in generated output: {{.*}} both emit 'Old_' for target language 'cpp'
+# RUN: %dsdlc --target-language c %t/declared/ns --outdir %t/declaredc
+
+# The same for a deprecated service's sections.
+# RUN: rm -rf %t/declsvc && mkdir -p %t/declsvc/ns
+# RUN: printf '@deprecated\nuint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/declsvc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/declsvc/ns/Svc_Response_.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/declsvc/ns --outdir %t/declsvcout 2>&1 | FileCheck %s --check-prefix=DECLARED_SVC
+# DECLARED_SVC: the response section of 'ns.Svc' both emit 'Svc_Response_' for target language 'cpp'

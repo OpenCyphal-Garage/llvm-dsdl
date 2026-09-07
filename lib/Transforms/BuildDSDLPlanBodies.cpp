@@ -809,7 +809,8 @@ mlir::dsdl::PtrType nestedPointerType(mlir::MLIRContext* ctx, const PlanStep& st
 {
     return mlir::dsdl::PtrType::get(ctx,
                                     mlir::dsdl::OpaqueType::get(ctx,
-                                                                (writing ? "const " : "") + step.compositeCTypeName));
+                                                                (writing ? "const " : "") +
+                                                                    renderCTagSpelling(step.compositeCTypeName)));
 }
 
 /// @brief The dialect's pointer into the wire buffer, qualified for the direction.
@@ -1147,7 +1148,8 @@ PlanCursor buildCompositeElementLoop(mlir::OpBuilder&   b,
                                                   elementPath(b, step),
                                                   elementIndices(b, step, memberIndex),
                                                   index,
-                                                  b.getStringAttr(qualifier + step.compositeCTypeName));
+                                                  b.getStringAttr(qualifier +
+                                                                  renderCTagSpelling(step.compositeCTypeName)));
             return buildNested(b, loc, step, target, buffer, capacityBytes, inner, writing);
         });
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{next.bitOffset, next.error});
@@ -1209,14 +1211,15 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
     mlir::OpBuilder::InsertionGuard const outer(builder);
     builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
-    auto* ctx    = builder.getContext();
-    auto  objTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, ("const " + cTypeName).str()));
-    auto  bufTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "uint8_t"));
-    auto  sizeTy = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "size_t"));
-    auto  i8Ty   = builder.getIntegerType(8);
-    auto  i64Ty  = builder.getIntegerType(64);
-    auto  fnType = builder.getFunctionType(mlir::TypeRange{objTy, bufTy, sizeTy}, mlir::TypeRange{i8Ty});
-    auto  fn     = mlir::func::FuncOp::create(builder, loc, functionName, fnType);
+    auto* ctx = builder.getContext();
+    auto  objTy =
+        mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "const " + renderCTagSpelling(cTypeName)));
+    auto bufTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "uint8_t"));
+    auto sizeTy = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "size_t"));
+    auto i8Ty   = builder.getIntegerType(8);
+    auto i64Ty  = builder.getIntegerType(64);
+    auto fnType = builder.getFunctionType(mlir::TypeRange{objTy, bufTy, sizeTy}, mlir::TypeRange{i8Ty});
+    auto fn     = mlir::func::FuncOp::create(builder, loc, functionName, fnType);
     fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr(kLoweredSerDesContractProducer));
 
     mlir::Block* entry = fn.addEntryBlock();
@@ -1606,7 +1609,7 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
     builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
     auto* ctx    = builder.getContext();
-    auto  objTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, cTypeName));
+    auto  objTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, renderCTagSpelling(cTypeName)));
     auto  bufTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "const uint8_t"));
     auto  sizeTy = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::OpaqueType::get(ctx, "size_t"));
     auto  i8Ty   = builder.getIntegerType(8);

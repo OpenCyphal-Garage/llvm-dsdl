@@ -59,6 +59,9 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages();
 /// then the two land on one identifier. @ref discoverDefinitions cannot see this: it keys each
 /// definition on its own short name, and `Foo` and `Foo_Request` do not collide as declared names.
 ///
+/// A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
+/// it (@ref renderDeclaredTypeName), so that name is claimed as well.
+///
 /// Only where a language shares one scope across a namespace does this break a build -- C in its
 /// single global scope, C++ in the namespace, Go in the package. Rust, TypeScript and Python give
 /// every definition its own module, so the repeat is unreachable and is not reported.

@@ -161,12 +161,14 @@ an `IS_DEPRECATED` metadata constant (`DSDL_IS_DEPRECATED` in TypeScript and Pyt
 TypeScript is additionally given a `/** @deprecated … */` JSDoc block.
 
 C, C++, and Rust additionally get a language-native attribute — `__attribute__((deprecated))`,
-`[[deprecated]]`, and `#[deprecated]` respectively — so naming the type produces a compiler
-diagnostic. This is **on by default**.
+`[[deprecated]]`, and `#[deprecated(note = …)]` respectively — so naming the type produces a compiler
+diagnostic. The Rust attribute carries the notice as its message, which rustc prints in the warning.
+This is **on by default**.
 
-Each generated file suppresses deprecation diagnostics across its own body (`#pragma GCC diagnostic
-ignored "-Wdeprecated-declarations"`, or `#![allow(deprecated)]` in Rust). The suppression is scoped
-to the generated file: including generated headers is clean under `-Werror`, and only your own code
-naming a deprecated type is diagnosed.
+Generated code does not trip its own attribute. In C the attribute is on the typedef, and generated
+code names the type through its struct tag, `struct <name>`, which carries no attribute. In C++ and
+Rust the struct is declared as `<name>_` and `<name>` is a deprecated alias of it; generated code
+names the struct. Compiling generated code is clean under `-Werror` or `-D warnings`, and only your
+own code naming a deprecated type is diagnosed.
 
 The `obj` backend never emits these attributes.

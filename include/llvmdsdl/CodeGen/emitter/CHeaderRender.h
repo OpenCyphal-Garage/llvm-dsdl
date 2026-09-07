@@ -65,9 +65,11 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string& bas
 /// @brief Renders service alias bridge lines after request type declaration.
 /// @param[in] baseTypeName Alias base type name.
 /// @param[in] requestTypeName Request section generated type name.
+/// @param[in] deprecatedAttribute Whether the alias typedef carries `__attribute__((deprecated))`.
 /// @return Ordered typedef/bridge macro lines.
 std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
-                                                       const std::string& requestTypeName);
+                                                       const std::string& requestTypeName,
+                                                       bool               deprecatedAttribute);
 
 /// @brief Renders service alias serialise/deserialize inline wrappers.
 /// @param[in] baseTypeName Alias base type name.

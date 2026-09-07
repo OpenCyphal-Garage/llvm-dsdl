@@ -271,6 +271,14 @@ bool DefinitionAST::isService() const
                                [](const auto& stmt) { return std::holds_alternative<ServiceResponseMarkerAST>(stmt); });
 }
 
+bool DefinitionAST::isDeprecated() const
+{
+    return std::ranges::any_of(statements, [](const auto& stmt) {
+        const auto* directive = std::get_if<DirectiveAST>(&stmt);
+        return (directive != nullptr) && (directive->kind == DirectiveKind::Deprecated);
+    });
+}
+
 std::string printAST(const ASTModule& module)
 {
     std::ostringstream out;

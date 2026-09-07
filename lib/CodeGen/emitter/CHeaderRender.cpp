@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -48,10 +49,12 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&  ba
 }
 
 std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
-                                                       const std::string& requestTypeName)
+                                                       const std::string& requestTypeName,
+                                                       const bool         deprecatedAttribute)
 {
     return {
-        "typedef " + requestTypeName + " " + baseTypeName + ";",
+        "typedef " + renderCTagSpelling(requestTypeName) + " " + baseTypeName +
+            (deprecatedAttribute ? " __attribute__((deprecated));" : ";"),
         "#define " + baseTypeName + "_EXTENT_BYTES_ " + requestTypeName + "_EXTENT_BYTES_",
         "#define " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " + requestTypeName +
             "_SERIALIZATION_BUFFER_SIZE_BYTES_",
@@ -63,18 +66,17 @@ std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTy
 std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
                                                         const std::string& requestTypeName)
 {
+    const std::string objectType = renderCTagSpelling(requestTypeName);
     return {
-        "static inline int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
+        "static inline int8_t " + baseTypeName + "__serialize_(const " + objectType +
             "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)",
         "{",
-        "  return " + requestTypeName + "__serialize_((const " + requestTypeName +
-            "*)obj, buffer, inout_buffer_size_bytes);",
+        "  return " + requestTypeName + "__serialize_(obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline int8_t " + baseTypeName + "__deserialize_(" + baseTypeName +
+        "static inline int8_t " + baseTypeName + "__deserialize_(" + objectType +
             "* const out_obj, const uint8_t* buffer, size_t* const inout_buffer_size_bytes)",
         "{",
-        "  return " + requestTypeName + "__deserialize_((" + requestTypeName +
-            "*)out_obj, buffer, inout_buffer_size_bytes);",
+        "  return " + requestTypeName + "__deserialize_(out_obj, buffer, inout_buffer_size_bytes);",
         "}",
         "static inline int8_t " + baseTypeName +
             "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "

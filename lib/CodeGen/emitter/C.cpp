@@ -319,7 +319,7 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.cTypeName(*type.compositeType);
+            return renderCTagSpelling(ctx.cTypeName(*type.compositeType));
         }
         return "uint8_t";
     }
@@ -433,11 +433,11 @@ void emitSectionTypedef(SourceWriter&          w,
     if (deprecatedAttribute)
     {
         // After the typedef name, not between the closing brace and the name. The two positions are
-        // not equivalent: GCC reads the earlier one as deprecating the anonymous struct *type* and
-        // warns once, at the definition -- which the generated file then suppresses with its own
-        // `#pragma GCC diagnostic ignored`, so user code naming the typedef is told nothing at all.
-        // Placed after the name it deprecates the typedef, and the diagnostic lands where it is
-        // useful: on the code that uses it. Clang warns either way, so this only shows up on GCC.
+        // not equivalent: GCC reads the earlier one as deprecating the struct type and warns once,
+        // at the definition, and says nothing where the typedef is used. Placed after the name it
+        // deprecates the typedef, and the diagnostic lands where it is useful: on the code that
+        // names it. Clang warns either way, so this only shows up on GCC. Generated code never
+        // names the typedef; it spells the type through its tag, see renderCTagSpelling.
         w.close("} " + typeName + " __attribute__((deprecated));");
     }
     else
@@ -537,16 +537,17 @@ void emitSection(SourceWriter&                    w,
                                               def.info.minorVersion));
     emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
 
-    const auto irStem = sectionIRFunctionStem(def, sectionName);
-    w.line("int8_t " + irStem + "__serialize_ir_(const " + typeName +
+    const auto irStem     = sectionIRFunctionStem(def, sectionName);
+    const auto objectType = renderCTagSpelling(typeName);
+    w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
            "* const obj, uint8_t* buffer, size_t* const "
            "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__deserialize_ir_(" + typeName +
+    w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
            "* const out_obj, const uint8_t* buffer, size_t* const "
            "inout_buffer_size_bytes);");
     w.blank();
 
-    w.line("static inline int8_t " + typeName + "__serialize_(const " + typeName +
+    w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
            "* const obj, uint8_t* const buffer, size_t* const "
            "inout_buffer_size_bytes)");
     w.open("{");
@@ -554,7 +555,7 @@ void emitSection(SourceWriter&                    w,
     w.close("}");
     w.blank();
 
-    w.line("static inline int8_t " + typeName + "__deserialize_(" + typeName +
+    w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
            "* const out_obj, const uint8_t* buffer, size_t* const "
            "inout_buffer_size_bytes)");
     w.open("{");
@@ -678,17 +679,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     w.blank();
 
-    // Generated code must never warn about itself. A deprecated typedef is referenced by this very
-    // header -- in its own declaration, in its serialiser signatures, and, when a deprecated type is
-    // used as a field, in the struct body of an unrelated type (uavcan.file.Path.1.0 is deprecated and
-    // embedded by five other definitions). Suppressing across the whole body covers all three. The
-    // region ends before the include guard closes, so a user naming the type still gets the warning.
-    if (ctx.emitDeprecationAttributes())
-    {
-        out << "#pragma GCC diagnostic push\n";
-        out << "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n\n";
-    }
-
     if (def.isService)
     {
         const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
@@ -724,7 +714,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                         def.doc,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
-        for (const auto& line : renderServiceAliasBridgeLines(baseTypeName, requestType))
+        for (const auto& line :
+             renderServiceAliasBridgeLines(baseTypeName,
+                                           requestType,
+                                           def.request.deprecated && ctx.emitDeprecationAttributes()))
         {
             w.line(line);
         }
@@ -746,11 +739,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                     def.request,
                     def.doc,
                     lookupLoweredSectionFacts(loweredFacts, def, ""));
-    }
-
-    if (ctx.emitDeprecationAttributes())
-    {
-        out << "#pragma GCC diagnostic pop\n\n";
     }
 
     out << "#endif /* " << guard << " */\n";
@@ -1043,21 +1031,9 @@ llvm::Error emit(const SemanticModule& semantic,
         const std::string implPreamble =
             generatedCommentLine("C backend implementation") + "\n" + "/* Source: " + def.info.fullName + "." +
             std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + " */\n\n";
-        // The header suppresses deprecation diagnostics across its own body, and this translation unit
-        // needs the same treatment for the same reason: it names the deprecated typedef in every
-        // serialiser signature it defines. The region opens before the includes so that a deprecated
-        // type pulled in as a field is covered too, and closes at end of file, which is where this
-        // translation unit stops being generated code.
-        const std::string implGuardOpen =
-            options.emitDeprecationAttributes
-                ? std::string("#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored "
-                              "\"-Wdeprecated-declarations\"\n\n")
-                : std::string();
-        const std::string implGuardClose =
-            options.emitDeprecationAttributes ? std::string("\n#pragma GCC diagnostic pop\n") : std::string();
         std::string implContents;
-        implContents.reserve(implPreamble.size() + implGuardOpen.size() + emitted.size() + implGuardClose.size());
-        implContents.append(implPreamble).append(implGuardOpen).append(emitted).append(implGuardClose);
+        implContents.reserve(implPreamble.size() + emitted.size());
+        implContents.append(implPreamble).append(emitted);
         if (auto err = writeGeneratedFile(implDir / implFileName(def.info),
                                           implContents,
                                           options.writePolicy,

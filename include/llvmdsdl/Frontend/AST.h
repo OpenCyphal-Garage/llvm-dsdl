@@ -414,6 +414,10 @@ struct DefinitionAST
     /// @brief Returns true when the definition is a service.
     /// @return True when a service response marker is present.
     [[nodiscard]] bool isService() const;
+
+    /// @brief Returns true when the definition is deprecated.
+    /// @return True when a `@deprecated` directive is present.
+    [[nodiscard]] bool isDeprecated() const;
 };
 
 /// @brief Definition discovered on disk with resolved metadata.

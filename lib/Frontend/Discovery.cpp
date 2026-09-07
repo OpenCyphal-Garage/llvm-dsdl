@@ -308,17 +308,32 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
                                                               info.majorVersion,
                                                               info.minorVersion,
                                                               versioning);
+            // A deprecated definition's C++ struct is declared under a name of its own, which a
+            // sibling may be called; that name is claimed beside the public one.
+            const bool declaredApart = (language.language == CodegenNamingLanguage::Cpp) && parsed.ast.isDeprecated();
             record(language, scope, base, TypeNameOrigin{info.fullName, "", info.filePath});
             if (!parsed.ast.isService())
             {
+                if (declaredApart)
+                {
+                    record(language,
+                           scope,
+                           renderDeclaredTypeName(base, true),
+                           TypeNameOrigin{info.fullName, "", info.filePath});
+                }
                 continue;
             }
             for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
-                record(language,
-                       scope,
-                       base + renderSectionTypeSuffix(language.language, section),
-                       TypeNameOrigin{info.fullName, section.str(), info.filePath});
+                const std::string sectionName = base + renderSectionTypeSuffix(language.language, section);
+                record(language, scope, sectionName, TypeNameOrigin{info.fullName, section.str(), info.filePath});
+                if (declaredApart)
+                {
+                    record(language,
+                           scope,
+                           renderDeclaredTypeName(sectionName, true),
+                           TypeNameOrigin{info.fullName, section.str(), info.filePath});
+                }
             }
         }
     }
