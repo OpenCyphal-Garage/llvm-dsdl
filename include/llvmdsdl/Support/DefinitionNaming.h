@@ -181,6 +181,17 @@ struct DefinitionNamePolicy final
 /// @return The suffix, or an empty string.
 [[nodiscard]] std::string renderSectionSymbolSuffix(llvm::StringRef sectionName);
 
+/// @brief Renders how generated C names a composite type where it is used: `struct <typeName>`.
+///
+/// The typedef carries `__attribute__((deprecated))` when the definition is deprecated; the tag
+/// carries no attribute. Naming the type through the tag keeps generated code -- serialiser
+/// signatures, implementations, embedding structs -- clean under `-Werror`, while user code naming
+/// the typedef is diagnosed. The header emitter, the plan-body builder and the object lowering all
+/// agree on this spelling through this one function.
+/// @param[in] typeName The C typedef name, which is also the struct tag.
+/// @return The tag spelling.
+[[nodiscard]] std::string renderCTagSpelling(llvm::StringRef typeName);
+
 }  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_SUPPORT_DEFINITION_NAMING_H

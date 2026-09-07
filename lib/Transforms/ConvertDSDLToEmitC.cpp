@@ -963,7 +963,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         for (const auto& typeName : forwardDeclaredTypes)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            mlir::emitc::VerbatimOp::create(builder, loc, "typedef struct " + typeName + " " + typeName + ";");
+            mlir::emitc::VerbatimOp::create(builder, loc, renderCTagSpelling(typeName) + ";");
         }
         for (const auto& symbol : capacityCheckSymbols)
         {

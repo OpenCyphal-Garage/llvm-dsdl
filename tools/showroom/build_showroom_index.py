@@ -377,12 +377,11 @@ def _extract_python(lines: list[str]) -> list[str]:
     return chunks
 
 
-# A `@deprecated` definition carries a language-native attribute, which lands between the closing
-# brace and the typedef name in C and between `struct` and the name in C++. Both patterns tolerate it;
-# without that the deprecated types are the one kind of definition these pages cannot show.
+# A `@deprecated` definition carries a language-native attribute: after the typedef name in C, and
+# between `struct` and the name in C++. Both patterns tolerate it.
 EXTRACTORS = {
     "c": lambda lines: _extract_braced(
-        lines, re.compile(r"^typedef struct\b"), re.compile(r"^\}\s*(?:__attribute__\(\(.*?\)\)\s*)*\w+;")
+        lines, re.compile(r"^typedef struct\b"), re.compile(r"^\}\s*\w+(?:\s+__attribute__\(\(.*?\)\))?;")
     ),
     "cpp": lambda lines: _extract_braced(
         lines, re.compile(r"^struct\s+(?:\[\[.*?\]\]\s+)?\w+\s*\{"), re.compile(r"^\};")

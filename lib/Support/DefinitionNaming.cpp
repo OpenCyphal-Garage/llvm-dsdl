@@ -160,4 +160,9 @@ std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)
     return "";
 }
 
+std::string renderCTagSpelling(const llvm::StringRef typeName)
+{
+    return "struct " + typeName.str();
+}
+
 }  // namespace llvmdsdl

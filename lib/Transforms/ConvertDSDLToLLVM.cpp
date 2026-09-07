@@ -576,8 +576,11 @@ mlir::Type structBehind(mlir::Type pointee, const llvm::DenseMap<llvm::StringRef
     {
         return {};
     }
+    // The spelling is the C spelling of the pointee, `const struct <tag>`; both words are shed to
+    // reach the tag the plan is keyed by.
     llvm::StringRef spelling = named.getName();
     spelling.consume_front("const ");
+    spelling.consume_front("struct ");
     const auto found = composites.find(spelling);
     return (found == composites.end()) ? mlir::Type{} : found->second;
 }
