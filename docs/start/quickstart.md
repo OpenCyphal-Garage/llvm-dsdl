@@ -23,7 +23,7 @@ dsdlc --target-language c path/to/root_namespace --outdir out/c
 dsdlc --target-language obj path/to/root_namespace --outdir out/obj
 ```
 
-The headers `-l c` generates are published beside one object per definition. Naming another target
+The headers `--target-language c` generates are published beside one object per definition. Naming another target
 and what the objects expose are in [Object Backend](../reference/codegen/object.md).
 
 ## See the output before you write anything
