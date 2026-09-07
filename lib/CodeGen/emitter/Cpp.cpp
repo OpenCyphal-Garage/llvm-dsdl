@@ -398,10 +398,10 @@ public:
                                         typeNameVersioning_);
     }
 
-    /// @brief The name @p def's struct is declared under; see renderCppDeclaredTypeName.
+    /// @brief The name @p def's struct is declared under; see renderDeclaredTypeName.
     std::string cppDeclaredTypeName(const SemanticDefinition& def) const
     {
-        return renderCppDeclaredTypeName(cppTypeName(def), def.request.deprecated);
+        return renderDeclaredTypeName(cppTypeName(def), def.request.deprecated);
     }
 
     std::string cppQualifiedTypeName(const SemanticDefinition& def) const
@@ -1888,7 +1888,7 @@ void emitSection(SourceWriter&                    w,
                  const AttachedDoc&               typeDoc,
                  const LoweredSectionFacts* const sectionFacts)
 {
-    const auto declaredName = renderCppDeclaredTypeName(typeName, section.deprecated);
+    const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitFunctionPrototypes(w, typeName, declaredName, flavor);
     emitSectionStruct(w,
                       typeName,
@@ -2005,7 +2005,7 @@ std::string renderHeader(const SemanticDefinition& def,
         const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "response");
         // The service alias and its wrappers name the request struct, never the request's public
         // name, which is a deprecated alias when the service is.
-        const auto        requestDeclared = renderCppDeclaredTypeName(requestType, def.request.deprecated);
+        const auto        requestDeclared = renderDeclaredTypeName(requestType, def.request.deprecated);
         const std::string aliasAttribute =
             (def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "";
 

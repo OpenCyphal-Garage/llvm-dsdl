@@ -31,6 +31,7 @@
 
 # RUN: %dsdlc --target-language rust %S/fixtures_deprecated/dep --rust-crate-name dep_fixture --outdir %t/rust >/dev/null 2>&1
 # RUN: cat %t/rust/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_DEP
+# RUN: cat %t/rust/src/dep/retired_1_0.rs | FileCheck %s --check-prefix=RUST_DEP_NEG
 # RUN: cat %t/rust/src/dep/current_1_0.rs | FileCheck %s --check-prefix=RUST_OK
 # RUN: cat %t/rust/src/dep/current_1_0.rs | FileCheck %s --check-prefix=RUST_OK_NEG
 
@@ -97,15 +98,28 @@
 # CPP_OK_NEG-NOT: #pragma GCC diagnostic
 # CPP_OK_NEG-NOT: using Current
 
-# RUST_DEP: #![allow(deprecated)]
+# The same shape as C++: rustc lints every mention of a deprecated struct, its own impl blocks
+# included, so nothing generated may name it. The attribute is on the alias alone.
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
+# RUST_DEP: #[derive(Clone, Debug, PartialEq)]
+# RUST_DEP-NEXT: pub struct dep_Retired_Request_ {
 # RUST_DEP: #[deprecated]
-# RUST_DEP: pub struct dep_Retired_Request {
+# RUST_DEP-NEXT: pub type dep_Retired_Request = dep_Retired_Request_;
+# RUST_DEP: impl Default for dep_Retired_Request_ {
+# RUST_DEP: impl dep_Retired_Request_ {
 # RUST_DEP: IS_DEPRECATED: bool = true;
+# RUST_DEP: pub type dep_Retired_Response = dep_Retired_Response_;
+# The service alias is deprecated the same way.
+# RUST_DEP: #[deprecated]
+# RUST_DEP-NEXT: pub type dep_Retired = dep_Retired_Request_;
+# RUST_DEP_NEG-NOT: #![allow(deprecated)]
 
+# RUST_OK: pub struct dep_Current {
 # RUST_OK: IS_DEPRECATED: bool = false;
 # RUST_OK_NEG-NOT: Deprecated:
 # RUST_OK_NEG-NOT: #[deprecated]
+# RUST_OK_NEG-NOT: #![allow(deprecated)]
+# RUST_OK_NEG-NOT: pub type dep_Current
 
 # Go recognises a deprecation only from a doc-comment paragraph beginning exactly `Deprecated: `.
 # GO_DEP: _IS_DEPRECATED = true
@@ -133,9 +147,9 @@
 # PY_OK-NOT: Deprecated:
 
 # --------------------------------------------------------------------------------------------------
-# Opt-out mode: --no-deprecation-attributes drops the attribute -- and in Rust the suppression guard
-# with it -- and must leave the notice and the constant untouched. The C++ struct keeps its own name
-# and the public name stays an alias of it, so a type has one shape whichever way it is generated.
+# Opt-out mode: --no-deprecation-attributes drops the attribute and must leave the notice and the
+# constant untouched. The C++ and Rust struct keeps its own name and the public name stays an alias
+# of it, so a type has one shape whichever way it is generated.
 
 # RUN: %dsdlc --target-language c %S/fixtures_deprecated/dep --no-deprecation-attributes --outdir %t/c-noattr >/dev/null 2>&1
 # RUN: cat %t/c-noattr/dep/Retired_1_0.h | FileCheck %s --check-prefix=C_NOATTR
@@ -164,4 +178,5 @@
 # RUST_NOATTR-NOT: #[deprecated]
 # RUST_NOATTR-NOT: #![allow(deprecated)]
 # RUST_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
+# RUST_NOATTR_DOC: pub type dep_Retired_Request = dep_Retired_Request_;
 # RUST_NOATTR_DOC: IS_DEPRECATED: bool = true;

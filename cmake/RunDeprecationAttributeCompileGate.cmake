@@ -9,10 +9,10 @@
 #
 # A language-native deprecation attribute makes generated code warn about itself unless the emitter
 # takes care: the deprecated name is referenced by its own serialiser signatures and by any struct
-# that embeds it. C names the type through its struct tag, which carries no attribute; C++ declares
-# the struct under a name of its own and deprecates the public name as an alias of it; Rust
-# suppresses the lint across each generated module. This test is what keeps that honest -- without
-# it a reference spelled through the deprecated name only shows up in a downstream -Werror build.
+# that embeds it. C names the type through its struct tag, which carries no attribute; C++ and Rust
+# declare the struct under a name of its own and deprecate the public name as an alias of it. This
+# test is what keeps that honest -- without it a reference spelled through the deprecated name only
+# shows up in a downstream -Werror build.
 #
 # The attributes are on by default, so no generation run here passes a flag: the default is exactly
 # what needs guarding.
@@ -264,19 +264,67 @@ llvmdsdl_run_or_fail("dsdlc Rust generation"
   "${DSDLC}" --target-language rust --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
              --rust-crate-name deprecation_gate --outdir "${WORK_DIR}/rust")
 
+llvmdsdl_run_or_fail("dsdlc Rust generation with --no-deprecation-attributes"
+  "${DSDLC}" --target-language rust --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
+             --rust-crate-name deprecation_gate --no-deprecation-attributes --outdir "${WORK_DIR}/rust-noattr")
+
+# User code naming a deprecated type: the section alias, and the service alias. Each is compiled
+# against the built crate with rustc, so the diagnostic text can be asserted.
+file(WRITE "${WORK_DIR}/rust_use_probe.rs"
+"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::uavcan_file_Read_Request::default(); }
+")
+file(WRITE "${WORK_DIR}/rust_alias_probe.rs"
+"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::uavcan_file_Read::default(); }
+")
+
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE STREQUAL "CARGO_EXECUTABLE-NOTFOUND")
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env "RUSTFLAGS=-D warnings"
-            "CARGO_TARGET_DIR=${WORK_DIR}/rust/target"
-            "${CARGO_EXECUTABLE}" build --quiet --manifest-path "${WORK_DIR}/rust/Cargo.toml"
-    RESULT_VARIABLE _rust_result
-    OUTPUT_VARIABLE _rust_stdout
-    ERROR_VARIABLE _rust_stderr)
-  if(NOT _rust_result EQUAL 0)
-    message(FATAL_ERROR
-      "generated Rust crate does not build under -D warnings; the #![allow(deprecated)] guard is "
-      "missing or misplaced:\n${_rust_stdout}\n${_rust_stderr}")
+  get_filename_component(_cargo_dir "${CARGO_EXECUTABLE}" DIRECTORY)
+  find_program(_rustc NAMES rustc HINTS "${_cargo_dir}")
+  if(NOT _rustc)
+    message(FATAL_ERROR "cargo found at ${CARGO_EXECUTABLE} but no rustc beside it")
   endif()
+
+  # Builds the crate generated under `variant` with warnings denied.
+  function(llvmdsdl_build_rust_crate variant)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E env "RUSTFLAGS=-D warnings"
+              "CARGO_TARGET_DIR=${WORK_DIR}/${variant}/target"
+              "${CARGO_EXECUTABLE}" build --quiet --manifest-path "${WORK_DIR}/${variant}/Cargo.toml"
+      RESULT_VARIABLE _rust_result
+      OUTPUT_VARIABLE _rust_stdout
+      ERROR_VARIABLE _rust_stderr)
+    if(NOT _rust_result EQUAL 0)
+      message(FATAL_ERROR
+        "generated Rust crate (${variant}) does not build under -D warnings; generated code is naming "
+        "a deprecated type:\n${_rust_stdout}\n${_rust_stderr}")
+    endif()
+  endfunction()
+
+  llvmdsdl_build_rust_crate(rust)
+  llvmdsdl_build_rust_crate(rust-noattr)
+
+  foreach(_probe IN ITEMS rust_use_probe rust_alias_probe)
+    execute_process(
+      COMMAND "${_rustc}" --edition 2021 --crate-type lib
+              --extern "deprecation_gate=${WORK_DIR}/rust/target/debug/libdeprecation_gate.rlib"
+              "${WORK_DIR}/${_probe}.rs" -o "${WORK_DIR}/${_probe}.rlib"
+      RESULT_VARIABLE _probe_result
+      OUTPUT_VARIABLE _probe_stdout
+      ERROR_VARIABLE _probe_stderr)
+    if(NOT _probe_result EQUAL 0)
+      message(FATAL_ERROR "${_probe} failed to compile:\n${_probe_stdout}\n${_probe_stderr}")
+    endif()
+    if(NOT _probe_stderr MATCHES "deprecated")
+      message(FATAL_ERROR
+        "${_probe} produced no deprecation diagnostic; the attribute is not reaching user code:\n"
+        "${_probe_stderr}")
+    endif()
+
+    llvmdsdl_run_or_fail("${_probe} compile under -D warnings with --no-deprecation-attributes"
+      "${_rustc}" --edition 2021 --crate-type lib -D warnings
+                  --extern "deprecation_gate=${WORK_DIR}/rust-noattr/target/debug/libdeprecation_gate.rlib"
+                  "${WORK_DIR}/${_probe}.rs" -o "${WORK_DIR}/${_probe}_noattr.rlib")
+  endforeach()
 else()
   message(STATUS "cargo unavailable; skipping the Rust half of the deprecation attribute gate")
 endif()

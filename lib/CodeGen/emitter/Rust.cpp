@@ -352,6 +352,26 @@ public:
         return rustTypeName(tmp);
     }
 
+    /// @brief The name @p def's struct is declared under; see renderDeclaredTypeName.
+    std::string rustDeclaredTypeName(const SemanticDefinition& def) const
+    {
+        return renderDeclaredTypeName(rustTypeName(def.info), def.request.deprecated);
+    }
+
+    /// @brief The declared name of the definition @p ref names, for spelling its type.
+    ///
+    /// A reference that resolves to nothing is spelled with its public name: nothing says it is
+    /// deprecated.
+    std::string rustDeclaredTypeName(const SemanticTypeRef& ref) const
+    {
+        if (const auto* def = find(ref))
+        {
+            return rustDeclaredTypeName(*def);
+        }
+        return rustTypeName(ref);
+    }
+
+    /// @brief The `use` path of the struct the definition @p ref names.
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
         std::ostringstream out;
@@ -363,7 +383,7 @@ public:
 
         if (const auto* def = find(ref))
         {
-            out << "::" << rustModuleName(def->info) << "::" << rustTypeName(def->info);
+            out << "::" << rustModuleName(def->info) << "::" << rustDeclaredTypeName(*def);
             return out.str();
         }
 
@@ -401,7 +421,7 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustTypeName(*type.compositeType);
+            return ctx.rustDeclaredTypeName(*type.compositeType);
         }
         return "u8";
     }
@@ -441,7 +461,7 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustTypeName(*type.compositeType) + "::default()";
+            return ctx.rustDeclaredTypeName(*type.compositeType) + "::default()";
         }
         return "0";
     }
@@ -1375,18 +1395,15 @@ void emitSectionType(SourceWriter&                    w,
         poolClassConstants.emplace_back(constName, nextPoolClassId++);
     }
 
+    const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitAttachedDocRust(w,
                         docWithDeprecationNotice(typeDoc,
                                                  section.deprecated,
                                                  definitionFullName,
                                                  majorVersion,
                                                  minorVersion));
-    if (section.deprecated && options.emitDeprecationAttributes)
-    {
-        w.line("#[deprecated]");
-    }
     w.line("#[derive(Clone, Debug, PartialEq)]");
-    w.open("pub struct " + typeName + " {");
+    w.open("pub struct " + declaredName + " {");
 
     std::size_t fieldCount = 0;
     for (const auto& field : section.fields)
@@ -1415,7 +1432,17 @@ void emitSectionType(SourceWriter&                    w,
     w.close("}");
     w.blank();
 
-    w.open("impl Default for " + typeName + " {");
+    if (section.deprecated)
+    {
+        if (options.emitDeprecationAttributes)
+        {
+            w.line("#[deprecated]");
+        }
+        w.line("pub type " + typeName + " = " + declaredName + ";");
+        w.blank();
+    }
+
+    w.open("impl Default for " + declaredName + " {");
     w.open("fn default() -> Self {");
     w.open("Self {");
     for (const auto& field : section.fields)
@@ -1456,7 +1483,7 @@ void emitSectionType(SourceWriter&                    w,
     w.close("}");
     w.blank();
 
-    w.open("impl " + typeName + " {");
+    w.open("impl " + declaredName + " {");
     w.line("pub const FULL_NAME: &'static str = \"" + fullName + "\";");
     w.line(std::string("pub const IS_DEPRECATED: bool = ") + (section.deprecated ? "true;" : "false;"));
     w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + fullName + "." + std::to_string(majorVersion) + "." +
@@ -1578,13 +1605,6 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
     w.line("#![allow(non_camel_case_types)]");
     w.line("#![allow(non_snake_case)]");
     w.line("#![allow(non_upper_case_globals)]");
-    if (options.emitDeprecationAttributes)
-    {
-        // Generated code must never warn about itself: the deprecated struct is named by its own impl
-        // blocks and derives, and by any struct that holds it as a field. The allow is module-scoped,
-        // so a consumer outside this module still gets the lint.
-        w.line("#![allow(deprecated)]");
-    }
     out << "\n";
 
     const auto deps = collectDefinitionCompositeDependencies(def);
@@ -1665,7 +1685,11 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
     }
 
     out << "\n";
-    w.line("pub type " + baseType + " = " + reqType + ";");
+    if (def.request.deprecated && options.emitDeprecationAttributes)
+    {
+        w.line("#[deprecated]");
+    }
+    w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
 
     return out.str();
 }

@@ -165,7 +165,7 @@ std::string renderCTagSpelling(const llvm::StringRef typeName)
     return "struct " + typeName.str();
 }
 
-std::string renderCppDeclaredTypeName(const llvm::StringRef typeName, const bool deprecated)
+std::string renderDeclaredTypeName(const llvm::StringRef typeName, const bool deprecated)
 {
     return deprecated ? typeName.str() + "_" : typeName.str();
 }

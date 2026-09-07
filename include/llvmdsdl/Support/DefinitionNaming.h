@@ -192,17 +192,18 @@ struct DefinitionNamePolicy final
 /// @return The tag spelling.
 [[nodiscard]] std::string renderCTagSpelling(llvm::StringRef typeName);
 
-/// @brief Renders the name a C++ definition's struct is declared under.
+/// @brief Renders the name a C++ or Rust definition's struct is declared under.
 ///
-/// A deprecated definition is declared as `<typeName>_`, and `<typeName>` becomes a `[[deprecated]]`
-/// alias of it. Generated code names the struct, so its own prototypes, free functions and
-/// embedding structs never mention the deprecated name; user code names the alias and is diagnosed.
-/// Placing `[[deprecated]]` on the struct itself cannot achieve this: GCC reports every mention
-/// outside the struct's own members, from a deprecated context or not.
+/// A deprecated definition is declared as `<typeName>_`, and `<typeName>` becomes a deprecated alias
+/// of it: `using X [[deprecated]] = X_;`, `#[deprecated] pub type X = X_;`. Generated code names the
+/// struct, so its own prototypes, impl blocks, free functions and embedding structs never mention the
+/// deprecated name; user code names the alias and is diagnosed. Deprecating the struct itself cannot
+/// achieve this: GCC reports every mention outside the struct's own members and rustc every mention
+/// including its impl blocks, from a deprecated context or not.
 /// @param[in] typeName The public type name.
 /// @param[in] deprecated Whether the definition is deprecated.
 /// @return The declared name.
-[[nodiscard]] std::string renderCppDeclaredTypeName(llvm::StringRef typeName, bool deprecated);
+[[nodiscard]] std::string renderDeclaredTypeName(llvm::StringRef typeName, bool deprecated);
 
 }  // namespace llvmdsdl
 

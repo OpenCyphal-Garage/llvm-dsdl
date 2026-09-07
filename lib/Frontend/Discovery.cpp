@@ -318,7 +318,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
                 {
                     record(language,
                            scope,
-                           renderCppDeclaredTypeName(base, true),
+                           renderDeclaredTypeName(base, true),
                            TypeNameOrigin{info.fullName, "", info.filePath});
                 }
                 continue;
@@ -331,7 +331,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
                 {
                     record(language,
                            scope,
-                           renderCppDeclaredTypeName(sectionName, true),
+                           renderDeclaredTypeName(sectionName, true),
                            TypeNameOrigin{info.fullName, section.str(), info.filePath});
                 }
             }
