@@ -6,7 +6,7 @@
 #
 # ===----------------------------------------------------------------------===//
 
-"""Install a built.deb on a pristine system and prove the tools work.
+"""Install a built .deb on a pristine system and prove the tools work.
 
 The package this checks is a *downloadable file*: users fetch it and run
 ``apt install ./llvm-dsdl_*.deb`` against stock Ubuntu, with no repository of
