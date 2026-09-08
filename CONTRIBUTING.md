@@ -312,6 +312,15 @@ cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showr
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target showroom-docs
 ```
 
+Regulated corpus. `prdt-corpus` generates `submodules/public_regulated_data_types` — both `uavcan` and
+`reg` — with dsdlc in every language and with Nunavut's `nnvg` at the release CI pins, into
+`<build-dir>/prdt-corpus/{dsdlc,nnvg}/<language>/`. The script behind it also runs on its own and can
+build dsdlc first; see `python3 tools/generate_prdt_corpus.py --help`.
+
+```bash
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target prdt-corpus
+```
+
 Documentation targets. Three kinds of page under `docs/` are produced rather than written — the
 showroom (compiler output), the guarantee matrices (report-generator output), and
 `llms.txt`/`llms-full.txt` (derived from the nav, for agents and documentation crawlers). None are

@@ -110,6 +110,17 @@ if(PYTHON_EXECUTABLE)
     PROPERTIES
       LABELS "unit;python"
   )
+
+  add_test(
+    NAME llvmdsdl-prdt-corpus-tool-tests
+    COMMAND ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/test_generate_prdt_corpus.py
+  )
+
+  set_tests_properties(
+    llvmdsdl-prdt-corpus-tool-tests
+    PROPERTIES
+      LABELS "unit;python"
+  )
 else()
   message(STATUS "Skipping Python unit tests: python3 unavailable")
 endif()
