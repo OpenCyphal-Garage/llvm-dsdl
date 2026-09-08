@@ -55,6 +55,20 @@ struct TypeLayout final
     SemanticFieldType resolved;
 };
 
+/// @brief Bit-length set of a composite as it appears on the wire when referenced from another
+///        definition: the section's own final offsets when sealed, otherwise the delimited container
+///        (32-bit delimiter header plus a byte-granular payload of up to the extent). `_bit_length_`
+///        resolves to the same set, as it does in pydsdl.
+BitLengthSet compositeWireBitLengthSet(const SemanticSection& sec)
+{
+    if (sec.sealed)
+    {
+        return sec.offsetAtEnd;
+    }
+    const std::int64_t extent = sec.extentBits.value_or(0);
+    return BitLengthSet(32) + BitLengthSet(8).repeatRange(extent / 8);
+}
+
 std::string typeKey(const std::string& name, std::uint32_t major, std::uint32_t minor)
 {
     return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
@@ -557,18 +571,8 @@ private:
             const auto& sec                     = def->request;
             layout.resolved.compositeSealed     = sec.sealed;
             layout.resolved.compositeExtentBits = sec.extentBits.value_or(sec.offsetAtEnd.max());
-            if (sec.sealed)
-            {
-                layout.bls                   = sec.offsetAtEnd;
-                layout.resolved.bitLengthSet = layout.bls;
-                return layout;
-            }
-
-            const std::int64_t extent = sec.extentBits.value_or(0);
-            BitLengthSet       bls(32);
-            bls                          = bls + BitLengthSet(8).repeatRange(extent / 8);
-            layout.bls                   = bls;
-            layout.resolved.bitLengthSet = layout.bls;
+            layout.bls                          = compositeWireBitLengthSet(sec);
+            layout.resolved.bitLengthSet        = layout.bls;
             return layout;
         };
 
@@ -846,6 +850,10 @@ private:
             if (attributeName == "_extent_")
             {
                 return Value{Rational(sec.extentBits.value_or(sec.offsetAtEnd.max()), 1)};
+            }
+            if (attributeName == "_bit_length_")
+            {
+                return Value{compositeWireBitLengthSet(sec)};
             }
 
             for (const auto& constant : sec.constants)
