@@ -319,10 +319,18 @@ bool runEvaluatorTests()
             return false;
         }
 
-        auto invalidPower = evaluateAssertExpression("2 ** -1", diag, env, nullptr);
-        if (invalidPower || !hasErrorContaining(diag, "invalid rational operation"))
+        auto negativePower = evaluateAssertExpression("2 ** -11", diag, env, nullptr);
+        if (!expectRational(negativePower, llvmdsdl::Rational(1, 2048)))
         {
-            std::cerr << "expected invalid rational operation for negative exponent\n";
+            std::cerr << "negative-exponent power evaluation produced unexpected result\n";
+            return false;
+        }
+
+        llvmdsdl::DiagnosticEngine zeroDiag;
+        auto                       invalidPower = evaluateAssertExpression("0 ** -1", zeroDiag, env, nullptr);
+        if (invalidPower || !hasErrorContaining(zeroDiag, "invalid rational operation"))
+        {
+            std::cerr << "expected invalid rational operation for zero raised to a negative exponent\n";
             return false;
         }
     }
