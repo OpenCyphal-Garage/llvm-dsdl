@@ -71,9 +71,6 @@ struct Options final
     /// @brief Requested runtime helper specialisation.
     RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 

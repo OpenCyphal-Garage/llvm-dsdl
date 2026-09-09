@@ -2189,12 +2189,7 @@ llvm::Error emit(const SemanticModule& semantic,
     }
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C++");
     LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic,
-                                     module,
-                                     diagnostics,
-                                     "C++",
-                                     &loweredFacts,
-                                     options.optimizeLoweredSerDes))
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C++", &loweredFacts))
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }

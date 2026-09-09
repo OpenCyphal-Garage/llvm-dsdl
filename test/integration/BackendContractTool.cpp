@@ -43,8 +43,11 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
@@ -350,7 +353,7 @@ std::optional<std::string> factsDigest(const llvmdsdl::SemanticModule& semantic,
 {
     llvmdsdl::DiagnosticEngine diagnostics;
     llvmdsdl::LoweredFactsMap  facts;
-    if (!llvmdsdl::collectLoweredFactsFromMlir(semantic, module, diagnostics, "backend-contract", &facts, false))
+    if (!llvmdsdl::collectLoweredFactsFromMlir(semantic, module, diagnostics, "backend-contract", &facts))
     {
         return std::nullopt;
     }
@@ -624,6 +627,14 @@ struct Session final
         return module;
     }
 
+    /// Runs the pipeline every backend's bodies are translations of, as dsdlc does before emission.
+    static bool lowerBodies(mlir::ModuleOp module)
+    {
+        mlir::PassManager pm(module.getContext());
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, false);
+        return mlir::succeeded(pm.run(module));
+    }
+
     /// Generates into `work-dir/<name>`; the snapshot of in-scope files, or nullopt on failure.
     std::optional<std::map<fs::path, std::string>> generate(const std::string&              name,
                                                             const llvmdsdl::SemanticModule& semantic,
@@ -654,7 +665,7 @@ struct Session final
             return false;
         }
         auto baselineModule = lower(*semantic);
-        if (!baselineModule)
+        if (!baselineModule || !lowerBodies(*baselineModule))
         {
             return false;
         }
@@ -674,7 +685,8 @@ struct Session final
         // Determinism: the same inputs into a different directory.
         {
             auto module = lower(*semantic);
-            auto repeat = module ? generate("baseline-repeat", *semantic, *module) : std::nullopt;
+            auto repeat =
+                (module && lowerBodies(*module)) ? generate("baseline-repeat", *semantic, *module) : std::nullopt;
             if (!repeat)
             {
                 record("determinism", "repeat", Verdict::Error, "generation failed");
@@ -701,6 +713,11 @@ struct Session final
             if (!row.apply(*module))
             {
                 record("operation-reflection", row.name, Verdict::Error, "fixture does not fit the row");
+                continue;
+            }
+            if (!lowerBodies(*module))
+            {
+                record("operation-reflection", row.name, Verdict::Error, "lowering failed on perturbed operations");
                 continue;
             }
             const auto facts = factsDigest(*semantic, *module);
@@ -740,7 +757,7 @@ struct Session final
                 continue;
             }
             auto module = lower(*semantic);
-            if (!module)
+            if (!module || !lowerBodies(*module))
             {
                 record("model-independence", row.name, Verdict::Error, "lowering failed");
                 continue;

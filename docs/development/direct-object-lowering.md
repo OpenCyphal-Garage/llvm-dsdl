@@ -334,16 +334,15 @@ byte-for-byte with the C lane.
 ### The lane
 
 `--target-language obj` is the C backend's API with the definitions already assembled: the same
-headers, declaring the same symbols. Per definition, the plan becomes operations, converts to the
-LLVM dialect, is finished by the upstream conversions, and is handed to `translateModuleToLLVMIR`
-and then to `TargetMachine::addPassesToEmitFile`. `--target-triple` names the target; every
+headers, declaring the same symbols. Per definition, the functions `lower-dsdl-bodies` built
+convert to the LLVM dialect, are finished by the upstream conversions, and are handed to
+`translateModuleToLLVMIR` and then to `TargetMachine::addPassesToEmitFile`. `--target-triple` names the target; every
 backend the build carries is linked in, so emitting for one is a matter of naming it.
 
 A per-definition module holds only its own schema, which is enough for C -- a nested type is
 reached by name, and its header supplies that. An object needs the nested type's *layout*, so the
-schemas it reaches are cloned in beside it, marked so that neither the body builder nor the helper
-lowering touches them. Their serialisation belongs to their own object; a second copy here would
-be a duplicate symbol and a second thing to keep right.
+schemas it reaches are cloned in beside it, without their functions. Their serialisation belongs
+to their own object.
 
 The primitives are internal to each object, as `static inline` makes them in C. Exported, no two
 objects could be linked together.

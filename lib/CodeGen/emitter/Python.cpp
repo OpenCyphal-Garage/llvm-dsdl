@@ -1866,12 +1866,7 @@ llvm::Error emit(const SemanticModule& semantic,
     const auto mlirCoverageDiagnostic =
         codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Python");
     LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic,
-                                     module,
-                                     diagnostics,
-                                     "Python",
-                                     &loweredFacts,
-                                     options.optimizeLoweredSerDes))
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Python", &loweredFacts))
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }

@@ -16,6 +16,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <array>
@@ -32,6 +33,7 @@
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
+#include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
@@ -124,6 +126,12 @@ std::optional<mlir::OwningOpRef<mlir::ModuleOp>> lowerFixture(llvmdsdl::Diagnost
     {
         return std::nullopt;
     }
+    mlir::PassManager pm(&context);
+    llvmdsdl::addLowerDSDLBodiesPipeline(pm, false);
+    if (mlir::failed(pm.run(*lowered)))
+    {
+        return std::nullopt;
+    }
     return lowered;
 }
 
@@ -183,7 +191,7 @@ bool expectFactsCollectionFailure(llvmdsdl::SemanticModule& semantic,
 {
     llvmdsdl::LoweredFactsMap  facts;
     llvmdsdl::DiagnosticEngine diagnostics;
-    const bool ok = llvmdsdl::collectLoweredFactsFromMlir(semantic, module, diagnostics, backendLabel, &facts, false);
+    const bool ok = llvmdsdl::collectLoweredFactsFromMlir(semantic, module, diagnostics, backendLabel, &facts);
     if (ok)
     {
         std::cerr << backendLabel << " facts collection unexpectedly succeeded\n";
@@ -266,7 +274,7 @@ bool runLoweringMetadataFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
+                                          "the module does not verify for " + backend + " backend validation"))
         {
             return false;
         }
@@ -307,7 +315,7 @@ bool runSchemaIdentityFamilyTests(mlir::MLIRContext& context)
         if (!expectFactsCollectionFailure(*semantic,
                                           *perBackend,
                                           backend,
-                                          "failed to run lower-dsdl-exec for " + backend + " backend validation"))
+                                          "the module does not verify for " + backend + " backend validation"))
         {
             return false;
         }

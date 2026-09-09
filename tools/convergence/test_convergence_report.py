@@ -31,6 +31,7 @@ def _write_json(path: Path, data: Dict[str, object]) -> None:
 
 class ConvergenceReportRegressionTest(unittest.TestCase):
     CONVERGENCE_REPORT_REQUIRED_PATHS = [
+        "tools/dsdlc/main.cpp",
         "lib/CodeGen/emitter/C.cpp",
         "lib/CodeGen/emitter/Cpp.cpp",
         "lib/CodeGen/emitter/Rust.cpp",

@@ -29,10 +29,9 @@ the dialect. Consuming lowered facts is not translating lowered operations.
 
 `lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-annotate-aliasability` and
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
-registered with `dsdl-opt` under that name. The C lane runs it for both of its artefacts.
-
-The C lane runs it per definition, after stamping C names on the schema, and translates each
-result.
+registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
+receives. The C lane takes each definition's schema, and the functions built for it, from that
+module; stamps C names on the schema; and converts them.
 
 ## The body IR is target-neutral
 

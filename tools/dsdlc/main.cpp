@@ -63,6 +63,9 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
+#include "llvmdsdl/Transforms/Passes.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/CliPath.h"
@@ -2042,6 +2045,19 @@ int runDsdlc(int argc, char** argv)
         return llvm::Error::success();
     };
 
+    // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
+    // over the module they all receive.
+    {
+        logVerbose(1, "lowering serialisation plans to bodies");
+        mlir::PassManager pm(&context);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes);
+        if (mlir::failed(pm.run(*mlirModule)))
+        {
+            llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+    }
+
     logVerbose(1, "running backend emission");
 
     // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
@@ -2056,7 +2072,6 @@ int runDsdlc(int argc, char** argv)
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2081,7 +2096,6 @@ int runDsdlc(int argc, char** argv)
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2109,7 +2123,6 @@ int runDsdlc(int argc, char** argv)
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2144,7 +2157,6 @@ int runDsdlc(int argc, char** argv)
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
         emitOptions.memoryMode                = options.rustMemoryMode;
         emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2172,13 +2184,12 @@ int runDsdlc(int argc, char** argv)
     if (options.targetLanguage == "go")
     {
         llvmdsdl::emitter::go::Options emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning    = options.typeNameVersioning;
-        emitOptions.moduleName            = options.goModuleName;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.outDir             = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.moduleName         = options.goModuleName;
+        emitOptions.selectedTypeKeys   = selectedTypeKeys;
+        emitOptions.supportGeneration  = options.supportGeneration;
+        emitOptions.writePolicy        = writePolicy;
 
         if (auto err =
                 llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
@@ -2206,7 +2217,6 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
@@ -2237,7 +2247,6 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;

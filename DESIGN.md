@@ -140,7 +140,7 @@ The backend emitters live in [`include/llvmdsdl/CodeGen/emitter`](./include/llvm
 
 ## 4. Backend Contract
 
-A backend is a translation of MLIR. For every definition, one pass pipeline runs, regardless of target — `lower-dsdl-exec`, `dsdl-annotate-aliasability`, `build-dsdl-plan-bodies` — and produces, for each serialisation plan, a serialise function and a deserialise function whose bodies are dialect operations. A backend receives those functions and spells them in its language. The body translator's input is the `func.func`; it has no access to the `SemanticModule`, to lowered-facts maps, or to any codegen-side plan structure. Type declarations, module layout, manifests and runtime support are outside the body contract and may consult the semantic model.
+A backend is a translation of MLIR. One pass pipeline runs over the module, regardless of target — `lower-dsdl-exec`, `dsdl-annotate-aliasability`, `build-dsdl-plan-bodies` — and produces, for each serialisation plan, a serialise function and a deserialise function whose bodies are dialect operations. A backend receives those functions and spells them in its language. The body translator's input is the `func.func`; it has no access to the `SemanticModule`, to lowered-facts maps, or to any codegen-side plan structure. Type declarations, module layout, manifests and runtime support are outside the body contract and may consult the semantic model.
 
 An emitter that decides what a body does from any other source is not a backend of this compiler. This architecture has three times been delivered as shared planners over lowered facts with per-language rendering, and each time the result read as the real thing because every emitter consumed the dialect. Consuming lowered facts is not translating lowered operations. The planners are what this contract removes; there is one body source.
 
@@ -164,7 +164,7 @@ A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap
 
 ### 5.1 C backend (`emitter::c::emit`)
 
-The C backend translates plan bodies through EmitC. For each selected definition, it runs the lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
+The C backend translates plan bodies through EmitC. For each selected definition, it takes the schema and the functions the pipeline built for it, runs the conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
 
 Key file:
 
@@ -173,8 +173,8 @@ Key file:
 Current path:
 
 1. Validate lowered contract coverage.
-2. Clone per-definition schema into a working module.
-3. Run `lower-dsdl-bodies`, then `convert-dsdl-to-emitc`, canonicalisation/CSE and the EmitC conversions.
+2. Clone the definition's schema, and the functions `lower-dsdl-bodies` built for it, into a working module.
+3. Run `convert-dsdl-to-emitc`, canonicalisation/CSE and the EmitC conversions.
 4. Emit body using `mlir::emitc::translateToCpp(...)`.
 5. Emit matching `.h` API and `dsdl_runtime.h`.
 

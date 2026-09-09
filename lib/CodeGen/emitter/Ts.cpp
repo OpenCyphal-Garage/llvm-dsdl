@@ -2171,12 +2171,7 @@ llvm::Error emit(const SemanticModule& semantic,
     const auto mlirCoverageDiagnostic =
         codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("TypeScript");
     LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic,
-                                     module,
-                                     diagnostics,
-                                     "TypeScript",
-                                     &loweredFacts,
-                                     options.optimizeLoweredSerDes))
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "TypeScript", &loweredFacts))
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }

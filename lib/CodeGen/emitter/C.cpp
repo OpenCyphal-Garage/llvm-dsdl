@@ -69,6 +69,7 @@
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -749,9 +750,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 ///
 /// A C translation unit needs only the nested type's name, which its header supplies. An object
 /// addresses members by position, so it needs the nested type's layout, and that lives in the
-/// nested type's own schema. They are marked so that the body builder passes over them: the
-/// serialisation of a nested type belongs to the nested type's object, and a second copy here
-/// would be a duplicate symbol and a second thing to keep right.
+/// nested type's own schema. Their functions stay behind: the serialisation of a nested type
+/// belongs to the nested type's object.
 void cloneReachableSchemas(mlir::Operation*                         target,
                            mlir::ModuleOp                           destination,
                            const llvm::StringMap<mlir::Operation*>& byKey)
@@ -778,10 +778,24 @@ void cloneReachableSchemas(mlir::Operation*                         target,
                 return;
             }
             mlir::Operation* const clone = found->second->clone();
-            clone->setAttr("llvmdsdl.layout_only", mlir::UnitAttr::get(clone->getContext()));
             destination.getBodyRegion().front().push_back(clone);
             pending.push_back(clone);
         });
+    }
+}
+
+/// @brief Clones into @p destination the functions the pipeline built for @p schema: its helpers
+///        and its two bodies, in the order @p source holds them.
+void cloneFunctionsOf(mlir::dsdl::SchemaOp schema, mlir::ModuleOp source, mlir::ModuleOp destination)
+{
+    const llvm::StringRef owner = schema.getSymName();
+    for (const mlir::func::FuncOp fn : source.getBodyRegion().front().getOps<mlir::func::FuncOp>())
+    {
+        const auto tag = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        if (tag && tag.getValue() == owner)
+        {
+            destination.getBodyRegion().front().push_back(fn->clone());
+        }
     }
 }
 
@@ -900,7 +914,7 @@ llvm::Error emit(const SemanticModule& semantic,
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
 
     LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", &loweredFacts, options.optimizeLoweredSerDes))
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", &loweredFacts))
     {
         diagnostics.error({"<mlir>", 1, 1}, mlirCoverageDiagnostic);
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
@@ -941,6 +955,8 @@ llvm::Error emit(const SemanticModule& semantic,
 
         auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
         auto perDefModule    = *perDefModuleRef;
+        // The contract the pipeline stamped on the module travels with each definition's share of it.
+        perDefModule->setAttrs(module->getAttrDictionary());
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
 
         const std::string targetHeaderPath = EmitterContext::relativeHeaderPath(def);
@@ -961,9 +977,9 @@ llvm::Error emit(const SemanticModule& semantic,
             // definition, so a nested type's members are named the way its own object named them.
             (void) stampCNames(perDefModule, semantic, options.typeNameVersioning);
         }
+        cloneFunctionsOf(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), module, perDefModule);
 
         mlir::PassManager pm(perDefModule.getContext());
-        addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes);
         if (options.artifact == Artifact::Object)
         {
             pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));

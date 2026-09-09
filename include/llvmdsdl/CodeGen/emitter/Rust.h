@@ -104,9 +104,6 @@ struct Options final
     /// @brief Inline storage threshold in bytes for pool mode.
     std::uint32_t inlineThresholdBytes{256U};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
     ///
     /// @details

@@ -19,9 +19,13 @@ from typing import Iterable, List, Sequence
 
 SOURCE_RULES = [
     {
+        "path": "tools/dsdlc/main.cpp",
+        "required": [r"addLowerDSDLBodiesPipeline\("],
+        "forbidden": [],
+    },
+    {
         "path": "lib/CodeGen/emitter/C.cpp",
         "required": [
-            r"addLowerDSDLBodiesPipeline\(",
             r"createConvertDSDLToEmitCPass\(",
             r"collectLoweredFactsFromMlir\(",
             r"mlirSchemaCoverageValidationFailedForEmission\(\"C\"\)",

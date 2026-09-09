@@ -1786,12 +1786,7 @@ llvm::Error emit(const SemanticModule& semantic,
     }
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Rust");
     LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic,
-                                     module,
-                                     diagnostics,
-                                     "Rust",
-                                     &loweredFacts,
-                                     options.optimizeLoweredSerDes))
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Rust", &loweredFacts))
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }

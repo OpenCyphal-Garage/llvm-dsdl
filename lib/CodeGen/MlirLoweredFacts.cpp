@@ -18,10 +18,7 @@
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
 #include <cstdint>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
@@ -33,11 +30,8 @@
 #include <utility>
 
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
-#include "mlir/Pass/Pass.h"  // IWYU pragma: keep
-#include "mlir/Pass/PassManager.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -91,35 +85,18 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                                  mlir::ModuleOp         module,
                                  DiagnosticEngine&      diagnostics,
                                  const std::string&     backendLabel,
-                                 LoweredFactsMap* const outFacts,
-                                 const bool             optimizeLoweredSerDes)
+                                 LoweredFactsMap* const outFacts)
 {
     std::unordered_map<std::string, std::set<std::string>> keyToSections;
     LoweredFactsMap                                        loweredFacts;
-    auto              loweredModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>(module->clone()));
-    mlir::PassManager pm(module.getContext());
-    pm.addPass(createLowerDSDLExecPass());
-    pm.addPass(createDSDLAnnotateAliasabilityPass());
-    if (optimizeLoweredSerDes)
+    // The facts are read through the dialect's accessors, which is only sound over IR the
+    // verifier has accepted.
+    if (mlir::failed(mlir::verify(module.getOperation())))
     {
-        addOptimizeLoweredSerDesPipeline(pm);
-    }
-    // The passes read the dialect's attributes through their accessors, which is only sound over
-    // IR the verifier has accepted.
-    if (mlir::failed(mlir::verify(loweredModule->getOperation())))
-    {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "failed to run lower-dsdl-exec for " + backendLabel +
-                              " backend validation: the module does not verify");
+        diagnostics.error({"<mlir>", 1, 1}, "the module does not verify for " + backendLabel + " backend validation");
         return false;
     }
-    if (mlir::failed(pm.run(*loweredModule)))
-    {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "failed to run lower-dsdl-exec for " + backendLabel + " backend validation");
-        return false;
-    }
-    if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(loweredModule->getOperation()))
+    if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(module.getOperation()))
     {
         switch (envelopeViolation->kind)
         {
@@ -146,7 +123,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
         return false;
     }
 
-    for (mlir::dsdl::SchemaOp op : loweredModule->getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+    for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
         const std::string fullName = op.getFullName().str();
         const auto        key      = loweredTypeKey(fullName, op.getMajor(), op.getMinor());
@@ -195,7 +172,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                 return false;
             }
 
-            if (const auto violation = findLoweredPlanContractViolation(*loweredModule, child.getOperation()))
+            if (const auto violation = findLoweredPlanContractViolation(module, child.getOperation()))
             {
                 diagnostics.error({"<mlir>", 1, 1},
                                   "serialisation plan contract violation for " + op.getFullName().str() + ": " +

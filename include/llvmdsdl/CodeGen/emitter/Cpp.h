@@ -72,9 +72,6 @@ struct Options final
     /// @brief Requested C++ profile.
     Profile profile{Profile::Both};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
     ///
     /// @details

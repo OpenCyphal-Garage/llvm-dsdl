@@ -1081,12 +1081,6 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
 
     for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (op->hasAttr("llvmdsdl.layout_only"))
-        {
-            // Present so that a member of this type can be addressed. Its helpers belong to its
-            // own object, which is where a caller resolves them.
-            continue;
-        }
         if (op.getBody().empty())
         {
             continue;
@@ -1226,12 +1220,6 @@ struct AnnotateDSDLAliasabilityPass
         {
             if (op.getBody().empty())
             {
-                continue;
-            }
-            if (op->hasAttr("llvmdsdl.layout_only"))
-            {
-                // Present so that a member of this type can be addressed. Its helpers belong to
-                // its own object, which is where a caller resolves them.
                 continue;
             }
             for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())

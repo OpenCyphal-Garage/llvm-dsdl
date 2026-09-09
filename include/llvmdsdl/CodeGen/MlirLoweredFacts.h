@@ -115,18 +115,16 @@ std::string loweredTypeKey(const std::string& name, std::uint32_t major, std::ui
 
 /// @brief Collects lowered metadata from MLIR for all semantic definitions.
 /// @param[in] semantic Semantic module used for validation/indexing.
-/// @param[in] module MLIR module containing lowered serialisation plans.
+/// @param[in] module The module after `lower-dsdl-bodies`.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @param[in] backendLabel Backend label for diagnostics.
 /// @param[out] outFacts Output lowered-facts map.
-/// @param[in] optimizeLoweredSerDes Enables optional optimisation pipeline.
 /// @return True on success, false on extraction/validation failure.
 bool collectLoweredFactsFromMlir(const SemanticModule& semantic,
                                  mlir::ModuleOp        module,
                                  DiagnosticEngine&     diagnostics,
                                  const std::string&    backendLabel,
-                                 LoweredFactsMap*      outFacts,
-                                 bool                  optimizeLoweredSerDes = false);
+                                 LoweredFactsMap*      outFacts);
 
 /// @brief Finds lowered field facts by field name.
 /// @param[in] sectionFacts Section facts map.

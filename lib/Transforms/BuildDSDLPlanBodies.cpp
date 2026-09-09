@@ -1753,6 +1753,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             {
                 return plan.emitOpError("body '" + name + "' was not defined");
             }
+            fn->setAttr("llvmdsdl.schema_sym", schema.getSymNameAttr());
             built.push_back(fn);
         }
         return mlir::success();
@@ -1766,12 +1767,6 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         mlir::SmallVector<mlir::func::FuncOp, 16> built;
         for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
-            if (schema->hasAttr("llvmdsdl.layout_only"))
-            {
-                // Present so that a member of this type can be addressed. Its serialisation is
-                // its own object's to define.
-                continue;
-            }
             // A schema is a type, and a type has a plan. The header a backend publishes
             // declares entry points for it, so a schema that carries none is malformed input
             // rather than something to pass over.
