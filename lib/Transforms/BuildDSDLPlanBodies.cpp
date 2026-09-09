@@ -1746,14 +1746,22 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         {
             return plan.emitOpError("deserialize body could not be built");
         }
-        for (const std::string& name : {fnStem + "__serialize_ir_", fnStem + "__deserialize_ir_"})
+        for (const auto& [name, direction] : {std::pair{fnStem + "__serialize_ir_", "serialize"},
+                                              std::pair{fnStem + "__deserialize_ir_", "deserialize"}})
         {
             auto fn = module.lookupSymbol<mlir::func::FuncOp>(name);
             if (!fn)
             {
                 return plan.emitOpError("body '" + name + "' was not defined");
             }
+            // What a translator needs to find a body and place it: the schema it serialises,
+            // its direction, and the section of a service it belongs to.
             fn->setAttr("llvmdsdl.schema_sym", schema.getSymNameAttr());
+            fn->setAttr("llvmdsdl.plan_body", builder.getStringAttr(direction));
+            if (!section.empty())
+            {
+                fn->setAttr("llvmdsdl.section", builder.getStringAttr(section));
+            }
             built.push_back(fn);
         }
         return mlir::success();

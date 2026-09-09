@@ -1,10 +1,10 @@
 # Canonical emit order
 
-The reference **abstract** serialise/deserialize step order that every string backend
-(Rust, Go, C++, TypeScript, Python) follows. This is a live contract: the shared render
-template produces this order by construction, and the emit-order verifier
+The reference **abstract** serialise/deserialize step order that every string backend that
+plans its bodies (Rust, Go, TypeScript, Python) follows. This is a live contract: the shared
+render template produces this order by construction, and the emit-order verifier
 (`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order-verifier`)
-independently pins it on every build.
+independently pins it on every build. C++ translates the plan bodies, and its order is theirs.
 
 This prose is the human-readable projection of the machine-checked model in
 [spec/dafny/CyphalSerdes.dfy](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
@@ -83,7 +83,7 @@ ADVANCE(tagBits)
 SWITCH(tag) { CASE(optionIndex): ALIGN(...) <field ops> ... DEFAULT: DEFAULT_BAD_TAG }
 ```
 Note `READ → MASK → STORE → VALIDATE` on deserialise vs `VALIDATE → MASK → WRITE` on serialise
-(principle 1). All five backends emit this by construction via `renderUnionSection`.
+(principle 1). All four backends emit this by construction via `renderUnionSection`.
 
 ## Field level
 
@@ -184,8 +184,8 @@ Each op carries a small payload where relevant (bit width, option index, scalar 
 normalises away identifiers and indentation, keeping op + payload — payloads are compared,
 so a wrong bit width or option index fails even when op names agree.
 
-Two structural elements beyond the wire ops: `BULK_COPY` (payload = total bits) is the honest trace
-of the C++ fixed-bool-array fast path — the D3 declared equivalence
+Two structural elements beyond the wire ops: `BULK_COPY` (payload = total bits) is the trace of a
+fixed bool array copied as one run — the D3 declared equivalence
 `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` is applied by the comparator.
 `SECTION <canonical.name> <serialize|deserialize>` header events segment the trace per
 (type, direction) so divergences localize and cannot cancel across type boundaries.
@@ -204,10 +204,10 @@ score cannot see structural facts of this kind.
 | # | Backend(s) | Kind | Resolution |
 |---|---|---|---|
 | D1 | TS/Python mask the union tag as its own statement; Rust/Go fold it into the write argument | **Spelling only** — abstract order `VALIDATE→MASK→WRITE` is identical | Both kept. Serves as the verifier's insensitivity case: it must report *equal* |
-| D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go/C++ do not** (fixed arrays are compile-time-sized `[N]T` / `std::array`, so the guard is subsumed by the type system — no emit site) | **Structural, accepted** — type-system-subsumed, not missing | Declared interface point `FieldStepSpelling::spellFixedArrayLenCheck` (a documented no-op in Go/C++); `LEN_CHECK` is backend-optional in the comparator skeleton |
-| D3 | C++ has a **bulk-copy fast path for fixed `bool` arrays** (`dsdl_runtime_copy_bits`/`get_bits`) that returns before the element loop, so it emits no `ELEM_LOOP` / per-element scalar ops for that case | **C++ optimisation** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces an honest `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned, exercised by the `BoolArray` fixture) |
-| D4 | *(none)* | — | All five backends render the union prologue through `renderUnionSection`, so their raw prologue traces are identical by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
-| D5 | *(further reorderings)* | **None.** All 5 backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
+| D2 | Fixed-array `LEN_CHECK`: **Rust emits it** (Vec/slice, runtime `len != capacity` guard); **Go does not** (fixed arrays are compile-time-sized `[N]T`, so the guard is subsumed by the type system — no emit site) | **Structural, accepted** — type-system-subsumed, not missing | Declared interface point `FieldStepSpelling::spellFixedArrayLenCheck` (a documented no-op in Go); `LEN_CHECK` is backend-optional in the comparator skeleton |
+| D3 | A **bulk copy of a fixed `bool` array** (`dsdl_runtime_copy_bits`/`get_bits`) in place of the element loop, so no `ELEM_LOOP` / per-element scalar ops for that case | **Optimisation** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned) |
+| D4 | *(none)* | — | All four backends render the union prologue through `renderUnionSection`, so their raw prologue traces are identical by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
+| D5 | *(further reorderings)* | **None.** All four backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
 
 ## Enforcement
 
@@ -219,7 +219,6 @@ Three ctests (labels `integration;convergence;emit-order`) run in every ctest-dr
 | `llvmdsdl-emit-order-verifier-selftest` | The checker itself has teeth: mask-before-validate rejected, payload divergence detected, D3 equivalence honored, `BULK_COPY` without `ADVANCE` rejected |
 | `llvmdsdl-emit-order-verifier-mutation` | The whole pipeline has teeth: dsdlc re-runs with `LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate` and the verifier must go red |
 
-**Scope**: the 5 string emitters. **C is out of scope** — it lowers through MLIR
-`convert-dsdl-to-emitc` with no string emitter, and is covered instead by the
-C↔{Go,Rust,Cpp} parity harnesses. State coverage as "5 string emitters + C via parity",
-never "six". Driving EmitC from the step IR is a separate, unscoped epic.
+**Scope**: the four string emitters that plan their bodies. C, obj and C++ are translations
+of the plan bodies, so their order is the plan's, and the C↔{Go,Rust,Cpp} parity harnesses
+cover them. State coverage as "4 planned emitters + 3 translations via parity".

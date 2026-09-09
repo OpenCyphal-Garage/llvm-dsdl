@@ -4,7 +4,7 @@
 """
 Emit-order verifier (the golden step-trace check).
 
-Runs dsdlc over a set of DSDL fixtures for each string backend (rust/go/cpp/ts/python)
+Runs dsdlc over a set of DSDL fixtures for each string backend (rust/go/ts/python)
 with the LLVMDSDL_EMIT_TRACE side channel enabled, then verifies each backend's abstract
 op-trace is a MEMBER of the proven-safe equivalence class -- the same serialize/deserialize
 ordering the Dafny oracle (spec/dafny/CyphalSerdes.dfy) proves for the canonical traces.
@@ -33,10 +33,10 @@ It checks two things:
      prefix width is a failure even when the op names agree.
 
 Accepted differences (explicitly modeled):
-  D2: LEN_CHECK (fixed-array exact-length guard) is backend-optional -- Go/C++ fixed
+  D2: LEN_CHECK (fixed-array exact-length guard) is backend-optional -- Go fixed
       arrays are compile-time sized so the guard is type-system-subsumed. Dropped from
       the skeleton.
-  D3: the C++ fixed-bool-array fast path traces BULK_COPY instead of an element loop;
+  D3: a fixed bool array copied as one run traces BULK_COPY instead of an element loop;
       the skeleton expands BULK_COPY to ELEM_LOOP + one 1-bit bool scalar op.
   D4: ADVANCE / STORE_TAG positions are bookkeeping freedom. Dropped from the skeleton;
       membership (check 1) still pins the safety-critical relative order.
@@ -54,7 +54,7 @@ import subprocess
 import sys
 import tempfile
 
-BACKENDS = ["rust", "go", "cpp", "ts", "python"]
+BACKENDS = ["rust", "go", "ts", "python"]
 
 # Ops whose position is a free bookkeeping/accepted-difference degree of freedom (D2/D4 +
 # the native-only trailing byte-align). Removed before the cross-backend skeleton
@@ -172,7 +172,7 @@ def skeleton(segment, direction):
         if op in SKELETON_DROP:
             continue
         if op == "BULK_COPY":
-            # D3: the C++ fixed-bool-array fast path is declared equivalent to an
+            # D3: a fixed bool array copied as one run is declared equivalent to an
             # element loop of 1-bit bool scalar ops.
             out.append(("ELEM_LOOP", None))
             out.append((scalar, 1))
@@ -184,8 +184,6 @@ def skeleton(segment, direction):
 def run_dsdlc(dsdlc, lang, fixture_root, trace_path, out_dir, extra_env=None):
     """Generate `lang` from fixture_root with tracing on; return (ok, stderr)."""
     cmd = [dsdlc, "--target-language", lang, fixture_root, "--outdir", out_dir]
-    if lang == "cpp":
-        cmd += ["--cpp-profile", "std"]   # a single flavor -> a single, non-doubled trace
     if lang == "ts":
         cmd += ["--ts-module", "emit_order_verifier"]
     if lang == "go":
@@ -211,7 +209,7 @@ FIXTURES = {
     "vaultwidget/Floats.1.0.dsdl": "float16 a\nfloat32 b\nfloat64 c\n@sealed\n",
     # Signed ints + void padding: exercises SINT scalars, PAD, and ALIGN.
     "vaultwidget/SignedPad.1.0.dsdl": "int7 a\nvoid9\nint32 b\n@sealed\n",
-    # A fixed bool array + a scalar bool: exercises the C++ bulk-copy fast path (D3).
+    # A fixed bool array + a scalar bool: exercises the bulk-copy equivalence (D3).
     "vaultwidget/BoolArray.1.0.dsdl": "bool[16] flags\nbool single\n@sealed\n",
     # A sealed composite member: exercises COMPOSITE_INLINE.
     "vaultwidget/Inner.1.0.dsdl": "uint8 x\n@sealed\n",
@@ -391,7 +389,7 @@ def selftest():
     b = skeleton([("WRITE_SCALAR_UINT", 16), ("ADVANCE", 16)], "serialize")
     expect("payload divergence detected (uint8 vs uint16)", a != b)
 
-    # D3: C++ BULK_COPY must be skeleton-equal to the element-loop form.
+    # D3: BULK_COPY must be skeleton-equal to the element-loop form.
     loop_form = skeleton([("ELEM_LOOP", None), ("WRITE_SCALAR_BOOL", 1), ("ADVANCE", 1)],
                          "serialize")
     bulk_form = skeleton([("BULK_COPY", 16), ("ADVANCE", 16)], "serialize")

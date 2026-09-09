@@ -240,16 +240,23 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
         traits["helper_binding_render"] = _has_any(text, [r"buildSectionHelperBodies\("])
         traits["union_helper_usage"] = _has_any(text, [r"unionTagValidate"])
         traits["capacity_helper_usage"] = _has_any(text, [r"capacityCheck"])
-        traits["shared_pipeline"] = traits["native_function_skeleton"] or _has_all(
-            text,
-            [
-                r"collectLoweredFactsFromMlir\(",
-                r"forEachNativeEmitterRenderStep\(",
-                r"renderIR\.helperBindings",
-                r"buildSectionHelperBodies\(",
-                r"unionTagValidate",
-                r"capacityCheck",
-            ],
+        # A backend whose bodies are translations of the plan operations takes every shape,
+        # helper and diagnostic from the lowered module.
+        traits["body_translation"] = _has_any(text, [r"translateFunction\("])
+        traits["shared_pipeline"] = (
+            traits["body_translation"]
+            or traits["native_function_skeleton"]
+            or _has_all(
+                text,
+                [
+                    r"collectLoweredFactsFromMlir\(",
+                    r"forEachNativeEmitterRenderStep\(",
+                    r"renderIR\.helperBindings",
+                    r"buildSectionHelperBodies\(",
+                    r"unionTagValidate",
+                    r"capacityCheck",
+                ],
+            )
         )
         return traits
 
@@ -449,7 +456,7 @@ def _classifications(kind: str, traits: Dict[str, bool], global_traits: Dict[str
         if traits["shared_pipeline"]:
             for name, _ in SEMANTIC_CLASSES[:8]:
                 classes[name] = "shared"
-        if traits["helper_binding_render"]:
+        if traits["helper_binding_render"] or traits["body_translation"]:
             classes["malformed_input_diagnostic_text"] = "shared"
         if traits["collect_lowered_facts"]:
             classes["lowered_contract_validation"] = "shared"

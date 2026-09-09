@@ -68,17 +68,16 @@ class ExecutionEngineBoundaryValidatorRegressionTest(unittest.TestCase):
         result = self._run_validator(self.repo_root)
         self.assertEqual(result.returncode, 0, msg=f"expected validator success, stderr={result.stderr}")
 
-    def test_missing_native_skeleton_marker_is_detected(self) -> None:
+    def test_missing_body_translation_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-exec-boundary-test-") as tmp_dir:
             snapshot = self._create_snapshot(Path(tmp_dir) / "snapshot")
             target = snapshot / "lib/CodeGen/emitter/Cpp.cpp"
             text = target.read_text(encoding="utf-8")
-            self.assertIn("emitNativeFunctionSkeleton(", text)
-            target.write_text(text.replace("emitNativeFunctionSkeleton(", "emitNativeFunctionSkeleton_REMOVED("),
-                              encoding="utf-8")
+            self.assertIn("translateFunction(", text)
+            target.write_text(text.replace("translateFunction(", "translateFunction_REMOVED("), encoding="utf-8")
             result = self._run_validator(snapshot)
 
-        self.assertNotEqual(result.returncode, 0, msg="expected missing native skeleton marker regression failure")
+        self.assertNotEqual(result.returncode, 0, msg="expected missing body translation marker regression failure")
         self.assertIn("execution-engine regression:", result.stderr)
         self.assertIn("missing required source marker", result.stderr)
         self.assertIn("lib/CodeGen/emitter/Cpp.cpp", result.stderr)

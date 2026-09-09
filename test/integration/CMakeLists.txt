@@ -3531,7 +3531,7 @@ endif()
 # bodies follow. A backend in the enforced list fails its test on a gap; the others report the
 # gap. A backend joins the list in the change that makes its bodies translations of the plan
 # operations, and does not leave it.
-set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj" CACHE STRING
+set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj;cpp" CACHE STRING
     "Backends whose backend-contract gate fails on a gap rather than reporting it.")
 
 add_executable(llvmdsdl-backend-contract-tool BackendContractTool.cpp)

@@ -36,11 +36,13 @@ flowchart LR
   P --> K{"Translation"}
   K --> J["C: convert-dsdl-to-emitc\n+ EmitC translation"]
   K --> N["obj: convert-dsdl-to-llvm\n+ LLVM code generation"]
-  K --> O["C++/Rust/Go/TS/Python:\none translator per language"]
+  K --> O["C++: translateFunction\n+ CppSpelling"]
+  K --> Q["Rust/Go/TS/Python:\none spelling per language"]
   E --> L["Declarations, module layout,\nmanifests, runtime support"]
   J --> M["Generated sources and objects"]
   N --> M
   O --> M
+  Q --> M
   L --> M
 ```
 
@@ -158,7 +160,7 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 Operation reflection is also checked through the lowered-facts channel: a row whose perturbation is visible in `LoweredFactsMap` is reported and not scored, since a fact-walking emitter could reflect it. The rows are chosen so that none is.
 
-A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
+A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj;cpp`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
 ## 5. Backend Architecture (As Implemented)
 
@@ -180,11 +182,12 @@ Current path:
 
 ### 5.2 C++ backend (`emitter::cpp::emit`)
 
-The C++ backend renders namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles.
+The C++ backend renders namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `CppSpelling` spells its operations.
 
-Key file:
+Key files:
 
 - [`lib/CodeGen/emitter/Cpp.cpp`](lib/CodeGen/emitter/Cpp.cpp)
+- [`lib/CodeGen/BodyTranslator.cpp`](lib/CodeGen/BodyTranslator.cpp)
 
 `pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
 

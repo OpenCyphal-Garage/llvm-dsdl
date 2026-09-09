@@ -63,6 +63,7 @@ add_custom_target(llvmdsdl-embedded-runtime-sources
 add_library(llvmdsdlCodeGen
   EmbeddedRuntimeSources.cpp
   ArrayWirePlan.cpp
+  BodyTranslator.cpp
   CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
   DefinitionDependencies.cpp
