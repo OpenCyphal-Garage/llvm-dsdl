@@ -41,6 +41,10 @@ a particular language.
    rest. A backend is this translation and nothing more; `ctest -L backend-contract` reports which
    backends meet that contract (DESIGN.md, *Backend Contract*).
 
+Steps 1 to 4 are the `lower-dsdl-bodies` pipeline, defined once in `lib/Transforms` and registered
+with `dsdl-opt` under that name. [Backend Translation](backend-translation.md) records the work of
+bringing every backend onto it.
+
 ### Boundary guarantees
 
 - Raw or unlowered IR reaching a backend is caught by a contract version and producer-identity guard.

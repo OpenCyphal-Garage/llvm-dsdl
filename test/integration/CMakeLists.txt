@@ -3528,11 +3528,11 @@ endif()
 
 # Backend-contract gates (DESIGN.md, Backend Contract). One test per backend. Each row perturbs
 # either the plan operations or the semantic module and checks which of the two the generated
-# bodies follow. C and obj hold; C++, Rust, Go, TypeScript and Python do not yet, so the option
-# is off and their gaps are reported rather than enforced.
-option(LLVMDSDL_BACKEND_CONTRACT_STRICT
-       "Treat a backend whose bodies do not follow the plan operations as a failure rather than as a gap."
-       OFF)
+# bodies follow. A backend in the enforced list fails its test on a gap; the others report the
+# gap. A backend joins the list in the change that makes its bodies translations of the plan
+# operations, and does not leave it.
+set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj" CACHE STRING
+    "Backends whose backend-contract gate fails on a gap rather than reporting it.")
 
 add_executable(llvmdsdl-backend-contract-tool BackendContractTool.cpp)
 target_link_libraries(llvmdsdl-backend-contract-tool PRIVATE llvmdsdlCodeGen)
@@ -3541,11 +3541,11 @@ target_include_directories(llvmdsdl-backend-contract-tool PRIVATE
   ${LLVMDSDL_BINARY_DIR}/include
 )
 
-set(_backend_contract_strict_flag "")
-if(LLVMDSDL_BACKEND_CONTRACT_STRICT)
-  set(_backend_contract_strict_flag --strict)
-endif()
 foreach(backend c obj cpp rust go ts python)
+  set(_backend_contract_strict_flag "")
+  if(backend IN_LIST LLVMDSDL_BACKEND_CONTRACT_ENFORCED)
+    set(_backend_contract_strict_flag --strict)
+  endif()
   add_test(
     NAME llvmdsdl-backend-contract-${backend}
     COMMAND

@@ -786,7 +786,8 @@ int main(int argc, char** argv)
         {
             return 1;
         }
-        std::cout << "  gap reported, not enforced: LLVMDSDL_BACKEND_CONTRACT_STRICT is off\n";
+        std::cout << "  gap reported, not enforced: " << args->backend
+                  << " is not in LLVMDSDL_BACKEND_CONTRACT_ENFORCED\n";
     }
     return 0;
 }

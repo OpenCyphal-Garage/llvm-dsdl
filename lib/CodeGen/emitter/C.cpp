@@ -964,12 +964,7 @@ llvm::Error emit(const SemanticModule& semantic,
         }
 
         mlir::PassManager pm(perDefModule.getContext());
-        pm.addPass(createLowerDSDLExecPass());
-        if (options.optimizeLoweredSerDes)
-        {
-            addOptimizeLoweredSerDesPipeline(pm);
-        }
-        pm.addPass(createBuildDSDLPlanBodiesPass());
+        addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes);
         if (options.artifact == Artifact::Object)
         {
             pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));

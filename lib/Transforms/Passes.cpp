@@ -1361,6 +1361,17 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLoweredSerDes)
+{
+    pm.addPass(createLowerDSDLExecPass());
+    pm.addPass(createDSDLAnnotateAliasabilityPass());
+    if (optimizeLoweredSerDes)
+    {
+        addOptimizeLoweredSerDesPipeline(pm);
+    }
+    pm.addPass(createBuildDSDLPlanBodiesPass());
+}
+
 void registerDSDLPasses()
 {
     static bool once = false;
@@ -1376,6 +1387,10 @@ void registerDSDLPasses()
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
+    static mlir::PassPipelineRegistration<> const
+        lowerBodiesPipeline("lower-dsdl-bodies",
+                            "Lower serialisation plans to serialise and deserialise functions of dialect operations",
+                            [](mlir::OpPassManager& pm) { addLowerDSDLBodiesPipeline(pm, false); });
     registerBuildDSDLPlanBodiesPass();
     registerDSDLConvertPasses();
     registerEmitDSDLRuntimePass();

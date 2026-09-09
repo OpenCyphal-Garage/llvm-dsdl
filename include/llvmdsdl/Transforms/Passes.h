@@ -81,6 +81,14 @@ void registerEmitDSDLRuntimePass();
 /// @brief Registers the LLVM lowering with the pass registry.
 void registerDSDLToLLVMPasses();
 
+/// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-annotate-aliasability`
+///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a
+///        deserialise function of dialect operations. A backend is a translation of that output
+///        (DESIGN.md, *Backend Contract*). Registered with `dsdl-opt` as `lower-dsdl-bodies`.
+/// @param[in] pm Pass manager to extend.
+/// @param[in] optimizeLoweredSerDes Adds the optional canonicalisation pipeline before the bodies are built.
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, bool optimizeLoweredSerDes);
+
 /// @brief Adds optional lowered-serdes optimisation passes to a pipeline.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm);

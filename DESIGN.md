@@ -116,6 +116,7 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 - `dsdl-annotate-aliasability`
 - optional `optimize-dsdl-lowered-serdes` pipeline
 - `build-dsdl-plan-bodies`
+- `lower-dsdl-bodies`: the pipeline of the three above, which every backend's bodies are translations of
 - `convert-dsdl-to-emitc`
 - `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 
@@ -157,7 +158,7 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 Operation reflection is also checked through the lowered-facts channel: a row whose perturbation is visible in `LoweredFactsMap` is reported and not scored, since a fact-walking emitter could reflect it. The rows are chosen so that none is.
 
-`LLVMDSDL_BACKEND_CONTRACT_STRICT=ON` makes a backend that fails a gate fail its test. The option is `OFF` while the C++, Rust, Go, TypeScript and Python backends are not translations of plan bodies; each turns strict as it becomes one, and the option is removed when all have.
+A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
 ## 5. Backend Architecture (As Implemented)
 
@@ -173,7 +174,7 @@ Current path:
 
 1. Validate lowered contract coverage.
 2. Clone per-definition schema into a working module.
-3. Run pass pipeline (`lower-dsdl-exec`, `build-dsdl-plan-bodies`, `convert-dsdl-to-emitc`, canonicalisation/CSE, EmitC conversions).
+3. Run `lower-dsdl-bodies`, then `convert-dsdl-to-emitc`, canonicalisation/CSE and the EmitC conversions.
 4. Emit body using `mlir::emitc::translateToCpp(...)`.
 5. Emit matching `.h` API and `dsdl_runtime.h`.
 

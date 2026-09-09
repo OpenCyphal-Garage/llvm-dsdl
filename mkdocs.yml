@@ -60,6 +60,7 @@ nav:
       - Testing and CI: development/testing.md
       - Architecture: development/architecture.md
       - Direct Object Lowering: development/direct-object-lowering.md
+      - Backend Translation: development/backend-translation.md
       - Authoring Lint Rules: development/lint-rule-authoring.md
       - Project:
           - Review & Release Roadmap: development/roadmap.md
