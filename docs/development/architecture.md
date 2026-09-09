@@ -36,7 +36,10 @@ a particular language.
 2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
 3. optional `optimize-dsdl-lowered-serdes`
 4. `build-dsdl-plan-bodies` — every plan becomes a serialise and a deserialise function of plan operations
-5. `convert-dsdl-to-emitc` for C; `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects
+5. translation of those functions, one per backend: `convert-dsdl-to-emitc` and EmitC translation for
+   C, `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects, a translator per language for the
+   rest. A backend is this translation and nothing more; `ctest -L backend-contract` reports which
+   backends meet that contract (DESIGN.md, *Backend Contract*).
 
 ### Boundary guarantees
 

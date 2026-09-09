@@ -3526,6 +3526,42 @@ if(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
   )
 endif()
 
+# Backend-contract gates (DESIGN.md, Backend Contract). One test per backend. Each row perturbs
+# either the plan operations or the semantic module and checks which of the two the generated
+# bodies follow. C and obj hold; C++, Rust, Go, TypeScript and Python do not yet, so the option
+# is off and their gaps are reported rather than enforced.
+option(LLVMDSDL_BACKEND_CONTRACT_STRICT
+       "Treat a backend whose bodies do not follow the plan operations as a failure rather than as a gap."
+       OFF)
+
+add_executable(llvmdsdl-backend-contract-tool BackendContractTool.cpp)
+target_link_libraries(llvmdsdl-backend-contract-tool PRIVATE llvmdsdlCodeGen)
+target_include_directories(llvmdsdl-backend-contract-tool PRIVATE
+  ${LLVMDSDL_SOURCE_DIR}/include
+  ${LLVMDSDL_BINARY_DIR}/include
+)
+
+set(_backend_contract_strict_flag "")
+if(LLVMDSDL_BACKEND_CONTRACT_STRICT)
+  set(_backend_contract_strict_flag --strict)
+endif()
+foreach(backend c obj cpp rust go ts python)
+  add_test(
+    NAME llvmdsdl-backend-contract-${backend}
+    COMMAND
+      $<TARGET_FILE:llvmdsdl-backend-contract-tool>
+        --backend ${backend}
+        --namespace-root ${CMAKE_CURRENT_SOURCE_DIR}/backend_contract/contract
+        --work-dir ${CMAKE_CURRENT_BINARY_DIR}/backend-contract/${backend}
+        ${_backend_contract_strict_flag}
+  )
+  set_tests_properties(
+    llvmdsdl-backend-contract-${backend}
+    PROPERTIES
+      LABELS "integration;backend-contract"
+  )
+endforeach()
+
 # Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
 # through LLVM IR has and a generator that writes C and drives a host compiler does not. All of
 # them hold, so a gate reporting the lowering absent is a regression rather than a gap.
