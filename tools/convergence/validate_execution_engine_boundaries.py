@@ -21,7 +21,7 @@ SOURCE_RULES = [
     {
         "path": "lib/CodeGen/emitter/C.cpp",
         "required": [
-            r"createLowerDSDL(?:Serialization|Exec)Pass\(",
+            r"addLowerDSDLBodiesPipeline\(",
             r"createConvertDSDLToEmitCPass\(",
             r"collectLoweredFactsFromMlir\(",
             r"mlirSchemaCoverageValidationFailedForEmission\(\"C\"\)",

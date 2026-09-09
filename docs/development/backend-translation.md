@@ -31,26 +31,26 @@ the dialect. Consuming lowered facts is not translating lowered operations.
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. The C lane runs it for both of its artefacts.
 
-`build-dsdl-plan-bodies` requires a backend's final names on its input, so the C lane runs the
-pipeline per definition after stamping C names. The neutral IR below removes that requirement;
-until then no other backend can run the pipeline, which is why they come after it.
+The C lane runs it per definition, after stamping C names on the schema, and translates each
+result.
 
-## The body IR becomes target-neutral
+## The body IR is target-neutral
 
-The bodies `build-dsdl-plan-bodies` builds encode C's naming and struct layout:
+A body spells nothing the way C does:
 
-| today | neutral form | applied by |
-|---|---|---|
-| `path = [c_name]` | the DSDL field name and step index | each conversion or translator, through `LanguageNamingPolicy` |
-| `path = [c_name, "count"]`, `[…, "elements"]`, `[…, "bitpacked"]` | `dsdl.array_length`, `dsdl.set_array_length`, `dsdl.element_addr` | EmitC as `.count` and `.elements`; Rust as `len()` and `Vec`; and so on |
-| `path = ["_tag_"]` and option member stores | `dsdl.union_tag`, `dsdl.set_union_tag`, `dsdl.union_option_addr` | EmitC as `_tag_` and the union member; Rust as enum construction |
-| `callee = "X__serialize_"` | the type key and direction | each translator's function naming |
-| `!dsdl.ptr<!dsdl.opaque<"const struct X">>`, `"uint8_t"`, `"size_t"` | `!dsdl.object<key>`, `!dsdl.buffer`, `!dsdl.size` | the conversions |
+| in the body | the C conversions spell it as |
+|---|---|
+| `!dsdl.ptr<!dsdl.object<"vendor.Msg.1.0">>`, `!dsdl.ptr<!dsdl.byte>`, `!dsdl.ptr<!dsdl.size>`, `const` carried on the pointer | `struct vendor__Msg*`, `uint8_t*`, `size_t*` |
+| `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's `c_name` from the schema |
+| `dsdl.array_length`, `dsdl.set_array_length` | `.count` |
+| `dsdl.element_addr`, `dsdl.load_element`, `dsdl.store_element`, carrying the element's storage category and width | `.elements[i]`, or `.bitpacked` for a `bool` array |
+| `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |
+| `dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_`, carrying the member and the direction | `vendor__Inner__serialize_` |
 
-`convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take on the C spelling they inherit today from
-the stamped module. The pipeline then runs once per module before any backend, and the gate
-fixture gains a variable array, a union and a nested composite, with rows for each. A lit check
-holds that the module after `lower-dsdl-bodies` carries no C spelling.
+`convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema
+when they run. `test/lit/lower-dsdl-bodies-neutral.txt` holds that a module after
+`lower-dsdl-bodies` carries none of it, and the gate fixture has a variable array, a union and a
+nested composite, with a row for each.
 
 The union operations are designed against Rust's enum, the object model furthest from a C
 struct, and validated on C, where the answer is known.
@@ -84,7 +84,7 @@ same change.
 1. **C++** — first because its object model is C's; the `std`, `pmr` and `autosar` profiles
    differ only in how `element_addr` and `set_array_length` spell containers. Oracle: the C↔C++
    parity lanes.
-2. **Rust** — enum unions built from `union_option_addr` payloads, `Vec` and bounded arrays
+2. **Rust** — enum unions built from `set_union_tag` and the store to the selected option, `Vec` and bounded arrays
    behind `set_array_length`; `std` and `no-std-alloc`, both runtime specialisations, both memory
    modes. Oracle: the C↔Rust parity lanes and their variants.
 3. **Go** — slices and structs. Oracle: the C↔Go parity lanes.
@@ -117,7 +117,7 @@ once per backend over
 
 | gate | perturbed | held | bodies must |
 |---|---|---|---|
-| operation reflection | one `dsdl.io` class per row — unsigned, signed and float widths, alignment — with the serialised size preserved | the semantic module | change |
+| operation reflection | one `dsdl.io` class per row — unsigned, signed and float widths, alignment, an array element's width, a union option's width | the semantic module | change |
 | model independence | the semantic module's cast mode; its field widths | the MLIR module | be identical |
 | determinism | nothing; the baseline is generated twice | everything | be identical |
 

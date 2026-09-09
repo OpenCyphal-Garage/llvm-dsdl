@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -31,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -63,7 +65,9 @@ namespace
 
 namespace fs = std::filesystem;
 
-constexpr const char* kFixtureType = "contract.Scalars";
+constexpr const char* kFixtureType  = "contract.Scalars";
+constexpr const char* kSequenceType = "contract.Sequence";
+constexpr const char* kChoiceType   = "contract.Choice";
 
 enum class Verdict : std::uint8_t
 {
@@ -265,7 +269,7 @@ bool isCommentLine(const std::string& line)
         return true;
     }
     const auto rest = line.substr(first);
-    return rest.rfind("//", 0) == 0 || rest.rfind("#", 0) == 0 || rest.rfind("/*", 0) == 0 || rest.rfind("*", 0) == 0;
+    return rest.starts_with("//") || rest.starts_with('#') || rest.starts_with("/*") || rest.starts_with('*');
 }
 
 /// Comment-only and blank lines are dropped before comparing text, so a declaration comment that
@@ -334,7 +338,7 @@ std::vector<std::string> differingFiles(const std::map<fs::path, std::string>& a
             out.push_back(path.string());
         }
     }
-    std::sort(out.begin(), out.end());
+    std::ranges::sort(out);
     return out;
 }
 
@@ -374,24 +378,30 @@ std::optional<std::string> factsDigest(const llvmdsdl::SemanticModule& semantic,
             {
                 s << "\n  " << fieldName << ": " << text;
             }
-            sorted.emplace(typeKey + "/" + sectionName, s.str());
+            std::string key = typeKey;
+            key += "/";
+            key += sectionName;
+            sorted.emplace(key, s.str());
         }
     }
     std::string digest;
     for (const auto& [key, text] : sorted)
     {
-        digest += key + ": " + text + "\n";
+        digest += key;
+        digest += ": ";
+        digest += text;
+        digest += "\n";
     }
     return digest;
 }
 
 // --- perturbations ------------------------------------------------------------------------------
 
-mlir::dsdl::SerializationPlanOp fixturePlan(mlir::ModuleOp module)
+mlir::dsdl::SerializationPlanOp fixturePlan(mlir::ModuleOp module, const llvm::StringRef fullName = kFixtureType)
 {
     mlir::dsdl::SerializationPlanOp found;
     module->walk([&](mlir::dsdl::SchemaOp schema) {
-        if (schema.getFullName() != kFixtureType)
+        if (schema.getFullName() != fullName)
         {
             return;
         }
@@ -445,11 +455,34 @@ struct IrRow final
     IrPerturbation apply;
 };
 
-/// Each row moves bits between one operation class and the padding so the plan's serialised size is
-/// unchanged; only the operations differ.
+/// Each scalar row moves bits between one operation class and the padding so the plan's serialised
+/// size is unchanged; the array and union rows narrow one element or option. Only operations differ.
 std::vector<IrRow> irRows()
 {
     return {
+        {"array-element-width",
+         [](mlir::ModuleOp module) {
+             auto plan  = fixturePlan(module, kSequenceType);
+             auto items = plan ? fieldOp(plan, "items") : mlir::dsdl::IOOp{};
+             if (!items || items.getBitLength() < 2)
+             {
+                 return false;
+             }
+             mlir::OpBuilder builder(items.getContext());
+             items.setBitLengthAttr(builder.getI64IntegerAttr(items.getBitLength() - 1));
+             return true;
+         }},
+        {"union-option-width",
+         [](mlir::ModuleOp module) {
+             auto plan  = fixturePlan(module, kChoiceType);
+             auto small = plan ? fieldOp(plan, "small") : mlir::dsdl::IOOp{};
+             if (!small || small.getBitLength() < 2)
+             {
+                 return false;
+             }
+             setWidth(small, small.getBitLength() - 1);
+             return true;
+         }},
         {"unsigned-and-signed-width",
          [](mlir::ModuleOp module) {
              auto plan = fixturePlan(module);
@@ -594,7 +627,7 @@ struct Session final
     /// Generates into `work-dir/<name>`; the snapshot of in-scope files, or nullopt on failure.
     std::optional<std::map<fs::path, std::string>> generate(const std::string&              name,
                                                             const llvmdsdl::SemanticModule& semantic,
-                                                            mlir::ModuleOp                  module)
+                                                            mlir::ModuleOp                  module) const
     {
         llvmdsdl::DiagnosticEngine diagnostics;
         const fs::path             outDir = args.workDir / name;
@@ -728,9 +761,7 @@ struct Session final
     }
 };
 
-}  // namespace
-
-int main(int argc, char** argv)
+int runBackendContract(int argc, char** argv)
 {
     const auto args = parseArguments(argc, argv);
     if (!args)
@@ -774,7 +805,15 @@ int main(int argc, char** argv)
         anyError = anyError || r.verdict == Verdict::Error;
         anyGap   = anyGap || r.verdict == Verdict::Gap;
     }
-    const char* verdict = anyError ? "ERROR" : (anyGap ? "GAP" : "PASS");
+    const char* verdict = "PASS";
+    if (anyError)
+    {
+        verdict = "ERROR";
+    }
+    else if (anyGap)
+    {
+        verdict = "GAP";
+    }
     std::cout << "BACKEND_CONTRACT backend=" << args->backend << " verdict=" << verdict << "\n";
     if (anyError)
     {
@@ -790,4 +829,26 @@ int main(int argc, char** argv)
                   << " is not in LLVMDSDL_BACKEND_CONTRACT_ENFORCED\n";
     }
     return 0;
+}
+
+}  // namespace
+
+/// @brief Turns an escaping exception into a diagnostic and a failure status.
+///
+/// Without this the exception would leave `main` and reach std::terminate, which prints nothing a
+/// user can act on.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return runBackendContract(argc, argv);
+    } catch (const std::exception& e)
+    {
+        std::cerr << "backend-contract: unhandled exception: " << e.what() << "\n";
+        return 2;
+    } catch (...)
+    {
+        std::cerr << "backend-contract: unhandled exception of unknown type\n";
+        return 2;
+    }
 }

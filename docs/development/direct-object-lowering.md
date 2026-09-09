@@ -208,10 +208,10 @@ module-wide canonicalisation deletes the plans the next pass has to read.
 
 ### Addressing a member
 
-Every `!dsdl.ptr` converts to `!llvm.ptr`, so the spelling `!dsdl.opaque` carries is not
-consulted. A member is reached by `llvm.getelementptr` against a struct derived from the
-schema, whose `dsdl.io` operations carry the category, width, array kind and capacity the C
-struct is built from. Nothing adds up bytes: the member's position indexes the struct and LLVM
+Every `!dsdl.ptr` converts to `!llvm.ptr`. A member is reached by `llvm.getelementptr` against
+a struct derived from the schema the pointer's `!dsdl.object` identity names, whose `dsdl.io`
+operations carry the category, width, array kind and capacity the C struct is built from; the
+DSDL member name the operation carries selects the position. Nothing adds up bytes: the member's position indexes the struct and LLVM
 computes the offset from its own data layout, so it cannot drift from what a C compiler does
 with the same fields.
 
@@ -234,22 +234,25 @@ addressed by its position among the steps addresses the wrong one; a union's opt
 first members and its `_tag_` follows them. The LLVM verifier rejects an index past the end of
 a struct, which is how each of these was found.
 
-### The names a body is built from
+### The names a body carries
 
-Lowering stamps the unscoped, unversioned spelling of every C name, because it does not know a
-backend's naming options and produces one module every backend reads. A backend rewrites them
-through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/SchemaNaming.cpp),
-using the same scopes and renderers it names its own output with.
+A body names its object by the definition's identity, `!dsdl.object<"uavcan.node.Heartbeat.1.0">`,
+its members by their DSDL names, and a nested type's functions by their plan-body symbols. It
+carries no C name, so `build-dsdl-plan-bodies` runs the same over a module whichever backend
+reads it next.
 
-Two conditions were once one attribute. `llvmdsdl.names_final` says the C names on a module are
-a backend's own, and gates body building. `llvmdsdl.headers_available` says the generated header
-can be included, and gates the includes the C conversion emits. Only the first bears on an
-object lowering, and conflating them made the object lane appear to need headers.
+The C names are the conversions' to add. Lowering stamps the unscoped, unversioned spelling of
+every C name on the schema, because it does not know a backend's naming options; a backend
+rewrites them through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/SchemaNaming.cpp),
+using the same scopes and renderers it names its own output with, and `convert-dsdl-to-emitc`
+and `convert-dsdl-to-llvm` read the stamped schema when they spell a body.
+`llvmdsdl.headers_available` says the generated header can be included, and gates the includes
+the C conversion emits.
 
-`--target-language mlir` stamps and sets `names_final`, which is what makes the symbols it
-prints the ones a generated header declares. It refuses to claim the attribute unless every
-schema was stamped, the embedded catalogue otherwise contributing schemas the stamp never reached.
-`llvmdsdl-schema-symbol-parity` holds those symbols against the headers under both naming modes.
+`--target-language mlir` stamps the module it prints, which is what makes its symbols the ones
+a generated header declares. It refuses unless every schema was stamped, the embedded catalogue
+otherwise contributing schemas the stamp never reached. `llvmdsdl-schema-symbol-parity` holds
+those symbols against the headers under both naming modes.
 
 ### The target's `size_t`
 

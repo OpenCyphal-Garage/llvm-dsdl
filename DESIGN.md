@@ -152,7 +152,7 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 | Gate | Perturbed | Held constant | Bodies must |
 |---|---|---|---|
-| Operation reflection | the `dsdl.io` operations of a plan — unsigned, signed and float widths, and alignment — one class per row, serialised size preserved | the semantic module | change in every row |
+| Operation reflection | the `dsdl.io` operations of a plan — unsigned, signed and float widths, alignment, an array element's width, a union option's width — one class per row | the semantic module | change in every row |
 | Model independence | the semantic module's cast mode and field widths | the MLIR module | be identical to the baseline |
 | Determinism | nothing; the baseline is generated twice into different directories | everything | be identical |
 

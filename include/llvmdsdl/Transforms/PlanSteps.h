@@ -26,6 +26,7 @@
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 
 namespace llvmdsdl
 {
@@ -86,8 +87,6 @@ struct PlanStep final
     std::int64_t bits{0};
     /// @brief The DSDL field name.
     std::string name;
-    /// @brief The C member name the backend stamped.
-    std::string cName;
     /// @brief The scalar category: `bool`, `unsigned`, `signed`, `float`, `composite`.
     std::string scalarCategory;
     /// @brief `saturated` or `truncated`.
@@ -106,8 +105,12 @@ struct PlanStep final
     std::int64_t unionOptionIndex{0};
     /// @brief Width of the union tag, in bits.
     std::int64_t unionTagBits{0};
-    /// @brief The C type of a nested composite.
-    std::string compositeCTypeName;
+    /// @brief Full name of the composite a composite step holds, else empty.
+    std::string compositeFullName;
+
+    /// @brief Version of that composite.
+    std::int64_t compositeMajor{0};
+    std::int64_t compositeMinor{0};
     /// @brief Lowered helper symbol.
     std::string serUnsignedHelper;
     /// @brief Lowered helper symbol.
@@ -138,6 +141,41 @@ struct PlanStep final
 /// @param[in] plan The plan.
 /// @return Its steps.
 std::vector<PlanStep> collectPlanSteps(mlir::dsdl::SerializationPlanOp plan);
+
+/// @brief The identity of one plan's object: full name, version, and the section of a service.
+///
+/// `!dsdl.object` carries it, and every target resolves it to the struct or class it declares.
+inline std::string planIdentity(const llvm::StringRef fullName,
+                                const std::int64_t    major,
+                                const std::int64_t    minor,
+                                const llvm::StringRef section)
+{
+    std::string identity = fullName.str() + "." + std::to_string(major) + "." + std::to_string(minor);
+    if (!section.empty())
+    {
+        identity += "/" + section.str();
+    }
+    return identity;
+}
+
+inline std::string planIdentity(mlir::dsdl::SchemaOp schema, mlir::dsdl::SerializationPlanOp plan)
+{
+    return planIdentity(schema.getFullName(),
+                        schema.getMajor(),
+                        schema.getMinor(),
+                        plan.getSection().value_or(llvm::StringRef{}));
+}
+
+/// @brief The symbol `build-dsdl-plan-bodies` gives one plan's body in one direction.
+inline std::string planBodySymbol(const llvm::StringRef fullName,
+                                  const std::int64_t    major,
+                                  const std::int64_t    minor,
+                                  const llvm::StringRef section,
+                                  const bool            serialize)
+{
+    return renderDefinitionSymbolBase(fullName, static_cast<std::uint32_t>(major), static_cast<std::uint32_t>(minor)) +
+           renderSectionSymbolSuffix(section) + (serialize ? "__serialize_ir_" : "__deserialize_ir_");
+}
 
 }  // namespace llvmdsdl
 

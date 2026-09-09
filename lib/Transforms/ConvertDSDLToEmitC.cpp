@@ -21,6 +21,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -51,9 +52,9 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 #include "llvmdsdl/Transforms/Passes.h"
-#include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -76,17 +77,203 @@ constexpr llvm::StringRef kRuntimeCopyBits = "dsdl_runtime_copy_bits";
 /// The conversion has to reach function signatures, not just operands, because `!dsdl.ptr` is
 /// how a plan states what it was handed. An operand-only rewrite would leave the argument type
 /// behind and no EmitC operation accepts it.
-mlir::TypeConverter makeBitCopyTypeConverter()
+/// @brief The C spelling of one member, from the schema the plan belongs to.
+struct CMember final
+{
+    std::string  cName;
+    std::string  arrayKind;
+    std::string  category;
+    std::int64_t bitLength{0};
+    std::string  compositeCTypeName;
+};
+
+struct CPlan final
+{
+    std::string              cTypeName;
+    llvm::StringMap<CMember> members;
+};
+
+/// @brief What the C backend named everything a body touches, gathered from the schema ops.
+///
+/// A body names members and objects by their DSDL identity; this is where those become the
+/// names the generated header declares.
+struct CSpelling final
+{
+    /// @brief Plans by identity.
+    llvm::StringMap<CPlan> plans;
+
+    /// @brief C type names by object identity: each plan's own, and every nested type a plan refers to.
+    llvm::StringMap<std::string> tags;
+
+    [[nodiscard]] const std::string* tagFor(const llvm::StringRef identity) const
+    {
+        const auto found = tags.find(identity);
+        return (found == tags.end()) ? nullptr : &found->second;
+    }
+
+    [[nodiscard]] static mlir::dsdl::ObjectType objectOf(const mlir::Value pointer)
+    {
+        auto ptr = mlir::dyn_cast<mlir::dsdl::PtrType>(pointer.getType());
+        return ptr ? mlir::dyn_cast<mlir::dsdl::ObjectType>(ptr.getPointee()) : mlir::dsdl::ObjectType{};
+    }
+
+    [[nodiscard]] static bool isConst(const mlir::Value pointer)
+    {
+        auto ptr = mlir::dyn_cast<mlir::dsdl::PtrType>(pointer.getType());
+        return ptr && ptr.getIsConst();
+    }
+
+    [[nodiscard]] const CMember* memberFor(const mlir::Value object, const llvm::StringRef member) const
+    {
+        const auto identity = objectOf(object);
+        if (!identity)
+        {
+            return nullptr;
+        }
+        const auto plan = plans.find(identity.getIdentity());
+        if (plan == plans.end())
+        {
+            return nullptr;
+        }
+        const auto found = plan->second.members.find(member);
+        return (found == plan->second.members.end()) ? nullptr : &found->second;
+    }
+};
+
+CSpelling gatherCSpelling(mlir::ModuleOp module)
+{
+    CSpelling spelling;
+    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+    {
+        if (schema.getBody().empty())
+        {
+            continue;
+        }
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+        {
+            const std::string identity = planIdentity(schema, plan);
+            CPlan             entry;
+            entry.cTypeName         = plan.getCTypeName().str();
+            spelling.tags[identity] = entry.cTypeName;
+            if (!plan.getBody().empty())
+            {
+                for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
+                {
+                    if (io.isPadding())
+                    {
+                        continue;
+                    }
+                    CMember member;
+                    member.cName              = io.getCName().value_or(llvm::StringRef{}).str();
+                    member.arrayKind          = io.getArrayKind().str();
+                    member.category           = io.getScalarCategory().str();
+                    member.bitLength          = io.getBitLength();
+                    member.compositeCTypeName = io.getCompositeCTypeName().value_or(llvm::StringRef{}).str();
+                    if (io.getCompositeFullName())
+                    {
+                        spelling.tags[planIdentity(*io.getCompositeFullName(),
+                                                   io.getCompositeMajor().value_or(0),
+                                                   io.getCompositeMinor().value_or(0),
+                                                   {})] = member.compositeCTypeName;
+                    }
+                    entry.members[io.getName()] = member;
+                }
+            }
+            spelling.plans[identity] = entry;
+        }
+    }
+    return spelling;
+}
+
+/// @brief The spelling of a pointee: the C name the header declares for it.
+std::optional<std::string> pointeeSpelling(const CSpelling& spelling, const mlir::Type pointee)
+{
+    if (mlir::isa<mlir::dsdl::ByteType>(pointee))
+    {
+        return "uint8_t";
+    }
+    if (mlir::isa<mlir::dsdl::SizeType>(pointee))
+    {
+        return "size_t";
+    }
+    if (auto object = mlir::dyn_cast<mlir::dsdl::ObjectType>(pointee))
+    {
+        const std::string* tag = spelling.tagFor(object.getIdentity());
+        if (tag == nullptr)
+        {
+            return std::nullopt;
+        }
+        return renderCTagSpelling(*tag);
+    }
+    return std::nullopt;
+}
+
+mlir::TypeConverter makeBitCopyTypeConverter(const CSpelling& spelling)
 {
     mlir::TypeConverter converter;
     converter.addConversion([](mlir::Type type) { return type; });
-    converter.addConversion([](mlir::dsdl::OpaqueType named) -> mlir::Type {
-        return mlir::emitc::OpaqueType::get(named.getContext(), named.getName());
-    });
-    converter.addConversion([&converter](mlir::dsdl::PtrType ptr) -> mlir::Type {
-        return mlir::emitc::PointerType::get(converter.convertType(ptr.getPointee()));
+    converter.addConversion([&spelling](mlir::dsdl::PtrType ptr) -> std::optional<mlir::Type> {
+        const mlir::Type pointee = ptr.getPointee();
+        const auto       spelt   = pointeeSpelling(spelling, pointee);
+        if (!spelt)
+        {
+            // A local's pointee is a value type, which needs no name.
+            if (mlir::isa<mlir::dsdl::ObjectType, mlir::dsdl::ByteType, mlir::dsdl::SizeType>(pointee))
+            {
+                return std::nullopt;
+            }
+            return mlir::emitc::PointerType::get(pointee);
+        }
+        return mlir::emitc::PointerType::get(
+            mlir::emitc::OpaqueType::get(ptr.getContext(), (ptr.getIsConst() ? "const " : "") + *spelt));
     });
     return converter;
+}
+
+/// @brief A pattern that spells members through what the C backend named them.
+template <typename OpT>
+struct SpeltPattern : public mlir::OpConversionPattern<OpT>
+{
+    SpeltPattern(const mlir::TypeConverter& converter, mlir::MLIRContext* ctx, const CSpelling& names)
+        : mlir::OpConversionPattern<OpT>(converter, ctx)
+        , spelling(names)
+    {
+    }
+
+    const CSpelling& spelling;
+};
+
+/// @brief The C type one array element is stored as, qualified as the object is.
+std::string elementCType(const CMember&        member,
+                         const bool            isConst,
+                         const llvm::StringRef category,
+                         const std::int64_t    bits)
+{
+    const std::string qualifier = isConst ? "const " : "";
+    if (category == "composite")
+    {
+        return qualifier + renderCTagSpelling(member.compositeCTypeName);
+    }
+    if (category == "bool")
+    {
+        return qualifier + "uint8_t";
+    }
+    if (category == "float")
+    {
+        return qualifier + ((bits <= 32) ? "float" : "double");
+    }
+    return qualifier + std::string(category == "signed" ? "int" : "uint") + std::to_string(bits) + "_t";
+}
+
+/// @brief The path to an array member's element storage: a fixed array is the member; a
+///        variable-length one keeps its elements -- or, for bools, its packed bits -- beside a count.
+mlir::ArrayAttr elementPath(mlir::ConversionPatternRewriter& rewriter, const CMember& member)
+{
+    if (member.arrayKind == "fixed")
+    {
+        return rewriter.getStrArrayAttr({member.cName});
+    }
+    return rewriter.getStrArrayAttr({member.cName, (member.category == "bool") ? "bitpacked" : "elements"});
 }
 
 /// @brief Rewrites a bulk bit copy into `dsdl_runtime_copy_bits`.
@@ -387,31 +574,129 @@ mlir::Value walkMemberPath(mlir::ConversionPatternRewriter& rewriter,
     return cursor;
 }
 
-struct LoadMemberLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadMemberOp>
+struct LoadMemberLowering final : public SpeltPattern<mlir::dsdl::LoadMemberOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::LoadMemberOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::LoadMemberOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadMemberOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value slot =
-            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), op.getValue().getType());
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({member->cName}),
+                                                op.getValue().getType());
         rewriter.replaceOpWithNewOp<mlir::emitc::LoadOp>(op, op.getValue().getType(), slot);
         return mlir::success();
     }
 };
 
-struct StoreMemberLowering final : public mlir::OpConversionPattern<mlir::dsdl::StoreMemberOp>
+struct ArrayLengthLowering final : public SpeltPattern<mlir::dsdl::ArrayLengthOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::StoreMemberOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::ArrayLengthOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ArrayLengthOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({member->cName, "count"}),
+                                                op.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::LoadOp>(op, op.getValue().getType(), slot);
+        return mlir::success();
+    }
+};
+
+struct SetArrayLengthLowering final : public SpeltPattern<mlir::dsdl::SetArrayLengthOp>
+{
+    using SpeltPattern<mlir::dsdl::SetArrayLengthOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::SetArrayLengthOp     op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({member->cName, "count"}),
+                                                adaptor.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, adaptor.getValue());
+        return mlir::success();
+    }
+};
+
+struct UnionTagLowering final : public SpeltPattern<mlir::dsdl::UnionTagOp>
+{
+    using SpeltPattern<mlir::dsdl::UnionTagOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::UnionTagOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({"_tag_"}),
+                                                op.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::LoadOp>(op, op.getValue().getType(), slot);
+        return mlir::success();
+    }
+};
+
+struct SetUnionTagLowering final : public SpeltPattern<mlir::dsdl::SetUnionTagOp>
+{
+    using SpeltPattern<mlir::dsdl::SetUnionTagOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::SetUnionTagOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({"_tag_"}),
+                                                adaptor.getValue().getType());
+        rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, adaptor.getValue());
+        return mlir::success();
+    }
+};
+
+struct StoreMemberLowering final : public SpeltPattern<mlir::dsdl::StoreMemberOp>
+{
+    using SpeltPattern<mlir::dsdl::StoreMemberOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreMemberOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value slot =
-            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), adaptor.getValue().getType());
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({member->cName}),
+                                                adaptor.getValue().getType());
         rewriter.replaceOpWithNewOp<mlir::emitc::AssignOp>(op, slot, adaptor.getValue());
         return mlir::success();
     }
@@ -448,19 +733,31 @@ mlir::Value elementSlot(mlir::ConversionPatternRewriter& rewriter,
                                             index);
 }
 
-struct LoadElementLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadElementOp>
+struct LoadElementLowering final : public SpeltPattern<mlir::dsdl::LoadElementOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::LoadElementOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::LoadElementOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadElementOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc = op.getLoc();
-        const mlir::Value    slot =
-            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
-        const mlir::Type stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
-        mlir::Value      loaded = mlir::emitc::LoadOp::create(rewriter, loc, stored, slot);
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Location loc    = op.getLoc();
+        const mlir::Value    slot   = elementSlot(rewriter,
+                                                  loc,
+                                                  adaptor.getObject(),
+                                                  elementPath(rewriter, *member),
+                                                  adaptor.getIndex(),
+                                                  elementCType(*member,
+                                                               CSpelling::isConst(op.getObject()),
+                                                               op.getStorageCategory(),
+                                                               op.getStorageBits()));
+        const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value          loaded = mlir::emitc::LoadOp::create(rewriter, loc, stored, slot);
         if (stored != op.getValue().getType())
         {
             loaded = mlir::emitc::CastOp::create(rewriter, loc, op.getValue().getType(), loaded);
@@ -470,19 +767,31 @@ struct LoadElementLowering final : public mlir::OpConversionPattern<mlir::dsdl::
     }
 };
 
-struct StoreElementLowering final : public mlir::OpConversionPattern<mlir::dsdl::StoreElementOp>
+struct StoreElementLowering final : public SpeltPattern<mlir::dsdl::StoreElementOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::StoreElementOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::StoreElementOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreElementOp       op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc = op.getLoc();
-        const mlir::Value    slot =
-            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
-        const mlir::Type stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
-        mlir::Value      value  = adaptor.getValue();
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
+        const mlir::Location loc    = op.getLoc();
+        const mlir::Value    slot   = elementSlot(rewriter,
+                                                  loc,
+                                                  adaptor.getObject(),
+                                                  elementPath(rewriter, *member),
+                                                  adaptor.getIndex(),
+                                                  elementCType(*member,
+                                                               CSpelling::isConst(op.getObject()),
+                                                               op.getStorageCategory(),
+                                                               op.getStorageBits()));
+        const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
+        mlir::Value          value  = adaptor.getValue();
         if (stored != value.getType())
         {
             value = mlir::emitc::CastOp::create(rewriter, loc, stored, value);
@@ -501,36 +810,56 @@ mlir::Value addressOf(mlir::ConversionPatternRewriter& rewriter,
     return mlir::emitc::ApplyOp::create(rewriter, loc, pointerType, "&", lvalue);
 }
 
-struct MemberAddrLowering final : public mlir::OpConversionPattern<mlir::dsdl::MemberAddrOp>
+struct MemberAddrLowering final : public SpeltPattern<mlir::dsdl::MemberAddrOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::MemberAddrOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::MemberAddrOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::MemberAddrOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
         auto pointerType =
             mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
-        const mlir::Value slot =
-            walkMemberPath(rewriter, op.getLoc(), adaptor.getObject(), op.getPath(), pointerType.getPointee());
+        const mlir::Value slot = walkMemberPath(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                rewriter.getStrArrayAttr({member->cName}),
+                                                pointerType.getPointee());
         rewriter.replaceOp(op, addressOf(rewriter, op.getLoc(), slot, pointerType));
         return mlir::success();
     }
 };
 
-struct ElementAddrLowering final : public mlir::OpConversionPattern<mlir::dsdl::ElementAddrOp>
+struct ElementAddrLowering final : public SpeltPattern<mlir::dsdl::ElementAddrOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::ElementAddrOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::ElementAddrOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::ElementAddrOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if (member == nullptr)
+        {
+            return mlir::failure();
+        }
         const mlir::Location loc = op.getLoc();
         auto                 pointerType =
             mlir::cast<mlir::emitc::PointerType>(getTypeConverter()->convertType(op.getAddress().getType()));
-        const mlir::Value slot =
-            elementSlot(rewriter, loc, adaptor.getObject(), op.getPath(), adaptor.getIndex(), op.getElementType());
+        const mlir::Value slot = elementSlot(rewriter,
+                                             loc,
+                                             adaptor.getObject(),
+                                             elementPath(rewriter, *member),
+                                             adaptor.getIndex(),
+                                             elementCType(*member,
+                                                          CSpelling::isConst(op.getObject()),
+                                                          op.getStorageCategory(),
+                                                          op.getStorageBits()));
         rewriter.replaceOp(op, addressOf(rewriter, loc, slot, pointerType));
         return mlir::success();
     }
@@ -585,17 +914,24 @@ struct LocalLowering final : public mlir::OpConversionPattern<mlir::dsdl::LocalO
     }
 };
 
-struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>
+struct CallSerdesLowering final : public SpeltPattern<mlir::dsdl::CallSerdesOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>::OpConversionPattern;
+    using SpeltPattern<mlir::dsdl::CallSerdesOp>::SpeltPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::CallSerdesOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
+        const auto         object = CSpelling::objectOf(op.getObject());
+        const std::string* tag    = object ? spelling.tagFor(object.getIdentity()) : nullptr;
+        if (tag == nullptr)
+        {
+            return mlir::failure();
+        }
+        const std::string callee = *tag + "__" + op.getDirection().str() + "_";
         rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
                                                                mlir::TypeRange{rewriter.getIntegerType(8)},
-                                                               op.getCalleeAttr(),
+                                                               rewriter.getStringAttr(callee),
                                                                mlir::ValueRange{adaptor.getObject(),
                                                                                 adaptor.getBuffer(),
                                                                                 adaptor.getSize()});
@@ -625,25 +961,30 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
     /// already emptied the module of them.
     mlir::LogicalResult lowerPlanOperations(mlir::ModuleOp module)
     {
-        mlir::TypeConverter     converter = makeBitCopyTypeConverter();
+        const CSpelling         spelling  = gatherCSpelling(module);
+        mlir::TypeConverter     converter = makeBitCopyTypeConverter(spelling);
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<BitWriteLowering,
                      BitReadLowering,
                      WriteBitsLowering,
                      ReadBitsLowering,
-                     LoadMemberLowering,
-                     StoreMemberLowering,
-                     LoadElementLowering,
-                     StoreElementLowering,
-                     MemberAddrLowering,
                      BufferAtLowering,
-                     ElementAddrLowering,
                      LocalLowering,
-                     CallSerdesLowering,
                      IsNullLowering,
                      BufferOrEmptyLowering,
                      LoadScalarLowering,
                      StoreScalarLowering>(converter, &getContext());
+        patterns.add<LoadMemberLowering,
+                     StoreMemberLowering,
+                     LoadElementLowering,
+                     StoreElementLowering,
+                     MemberAddrLowering,
+                     ElementAddrLowering,
+                     ArrayLengthLowering,
+                     SetArrayLengthLowering,
+                     UnionTagLowering,
+                     SetUnionTagLowering,
+                     CallSerdesLowering>(converter, &getContext(), spelling);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
 
         mlir::ConversionTarget target(getContext());
@@ -658,6 +999,10 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::ReadBitsOp,
                             mlir::dsdl::LoadMemberOp,
                             mlir::dsdl::StoreMemberOp,
+                            mlir::dsdl::ArrayLengthOp,
+                            mlir::dsdl::SetArrayLengthOp,
+                            mlir::dsdl::UnionTagOp,
+                            mlir::dsdl::SetUnionTagOp,
                             mlir::dsdl::LoadElementOp,
                             mlir::dsdl::StoreElementOp,
                             mlir::dsdl::MemberAddrOp,
@@ -787,20 +1132,24 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                 {
                     forwardDeclaredTypes.insert(cTypeName);
                 }
+                // C member names are the C backend's to decide, not lowering's: it stamps `c_name`
+                // onto its own clone of the schema so that the struct declaration and the member
+                // references this pass spells cannot disagree. A field without one names nothing.
+                if (!child.getBody().empty())
+                {
+                    for (mlir::dsdl::IOOp io : child.getBody().front().getOps<mlir::dsdl::IOOp>())
+                    {
+                        if (!io.isPadding() && io.getCName().value_or(llvm::StringRef{}).empty())
+                        {
+                            child.emitOpError("field step '" + io.getName().str() + "' has no 'c_name' attribute");
+                            signalPassFailure();
+                            return;
+                        }
+                    }
+                }
                 const auto steps = collectPlanSteps(child);
                 for (const auto& step : steps)
                 {
-                    // C member names are the C backend's to decide, not lowering's: it stamps
-                    // `c_name` onto its own clone of the schema so that the struct declaration and
-                    // the references below cannot disagree. Reaching here without one means the
-                    // schema came from somewhere that did not, and every member reference this plan
-                    // emits would name nothing.
-                    if ((step.kind == PlanStepKind::Field) && step.cName.empty())
-                    {
-                        child.emitOpError("field step '" + step.name + "' has no 'c_name' attribute");
-                        signalPassFailure();
-                        return;
-                    }
                     if (!step.serUnsignedHelper.empty())
                     {
                         if (!module.lookupSymbol<mlir::func::FuncOp>(step.serUnsignedHelper))

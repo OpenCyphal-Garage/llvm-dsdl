@@ -1,4 +1,4 @@
 @union
-uint8 small
+uint7 small
 uint16 wide
 @sealed

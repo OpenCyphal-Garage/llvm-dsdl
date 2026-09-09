@@ -1,0 +1,20 @@
+# A lowered module carries no target's spelling. Bodies name objects by identity and members by
+# their DSDL names; arrays, unions and nested types go through their own operations. What C
+# calls those things is the C conversion's to add, from the schema, when it runs.
+#
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s \
+# RUN:   --implicit-check-not='opaque<' --implicit-check-not='"_tag_"' --implicit-check-not='"count"' \
+# RUN:   --implicit-check-not='"elements"' --implicit-check-not='bitpacked' --implicit-check-not='uint8_t' \
+# RUN:   --implicit-check-not='size_t' --implicit-check-not='struct '
+
+# CHECK: func.func @fixtures_vendor_DelimitedList_1_0__serialize_ir_
+# CHECK: dsdl.array_length
+# CHECK: dsdl.element_addr %{{.*}} "{{[a-z_]+}}"[%{{.*}}] {storage_bits = 0 : i64, storage_category = "composite"}
+# CHECK: dsdl.call_serdes @fixtures_vendor_Delimited_1_0__serialize_ir_
+# CHECK: func.func @fixtures_vendor_DelimitedList_1_0__deserialize_ir_
+# CHECK: dsdl.set_array_length
+# CHECK: func.func @fixtures_vendor_UnionTag_1_0__serialize_ir_(%{{.*}}: !dsdl.ptr<const !dsdl.object<"fixtures.vendor.UnionTag.1.0">>, %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: !dsdl.ptr<!dsdl.size>)
+# CHECK: dsdl.union_tag
+# CHECK: func.func @fixtures_vendor_UnionTag_1_0__deserialize_ir_(%{{.*}}: !dsdl.ptr<!dsdl.object<"fixtures.vendor.UnionTag.1.0">>, %{{.*}}: !dsdl.ptr<const !dsdl.byte>
+# CHECK: dsdl.set_union_tag

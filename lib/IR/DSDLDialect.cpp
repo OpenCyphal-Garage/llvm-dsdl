@@ -33,6 +33,25 @@ using namespace mlir::dsdl;
 
 #include "llvmdsdl/IR/DSDLDialect.cpp.inc"  // IWYU pragma: keep
 
+namespace mlir::dsdl
+{
+/// `const` before a pointee marks storage the plan only reads.
+static ParseResult parsePointee(AsmParser& parser, bool& isConst, Type& pointee)
+{
+    isConst = succeeded(parser.parseOptionalKeyword("const"));
+    return parser.parseType(pointee);
+}
+
+static void printPointee(AsmPrinter& printer, const bool isConst, const Type pointee)
+{
+    if (isConst)
+    {
+        printer << "const ";
+    }
+    printer << pointee;
+}
+}  // namespace mlir::dsdl
+
 #define GET_TYPEDEF_CLASSES
 #include "llvmdsdl/IR/DSDLTypes.cpp.inc"  // IWYU pragma: keep
 

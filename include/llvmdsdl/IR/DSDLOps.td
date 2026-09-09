@@ -293,57 +293,55 @@ def DSDL_StoreScalarOp : DSDL_Op<"store_scalar"> {
 class DSDL_MemberAccessOp<string mnemonic, list<Trait> traits = []>
     : DSDL_Op<mnemonic, traits> {
   let description = [{
-    `path` names the members to walk from the object, and `indices` their declaration
-    positions. A variable-length array is a member holding a count and a pointer, so
-    reaching either is two names rather than one, and a single-name form could not say it.
-
-    A target resolves whichever of the two it can: the C path spells the names, and object
-    emission walks the indices through the published layout.
+    `member` is the DSDL name of the field the access reaches. Each target spells the
+    storage it declares for that field: the C path through the member's C name, object
+    emission through the member's position in the published layout, and every other
+    language through its own naming.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
 }
 
 def DSDL_LoadMemberOp : DSDL_MemberAccessOp<"load_member"> {
   let summary = "Read a member of the object a plan was handed";
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
   let assemblyFormat =
-      "$object $path attr-dict `:` type($object) `->` type($value)";
+      "$object $member attr-dict `:` type($object) `->` type($value)";
 }
 
 def DSDL_StoreMemberOp : DSDL_MemberAccessOp<"store_member"> {
   let summary = "Write a member of the object a plan was handed";
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices, AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member,
+      AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
   let assemblyFormat =
-      "$object $path `,` $value attr-dict `:` type($object) `,` type($value)";
+      "$object $member `,` $value attr-dict `:` type($object) `,` type($value)";
 }
 
 def DSDL_LoadElementOp : DSDL_MemberAccessOp<"load_element"> {
   let summary = "Read one element of an array member";
   let description = [{
-    `path` reaches the element storage and `index` selects within it. The index is a value
-    because it is a loop variable.
+    `member` is an array field and `index` selects within its elements; the index is a
+    value because it is a loop variable.
 
-    `element_type` is the storage's own spelling, which is not the type the plan works in: a
-    `uint8[<=255]` is held as `uint8_t` and normalised through helpers that take 64 bits.
-    Addressing it as the working type would stride by the wrong width.
+    `storage_category` and `storage_bits` describe the element storage, which is not the
+    type the plan works in: a `uint8[<=255]` is held as eight-bit unsigned and normalised
+    through helpers that take 64 bits. Addressing it as the working type would stride by
+    the wrong width. A bool array is bit-packed, so its elements are bytes.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices, I64:$index, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, I64:$index,
+      StrAttr:$storage_category, DSDL_I64Attr:$storage_bits);
   let results = (outs AnyTypeOf<[AnyInteger, AnyFloat]>:$value);
   let assemblyFormat = [{
-    $object $path `[` $index `]` attr-dict `:` type($object) `->` type($value)
+    $object $member `[` $index `]` attr-dict `:` type($object) `->` type($value)
   }];
 }
 
 def DSDL_StoreElementOp : DSDL_MemberAccessOp<"store_element"> {
   let summary = "Write one element of an array member";
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices, I64:$index,
-      AnyTypeOf<[AnyInteger, AnyFloat]>:$value, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, I64:$index,
+      AnyTypeOf<[AnyInteger, AnyFloat]>:$value, StrAttr:$storage_category,
+      DSDL_I64Attr:$storage_bits);
   let assemblyFormat = [{
-    $object $path `[` $index `]` `,` $value attr-dict `:` type($object) `,` type($value)
+    $object $member `[` $index `]` `,` $value attr-dict `:` type($object) `,` type($value)
   }];
 }
 
@@ -354,11 +352,10 @@ def DSDL_MemberAddrOp : DSDL_Op<"member_addr", [NoMemoryEffect]> {
     rather than by inlining its layout here. That keeps one definition of each type's wire
     format, and it is why a plan needs an address and not a value.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
   let results = (outs DSDL_PtrType:$address);
   let assemblyFormat =
-      "$object $path attr-dict `:` type($object) `->` type($address)";
+      "$object $member attr-dict `:` type($object) `->` type($address)";
 }
 
 def DSDL_ElementAddrOp : DSDL_Op<"element_addr", [NoMemoryEffect]> {
@@ -367,12 +364,38 @@ def DSDL_ElementAddrOp : DSDL_Op<"element_addr", [NoMemoryEffect]> {
     An array of composites is encoded element by element through the nested type's own entry
     point, so each iteration needs the address of that element rather than of the array.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrArrayAttr:$path,
-      DenseI64ArrayAttr:$indices, I64:$index, StrAttr:$element_type);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, I64:$index,
+      StrAttr:$storage_category, DSDL_I64Attr:$storage_bits);
   let results = (outs DSDL_PtrType:$address);
   let assemblyFormat = [{
-    $object $path `[` $index `]` attr-dict `:` type($object) `->` type($address)
+    $object $member `[` $index `]` attr-dict `:` type($object) `->` type($address)
   }];
+}
+
+def DSDL_ArrayLengthOp : DSDL_Op<"array_length"> {
+  let summary = "The element count a variable-length array member holds";
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
+  let results = (outs I64:$value);
+  let assemblyFormat = "$object $member attr-dict `:` type($object)";
+}
+
+def DSDL_SetArrayLengthOp : DSDL_Op<"set_array_length"> {
+  let summary = "Set the element count of a variable-length array member";
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, I64:$value);
+  let assemblyFormat = "$object $member `,` $value attr-dict `:` type($object)";
+}
+
+def DSDL_UnionTagOp : DSDL_Op<"union_tag"> {
+  let summary = "The option a union object holds";
+  let arguments = (ins DSDL_PtrType:$object);
+  let results = (outs I64:$value);
+  let assemblyFormat = "$object attr-dict `:` type($object)";
+}
+
+def DSDL_SetUnionTagOp : DSDL_Op<"set_union_tag"> {
+  let summary = "Select the option a union object holds";
+  let arguments = (ins DSDL_PtrType:$object, I64:$value);
+  let assemblyFormat = "$object `,` $value attr-dict `:` type($object)";
 }
 
 def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
@@ -403,11 +426,14 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
   let summary =
       "Invoke a nested type's own serialize or deserialize entry point";
   let description = [{
-    `callee` names the target's public symbol for that type rather than an operation in
-    this module, because the definition lives in the nested type's own translation unit.
+    `callee` is the nested type's body for `direction`, as `build-dsdl-plan-bodies` names
+    it, and `member` the field whose type is called. A target calls whatever its own
+    emission of that type publishes: the C path its header's entry point, object emission
+    the body itself.
   }];
-  let arguments = (ins StrAttr:$callee, DSDL_PtrType:$object,
-      DSDL_PtrType:$buffer, DSDL_PtrType:$size);
+  let arguments = (ins FlatSymbolRefAttr:$callee, StrAttr:$member,
+      StrAttr:$direction, DSDL_PtrType:$object, DSDL_PtrType:$buffer,
+      DSDL_PtrType:$size);
   let results = (outs I8:$error);
   let assemblyFormat = [{
     $callee `(` $object `,` $buffer `,` $size `)` attr-dict `:`

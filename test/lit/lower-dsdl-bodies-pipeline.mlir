@@ -3,7 +3,7 @@
 // The pipeline every backend's bodies are translations of: lowering, aliasability annotation and
 // body building in one step, from a module carrying a backend's final names.
 
-module attributes {llvmdsdl.names_final} {
+module {
   dsdl.schema @test_Bodies_1_0 attributes {c_type_name = "test__Bodies", full_name = "test.Bodies", major = 1 : i32, minor = 0 : i32, sealed} {
     dsdl.field {c_name = "value", name = "value", type_name = "saturated uint8"}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "test__Bodies__deserialize_", c_serialize_symbol = "test__Bodies__serialize_", c_type_name = "test__Bodies", extent_bits = 8 : i64, fixed_size, max_bits = 8 : i64, min_bits = 8 : i64, sealed} {

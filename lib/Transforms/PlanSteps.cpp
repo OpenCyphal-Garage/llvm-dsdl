@@ -47,7 +47,6 @@ PlanStep stepFor(mlir::dsdl::IOOp io)
     step.kind                         = io.isPadding() ? PlanStepKind::Padding : PlanStepKind::Field;
     step.bits                         = ioStepBits(io);
     step.name                         = io.getName().str();
-    step.cName                        = valueOrEmpty(io.getCName());
     step.scalarCategory               = io.getScalarCategory().str();
     step.castMode                     = io.getCastMode().str();
     step.arrayKind                    = io.getArrayKind().str();
@@ -57,7 +56,9 @@ PlanStep stepFor(mlir::dsdl::IOOp io)
     step.alignmentBits                = io.getAlignmentBits();
     step.unionOptionIndex             = io.getUnionOptionIndex();
     step.unionTagBits                 = io.getUnionTagBits();
-    step.compositeCTypeName           = valueOrEmpty(io.getCompositeCTypeName());
+    step.compositeFullName            = valueOrEmpty(io.getCompositeFullName());
+    step.compositeMajor               = io.getCompositeMajor().value_or(0);
+    step.compositeMinor               = io.getCompositeMinor().value_or(0);
     step.serUnsignedHelper            = valueOrEmpty(io.getLoweredSerUnsignedHelper());
     step.deserUnsignedHelper          = valueOrEmpty(io.getLoweredDeserUnsignedHelper());
     step.serSignedHelper              = valueOrEmpty(io.getLoweredSerSignedHelper());

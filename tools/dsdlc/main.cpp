@@ -61,7 +61,6 @@
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
@@ -1928,7 +1927,7 @@ int runDsdlc(int argc, char** argv)
         }
         // Lowering can only guess at the C names, and what it guesses is not what any backend
         // emits. Stamping them here is what makes the printed symbols the ones a generated
-        // header declares, and what lets a lowering pass build bodies over this module.
+        // header declares.
         //
         // The merged model, because the embedded catalogue contributes schemas of its own and a
         // module stamped over only some of them names both what a backend emits and what it
@@ -1943,7 +1942,6 @@ int runDsdlc(int argc, char** argv)
                          << " schemas; the rest would carry names no backend emits\n";
             return finish("stdout", {}, true);
         }
-        (*mlirModule)->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(&context));
         if (!options.listInputs && !options.listOutputs)
         {
             mlirModule->print(llvm::outs());

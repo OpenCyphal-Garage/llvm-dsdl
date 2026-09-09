@@ -1,9 +1,7 @@
 // RUN: not %dsdl-opt --pass-pipeline='builtin.module(convert-dsdl-to-emitc)' %s 2>&1 | FileCheck %s --check-prefix=EMITC
-// RUN: not %dsdl-opt --pass-pipeline='builtin.module(build-dsdl-plan-bodies)' %s 2>&1 | FileCheck %s --check-prefix=BUILD
 
 // The C conversion renders nothing of its own: a plan whose body was not built as operations
-// is an error, not a function spelled out as text. And the builder works from a backend's
-// final names, which this module does not carry.
+// is an error, not a function spelled out as text.
 
 module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64} {
   func.func private @llvmdsdl_plan_capacity_check__test_Unbuilt_1_0(i64) -> i8
@@ -18,4 +16,3 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmd
 }
 
 // EMITC: error: 'dsdl.serialization_plan' op no serialize body was built for this plan; run build-dsdl-plan-bodies before convert-dsdl-to-emitc
-// BUILD: error: 'dsdl.serialization_plan' op bodies are built from a backend's final C names, and this module carries none

@@ -941,7 +941,6 @@ llvm::Error emit(const SemanticModule& semantic,
 
         auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
         auto perDefModule    = *perDefModuleRef;
-        perDefModule->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
 
         const std::string targetHeaderPath = EmitterContext::relativeHeaderPath(def);

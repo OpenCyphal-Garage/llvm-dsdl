@@ -54,20 +54,3 @@ func.func @read_float(%buf: !dsdl.ptr<i8>, %cap: i64, %off: i64) -> f64 {
   %v = dsdl.read_bits %buf[%off], size %cap {width = 64 : i64} : !dsdl.ptr<i8> -> f64
   return %v : f64
 }
-
-// Member access keeps the published signature: the composite carries the spelling the header
-// already declares, so the emitted definition matches the emitted declaration. `member_of_ptr`
-// needs an lvalue holding the pointer, which a function parameter is not, hence the slot.
-// CHECK-LABEL: func.func @member_round_trip
-// CHECK-SAME: (%[[OBJ:.*]]: !emitc.ptr<!emitc.opaque<"vendor__Widget">>
-func.func @member_round_trip(%obj: !dsdl.ptr<!dsdl.opaque<"vendor__Widget">>, %v: i64) -> i64 {
-  // CHECK: %[[SLOT:.*]] = "emitc.variable"() <{value = #emitc.opaque<"">}> : () -> !emitc.lvalue<!emitc.ptr<!emitc.opaque<"vendor__Widget">>>
-  // CHECK: emitc.assign %[[OBJ]] : {{.*}} to %[[SLOT]]
-  // CHECK: %[[M:.*]] = "emitc.member_of_ptr"(%[[SLOT]]) <{member = "foo"}>
-  // CHECK: emitc.load %[[M]]
-  %got = dsdl.load_member %obj ["foo"] {indices = array<i64: 0>} : !dsdl.ptr<!dsdl.opaque<"vendor__Widget">> -> i64
-  // CHECK: "emitc.member_of_ptr"({{.*}}) <{member = "bar"}>
-  // CHECK: emitc.assign
-  dsdl.store_member %obj ["bar"], %v {indices = array<i64: 1>} : !dsdl.ptr<!dsdl.opaque<"vendor__Widget">>, i64
-  return %got : i64
-}
