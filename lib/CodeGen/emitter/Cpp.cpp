@@ -476,7 +476,10 @@ public:
         }
     }
 
-    void declareVariable(SourceWriter& w, const mlir::Type type, const llvm::StringRef name) const override
+    void declareVariable(SourceWriter&         w,
+                         const mlir::Type      type,
+                         const llvm::StringRef name,
+                         bool /*reassigned*/) const override
     {
         w.line(typeName(type) + " " + name.str() + "{};");
     }

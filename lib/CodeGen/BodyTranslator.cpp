@@ -127,10 +127,10 @@ private:
     }
 
     /// @brief Declares a variable for @p value that a structured operation's arms assign.
-    std::string variable(const mlir::Value value)
+    std::string variable(const mlir::Value value, const bool reassigned)
     {
         const std::string name = fresh();
-        spelling_.declareVariable(w_, value.getType(), name);
+        spelling_.declareVariable(w_, value.getType(), name, reassigned);
         names_[value] = name;
         return name;
     }
@@ -191,7 +191,7 @@ private:
         results.reserve(op.getNumResults());
         for (const mlir::Value result : op.getResults())
         {
-            results.push_back(variable(result));
+            results.push_back(variable(result, false));
         }
         spelling_.openIf(w_, (*this)(op.getCondition()));
         if (auto err = block(op.getThenRegion().front(), results, {}))
@@ -218,13 +218,13 @@ private:
         std::vector<std::string> carried;
         for (const auto& [argument, init] : llvm::zip(op.getBeforeArguments(), op.getInits()))
         {
-            carried.push_back(variable(argument));
+            carried.push_back(variable(argument, true));
             spelling_.assign(w_, carried.back(), (*this)(init));
         }
         std::vector<std::string> results;
         for (const auto& [result, argument] : llvm::zip(op.getResults(), op.getAfterArguments()))
         {
-            results.push_back(variable(result));
+            results.push_back(variable(result, true));
             names_[argument] = results.back();
         }
         spelling_.openLoop(w_);
@@ -248,7 +248,7 @@ private:
         for (const auto& [argument, init, result] :
              llvm::zip(op.getRegionIterArgs(), op.getInitArgs(), op.getResults()))
         {
-            carried.push_back(variable(argument));
+            carried.push_back(variable(argument, true));
             spelling_.assign(w_, carried.back(), (*this)(init));
             names_[result] = carried.back();
         }

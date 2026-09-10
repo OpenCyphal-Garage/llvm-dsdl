@@ -4,23 +4,23 @@ A backend is a translation of MLIR: one pass pipeline turns every serialisation 
 serialise and a deserialise function of dialect operations, and a backend spells those functions
 in its language. [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)
 states this as the backend contract; `ctest -L backend-contract` accepts a backend against it, and
-nothing else does. C, obj and C++ meet the contract. Rust, Go, TypeScript and Python do not, and
-this page is the record of making them.
+nothing else does. C, obj, C++ and Rust meet the contract. Go, TypeScript and Python do not,
+and this page is the record of making them.
 
 ## Bodies are not derived from the IR
 
-Every emitter calls `collectLoweredFactsFromMlir`, and for four of them that is the whole of their
-MLIR consumption. The `LoweredFactsMap` it returns holds, per field, a step index and the names
-of helper symbols; per section, a capacity-check helper name, the union tag width and the alias
-flag. It holds no operations. The serialise and deserialise bodies of Rust and Go come from
+Every emitter calls `collectLoweredFactsFromMlir`, and for three of them that is the whole of
+their MLIR consumption. The `LoweredFactsMap` it returns holds, per field, a step index and the
+names of helper symbols; per section, a capacity-check helper name, the union tag width and the
+alias flag. It holds no operations. The serialise and deserialise bodies of Go come from
 `SerDesStatementPlan` and `NativeEmitterTraversal`; those of TypeScript and Python from
 `RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that walk the
-semantic module and decide the control flow themselves. C, obj and C++ translate the output of
-`build-dsdl-plan-bodies`: through EmitC for C source, through the LLVM dialect for objects, and
-through the translator below for C++.
+semantic module and decide the control flow themselves. C, obj, C++ and Rust translate the output
+of `build-dsdl-plan-bodies`: through EmitC for C source, through the LLVM dialect for objects, and
+through the translator below for C++ and Rust.
 
 The gates measure exactly this. Perturb an `dsdl.io` operation's width with the semantic module
-held constant and the four backends' bodies do not change; perturb the semantic module's cast
+held constant and the three backends' bodies do not change; perturb the semantic module's cast
 mode with the operations held constant and they do. Three times the architecture was asked for
 and delivered in that shape, each time passing as the real thing because every emitter consumed
 the dialect. Consuming lowered facts is not translating lowered operations.
@@ -94,16 +94,26 @@ malformed count never sizes a container past it. The `std`, `pmr` and `autosar` 
 in how those containers are spelled and, under `pmr`, in the memory resource a nested call is
 handed. The C↔C++ parity lanes and the generation lane accept it.
 
-The remaining four:
+**Rust** followed. `RustSpelling`, in
+[`lib/CodeGen/emitter/Rust.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Rust.cpp),
+names members from the scope the struct declaration names them in, and never names a nested type:
+a nested call is a method call on the member. The plan's `i64` is `u64` with wrapping arithmetic,
+which is the plan's arithmetic and cannot panic; the size a plan is handed by pointer is a local
+`usize`, and a nested call's answer is written back to it. A buffer is a slice, and a pointer
+into it is a sub-slice clamped to the buffer's end. A fixed-length array is `[T; N]`, which is the
+object the plan addresses without a count; it was a growable container with a length check the
+plan does not state. A variable-length array is sized within its capacity, under the section's
+memory contract, before the plan validates the count. The helpers are functions of the module.
+Both profiles, both runtime specialisations and both memory modes are one spelling. The C↔Rust
+parity lanes and their variants, the cargo-check lanes and the generation lane accept it.
 
-1. **Rust** — enum unions built from `set_union_tag` and the store to the selected option, `Vec` and bounded arrays
-   behind `set_array_length`; `std` and `no-std-alloc`, both runtime specialisations, both memory
-   modes. Oracle: the C↔Rust parity lanes and their variants.
-2. **Go** — slices and structs. Oracle: the C↔Go parity lanes.
-3. **TypeScript** — the integer model is the work: `arith` on `i64` needs `bigint`, narrower
+The remaining three:
+
+1. **Go** — slices and structs. Oracle: the C↔Go parity lanes.
+2. **TypeScript** — the integer model is the work: `arith` on `i64` needs `bigint`, narrower
    arithmetic needs explicit truncation. Oracle: the `c-ts-*` fixtures, `bigint-parity` and
    `truncated-decode-parity` among them.
-4. **Python** — arbitrary-precision integers, so wrap semantics are explicit masks;
+3. **Python** — arbitrary-precision integers, so wrap semantics are explicit masks;
    `auto|pure|accel` is a primitive-table choice. Oracle: the `c-python-*` fixtures and the
    runtime-execution lanes.
 
@@ -114,7 +124,7 @@ With the last backend converted: the planners — `SerDesStatementPlan`, `Native
 `LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`, `NativeHelperContract`,
 `SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts` with them. The
 convergence report and its scorecard page, which grade an emitter by the presence of
-`collectLoweredFactsFromMlir(` in its source. The four per-language emit-order traces, replaced
+`collectLoweredFactsFromMlir(` in its source. The three per-language emit-order traces, replaced
 by one check of step order on the plan-body IR, downstream of which order is by construction.
 The facts-channel check in the gate tool, which has no channel left to check.
 `--optimize-lowered-serdes` then sits after `build-dsdl-plan-bodies` in the shared pipeline and

@@ -55,11 +55,18 @@ SOURCE_RULES = [
     {
         "path": "lib/CodeGen/emitter/Rust.cpp",
         "required": [
-            r"emitNativeFunctionSkeleton\(",
+            r"translateFunction\(",
             r"collectLoweredFactsFromMlir\(",
             r"mlirSchemaCoverageValidationFailedForEmission\(\"Rust\"\)",
         ],
-        "forbidden": [r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\(", r"validateNativeSectionHelperContract\("],
+        "forbidden": [
+            r"emitNativeFunctionSkeleton\(",
+            r"forEachNativeEmitterRenderStep\(",
+            r"renderFieldSteps\(",
+            r"buildLoweredBodyRenderIR\(",
+            r"forEachLoweredRenderStep\(",
+            r"validateNativeSectionHelperContract\(",
+        ],
     },
     {
         "path": "lib/CodeGen/emitter/Go.cpp",

@@ -4,7 +4,7 @@
 """
 Emit-order verifier (the golden step-trace check).
 
-Runs dsdlc over a set of DSDL fixtures for each string backend (rust/go/ts/python)
+Runs dsdlc over a set of DSDL fixtures for each string backend (go/ts/python)
 with the LLVMDSDL_EMIT_TRACE side channel enabled, then verifies each backend's abstract
 op-trace is a MEMBER of the proven-safe equivalence class -- the same serialize/deserialize
 ordering the Dafny oracle (spec/dafny/CyphalSerdes.dfy) proves for the canonical traces.
@@ -54,7 +54,7 @@ import subprocess
 import sys
 import tempfile
 
-BACKENDS = ["rust", "go", "ts", "python"]
+BACKENDS = ["go", "ts", "python"]
 
 # Ops whose position is a free bookkeeping/accepted-difference degree of freedom (D2/D4 +
 # the native-only trailing byte-align). Removed before the cross-backend skeleton
@@ -275,7 +275,7 @@ def verify_traces(traces):
 
     # Cross-backend agreement: identical segment keys, identical skeletons per key.
     if len(traces) > 1:
-        ref_lang = "rust" if "rust" in traces else next(iter(traces))
+        ref_lang = "go" if "go" in traces else next(iter(traces))
         ref_keys = set(traces[ref_lang].keys())
         agree = True
         for lang, segments in traces.items():

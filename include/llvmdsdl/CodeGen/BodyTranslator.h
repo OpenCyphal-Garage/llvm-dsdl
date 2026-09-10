@@ -136,7 +136,9 @@ public:
     virtual void declare(SourceWriter& w, mlir::Type type, llvm::StringRef name, llvm::StringRef expr) const = 0;
 
     /// @brief Declares @p name to be assigned by the arms of a structured statement.
-    virtual void declareVariable(SourceWriter& w, mlir::Type type, llvm::StringRef name) const = 0;
+    /// @param[in] reassigned Whether the variable is assigned more than once on a path: a
+    ///                       loop-carried value is, an `scf.if` result is not.
+    virtual void declareVariable(SourceWriter& w, mlir::Type type, llvm::StringRef name, bool reassigned) const = 0;
 
     virtual void assign(SourceWriter& w, llvm::StringRef name, llvm::StringRef expr) const = 0;
 

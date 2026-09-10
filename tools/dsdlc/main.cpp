@@ -2161,8 +2161,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err =
-                llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);

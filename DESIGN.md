@@ -36,8 +36,8 @@ flowchart LR
   P --> K{"Translation"}
   K --> J["C: convert-dsdl-to-emitc\n+ EmitC translation"]
   K --> N["obj: convert-dsdl-to-llvm\n+ LLVM code generation"]
-  K --> O["C++: translateFunction\n+ CppSpelling"]
-  K --> Q["Rust/Go/TS/Python:\none spelling per language"]
+  K --> O["C++ and Rust: translateFunction\n+ a spelling per language"]
+  K --> Q["Go/TS/Python:\none spelling per language"]
   E --> L["Declarations, module layout,\nmanifests, runtime support"]
   J --> M["Generated sources and objects"]
   N --> M
@@ -160,7 +160,7 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 Operation reflection is also checked through the lowered-facts channel: a row whose perturbation is visible in `LoweredFactsMap` is reported and not scored, since a fact-walking emitter could reflect it. The rows are chosen so that none is.
 
-A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj;cpp`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
+A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj;cpp;rust`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
 ## 5. Backend Architecture (As Implemented)
 
@@ -197,7 +197,7 @@ Key files:
 
 ### 5.3 Rust backend (`emitter::rust::emit`)
 
-Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialisation modes, and configurable memory-mode contracts.
+Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialisation modes, and configurable memory-mode contracts. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `RustSpelling` spells its operations. A fixed-length array is `[T; N]`; a variable-length one is `DsdlVec<T>`.
 
 Key file:
 
