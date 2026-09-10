@@ -150,7 +150,7 @@
 # TS_PORTABLE_PACKAGE: "tsRuntimeSpecialization": "portable"
 # TS_PORTABLE_RUNTIME: export function copyBits(
 # TS_PORTABLE_RUNTIME-NOT: dst.set(src.subarray
-# TS_HELPERS: const mlir_
+# TS_HELPERS: function mlir_
 # TS_HELPERS: mlir_
 # TS_TYPE: export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = true;
 # TS_TYPE: export const DSDL_REQUEST_ZOH_ALIAS_REASON = "eligible";

@@ -51,7 +51,7 @@ import subprocess
 import sys
 import tempfile
 
-BACKENDS = ["ts", "python"]
+BACKENDS = ["python"]
 
 # Ops whose position is a free bookkeeping degree of freedom (D4, and the byte-align).
 # Removed before the cross-backend skeleton comparison; NOT used to relax the membership
@@ -267,7 +267,7 @@ def verify_traces(traces):
 
     # Cross-backend agreement: identical segment keys, identical skeletons per key.
     if len(traces) > 1:
-        ref_lang = "ts" if "ts" in traces else next(iter(traces))
+        ref_lang = next(iter(traces))
         ref_keys = set(traces[ref_lang].keys())
         agree = True
         for lang, segments in traces.items():

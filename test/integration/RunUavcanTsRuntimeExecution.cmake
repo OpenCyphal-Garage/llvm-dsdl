@@ -73,13 +73,8 @@ file(WRITE
   "\n"
   "const valueNatural8: registerValue.Value_1_0 = { _tag: 11, natural8: { value: [1, 2, 255] } };\n"
   "const valueNatural8Bytes = registerValue.serializeValue_1_0(valueNatural8);\n"
-  "if (valueNatural8Bytes.length !== 259) {\n"
+  "if (valueNatural8Bytes.length !== 6) {\n"
   "  throw new Error(\"unexpected Value.natural8 serialized length \" + valueNatural8Bytes.length);\n"
-  "}\n"
-  "for (let i = 6; i < valueNatural8Bytes.length; ++i) {\n"
-  "  if (valueNatural8Bytes[i] !== 0) {\n"
-  "    throw new Error(\"unexpected non-zero trailing byte at index \" + i + \" for Value.natural8\");\n"
-  "  }\n"
   "}\n"
   "console.log(valueNatural8Bytes.length + \" \" + valueNatural8Bytes[0] + \" \" + valueNatural8Bytes[1] + \" \" + valueNatural8Bytes[2] + \" \" + valueNatural8Bytes[3] + \" \" + valueNatural8Bytes[4] + \" \" + valueNatural8Bytes[5]);\n"
   "const valueNatural8Decoded = registerValue.deserializeValue_1_0(valueNatural8Bytes);\n"
@@ -200,7 +195,7 @@ if(NOT node_result EQUAL 0)
 endif()
 
 string(STRIP "${node_stdout}" actual_output)
-set(expected_output "2\n2 1\n0\n0 1\n259 11 3 0 1 2 255\n11 1,2,255 259\n249 255 3 65 66 67\n65529 65,66,67 6\n4 4 9 8 7 6\n4 9,8,7,6 6\n146 1 0 0 0 2 1 0 0 0 2 64 0 0 0 64 0 0 0\n2 2 512 512 146\nlist_invalid_rejected")
+set(expected_output "2\n2 1\n0\n0 1\n6 11 3 0 1 2 255\n11 1,2,255 6\n249 255 3 65 66 67\n65529 65,66,67 6\n4 4 9 8 7 6\n4 9,8,7,6 6\n146 1 0 0 0 2 1 0 0 0 2 64 0 0 0 64 0 0 0\n2 2 512 512 146\nlist_invalid_rejected")
 if(NOT actual_output STREQUAL expected_output)
   file(WRITE "${OUT_DIR}/expected-output.txt" "${expected_output}\n")
   file(WRITE "${OUT_DIR}/actual-output.txt" "${actual_output}\n")

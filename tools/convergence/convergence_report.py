@@ -121,7 +121,7 @@ BACKEND_CONFIG = {
         },
     },
     "ts": {
-        "kind": "scripted",
+        "kind": "native",
         "path": "lib/CodeGen/emitter/Ts.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanTsGeneration.cmake",

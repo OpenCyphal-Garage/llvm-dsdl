@@ -87,12 +87,17 @@ SOURCE_RULES = [
     {
         "path": "lib/CodeGen/emitter/Ts.cpp",
         "required": [
-            r"buildScriptedSectionOperationPlan\(",
-            r"operationPlan\.takeError\(\)",
+            r"translateFunction\(",
             r"collectLoweredFactsFromMlir\(",
             r"mlirSchemaCoverageValidationFailedForEmission\(\"TypeScript\"\)",
         ],
-        "forbidden": [r"buildScriptedSectionBodyPlan\(", r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\("],
+        "forbidden": [
+            r"buildScriptedSectionBodyPlan\(",
+            r"buildScriptedSectionOperationPlan\(",
+            r"buildRuntimeSectionPlan\(",
+            r"buildLoweredBodyRenderIR\(",
+            r"forEachLoweredRenderStep\(",
+        ],
     },
     {
         "path": "lib/CodeGen/emitter/Python.cpp",

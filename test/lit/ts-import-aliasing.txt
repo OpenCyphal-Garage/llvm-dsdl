@@ -12,12 +12,12 @@
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language ts %S/fixtures_ts_alias/collide --ts-module collide_demo --outdir %t/ts >/dev/null 2>&1
 
-# The clashing pair is imported under namespace-qualified aliases, for the type and for both runtime
-# functions -- they are all derived from the same local name, so they cannot disagree.
+# The clashing pair is imported under namespace-qualified aliases, for the type and for both
+# bodies -- they are all derived from the same local name, so they cannot disagree.
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED
 
-# ALIASED: import { deserializeVec as deserializeVec__collide_alpha, serializeVec as serializeVec__collide_alpha } from "./alpha/vec_1_0";
-# ALIASED: import { deserializeVec as deserializeVec__collide_beta, serializeVec as serializeVec__collide_beta } from "./beta/vec_1_0";
+# ALIASED: import { deserializeVecFrom as deserializeVec__collide_alphaFrom, serializeVecInto as serializeVec__collide_alphaInto } from "./alpha/vec_1_0";
+# ALIASED: import { deserializeVecFrom as deserializeVec__collide_betaFrom, serializeVecInto as serializeVec__collide_betaInto } from "./beta/vec_1_0";
 # ALIASED: import type { Vec as Vec__collide_alpha } from "./alpha/vec_1_0";
 # ALIASED: import type { Vec as Vec__collide_beta } from "./beta/vec_1_0";
 

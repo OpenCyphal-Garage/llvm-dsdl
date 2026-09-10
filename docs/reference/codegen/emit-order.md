@@ -1,11 +1,11 @@
 # Canonical emit order
 
-The reference **abstract** serialise/deserialize step order that every string backend that
-plans its bodies (TypeScript, Python) follows. This is a live contract: the shared render
+The reference **abstract** serialise/deserialize step order that Python, the string backend
+that plans its bodies, follows. This is a live contract: the shared render
 template produces this order by construction, and the emit-order verifier
 (`tools/convergence/emit_order_verifier.py`, ctest `llvmdsdl-emit-order-verifier`)
-independently pins it on every build. C++, Rust and Go translate the plan bodies, and their order
-is the plan's.
+independently pins it on every build. C++, Rust, Go and TypeScript translate the plan bodies, and
+their order is the plan's.
 
 This prose is the human-readable projection of the machine-checked model in
 [spec/dafny/CyphalSerdes.dfy](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy), which *proves* (unbounded,
@@ -34,10 +34,10 @@ ordered sequence of abstract ops, regardless of how each op is spelled.
   `Result`/`Err` vs `(rc,0)` vs negative-int return vs `throw`/`raise`; identifier names;
   indentation.
 
-Example: in `serialize` of a union tag, TypeScript emits `tag = mask(tag);` then
-`writeUnsigned(...tag...)`, and Python `tag = mask(tag)` then `write_unsigned(...)`. Whether the
-mask is its own statement or folded into the write argument, the trace is **`VALIDATE_TAG →
-MASK_TAG → WRITE_TAG`**: the emit-order verifier sees the abstract order and not the spelling.
+Example: in `serialize` of a union tag, Python emits `tag = mask(tag)` then
+`write_unsigned(...)`. Whether the mask is its own statement or folded into the write argument,
+the trace is **`VALIDATE_TAG → MASK_TAG → WRITE_TAG`**: the emit-order verifier sees the abstract
+order and not the spelling.
 
 ## Two invariant principles
 
@@ -83,7 +83,7 @@ ADVANCE(tagBits)
 SWITCH(tag) { CASE(optionIndex): ALIGN(...) <field ops> ... DEFAULT: DEFAULT_BAD_TAG }
 ```
 Note `READ → MASK → STORE → VALIDATE` on deserialise vs `VALIDATE → MASK → WRITE` on serialise
-(principle 1). Both backends emit this by construction via `renderUnionSection`.
+(principle 1). Python emits this by construction via `renderUnionSection`.
 
 ## Field level
 
@@ -203,11 +203,11 @@ score cannot see structural facts of this kind.
 
 | # | Backend(s) | Kind | Resolution |
 |---|---|---|---|
-| D1 | *(none)* | — | Both backends spell the union-tag mask as its own statement |
-| D2 | *(none)* | — | Both backends emit the fixed-array `LEN_CHECK`, a runtime `length != capacity` guard on a growable array, and it is part of the comparator skeleton |
+| D1 | *(none)* | — | The union-tag mask is its own statement |
+| D2 | *(none)* | — | The fixed-array `LEN_CHECK`, a runtime `length != capacity` guard on a growable array, is part of the comparator skeleton |
 | D3 | A **bulk copy of a fixed `bool` array** (`dsdl_runtime_copy_bits`/`get_bits`) in place of the element loop, so no `ELEM_LOOP` / per-element scalar ops for that case | **Optimisation** | Declared interface point `FieldStepSpelling::trySpellArrayBulkFastPath`; traces `BULK_COPY`, and the comparator applies the declared equivalence `BULK_COPY ≡ ELEM_LOOP + 1-bit bool scalar` (selftest-pinned) |
-| D4 | *(none)* | — | Both backends render the union prologue through `renderUnionSection`, so their raw prologue traces are identical by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
-| D5 | *(further reorderings)* | **None.** Both backends verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
+| D4 | *(none)* | — | Python renders the union prologue through `renderUnionSection`, so its raw prologue trace is the template's by construction. The comparator carries a tolerance for `STORE`/`ADVANCE` bookkeeping positions anyway: it costs nothing, and it is the axis a hand-written prologue would drift along first |
+| D5 | *(further reorderings)* | **None.** Python verified over unions, variable/fixed arrays, floats, signed+void padding, fixed bool arrays, sealed + delimited composites, arrays of composites, and a service type (26 fixture segments), plus the full UAVCAN public-regulated corpus (424 segments) | Zero unmodeled divergences |
 
 ## Enforcement
 
@@ -219,6 +219,7 @@ Three ctests (labels `integration;convergence;emit-order`) run in every ctest-dr
 | `llvmdsdl-emit-order-verifier-selftest` | The checker itself has teeth: mask-before-validate rejected, payload divergence detected, D3 equivalence honored, `BULK_COPY` without `ADVANCE` rejected |
 | `llvmdsdl-emit-order-verifier-mutation` | The whole pipeline has teeth: dsdlc re-runs with `LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate` and the verifier must go red |
 
-**Scope**: the two string emitters that plan their bodies. C, obj, C++, Rust and Go are
-translations of the plan bodies, so their order is the plan's, and the C↔{Cpp,Rust,Go} parity
-harnesses cover them. State coverage as "2 planned emitters + 5 translations via parity".
+**Scope**: Python, the string emitter that plans its bodies. C, obj, C++, Rust, Go and
+TypeScript are translations of the plan bodies, so their order is the plan's, and the
+C↔{Cpp,Rust,Go,TS} parity harnesses cover them. State coverage as "1 planned emitter + 6
+translations via parity".
