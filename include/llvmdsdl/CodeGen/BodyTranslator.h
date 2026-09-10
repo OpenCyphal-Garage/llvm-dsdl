@@ -182,6 +182,20 @@ public:
                                              llvm::StringRef ifFalse,
                                              mlir::Type      type) const = 0;
 
+    /// @brief Declares @p name as one of two values by @p condition.
+    ///
+    /// A language without a conditional expression spells this as a statement; the others
+    /// declare the value of @ref select.
+    virtual void declareSelect(SourceWriter&   w,
+                               mlir::Type      type,
+                               llvm::StringRef name,
+                               llvm::StringRef condition,
+                               llvm::StringRef ifTrue,
+                               llvm::StringRef ifFalse) const
+    {
+        declare(w, type, name, select(condition, ifTrue, ifFalse, type));
+    }
+
     [[nodiscard]] virtual std::string convert(Conversion      conversion,
                                               llvm::StringRef value,
                                               mlir::Type      from,
@@ -225,6 +239,23 @@ public:
     virtual void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const             = 0;
     virtual void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const               = 0;
     [[nodiscard]] virtual std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const     = 0;
+
+    /// @brief Declares @p name as the error code a nested call answers with.
+    ///
+    /// A language whose call answers two values spells this as a statement; the others declare
+    /// the value of @ref callSerdes. @p name is empty when the plan does not read the code.
+    virtual void declareCallSerdes(SourceWriter&            w,
+                                   llvm::StringRef          name,
+                                   mlir::dsdl::CallSerdesOp op,
+                                   const ValueNames&        names) const
+    {
+        if (name.empty())
+        {
+            discard(w, callSerdes(op, names));
+            return;
+        }
+        declare(w, op.getError().getType(), name, callSerdes(op, names));
+    }
 };
 
 /// @brief Spells @p fn through @p spelling into @p w.

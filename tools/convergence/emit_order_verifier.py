@@ -33,9 +33,6 @@ It checks two things:
      prefix width is a failure even when the op names agree.
 
 Accepted differences (explicitly modeled):
-  D2: LEN_CHECK (fixed-array exact-length guard) is backend-optional -- Go fixed
-      arrays are compile-time sized so the guard is type-system-subsumed. Dropped from
-      the skeleton.
   D3: a fixed bool array copied as one run traces BULK_COPY instead of an element loop;
       the skeleton expands BULK_COPY to ELEM_LOOP + one 1-bit bool scalar op.
   D4: ADVANCE / STORE_TAG positions are bookkeeping freedom. Dropped from the skeleton;
@@ -54,12 +51,12 @@ import subprocess
 import sys
 import tempfile
 
-BACKENDS = ["go", "ts", "python"]
+BACKENDS = ["ts", "python"]
 
-# Ops whose position is a free bookkeeping/accepted-difference degree of freedom (D2/D4 +
-# the native-only trailing byte-align). Removed before the cross-backend skeleton
-# comparison; NOT used to relax the membership ordering.
-SKELETON_DROP = {"ADVANCE", "STORE_TAG", "ALIGN", "LEN_CHECK"}
+# Ops whose position is a free bookkeeping degree of freedom (D4, and the byte-align).
+# Removed before the cross-backend skeleton comparison; NOT used to relax the membership
+# ordering.
+SKELETON_DROP = {"ADVANCE", "STORE_TAG", "ALIGN"}
 
 # Contiguous op groups that make up a tag / length prologue (scanned backward from the
 # dispatch/loop op). Bookkeeping ops are allowed to appear interleaved.
@@ -186,11 +183,6 @@ def run_dsdlc(dsdlc, lang, fixture_root, trace_path, out_dir, extra_env=None):
     cmd = [dsdlc, "--target-language", lang, fixture_root, "--outdir", out_dir]
     if lang == "ts":
         cmd += ["--ts-module", "emit_order_verifier"]
-    if lang == "go":
-        # Go compiles a namespace as one package, so the uavcan corpus -- which carries several
-        # types at two or more versions -- cannot be expressed with unversioned names at all. The
-        # emit order this verifies is the same either way; this makes the corpus generable.
-        cmd += ["--versioned-type-names"]
     env = dict(os.environ, LLVMDSDL_EMIT_TRACE=trace_path)
     if extra_env:
         env.update(extra_env)
@@ -275,7 +267,7 @@ def verify_traces(traces):
 
     # Cross-backend agreement: identical segment keys, identical skeletons per key.
     if len(traces) > 1:
-        ref_lang = "go" if "go" in traces else next(iter(traces))
+        ref_lang = "ts" if "ts" in traces else next(iter(traces))
         ref_keys = set(traces[ref_lang].keys())
         agree = True
         for lang, segments in traces.items():

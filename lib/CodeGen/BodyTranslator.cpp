@@ -330,12 +330,17 @@ private:
                 return llvm::Error::success();
             })
             .Case<mlir::arith::SelectOp>([&](mlir::arith::SelectOp select) {
-                define(select.getResult(),
-                       spelling_.select((*this)(select.getCondition()),
-                                        (*this)(select.getTrueValue()),
-                                        (*this)(select.getFalseValue()),
-                                        select.getType()),
-                       true);
+                if (!select.getResult().use_empty())
+                {
+                    const std::string name = fresh();
+                    spelling_.declareSelect(w_,
+                                            select.getType(),
+                                            name,
+                                            (*this)(select.getCondition()),
+                                            (*this)(select.getTrueValue()),
+                                            (*this)(select.getFalseValue()));
+                    names_[select.getResult()] = name;
+                }
                 return llvm::Error::success();
             })
             .Case<mlir::arith::ExtUIOp>([&](auto) { return conversion(op, Conversion::ZeroExtend); })
@@ -440,7 +445,12 @@ private:
                 return llvm::Error::success();
             })
             .Case<mlir::dsdl::CallSerdesOp>([&](mlir::dsdl::CallSerdesOp call) {
-                define(call.getResult(), spelling_.callSerdes(call, *this), false);
+                const std::string name = call.getResult().use_empty() ? std::string{} : fresh();
+                spelling_.declareCallSerdes(w_, name, call, *this);
+                if (!name.empty())
+                {
+                    names_[call.getResult()] = name;
+                }
                 return llvm::Error::success();
             })
             .Case<mlir::dsdl::StoreScalarOp>([&](mlir::dsdl::StoreScalarOp write) {

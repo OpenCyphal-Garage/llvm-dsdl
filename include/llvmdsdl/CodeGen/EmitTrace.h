@@ -11,7 +11,7 @@
 /// Abstract emit-order trace vocabulary shared by the string backends.
 ///
 /// The emit-order verifier (tools/convergence/emit_order_verifier.py) asserts that every string backend
-/// (Rust/Go/C++/TypeScript/Python) performs the same ordered sequence of
+/// (TypeScript/Python) performs the same ordered sequence of
 /// *abstract* serialise/deserialize operations for a given type, independent of
 /// surface spelling. Each backend records these ops into an @ref EmitTraceSink
 /// at the point it emits the corresponding text; a null sink is the default and

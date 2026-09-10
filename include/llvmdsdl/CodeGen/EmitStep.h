@@ -223,8 +223,7 @@ struct FieldEmitStep final
 /// @warning Temp-name allocation order is load-bearing. `nextName` counters are
 /// shared and order-sensitive, so the sequence of `nextName` calls inside a
 /// spelling method determines the generated identifier suffixes for the whole
-/// section. Backends legitimately differ — C++ allocates `count_raw` before
-/// `count`, Rust/Go the reverse — and each preserves the allocation order its
+/// section. Backends differ, and each preserves the allocation order its
 /// generated output had before the sequencing was shared. Reordering these
 /// calls is not a no-op refactor: it renames identifiers across the entire
 /// corpus and will churn the golden/lit snapshots even though the emit-order
@@ -244,10 +243,6 @@ public:
     virtual void spellScalarDeserialize(const FieldEmitStep& step, const std::string& targetExpr) = 0;
 
     /// @brief D2 point — fixed-array exact-length guard (LEN_CHECK).
-    ///
-    /// Backends whose fixed arrays are compile-time sized (Go `[N]T`,
-    /// C++ `std::array`) implement this as a documented no-op: the guard is
-    /// type-system-subsumed, not skipped ad hoc.
     virtual void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) = 0;
 
     /// @brief D3 point — optional bulk fast path replacing the element loop (BULK_COPY).

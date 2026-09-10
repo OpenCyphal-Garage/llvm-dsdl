@@ -56,6 +56,30 @@ func TestChooseMin(t *testing.T) {
 }
 
 // TestSaturateFragmentBits validates fragment saturation boundaries.
+func TestBoolToUint64(t *testing.T) {
+	if BoolToUint64(true) != 1 || BoolToUint64(false) != 0 {
+		t.Fatalf("BoolToUint64 does not map the two values onto 1 and 0")
+	}
+}
+
+func TestResizeZeroesAndReusesStorage(t *testing.T) {
+	s := []uint8{7, 8, 9}
+	backing := &s[0]
+	s = Resize(s, 2)
+	if len(s) != 2 || s[0] != 0 || s[1] != 0 || &s[0] != backing {
+		t.Fatalf("Resize within capacity must zero the elements in place: got %v", s)
+	}
+	s = Resize(s, 5)
+	if len(s) != 5 {
+		t.Fatalf("Resize past capacity must grow the slice: got len %d", len(s))
+	}
+	for i, v := range s {
+		if v != 0 {
+			t.Fatalf("Resize past capacity must zero element %d: got %d", i, v)
+		}
+	}
+}
+
 func TestSaturateFragmentBits(t *testing.T) {
 	if got := SaturateFragmentBits(2, 0, 9); got != 9 {
 		t.Fatalf("SaturateFragmentBits(2,0,9) = %d, want 9", got)

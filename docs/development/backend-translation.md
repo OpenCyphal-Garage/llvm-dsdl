@@ -4,23 +4,22 @@ A backend is a translation of MLIR: one pass pipeline turns every serialisation 
 serialise and a deserialise function of dialect operations, and a backend spells those functions
 in its language. [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)
 states this as the backend contract; `ctest -L backend-contract` accepts a backend against it, and
-nothing else does. C, obj, C++ and Rust meet the contract. Go, TypeScript and Python do not,
+nothing else does. C, obj, C++, Rust and Go meet the contract. TypeScript and Python do not,
 and this page is the record of making them.
 
 ## Bodies are not derived from the IR
 
-Every emitter calls `collectLoweredFactsFromMlir`, and for three of them that is the whole of
+Every emitter calls `collectLoweredFactsFromMlir`, and for two of them that is the whole of
 their MLIR consumption. The `LoweredFactsMap` it returns holds, per field, a step index and the
 names of helper symbols; per section, a capacity-check helper name, the union tag width and the
-alias flag. It holds no operations. The serialise and deserialise bodies of Go come from
-`SerDesStatementPlan` and `NativeEmitterTraversal`; those of TypeScript and Python from
-`RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that walk the
-semantic module and decide the control flow themselves. C, obj, C++ and Rust translate the output
-of `build-dsdl-plan-bodies`: through EmitC for C source, through the LLVM dialect for objects, and
-through the translator below for C++ and Rust.
+alias flag. It holds no operations. The serialise and deserialise bodies of TypeScript and
+Python come from `RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen`
+that walk the semantic module and decide the control flow themselves. C, obj, C++, Rust and Go
+translate the output of `build-dsdl-plan-bodies`: through EmitC for C source, through the LLVM
+dialect for objects, and through the translator below for C++, Rust and Go.
 
 The gates measure exactly this. Perturb an `dsdl.io` operation's width with the semantic module
-held constant and the three backends' bodies do not change; perturb the semantic module's cast
+held constant and the two backends' bodies do not change; perturb the semantic module's cast
 mode with the operations held constant and they do. Three times the architecture was asked for
 and delivered in that shape, each time passing as the real thing because every emitter consumed
 the dialect. Consuming lowered facts is not translating lowered operations.
@@ -107,13 +106,27 @@ memory contract, before the plan validates the count. The helpers are functions 
 Both profiles, both runtime specialisations and both memory modes are one spelling. The C↔Rust
 parity lanes and their variants, the cargo-check lanes and the generation lane accept it.
 
-The remaining three:
+**Go** followed. `GoSpelling`, in
+[`lib/CodeGen/emitter/Go.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Go.cpp),
+names members from the scope the struct declaration names them in, and never names a nested type:
+a nested call is a method call on the member, and its two answers, the code and the size it used,
+make it a statement rather than a value. The output is gofmt-clean by construction: each operation
+is one statement, so no operator sits inside a call argument or an index, and a conditional value
+is an `if` that assigns a declared variable. Go's fixed-width arithmetic wraps, which is the
+plan's arithmetic. A negative literal is spelled in the signed type it is compared in, since a
+constant conversion that overflows is a compile error. A `bool` member read as an integer goes
+through the runtime's `BoolToUint64`; a variable-length array is sized within its capacity by the
+runtime's `Resize`, which names no element type. A buffer is a slice, and a pointer into it is a
+sub-slice clamped to the buffer's end. The helpers are functions of the package. The C↔Go parity
+lanes, the decoder fuzz and forward-compatibility lanes, the go-build lane and the generation
+lane, which runs gofmt, accept it.
 
-1. **Go** — slices and structs. Oracle: the C↔Go parity lanes.
-2. **TypeScript** — the integer model is the work: `arith` on `i64` needs `bigint`, narrower
+The remaining two:
+
+1. **TypeScript** — the integer model is the work: `arith` on `i64` needs `bigint`, narrower
    arithmetic needs explicit truncation. Oracle: the `c-ts-*` fixtures, `bigint-parity` and
    `truncated-decode-parity` among them.
-3. **Python** — arbitrary-precision integers, so wrap semantics are explicit masks;
+2. **Python** — arbitrary-precision integers, so wrap semantics are explicit masks;
    `auto|pure|accel` is a primitive-table choice. Oracle: the `c-python-*` fixtures and the
    runtime-execution lanes.
 
@@ -124,7 +137,7 @@ With the last backend converted: the planners — `SerDesStatementPlan`, `Native
 `LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`, `NativeHelperContract`,
 `SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts` with them. The
 convergence report and its scorecard page, which grade an emitter by the presence of
-`collectLoweredFactsFromMlir(` in its source. The three per-language emit-order traces, replaced
+`collectLoweredFactsFromMlir(` in its source. The two per-language emit-order traces, replaced
 by one check of step order on the plan-body IR, downstream of which order is by construction.
 The facts-channel check in the gate tool, which has no channel left to check.
 `--optimize-lowered-serdes` then sits after `build-dsdl-plan-bodies` in the shared pipeline and
