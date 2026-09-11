@@ -1,0 +1,19 @@
+[package]
+name = "llvmdsdl_array_length_prefix_guard"
+version = "@LLVMDSDL_TOOL_VERSION@"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "array_length_prefix_guard"
+path = "src/main.rs"
+required-features = ["std"]
+
+[features]
+default = ["std"]
+std = ["prefixguard_generated/std"]
+
+[dependencies]
+prefixguard_generated = { path = "@RUST_OUT@", default-features = false }

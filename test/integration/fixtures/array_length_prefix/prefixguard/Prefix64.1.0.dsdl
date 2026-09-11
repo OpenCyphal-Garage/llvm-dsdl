@@ -1,0 +1,3 @@
+# A variable-length array whose length prefix is 64 bits wide.
+bool[<=8589934592] flags
+@sealed

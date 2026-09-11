@@ -777,6 +777,43 @@ else()
     "Skipping cross-language primitive equivalence: need C compiler, cargo, go, and python3")
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # Array-length prefixes above the declared capacity and beyond the index width of the target,
+  # decoded by every backend. A 32-bit leg has to execute on a host that can run one: Go's
+  # linux/386 binary runs on an x86 Linux host, which is where the requirement is switched on.
+  set(array_length_prefix_guard_args "")
+  cmake_host_system_information(RESULT _guard_host_os QUERY OS_NAME)
+  cmake_host_system_information(RESULT _guard_host_platform QUERY OS_PLATFORM)
+  if(GO_EXECUTABLE AND _guard_host_os STREQUAL "Linux"
+     AND _guard_host_platform MATCHES "^(x86_64|amd64|i[3-6]86)$")
+    list(APPEND array_length_prefix_guard_args -DREQUIRE_32BIT_EXECUTION=ON)
+  endif()
+  add_test(
+    NAME llvmdsdl-array-length-prefix-guard
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/array-length-prefix-guard-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        ${array_length_prefix_guard_args}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunArrayLengthPrefixGuard.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-array-length-prefix-guard
+    PROPERTIES
+      LABELS "integration;fixtures;differential;c;cpp;rust;go;ts;python"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend
