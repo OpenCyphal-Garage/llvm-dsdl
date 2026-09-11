@@ -246,67 +246,6 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;convergence"
   )
 
-  # Emit-order verifier (golden step-trace): runs dsdlc over fixtures with the LLVMDSDL_EMIT_TRACE side
-  # channel and checks every backend's emit-order trace is a member of the proven-safe
-  # equivalence class (the ordering the Dafny oracle proves for the canonical), plus
-  # cross-backend payload-aware wire-skeleton agreement per (type, direction). When the
-  # UAVCAN submodule is present the full public regulated corpus is verified too (~424
-  # segments, sub-second per backend). Only needs dsdlc + Python (no target toolchains).
-  set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS "")
-  if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
-    set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS --corpus "${LLVMDSDL_UAVCAN_ROOT}")
-  endif()
-  add_test(
-    NAME llvmdsdl-emit-order-verifier
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --dsdlc $<TARGET_FILE:dsdlc>
-        ${LLVMDSDL_EMIT_ORDER_CORPUS_ARGS}
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
-  )
-
-  # Negative control: the membership check must reject a mask-before-validate reorder,
-  # detect payload divergence, and honor the declared D3 bulk-copy equivalence.
-  add_test(
-    NAME llvmdsdl-emit-order-verifier-selftest
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --selftest
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier-selftest
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
-  )
-
-  # End-to-end mutation negative control: dsdlc re-runs with
-  # LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate (a mask-before-validate reorder
-  # of the recorded trace) and the verifier must go red. Proves the whole pipeline
-  # (emitter run -> trace side channel -> comparator) detects a reorder, not merely that
-  # the checker rejects a hand-written list.
-  add_test(
-    NAME llvmdsdl-emit-order-verifier-mutation
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --dsdlc $<TARGET_FILE:dsdlc>
-        --mutation-test
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier-mutation
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
-  )
-
   if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
     add_test(
       NAME llvmdsdl-embedded-uavcan-catalog-guard
@@ -3531,7 +3470,7 @@ endif()
 # bodies follow. A backend in the enforced list fails its test on a gap; the others report the
 # gap. A backend joins the list in the change that makes its bodies translations of the plan
 # operations, and does not leave it.
-set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj;cpp;rust;go;ts" CACHE STRING
+set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj;cpp;rust;go;ts;python" CACHE STRING
     "Backends whose backend-contract gate fails on a gap rather than reporting it.")
 
 add_executable(llvmdsdl-backend-contract-tool BackendContractTool.cpp)

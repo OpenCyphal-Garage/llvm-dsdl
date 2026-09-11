@@ -102,12 +102,17 @@ SOURCE_RULES = [
     {
         "path": "lib/CodeGen/emitter/Python.cpp",
         "required": [
-            r"buildScriptedSectionOperationPlan\(",
-            r"operationPlan\.takeError\(\)",
+            r"translateFunction\(",
             r"collectLoweredFactsFromMlir\(",
             r"mlirSchemaCoverageValidationFailedForEmission\(\"Python\"\)",
         ],
-        "forbidden": [r"buildScriptedSectionBodyPlan\(", r"buildLoweredBodyRenderIR\(", r"forEachLoweredRenderStep\("],
+        "forbidden": [
+            r"buildScriptedSectionBodyPlan\(",
+            r"buildScriptedSectionOperationPlan\(",
+            r"buildRuntimeSectionPlan\(",
+            r"buildLoweredBodyRenderIR\(",
+            r"forEachLoweredRenderStep\(",
+        ],
     },
 ]
 

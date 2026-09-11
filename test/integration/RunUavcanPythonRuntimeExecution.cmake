@@ -133,24 +133,13 @@ assert abs(accel_rt.meter_per_second_per_second[1] + 2.5) < 1e-6
 assert abs(accel_rt.meter_per_second_per_second[2] - 9.81) < 1e-5
 print("uavcan-python-runtime composite-roundtrip-ok")
 
-# Truncated decode malformed-input contract:
-# - portable pure runtime: zero-extends missing bits
-# - fast pure runtime: rejects byte-aligned out-of-range extract with ValueError
-if RUNTIME_SPECIALIZATION == "fast":
-    truncated_failed = False
-    try:
-        HeartbeatMod.Heartbeat_1_0.deserialize(bytes([0x34, 0x12]))
-    except ValueError:
-        truncated_failed = True
-    assert truncated_failed
-    print("uavcan-python-runtime truncated-buffer-rejected-ok")
-else:
-    truncated = HeartbeatMod.Heartbeat_1_0.deserialize(bytes([0x34, 0x12]))
-    assert truncated.uptime == 0x1234
-    assert truncated.health.value == 0
-    assert truncated.mode.value == 0
-    assert truncated.vendor_specific_status_code == 0
-    print("uavcan-python-runtime truncated-buffer-zero-extend-ok")
+# Truncated decode: the missing bits read as zero.
+truncated = HeartbeatMod.Heartbeat_1_0.deserialize(bytes([0x34, 0x12]))
+assert truncated.uptime == 0x1234
+assert truncated.health.value == 0
+assert truncated.mode.value == 0
+assert truncated.vendor_specific_status_code == 0
+print("uavcan-python-runtime truncated-buffer-zero-extend-ok")
 
 # Negative path: invalid union tags should fail.
 invalid_union_failed = False

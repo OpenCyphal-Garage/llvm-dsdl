@@ -34,7 +34,7 @@
 # RUN: cat %t/py/dsdl_gen/dsdl/cx/c_1_0.py | FileCheck %s --check-prefix=PY
 # PY-DAG: foo_bar: int = 0
 # PY-DAG: foo_bar_2: int = 0
-# PY-DAG: value.foo_bar_2 =
+# PY-DAG: self.foo_bar_2 =
 # PY-DAG: C_BAR_BAZ = 1
 # PY-DAG: C_BAR_BAZ_2 = 2
 

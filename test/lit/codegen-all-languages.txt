@@ -190,10 +190,10 @@
 # PY_PYPROJECT: requires-python = ">=3.10"
 # PY_PYPROJECT: [tool.setuptools.package-data]
 # PY_PYPROJECT: _dsdl_runtime_accel*.so
+# PY_HELPERS: def mlir_
+# PY_HELPERS: mlir_
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: def serialize(self) -> bytes:
 # PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)
-# PY_HELPERS: def mlir_
-# PY_HELPERS: mlir_
 # PY_TYPE: DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = True
 # PY_TYPE: DSDL_REQUEST_ZOH_ALIAS_REASON = "eligible"

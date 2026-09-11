@@ -52,9 +52,6 @@ bringing every backend onto it.
 - Backend emitters stay aligned, because they read the same validated facts.
 - Unsupported and malformed states produce deterministic diagnostics.
 
-The serialise/deserialize step order the emitters render from this state is itself a contract, and a
-published one: see [Emit Order](../reference/codegen/emit-order.md).
-
 ## Canonical references
 
 - Design source: [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)

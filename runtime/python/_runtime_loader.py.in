@@ -43,3 +43,16 @@ if runtime is None:
     from . import _dsdl_runtime as runtime  # type: ignore[assignment]
 
 BACKEND = getattr(runtime, "BACKEND", "unknown")
+
+_ERROR_MESSAGES = {
+    -2: "invalid argument",
+    -3: "serialisation buffer too small",
+    -10: "array length out of range",
+    -11: "invalid union tag",
+    -12: "invalid delimiter header",
+}
+
+
+def error_message(code: int) -> str:
+    """The text of the error code a generated body answers with."""
+    return _ERROR_MESSAGES.get(code, f"serialisation error {code}")

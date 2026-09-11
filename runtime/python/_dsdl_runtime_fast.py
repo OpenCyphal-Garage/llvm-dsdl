@@ -24,6 +24,7 @@ import struct
 from typing import Union
 
 BytesLike = Union[bytes, bytearray, memoryview]
+WritableBytes = Union[bytearray, memoryview]
 
 BACKEND = "pure"
 
@@ -34,19 +35,19 @@ def byte_length_for_bits(total_bits: int) -> int:
     return (total_bits + 7) // 8
 
 
-def _as_readonly_bytes(data: BytesLike) -> bytes:
-    if isinstance(data, bytes):
+def _as_readonly_bytes(data: BytesLike) -> BytesLike:
+    # A view is read in place: a body hands its nested bodies views into one buffer.
+    if isinstance(data, (bytes, bytearray, memoryview)):
         return data
-    if isinstance(data, bytearray):
-        return bytes(data)
-    if isinstance(data, memoryview):
-        return data.tobytes()
     raise TypeError(f"expected bytes-like object, got {type(data)!r}")
 
 
-def _check_mutable_buffer(buf: bytearray) -> None:
-    if not isinstance(buf, bytearray):
-        raise TypeError(f"expected bytearray, got {type(buf)!r}")
+def _check_mutable_buffer(buf: WritableBytes) -> None:
+    if isinstance(buf, bytearray):
+        return
+    if isinstance(buf, memoryview) and not buf.readonly:
+        return
+    raise TypeError(f"expected bytearray or writable memoryview, got {type(buf)!r}")
 
 
 def _mask_bits(length_bits: int) -> int:
@@ -55,7 +56,7 @@ def _mask_bits(length_bits: int) -> int:
     return (1 << length_bits) - 1
 
 
-def set_bit(buf: bytearray, off_bits: int, value: bool) -> None:
+def set_bit(buf: WritableBytes, off_bits: int, value: bool) -> int:
     _check_mutable_buffer(buf)
     byte_index = off_bits // 8
     bit_index = off_bits % 8
@@ -66,6 +67,7 @@ def set_bit(buf: bytearray, off_bits: int, value: bool) -> None:
         buf[byte_index] = (buf[byte_index] | mask) & 0xFF
     else:
         buf[byte_index] = (buf[byte_index] & (~mask)) & 0xFF
+    return 0
 
 
 def get_bit(buf: BytesLike, off_bits: int) -> bool:
@@ -77,7 +79,7 @@ def get_bit(buf: BytesLike, off_bits: int) -> bool:
     return ((source[byte_index] >> bit_index) & 1) == 1
 
 
-def copy_bits(dst: bytearray, dst_off_bits: int, src: BytesLike, src_off_bits: int, len_bits: int) -> None:
+def copy_bits(dst: WritableBytes, dst_off_bits: int, src: BytesLike, src_off_bits: int, len_bits: int) -> None:
     _check_mutable_buffer(dst)
     source = _as_readonly_bytes(src)
     if len_bits <= 0:
@@ -107,17 +109,17 @@ def extract_bits(src: BytesLike, src_off_bits: int, len_bits: int) -> bytes:
             raise ValueError("negative offsets are not supported")
         if src_start + byte_len > len(source):
             raise ValueError("serialisation buffer too small")
-        return source[src_start : src_start + byte_len]
+        return bytes(source[src_start : src_start + byte_len])
 
     out = bytearray(byte_length_for_bits(len_bits))
     copy_bits(out, 0, source, src_off_bits, len_bits)
     return bytes(out)
 
 
-def write_unsigned(buf: bytearray, off_bits: int, len_bits: int, value: int, saturating: bool) -> None:
+def write_unsigned(buf: WritableBytes, off_bits: int, len_bits: int, value: int, saturating: bool) -> int:
     _check_mutable_buffer(buf)
     if len_bits <= 0:
-        return
+        return 0
     value_int = int(value)
     max_value = _mask_bits(len_bits)
     if saturating:
@@ -129,12 +131,13 @@ def write_unsigned(buf: bytearray, off_bits: int, len_bits: int, value: int, sat
         value_int &= max_value
     for i in range(len_bits):
         set_bit(buf, off_bits + i, ((value_int >> i) & 1) == 1)
+    return 0
 
 
-def write_signed(buf: bytearray, off_bits: int, len_bits: int, value: int, saturating: bool) -> None:
+def write_signed(buf: WritableBytes, off_bits: int, len_bits: int, value: int, saturating: bool) -> int:
     _check_mutable_buffer(buf)
     if len_bits <= 0:
-        return
+        return 0
     value_int = int(value)
     if saturating:
         min_value = -(1 << (len_bits - 1))
@@ -143,7 +146,7 @@ def write_signed(buf: bytearray, off_bits: int, len_bits: int, value: int, satur
             value_int = min_value
         elif value_int > max_value:
             value_int = max_value
-    write_unsigned(buf, off_bits, len_bits, value_int, False)
+    return write_unsigned(buf, off_bits, len_bits, value_int, False)
 
 
 def read_unsigned(buf: BytesLike, off_bits: int, len_bits: int) -> int:
@@ -191,18 +194,15 @@ def _bits_to_float64(bits: int) -> float:
     return struct.unpack("<d", struct.pack("<Q", bits & 0xFFFFFFFFFFFFFFFF))[0]
 
 
-def write_float(buf: bytearray, off_bits: int, len_bits: int, value: float) -> None:
+def write_float(buf: WritableBytes, off_bits: int, len_bits: int, value: float) -> int:
     if math.isnan(value):
         value = float("nan")
     if len_bits == 16:
-        write_unsigned(buf, off_bits, len_bits, _float16_to_bits(value), False)
-        return
+        return write_unsigned(buf, off_bits, len_bits, _float16_to_bits(value), False)
     if len_bits == 32:
-        write_unsigned(buf, off_bits, len_bits, _float32_to_bits(value), False)
-        return
+        return write_unsigned(buf, off_bits, len_bits, _float32_to_bits(value), False)
     if len_bits == 64:
-        write_unsigned(buf, off_bits, len_bits, _float64_to_bits(value), False)
-        return
+        return write_unsigned(buf, off_bits, len_bits, _float64_to_bits(value), False)
     raise ValueError(f"unsupported float bit length {len_bits}")
 
 

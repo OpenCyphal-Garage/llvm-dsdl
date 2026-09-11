@@ -10,8 +10,8 @@
 /// @file
 /// Implements Python backend code emission from lowered DSDL modules.
 ///
-/// This file emits Python dataclass models, serialiser/deserializer methods,
-/// and runtime wiring from lowering contracts.
+/// This file emits Python dataclass models and the methods a consumer calls; the serialise and
+/// deserialise bodies those wrap are translations of the plan bodies through `PythonSpelling`.
 ///
 /// The line-building concatenations here carry NOLINT for
 /// performance-inefficient-string-concatenation. Each one spells out a line of generated
@@ -19,6 +19,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
@@ -47,22 +48,35 @@
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
-#include "llvmdsdl/CodeGen/EmitStep.h"
-#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
-#include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
-#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Version.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
+#include <llvm/ADT/StringMap.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+#include <cmath>
+#include <functional>
+#include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl::emitter::python
@@ -114,18 +128,6 @@ void emitAttachedDocPy(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-std::string runtimeSerializeFn(const std::string& typeName)
-{
-    // Not a role: typeName is already a projected identifier, so this is a defensive escape of a
-    // symbol this generator assembled, not a DSDL name being named.
-    return "_serialize_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, typeName);
-}
-
-std::string runtimeDeserializeFn(const std::string& typeName)
-{
-    return "_deserialize_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, typeName);
-}
-
 std::string joinDotted(const std::vector<std::string>& parts)
 {
     std::string out;
@@ -169,163 +171,6 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     return out;
 }
 
-/// @brief Python spelling of the helper body shapes (see HelperBodyPlan.h).
-///
-/// The suites here get their depth from the writer like any other Python this
-/// backend emits.
-class PyHelperBodySpelling final : public HelperBodySpelling
-{
-public:
-    explicit PyHelperBodySpelling(SourceWriter& w)
-        : w_(w)
-    {
-    }
-
-    void spellIdentity(const HelperBody& body) override
-    {
-        open(body);
-        w_.line(isFloat(body.signature) ? "return float(value)" : "return int(value)");
-        w_.dedent();
-    }
-
-    void spellMask(const HelperBody& body) override
-    {
-        open(body);
-        w_.line("return int(value) & " + mask(body.bits));
-        w_.dedent();
-    }
-
-    void spellSaturateUnsigned(const HelperBody& body) override
-    {
-        open(body);
-        w_.line("raw = int(value)");
-        w_.open("if raw < 0:");
-        w_.line("return 0");
-        w_.dedent();
-        w_.open("if raw > " + mask(body.bits) + ":");
-        w_.line("return " + mask(body.bits));
-        w_.dedent();
-        w_.line("return raw");
-        w_.dedent();
-    }
-
-    void spellSaturateSigned(const HelperBody& body) override
-    {
-        const auto lo = std::to_string(body.minValue);
-        const auto hi = std::to_string(body.maxValue);
-        open(body);
-        w_.line("raw = int(value)");
-        w_.open("if raw < " + lo + ":");
-        w_.line("return " + lo);
-        w_.dedent();
-        w_.open("if raw > " + hi + ":");
-        w_.line("return " + hi);
-        w_.dedent();
-        w_.line("return raw");
-        w_.dedent();
-    }
-
-    void spellSignExtend(const HelperBody& body) override
-    {
-        const auto bitMask = mask(body.bits);
-        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U));
-        open(body);
-        w_.line("raw = int(value) & " + bitMask);
-        w_.open("if (raw & " + signBit + ") != 0:");
-        w_.line("return raw | (~" + bitMask + ")");
-        w_.dedent();
-        w_.line("return raw");
-        w_.dedent();
-    }
-
-    void spellStatusGuard(const HelperBody& body) override
-    {
-        open(body);
-        switch (body.guard)
-        {
-        case HelperGuardKind::CapacityTooSmall:
-            w_.line("return " + std::to_string(body.requiredBits) + " <= capacity_bits");
-            break;
-        case HelperGuardKind::ArrayLengthOutOfRange:
-            w_.line("return (value >= 0) and (value <= " + std::to_string(body.capacity) + ")");
-            break;
-        case HelperGuardKind::DelimiterOutOfRange:
-            w_.line("return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)");
-            break;
-        }
-        w_.dedent();
-    }
-
-    void spellTagMembership(const HelperBody& body) override
-    {
-        open(body);
-        if (body.allowedTags.empty())
-        {
-            w_.line("return False");
-            w_.dedent();
-            return;
-        }
-        std::string condition;
-        for (const auto tag : body.allowedTags)
-        {
-            if (!condition.empty())
-            {
-                condition += " or ";
-            }
-            condition += "(tag_value == " + std::to_string(tag) + ")";
-        }
-        w_.line("return " + condition);
-        w_.dedent();
-    }
-
-private:
-    static bool isFloat(const HelperSignature signature)
-    {
-        return signature == HelperSignature::Float32 || signature == HelperSignature::Float64;
-    }
-
-    static std::string mask(const std::uint32_t bits)
-    {
-        return renderMaskLiteral(HelperSpellingLanguage::Python, bits);
-    }
-
-    /// @brief Names the parameter after what the helper asks about.
-    static std::string statusParamName(const HelperBody& body)
-    {
-        if (body.kind == HelperBodyKind::TagMembership)
-        {
-            return "tag_value";
-        }
-        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacity_bits" : "value";
-    }
-
-    static std::string signature(const HelperBody& body)
-    {
-        switch (body.signature)
-        {
-        case HelperSignature::UnsignedToUnsigned:
-        case HelperSignature::SignedToSigned:
-            return "(value: int) -> int";
-        case HelperSignature::Float32:
-        case HelperSignature::Float64:
-            return "(value: float) -> float";
-        case HelperSignature::ValueToStatus:
-            return "(" + statusParamName(body) + ": int) -> bool";
-        case HelperSignature::PairToStatus:
-            return "(payload_bytes: int, remaining_bytes: int) -> bool";
-        }
-        return "(value: int) -> int";
-    }
-
-    /// @brief Emits the `def` line and descends into its suite.
-    void open(const HelperBody& body)
-    {
-        w_.open("def " + body.symbol + signature(body) + ":");
-    }
-
-    SourceWriter& w_;
-};
-
 class EmitterContext final
 {
 public:
@@ -336,29 +181,6 @@ public:
         , index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
     {
-    }
-
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
-    /// cost.
-    void setTraceSink(EmitTraceSink* const sink)
-    {
-        traceSink_ = sink;
-    }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
-    ///
-    /// Marked `const` so it can be called through the `const EmitterContext&` the render free
-    /// functions hold: it mutates the pointee (the sink), not the pointer.
-    template <typename PayloadT = std::int64_t>
-    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
-    {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
-    }
-
-    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
-    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
-    {
-        emitTraceSection(traceSink_, canonicalName, direction);
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -471,7 +293,6 @@ private:
     std::vector<std::string> packageComponents_;
     DefinitionIndex          index_;
     TypeNameVersioning       typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*           traceSink_ = nullptr;
 };
 
 std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -509,13 +330,28 @@ std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx
     return "list[" + base + "]";
 }
 
+std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx);
+
 std::string pyDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
 {
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        const std::string count = std::to_string(type.arrayCapacity);
+        const std::string list  = type.scalarCategory == SemanticScalarCategory::Composite
+                                      ? "[" + pyElementDefaultExpr(type, ctx) + " for _ in range(" + count + ")]"
+                                      : "[" + pyElementDefaultExpr(type, ctx) + "] * " + count;
+        return "field(default_factory=lambda: " + list + ")";
+    }
     if (type.arrayKind != ArrayKind::None)
     {
         return "field(default_factory=list)";
     }
+    return pyElementDefaultExpr(type, ctx);
+}
 
+/// @brief The default of one element of @p type, or of a scalar or object.
+std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+{
     switch (type.scalarCategory)
     {
     case SemanticScalarCategory::Bool:
@@ -525,7 +361,7 @@ std::string pyDefaultExpr(const SemanticFieldType& type, const EmitterContext& c
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return "field(default_factory=" + ctx.typeName(*type.compositeType) + ")";
+            return ctx.typeName(*type.compositeType) + "()";
         }
         return "None";
     case SemanticScalarCategory::Void:
@@ -557,28 +393,28 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     }
 }
 
-void emitClassMethods(SourceWriter& w, const std::string& typeName)
+void emitClassMethods(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
+    // A value serialises into a buffer of the type's largest size; a deserialisation fills a
+    // default-constructed object. Each raises on the code a body answers.
     w.open("def serialize(self) -> bytes:");
-    w.line("return " + runtimeSerializeFn(typeName) + "(self)");
+    w.line("buffer = bytearray(" + std::to_string((section.serializationBufferSizeBits + 7) / 8) + ")");
+    w.line("result = self._serialize_into(memoryview(buffer))");
+    w.open("if result < 0:");
+    w.line("raise ValueError(error_message(result))");
+    w.dedent();
+    w.line("return bytes(buffer[:result])");
     w.dedent();
     w.blank();
 
     w.line("@classmethod");
     w.open("def deserialize(cls, data: bytes | bytearray | memoryview) -> \"" + typeName + "\":");
-    w.line("value, _consumed = " + runtimeDeserializeFn(typeName) + "(bytes(data))");
+    w.line("value = cls()");
+    w.line("result = value._deserialize_from(memoryview(data))");
+    w.open("if result < 0:");
+    w.line("raise ValueError(error_message(result))");
+    w.dedent();
     w.line("return value");
-    w.dedent();
-    w.blank();
-
-    w.open("def _serialize_to(self, writer: object) -> None:");
-    w.line("writer.write(self.serialize())");
-    w.dedent();
-    w.blank();
-
-    w.line("@classmethod");
-    w.open("def _deserialize_from(cls, reader: object) -> \"" + typeName + "\":");
-    w.line("return cls.deserialize(reader.read())");
     w.dedent();
 }
 
@@ -605,20 +441,19 @@ void emitStructSectionType(SourceWriter&          w,
         }
         emittedField = true;
         emitAttachedDocPy(w, field.doc);
-        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const auto        fieldName   = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const std::string defaultExpr = pyDefaultExpr(field.resolvedType, ctx);
+        const bool        factory     = field.resolvedType.arrayKind != ArrayKind::None ||
+                                        field.resolvedType.scalarCategory == SemanticScalarCategory::Composite;
         w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
-               pyDefaultExpr(field.resolvedType, ctx));
+               (factory && !defaultExpr.starts_with("field(") ? "field(default_factory=lambda: " + defaultExpr + ")"
+                                                              : defaultExpr));
     }
-    if (!emittedField)
-    {
-        w.line("pass");
-    }
-    else
+    if (emittedField)
     {
         w.blank();
     }
-    emitClassMethods(w, typeName);
-    w.dedent();
+    emitClassMethods(w, typeName, section);
 }
 
 void emitUnionSectionType(SourceWriter&          w,
@@ -648,8 +483,7 @@ void emitUnionSectionType(SourceWriter&          w,
     }
 
     w.blank();
-    emitClassMethods(w, typeName);
-    w.dedent();
+    emitClassMethods(w, typeName, section);
 }
 
 void emitSectionType(SourceWriter&          w,
@@ -671,846 +505,949 @@ void emitSectionType(SourceWriter&          w,
     }
 }
 
-std::string compositeTypeName(const RuntimeFieldPlan& field, const EmitterContext& ctx)
-{
-    return field.compositeType ? ctx.typeName(*field.compositeType) : std::string{"object"};
-}
-
-std::string helperBindingNamePy(const std::string& helperSymbol)
-{
-    return renderHelperBindingIdentifier(CodegenNamingLanguage::Python, helperSymbol);
-}
-
-void emitPyRuntimeSerializeCompositeValue(SourceWriter&           w,
-                                          const RuntimeFieldPlan& field,
-                                          const std::string&      valueExpr,
-                                          const EmitterContext&   ctx)
-{
-    ctx.trace(field.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-    const auto nestedVar = field.fieldName + "_bytes";
-    w.line(nestedVar + " = " + valueExpr + ".serialize()");
-    if (field.compositeSealed)
-    {
-        w.line("dsdl_runtime.copy_bits(out, offset_bits, " + nestedVar + ", 0, " + std::to_string(field.bitLength) +
-               ")");
-        w.line("offset_bits += " + std::to_string(field.bitLength));
-        return;
-    }
-
-    const auto sizeVar         = field.fieldName + "_size_bytes";
-    const auto remainingVar    = field.fieldName + "_remaining_bytes";
-    const auto maxPayloadBytes = std::to_string((field.compositePayloadMaxBits + 7) / 8);
-    w.line(sizeVar + " = len(" + nestedVar + ")");
-    w.open("if " + sizeVar + " > " + maxPayloadBytes + ":");
-    w.line("raise ValueError(\"" +
-           codegen_diagnostic_text::encodedCompositePayloadExceedsMaxPayloadBytes(field.fieldName, maxPayloadBytes) +
-           "\")");
-    w.dedent();
-    w.line(remainingVar + " = len(out) - min(offset_bits // 8, len(out))");
-    w.open("if " + sizeVar + " > " + remainingVar + ":");
-    w.line("raise ValueError(\"" +
-           codegen_diagnostic_text::encodedCompositePayloadExceedsRemainingBufferSpace(field.fieldName) + "\")");
-    w.dedent();
-    w.line("dsdl_runtime.write_unsigned(out, offset_bits, 32, " + sizeVar + ", False)");
-    w.line("offset_bits += 32");
-    w.line("dsdl_runtime.copy_bits(out, offset_bits, " + nestedVar + ", 0, " + sizeVar + " * 8)");
-    w.line("offset_bits += " + sizeVar + " * 8");
-}
-
-void emitPyRuntimeDeserializeCompositeValue(SourceWriter&           w,
-                                            const RuntimeFieldPlan& field,
-                                            const std::string&      targetExpr,
-                                            const EmitterContext&   ctx,
-                                            const std::string&      delimiterValidateHelper = {})
-{
-    ctx.trace(field.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-    const auto typeName = compositeTypeName(field, ctx);
-    if (field.compositeSealed)
-    {
-        const auto nestedVar = field.fieldName + "_bytes";
-        w.line(nestedVar + " = dsdl_runtime.extract_bits(data, offset_bits, " + std::to_string(field.bitLength) + ")");
-        w.line(targetExpr + " = " + typeName + ".deserialize(" + nestedVar + ")");
-        w.line("offset_bits += " + std::to_string(field.bitLength));
-        return;
-    }
-
-    const auto sizeVar      = field.fieldName + "_size_bytes";
-    const auto remainingVar = field.fieldName + "_remaining_bytes";
-    const auto startVar     = field.fieldName + "_start_byte";
-    const auto endVar       = field.fieldName + "_end_byte";
-    const auto nestedVar    = field.fieldName + "_bytes";
-    w.line(sizeVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, 32))");
-    w.line("offset_bits += 32");
-    w.line(remainingVar + " = len(data) - min(offset_bits // 8, len(data))");
-    if (!delimiterValidateHelper.empty())
-    {
-        w.open("if not " + delimiterValidateHelper + "(" + sizeVar + ", " + remainingVar + "):");
-    }
-    else
-    {
-        w.dedent();
-        w.open("if " + sizeVar + " < 0 or " + sizeVar + " > " + remainingVar + ":");
-    }
-    w.line("raise ValueError(\"" +
-           codegen_diagnostic_text::decodedCompositePayloadExceedsRemainingBufferSpace(field.fieldName) + "\")");
-    w.dedent();
-    w.line(startVar + " = min(offset_bits // 8, len(data))");
-    w.line(endVar + " = min(" + startVar + " + " + sizeVar + ", len(data))");
-    w.line(nestedVar + " = data[" + startVar + ":" + endVar + "]");
-    w.line(targetExpr + " = " + typeName + ".deserialize(" + nestedVar + ")");
-    w.line("offset_bits += " + sizeVar + " * 8");
-}
-
-void emitPyRuntimeAlignSerialize(SourceWriter&         w,
-                                 std::int64_t          alignmentBits,
-                                 const std::string&    prefix,
-                                 const EmitterContext& ctx)
-{
-    if (alignmentBits <= 1)
-    {
-        return;
-    }
-    ctx.trace(EmitTraceOp::Align, alignmentBits);
-    const auto alignedVar = prefix + "_aligned_offset_bits";
-    const auto bitVar     = prefix + "_align_bit";
-    w.line(alignedVar + " = ((offset_bits + " + std::to_string(alignmentBits - 1) + ") // " +
-           std::to_string(alignmentBits) + ") * " + std::to_string(alignmentBits));
-    w.open("for " + bitVar + " in range(offset_bits, " + alignedVar + "):");
-    w.line("dsdl_runtime.set_bit(out, " + bitVar + ", False)");
-    w.dedent();
-    w.line("offset_bits = " + alignedVar);
-}
-
-void emitPyRuntimeAlignDeserialize(SourceWriter& w, std::int64_t alignmentBits, const EmitterContext& ctx)
-{
-    if (alignmentBits <= 1)
-    {
-        return;
-    }
-    ctx.trace(EmitTraceOp::Align, alignmentBits);
-    w.line("offset_bits = ((offset_bits + " + std::to_string(alignmentBits - 1) + ") // " +
-           std::to_string(alignmentBits) + ") * " + std::to_string(alignmentBits));
-}
-
-void emitPyRuntimeSerializePadding(SourceWriter& w, const RuntimeFieldPlan& field, const EmitterContext& ctx)
-{
-    if (field.bitLength <= 0)
-    {
-        return;
-    }
-    ctx.trace(EmitTraceOp::Pad, field.bitLength);
-    const auto bitVar = field.fieldName + "_padding_bit";
-    w.open("for " + bitVar + " in range(" + std::to_string(field.bitLength) + "):");
-    w.line("dsdl_runtime.set_bit(out, offset_bits + " + bitVar + ", False)");
-    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-    w.dedent();
-    w.line("offset_bits += " + std::to_string(field.bitLength));
-}
-
-void emitPyRuntimeDeserializePadding(SourceWriter& w, const RuntimeFieldPlan& field, const EmitterContext& ctx)
-{
-    if (field.bitLength <= 0)
-    {
-        return;
-    }
-    ctx.trace(EmitTraceOp::Pad, field.bitLength);
-    ctx.trace(EmitTraceOp::Advance, field.bitLength);
-    w.line("offset_bits += " + std::to_string(field.bitLength));
-}
-
-void emitPyRuntimeSerializeScalarValue(SourceWriter&                     w,
-                                       const ScriptedFieldOperationPlan& operation,
-                                       const std::string&                valueExpr,
-                                       const EmitterContext&             ctx)
-{
-    const auto&       field      = operation.body.field;
-    const auto&       helpers    = operation.body.helpers;
-    const auto        bits       = std::to_string(field.bitLength);
-    const auto* const saturating = field.castMode == CastMode::Saturated ? "True" : "False";
-
-    switch (operation.valueKind)
-    {
-    case ScriptedFieldValueKind::Padding:
-        emitPyRuntimeSerializePadding(w, field, ctx);
-        return;
-    case ScriptedFieldValueKind::Bool:
-        ctx.trace(EmitTraceOp::WriteScalarBool, field.bitLength);
-        w.line("dsdl_runtime.set_bit(out, offset_bits, bool(" + valueExpr + "))");
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    case ScriptedFieldValueKind::Composite:
-        emitPyRuntimeSerializeCompositeValue(w, field, valueExpr, ctx);
-        return;
-    case ScriptedFieldValueKind::Unsigned: {
-        std::string scalarExpr = "int(" + valueExpr + ")";
-        if (!helpers.serScalar.empty())
-        {
-            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-        }
-        ctx.trace(EmitTraceOp::WriteScalarUint, field.bitLength);
-        w.line("dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    case ScriptedFieldValueKind::Float: {
-        std::string scalarExpr = "float(" + valueExpr + ")";
-        if (!helpers.serScalar.empty())
-        {
-            scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
-        }
-        ctx.trace(EmitTraceOp::WriteScalarFloat, field.bitLength);
-        w.line("dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    case ScriptedFieldValueKind::Signed: {
-        std::string scalarExpr = "int(" + valueExpr + ")";
-        if (!helpers.serScalar.empty())
-        {
-            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-        }
-        ctx.trace(EmitTraceOp::WriteScalarSint, field.bitLength);
-        w.line("dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    }
-}
-
-void emitPyRuntimeDeserializeScalarValue(SourceWriter&                     w,
-                                         const ScriptedFieldOperationPlan& operation,
-                                         const std::string&                targetExpr,
-                                         const EmitterContext&             ctx);
-
-/// @brief Python spelling of the shared recursive field-body steps (see EmitStep.h).
+/// @brief The Python spelling of the plan-body vocabulary, for one schema.
 ///
-/// Leaf statement idioms delegate to the existing atomic per-kind renderers
-/// (emitPyRuntime*ScalarValue / *CompositeValue / *Padding); all cross-group and
-/// recursive ordering comes from renderFieldSteps. Temp names are field-name
-/// derived (no counters), matching the pre-template output byte for byte.
-class PyFieldSpelling final : public FieldStepSpelling
+/// Every integer of the plan is a Python `int`, which holds the value it stands for: a
+/// constant is spelled as that value, and a bigint's bitwise operators read a negative value as
+/// its two's complement. A buffer is a `memoryview`, and a pointer into it is a slice of the
+/// view. A body is a method of the dataclass that answers the size it used, or the error code,
+/// which is negative; the `serialize` and `deserialize` methods a consumer calls wrap it. A
+/// deserialise body is handed a default-constructed object, whose fixed arrays and nested
+/// objects exist; a union's option is created when the plan sets the tag. Python has no
+/// empty block, so a block that spelled no statement closes with `pass`.
+class PythonSpelling final : public BodySpelling
 {
 public:
-    PyFieldSpelling(SourceWriter& w, const EmitterContext& ctx, const ScriptedFieldOperationPlan& operation)
-        : w_(w)
-        , ctx_(ctx)
-        , operation_(operation)
-    {
-    }
+    /// @brief The name this file gives the type @p fullName names at @p major.@p minor.
+    using TypeNameResolver =
+        std::function<std::string(llvm::StringRef fullName, std::uint32_t major, std::uint32_t minor)>;
 
-    void spellPad(const FieldEmitStep& step) override
+    PythonSpelling(mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
+        : typeNameOf_(std::move(typeNameOf))
     {
-        (void) step;
-        if (direction_ == HelperBindingDirection::Serialize)
+        if (schema.getBody().empty())
         {
-            emitPyRuntimeSerializePadding(w_, operation_.body.field, ctx_);
+            return;
         }
-        else
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            emitPyRuntimeDeserializePadding(w_, operation_.body.field, ctx_);
+            Plan                          entry;
+            NamingScope                   scope(CodegenNamingLanguage::Python);
+            std::vector<mlir::dsdl::IOOp> fields;
+            if (!plan.getBody().empty())
+            {
+                for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
+                {
+                    if (!io.isPadding())
+                    {
+                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
+                        fields.push_back(io);
+                    }
+                }
+            }
+            for (mlir::dsdl::IOOp io : fields)
+            {
+                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+                entry.order.push_back(io.getName().str());
+            }
+            plans_[planIdentity(schema, plan)] = std::move(entry);
         }
     }
 
-    void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
+    /// @brief The method that serialises the object into a buffer.
+    static std::string serializeInto()
     {
-        (void) step;
-        emitPyRuntimeSerializeScalarValue(w_, operation_, expr, ctx_);
+        return "_serialize_into";
     }
 
-    void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    /// @brief The method that deserialises the object from a buffer.
+    static std::string deserializeFrom()
     {
-        (void) step;
-        emitPyRuntimeDeserializeScalarValue(w_, operation_, expr, ctx_);
+        return "_deserialize_from";
     }
 
-    void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
-    {
-        (void) step;
-        emitPyRuntimeSerializeCompositeValue(w_, operation_.body.field, expr, ctx_);
-    }
+    // Functions.
 
-    void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
-        (void) step;
-        emitPyRuntimeDeserializeCompositeValue(w_,
-                                               operation_.body.field,
-                                               expr,
-                                               ctx_,
-                                               operation_.body.helpers.delimiterValidate);
-    }
-
-    void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
-    {
-        (void) step;
-        const auto& field  = operation_.body.field;
-        const auto  cap    = std::to_string(field.arrayCapacity);
-        const auto  arrVar = field.fieldName + "_arr";
-        w_.line(arrVar + " = " + expr);
-        ctx_.trace(EmitTraceOp::LenCheck, field.arrayCapacity);
-        w_.open("if len(" + arrVar + ") != " + cap + ":");
-        w_.line("raise ValueError(\"" +
-                codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\")");
-        w_.dedent();
-    }
-
-    void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
-    {
-        (void) step;
-        const auto& field     = operation_.body.field;
-        const auto& helpers   = operation_.body.helpers;
-        const auto  cap       = std::to_string(field.arrayCapacity);
-        const auto  arrVar    = field.fieldName + "_arr";
-        const auto  prefixBit = std::to_string(field.arrayLengthPrefixBits);
-        w_.line(arrVar + " = " + expr);
-        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-        if (!helpers.arrayValidate.empty())
+        const auto direction = planBodyDirection(fn);
+        inBody_              = direction.has_value();
+        if (!direction)
         {
-            w_.open("if not " + helpers.arrayValidate + "(len(" + arrVar + ")):");
+            std::vector<std::string> parameters;
+            std::string              list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                parameters.push_back("p" + std::to_string(index));
+                list += (list.empty() ? "" : ", ") + parameters.back() + ": " + typeName(argument.getType());
+            }
+            open(w,
+                 "def " + functionName(fn.getSymName()) + "(" + list + ") -> " + typeName(fn.getResultTypes().front()) +
+                     ":");
+            return parameters;
         }
-        else
+        open(w,
+             "def " + (*direction == "serialize" ? serializeInto() : deserializeFrom()) +
+                 "(self, buffer: memoryview) -> int:");
+        // The size a plan is handed by pointer, read at entry and answered at the end.
+        line(w, "inout_buffer_size_bytes = len(buffer)");
+        return {"self", "buffer", "inout_buffer_size_bytes"};
+    }
+
+    void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
+    {
+        closeBlock(w);
+    }
+
+    [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
+    {
+        return renderHelperBindingIdentifier(CodegenNamingLanguage::Python, callee);
+    }
+
+    // Statements.
+
+    void declare(SourceWriter& w,
+                 const mlir::Type /*type*/,
+                 const llvm::StringRef name,
+                 const llvm::StringRef expr) const override
+    {
+        line(w, name.str() + " = " + expr.str());
+    }
+
+    void declareVariable(SourceWriter& /*w*/,
+                         const mlir::Type /*type*/,
+                         const llvm::StringRef /*name*/,
+                         const bool /*reassigned*/) const override
+    {
+        // A Python variable exists from its first assignment, which every path makes.
+    }
+
+    void assign(SourceWriter& w, const llvm::StringRef name, const llvm::StringRef expr) const override
+    {
+        line(w, name.str() + " = " + expr.str());
+    }
+
+    void discard(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        line(w, expr.str());
+    }
+
+    void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        // A body answers the runtime's error code; its Python signature answers the size used
+        // on success and the code, which is negative, on failure.
+        if (inBody_)
         {
-            w_.open("if len(" + arrVar + ") > " + cap + ":");
+            open(w, "if " + expr.str() + " == 0:");
+            line(w, "return inout_buffer_size_bytes");
+            closeBlock(w);
         }
-        w_.line("raise ValueError(\"" + codegen_diagnostic_text::fieldExceedsMaxLength(field.fieldName, cap, false) +
-                "\")");
-        std::string prefixExpr = "len(" + arrVar + ")";
-        if (!helpers.serArrayPrefix.empty())
+        line(w, "return " + expr.str());
+    }
+
+    void openIf(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        open(w, "if " + condition.str() + ":");
+    }
+
+    void openElse(SourceWriter& w) const override
+    {
+        if (blockEmpty_)
         {
-            prefixExpr = "int(" + helpers.serArrayPrefix + "(" + prefixExpr + "))";
+            w.line("pass");
         }
-        ctx_.trace(EmitTraceOp::LenWrite, field.arrayLengthPrefixBits);
-        w_.dedent();
-        w_.line("dsdl_runtime.write_unsigned(out, offset_bits, " + prefixBit + ", " + prefixExpr + ", False)");
-        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-        w_.line("offset_bits += " + prefixBit);
+        w.midway("else:");
+        blockEmpty_ = true;
     }
 
-    std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    void openLoop(SourceWriter& w) const override
     {
-        (void) step;
-        (void) expr;
-        const auto& field      = operation_.body.field;
-        const auto& helpers    = operation_.body.helpers;
-        const auto  cap        = std::to_string(field.arrayCapacity);
-        const auto  arrVar     = field.fieldName + "_arr";
-        const auto  lenVar     = field.fieldName + "_len";
-        const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
-        const auto  rawLenVar  = field.fieldName + "_len_raw";
-        ctx_.trace(EmitTraceOp::LenRead, field.arrayLengthPrefixBits);
-        w_.line(rawLenVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, " + prefixBits + "))");
-        ctx_.trace(EmitTraceOp::Advance, field.arrayLengthPrefixBits);
-        w_.line("offset_bits += " + prefixBits);
-        if (!helpers.deserArrayPrefix.empty())
+        open(w, "while True:");
+    }
+
+    void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        open(w, "if not (" + condition.str() + "):");
+        line(w, "break");
+        closeBlock(w);
+    }
+
+    void openFor(SourceWriter&         w,
+                 const llvm::StringRef variable,
+                 const llvm::StringRef lower,
+                 const llvm::StringRef upper,
+                 const llvm::StringRef step) const override
+    {
+        open(w, "for " + variable.str() + " in range(" + lower.str() + ", " + upper.str() + ", " + step.str() + "):");
+    }
+
+    void closeBlock(SourceWriter& w) const override
+    {
+        if (blockEmpty_)
         {
-            w_.line(lenVar + " = int(" + helpers.deserArrayPrefix + "(" + rawLenVar + "))");
+            w.line("pass");
         }
-        else
+        w.dedent();
+        blockEmpty_ = false;
+    }
+
+    // Values.
+
+    [[nodiscard]] std::string constant(const mlir::TypedAttr value) const override
+    {
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerAttr>(value))
         {
-            w_.line(lenVar + " = " + rawLenVar);
+            const mlir::Type type = integer.getType();
+            if (mlir::isa<mlir::IndexType>(type))
+            {
+                return std::to_string(integer.getValue().getZExtValue());
+            }
+            if (isBool(type))
+            {
+                return integer.getValue().isZero() ? "False" : "True";
+            }
+            // The value the two's complement stands for: an int holds it as such, and the
+            // bitwise operators read a negative int as its two's complement.
+            return std::to_string(integer.getValue().getSExtValue());
         }
-        ctx_.trace(EmitTraceOp::LenValidate, field.arrayLengthPrefixBits);
-        if (!helpers.arrayValidate.empty())
+        if (const auto real = mlir::dyn_cast<mlir::FloatAttr>(value))
         {
-            w_.open("if not " + helpers.arrayValidate + "(" + lenVar + "):");
+            const double number = real.getValueAsDouble();
+            if (std::isnan(number))
+            {
+                return "float(\"nan\")";
+            }
+            if (std::isinf(number))
+            {
+                return number < 0 ? "-float(\"inf\")" : "float(\"inf\")";
+            }
+            std::ostringstream stream;
+            stream << std::setprecision(17) << number;
+            std::string text = stream.str();
+            if (text.find_first_of(".e") == std::string::npos)
+            {
+                text += ".0";
+            }
+            return text;
         }
-        else
+        llvm::report_fatal_error("Python spelling: a constant of an unexpected kind");
+    }
+
+    [[nodiscard]] std::string binary(const BinaryOperator  op,
+                                     const llvm::StringRef lhs,
+                                     const llvm::StringRef rhs,
+                                     const mlir::Type      type) const override
+    {
+        if (isBool(type))
         {
-            w_.open("if " + lenVar + " < 0 or " + lenVar + " > " + cap + ":");
+            switch (op)
+            {
+            case BinaryOperator::And:
+                return lhs.str() + " and " + rhs.str();
+            case BinaryOperator::Or:
+                return lhs.str() + " or " + rhs.str();
+            case BinaryOperator::Xor:
+                return lhs.str() + " != " + rhs.str();
+            default:
+                llvm::report_fatal_error("Python spelling: an arithmetic operator on a bool");
+            }
         }
-        w_.line("raise ValueError(\"" +
-                codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\")");
-        w_.dedent();
-        w_.line(arrVar + " = []");
-        return lenVar;
+        return lhs.str() + " " + operatorToken(op) + " " + rhs.str();
     }
 
-    std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    [[nodiscard]] std::string compare(const Comparison      comparison,
+                                      const llvm::StringRef lhs,
+                                      const llvm::StringRef rhs,
+                                      const mlir::Type      type) const override
     {
-        (void) step;
-        (void) expr;
-        const auto& field  = operation_.body.field;
-        const auto  arrVar = field.fieldName + "_arr";
-        w_.line(arrVar + " = []");
-        return std::to_string(field.arrayCapacity);
+        std::string a = lhs.str();
+        std::string b = rhs.str();
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return a + " == " + b;
+        case Comparison::Ne:
+            return a + " != " + b;
+        case Comparison::LtU:
+        case Comparison::LeU:
+        case Comparison::GtU:
+        case Comparison::GeU:
+            // An int is the value its bits stand for; an unsigned comparison against a negative
+            // literal reads both as the unsigned 64-bit values the plan compares.
+            if (type.isInteger(64) && (lhs.starts_with("-") || rhs.starts_with("-")))
+            {
+                a = "(" + a + " & 0xFFFFFFFFFFFFFFFF)";
+                b = "(" + b + " & 0xFFFFFFFFFFFFFFFF)";
+            }
+            break;
+        default:
+            break;
+        }
+        return a + " " + comparisonToken(comparison) + " " + b;
     }
 
-    std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    [[nodiscard]] std::string select(const llvm::StringRef condition,
+                                     const llvm::StringRef ifTrue,
+                                     const llvm::StringRef ifFalse,
+                                     const mlir::Type /*type*/) const override
     {
-        (void) step;
-        (void) expr;
-        const auto& field   = operation_.body.field;
-        const auto  arrVar  = field.fieldName + "_arr";
-        const auto  itemVar = field.fieldName + "_item";
-        ctx_.trace(EmitTraceOp::ElemLoop);
-        w_.open("for " + itemVar + " in " + arrVar + ":");
-        return itemVar;
+        return "(" + ifTrue.str() + " if " + condition.str() + " else " + ifFalse.str() + ")";
     }
 
-    std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
-                                              const std::string&   expr,
-                                              const std::string&   countExpr) override
+    [[nodiscard]] std::string convert(const Conversion /*conversion*/,
+                                      const llvm::StringRef value,
+                                      const mlir::Type      from,
+                                      const mlir::Type      to) const override
     {
-        (void) step;
-        (void) expr;
-        const auto& field   = operation_.body.field;
-        const auto  itemVar = field.fieldName + "_item";
-        ctx_.trace(EmitTraceOp::ElemLoop);
-        w_.open("for _ in range(" + countExpr + "):");
-        return itemVar;
+        return cast(value.str(), from, to);
     }
 
-    void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
+    [[nodiscard]] std::string call(const llvm::StringRef callee, const llvm::ArrayRef<std::string> args) const override
     {
-        (void) step;
-        (void) expr;
-        w_.dedent();
+        return callee.str() + "(" + llvm::join(args, ", ") + ")";
     }
 
-    void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
+    // The dialect.
+
+    [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        (void) step;
-        const auto& field   = operation_.body.field;
-        const auto  arrVar  = field.fieldName + "_arr";
-        const auto  itemVar = field.fieldName + "_item";
-        w_.line(arrVar + ".append(" + itemVar + ")");
-        w_.dedent();
-        w_.line(expr + " = " + arrVar);
+        return mlir::
+            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
+                op);
     }
 
-    /// @brief Sets the render direction (spellPad branches on it).
-    void setDirection(const HelperBindingDirection direction)
+    [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
-        direction_ = direction;
+        // The object arrives by reference; a buffer and a local are never null.
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " is None";
+        }
+        return "False";
+    }
+
+    [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
+    {
+        return names(op.getBuffer());
+    }
+
+    [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
+    {
+        // The plan bounds its reads and writes itself; the slice is clamped to the buffer.
+        const std::string buffer = names(op.getBuffer());
+        return buffer + "[min(" + names(op.getByteOffset()) + ", len(" + buffer + ")):]";
+    }
+
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    {
+        return names(op.getPointer());
+    }
+
+    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    {
+        line(w, names(op.getPointer()) + " = " + names(op.getValue()));
+    }
+
+    [[nodiscard]] std::string local(SourceWriter&         w,
+                                    mlir::dsdl::LocalOp   op,
+                                    const llvm::StringRef name,
+                                    const ValueNames&     names) const override
+    {
+        line(w, name.str() + " = " + names(op.getInit()));
+        return name.str();
+    }
+
+    [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
+    {
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names),
+                           memberOf(op.getObject(), op.getMember()),
+                           op.getValue().getType());
+    }
+
+    void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
+    {
+        line(w,
+             memberAccess(op.getObject(), op.getMember(), names) + " = " +
+                 storedValue(names(op.getValue()), op.getValue().getType(), memberOf(op.getObject(), op.getMember())));
+    }
+
+    [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
+    {
+        return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           memberOf(op.getObject(), op.getMember()),
+                           op.getValue().getType());
+    }
+
+    void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
+    {
+        line(w,
+             elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
+                 storedValue(names(op.getValue()), op.getValue().getType(), memberOf(op.getObject(), op.getMember())));
+    }
+
+    [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string elementAddr(mlir::dsdl::ElementAddrOp op, const ValueNames& names) const override
+    {
+        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names);
+    }
+
+    [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
+    {
+        return "len(" + memberAccess(op.getObject(), op.getMember(), names) + ")";
+    }
+
+    void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
+    {
+        // Sized within its capacity -- a count past it is what the plan's validation rejects
+        // next -- with default elements for the plan to store into.
+        const Member      member = memberOf(op.getObject(), op.getMember());
+        mlir::dsdl::IOOp  io     = member.io;
+        const std::string count  = fresh("count");
+        line(w, count + " = min(" + names(op.getValue()) + ", " + std::to_string(io.getArrayCapacity()) + ")");
+        line(w, memberAccess(op.getObject(), op.getMember(), names) + " = " + arrayOf(member, count));
+    }
+
+    [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
+    {
+        return "int(" + names(op.getObject()) + "._tag)";
+    }
+
+    void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
+    {
+        // The object becomes the option the tag names, holding that option's default for the
+        // plan to store into: an option that is an object or an array is storage the plan
+        // addresses.
+        const Plan&       plan   = planOf(op.getObject());
+        const std::string object = names(op.getObject());
+        const std::string tag    = names(op.getValue());
+        line(w, object + "._tag = " + tag);
+        bool first = true;
+        for (const std::string& name : plan.order)
+        {
+            const Member&     member = plan.members.find(name)->second;
+            mlir::dsdl::IOOp  io     = member.io;
+            const std::string test   = "if " + tag + " == " + std::to_string(io.getUnionOptionIndex()) + ":";
+            if (first)
+            {
+                open(w, test);
+            }
+            else
+            {
+                w.midway("el" + test);
+                blockEmpty_ = true;
+            }
+            first = false;
+            line(w, object + "." + member.pyName + " = " + defaultOf(member));
+        }
+        if (!first)
+        {
+            closeBlock(w);
+        }
+    }
+
+    [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const std::string width     = std::to_string(op.getWidth());
+        const std::string value     = names(op.getValue());
+        const std::string prefix    = names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", ";
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "dsdl_runtime.write_float(" + prefix + width + ", " + value + ")";
+        }
+        if (isBool(valueType))
+        {
+            return "dsdl_runtime.set_bit(" + prefix + value + ")";
+        }
+        return "dsdl_runtime." + std::string(op.getIsSigned() ? "write_signed(" : "write_unsigned(") + prefix + width +
+               ", " + value + ", False)";
+    }
+
+    [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const std::string arguments =
+            names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", " + std::to_string(op.getWidth());
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "dsdl_runtime.read_float(" + arguments + ")";
+        }
+        const std::string read =
+            "dsdl_runtime." + std::string(op.getIsSigned() ? "read_signed(" : "read_unsigned(") + arguments + ")";
+        return cast(read, mlir::IntegerType::get(op.getContext(), 64), valueType);
+    }
+
+    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    {
+        // A bool array is a list of bools, so a run of its bits goes one element at a time.
+        const auto        container = boolContainerOf(op.getSource(), names);
+        const std::string index     = fresh("bit");
+        open(w, "for " + index + " in range(" + names(op.getWidth()) + "):");
+        line(w,
+             "dsdl_runtime.set_bit(" + names(op.getDestination()) + ", " + names(op.getDestinationBitOffset()) + " + " +
+                 index + ", " + container.first + "[" + container.second + " + " + names(op.getSourceBitOffset()) +
+                 " + " + index + "])");
+        closeBlock(w);
+    }
+
+    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    {
+        const auto        container = boolContainerOf(op.getDestination(), names);
+        const std::string index     = fresh("bit");
+        open(w, "for " + index + " in range(" + names(op.getWidth()) + "):");
+        line(w,
+             container.first + "[" + container.second + " + " + index + "] = dsdl_runtime.get_bit(" +
+                 names(op.getBuffer()) + ", " + names(op.getBitOffset()) + " + " + index + ")");
+        closeBlock(w);
+    }
+
+    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("Python spelling: a nested call is a statement");
+    }
+
+    void declareCallSerdes(SourceWriter&            w,
+                           const llvm::StringRef    name,
+                           mlir::dsdl::CallSerdesOp op,
+                           const ValueNames&        names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by
+        // the size the plan handed in; it answers the size it used or the code, and the size is
+        // written back through the local where the plan reads it.
+        const bool        serialize = op.getDirection() == "serialize";
+        const std::string buffer    = names(op.getBuffer());
+        const std::string size      = names(op.getSize());
+        const std::string bound     = fresh("bound");
+        const std::string result    = fresh("result");
+        const bool        read      = isRead(op.getSize());
+        line(w, bound + " = min(" + size + ", len(" + buffer + "))");
+        line(w,
+             result + " = " + names(op.getObject()) + "." + (serialize ? serializeInto() : deserializeFrom()) + "(" +
+                 buffer + "[:" + bound + "])");
+        if (!name.empty())
+        {
+            open(w, "if " + result + " < 0:");
+            line(w, name.str() + " = " + result);
+            openElse(w);
+            if (read)
+            {
+                line(w, size + " = " + result);
+            }
+            line(w, name.str() + " = 0");
+            closeBlock(w);
+            return;
+        }
+        if (read)
+        {
+            open(w, "if " + result + " >= 0:");
+            line(w, size + " = " + result);
+            closeBlock(w);
+        }
     }
 
 private:
-    SourceWriter&                     w_;
-    const EmitterContext&             ctx_;
-    const ScriptedFieldOperationPlan& operation_;
-    HelperBindingDirection            direction_{};
+    struct Member final
+    {
+        std::string      pyName;
+        mlir::dsdl::IOOp io;
+    };
+
+    struct Plan final
+    {
+        llvm::StringMap<Member>  members;
+        std::vector<std::string> order;
+    };
+
+    // Python has no empty block: a block that spelled no statement closes with `pass`.
+
+    void open(SourceWriter& w, const std::string& text) const
+    {
+        w.open(text);
+        blockEmpty_ = true;
+    }
+
+    void line(SourceWriter& w, const std::string& text) const
+    {
+        w.line(text);
+        blockEmpty_ = false;
+    }
+
+    /// @brief The plan the object a pointer names belongs to.
+    const Plan& planOf(const mlir::Value object) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? plans_.find(identity.getIdentity()) : plans_.end();
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Python spelling: an object that no plan of this schema describes");
+        }
+        return found->second;
+    }
+
+    Member memberOf(const mlir::Value object, const llvm::StringRef member) const
+    {
+        const Plan& plan  = planOf(object);
+        const auto  found = plan.members.find(member);
+        if (found == plan.members.end())
+        {
+            llvm::report_fatal_error("Python spelling: a member the schema does not declare: " + member);
+        }
+        return found->second;
+    }
+
+    std::string memberAccess(const mlir::Value object, const llvm::StringRef member, const ValueNames& names) const
+    {
+        return names(object) + "." + memberOf(object, member).pyName;
+    }
+
+    std::string elementAccess(const mlir::Value     object,
+                              const llvm::StringRef member,
+                              const std::string&    index,
+                              const ValueNames&     names) const
+    {
+        return memberAccess(object, member, names) + "[" + index + "]";
+    }
+
+    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
+    static bool isRead(const mlir::Value pointer)
+    {
+        return llvm::any_of(pointer.getUsers(),
+                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
+    }
+
+    /// @brief The container expression and element base of the bool array @p address names.
+    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
+    {
+        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
+        if (!element)
+        {
+            llvm::report_fatal_error("Python spelling: a bit copy whose storage is not an array element");
+        }
+        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names), names(element.getIndex()));
+    }
+
+    // Members.
+
+    /// @brief The kind of value a member or element holds.
+    enum class Storage : std::uint8_t
+    {
+        Boolean,
+        Integer,
+        Float,
+        Object,
+    };
+
+    static Storage storageOf(const Member& member)
+    {
+        mlir::dsdl::IOOp      io       = member.io;
+        const llvm::StringRef category = io.getScalarCategory();
+        if (io.isComposite())
+        {
+            return Storage::Object;
+        }
+        if (category == "bool")
+        {
+            return Storage::Boolean;
+        }
+        if (category == "float")
+        {
+            return Storage::Float;
+        }
+        return Storage::Integer;
+    }
+
+    /// @brief The default value of one element of @p member, or of the member when it is no array.
+    std::string elementDefault(const Member& member) const
+    {
+        switch (storageOf(member))
+        {
+        case Storage::Boolean:
+            return "False";
+        case Storage::Integer:
+            return "0";
+        case Storage::Float:
+            return "0.0";
+        case Storage::Object:
+            break;
+        }
+        mlir::dsdl::IOOp io = member.io;
+        return typeNameOf_(io.getCompositeFullName().value_or(llvm::StringRef{}),
+                           static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                           static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))) +
+               "()";
+    }
+
+    /// @brief A list of @p count default elements of @p member.
+    std::string arrayOf(const Member& member, const std::string& count) const
+    {
+        if (storageOf(member) == Storage::Object)
+        {
+            return "[" + elementDefault(member) + " for _ in range(" + count + ")]";
+        }
+        return "[" + elementDefault(member) + "] * " + count;
+    }
+
+    /// @brief The default value of @p member.
+    std::string defaultOf(const Member& member) const
+    {
+        mlir::dsdl::IOOp io = member.io;
+        if (!io.isArray())
+        {
+            return elementDefault(member);
+        }
+        if (io.isVariableArray())
+        {
+            return "[]";
+        }
+        return arrayOf(member, std::to_string(io.getArrayCapacity()));
+    }
+
+    /// @brief @p access read as a value of @p type.
+    static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
+    {
+        switch (storageOf(member))
+        {
+        case Storage::Boolean:
+            return isBool(type) ? "bool(" + access + ")" : "int(" + access + ")";
+        case Storage::Integer:
+            // A number a caller stored may be no integer; it is read as one.
+            return isBool(type) ? "(" + access + " != 0)" : "int(" + access + ")";
+        case Storage::Float:
+            return "float(" + access + ")";
+        case Storage::Object:
+            break;
+        }
+        return access;
+    }
+
+    /// @brief @p value, of @p type, converted for storage in @p member.
+    static std::string storedValue(const std::string& value, const mlir::Type type, const Member& member)
+    {
+        switch (storageOf(member))
+        {
+        case Storage::Boolean:
+            return isBool(type) ? value : value + " != 0";
+        case Storage::Integer:
+            return isBool(type) ? "int(" + value + ")" : value;
+        case Storage::Float:
+        case Storage::Object:
+            break;
+        }
+        return value;
+    }
+
+    // Types.
+
+    static bool isBool(const mlir::Type type)
+    {
+        return type.isInteger(1);
+    }
+
+    /// @brief @p value, of @p from, as a value of @p to.
+    static std::string cast(const std::string& value, const mlir::Type from, const mlir::Type to)
+    {
+        if (from == to)
+        {
+            return value;
+        }
+        if (isBool(to))
+        {
+            return "(" + value + " != 0)";
+        }
+        if (isBool(from))
+        {
+            return "int(" + value + ")";
+        }
+        if (to.isInteger(8) && !from.isInteger(8))
+        {
+            // Truncated to eight bits and read back as the signed value they hold.
+            return "(((" + value + " & 0xFF) ^ 0x80) - 0x80)";
+        }
+        return value;
+    }
+
+    static std::string typeName(const mlir::Type type)
+    {
+        if (mlir::isa<mlir::FloatType>(type))
+        {
+            return "float";
+        }
+        if (isBool(type))
+        {
+            return "bool";
+        }
+        if (mlir::isa<mlir::IndexType>(type) || mlir::isa<mlir::IntegerType>(type))
+        {
+            return "int";
+        }
+        if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type))
+        {
+            if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
+            {
+                return "memoryview";
+            }
+            if (mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()))
+            {
+                return "int";
+            }
+        }
+        llvm::report_fatal_error("Python spelling: a value of a type no plan body carries");
+    }
+
+    static std::string operatorToken(const BinaryOperator op)
+    {
+        switch (op)
+        {
+        case BinaryOperator::Add:
+            return "+";
+        case BinaryOperator::Sub:
+            return "-";
+        case BinaryOperator::Mul:
+            return "*";
+        case BinaryOperator::DivU:
+        case BinaryOperator::DivS:
+            return "//";
+        case BinaryOperator::RemU:
+        case BinaryOperator::RemS:
+            return "%";
+        case BinaryOperator::And:
+            return "&";
+        case BinaryOperator::Or:
+            return "|";
+        case BinaryOperator::Xor:
+            return "^";
+        case BinaryOperator::ShiftLeft:
+            return "<<";
+        case BinaryOperator::ShiftRightU:
+        case BinaryOperator::ShiftRightS:
+            return ">>";
+        }
+        llvm::report_fatal_error("Python spelling: an operator of an unexpected kind");
+    }
+
+    static std::string comparisonToken(const Comparison comparison)
+    {
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return "==";
+        case Comparison::Ne:
+            return "!=";
+        case Comparison::LtS:
+        case Comparison::LtU:
+            return "<";
+        case Comparison::LeS:
+        case Comparison::LeU:
+            return "<=";
+        case Comparison::GtS:
+        case Comparison::GtU:
+            return ">";
+        case Comparison::GeS:
+        case Comparison::GeU:
+            return ">=";
+        }
+        llvm::report_fatal_error("Python spelling: a comparison of an unexpected kind");
+    }
+
+    /// @brief A name for a value of this spelling's own, distinct from the translator's.
+    std::string fresh(const char* const stem) const
+    {
+        return "_" + std::string(stem) + std::to_string(fresh_++) + "_";
+    }
+
+    TypeNameResolver      typeNameOf_;
+    llvm::StringMap<Plan> plans_;
+    mutable bool          inBody_{false};
+    mutable bool          blockEmpty_{false};
+    mutable unsigned      fresh_{0};
 };
 
-void emitPyRuntimeSerializeFieldValue(SourceWriter&                     w,
-                                      const ScriptedFieldOperationPlan& operation,
-                                      const std::string&                valueExpr,
-                                      const EmitterContext&             ctx)
+/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+struct SectionBodies final
 {
-    const auto& field = operation.body.field;
-
-    emitPyRuntimeAlignSerialize(w, field.alignmentBits, field.fieldName, ctx);
-    assert(operation.serializeSteps.has_value());
-    PyFieldSpelling spelling(w, ctx, operation);
-    spelling.setDirection(HelperBindingDirection::Serialize);
-    renderFieldSteps(*operation.serializeSteps, valueExpr, HelperBindingDirection::Serialize, spelling);
-}
-
-void emitPyRuntimeDeserializeScalarValue(SourceWriter&                     w,
-                                         const ScriptedFieldOperationPlan& operation,
-                                         const std::string&                targetExpr,
-                                         const EmitterContext&             ctx)
-{
-    const auto& field   = operation.body.field;
-    const auto& helpers = operation.body.helpers;
-    const auto  bits    = std::to_string(field.bitLength);
-
-    switch (operation.valueKind)
-    {
-    case ScriptedFieldValueKind::Padding:
-        emitPyRuntimeDeserializePadding(w, field, ctx);
-        return;
-    case ScriptedFieldValueKind::Bool:
-        ctx.trace(EmitTraceOp::ReadScalarBool, field.bitLength);
-        w.line(targetExpr + " = dsdl_runtime.get_bit(data, offset_bits)");
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    case ScriptedFieldValueKind::Composite:
-        emitPyRuntimeDeserializeCompositeValue(w, field, targetExpr, ctx, helpers.delimiterValidate);
-        return;
-    case ScriptedFieldValueKind::Unsigned: {
-        const auto rawVar = field.fieldName + "_raw";
-        ctx.trace(EmitTraceOp::ReadScalarUint, field.bitLength);
-        w.line(rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            w.line(targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            w.line(targetExpr + " = " + rawVar);
-        }
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    case ScriptedFieldValueKind::Float: {
-        const auto rawVar = field.fieldName + "_raw";
-        ctx.trace(EmitTraceOp::ReadScalarFloat, field.bitLength);
-        w.line(rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            w.line(targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            w.line(targetExpr + " = " + rawVar);
-        }
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    case ScriptedFieldValueKind::Signed: {
-        const auto rawVar = field.fieldName + "_raw";
-        ctx.trace(EmitTraceOp::ReadScalarSint, field.bitLength);
-        w.line(rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            w.line(targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            w.line(targetExpr + " = " + rawVar);
-        }
-        ctx.trace(EmitTraceOp::Advance, field.bitLength);
-        w.line("offset_bits += " + bits);
-        return;
-    }
-    }
-}
-
-void emitPyRuntimeDeserializeFieldValue(SourceWriter&                     w,
-                                        const ScriptedFieldOperationPlan& operation,
-                                        const std::string&                targetExpr,
-                                        const EmitterContext&             ctx)
-{
-    const auto& field = operation.body.field;
-
-    emitPyRuntimeAlignDeserialize(w, field.alignmentBits, ctx);
-    assert(operation.deserializeSteps.has_value());
-    PyFieldSpelling spelling(w, ctx, operation);
-    spelling.setDirection(HelperBindingDirection::Deserialize);
-    renderFieldSteps(*operation.deserializeSteps, targetExpr, HelperBindingDirection::Deserialize, spelling);
-}
-
-/// @brief Python spelling of the shared union-prologue steps (see EmitStep.h).
-///
-/// Dispatch is an if / elif chain; the error channel is `raise`; the tag mask is
-/// spelled as its own statement (D1 spelling freedom). Helper-conditional guards
-/// mirror the pre-template code.
-class PyUnionSpelling final : public UnionSectionSpelling
-{
-public:
-    PyUnionSpelling(SourceWriter&                    w,
-                    const EmitterContext&            ctx,
-                    const RuntimeSectionHelperNames& sectionHelperNames,
-                    const std::uint32_t              tagBits,
-                    std::string                      typeName)
-        : w_(w)
-        , ctx_(ctx)
-        , helperNames_(sectionHelperNames)
-        , tagBits_(tagBits)
-        , tagBitsStr_(std::to_string(tagBits))
-        , typeName_(std::move(typeName))
-    {
-    }
-
-    void spellSerializeValidateTag() override
-    {
-        if (!helperNames_.unionTagValidate.empty())
-        {
-            ctx_.trace(EmitTraceOp::ValidateTag);
-            w_.open("if not " + helperNames_.unionTagValidate + "(tag):");
-            w_.line("raise ValueError(f\"" + codegen_diagnostic_text::invalidUnionTagPrefix() + "{tag}\")");
-            w_.dedent();
-        }
-    }
-
-    void spellSerializeWriteMaskedTag() override
-    {
-        if (!helperNames_.serUnionTagMask.empty())
-        {
-            ctx_.trace(EmitTraceOp::MaskTag);
-            w_.line("tag = int(" + helperNames_.serUnionTagMask + "(tag))");
-        }
-        ctx_.trace(EmitTraceOp::WriteTag, tagBits_);
-        w_.line("dsdl_runtime.write_unsigned(out, offset_bits, " + tagBitsStr_ + ", tag, False)");
-    }
-
-    void spellDeserializeReadMaskStoreTag() override
-    {
-        ctx_.trace(EmitTraceOp::ReadTag, tagBits_);
-        w_.line("tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " + tagBitsStr_ + "))");
-        if (!helperNames_.deserUnionTagMask.empty())
-        {
-            ctx_.trace(EmitTraceOp::MaskTag);
-            w_.line("tag = int(" + helperNames_.deserUnionTagMask + "(tag))");
-        }
-        ctx_.trace(EmitTraceOp::StoreTag);
-        w_.line("value = " + typeName_ + "(_tag=tag)");
-    }
-
-    void spellDeserializeValidateTag() override
-    {
-        if (!helperNames_.unionTagValidate.empty())
-        {
-            ctx_.trace(EmitTraceOp::ValidateTag);
-            w_.open("if not " + helperNames_.unionTagValidate + "(tag):");
-            w_.line("raise ValueError(f\"" + codegen_diagnostic_text::decodedInvalidUnionTagPrefix() + "{tag}\")");
-            w_.dedent();
-        }
-    }
-
-    void spellAdvanceTag() override
-    {
-        ctx_.trace(EmitTraceOp::Advance, tagBits_);
-        w_.line("offset_bits += " + tagBitsStr_);
-    }
-
-    void spellBeginDispatch() override
-    {
-        // The if / elif chain has no opening construct; SWITCH is abstract here.
-        ctx_.trace(EmitTraceOp::Switch);
-    }
-
-    void spellBeginCase(const std::int64_t optionIndex, const bool firstCase) override
-    {
-        ctx_.trace(EmitTraceOp::Case, optionIndex);
-        w_.open(std::string(firstCase ? "if " : "elif ") + "tag == " + std::to_string(optionIndex) + ":");
-    }
-
-    void spellEndCase() override
-    {
-        // Indentation-delimited: the suite ends by going back out, with no line of its own.
-        w_.dedent();
-    }
-
-    void spellBadTagDefault() override
-    {
-        ctx_.trace(EmitTraceOp::DefaultBadTag);
-        w_.open("else:");
-        w_.line("raise ValueError(f\"" + badTagDiagnosticPrefix_ + "{tag}\")");
-        w_.dedent();
-    }
-
-    void spellEndDispatch() override
-    {
-        // The if / elif chain has no closing construct.
-    }
-
-    /// @brief Selects the bad-tag diagnostic text (serialise vs decoded spelling).
-    void setBadTagDiagnosticPrefix(std::string prefix)
-    {
-        badTagDiagnosticPrefix_ = std::move(prefix);
-    }
-
-private:
-    SourceWriter&                    w_;
-    const EmitterContext&            ctx_;
-    const RuntimeSectionHelperNames& helperNames_;
-    const std::uint32_t              tagBits_;
-    const std::string                tagBitsStr_;
-    const std::string                typeName_;
-    std::string                      badTagDiagnosticPrefix_;
+    mlir::func::FuncOp serialize;
+    mlir::func::FuncOp deserialize;
 };
 
-/// @brief Canonical (backend-independent) DSDL section label for emit-order trace segments.
-/// @param[in] info Discovered definition identity.
-/// @param[in] sectionSuffix "" for a message type, ".Request"/".Response" for service halves.
-/// @return "full.type.Name[.Request|.Response].major.minor".
-std::string canonicalDefinitionName(const DiscoveredDefinition& info, const std::string& sectionSuffix)
+/// @brief The schema of @p def in the lowered module, by identity.
+mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& def)
 {
-    return info.fullName + sectionSuffix + "." + std::to_string(info.majorVersion) + "." +
-           std::to_string(info.minorVersion);
+    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+    {
+        if (schema.getFullName() == def.info.fullName &&
+            static_cast<std::uint32_t>(schema.getMajor()) == def.info.majorVersion &&
+            static_cast<std::uint32_t>(schema.getMinor()) == def.info.minorVersion)
+        {
+            return schema;
+        }
+    }
+    return {};
 }
 
-llvm::Error emitPyRuntimeFunctions(SourceWriter&              w,
-                                   const std::string&         typeName,
-                                   const std::string&         canonicalSectionName,
-                                   const RuntimeSectionPlan&  plan,
-                                   const EmitterContext&      ctx,
-                                   const SemanticSection&     section,
-                                   const LoweredSectionFacts* sectionFacts)
+/// @brief One section: its class with the two bodies and the methods that wrap them, then its
+/// constants.
+llvm::Error emitSection(SourceWriter&             w,
+                        const std::string&        typeName,
+                        const SemanticSection&    section,
+                        const AttachedDoc&        typeDoc,
+                        const EmitterContext&     ctx,
+                        const SemanticDefinition& def,
+                        const PythonSpelling&     spelling,
+                        const SectionBodies&      bodies)
 {
-    const auto serializeFn   = runtimeSerializeFn(typeName);
-    const auto deserializeFn = runtimeDeserializeFn(typeName);
-    const auto maxByteLength = (plan.maxBits + 7) / 8;
-    const auto serializeHelpers =
-        buildSectionHelperBindingPlan(section, sectionFacts, HelperBindingDirection::Serialize);
-    const auto deserializeHelpers =
-        buildSectionHelperBindingPlan(section, sectionFacts, HelperBindingDirection::Deserialize);
-
-    const RuntimeHelperNameResolver helperNameResolver = [](const std::string& symbol) {
-        return helperBindingNamePy(symbol);
-    };
-    auto operationPlan = buildScriptedSectionOperationPlan(section, plan, sectionFacts, helperNameResolver);
-    if (!operationPlan)
+    if (!bodies.serialize || !bodies.deserialize)
     {
-        return operationPlan.takeError();
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no plan bodies for %s in the lowered module",
+                                       def.info.fullName.c_str());
     }
-    const NamingScope fieldIdents = makePyFieldIdents(section);
-    for (auto& scriptedField : operationPlan->fields)
-    {
-        auto&       field        = scriptedField.body.field;
-        const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
-        field.fieldName          = fieldIdents.get(IdentifierRole::FieldName, semanticName);
-    }
-    const auto& sectionHelperNames = operationPlan->sectionHelpers;
-
-    const auto emitSerializeHelperBindings = [&]() {
-        const auto           bodies = buildSectionHelperBodies(serializeHelpers,
-                                                               HelperDirection::Serialize,
-                                                               helperNameResolver,
-                                                               /*emitCapacityCheck=*/true);
-        PyHelperBodySpelling spelling(w);
-        for (const auto& body : bodies)
-        {
-            renderHelperBody(body, spelling);
-        }
-        if (!bodies.empty())
-        {
-            w.blank();
-        }
-    };
-
-    const auto emitDeserializeHelperBindings = [&]() {
-        const auto           bodies = buildSectionHelperBodies(deserializeHelpers,
-                                                               HelperDirection::Deserialize,
-                                                               helperNameResolver,
-                                                               /*emitCapacityCheck=*/false);
-        PyHelperBodySpelling spelling(w);
-        for (const auto& body : bodies)
-        {
-            renderHelperBody(body, spelling);
-        }
-        if (!bodies.empty())
-        {
-            w.blank();
-        }
-    };
-
-    if (operationPlan->isUnion)
-    {
-        ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
-        w.open("def " + serializeFn + "(value: " + typeName + ") -> bytes:");
-        w.line("out = bytearray(" + std::to_string(maxByteLength) + ")");
-        w.line("offset_bits = 0");
-        emitSerializeHelperBindings();
-        if (!sectionHelperNames.capacityCheck.empty())
-        {
-            w.open("if not " + sectionHelperNames.capacityCheck + "(len(out) * 8):");
-            w.line("raise ValueError(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\")");
-            w.dedent();
-        }
-        w.line("tag = int(value._tag)");
-        {
-            PyUnionSpelling spelling(w, ctx, sectionHelperNames, operationPlan->unionTagBits, typeName);
-            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::invalidUnionTagPrefix());
-            std::vector<UnionCaseRender> cases;
-            cases.reserve(operationPlan->fields.size());
-            for (const auto& scriptedField : operationPlan->fields)
-            {
-                cases.push_back(
-                    UnionCaseRender{scriptedField.body.field.unionOptionIndex, [&w, &ctx, &scriptedField]() {
-                                        const auto& field           = scriptedField.body.field;
-                                        const auto  optionTag       = std::to_string(field.unionOptionIndex);
-                                        const auto  optionValueExpr = "value." + field.fieldName;
-                                        w.open("if " + optionValueExpr + " is None:");
-                                        w.line("raise ValueError(\"" +
-                                               codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName,
-                                                                                                optionTag) +
-                                               "\")");
-                                        w.dedent();
-                                        emitPyRuntimeSerializeFieldValue(w, scriptedField, optionValueExpr, ctx);
-                                    }});
-            }
-            renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
-        }
-        w.line("aligned_offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
-        w.open("for bit in range(offset_bits, aligned_offset_bits):");
-        w.line("dsdl_runtime.set_bit(out, bit, False)");
-        w.dedent();
-        w.line("offset_bits = aligned_offset_bits");
-        w.line("used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)");
-        w.line("return bytes(out[:used_bytes])");
-        w.dedent();
-        w.blank();
-
-        ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
-        w.open("def " + deserializeFn + "(data: bytes | bytearray | memoryview) -> tuple[" + typeName + ", int]:");
-        w.line("data = bytes(data)");
-        emitDeserializeHelperBindings();
-        w.line("offset_bits = 0");
-        {
-            PyUnionSpelling spelling(w, ctx, sectionHelperNames, operationPlan->unionTagBits, typeName);
-            spelling.setBadTagDiagnosticPrefix(codegen_diagnostic_text::decodedInvalidUnionTagPrefix());
-            std::vector<UnionCaseRender> cases;
-            cases.reserve(operationPlan->fields.size());
-            for (const auto& scriptedField : operationPlan->fields)
-            {
-                cases.push_back(
-                    UnionCaseRender{scriptedField.body.field.unionOptionIndex, [&w, &ctx, &scriptedField]() {
-                                        emitPyRuntimeDeserializeFieldValue(w,
-                                                                           scriptedField,
-                                                                           "value." +
-                                                                               scriptedField.body.field.fieldName,
-                                                                           ctx);
-                                    }});
-            }
-            renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
-        }
-        w.line("offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
-        w.line("consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
-        w.line("return value, consumed");
-        w.dedent();
-        return llvm::Error::success();
-    }
-
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
-    w.open("def " + serializeFn + "(value: " + typeName + ") -> bytes:");
-    w.line("out = bytearray(" + std::to_string(maxByteLength) + ")");
-    w.line("offset_bits = 0");
-    emitSerializeHelperBindings();
-    if (!sectionHelperNames.capacityCheck.empty())
-    {
-        w.open("if not " + sectionHelperNames.capacityCheck + "(len(out) * 8):");
-        w.line("raise ValueError(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\")");
-        w.dedent();
-    }
-    for (const auto& scriptedField : operationPlan->fields)
-    {
-        const auto& field = scriptedField.body.field;
-        emitPyRuntimeSerializeFieldValue(w, scriptedField, "value." + field.fieldName, ctx);
-    }
-    w.line("used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)");
-    w.line("return bytes(out[:used_bytes])");
-    w.dedent();
+    emitSectionType(w,
+                    typeName,
+                    section,
+                    typeDoc,
+                    ctx,
+                    def.info.fullName,
+                    def.info.majorVersion,
+                    def.info.minorVersion);
     w.blank();
-
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
-    w.open("def " + deserializeFn + "(data: bytes | bytearray | memoryview) -> tuple[" + typeName + ", int]:");
-    w.line("data = bytes(data)");
-    emitDeserializeHelperBindings();
-    w.line("value = " + typeName + "()");
-    w.line("offset_bits = 0");
-    for (const auto& scriptedField : operationPlan->fields)
+    if (auto err = translateFunction(bodies.serialize, spelling, w))
     {
-        const auto& field = scriptedField.body.field;
-        emitPyRuntimeDeserializeFieldValue(w, scriptedField, "value." + field.fieldName, ctx);
+        return err;
     }
-    w.line("consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
-    w.line("return value, consumed");
+    w.blank();
+    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    {
+        return err;
+    }
     w.dedent();
+    if (!section.constants.empty())
+    {
+        w.blank();
+        emitSectionConstants(w, typeName, section);
+    }
     return llvm::Error::success();
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
-                                                 const LoweredFactsMap&    loweredFacts)
+                                                 const LoweredFactsMap&    loweredFacts,
+                                                 mlir::ModuleOp            module)
 {
+    mlir::dsdl::SchemaOp schema = schemaOf(module, def);
+    if (!schema)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no schema for %s in the lowered module",
+                                       def.info.fullName.c_str());
+    }
+
     std::ostringstream out;
     SourceWriter       w = makePyWriter(out);
     w.line(generatedCommentLine("Python backend"));
@@ -1520,34 +1457,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.blank();
     w.line("from dataclasses import dataclass, field");
     w.blank();
-
-    const llvm::StringRef      requestSectionKey   = def.isService ? "request" : "";
-    const LoweredSectionFacts* requestSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, requestSectionKey);
-    auto                       requestRuntimePlan  = buildRuntimeSectionPlan(def.request, requestSectionFacts);
-    if (!requestRuntimePlan)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "failed to build Python request runtime plan for '%s': %s",
-                                       def.info.fullName.c_str(),
-                                       llvm::toString(requestRuntimePlan.takeError()).c_str());
-    }
-
-    std::optional<RuntimeSectionPlan> responseRuntimePlanStorage;
-    const RuntimeSectionPlan*         responseRuntimePlan = nullptr;
-    if (def.response)
-    {
-        const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
-        auto              responsePlanOrErr    = buildRuntimeSectionPlan(*def.response, responseSectionFacts);
-        if (!responsePlanOrErr)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "failed to build Python response runtime plan for '%s': %s",
-                                           def.info.fullName.c_str(),
-                                           llvm::toString(responsePlanOrErr.takeError()).c_str());
-        }
-        responseRuntimePlanStorage = std::move(*responsePlanOrErr);
-        responseRuntimePlan        = &(*responseRuntimePlanStorage);
-    }
 
     std::map<std::string, std::set<std::string>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
@@ -1567,7 +1476,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         addSectionImports(*def.response);
     }
 
-    w.line("from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime");
+    w.line("from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime, error_message");
     for (const auto& [modulePath, names] : importsByModule)
     {
         std::string importNames;
@@ -1590,6 +1499,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
     w.line("DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion));
     w.line("DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion));
+    const LoweredSectionFacts* requestSectionFacts =
+        lookupLoweredSectionFacts(loweredFacts, def, def.isService ? "request" : "");
     const bool        requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
     const std::string requestZohReason =
         (requestSectionFacts != nullptr && !requestSectionFacts->zohAliasReason.empty())
@@ -1597,7 +1508,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             : "not-proven";
     w.line("DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "True" : "False"));
     w.line("DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\"");
-    if (responseRuntimePlan != nullptr)
+    if (def.response)
     {
         const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
         const bool responseZohEligible = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
@@ -1615,29 +1526,54 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     w.blank();
 
+    // The spelling names a nested type as this file does.
+    const PythonSpelling                 spelling(schema,
+                                                  [&ctx](const llvm::StringRef fullName,
+                                                         const std::uint32_t   major,
+                                                         const std::uint32_t   minor) {
+                                      SemanticTypeRef ref;
+                                      ref.fullName = fullName.str();
+                                      llvm::SmallVector<llvm::StringRef> components;
+                                      fullName.split(components, '.');
+                                      for (const llvm::StringRef component : components)
+                                      {
+                                          ref.namespaceComponents.push_back(component.str());
+                                      }
+                                      if (!ref.namespaceComponents.empty())
+                                      {
+                                          ref.shortName = ref.namespaceComponents.back();
+                                          ref.namespaceComponents.pop_back();
+                                      }
+                                      ref.majorVersion = major;
+                                      ref.minorVersion = minor;
+                                      return ctx.typeName(ref);
+                                                  });
+    std::vector<mlir::func::FuncOp>      helpers;
+    std::map<std::string, SectionBodies> bodies;
+    for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            helpers.push_back(fn);
+            continue;
+        }
+        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
+        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+    }
+    for (const mlir::func::FuncOp helper : helpers)
+    {
+        if (auto err = translateFunction(helper, spelling, w))
+        {
+            return std::move(err);
+        }
+        w.blank();
+    }
+
     if (!def.isService)
     {
-        emitSectionType(w,
-                        baseType,
-                        def.request,
-                        def.doc,
-                        ctx,
-                        def.info.fullName,
-                        def.info.majorVersion,
-                        def.info.minorVersion);
-        w.blank();
-        emitSectionConstants(w, baseType, def.request);
-        if (!def.request.constants.empty())
-        {
-            w.blank();
-        }
-        if (auto err = emitPyRuntimeFunctions(w,
-                                              baseType,
-                                              canonicalDefinitionName(def.info, ""),
-                                              *requestRuntimePlan,
-                                              ctx,
-                                              def.request,
-                                              requestSectionFacts))
+        if (auto err = emitSection(w, baseType, def.request, def.doc, ctx, def, spelling, bodies[""]))
         {
             return std::move(err);
         }
@@ -1646,56 +1582,19 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "request");
     const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "response");
-
-    emitSectionType(w,
-                    reqType,
-                    def.request,
-                    def.doc,
-                    ctx,
-                    def.info.fullName,
-                    def.info.majorVersion,
-                    def.info.minorVersion);
-    w.blank();
-    emitSectionConstants(w, reqType, def.request);
-    w.blank();
-    if (auto err = emitPyRuntimeFunctions(w,
-                                          reqType,
-                                          canonicalDefinitionName(def.info, ".Request"),
-                                          *requestRuntimePlan,
-                                          ctx,
-                                          def.request,
-                                          requestSectionFacts))
+    if (auto err = emitSection(w, reqType, def.request, def.doc, ctx, def, spelling, bodies["request"]))
     {
         return std::move(err);
     }
     w.blank();
-
     if (def.response)
     {
-        emitSectionType(w,
-                        respType,
-                        *def.response,
-                        def.doc,
-                        ctx,
-                        def.info.fullName,
-                        def.info.majorVersion,
-                        def.info.minorVersion);
-        w.blank();
-        emitSectionConstants(w, respType, *def.response);
-        w.blank();
-        if (auto err = emitPyRuntimeFunctions(w,
-                                              respType,
-                                              canonicalDefinitionName(def.info, ".Response"),
-                                              *responseRuntimePlan,
-                                              ctx,
-                                              *def.response,
-                                              lookupLoweredSectionFacts(loweredFacts, def, "response")))
+        if (auto err = emitSection(w, respType, *def.response, def.doc, ctx, def, spelling, bodies["response"]))
         {
             return std::move(err);
         }
         w.blank();
     }
-
     w.line(baseType + " = " + reqType);
     return out.str();
 }
@@ -1855,8 +1754,7 @@ llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
 llvm::Error emit(const SemanticModule& semantic,
                  mlir::ModuleOp        module,
                  const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink)
+                 DiagnosticEngine&     diagnostics)
 {
     if (options.outDir.empty())
     {
@@ -1871,9 +1769,8 @@ llvm::Error emit(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
-    const auto     packageComponents = splitPackageName(options.packageName);
-    EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
-    ctx.setTraceSink(traceSink);
+    const auto           packageComponents = splitPackageName(options.packageName);
+    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
 
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
@@ -1990,7 +1887,7 @@ llvm::Error emit(const SemanticModule& semantic,
             return err;
         }
 
-        auto rendered = renderDefinitionFile(*def, ctx, loweredFacts);
+        auto rendered = renderDefinitionFile(*def, ctx, loweredFacts, module);
         if (!rendered)
         {
             return rendered.takeError();

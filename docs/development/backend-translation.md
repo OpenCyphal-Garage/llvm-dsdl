@@ -4,25 +4,25 @@ A backend is a translation of MLIR: one pass pipeline turns every serialisation 
 serialise and a deserialise function of dialect operations, and a backend spells those functions
 in its language. [DESIGN.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/DESIGN.md)
 states this as the backend contract; `ctest -L backend-contract` accepts a backend against it, and
-nothing else does. C, obj, C++, Rust, Go and TypeScript meet the contract. Python does not,
-and this page is the record of making it.
+nothing else does. Every backend meets the contract, and this page is the record of the work.
 
-## Bodies are not derived from the IR
+## Bodies were not derived from the IR
 
-Every emitter calls `collectLoweredFactsFromMlir`, and for one of them that is the whole of
-their MLIR consumption. The `LoweredFactsMap` it returns holds, per field, a step index and the
-names of helper symbols; per section, a capacity-check helper name, the union tag width and the
-alias flag. It holds no operations. The serialise and deserialise bodies of Python come from
-`RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that walk the
-semantic module and decide the control flow themselves. C, obj, C++, Rust, Go and TypeScript
-translate the output of `build-dsdl-plan-bodies`: through EmitC for C source, through the LLVM
-dialect for objects, and through the translator below for C++, Rust, Go and TypeScript.
+Before this work, every emitter called `collectLoweredFactsFromMlir`, and for five of them that
+was the whole of their MLIR consumption. The `LoweredFactsMap` it returns holds, per field, a step
+index and the names of helper symbols; per section, a capacity-check helper name, the union tag
+width and the alias flag. It holds no operations. The serialise and deserialise bodies of C++,
+Rust and Go came from `SerDesStatementPlan` and `NativeEmitterTraversal`; those of TypeScript and
+Python from `RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that
+walked the semantic module and decided the control flow themselves. C and obj translated the
+output of `build-dsdl-plan-bodies`: through EmitC for C source and through the LLVM dialect for
+objects.
 
-The gates measure exactly this. Perturb an `dsdl.io` operation's width with the semantic module
-held constant and Python's bodies do not change; perturb the semantic module's cast
-mode with the operations held constant and they do. Three times the architecture was asked for
-and delivered in that shape, each time passing as the real thing because every emitter consumed
-the dialect. Consuming lowered facts is not translating lowered operations.
+The gates measure exactly this. Perturb a `dsdl.io` operation's width with the semantic module
+held constant and a planned body does not change; perturb the semantic module's cast mode with
+the operations held constant and it does. Three times the architecture was asked for and
+delivered in that shape, each time passing as the real thing because every emitter consumed the
+dialect. Consuming lowered facts is not translating lowered operations.
 
 ## The pipeline is one
 
@@ -137,9 +137,19 @@ end. The runtime's write functions answer the plan's code. Both runtime speciali
 spelling. The C↔TypeScript parity lanes and their variants, the decoder fuzz lane, the runtime
 smoke lanes, the type-check lanes and the generation lane accept it.
 
-**Python** remains: arbitrary-precision integers, so wrap semantics are explicit masks;
-`auto|pure|accel` is a primitive-table choice. Oracle: the `c-python-*` fixtures and the
-runtime-execution lanes.
+**Python** followed. `PythonSpelling`, in
+[`lib/CodeGen/emitter/Python.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Python.cpp),
+spells every integer of the plan as a Python `int`, which holds the value it stands for, so a
+constant is that value and the bitwise operators read a negative one as its two's complement. A
+body is a method of the dataclass that answers the size it used or the error code, and the
+`serialize` and `deserialize` methods wrap it: the one with a buffer of the type's largest size,
+the other with a default-constructed object, and each raises `ValueError` with the code's text. A
+buffer is a `memoryview`, and a pointer into it is a slice of the view, which the three runtimes
+read and write in place. A fixed-length array holds its elements from construction, so a
+deserialised object has the storage the plan addresses; a union's option is created when the
+plan sets the tag. Python has no empty block, so a block that spelled no statement closes with
+`pass`. The C↔Python parity lanes and their variants, the malformed-input and decode-fuzz lanes,
+the runtime parity and smoke lanes, and the generation lane accept it.
 
 ## What is removed
 
@@ -148,9 +158,9 @@ With the last backend converted: the planners — `SerDesStatementPlan`, `Native
 `LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`, `NativeHelperContract`,
 `SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts` with them. The
 convergence report and its scorecard page, which grade an emitter by the presence of
-`collectLoweredFactsFromMlir(` in its source. The Python emit-order trace, replaced
-by one check of step order on the plan-body IR, downstream of which order is by construction.
-The facts-channel check in the gate tool, which has no channel left to check.
+`collectLoweredFactsFromMlir(` in its source. The emit-order trace machinery, whose last
+recorder was the Python planner. The facts-channel check in the gate tool, which has no channel
+left to check.
 `--optimize-lowered-serdes` then sits after `build-dsdl-plan-bodies` in the shared pipeline and
 acts on every backend alike, or is removed with its `-optimized` lanes.
 

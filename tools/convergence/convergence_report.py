@@ -142,7 +142,7 @@ BACKEND_CONFIG = {
         },
     },
     "python": {
-        "kind": "scripted",
+        "kind": "native",
         "path": "lib/CodeGen/emitter/Python.cpp",
         "semantic_gate": {
             "path": "test/integration/RunUavcanPythonGeneration.cmake",
@@ -553,12 +553,9 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
         "validation, lowered-contract validation, and so on). A `shared` mark means the "
         "marker for that class is present in the emitter source: it certifies "
         "**infrastructure consistency, not runtime behavioural equivalence.** Behavioural "
-        "equivalence is enforced separately: emitted *step order* by the **emit-order "
-        "verifier** (`tools/convergence/emit_order_verifier.py`, ctest "
-        "`llvmdsdl-emit-order-verifier`), which compares each string backend's abstract "
-        "serialize/deserialize op trace per (type, direction) against the equivalence class "
-        "proven safe by the Dafny oracle (`spec/dafny/CyphalSerdes.dfy`); and *wire bytes* "
-        "by the parity and malformed-input gates, which consume executed test pass/fail. "
+        "equivalence is enforced separately: every backend's bodies are translations of the "
+        "plan bodies (`ctest -L backend-contract`), and *wire bytes* are checked by the "
+        "parity and malformed-input gates, which consume executed test pass/fail. "
         "Read each number here as *markers present*, not as a correctness proof or a "
         "convergence guarantee."
     )

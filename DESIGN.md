@@ -36,13 +36,11 @@ flowchart LR
   P --> K{"Translation"}
   K --> J["C: convert-dsdl-to-emitc\n+ EmitC translation"]
   K --> N["obj: convert-dsdl-to-llvm\n+ LLVM code generation"]
-  K --> O["C++, Rust, Go and TS: translateFunction\n+ a spelling per language"]
-  K --> Q["Python:\none spelling"]
+  K --> O["C++, Rust, Go, TS and Python:\ntranslateFunction + a spelling per language"]
   E --> L["Declarations, module layout,\nmanifests, runtime support"]
   J --> M["Generated sources and objects"]
   N --> M
   O --> M
-  Q --> M
   L --> M
 ```
 
@@ -160,7 +158,7 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 Operation reflection is also checked through the lowered-facts channel: a row whose perturbation is visible in `LoweredFactsMap` is reported and not scored, since a fact-walking emitter could reflect it. The rows are chosen so that none is.
 
-A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds `c;obj;cpp;rust;go;ts`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
+A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds every backend: `c;obj;cpp;rust;go;ts;python`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
 ## 5. Backend Architecture (As Implemented)
 
@@ -223,7 +221,7 @@ Key file:
 
 ### 5.6 Python backend (`emitter::python::emit`)
 
-Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection.
+Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `PythonSpelling` spells its operations as methods of the dataclass, and the `serialize` and `deserialize` methods wrap them. A fixed-length array holds its elements from construction.
 
 Key file:
 
