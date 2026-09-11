@@ -1,8 +1,9 @@
 // RUN: %dsdl-opt --convert-dsdl-to-llvm %s | FileCheck %s
 
 // Addressing a member without a name to address it by. The C path spells `obj->bar`; here the
-// struct is derived from the schema and the member's position indexes it, and LLVM computes
-// the offset from its own data layout rather than anything here adding up bytes.
+// struct is derived from the schema and the member's position within it, found from the DSDL
+// name the body carries, indexes it. LLVM computes the offset from its own data layout rather
+// than anything here adding up bytes.
 //
 // That the derived struct agrees with the one the C backend emits is not assumed: member
 // order and member widths are held against the generated headers by
@@ -21,22 +22,22 @@ module {
   }
 
   // CHECK-LABEL: func.func @access
-  func.func @access(%obj: !dsdl.ptr<!dsdl.opaque<"demo__T">>, %i: i64) -> i64 {
+  func.func @access(%obj: !dsdl.ptr<!dsdl.object<"demo.T.1.0">>, %i: i64) -> i64 {
     // The first member. A GEP's leading zero steps through the pointer, then the position.
     // CHECK: llvm.getelementptr %{{.*}}[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i8, i16, struct<(array<4 x i8>, i64)>)>
-    %a = dsdl.load_member %obj ["foo"] {indices = array<i64: 0>} : !dsdl.ptr<!dsdl.opaque<"demo__T">> -> i64
+    %a = dsdl.load_member %obj "foo" : !dsdl.ptr<!dsdl.object<"demo.T.1.0">> -> i64
 
     // The second: position one, not two. The padding between them holds nothing.
     // CHECK: llvm.getelementptr %{{.*}}[0, 1]
-    %b = dsdl.load_member %obj ["bar"] {indices = array<i64: 1>} : !dsdl.ptr<!dsdl.opaque<"demo__T">> -> i64
+    %b = dsdl.load_member %obj "bar" : !dsdl.ptr<!dsdl.object<"demo.T.1.0">> -> i64
 
     // An array's count is the second half of its own member, hence two positions.
     // CHECK: llvm.getelementptr %{{.*}}[0, 2, 1]
-    %n = dsdl.load_member %obj ["tail", "count"] {indices = array<i64: 2, 1>} : !dsdl.ptr<!dsdl.opaque<"demo__T">> -> i64
+    %n = dsdl.array_length %obj "tail" : !dsdl.ptr<!dsdl.object<"demo.T.1.0">>
 
     // And an element is a third step, the only one not known until the loop runs.
     // CHECK: llvm.getelementptr %{{.*}}[0, 2, 0, %{{.*}}]
-    %e = dsdl.load_element %obj ["tail", "elements"] [%i] {indices = array<i64: 2, 0>, element_type = "uint8_t"} : !dsdl.ptr<!dsdl.opaque<"demo__T">> -> i64
+    %e = dsdl.load_element %obj "tail"[%i] {storage_bits = 8 : i64, storage_category = "unsigned"} : !dsdl.ptr<!dsdl.object<"demo.T.1.0">> -> i64
 
     // CHECK-NOT: dsdl.
     %s = arith.addi %a, %b : i64

@@ -23,13 +23,9 @@ from typing import List
 class HardCutIntegrityRegressionTest(unittest.TestCase):
     REQUIRED_PATHS = [
         "tools/convergence/validate_hard_cut_integrity.py",
-        "tools/convergence/validate_execution_engine_boundaries.py",
         "test/integration/CMakeLists.txt",
-        "lib/CodeGen/NativeFunctionSkeleton.cpp",
-        "lib/CodeGen/ScriptedOperationPlan.cpp",
-        "lib/CodeGen/RuntimeLoweredPlan.cpp",
+        "lib/CodeGen/BodyTranslator.cpp",
         "lib/CodeGen/CodegenDiagnosticText.cpp",
-        "include/llvmdsdl/CodeGen/NativeFunctionSkeleton.h",
         "include/llvmdsdl/Transforms/LoweredSerDesContractValidation.h",
         "lib/Transforms/LoweredSerDesContractValidation.cpp",
     ]
@@ -74,15 +70,15 @@ class HardCutIntegrityRegressionTest(unittest.TestCase):
     def test_missing_canonical_marker_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-hard-cut-test-") as tmp_dir:
             snapshot_root = self._create_snapshot(Path(tmp_dir) / "snapshot")
-            target = snapshot_root / "lib/CodeGen/RuntimeLoweredPlan.cpp"
+            target = snapshot_root / "lib/CodeGen/BodyTranslator.cpp"
             text = target.read_text(encoding="utf-8")
-            marker = "buildRuntimeSectionPlan("
+            marker = "translateFunction("
             self.assertIn(marker, text)
-            target.write_text(text.replace(marker, "buildRuntimeSectionPlan_REMOVED(", 1), encoding="utf-8")
+            target.write_text(text.replace(marker, "translateFunction_REMOVED(", 1), encoding="utf-8")
             result = self._run_validator(snapshot_root)
         self.assertNotEqual(result.returncode, 0, msg="expected canonical marker regression failure")
         self.assertIn("required canonical marker missing", result.stderr)
-        self.assertIn("RuntimeLoweredPlan.cpp", result.stderr)
+        self.assertIn("BodyTranslator.cpp", result.stderr)
 
     def test_forbidden_shim_phrase_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-hard-cut-test-") as tmp_dir:

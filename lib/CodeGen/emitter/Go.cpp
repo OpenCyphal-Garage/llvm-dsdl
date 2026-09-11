@@ -18,6 +18,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
@@ -39,40 +40,43 @@
 #include <cstdint>
 #include <utility>
 
-#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/EmitStep.h"
-#include "llvmdsdl/CodeGen/EmitTrace.h"
-#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
-#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
-#include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Frontend/AST.h"
-#include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Version.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+#include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl::emitter::go
@@ -327,173 +331,6 @@ void emitAttachedDocGo(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-/// @brief Go spelling of the helper body shapes (see HelperBodyPlan.h).
-///
-/// Guards rather than conditional expressions throughout, as the rest of the
-/// generated Go reads. The float identity is the one single-line form: a
-/// `func(value float32) float32 { return value }` on its own line, matching what a
-/// reader would write.
-class GoHelperBodySpelling final : public HelperBodySpelling
-{
-public:
-    explicit GoHelperBodySpelling(SourceWriter& w)
-        : w_(w)
-    {
-    }
-
-    void spellIdentity(const HelperBody& body) override
-    {
-        oneLiner(body, "return value");
-    }
-
-    void spellMask(const HelperBody& body) override
-    {
-        oneLiner(body, "return value & " + mask(body.bits));
-    }
-
-    void spellSaturateUnsigned(const HelperBody& body) override
-    {
-        open(body);
-        w_.open("if value > " + mask(body.bits) + " {");
-        w_.line("return " + mask(body.bits));
-        w_.close("}");
-        w_.line("return value");
-        w_.close("}");
-    }
-
-    void spellSaturateSigned(const HelperBody& body) override
-    {
-        open(body);
-        w_.open("if value < " + std::to_string(body.minValue) + " {");
-        w_.line("return " + std::to_string(body.minValue));
-        w_.close("}");
-        w_.open("if value > " + std::to_string(body.maxValue) + " {");
-        w_.line("return " + std::to_string(body.maxValue));
-        w_.close("}");
-        w_.line("return value");
-        w_.close("}");
-    }
-
-    void spellSignExtend(const HelperBody& body) override
-    {
-        const auto bitMask = mask(body.bits);
-        const auto signBit = "uint64(" + std::to_string(std::uint64_t{1} << (body.bits - 1U)) + ")";
-        open(body);
-        w_.line("raw := uint64(value) & " + bitMask);
-        w_.open("if (raw & " + signBit + ") != 0 {");
-        w_.line("return int64(raw | (^" + bitMask + "))");
-        w_.close("}");
-        w_.line("return int64(raw)");
-        w_.close("}");
-    }
-
-    void spellStatusGuard(const HelperBody& body) override
-    {
-        open(body);
-        switch (body.guard)
-        {
-        case HelperGuardKind::CapacityTooSmall:
-            w_.open("if " + std::to_string(body.requiredBits) + " > capacityBits {");
-            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL");
-            break;
-        case HelperGuardKind::ArrayLengthOutOfRange:
-            w_.open("if (value < 0) || (value > " + std::to_string(body.capacity) + ") {");
-            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH");
-            break;
-        case HelperGuardKind::DelimiterOutOfRange:
-            w_.open("if (payloadBytes < 0) || (payloadBytes > remainingBytes) {");
-            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER");
-            break;
-        }
-        w_.close("}");
-        w_.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS");
-        w_.close("}");
-    }
-
-    void spellTagMembership(const HelperBody& body) override
-    {
-        open(body);
-        if (body.allowedTags.empty())
-        {
-            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
-            w_.close("}");
-            return;
-        }
-        std::string condition;
-        for (const auto tag : body.allowedTags)
-        {
-            if (!condition.empty())
-            {
-                condition += " || ";
-            }
-            condition += "(tagValue == " + std::to_string(tag) + ")";
-        }
-        w_.open("if " + condition + " {");
-        w_.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS");
-        w_.close("}");
-        w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
-        w_.close("}");
-    }
-
-private:
-    static std::string floatType(const HelperSignature signature)
-    {
-        return signature == HelperSignature::Float64 ? "float64" : "float32";
-    }
-
-    static std::string mask(const std::uint32_t bits)
-    {
-        return renderMaskLiteral(HelperSpellingLanguage::Go, bits);
-    }
-
-    /// @brief The closure's parameter list and return type, e.g. "(value uint64) uint64".
-    static std::string signature(const HelperBody& body)
-    {
-        switch (body.signature)
-        {
-        case HelperSignature::UnsignedToUnsigned:
-            return "(value uint64) uint64";
-        case HelperSignature::SignedToSigned:
-            return "(value int64) int64";
-        case HelperSignature::ValueToStatus:
-            return "(" + statusParamName(body) + " int64) int8";
-        case HelperSignature::PairToStatus:
-            return "(payloadBytes int64, remainingBytes int64) int8";
-        case HelperSignature::Float32:
-        case HelperSignature::Float64:
-            return "(value " + floatType(body.signature) + ") " + floatType(body.signature);
-        }
-        return "(value uint64) uint64";
-    }
-
-    /// @brief Names the parameter after what the helper asks about.
-    static std::string statusParamName(const HelperBody& body)
-    {
-        if (body.kind == HelperBodyKind::TagMembership)
-        {
-            return "tagValue";
-        }
-        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacityBits" : "value";
-    }
-
-    /// @brief Emits a whole-body-in-one-statement helper on a single line.
-    ///
-    /// Go reads a trivial closure better inline than spread over three lines, and
-    /// every helper whose body is one `return` gets the same treatment.
-    void oneLiner(const HelperBody& body, const std::string& statement)
-    {
-        w_.line(body.symbol + " := func" + signature(body) + " { " + statement + " }");
-    }
-
-    /// @brief Emits the closure's opening line and descends into its body.
-    void open(const HelperBody& body)
-    {
-        w_.open(body.symbol + " := func" + signature(body) + " {");
-    }
-
-    SourceWriter& w_;
-};
-
 /// @brief One member of a generated Go struct, with whatever documents it.
 struct GoStructMember final
 {
@@ -552,26 +389,6 @@ public:
         return typeNameVersioning_;
     }
 
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
-    /// cost.
-    void setTraceSink(EmitTraceSink* const sink)
-    {
-        traceSink_ = sink;
-    }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
-    template <typename PayloadT = std::int64_t>
-    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
-    {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
-    }
-
-    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
-    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
-    {
-        emitTraceSection(traceSink_, canonicalName, direction);
-    }
-
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
@@ -626,7 +443,6 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*     traceSink_ = nullptr;
 };
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
@@ -728,848 +544,853 @@ std::string goFieldType(const SemanticFieldType&                  type,
     return "[]" + base;
 }
 
-class FunctionBodyEmitter final
+/// @brief The Go spelling of the plan-body vocabulary, for one schema.
+///
+/// Members are named from the same scope the struct declaration names them in, built from the
+/// schema's own fields. A nested type is never named: a nested call is a method call on the
+/// member, and a variable-length array is resized by the runtime, which takes the element type
+/// from the slice. The plan's `i64` is `uint64`, `i8` is `int8`, an index is `int`, and the size a
+/// plan is handed by pointer is a local `int`. A buffer is a slice, and a pointer into it is a
+/// sub-slice clamped to the buffer's end.
+///
+/// The generation lane holds the output to gofmt, so every operation is its own statement and no
+/// operator sits inside a call argument or an index: those are the places gofmt respaces.
+class GoSpelling final : public BodySpelling
 {
 public:
-    FunctionBodyEmitter(const EmitterContext&                     ctx,
-                        std::string                               currentPackagePath,
-                        const std::map<std::string, std::string>& importAliases)
-        : ctx_(ctx)
-        , currentPackagePath_(std::move(currentPackagePath))
-        , importAliases_(importAliases)
+    explicit GoSpelling(mlir::dsdl::SchemaOp schema)
     {
-    }
-
-    /// @brief Records one abstract emit op via the shared EmitterContext sink (no-op when unattached).
-    template <typename PayloadT = std::int64_t>
-    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
-    {
-        ctx_.trace(op, payload);
-    }
-
-    void emitSerializeFunction(SourceWriter&              w,
-                               const std::string&         typeName,
-                               const SemanticSection&     section,
-                               const LoweredSectionFacts* sectionFacts)
-    {
-        fieldIdents_.emplace(makeExportedFieldIdents(section));
-        w.open("func (obj *" + typeName + ") Serialize(buffer []byte) (int8, int) {");
-        w.open("if obj == nil {");
-        w.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
-        w.close("}");
-        w.line("offsetBits := 0");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Serialize,
-            NativeFunctionSkeletonCallbacks{[&w](const SectionHelperBindingPlan& helperBindings) {
-                                                emitSerializeMlirHelperBindings(w, helperBindings);
-                                            },
-                                            [&w](const std::string& missingHelperRequirement) {
-                                                w.line("// missing lowered helper contract: " +
-                                                       missingHelperRequirement);
-                                                w.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
-                                            },
-                                            [&w](const SectionHelperBindingPlan& helperBindings) {
-                                                const auto capacityHelper =
-                                                    helperBindingName(helperBindings.capacityCheck->symbol);
-                                                w.open("if rc := " + capacityHelper +
-                                                       "(int64(len(buffer) * 8)); rc != "
-                                                       "dsdlruntime.DSDL_RUNTIME_SUCCESS {");
-                                                w.line("return rc, 0");
-                                                w.close("}");
-                                            },
-                                            [this, &w, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &w, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitSerializeUnion(w,
-                                                                           section,
-                                                                           unionBranches,
-                                                                           sectionFacts,
-                                                                           renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &w](const std::int64_t alignmentBits) {
-                                                    emitAlignSerialize(w, alignmentBits);
-                                                };
-                                                callbacks.onField = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitSerializeAny(w,
-                                                                     field->resolvedType,
-                                                                     "obj." + exportedFieldIdent(field->name),
-                                                                     fieldStep.arrayLengthPrefixBits,
-                                                                     fieldStep.fieldFacts);
-                                                };
-                                                callbacks.onPaddingAlignment = [this,
-                                                                                &w](const std::int64_t alignmentBits) {
-                                                    emitAlignSerialize(w, alignmentBits);
-                                                };
-                                                callbacks.onPadding = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitSerializePadding(w, field->resolvedType);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &w]() {
-                                                emitAlignSerialize(w, 8);
-                                                w.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS, offsetBits / 8");
-                                            }});
-        if (!emitted)
+        if (schema.getBody().empty())
         {
-            w.close("}");
             return;
         }
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+        {
+            Plan entry;
+            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            NamingScope                   scope(CodegenNamingLanguage::Go);
+            std::vector<mlir::dsdl::IOOp> fields;
+            if (!plan.getBody().empty())
+            {
+                for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
+                {
+                    if (!io.isPadding())
+                    {
+                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
+                        fields.push_back(io);
+                    }
+                }
+            }
+            for (mlir::dsdl::IOOp io : fields)
+            {
+                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+            }
+            plans_[planIdentity(schema, plan)] = std::move(entry);
+        }
+    }
+
+    // Functions.
+
+    std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
+    {
+        const auto direction = planBodyDirection(fn);
+        inBody_              = direction.has_value();
+        if (!direction)
+        {
+            std::vector<std::string> parameters;
+            std::string              list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                parameters.push_back("p" + std::to_string(index));
+                list += (list.empty() ? "" : ", ") + parameters.back() + " " + typeName(argument.getType());
+            }
+            w.open("func " + functionName(fn.getSymName()) + "(" + list + ") " + typeName(fn.getResultTypes().front()) +
+                   " {");
+            return parameters;
+        }
+        const Plan& plan = planOf(fn.getArgument(0));
+        w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
+               "(buffer []byte) (int8, int) {");
+        // The size a plan is handed by pointer, read at entry and written back at the end.
+        w.line("inoutBufferSizeBytes := len(buffer)");
+        return {"obj", "buffer", "inoutBufferSizeBytes"};
+    }
+
+    void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
+    {
         w.close("}");
     }
 
-    void emitDeserializeFunction(SourceWriter&              w,
-                                 const std::string&         typeName,
-                                 const SemanticSection&     section,
-                                 const LoweredSectionFacts* sectionFacts)
+    [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        fieldIdents_.emplace(makeExportedFieldIdents(section));
-        w.open("func (obj *" + typeName + ") Deserialize(buffer []byte) (int8, int) {");
-        w.open("if obj == nil {");
-        w.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
-        w.close("}");
-        w.line("capacityBytes := len(buffer)");
-        w.line("capacityBits := capacityBytes * 8");
-        w.line("offsetBits := 0");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Deserialize,
-            NativeFunctionSkeletonCallbacks{[&w](const SectionHelperBindingPlan& helperBindings) {
-                                                emitDeserializeMlirHelperBindings(w, helperBindings);
-                                            },
-                                            [&w](const std::string& missingHelperRequirement) {
-                                                w.line("// missing lowered helper contract: " +
-                                                       missingHelperRequirement);
-                                                w.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
-                                            },
-                                            nullptr,
-                                            [this, &w, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &w, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitDeserializeUnion(w,
-                                                                             section,
-                                                                             unionBranches,
-                                                                             sectionFacts,
-                                                                             renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &w](const std::int64_t alignmentBits) {
-                                                    emitAlignDeserialize(w, alignmentBits);
-                                                };
-                                                callbacks.onField = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitDeserializeAny(w,
-                                                                       field->resolvedType,
-                                                                       "obj." + exportedFieldIdent(field->name),
-                                                                       fieldStep.arrayLengthPrefixBits,
-                                                                       fieldStep.fieldFacts);
-                                                };
-                                                callbacks.onPaddingAlignment = [this,
-                                                                                &w](const std::int64_t alignmentBits) {
-                                                    emitAlignDeserialize(w, alignmentBits);
-                                                };
-                                                callbacks.onPadding = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitDeserializePadding(w, field->resolvedType);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &w]() {
-                                                emitAlignDeserialize(w, 8);
-                                                w.line("consumedBits := dsdlruntime.ChooseMin(offsetBits, "
-                                                       "capacityBits)");
-                                                w.line("return dsdlruntime.DSDL_RUNTIME_SUCCESS, consumedBits / 8");
-                                            }});
-        if (!emitted)
+        return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, callee);
+    }
+
+    /// @brief Names the Go type each plan's bodies are methods of.
+    void setTypeName(const llvm::StringRef identity, const std::string& typeName)
+    {
+        const auto found = plans_.find(identity);
+        if (found != plans_.end())
         {
+            found->second.typeName = typeName;
+        }
+    }
+
+    // Statements.
+
+    void declare(SourceWriter& w,
+                 const mlir::Type /*type*/,
+                 const llvm::StringRef name,
+                 const llvm::StringRef expr) const override
+    {
+        w.line(name.str() + " := " + expr.str());
+    }
+
+    void declareVariable(SourceWriter&         w,
+                         const mlir::Type      type,
+                         const llvm::StringRef name,
+                         const bool /*reassigned*/) const override
+    {
+        w.line("var " + name.str() + " " + typeName(type));
+    }
+
+    void assign(SourceWriter& w, const llvm::StringRef name, const llvm::StringRef expr) const override
+    {
+        w.line(name.str() + " = " + expr.str());
+    }
+
+    void discard(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        w.line("_ = " + expr.str());
+    }
+
+    void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        // A body answers the runtime's error code; its Go signature answers the code and the
+        // size, which is the size used on success and nothing on failure.
+        if (inBody_)
+        {
+            w.open("if " + expr.str() + " == int8(0) {");
+            w.line("return int8(0), inoutBufferSizeBytes");
             w.close("}");
+            w.line("return " + expr.str() + ", 0");
             return;
         }
+        w.line("return " + expr.str());
+    }
+
+    void openIf(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        w.open("if " + condition.str() + " {");
+    }
+
+    void openElse(SourceWriter& w) const override
+    {
+        w.midway("} else {");
+    }
+
+    void openLoop(SourceWriter& w) const override
+    {
+        w.open("for {");
+    }
+
+    void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        w.open("if !" + condition.str() + " {");
+        w.line("break");
         w.close("}");
     }
 
-    /// @brief Collision-free exported field name for the section currently being emitted.
-    std::string exportedFieldIdent(const llvm::StringRef name) const
+    void openFor(SourceWriter&         w,
+                 const llvm::StringRef variable,
+                 const llvm::StringRef lower,
+                 const llvm::StringRef upper,
+                 const llvm::StringRef step) const override
     {
-        return fieldIdents_ ? fieldIdents_->get(IdentifierRole::FieldName, name)
-                            : codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::FieldName, name);
+        w.open("for " + variable.str() + " := " + lower.str() + "; " + variable.str() + " < " + upper.str() + "; " +
+               variable.str() + " += " + step.str() + " {");
+    }
+
+    void closeBlock(SourceWriter& w) const override
+    {
+        w.close("}");
+    }
+
+    void declareSelect(SourceWriter&         w,
+                       const mlir::Type      type,
+                       const llvm::StringRef name,
+                       const llvm::StringRef condition,
+                       const llvm::StringRef ifTrue,
+                       const llvm::StringRef ifFalse) const override
+    {
+        w.line("var " + name.str() + " " + typeName(type));
+        w.open("if " + condition.str() + " {");
+        w.line(name.str() + " = " + ifTrue.str());
+        w.midway("} else {");
+        w.line(name.str() + " = " + ifFalse.str());
+        w.close("}");
+    }
+
+    // Values.
+
+    [[nodiscard]] std::string constant(const mlir::TypedAttr value) const override
+    {
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerAttr>(value))
+        {
+            const mlir::Type type = integer.getType();
+            if (mlir::isa<mlir::IndexType>(type))
+            {
+                return "int(" + std::to_string(integer.getValue().getZExtValue()) + ")";
+            }
+            const unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
+            if (width == 1)
+            {
+                return integer.getValue().isZero() ? "false" : "true";
+            }
+            // A negative value of an unsigned-spelt type is its two's complement, which the
+            // type holds; the signed forms read it back as the value it stands for.
+            const std::string digits = isSignedSpelt(type) ? std::to_string(integer.getValue().getSExtValue())
+                                                           : std::to_string(integer.getValue().getZExtValue());
+            return typeName(type) + "(" + digits + ")";
+        }
+        if (const auto real = mlir::dyn_cast<mlir::FloatAttr>(value))
+        {
+            const bool         single = real.getType().isF32();
+            std::ostringstream stream;
+            stream << std::setprecision(single ? 9 : 17) << real.getValueAsDouble();
+            std::string text = stream.str();
+            if (text.find_first_of(".eEn") == std::string::npos)
+            {
+                text += ".0";
+            }
+            return (single ? "float32(" : "float64(") + text + ")";
+        }
+        llvm::report_fatal_error("Go spelling: a constant of an unexpected kind");
+    }
+
+    [[nodiscard]] std::string binary(const BinaryOperator  op,
+                                     const llvm::StringRef lhs,
+                                     const llvm::StringRef rhs,
+                                     const mlir::Type      type) const override
+    {
+        if (isBool(type))
+        {
+            switch (op)
+            {
+            case BinaryOperator::And:
+                return lhs.str() + " && " + rhs.str();
+            case BinaryOperator::Or:
+                return lhs.str() + " || " + rhs.str();
+            case BinaryOperator::Xor:
+                return lhs.str() + " != " + rhs.str();
+            default:
+                llvm::report_fatal_error("Go spelling: an arithmetic operator on a bool");
+            }
+        }
+        // Go's fixed-width arithmetic wraps, which is the plan's arithmetic.
+        const bool signedForm =
+            op == BinaryOperator::DivS || op == BinaryOperator::RemS || op == BinaryOperator::ShiftRightS;
+        const bool unsignedForm =
+            op == BinaryOperator::DivU || op == BinaryOperator::RemU || op == BinaryOperator::ShiftRightU;
+        const bool  recast = (signedForm && !isSignedSpelt(type)) || (unsignedForm && isSignedSpelt(type));
+        std::string a      = lhs.str();
+        std::string b      = rhs.str();
+        if (recast)
+        {
+            a = signedForm ? asSigned(lhs, type) : asUnsigned(lhs, type);
+            b = signedForm ? asSigned(rhs, type) : asUnsigned(rhs, type);
+        }
+        const std::string expression = a + " " + operatorToken(op) + " " + b;
+        return recast ? typeName(type) + "(" + expression + ")" : expression;
+    }
+
+    [[nodiscard]] std::string compare(const Comparison      comparison,
+                                      const llvm::StringRef lhs,
+                                      const llvm::StringRef rhs,
+                                      const mlir::Type      type) const override
+    {
+        std::string a = lhs.str();
+        std::string b = rhs.str();
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return a + " == " + b;
+        case Comparison::Ne:
+            return a + " != " + b;
+        case Comparison::LtS:
+        case Comparison::LeS:
+        case Comparison::GtS:
+        case Comparison::GeS:
+            if (!isSignedSpelt(type))
+            {
+                a = asSigned(lhs, type);
+                b = asSigned(rhs, type);
+            }
+            break;
+        case Comparison::LtU:
+        case Comparison::LeU:
+        case Comparison::GtU:
+        case Comparison::GeU:
+            if (isSignedSpelt(type))
+            {
+                a = asUnsigned(lhs, type);
+                b = asUnsigned(rhs, type);
+            }
+            break;
+        }
+        return a + " " + comparisonToken(comparison) + " " + b;
+    }
+
+    [[nodiscard]] std::string select(const llvm::StringRef /*condition*/,
+                                     const llvm::StringRef /*ifTrue*/,
+                                     const llvm::StringRef /*ifFalse*/,
+                                     const mlir::Type /*type*/) const override
+    {
+        llvm::report_fatal_error("Go spelling: a select is a statement");
+    }
+
+    [[nodiscard]] std::string convert(const Conversion      conversion,
+                                      const llvm::StringRef value,
+                                      const mlir::Type      from,
+                                      const mlir::Type      to) const override
+    {
+        if (isBool(from))
+        {
+            // Go converts no bool to a number; the runtime does.
+            return typeName(to) + "(dsdlruntime.BoolToUint64(" + value.str() + "))";
+        }
+        if (conversion == Conversion::SignExtend && !isSignedSpelt(from))
+        {
+            return typeName(to) + "(" + signedStorageType(widthOf(to)) + "(" + asSigned(value, from) + "))";
+        }
+        return typeName(to) + "(" + value.str() + ")";
+    }
+
+    [[nodiscard]] std::string call(const llvm::StringRef callee, const llvm::ArrayRef<std::string> args) const override
+    {
+        return callee.str() + "(" + llvm::join(args, ", ") + ")";
+    }
+
+    // The dialect.
+
+    [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
+    {
+        return mlir::
+            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
+                op);
+    }
+
+    [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        // The object arrives by pointer and may be nil; a slice and a local are never null.
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " == nil";
+        }
+        return "false";
+    }
+
+    [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
+    {
+        return names(op.getBuffer());
+    }
+
+    [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
+    {
+        // The plan bounds its reads and writes itself; a slice past the end would panic first.
+        const std::string buffer = names(op.getBuffer());
+        return buffer + "[dsdlruntime.ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer + ")):]";
+    }
+
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    {
+        return typeName(op.getValue().getType()) + "(" + names(op.getPointer()) + ")";
+    }
+
+    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    {
+        w.line(names(op.getPointer()) + " = " + asInt(names(op.getValue())));
+    }
+
+    [[nodiscard]] std::string local(SourceWriter&         w,
+                                    mlir::dsdl::LocalOp   op,
+                                    const llvm::StringRef name,
+                                    const ValueNames&     names) const override
+    {
+        w.line(name.str() + " := " + asInt(names(op.getInit())));
+        return name.str();
+    }
+
+    [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
+    {
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names),
+                           memberOf(op.getObject(), op.getMember()),
+                           op.getValue().getType());
+    }
+
+    void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
+    {
+        const Member member = memberOf(op.getObject(), op.getMember());
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)));
+    }
+
+    [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
+    {
+        return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           memberOf(op.getObject(), op.getMember()),
+                           op.getValue().getType());
+    }
+
+    void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
+    {
+        const Member member = memberOf(op.getObject(), op.getMember());
+        w.line(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)));
+    }
+
+    [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string elementAddr(mlir::dsdl::ElementAddrOp op, const ValueNames& names) const override
+    {
+        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names);
+    }
+
+    [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + memberAccess(op.getObject(), op.getMember(), names) + "))";
+    }
+
+    void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
+    {
+        // Sized within its capacity -- a count past it is what the plan's validation rejects
+        // next -- with zeroed elements for the plan to store into.
+        const Member      member = memberOf(op.getObject(), op.getMember());
+        mlir::dsdl::IOOp  io     = member.io;
+        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
+        const std::string count  = fresh("count");
+        w.line(count + " := dsdlruntime.ChooseMin(" + asInt(names(op.getValue())) + ", " +
+               std::to_string(io.getArrayCapacity()) + ")");
+        w.line(access + " = dsdlruntime.Resize(" + access + ", " + count + ")");
+    }
+
+    [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
+    {
+        return "uint64(" + names(op.getObject()) + ".Tag)";
+    }
+
+    void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
+    {
+        const Plan& plan = planOf(op.getObject());
+        w.line(names(op.getObject()) + ".Tag = " + unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) +
+               "(" + names(op.getValue()) + ")");
+    }
+
+    [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const auto        width     = static_cast<std::int64_t>(op.getWidth());
+        const std::string value     = names(op.getValue());
+        const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ", ";
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "dsdlruntime.SetF" + std::to_string(width) + "(" + prefix + value + ")";
+        }
+        if (width == 1 && !op.getIsSigned())
+        {
+            return "dsdlruntime.SetBit(" + prefix + (isBool(valueType) ? value : value + " != uint64(0)") + ")";
+        }
+        if (op.getIsSigned())
+        {
+            return "dsdlruntime.SetIxx(" + prefix + asSigned(value, valueType) + ", uint8(" + std::to_string(width) +
+                   "))";
+        }
+        return "dsdlruntime.SetUxx(" + prefix + value + ", uint8(" + std::to_string(width) + "))";
+    }
+
+    [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const auto        width     = static_cast<std::int64_t>(op.getWidth());
+        const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset()));
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "dsdlruntime.GetF" + std::to_string(width) + "(" + prefix + ")";
+        }
+        const std::string result = typeName(valueType);
+        if (width == 1 && !op.getIsSigned())
+        {
+            // The bit read answers a number, which is what the plan holds it as.
+            return result + "(dsdlruntime.GetU8(" + prefix + ", uint8(1)))";
+        }
+        // The runtime answers in the narrowest standard width that holds the field; a signed read
+        // arrives sign-extended and keeps its value across the widening.
+        const unsigned holder = holderWidthFor(width);
+        return result + "(dsdlruntime.Get" + std::string(op.getIsSigned() ? "I" : "U") + std::to_string(holder) + "(" +
+               prefix + ", uint8(" + std::to_string(width) + ")))";
+    }
+
+    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    {
+        // A bool array is a container of bools, so a run of its bits goes one element at a time.
+        const auto        container = boolContainerOf(op.getSource(), names);
+        const std::string index     = fresh("bit");
+        const std::string at        = fresh("at");
+        const std::string from      = fresh("from");
+        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
+        w.line(at + " := " + asInt(names(op.getDestinationBitOffset())) + " + " + index);
+        w.line(from + " := " + container.second + " + " + asInt(names(op.getSourceBitOffset())) + " + " + index);
+        w.line("_ = dsdlruntime.SetBit(" + names(op.getDestination()) + ", " + at + ", " + container.first + "[" +
+               from + "])");
+        w.close("}");
+    }
+
+    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    {
+        const auto        container = boolContainerOf(op.getDestination(), names);
+        const std::string index     = fresh("bit");
+        const std::string at        = fresh("at");
+        const std::string into      = fresh("into");
+        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
+        w.line(at + " := " + asInt(names(op.getBitOffset())) + " + " + index);
+        w.line(into + " := " + container.second + " + " + index);
+        w.line(container.first + "[" + into + "] = dsdlruntime.GetBit(" + names(op.getBuffer()) + ", " + at + ")");
+        w.close("}");
+    }
+
+    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("Go spelling: a nested call is a statement");
+    }
+
+    void declareCallSerdes(SourceWriter&            w,
+                           const llvm::StringRef    name,
+                           mlir::dsdl::CallSerdesOp op,
+                           const ValueNames&        names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by
+        // the size the plan handed in; it answers the code and the size it used, and the size is
+        // written back through the local where the plan reads it.
+        const bool        serialize = op.getDirection() == "serialize";
+        const std::string buffer    = names(op.getBuffer());
+        const std::string size      = names(op.getSize());
+        const std::string bound     = fresh("bound");
+        const std::string used      = isRead(op.getSize()) ? fresh("used") : "_";
+        w.line(bound + " := dsdlruntime.ChooseMin(" + size + ", len(" + buffer + "))");
+        w.line((name.empty() ? "_" : name.str()) + ", " + used + (name.empty() && used == "_" ? " = " : " := ") +
+               names(op.getObject()) + (serialize ? ".Serialize(" : ".Deserialize(") + buffer + "[:" + bound + "])");
+        if (used != "_")
+        {
+            w.line(size + " = " + used);
+        }
     }
 
 private:
-    const EmitterContext&                     ctx_;
-    std::string                               currentPackagePath_;
-    const std::map<std::string, std::string>& importAliases_;
-
-    /// @brief Per-section exported field-name allocation; set at the start of each function body.
-    std::optional<NamingScope> fieldIdents_;
-    std::size_t                id_{0};
-
-    std::string nextName(const std::string& prefix)
+    struct Member final
     {
-        return "_" + prefix + std::to_string(id_++) + "_";
-    }
-
-    static std::string helperBindingName(const std::string& helperSymbol)
-    {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, helperSymbol);
-    }
-
-    static void emitMlirHelperBindings(SourceWriter&                   w,
-                                       const SectionHelperBindingPlan& plan,
-                                       const HelperDirection           direction,
-                                       const bool                      emitCapacityCheck)
-    {
-        GoHelperBodySpelling spelling(w);
-        for (const auto& body : buildSectionHelperBodies(
-                 plan,
-                 direction,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 emitCapacityCheck))
-        {
-            renderHelperBody(body, spelling);
-        }
-    }
-
-    static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
-    {
-        emitMlirHelperBindings(w, plan, HelperDirection::Serialize, /*emitCapacityCheck=*/true);
-    }
-
-    static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
-    {
-        emitMlirHelperBindings(w, plan, HelperDirection::Deserialize, /*emitCapacityCheck=*/false);
-    }
-
-    void emitAlignSerialize(SourceWriter& w, std::int64_t alignmentBits)
-    {
-        if (alignmentBits <= 1)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Align, alignmentBits);
-        const auto err = nextName("err");
-        w.open("for (offsetBits % " + std::to_string(alignmentBits) + ") != 0 {");
-        w.line(err + " := dsdlruntime.SetBit(buffer, offsetBits, false)");
-        w.open("if " + err + " < 0 {");
-        w.line("return " + err + ", 0");
-        w.close("}");
-        w.line("offsetBits++");
-        w.close("}");
-    }
-
-    void emitAlignDeserialize(SourceWriter& w, std::int64_t alignmentBits) const
-    {
-        if (alignmentBits <= 1)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Align, alignmentBits);
-        w.line("offsetBits = (offsetBits + " + std::to_string(alignmentBits - 1) + ") & ^" +
-               std::to_string(alignmentBits - 1));
-    }
-
-    void emitSerializePadding(SourceWriter& w, const SemanticFieldType& type)
-    {
-        if (type.bitLength == 0)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Pad, type.bitLength);
-        const auto err = nextName("err");
-        w.line(err + " := dsdlruntime.SetUxx(buffer, offsetBits, 0, " + std::to_string(type.bitLength) + ")");
-        w.open("if " + err + " < 0 {");
-        w.line("return " + err + ", 0");
-        w.close("}");
-        trace(EmitTraceOp::Advance, type.bitLength);
-        w.line("offsetBits += " + std::to_string(type.bitLength));
-    }
-
-    void emitDeserializePadding(SourceWriter& w, const SemanticFieldType& type) const
-    {
-        if (type.bitLength == 0)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Pad, type.bitLength);
-        trace(EmitTraceOp::Advance, type.bitLength);
-        w.line("offsetBits += " + std::to_string(type.bitLength));
-    }
-
-    /// @brief Go spelling of the shared union-prologue steps (see EmitStep.h).
-    class UnionSpelling final : public UnionSectionSpelling
-    {
-    public:
-        UnionSpelling(FunctionBodyEmitter&            owner,
-                      SourceWriter&                   w,
-                      const std::int64_t              tagBits,
-                      const SectionHelperBindingPlan& helperBindings)
-            : owner_(owner)
-            , w_(w)
-            , tagBits_(tagBits)
-            , helperBindings_(helperBindings)
-        {
-        }
-
-        void spellSerializeValidateTag() override
-        {
-            const auto validateHelper =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
-            owner_.trace(EmitTraceOp::ValidateTag);
-            w_.open("if rc := " + validateHelper + "(int64(obj.Tag)); rc != dsdlruntime.DSDL_RUNTIME_SUCCESS {");
-            w_.line("return rc, 0");
-            w_.close("}");
-        }
-
-        void spellSerializeWriteMaskedTag() override
-        {
-            const auto tagExpr =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol) + "(uint64(obj.Tag))";
-            const auto tagErr = owner_.nextName("err");
-            owner_.trace(EmitTraceOp::MaskTag);
-            owner_.trace(EmitTraceOp::WriteTag, tagBits_);
-            w_.line(tagErr + " := dsdlruntime.SetUxx(buffer, offsetBits, " + tagExpr + ", " + std::to_string(tagBits_) +
-                    ")");
-            w_.open("if " + tagErr + " < 0 {");
-            w_.line("return " + tagErr + ", 0");
-            w_.close("}");
-        }
-
-        void spellDeserializeReadMaskStoreTag() override
-        {
-            const auto rawTag = owner_.nextName("tag");
-            owner_.trace(EmitTraceOp::ReadTag, tagBits_);
-            w_.line(rawTag + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(tagBits_) + ")");
-            const auto tagExpr =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol) + "(" + rawTag + ")";
-            owner_.trace(EmitTraceOp::MaskTag);
-            owner_.trace(EmitTraceOp::StoreTag);
-            w_.line("obj.Tag = " + unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + "(" + tagExpr + ")");
-        }
-
-        void spellDeserializeValidateTag() override
-        {
-            const auto validateHelper =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
-            owner_.trace(EmitTraceOp::ValidateTag);
-            w_.open("if rc := " + validateHelper + "(int64(obj.Tag)); rc != dsdlruntime.DSDL_RUNTIME_SUCCESS {");
-            w_.line("return rc, 0");
-            w_.close("}");
-        }
-
-        void spellAdvanceTag() override
-        {
-            owner_.trace(EmitTraceOp::Advance, tagBits_);
-            w_.line("offsetBits += " + std::to_string(tagBits_));
-        }
-
-        void spellBeginDispatch() override
-        {
-            owner_.trace(EmitTraceOp::Switch);
-            // gofmt aligns `case` with its `switch`, so the dispatch line opens no level of its own.
-            w_.line("switch obj.Tag {");
-        }
-
-        void spellBeginCase(const std::int64_t optionIndex, const bool /*firstCase*/) override
-        {
-            owner_.trace(EmitTraceOp::Case, optionIndex);
-            w_.open("case " + std::to_string(optionIndex) + ":");
-        }
-
-        void spellEndCase() override
-        {
-            w_.dedent();
-        }
-
-        void spellBadTagDefault() override
-        {
-            owner_.trace(EmitTraceOp::DefaultBadTag);
-            w_.open("default:");
-            w_.line("return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG, "
-                    "0");
-            w_.dedent();
-        }
-
-        void spellEndDispatch() override
-        {
-            w_.line("}");
-        }
-
-    private:
-        FunctionBodyEmitter&            owner_;
-        SourceWriter&                   w_;
-        const std::int64_t              tagBits_;
-        const SectionHelperBindingPlan& helperBindings_;
+        std::string      goName;
+        mlir::dsdl::IOOp io;
     };
 
-    void emitSerializeUnion(SourceWriter&                        w,
-                            const SemanticSection&               section,
-                            const std::vector<PlannedFieldStep>& unionBranches,
-                            const LoweredSectionFacts*           sectionFacts,
-                            const SectionHelperBindingPlan&      helperBindings)
+    struct Plan final
     {
-        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling                spelling(*this, w, static_cast<std::int64_t>(tagBits), helperBindings);
-        std::vector<UnionCaseRender> cases;
-        cases.reserve(unionBranches.size());
-        for (const auto& step : unionBranches)
+        std::string             typeName;
+        std::int64_t            unionTagBits{0};
+        llvm::StringMap<Member> members;
+    };
+
+    /// @brief The plan the object a pointer names belongs to.
+    const Plan& planOf(const mlir::Value object) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? plans_.find(identity.getIdentity()) : plans_.end();
+        if (found == plans_.end())
         {
-            const auto& field = *step.field;
-            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &w, &step, &field]() {
-                                                emitAlignSerialize(w, field.resolvedType.alignmentBits);
-                                                emitSerializeAny(w,
-                                                                 field.resolvedType,
-                                                                 "obj." + exportedFieldIdent(field.name),
-                                                                 step.arrayLengthPrefixBits,
-                                                                 step.fieldFacts);
-                                            }});
+            llvm::report_fatal_error("Go spelling: an object that no plan of this schema describes");
         }
-        renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
+        return found->second;
     }
 
-    void emitDeserializeUnion(SourceWriter&                        w,
-                              const SemanticSection&               section,
-                              const std::vector<PlannedFieldStep>& unionBranches,
-                              const LoweredSectionFacts*           sectionFacts,
-                              const SectionHelperBindingPlan&      helperBindings)
+    Member memberOf(const mlir::Value object, const llvm::StringRef member) const
     {
-        const auto                   tagBits = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling                spelling(*this, w, static_cast<std::int64_t>(tagBits), helperBindings);
-        std::vector<UnionCaseRender> cases;
-        cases.reserve(unionBranches.size());
-        for (const auto& step : unionBranches)
+        const Plan& plan  = planOf(object);
+        const auto  found = plan.members.find(member);
+        if (found == plan.members.end())
         {
-            const auto& field = *step.field;
-            cases.push_back(UnionCaseRender{field.unionOptionIndex, [this, &w, &step, &field]() {
-                                                emitAlignDeserialize(w, field.resolvedType.alignmentBits);
-                                                emitDeserializeAny(w,
-                                                                   field.resolvedType,
-                                                                   "obj." + exportedFieldIdent(field.name),
-                                                                   step.arrayLengthPrefixBits,
-                                                                   step.fieldFacts);
-                                            }});
+            llvm::report_fatal_error("Go spelling: a member the schema does not declare: " + member);
         }
-        renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
+        return found->second;
     }
 
-    /// @brief Go spelling of the shared recursive field-body steps (see EmitStep.h).
+    std::string memberAccess(const mlir::Value object, const llvm::StringRef member, const ValueNames& names) const
+    {
+        return names(object) + "." + memberOf(object, member).goName;
+    }
+
+    std::string elementAccess(const mlir::Value     object,
+                              const llvm::StringRef member,
+                              const std::string&    index,
+                              const ValueNames&     names) const
+    {
+        return memberAccess(object, member, names) + "[" + asInt(index) + "]";
+    }
+
+    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
+    static bool isRead(const mlir::Value pointer)
+    {
+        return llvm::any_of(pointer.getUsers(),
+                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
+    }
+
+    /// @brief The container expression and element base of the bool array @p address names.
+    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
+    {
+        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
+        if (!element)
+        {
+            llvm::report_fatal_error("Go spelling: a bit copy whose storage is not an array element");
+        }
+        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
+                              asInt(names(element.getIndex())));
+    }
+
+    /// @brief The Go type the struct declares a scalar field or element as.
+    static std::string scalarType(mlir::dsdl::IOOp io)
+    {
+        const llvm::StringRef category = io.getScalarCategory();
+        const auto            bits     = static_cast<std::uint32_t>(io.getBitLength());
+        if (category == "bool")
+        {
+            return "bool";
+        }
+        if (category == "signed")
+        {
+            return signedStorageType(bits);
+        }
+        if (category == "float")
+        {
+            return bits == 64U ? "float64" : "float32";
+        }
+        return unsignedStorageType(bits);
+    }
+
+    /// @brief @p access read as a value of @p type.
+    static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
+    {
+        const mlir::dsdl::IOOp io = member.io;
+        if (scalarType(io) == "bool" && !isBool(type))
+        {
+            return typeName(type) + "(dsdlruntime.BoolToUint64(" + access + "))";
+        }
+        return typeName(type) + "(" + access + ")";
+    }
+
+    /// @brief @p value, of @p type, converted for storage in a field of @p storage.
+    static std::string storedValue(const std::string& value, const mlir::Type type, const std::string& storage)
+    {
+        if (storage == "bool")
+        {
+            return isBool(type) ? value : value + " != uint64(0)";
+        }
+        return storage + "(" + value + ")";
+    }
+
+    // Types.
+
+    static bool isBool(const mlir::Type type)
+    {
+        return type.isInteger(1);
+    }
+
+    /// @brief Whether @p type is spelled as a signed Go type.
+    static bool isSignedSpelt(const mlir::Type type)
+    {
+        return type.isInteger(8);
+    }
+
+    static unsigned widthOf(const mlir::Type type)
+    {
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(type))
+        {
+            return integer.getWidth();
+        }
+        return 64U;
+    }
+
+    /// @brief @p value read as the signed type of its width.
     ///
-    /// Leaf statement idioms only; all cross-group and recursive ordering comes
-    /// from renderFieldSteps. Fixed arrays are compile-time sized `[N]T`, so the
-    /// D2 length guard is type-system-subsumed (spellFixedArrayLenCheck is a
-    /// documented no-op).
-    class FieldSpelling final : public FieldStepSpelling
+    /// A literal is re-spelled as a signed literal: Go checks a constant conversion against the
+    /// target's range, so the two's complement form of a negative value cannot be converted.
+    static std::string asSigned(const llvm::StringRef value, const mlir::Type type)
     {
-    public:
-        FieldSpelling(FunctionBodyEmitter& owner, SourceWriter& w, const HelperBindingDirection direction)
-            : owner_(owner)
-            , w_(w)
-            , direction_(direction)
+        const std::string target  = signedStorageType(widthOf(type));
+        const std::string literal = literalDigits(value);
+        if (!literal.empty())
         {
+            const auto digits = llvm::APInt(widthOf(type), literal, 10);
+            return target + "(" + std::to_string(digits.getSExtValue()) + ")";
         }
-
-        void spellPad(const FieldEmitStep& step) override
-        {
-            if (direction_ == HelperBindingDirection::Serialize)
-            {
-                owner_.emitSerializePadding(w_, step.type);
-            }
-            else
-            {
-                owner_.emitDeserializePadding(w_, step.type);
-            }
-        }
-
-        void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            switch (step.kind)
-            {
-            case FieldStepKind::ScalarBool: {
-                const auto err = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarBool, 1);
-                w_.line(err + " := dsdlruntime.SetBit(buffer, offsetBits, " + expr + ")");
-                w_.open("if " + err + " < 0 {");
-                w_.line("return " + err + ", 0");
-                w_.close("}");
-                owner_.trace(EmitTraceOp::Advance, 1);
-                w_.line("offsetBits += 1");
-                break;
-            }
-            case FieldStepKind::ScalarUint: {
-                std::string valueExpr = "uint64(" + expr + ")";
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                valueExpr         = helper + "(" + valueExpr + ")";
-                const auto err    = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
-                w_.line(err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + valueExpr + ", " +
-                        std::to_string(step.bits) + ")");
-                w_.open("if " + err + " < 0 {");
-                w_.line("return " + err + ", 0");
-                w_.close("}");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            case FieldStepKind::ScalarSint: {
-                std::string valueExpr = "int64(" + expr + ")";
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                valueExpr         = helper + "(" + valueExpr + ")";
-
-                const auto err = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
-                w_.line(err + " := dsdlruntime.SetIxx(buffer, offsetBits, " + valueExpr + ", " +
-                        std::to_string(step.bits) + ")");
-                w_.open("if " + err + " < 0 {");
-                w_.line("return " + err + ", 0");
-                w_.close("}");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            case FieldStepKind::ScalarFloat: {
-                const auto  floatType = std::string(step.bits == 64 ? "float64" : "float32");
-                std::string valueExpr = floatType + "(" + expr + ")";
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                valueExpr         = helper + "(" + valueExpr + ")";
-                const auto err    = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarFloat, step.bits);
-                if (step.bits == 16)
-                {
-                    w_.line(err + " := dsdlruntime.SetF16(buffer, offsetBits, " + valueExpr + ")");
-                }
-                else if (step.bits == 32)
-                {
-                    w_.line(err + " := dsdlruntime.SetF32(buffer, offsetBits, " + valueExpr + ")");
-                }
-                else
-                {
-                    w_.line(err + " := dsdlruntime.SetF64(buffer, offsetBits, " + valueExpr + ")");
-                }
-                w_.open("if " + err + " < 0 {");
-                w_.line("return " + err + ", 0");
-                w_.close("}");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            default:
-                assert(false && "not a scalar step");
-                break;
-            }
-        }
-
-        void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            switch (step.kind)
-            {
-            case FieldStepKind::ScalarBool:
-                owner_.trace(EmitTraceOp::ReadScalarBool, 1);
-                w_.line(expr + " = dsdlruntime.GetBit(buffer, offsetBits)");
-                owner_.trace(EmitTraceOp::Advance, 1);
-                w_.line("offsetBits += 1");
-                break;
-            case FieldStepKind::ScalarUint: {
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                const auto raw    = owner_.nextName("raw");
-                owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
-                w_.line(raw + " := uint64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) + "))");
-                w_.line(expr + " = " + unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper + "(" +
-                        raw + "))");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            case FieldStepKind::ScalarSint: {
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                const auto raw    = owner_.nextName("raw");
-                owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
-                w_.line(raw + " := int64(dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.bits) + "))");
-                w_.line(expr + " = " + signedStorageType(static_cast<std::uint32_t>(step.bits)) + "(" + helper + "(" +
-                        raw + "))");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            case FieldStepKind::ScalarFloat: {
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
-                if (step.bits == 16)
-                {
-                    w_.line(expr + " = float32(" + helper + "(float32(dsdlruntime.GetF16(buffer, offsetBits))))");
-                }
-                else if (step.bits == 32)
-                {
-                    w_.line(expr + " = float32(" + helper + "(float32(dsdlruntime.GetF32(buffer, offsetBits))))");
-                }
-                else
-                {
-                    w_.line(expr + " = " + helper + "(dsdlruntime.GetF64(buffer, offsetBits))");
-                }
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offsetBits += " + std::to_string(step.bits));
-                break;
-            }
-            default:
-                assert(false && "not a scalar step");
-                break;
-            }
-        }
-
-        void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
-        {
-            // D2: Go fixed arrays are compile-time sized `[N]T`; the exact-length
-            // guard is subsumed by the type system, so there is no emit site.
-            (void) step;
-            (void) expr;
-        }
-
-        void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            assert(step.arrayHelpers.has_value());
-            assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("lenRc");
-            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
-            w_.line(validateRc + " := " + validateHelper + "(int64(len(" + expr + ")))");
-            w_.open("if " + validateRc + " < 0 {");
-            w_.line("return " + validateRc + ", 0");
-            w_.close("}");
-
-            std::string prefixExpr = "uint64(len(" + expr + "))";
-            assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto serPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = owner_.nextName("err");
-            owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
-            w_.line(err + " := dsdlruntime.SetUxx(buffer, offsetBits, " + prefixExpr + ", " +
-                    std::to_string(step.prefixBits) + ")");
-            w_.open("if " + err + " < 0 {");
-            w_.line("return " + err + ", 0");
-            w_.close("}");
-            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
-            w_.line("offsetBits += " + std::to_string(step.prefixBits));
-        }
-
-        std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            const auto count    = owner_.nextName("count");
-            const auto rawCount = owner_.nextName("countRaw");
-            owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
-            w_.line(rawCount + " := dsdlruntime.GetU64(buffer, offsetBits, " + std::to_string(step.prefixBits) + ")");
-            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
-            w_.line("offsetBits += " + std::to_string(step.prefixBits));
-            std::string countExpr = "int(" + rawCount + ")";
-            assert(step.arrayHelpers.has_value());
-            assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto deserPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            countExpr                    = "int(" + deserPrefixHelper + "(" + rawCount + "))";
-            w_.line(count + " := " + countExpr);
-            assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("lenRc");
-            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
-            w_.line(validateRc + " := " + validateHelper + "(int64(" + count + "))");
-            w_.open("if " + validateRc + " < 0 {");
-            w_.line("return " + validateRc + ", 0");
-            w_.close("}");
-            const auto itemType = goBaseFieldType(step.children.front().type,
-                                                  owner_.ctx_,
-                                                  owner_.currentPackagePath_,
-                                                  owner_.importAliases_);
-            w_.line(expr + " = make([]" + itemType + ", " + count + ")");
-            return count;
-        }
-
-        std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            (void) expr;
-            const auto count = owner_.nextName("count");
-            w_.line(count + " := " + std::to_string(step.capacity));
-            return count;
-        }
-
-        std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            const auto index = owner_.nextName("index");
-            const auto count =
-                step.kind == FieldStepKind::VariableArray ? "len(" + expr + ")" : std::to_string(step.capacity);
-            owner_.trace(EmitTraceOp::ElemLoop);
-            w_.open("for " + index + " := 0; " + index + " < " + count + "; " + index + "++ {");
-            return expr + "[" + index + "]";
-        }
-
-        std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
-                                                  const std::string&   expr,
-                                                  const std::string&   countExpr) override
-        {
-            (void) step;
-            const auto index = owner_.nextName("index");
-            owner_.trace(EmitTraceOp::ElemLoop);
-            w_.open("for " + index + " := 0; " + index + " < " + countExpr + "; " + index + "++ {");
-            return expr + "[" + index + "]";
-        }
-
-        void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            (void) step;
-            (void) expr;
-            w_.close("}");
-        }
-
-        void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            (void) step;
-            (void) expr;
-            w_.close("}");
-        }
-
-        void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-            const auto sizeVar  = owner_.nextName("sizeBytes");
-            const auto maxBytes = (step.type.bitLengthSet.max() + 7) / 8;
-            if (!step.type.compositeSealed)
-            {
-                w_.line("offsetBits += 32");
-            }
-            w_.line(sizeVar + " := " + std::to_string(maxBytes));
-            if (!step.type.compositeSealed)
-            {
-                const auto remainingVar = owner_.nextName("remaining");
-                w_.line(remainingVar + " := len(buffer) - dsdlruntime.ChooseMin(offsetBits/8, "
-                                       "len(buffer))");
-                assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
-                const auto validateRc = owner_.nextName("rc");
-                w_.line(validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
-                w_.open("if " + validateRc + " < 0 {");
-                w_.line("return " + validateRc + ", 0");
-                w_.close("}");
-            }
-            const auto startVar = owner_.nextName("start");
-            const auto endVar   = owner_.nextName("end");
-            w_.line(startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-            w_.line(endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
-            const auto rcVar       = owner_.nextName("rc");
-            const auto consumedVar = owner_.nextName("consumed");
-            w_.line(rcVar + ", " + consumedVar + " := " + expr + ".Serialize(buffer[" + startVar + ":" + endVar + "])");
-            w_.open("if " + rcVar + " < 0 {");
-            w_.line("return " + rcVar + ", 0");
-            w_.close("}");
-            w_.line(sizeVar + " = " + consumedVar);
-            if (!step.type.compositeSealed)
-            {
-                const auto hdrErr = owner_.nextName("err");
-                w_.line(hdrErr + " := dsdlruntime.SetUxx(buffer, offsetBits-32, uint64(" + sizeVar + "), 32)");
-                w_.open("if " + hdrErr + " < 0 {");
-                w_.line("return " + hdrErr + ", 0");
-                w_.close("}");
-            }
-            w_.line("offsetBits += " + sizeVar + " * 8");
-        }
-
-        void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-            if (!step.type.compositeSealed)
-            {
-                const auto sizeVar = owner_.nextName("sizeBytes");
-                w_.line(sizeVar + " := int(dsdlruntime.GetU32(buffer, offsetBits, 32))");
-                w_.line("offsetBits += 32");
-                const auto remainingVar = owner_.nextName("remaining");
-                w_.line(remainingVar + " := capacityBytes - dsdlruntime.ChooseMin(offsetBits/8, "
-                                       "capacityBytes)");
-                assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
-                const auto validateRc = owner_.nextName("rc");
-                w_.line(validateRc + " := " + helper + "(int64(" + sizeVar + "), int64(" + remainingVar + "))");
-                w_.open("if " + validateRc + " < 0 {");
-                w_.line("return " + validateRc + ", 0");
-                w_.close("}");
-                const auto startVar = owner_.nextName("start");
-                const auto endVar   = owner_.nextName("end");
-                w_.line(startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-                w_.line(endVar + " := dsdlruntime.ChooseMin(" + startVar + "+" + sizeVar + ", len(buffer))");
-                const auto rcVar       = owner_.nextName("rc");
-                const auto consumedVar = owner_.nextName("consumed");
-                w_.line(rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":" + endVar +
-                        "])");
-                w_.line("_ = " + consumedVar);
-                w_.open("if " + rcVar + " < 0 {");
-                w_.line("return " + rcVar + ", 0");
-                w_.close("}");
-                w_.line("offsetBits += " + sizeVar + " * 8");
-                return;
-            }
-
-            const auto startVar = owner_.nextName("start");
-            w_.line(startVar + " := dsdlruntime.ChooseMin(offsetBits/8, len(buffer))");
-            const auto rcVar       = owner_.nextName("rc");
-            const auto consumedVar = owner_.nextName("consumed");
-            w_.line(rcVar + ", " + consumedVar + " := " + expr + ".Deserialize(buffer[" + startVar + ":len(buffer)])");
-            w_.open("if " + rcVar + " < 0 {");
-            w_.line("return " + rcVar + ", 0");
-            w_.close("}");
-            w_.line("offsetBits += " + consumedVar + " * 8");
-        }
-
-    private:
-        FunctionBodyEmitter&         owner_;
-        SourceWriter&                w_;
-        const HelperBindingDirection direction_;
-    };
-
-    void emitSerializeAny(SourceWriter&                w,
-                          const SemanticFieldType&     type,
-                          const std::string&           expr,
-                          std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
-                          const LoweredFieldFacts*     fieldFacts                    = nullptr)
-    {
-        const auto steps =
-            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
-        FieldSpelling spelling(*this, w, HelperBindingDirection::Serialize);
-        renderFieldSteps(steps, expr, HelperBindingDirection::Serialize, spelling);
+        return target + "(" + value.str() + ")";
     }
 
-    void emitDeserializeAny(SourceWriter&                w,
-                            const SemanticFieldType&     type,
-                            const std::string&           expr,
-                            std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
-                            const LoweredFieldFacts*     fieldFacts                    = nullptr)
+    static std::string asUnsigned(const llvm::StringRef value, const mlir::Type type)
     {
-        const auto steps =
-            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
-        FieldSpelling spelling(*this, w, HelperBindingDirection::Deserialize);
-        renderFieldSteps(steps, expr, HelperBindingDirection::Deserialize, spelling);
+        return unsignedStorageType(widthOf(type)) + "(" + value.str() + ")";
     }
+
+    static std::string asInt(const std::string& value)
+    {
+        return "int(" + value + ")";
+    }
+
+    /// @brief The digits of an unsigned literal `uintN(digits)`, else empty.
+    static std::string literalDigits(const llvm::StringRef value)
+    {
+        if (!value.starts_with("uint") || !value.ends_with(")"))
+        {
+            return {};
+        }
+        const auto open = value.find('(');
+        if (open == llvm::StringRef::npos)
+        {
+            return {};
+        }
+        const llvm::StringRef digits = value.slice(open + 1, value.size() - 1);
+        return llvm::all_of(digits, [](const char c) { return c >= '0' && c <= '9'; }) && !digits.empty()
+                   ? digits.str()
+                   : std::string{};
+    }
+
+    static std::string typeName(const mlir::Type type)
+    {
+        if (mlir::isa<mlir::IndexType>(type))
+        {
+            return "int";
+        }
+        if (type.isF32())
+        {
+            return "float32";
+        }
+        if (type.isF64())
+        {
+            return "float64";
+        }
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(type))
+        {
+            if (integer.getWidth() == 1)
+            {
+                return "bool";
+            }
+            return isSignedSpelt(type) ? signedStorageType(integer.getWidth())
+                                       : unsignedStorageType(integer.getWidth());
+        }
+        if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type))
+        {
+            if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
+            {
+                return "[]byte";
+            }
+            if (mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()))
+            {
+                return "int";
+            }
+        }
+        llvm::report_fatal_error("Go spelling: a value of a type no plan body carries");
+    }
+
+    static std::string operatorToken(const BinaryOperator op)
+    {
+        switch (op)
+        {
+        case BinaryOperator::Add:
+            return "+";
+        case BinaryOperator::Sub:
+            return "-";
+        case BinaryOperator::Mul:
+            return "*";
+        case BinaryOperator::DivU:
+        case BinaryOperator::DivS:
+            return "/";
+        case BinaryOperator::RemU:
+        case BinaryOperator::RemS:
+            return "%";
+        case BinaryOperator::And:
+            return "&";
+        case BinaryOperator::Or:
+            return "|";
+        case BinaryOperator::Xor:
+            return "^";
+        case BinaryOperator::ShiftLeft:
+            return "<<";
+        case BinaryOperator::ShiftRightU:
+        case BinaryOperator::ShiftRightS:
+            return ">>";
+        }
+        return "+";
+    }
+
+    static std::string comparisonToken(const Comparison comparison)
+    {
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return "==";
+        case Comparison::Ne:
+            return "!=";
+        case Comparison::LtS:
+        case Comparison::LtU:
+            return "<";
+        case Comparison::LeS:
+        case Comparison::LeU:
+            return "<=";
+        case Comparison::GtS:
+        case Comparison::GtU:
+            return ">";
+        case Comparison::GeS:
+        case Comparison::GeU:
+            return ">=";
+        }
+        return "==";
+    }
+
+    /// @brief A name for a local the spelling introduces on its own, apart from the values.
+    std::string fresh(const std::string& stem) const
+    {
+        return "_" + stem + std::to_string(counter_++) + "_";
+    }
+
+    llvm::StringMap<Plan> plans_;
+    mutable std::size_t   counter_{0};
+    mutable bool          inBody_{false};
 };
 
-void emitSectionType(SourceWriter&                             w,
-                     const EmitterContext&                     ctx,
-                     const std::string&                        typeName,
-                     const std::string&                        fullName,
-                     std::uint32_t                             majorVersion,
-                     std::uint32_t                             minorVersion,
-                     const SemanticSection&                    section,
-                     const AttachedDoc&                        typeDoc,
-                     const std::string&                        definitionFullName,
-                     const std::string&                        currentPackagePath,
-                     const std::map<std::string, std::string>& importAliases,
-                     const LoweredSectionFacts*                sectionFacts)
+/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+struct SectionBodies final
+{
+    mlir::func::FuncOp serialize;
+    mlir::func::FuncOp deserialize;
+};
+
+llvm::Error emitSectionType(SourceWriter&                             w,
+                            const EmitterContext&                     ctx,
+                            const std::string&                        typeName,
+                            const std::string&                        fullName,
+                            std::uint32_t                             majorVersion,
+                            std::uint32_t                             minorVersion,
+                            const SemanticSection&                    section,
+                            const AttachedDoc&                        typeDoc,
+                            const std::string&                        definitionFullName,
+                            const std::string&                        currentPackagePath,
+                            const std::map<std::string, std::string>& importAliases,
+                            const mlir::dsdl::SerializationPlanOp     plan,
+                            const GoSpelling&                         spelling,
+                            const SectionBodies&                      bodies)
 {
     const auto typeConstPrefix =
         codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
@@ -1580,10 +1401,7 @@ void emitSectionType(SourceWriter&                             w,
     w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(section.extentBits.value_or(0) / 8));
     w.line("const " + typeConstPrefix +
            "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                             ? sectionFacts->zohAliasReason
-                                             : "not-proven";
+    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
     w.line("const " + typeConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + std::string(zohAliasEligible ? "true" : "false"));
     w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + zohAliasReason + "\"");
 
@@ -1648,7 +1466,7 @@ void emitSectionType(SourceWriter&                             w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        members.push_back(GoStructMember{"Tag", unsignedStorageType(resolveUnionTagBits(section, sectionFacts)), {}});
+        members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
     }
     if (section.fields.empty())
     {
@@ -1658,103 +1476,170 @@ void emitSectionType(SourceWriter&                             w,
     w.close("}");
     w.blank();
 
-    const auto canonicalSectionName =
-        fullName + "." + std::to_string(majorVersion) + "." + std::to_string(minorVersion);
-    FunctionBodyEmitter body(ctx, currentPackagePath, importAliases);
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
-    body.emitSerializeFunction(w, typeName, section, sectionFacts);
+    if (!bodies.serialize || !bodies.deserialize)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no plan bodies for %s in the lowered module",
+                                       fullName.c_str());
+    }
+    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    {
+        return err;
+    }
     w.blank();
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
-    body.emitDeserializeFunction(w, typeName, section, sectionFacts);
+    return translateFunction(bodies.deserialize, spelling, w);
 }
 
-std::string renderDefinitionFile(const SemanticDefinition& def,
-                                 const EmitterContext&     ctx,
-                                 const std::string&        moduleName,
-                                 const LoweredFactsMap&    loweredFacts)
+llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
+                                                 const EmitterContext&     ctx,
+                                                 const std::string&        moduleName,
+                                                 mlir::ModuleOp            module)
 {
+    mlir::dsdl::SchemaOp schema = schemaOf(module, def);
+    if (!schema)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no schema for %s in the lowered module",
+                                       def.info.fullName.c_str());
+    }
+    GoSpelling                           spelling(schema);
+    std::vector<mlir::func::FuncOp>      helpers;
+    std::map<std::string, SectionBodies> bodies;
+    for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            helpers.push_back(fn);
+            continue;
+        }
+        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
+        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+    }
+
     const auto currentPackagePath = EmitterContext::packagePath(def.info);
     const auto packageName        = packageNameFromPath(currentPackagePath);
     const auto imports            = computeImportAliases(def, ctx);
+    const auto baseType           = ctx.goTypeName(def.info);
+    const auto reqType            = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "request");
+    const auto respType           = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "response");
+    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
+    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
+                         reqType);
+    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
+                         respType);
 
-    std::ostringstream out;
-    SourceWriter       w = makeGoWriter(out);
-    w.line(generatedCommentLine("Go backend"));
-    w.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-           std::to_string(def.info.minorVersion));
-    w.blank();
-    w.line("package " + packageName);
-    w.blank();
-
-    w.open("import (");
-    w.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
-    for (const auto& [path, alias] : imports)
+    // The declarations and bodies first: whether the runtime is imported depends on whether a
+    // body calls it, and Go rejects an import nothing uses.
+    std::ostringstream body;
+    SourceWriter       w = makeGoWriter(body);
+    for (const mlir::func::FuncOp helper : helpers)
     {
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        w.line(alias + " \"" + moduleName + "/" + path + "\"");
-    }
-    w.close(")");
-    w.blank();
-
-    const auto baseType = ctx.goTypeName(def.info);
-    if (!def.isService)
-    {
-        emitSectionType(w,
-                        ctx,
-                        baseType,
-                        def.info.fullName,
-                        def.info.majorVersion,
-                        def.info.minorVersion,
-                        def.request,
-                        def.doc,
-                        def.info.fullName,
-                        currentPackagePath,
-                        imports,
-                        lookupLoweredSectionFacts(loweredFacts, def, ""));
-        return out.str();
-    }
-
-    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "request");
-    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "response");
-    emitSectionType(w,
-                    ctx,
-                    reqType,
-                    def.info.fullName + ".Request",
-                    def.info.majorVersion,
-                    def.info.minorVersion,
-                    def.request,
-                    def.doc,
-                    def.info.fullName,
-                    currentPackagePath,
-                    imports,
-                    lookupLoweredSectionFacts(loweredFacts, def, "request"));
-    w.blank();
-    if (def.response)
-    {
-        emitSectionType(w,
-                        ctx,
-                        respType,
-                        def.info.fullName + ".Response",
-                        def.info.majorVersion,
-                        def.info.minorVersion,
-                        *def.response,
-                        def.doc,
-                        def.info.fullName,
-                        currentPackagePath,
-                        imports,
-                        lookupLoweredSectionFacts(loweredFacts, def, "response"));
+        if (auto err = translateFunction(helper, spelling, w))
+        {
+            return std::move(err);
+        }
         w.blank();
     }
-    w.line("type " + baseType + " = " + reqType);
-    // gofmt separates top-level declarations of different kinds, so the alias and the
-    // constants that follow it do not sit together.
-    w.blank();
-    const auto baseConstPrefix =
-        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
-    const auto reqConstPrefix =
-        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
-    w.line("const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
-    w.line("const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
+    if (!def.isService)
+    {
+        if (auto err = emitSectionType(w,
+                                       ctx,
+                                       baseType,
+                                       def.info.fullName,
+                                       def.info.majorVersion,
+                                       def.info.minorVersion,
+                                       def.request,
+                                       def.doc,
+                                       def.info.fullName,
+                                       currentPackagePath,
+                                       imports,
+                                       sectionPlan(schema, ""),
+                                       spelling,
+                                       bodies[""]))
+        {
+            return std::move(err);
+        }
+    }
+    else
+    {
+        if (auto err = emitSectionType(w,
+                                       ctx,
+                                       reqType,
+                                       def.info.fullName + ".Request",
+                                       def.info.majorVersion,
+                                       def.info.minorVersion,
+                                       def.request,
+                                       def.doc,
+                                       def.info.fullName,
+                                       currentPackagePath,
+                                       imports,
+                                       sectionPlan(schema, "request"),
+                                       spelling,
+                                       bodies["request"]))
+        {
+            return std::move(err);
+        }
+        w.blank();
+        if (def.response)
+        {
+            if (auto err = emitSectionType(w,
+                                           ctx,
+                                           respType,
+                                           def.info.fullName + ".Response",
+                                           def.info.majorVersion,
+                                           def.info.minorVersion,
+                                           *def.response,
+                                           def.doc,
+                                           def.info.fullName,
+                                           currentPackagePath,
+                                           imports,
+                                           sectionPlan(schema, "response"),
+                                           spelling,
+                                           bodies["response"]))
+            {
+                return std::move(err);
+            }
+            w.blank();
+        }
+        w.line("type " + baseType + " = " + reqType);
+        // gofmt separates top-level declarations of different kinds, so the alias and the
+        // constants that follow it do not sit together.
+        w.blank();
+        const auto baseConstPrefix =
+            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
+        const auto reqConstPrefix =
+            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
+        w.line("const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
+        w.line("const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
+    }
+
+    std::ostringstream out;
+    SourceWriter       head = makeGoWriter(out);
+    head.line(generatedCommentLine("Go backend"));
+    head.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
+              std::to_string(def.info.minorVersion));
+    head.blank();
+    head.line("package " + packageName);
+    head.blank();
+    const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
+    if (usesRuntime || !imports.empty())
+    {
+        head.open("import (");
+        if (usesRuntime)
+        {
+            head.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
+        }
+        for (const auto& [path, alias] : imports)
+        {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            head.line(alias + " \"" + moduleName + "/" + path + "\"");
+        }
+        head.close(")");
+        head.blank();
+    }
+    out << body.str();
     return out.str();
 }
 
@@ -1782,8 +1667,7 @@ std::string renderGoMod(const Options& options)
 llvm::Error emit(const SemanticModule& semantic,
                  mlir::ModuleOp        module,
                  const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink)
+                 DiagnosticEngine&     diagnostics)
 {
     if (options.outDir.empty())
     {
@@ -1834,13 +1718,6 @@ llvm::Error emit(const SemanticModule& semantic,
                                            "more than one version of a type");
         }
     }
-    const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Go");
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Go", &loweredFacts, options.optimizeLoweredSerDes))
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
-    }
-
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
@@ -1881,8 +1758,7 @@ llvm::Error emit(const SemanticModule& semantic,
         }
     }
 
-    EmitterContext ctx(semantic, options.typeNameVersioning);
-    ctx.setTraceSink(traceSink);
+    const EmitterContext ctx(semantic, options.typeNameVersioning);
 
     for (const auto& def : semantic.definitions)
     {
@@ -1898,8 +1774,13 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
+        auto file = renderDefinitionFile(def, ctx, options.moduleName, module);
+        if (!file)
+        {
+            return file.takeError();
+        }
         if (auto err = writeGeneratedFile(dir / EmitterContext::goFileName(def.info),
-                                          renderDefinitionFile(def, ctx, options.moduleName, loweredFacts),
+                                          *file,
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

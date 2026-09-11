@@ -206,7 +206,7 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
-      - name: Behavioural scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
+      - name: Behavioural report gates (parity/malformed/determinism pass-fail)
         # Runs after the suite so it can consume the executed JUnit results. `if: always()`
         # ensures the gate still runs (and can fail the job) even if an earlier test failed.
         if: always()
@@ -375,11 +375,9 @@ jobs:
     name: Formal model check (Dafny)
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
-    # spec/dafny/CyphalSerdes.dfy is the normative oracle for the emit-order verifier:
-    # it PROVES (unbounded, by induction) that serialise/deserialize round-trip and that
-    # the read path is bounds-safe by construction, and defines the accepted op orderings
-    # the B1 verifier checks each generated backend against. Re-verified on every change
-    # so the oracle can't rot. Needs only the Dafny toolchain — independent of the
+    # spec/dafny/CyphalSerdes.dfy PROVES (unbounded, by induction) that serialise and
+    # deserialise round-trip and that the read path is bounds-safe by construction.
+    # Re-verified on every change so the model can't rot. Needs only the Dafny toolchain — independent of the
     # LLVM/MLIR build matrix, so it is fast and cannot be skipped by a toolchain gap in
     # the heavy lanes.
     runs-on: ubuntu-26.04

@@ -1,0 +1,4 @@
+# Seven-bit elements: the storage is a byte the wire never matches, so narrowing an element
+# moves no aliasability fact.
+uint7[<=5] items
+@sealed

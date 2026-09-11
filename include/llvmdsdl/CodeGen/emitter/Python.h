@@ -29,9 +29,7 @@ class ModuleOp;
 
 namespace llvmdsdl
 {
-class DiagnosticEngine;
 struct SemanticModule;
-class EmitTraceSink;
 }  // namespace llvmdsdl
 
 namespace llvmdsdl::emitter::python
@@ -65,9 +63,6 @@ struct Options final
     /// @brief Runtime helper specialisation profile.
     RuntimeSpecialization runtimeSpecialization{RuntimeSpecialization::Portable};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 
@@ -80,17 +75,10 @@ struct Options final
 
 /// @brief Emits Python artifacts from semantic and lowered MLIR inputs.
 /// @param[in] semantic Resolved semantic module.
-/// @param[in] module Lowered MLIR module.
+/// @param[in] module The module after `lower-dsdl-bodies`.
 /// @param[in] options Backend configuration.
-/// @param[in,out] diagnostics Diagnostic sink.
-/// @param[in] traceSink Optional emit-order trace sink (for the emit-order verifier); null (default) disables tracing
-/// at zero cost.
 /// @return Success or detailed failure.
-llvm::Error emit(const SemanticModule& semantic,
-                 mlir::ModuleOp        module,
-                 const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Options& options);
 
 }  // namespace llvmdsdl::emitter::python
 

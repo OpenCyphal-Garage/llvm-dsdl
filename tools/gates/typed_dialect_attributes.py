@@ -22,7 +22,7 @@ SOURCE_ROOTS = ("include", "lib", "tools")
 EXCLUDED_PARTS = ("build", "submodules", "site-packages")
 
 # `op->getAttrOfType<T>("name")`, `op.hasAttr("name")`, `op->setAttr("name", ...)` and the rest of
-# the by-name surface. Dotted names such as `llvmdsdl.layout_only` are discardable attributes by
+# the by-name surface. Dotted names such as `llvmdsdl.schema_sym` are discardable attributes by
 # design and are not the dialect's to declare.
 BY_NAME = re.compile(r"\b(?:getAttrOfType<[^>]*>|hasAttr|setAttr|getAttr|removeAttr|getNamedAttr|"
                      r"getDiscardableAttr|setDiscardableAttr|removeDiscardableAttr)\s*\(\s*\"([a-z_]+)\"")

@@ -48,8 +48,8 @@ Generated at publish time, never committed:
 
 - `showroom/index.md` and `showroom/types/*` — rendered from compiler output
 - `reference/guarantees/parity-matrix.md`, `reference/guarantees/malformed-input.md`,
-  `reference/guarantees/determinism.md`, `development/convergence-scorecard.md` — rendered from the
-  report generators under `tools/convergence/`
+  `reference/guarantees/determinism.md` — rendered from the report generators under
+  `tools/convergence/`
 - `reference/commands/dsdlc-options.md` — rendered from `dsdlc --help`
 - `llms.txt`, `llms-full.txt`
 

@@ -1081,12 +1081,6 @@ mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
 
     for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        if (op->hasAttr("llvmdsdl.layout_only"))
-        {
-            // Present so that a member of this type can be addressed. Its helpers belong to its
-            // own object, which is where a caller resolves them.
-            continue;
-        }
         if (op.getBody().empty())
         {
             continue;
@@ -1228,12 +1222,6 @@ struct AnnotateDSDLAliasabilityPass
             {
                 continue;
             }
-            if (op->hasAttr("llvmdsdl.layout_only"))
-            {
-                // Present so that a member of this type can be addressed. Its helpers belong to
-                // its own object, which is where a caller resolves them.
-                continue;
-            }
             for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
                 const bool fixedSize = child.getFixedSize();
@@ -1361,6 +1349,18 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLoweredSerDes)
+{
+    pm.addPass(createLowerDSDLExecPass());
+    pm.addPass(createDSDLAnnotateAliasabilityPass());
+    pm.addPass(createBuildDSDLPlanBodiesPass());
+    // After the bodies: what is simplified here is what every backend translates.
+    if (optimizeLoweredSerDes)
+    {
+        addOptimizeLoweredSerDesPipeline(pm);
+    }
+}
+
 void registerDSDLPasses()
 {
     static bool once = false;
@@ -1376,6 +1376,10 @@ void registerDSDLPasses()
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
+    static mlir::PassPipelineRegistration<> const
+        lowerBodiesPipeline("lower-dsdl-bodies",
+                            "Lower serialisation plans to serialise and deserialise functions of dialect operations",
+                            [](mlir::OpPassManager& pm) { addLowerDSDLBodiesPipeline(pm, false); });
     registerBuildDSDLPlanBodiesPass();
     registerDSDLConvertPasses();
     registerEmitDSDLRuntimePass();

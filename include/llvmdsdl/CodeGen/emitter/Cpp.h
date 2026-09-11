@@ -29,8 +29,6 @@ class ModuleOp;
 
 namespace llvmdsdl
 {
-class DiagnosticEngine;
-class EmitTraceSink;
 struct SemanticModule;
 }  // namespace llvmdsdl
 
@@ -72,9 +70,6 @@ struct Options final
     /// @brief Requested C++ profile.
     Profile profile{Profile::Both};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
     ///
     /// @details
@@ -98,15 +93,10 @@ struct Options final
 
 /// @brief Emits C++ artifacts from semantic and lowered MLIR inputs.
 /// @param[in] semantic Resolved semantic module.
-/// @param[in] module Lowered MLIR module.
+/// @param[in] module The module after `lower-dsdl-bodies`.
 /// @param[in] options Backend configuration.
-/// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
-llvm::Error emit(const SemanticModule& semantic,
-                 mlir::ModuleOp        module,
-                 const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink = nullptr);
+llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Options& options);
 
 }  // namespace llvmdsdl::emitter::cpp
 

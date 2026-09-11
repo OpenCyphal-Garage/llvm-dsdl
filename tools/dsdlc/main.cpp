@@ -33,7 +33,6 @@
 #include <optional>
 #include <queue>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -49,7 +48,6 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
-#include "llvmdsdl/CodeGen/EmitTrace.h"
 #include "llvmdsdl/CodeGen/emitter/Rust.h"
 #include "llvmdsdl/CodeGen/emitter/Ts.h"
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
@@ -61,9 +59,11 @@
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
+#include "llvmdsdl/Transforms/Passes.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/CliPath.h"
@@ -80,55 +80,6 @@
 
 namespace
 {
-
-// Emit-order verifier side channel: writes the abstract op trace a string emitter recorded into
-// `sink` to `path`, one op per line ("OP_NAME" or "OP_NAME <payload>"). The comparator diffs
-// these across backends; enabled per run by the LLVMDSDL_EMIT_TRACE environment variable.
-//
-// LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate additionally swaps each VALIDATE_TAG with the
-// MASK_TAG that follows it before writing — the verifier's end-to-end mutation negative
-// control (a mask-before-validate reorder flowing through the real pipeline). It
-// affects only this diagnostic trace file, never the generated code.
-void writeEmitTrace(const std::string& path, const llvmdsdl::EmitTraceSink& sink)
-{
-    std::ofstream os(path, std::ios::binary | std::ios::trunc);
-    if (!os)
-    {
-        llvm::errs() << "warning: could not open LLVMDSDL_EMIT_TRACE file: " << path << "\n";
-        return;
-    }
-    auto events = sink.events();
-    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
-    const char* const mutate = std::getenv("LLVMDSDL_EMIT_TRACE_MUTATE");
-    if ((mutate != nullptr) && (std::string_view(mutate) == "swap-tag-validate"))
-    {
-        for (std::size_t i = 0; i + 1 < events.size(); ++i)
-        {
-            if (events[i].op == llvmdsdl::EmitTraceOp::ValidateTag &&
-                events[i + 1].op == llvmdsdl::EmitTraceOp::MaskTag)
-            {
-                std::swap(events[i], events[i + 1]);
-            }
-        }
-    }
-    for (const auto& event : events)
-    {
-        if (event.op == llvmdsdl::EmitTraceOp::SectionStart)
-        {
-            // "SECTION <canonical.type.Name.maj.min> <serialize|deserialize>": segment header
-            // the comparator keys on, so divergences localize to one (type, direction).
-            os << llvmdsdl::emitTraceOpName(event.op) << ' ' << event.label << ' '
-               << (event.payload == 0 ? "serialize" : "deserialize") << '\n';
-            continue;
-        }
-        os << llvmdsdl::emitTraceOpName(event.op);
-        if (event.payload >= 0)
-        {
-            os << ' ' << event.payload;
-        }
-        os << '\n';
-    }
-}
 
 struct CliOptions final
 {
@@ -372,7 +323,8 @@ void printHelp()
                  << "  --no-embedded-uavcan\n"
                  << "      Disable automatic embedded uavcan dependency catalogue for mlir/codegen targets.\n"
                  << "  --optimize-lowered-serdes\n"
-                 << "      Enable optional MLIR optimisation for lowered serialisation plans.\n"
+                 << "      Canonicalise the serialise and deserialise bodies, and their helpers, before\n"
+                 << "      they are translated.\n"
                  << "  --encode-reserved-identifiers\n"
                  << "      Accept a DSDL name that lands in a target language's reserved identifier\n"
                  << "      namespace, encoding the offending characters instead of rejecting the\n"
@@ -1928,7 +1880,7 @@ int runDsdlc(int argc, char** argv)
         }
         // Lowering can only guess at the C names, and what it guesses is not what any backend
         // emits. Stamping them here is what makes the printed symbols the ones a generated
-        // header declares, and what lets a lowering pass build bodies over this module.
+        // header declares.
         //
         // The merged model, because the embedded catalogue contributes schemas of its own and a
         // module stamped over only some of them names both what a backend emits and what it
@@ -1943,7 +1895,6 @@ int runDsdlc(int argc, char** argv)
                          << " schemas; the rest would carry names no backend emits\n";
             return finish("stdout", {}, true);
         }
-        (*mlirModule)->setAttr("llvmdsdl.names_final", mlir::UnitAttr::get(&context));
         if (!options.listInputs && !options.listOutputs)
         {
             mlirModule->print(llvm::outs());
@@ -2044,21 +1995,26 @@ int runDsdlc(int argc, char** argv)
         return llvm::Error::success();
     };
 
-    logVerbose(1, "running backend emission");
+    // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
+    // over the module they all receive.
+    {
+        logVerbose(1, "lowering serialisation plans to bodies");
+        mlir::PassManager pm(&context);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes);
+        if (mlir::failed(pm.run(*mlirModule)))
+        {
+            llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+    }
 
-    // Emit-order verifier: when LLVMDSDL_EMIT_TRACE names a file, attach a trace sink to the selected string
-    // emitter and dump its abstract emit-order op trace there after emission (see writeEmitTrace).
-    // NOLINTNEXTLINE(concurrency-mt-unsafe) -- read before any worker thread starts; nothing here calls setenv.
-    const char* const              emitTraceEnv = std::getenv("LLVMDSDL_EMIT_TRACE");
-    llvmdsdl::EmitTraceSink        emitTraceSink;
-    llvmdsdl::EmitTraceSink* const emitTraceSinkPtr = (emitTraceEnv != nullptr) ? &emitTraceSink : nullptr;
+    logVerbose(1, "running backend emission");
 
     if (options.targetLanguage == "c")
     {
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2083,7 +2039,6 @@ int runDsdlc(int argc, char** argv)
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
@@ -2111,21 +2066,15 @@ int runDsdlc(int argc, char** argv)
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err =
-                llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        if (emitTraceSinkPtr != nullptr)
-        {
-            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -2146,21 +2095,15 @@ int runDsdlc(int argc, char** argv)
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
         emitOptions.memoryMode                = options.rustMemoryMode;
         emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
-        emitOptions.optimizeLoweredSerDes     = options.optimizeLoweredSerDes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err =
-                llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        if (emitTraceSinkPtr != nullptr)
-        {
-            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -2174,23 +2117,17 @@ int runDsdlc(int argc, char** argv)
     if (options.targetLanguage == "go")
     {
         llvmdsdl::emitter::go::Options emitOptions;
-        emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning    = options.typeNameVersioning;
-        emitOptions.moduleName            = options.goModuleName;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
-        emitOptions.selectedTypeKeys      = selectedTypeKeys;
-        emitOptions.supportGeneration     = options.supportGeneration;
-        emitOptions.writePolicy           = writePolicy;
+        emitOptions.outDir             = options.outDir;
+        emitOptions.typeNameVersioning = options.typeNameVersioning;
+        emitOptions.moduleName         = options.goModuleName;
+        emitOptions.selectedTypeKeys   = selectedTypeKeys;
+        emitOptions.supportGeneration  = options.supportGeneration;
+        emitOptions.writePolicy        = writePolicy;
 
-        if (auto err =
-                llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        if (emitTraceSinkPtr != nullptr)
-        {
-            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -2208,20 +2145,14 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err =
-                llvmdsdl::emitter::ts::emit(closureSemantic, *mlirModule, emitOptions, diagnostics, emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::ts::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        if (emitTraceSinkPtr != nullptr)
-        {
-            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
@@ -2239,23 +2170,14 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
-        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitter::python::emit(closureSemantic,
-                                                       *mlirModule,
-                                                       emitOptions,
-                                                       diagnostics,
-                                                       emitTraceSinkPtr))
+        if (auto err = llvmdsdl::emitter::python::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        if (emitTraceSinkPtr != nullptr)
-        {
-            writeEmitTrace(emitTraceEnv, emitTraceSink);
         }
         const std::vector<std::string> regularOutputs = generatedOutputs;
         if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))

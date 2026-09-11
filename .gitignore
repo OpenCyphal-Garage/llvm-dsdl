@@ -60,7 +60,6 @@ docs/reference/commands/dsdlc-options.md
 docs/reference/guarantees/parity-matrix.md
 docs/reference/guarantees/malformed-input.md
 docs/reference/guarantees/determinism.md
-docs/development/convergence-scorecard.md
 docs/llms.txt
 docs/llms-full.txt
 .venv-docs/

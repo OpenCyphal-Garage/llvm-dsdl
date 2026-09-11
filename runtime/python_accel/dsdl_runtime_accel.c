@@ -41,6 +41,20 @@ static int get_readonly_bytes(PyObject* obj, const uint8_t** outData, Py_ssize_t
         *outSize = PyByteArray_GET_SIZE(obj);
         return 1;
     }
+    if (PyMemoryView_Check(obj))
+    {
+        const Py_buffer* const view = PyMemoryView_GET_BUFFER(obj);
+        if (!PyBuffer_IsContiguous(view, 'C'))
+        {
+            PyErr_SetString(PyExc_TypeError, "expected a contiguous memoryview");
+            return 0;
+        }
+        *outOwner = obj;
+        Py_INCREF(*outOwner);
+        *outData = (const uint8_t*) view->buf;
+        *outSize = view->len;
+        return 1;
+    }
 
     PyObject* bytesObj = PyBytes_FromObject(obj);
     if (bytesObj == NULL)
@@ -56,9 +70,21 @@ static int get_readonly_bytes(PyObject* obj, const uint8_t** outData, Py_ssize_t
 
 static int get_mutable_bytearray(PyObject* obj, uint8_t** outData, Py_ssize_t* outSize)
 {
+    if (PyMemoryView_Check(obj))
+    {
+        const Py_buffer* const view = PyMemoryView_GET_BUFFER(obj);
+        if (view->readonly || !PyBuffer_IsContiguous(view, 'C'))
+        {
+            PyErr_SetString(PyExc_TypeError, "expected a writable contiguous memoryview");
+            return 0;
+        }
+        *outData = (uint8_t*) view->buf;
+        *outSize = view->len;
+        return 1;
+    }
     if (!PyByteArray_Check(obj))
     {
-        PyErr_SetString(PyExc_TypeError, "expected bytearray");
+        PyErr_SetString(PyExc_TypeError, "expected bytearray or writable memoryview");
         return 0;
     }
     *outData = (uint8_t*) PyByteArray_AS_STRING(obj);
@@ -117,7 +143,7 @@ static PyObject* py_set_bit(PyObject* self, PyObject* args)
         PyErr_SetString(PyExc_ValueError, "set_bit failed: serialisation buffer too small");
         return NULL;
     }
-    Py_RETURN_NONE;
+    return PyLong_FromLong(0);
 }
 
 static PyObject* py_get_bit(PyObject* self, PyObject* args)
@@ -276,18 +302,34 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
     {
         return NULL;
     }
+    // A value past the signed range is read again as unsigned: a 64-bit field holds up to
+    // UINT64_MAX, which the plan hands over as the value it is.
+    uint64_t wide      = 0;
+    int      wideValid = 0;
+    if (overflow > 0)
+    {
+        wide = PyLong_AsUnsignedLongLong(valueObj);
+        if (PyErr_Occurred())
+        {
+            PyErr_Clear();
+        }
+        else
+        {
+            wideValid = 1;
+        }
+    }
 
     const uint64_t mask = (lenBits == 64U) ? UINT64_MAX : ((UINT64_C(1) << lenBits) - UINT64_C(1));
     uint64_t       out  = 0;
     if (saturating)
     {
-        if (overflow < 0 || signedValue < 0)
+        if (overflow < 0 || (overflow == 0 && signedValue < 0))
         {
             out = 0;
         }
         else if (overflow > 0)
         {
-            out = mask;
+            out = (wideValid && wide <= mask) ? wide : mask;
         }
         else
         {
@@ -296,12 +338,19 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
     }
     else
     {
-        if (overflow != 0)
+        if (overflow > 0 && wideValid)
         {
-            PyErr_SetString(PyExc_OverflowError, "write_unsigned value does not fit into signed 64-bit range");
+            out = wide & mask;
+        }
+        else if (overflow != 0)
+        {
+            PyErr_SetString(PyExc_OverflowError, "write_unsigned value does not fit into 64 bits");
             return NULL;
         }
-        out = ((uint64_t) signedValue) & mask;
+        else
+        {
+            out = ((uint64_t) signedValue) & mask;
+        }
     }
 
     const int8_t rc = dsdl_runtime_set_uxx(dst, (size_t) dstSize, (size_t) offBits, out, lenBits);
@@ -311,7 +360,7 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
         return NULL;
     }
 
-    Py_RETURN_NONE;
+    return PyLong_FromLong(0);
 }
 
 static PyObject* py_write_signed(PyObject* self, PyObject* args)
@@ -390,7 +439,7 @@ static PyObject* py_write_signed(PyObject* self, PyObject* args)
         return NULL;
     }
 
-    Py_RETURN_NONE;
+    return PyLong_FromLong(0);
 }
 
 static PyObject* py_read_unsigned(PyObject* self, PyObject* args)
@@ -496,7 +545,7 @@ static PyObject* py_write_float(PyObject* self, PyObject* args)
         PyErr_SetString(PyExc_ValueError, "write_float failed: serialisation buffer too small");
         return NULL;
     }
-    Py_RETURN_NONE;
+    return PyLong_FromLong(0);
 }
 
 static PyObject* py_read_float(PyObject* self, PyObject* args)

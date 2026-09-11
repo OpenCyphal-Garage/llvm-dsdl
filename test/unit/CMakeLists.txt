@@ -15,7 +15,6 @@ add_executable(llvmdsdl-unit-tests
   SupportGenerationTests.cpp
   AnalyzerTests.cpp
   RuntimeTests.cpp
-  ArrayWirePlanTests.cpp
   CHeaderRenderTests.cpp
   CodegenDiagnosticTextTests.cpp
   ConstantLiteralRenderTests.cpp
@@ -23,28 +22,13 @@ add_executable(llvmdsdl-unit-tests
   DefinitionDependenciesTests.cpp
   DefinitionIndexTests.cpp
   DefinitionPathProjectionTests.cpp
-  NativeHelperContractTests.cpp
-  LoweredBodyPlanTests.cpp
-  LoweredFactsLookupTests.cpp
-  LoweredRenderIRTests.cpp
-  NativeEmitterTraversalTests.cpp
-  SectionHelperBindingPlanTests.cpp
-  SerDesStatementPlanTests.cpp
-  ScriptedBodyPlanTests.cpp
-  ScriptedOperationPlanTests.cpp
   HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp
-  RuntimeHelperBindingsTests.cpp
   NamingPolicyTests.cpp
   NamingGoldenTests.cpp
-  RuntimeLoweredPlanTests.cpp
-  RuntimeLoweredOrderingTests.cpp
-  HelperSymbolResolverTests.cpp
-  WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
   StorageTypeTokensTests.cpp
   LoweredContractVersionTests.cpp
-  LoweredMetadataHardeningTests.cpp
   UavcanEmbeddedCatalogTests.cpp
   LspDocumentStoreTests.cpp
   LspRequestSchedulerTests.cpp
@@ -107,6 +91,17 @@ if(PYTHON_EXECUTABLE)
 
   set_tests_properties(
     llvmdsdl-python-unit-tests
+    PROPERTIES
+      LABELS "unit;python"
+  )
+
+  add_test(
+    NAME llvmdsdl-prdt-corpus-tool-tests
+    COMMAND ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/test_generate_prdt_corpus.py
+  )
+
+  set_tests_properties(
+    llvmdsdl-prdt-corpus-tool-tests
     PROPERTIES
       LABELS "unit;python"
   )

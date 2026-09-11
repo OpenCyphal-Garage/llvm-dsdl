@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
@@ -21,7 +22,6 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
-#include <cassert>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -35,36 +35,41 @@
 #include <utility>
 #include <variant>
 
-#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/EmitStep.h"
-#include "llvmdsdl/CodeGen/EmitTrace.h"
-#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
-#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
-#include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
-#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Frontend/AST.h"
-#include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Version.h"
+#include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
+#include "llvmdsdl/Transforms/PlanSteps.h"
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringExtras.h>
+#include <llvm/ADT/StringMap.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/SymbolTable.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+#include <iomanip>
+#include <limits>
 #include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl::emitter::rust
@@ -115,170 +120,6 @@ void emitAttachedDocRust(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-/// @brief Rust spelling of the helper body shapes (see HelperBodyPlan.h).
-///
-/// Bodies are expressions rather than statements, so a guard is an `if`/`else` that
-/// evaluates to the answer and there is no `return` anywhere.
-class RustHelperBodySpelling final : public HelperBodySpelling
-{
-public:
-    explicit RustHelperBodySpelling(SourceWriter& w)
-        : w_(w)
-    {
-    }
-
-    void spellIdentity(const HelperBody& body) override
-    {
-        oneLiner(body, "value");
-    }
-
-    void spellMask(const HelperBody& body) override
-    {
-        oneLiner(body, "value & " + mask(body.bits));
-    }
-
-    void spellSaturateUnsigned(const HelperBody& body) override
-    {
-        oneLiner(body, "if value > " + mask(body.bits) + " { " + mask(body.bits) + " } else { value }");
-    }
-
-    void spellSaturateSigned(const HelperBody& body) override
-    {
-        const auto lo = std::to_string(body.minValue) + "i64";
-        const auto hi = std::to_string(body.maxValue) + "i64";
-        open(body);
-        w_.open("if value < " + lo + " {");
-        w_.line(lo);
-        w_.midway("} else if value > " + hi + " {");
-        w_.line(hi);
-        w_.midway("} else {");
-        w_.line("value");
-        w_.close("}");
-        w_.close("};");
-    }
-
-    void spellSignExtend(const HelperBody& body) override
-    {
-        const auto bitMask = mask(body.bits);
-        const auto signBit = std::to_string(std::uint64_t{1} << (body.bits - 1U)) + "u64";
-        open(body);
-        w_.line("let raw = (value as u64) & " + bitMask + ";");
-        w_.open("if (raw & " + signBit + ") != 0u64 {");
-        w_.line("(raw | (!" + bitMask + ")) as i64");
-        w_.midway("} else {");
-        w_.line("raw as i64");
-        w_.close("}");
-        w_.close("};");
-    }
-
-    void spellStatusGuard(const HelperBody& body) override
-    {
-        std::string condition;
-        std::string error;
-        switch (body.guard)
-        {
-        case HelperGuardKind::CapacityTooSmall:
-            condition = std::to_string(body.requiredBits) + "i64 > capacity_bits";
-            error     = "DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL";
-            break;
-        case HelperGuardKind::ArrayLengthOutOfRange:
-            condition = "(value < 0i64) || (value > " + std::to_string(body.capacity) + "i64)";
-            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH";
-            break;
-        case HelperGuardKind::DelimiterOutOfRange:
-            condition = "(payload_bytes < 0i64) || (payload_bytes > remaining_bytes)";
-            error     = "DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER";
-            break;
-        }
-        open(body);
-        w_.open("if " + condition + " {");
-        w_.line("-crate::dsdl_runtime::" + error);
-        w_.midway("} else {");
-        w_.line("crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS");
-        w_.close("}");
-        w_.close("};");
-    }
-
-    void spellTagMembership(const HelperBody& body) override
-    {
-        if (body.allowedTags.empty())
-        {
-            open(body);
-            w_.line("-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
-            w_.close("};");
-            return;
-        }
-        std::string condition;
-        for (const auto tag : body.allowedTags)
-        {
-            if (!condition.empty())
-            {
-                condition += " || ";
-            }
-            condition += "(tag_value == " + std::to_string(tag) + "i64)";
-        }
-        open(body);
-        w_.open("if " + condition + " {");
-        w_.line("crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS");
-        w_.midway("} else {");
-        w_.line("-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG");
-        w_.close("}");
-        w_.close("};");
-    }
-
-private:
-    static std::string mask(const std::uint32_t bits)
-    {
-        return renderMaskLiteral(HelperSpellingLanguage::Rust, bits);
-    }
-
-    static std::string floatType(const HelperSignature signature)
-    {
-        return signature == HelperSignature::Float64 ? "f64" : "f32";
-    }
-
-    /// @brief Names the parameter after what the helper asks about.
-    static std::string statusParamName(const HelperBody& body)
-    {
-        if (body.kind == HelperBodyKind::TagMembership)
-        {
-            return "tag_value";
-        }
-        return body.guard == HelperGuardKind::CapacityTooSmall ? "capacity_bits" : "value";
-    }
-
-    static std::string signature(const HelperBody& body)
-    {
-        switch (body.signature)
-        {
-        case HelperSignature::UnsignedToUnsigned:
-            return "|value: u64| -> u64";
-        case HelperSignature::SignedToSigned:
-            return "|value: i64| -> i64";
-        case HelperSignature::ValueToStatus:
-            return "|" + statusParamName(body) + ": i64| -> i8";
-        case HelperSignature::PairToStatus:
-            return "|payload_bytes: i64, remaining_bytes: i64| -> i8";
-        case HelperSignature::Float32:
-        case HelperSignature::Float64:
-            return "|value: " + floatType(body.signature) + "| -> " + floatType(body.signature);
-        }
-        return "|value: u64| -> u64";
-    }
-
-    void oneLiner(const HelperBody& body, const std::string& expression)
-    {
-        w_.line("let " + body.symbol + " = " + signature(body) + " { " + expression + " };");
-    }
-
-    void open(const HelperBody& body)
-    {
-        w_.open("let " + body.symbol + " = " + signature(body) + " {");
-    }
-
-    SourceWriter& w_;
-};
-
 class EmitterContext final
 {
 public:
@@ -292,26 +133,6 @@ public:
     TypeNameVersioning typeNameVersioning() const
     {
         return typeNameVersioning_;
-    }
-
-    /// @brief Attaches an emit-order trace sink (for the emit-order verifier). Null (default) disables tracing at zero
-    /// cost.
-    void setTraceSink(EmitTraceSink* const sink)
-    {
-        traceSink_ = sink;
-    }
-
-    /// @brief Records one abstract emit op into the attached sink (no-op when unattached).
-    template <typename PayloadT = std::int64_t>
-    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
-    {
-        emitTrace(traceSink_, op, static_cast<std::int64_t>(payload));
-    }
-
-    /// @brief Marks the start of one (type, direction) trace segment (no-op when unattached).
-    void traceSection(const std::string& canonicalName, const EmitTraceDirection direction) const
-    {
-        emitTraceSection(traceSink_, canonicalName, direction);
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -399,7 +220,6 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    EmitTraceSink*     traceSink_ = nullptr;
 };
 
 std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -435,16 +255,15 @@ std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& c
     {
         return base;
     }
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        return "[" + base + "; " + std::to_string(type.arrayCapacity) + "]";
+    }
     return "crate::dsdl_runtime::DsdlVec<" + base + ">";
 }
 
-std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
 {
-    if (type.arrayKind != ArrayKind::None)
-    {
-        return "crate::dsdl_runtime::DsdlVec::new()";
-    }
-
     switch (type.scalarCategory)
     {
     case SemanticScalarCategory::Bool:
@@ -468,6 +287,26 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
     return "0";
 }
 
+std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+{
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        const std::string element = scalarDefaultExpr(type, ctx);
+        const std::string count   = std::to_string(type.arrayCapacity);
+        // A composite is not `Copy`, so each element is made on its own.
+        if (type.scalarCategory == SemanticScalarCategory::Composite)
+        {
+            return "core::array::from_fn(|_| " + element + ")";
+        }
+        return "[" + element + "; " + count + "]";
+    }
+    if (type.arrayKind != ArrayKind::None)
+    {
+        return "crate::dsdl_runtime::DsdlVec::new()";
+    }
+    return scalarDefaultExpr(type, ctx);
+}
+
 /// @brief The `#[deprecated]` attribute for a definition, carrying the shared notice as its message.
 ///
 /// rustc prints the message after its own diagnostic, so the user sees which DSDL definition is
@@ -483,860 +322,835 @@ std::string rustDeprecatedAttribute(const std::string&  fullName,
     return "#[deprecated(note = \"" + message + "\")]";
 }
 
-class FunctionBodyEmitter final
+/// @brief The names of the pool-class constants of a section's variable-length arrays, by field.
+///
+/// The struct declares one constant per variable-length array, and a body's `set_array_length`
+/// hands it to the container; both take the names from here so that they cannot disagree.
+std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const std::vector<std::string>& fieldNames)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    std::set<std::string>                            used;
+    for (const auto& fieldName : fieldNames)
+    {
+        const std::string baseName =
+            "__LLVMDSDL_POOL_CLASS_" +
+            codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, fieldName);
+        std::string constName = baseName;
+        for (std::uint32_t suffix = 1U; !used.insert(constName).second; ++suffix)
+        {
+            constName = baseName + "_" + std::to_string(suffix);
+        }
+        out.emplace_back(fieldName, constName);
+    }
+    return out;
+}
+
+/// @brief The Rust spelling of the plan-body vocabulary, for one schema.
+///
+/// Members are named from the same scope the struct declaration names them in, built from the
+/// schema's own fields. A nested type is never named: a nested call is a method call on the
+/// member itself. The plan's `i64` is `u64`, `i8` is `i8`, and the size a plan is handed by
+/// pointer is a local `usize`, which is also what a nested call's size becomes. The runtime
+/// primitives take slices, so a buffer is a slice and a pointer into it is a sub-slice clamped
+/// to the buffer's end.
+class RustSpelling final : public BodySpelling
 {
 public:
-    explicit FunctionBodyEmitter(const EmitterContext&                               ctx,
-                                 const std::unordered_map<std::string, std::string>& poolClassConstExprByField)
-        : ctx_(ctx)
-        , poolClassConstExprByField_(poolClassConstExprByField)
+    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
+        : symbols_(module)
     {
-    }
-
-    /// @brief Records one abstract emit op via the shared EmitterContext sink (no-op when unattached).
-    template <typename PayloadT = std::int64_t>
-    void trace(const EmitTraceOp op, const PayloadT payload = -1) const
-    {
-        ctx_.trace(op, payload);
-    }
-
-    void emitSerialize(SourceWriter&                    w,
-                       const std::string&               typeName,
-                       const SemanticSection&           section,
-                       const LoweredSectionFacts* const sectionFacts)
-    {
-        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
-        (void) typeName;
-        w.open("pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
-        w.line("let mut offset_bits: usize = 0;");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Serialize,
-            NativeFunctionSkeletonCallbacks{[&w](const SectionHelperBindingPlan& helperBindings) {
-                                                emitSerializeMlirHelperBindings(w, helperBindings);
-                                            },
-                                            [&w](const std::string& missingHelperRequirement) {
-                                                w.line("// missing lowered helper contract: " +
-                                                       missingHelperRequirement);
-                                                w.line("return "
-                                                       "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
-                                                       "ARGUMENT);");
-                                            },
-                                            [&w](const SectionHelperBindingPlan& helperBindings) {
-                                                const auto capacityHelper =
-                                                    helperBindingName(helperBindings.capacityCheck->symbol);
-                                                w.line("let _err_capacity = " + capacityHelper +
-                                                       "(buffer.len().saturating_mul(8) as i64);");
-                                                w.open("if _err_capacity != "
-                                                       "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS {");
-                                                w.line("return Err(_err_capacity);");
-                                                w.close("}");
-                                            },
-                                            [this, &w, &section, sectionFacts, &fieldScope](
-                                                const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &w, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitSerializeUnion(w,
-                                                                           section,
-                                                                           unionBranches,
-                                                                           sectionFacts,
-                                                                           renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &w](const std::int64_t alignmentBits) {
-                                                    emitAlignSerialize(w, alignmentBits);
-                                                };
-                                                callbacks.onField =
-                                                    [this, &w, &fieldScope](const PlannedFieldStep& fieldStep) {
-                                                        const auto* const field = fieldStep.field;
-                                                        const auto        fieldRef =
-                                                            "self." +
-                                                            fieldScope.get(IdentifierRole::FieldName, field->name);
-                                                        emitSerializeAny(w,
-                                                                         field->resolvedType,
-                                                                         fieldRef,
-                                                                         fieldStep.arrayLengthPrefixBits,
-                                                                         fieldStep.fieldFacts);
-                                                    };
-                                                callbacks.onPaddingAlignment = [this,
-                                                                                &w](const std::int64_t alignmentBits) {
-                                                    emitAlignSerialize(w, alignmentBits);
-                                                };
-                                                callbacks.onPadding = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitSerializePadding(w, field->resolvedType);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &w]() {
-                                                emitAlignSerialize(w, 8);
-                                                w.line("Ok(offset_bits / 8)");
-                                            }});
-        if (!emitted)
+        if (schema.getBody().empty())
         {
-            w.close("}");
             return;
         }
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+        {
+            Plan entry;
+            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            NamingScope                   scope(CodegenNamingLanguage::Rust);
+            std::vector<mlir::dsdl::IOOp> fields;
+            std::vector<std::string>      variableArrays;
+            if (!plan.getBody().empty())
+            {
+                for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
+                {
+                    if (io.isPadding())
+                    {
+                        continue;
+                    }
+                    (void) scope.declare(IdentifierRole::FieldName, io.getName());
+                    fields.push_back(io);
+                    if (io.isVariableArray())
+                    {
+                        variableArrays.push_back(io.getName().str());
+                    }
+                }
+            }
+            for (const auto& [fieldName, constName] : poolClassConstantNames(variableArrays))
+            {
+                entry.poolClass[fieldName] = constName;
+            }
+            for (mlir::dsdl::IOOp io : fields)
+            {
+                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+            }
+            plans_[planIdentity(schema, plan)] = std::move(entry);
+        }
+    }
+
+    // Functions.
+
+    std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
+    {
+        const auto direction = planBodyDirection(fn);
+        inBody_              = direction.has_value();
+        if (!direction)
+        {
+            std::vector<std::string> parameters;
+            std::string              list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                parameters.push_back("p" + std::to_string(index));
+                list += (list.empty() ? "" : ", ") + parameters.back() + ": " + typeName(argument.getType());
+            }
+            w.open("fn " + functionName(fn.getSymName()) + "(" + list + ") -> " +
+                   typeName(fn.getResultTypes().front()) + " {");
+            return parameters;
+        }
+        const bool serialize = *direction == "serialize";
+        w.open(serialize ? "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"
+                         : "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
+        // The size a plan is handed by pointer, read at entry and written back at the end.
+        w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
+        return {"self", "buffer", "inout_buffer_size_bytes"};
+    }
+
+    void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
+    {
         w.close("}");
     }
 
-    void emitDeserialize(SourceWriter&                    w,
-                         const std::string&               typeName,
-                         const SemanticSection&           section,
-                         const LoweredSectionFacts* const sectionFacts)
+    [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
-        (void) typeName;
-        w.open("pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
-        w.line("let capacity_bytes = buffer.len();");
-        w.line("let capacity_bits = capacity_bytes.saturating_mul(8);\n");
-        w.line("let mut offset_bits: usize = 0;");
-        const auto emitted = emitNativeFunctionSkeleton(
-            section,
-            sectionFacts,
-            HelperBindingDirection::Deserialize,
-            NativeFunctionSkeletonCallbacks{[&w](const SectionHelperBindingPlan& helperBindings) {
-                                                emitDeserializeMlirHelperBindings(w, helperBindings);
-                                            },
-                                            [&w](const std::string& missingHelperRequirement) {
-                                                w.line("// missing lowered helper contract: " +
-                                                       missingHelperRequirement);
-                                                w.line("return "
-                                                       "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_"
-                                                       "ARGUMENT);");
-                                            },
-                                            nullptr,
-                                            [this, &w, &section, sectionFacts, &fieldScope](
-                                                const LoweredBodyRenderIR& renderIR) {
-                                                NativeEmitterTraversalCallbacks callbacks;
-                                                callbacks.onUnionDispatch =
-                                                    [this, &w, &section, sectionFacts, &renderIR](
-                                                        const std::vector<PlannedFieldStep>& unionBranches) {
-                                                        emitDeserializeUnion(w,
-                                                                             section,
-                                                                             unionBranches,
-                                                                             sectionFacts,
-                                                                             renderIR.helperBindings);
-                                                    };
-                                                callbacks.onFieldAlignment = [this,
-                                                                              &w](const std::int64_t alignmentBits) {
-                                                    emitAlignDeserialize(w, alignmentBits);
-                                                };
-                                                callbacks.onField =
-                                                    [this, &w, &fieldScope](const PlannedFieldStep& fieldStep) {
-                                                        const auto* const field = fieldStep.field;
-                                                        const auto        fieldRef =
-                                                            "self." +
-                                                            fieldScope.get(IdentifierRole::FieldName, field->name);
-                                                        emitDeserializeAny(w,
-                                                                           field->resolvedType,
-                                                                           fieldRef,
-                                                                           fieldStep.arrayLengthPrefixBits,
-                                                                           fieldStep.fieldFacts,
-                                                                           poolClassConstExprForField(field->name));
-                                                    };
-                                                callbacks.onPaddingAlignment = [this,
-                                                                                &w](const std::int64_t alignmentBits) {
-                                                    emitAlignDeserialize(w, alignmentBits);
-                                                };
-                                                callbacks.onPadding = [this, &w](const PlannedFieldStep& fieldStep) {
-                                                    const auto* const field = fieldStep.field;
-                                                    emitDeserializePadding(w, field->resolvedType);
-                                                };
-                                                return callbacks;
-                                            },
-                                            [this, &w]() {
-                                                emitAlignDeserialize(w, 8);
-                                                w.line("Ok(crate::dsdl_runtime::choose_min(offset_bits, "
-                                                       "capacity_bits) / 8)");
-                                            }});
-        if (!emitted)
+        return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, callee);
+    }
+
+    // Statements.
+
+    void declare(SourceWriter&         w,
+                 const mlir::Type      type,
+                 const llvm::StringRef name,
+                 const llvm::StringRef expr) const override
+    {
+        w.line("let " + name.str() + ": " + typeName(type) + " = " + expr.str() + ";");
+    }
+
+    void declareVariable(SourceWriter&         w,
+                         const mlir::Type      type,
+                         const llvm::StringRef name,
+                         const bool            reassigned) const override
+    {
+        w.line(std::string("let ") + (reassigned ? "mut " : "") + name.str() + ": " + typeName(type) + ";");
+    }
+
+    void assign(SourceWriter& w, const llvm::StringRef name, const llvm::StringRef expr) const override
+    {
+        w.line(name.str() + " = " + expr.str() + ";");
+    }
+
+    void discard(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        w.line("let _unused = " + expr.str() + ";");
+    }
+
+    void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
+    {
+        // A body answers the runtime's error code; its Rust signature answers the size or the code.
+        if (inBody_)
         {
-            w.close("}");
+            w.line("if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" + expr.str() + ") }");
             return;
         }
+        w.line(expr.str());
+    }
+
+    void openIf(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        w.open("if " + condition.str() + " {");
+    }
+
+    void openElse(SourceWriter& w) const override
+    {
+        w.midway("} else {");
+    }
+
+    void openLoop(SourceWriter& w) const override
+    {
+        w.open("loop {");
+    }
+
+    void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
+    {
+        w.line("if !" + condition.str() + " { break; }");
+    }
+
+    void openFor(SourceWriter&         w,
+                 const llvm::StringRef variable,
+                 const llvm::StringRef lower,
+                 const llvm::StringRef upper,
+                 const llvm::StringRef step) const override
+    {
+        const std::string range = lower.str() + ".." + upper.str();
+        w.open("for " + variable.str() + " in " +
+               (step == "1usize" ? range : "(" + range + ").step_by(" + step.str() + ")") + " {");
+    }
+
+    void closeBlock(SourceWriter& w) const override
+    {
         w.close("}");
-        w.blank();
-        w.open("pub fn deserialize_with_consumed(&mut self, buffer: &[u8]) -> (i8, usize) {");
-        w.open("match self.deserialize(buffer) {");
-        w.line("Ok(consumed) => (0, consumed),");
-        w.line("Err(rc) => (rc, buffer.len()),");
+    }
+
+    // Values.
+
+    [[nodiscard]] std::string constant(const mlir::TypedAttr value) const override
+    {
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerAttr>(value))
+        {
+            const mlir::Type type = integer.getType();
+            if (mlir::isa<mlir::IndexType>(type))
+            {
+                return std::to_string(integer.getValue().getZExtValue()) + "usize";
+            }
+            const unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
+            if (width == 1)
+            {
+                return integer.getValue().isZero() ? "false" : "true";
+            }
+            const std::int64_t signedValue = integer.getValue().getSExtValue();
+            if (isSignedSpelt(type))
+            {
+                return std::to_string(signedValue) + typeName(type);
+            }
+            if (signedValue >= 0)
+            {
+                return std::to_string(integer.getValue().getZExtValue()) + typeName(type);
+            }
+            if (signedValue == std::numeric_limits<std::int64_t>::min())
+            {
+                return "i64::MIN as " + typeName(type);
+            }
+            return std::to_string(signedValue) + "i64 as " + typeName(type);
+        }
+        if (const auto real = mlir::dyn_cast<mlir::FloatAttr>(value))
+        {
+            const bool         single = real.getType().isF32();
+            std::ostringstream stream;
+            stream << std::setprecision(single ? 9 : 17) << real.getValueAsDouble();
+            std::string text = stream.str();
+            if (text.find_first_of(".eEn") == std::string::npos)
+            {
+                text += ".0";
+            }
+            return text + (single ? "f32" : "f64");
+        }
+        llvm::report_fatal_error("Rust spelling: a constant of an unexpected kind");
+    }
+
+    [[nodiscard]] std::string binary(const BinaryOperator  op,
+                                     const llvm::StringRef lhs,
+                                     const llvm::StringRef rhs,
+                                     const mlir::Type      type) const override
+    {
+        if (isBool(type))
+        {
+            switch (op)
+            {
+            case BinaryOperator::And:
+                return lhs.str() + " && " + rhs.str();
+            case BinaryOperator::Or:
+                return lhs.str() + " || " + rhs.str();
+            case BinaryOperator::Xor:
+                return lhs.str() + " != " + rhs.str();
+            default:
+                llvm::report_fatal_error("Rust spelling: an arithmetic operator on a bool");
+            }
+        }
+        // Wrapping arithmetic is the plan's arithmetic; Rust's operators would panic on overflow
+        // in a debug build.
+        const bool signedForm =
+            op == BinaryOperator::DivS || op == BinaryOperator::RemS || op == BinaryOperator::ShiftRightS;
+        const bool unsignedForm =
+            op == BinaryOperator::DivU || op == BinaryOperator::RemU || op == BinaryOperator::ShiftRightU;
+        const bool  recast = (signedForm && !isSignedSpelt(type)) || (unsignedForm && isSignedSpelt(type));
+        std::string a      = lhs.str();
+        std::string b      = rhs.str();
+        if (recast)
+        {
+            a = "(" + (signedForm ? asSigned(lhs, type) : asUnsigned(lhs, type)) + ")";
+            b = signedForm ? asSigned(rhs, type) : asUnsigned(rhs, type);
+        }
+        std::string expression;
+        switch (op)
+        {
+        case BinaryOperator::Add:
+            expression = a + ".wrapping_add(" + b + ")";
+            break;
+        case BinaryOperator::Sub:
+            expression = a + ".wrapping_sub(" + b + ")";
+            break;
+        case BinaryOperator::Mul:
+            expression = a + ".wrapping_mul(" + b + ")";
+            break;
+        case BinaryOperator::DivU:
+        case BinaryOperator::DivS:
+            expression = a + ".wrapping_div(" + b + ")";
+            break;
+        case BinaryOperator::RemU:
+        case BinaryOperator::RemS:
+            expression = a + ".wrapping_rem(" + b + ")";
+            break;
+        case BinaryOperator::And:
+            expression = a + " & " + b;
+            break;
+        case BinaryOperator::Or:
+            expression = a + " | " + b;
+            break;
+        case BinaryOperator::Xor:
+            expression = a + " ^ " + b;
+            break;
+        case BinaryOperator::ShiftLeft:
+            expression = a + ".wrapping_shl(" + b + " as u32)";
+            break;
+        case BinaryOperator::ShiftRightU:
+        case BinaryOperator::ShiftRightS:
+            expression = a + ".wrapping_shr(" + b + " as u32)";
+            break;
+        }
+        return recast ? "(" + expression + ") as " + typeName(type) : expression;
+    }
+
+    [[nodiscard]] std::string compare(const Comparison      comparison,
+                                      const llvm::StringRef lhs,
+                                      const llvm::StringRef rhs,
+                                      const mlir::Type      type) const override
+    {
+        // An unsigned value is never below zero. The plan states that comparison for an empty
+        // plan's capacity check, and rustc warns on the operator form of it, so it is spelled as
+        // the method it stands for.
+        if (!isSignedSpelt(type) && !isBool(type))
+        {
+            if (comparison == Comparison::GtU && isZero(lhs))
+            {
+                return rhs.str() + ".lt(&" + lhs.str() + ")";
+            }
+            if (comparison == Comparison::LtU && isZero(rhs))
+            {
+                return lhs.str() + ".lt(&" + rhs.str() + ")";
+            }
+            if (comparison == Comparison::LeU && isZero(lhs))
+            {
+                return rhs.str() + ".ge(&" + lhs.str() + ")";
+            }
+            if (comparison == Comparison::GeU && isZero(rhs))
+            {
+                return lhs.str() + ".ge(&" + rhs.str() + ")";
+            }
+        }
+        std::string a = lhs.str();
+        std::string b = rhs.str();
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return a + " == " + b;
+        case Comparison::Ne:
+            return a + " != " + b;
+        case Comparison::LtS:
+        case Comparison::LeS:
+        case Comparison::GtS:
+        case Comparison::GeS:
+            if (!isSignedSpelt(type))
+            {
+                a = "(" + asSigned(lhs, type) + ")";
+                b = "(" + asSigned(rhs, type) + ")";
+            }
+            break;
+        case Comparison::LtU:
+        case Comparison::LeU:
+        case Comparison::GtU:
+        case Comparison::GeU:
+            if (isSignedSpelt(type))
+            {
+                a = "(" + asUnsigned(lhs, type) + ")";
+                b = "(" + asUnsigned(rhs, type) + ")";
+            }
+            break;
+        }
+        return a + " " + comparisonToken(comparison) + " " + b;
+    }
+
+    [[nodiscard]] std::string select(const llvm::StringRef condition,
+                                     const llvm::StringRef ifTrue,
+                                     const llvm::StringRef ifFalse,
+                                     const mlir::Type /*type*/) const override
+    {
+        return "if " + condition.str() + " { " + ifTrue.str() + " } else { " + ifFalse.str() + " }";
+    }
+
+    [[nodiscard]] std::string convert(const Conversion      conversion,
+                                      const llvm::StringRef value,
+                                      const mlir::Type      from,
+                                      const mlir::Type      to) const override
+    {
+        if (conversion == Conversion::SignExtend && !isSignedSpelt(from))
+        {
+            return asSigned(value, from) + " as " + signedStorageType(widthOf(to)) + " as " + typeName(to);
+        }
+        return value.str() + " as " + typeName(to);
+    }
+
+    [[nodiscard]] std::string call(const llvm::StringRef callee, const llvm::ArrayRef<std::string> args) const override
+    {
+        return callee.str() + "(" + llvm::join(args, ", ") + ")";
+    }
+
+    // The dialect.
+
+    [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
+    {
+        return mlir::
+            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
+                op);
+    }
+
+    [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        // A reference, a slice and a local are never null.
+        return "false";
+    }
+
+    [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
+    {
+        return names(op.getBuffer());
+    }
+
+    [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
+    {
+        // A sub-slice from the offset, clamped to the buffer's end: the plan bounds its reads
+        // and writes itself, and a slice past the end would panic before they could.
+        const std::string buffer = names(op.getBuffer());
+        const auto        result = mlir::cast<mlir::dsdl::PtrType>(op.getAddress().getType());
+        return "{ let _start = core::cmp::min(" + asSize(names(op.getByteOffset())) + ", " + buffer + ".len()); " +
+               (result.getIsConst() ? "&" : "&mut ") + buffer + "[_start..] }";
+    }
+
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    {
+        return names(op.getPointer()) + " as " + typeName(op.getValue().getType());
+    }
+
+    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    {
+        w.line(names(op.getPointer()) + " = " + asSize(names(op.getValue())) + ";");
+    }
+
+    [[nodiscard]] std::string local(SourceWriter&         w,
+                                    mlir::dsdl::LocalOp   op,
+                                    const llvm::StringRef name,
+                                    const ValueNames&     names) const override
+    {
+        // The size a nested call is handed bounds the slice it gets; it is written back only
+        // where the plan reads the answer.
+        w.line(std::string("let ") + (isRead(op.getAddress()) ? "mut " : "") + name.str() +
+               ": usize = " + asSize(names(op.getInit())) + ";");
+        return name.str();
+    }
+
+    [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names) + " as " + typeName(op.getValue().getType());
+    }
+
+    void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
+    {
+        const Member member = memberOf(op.getObject(), op.getMember());
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+    }
+
+    [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
+    {
+        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " as " +
+               typeName(op.getValue().getType());
+    }
+
+    void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
+    {
+        const Member member = memberOf(op.getObject(), op.getMember());
+        w.line(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
+               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+    }
+
+    [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string elementAddr(mlir::dsdl::ElementAddrOp op, const ValueNames& names) const override
+    {
+        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names);
+    }
+
+    [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names) + ".len() as u64";
+    }
+
+    void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
+    {
+        // The container takes the section's memory contract, is sized within its capacity -- a
+        // count past it is what the plan's validation rejects next -- and holds default elements
+        // for the plan to store into. A pool that cannot provide the storage ends the function.
+        const Member      member = memberOf(op.getObject(), op.getMember());
+        mlir::dsdl::IOOp  io     = member.io;
+        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
+        const std::string count  = fresh("count");
+        w.line(access +
+               ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new(Self::__LLVMDSDL_MEMORY_MODE, "
+               "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::" +
+               poolClassOf(op.getObject(), op.getMember()) + "));");
+        w.line(access + ".clear();");
+        w.line("let " + count + ": usize = core::cmp::min(" + asSize(names(op.getValue())) + ", " +
+               std::to_string(io.getArrayCapacity()) + "usize);");
+        w.open("if Self::__LLVMDSDL_MEMORY_MODE == crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
+        w.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
+        w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
+        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
         w.close("}");
+        w.midway("} else {");
+        w.line(access + ".reserve(" + count + ");");
         w.close("}");
+        w.line(access + ".resize(" + count + ", Default::default());");
+    }
+
+    [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
+    {
+        return names(op.getObject()) + "._tag_ as u64";
+    }
+
+    void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
+    {
+        const Plan& plan = planOf(op.getObject());
+        w.line(names(op.getObject()) + "._tag_ = " + names(op.getValue()) + " as " +
+               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ";");
+    }
+
+    [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const auto        width     = static_cast<std::int64_t>(op.getWidth());
+        const std::string value     = names(op.getValue());
+        const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + ", ";
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "crate::dsdl_runtime::set_f" + std::to_string(width) + "(" + prefix + value + ")";
+        }
+        if (width == 1 && !op.getIsSigned())
+        {
+            return "crate::dsdl_runtime::set_bit(" + prefix + (isBool(valueType) ? value : value + " != 0u64") + ")";
+        }
+        if (op.getIsSigned())
+        {
+            return "crate::dsdl_runtime::set_ixx(" + prefix + asSigned(value, valueType) + ", " +
+                   std::to_string(width) + "u8)";
+        }
+        return "crate::dsdl_runtime::set_uxx(" + prefix + value + ", " + std::to_string(width) + "u8)";
+    }
+
+    [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
+    {
+        const mlir::Type  valueType = op.getValue().getType();
+        const auto        width     = static_cast<std::int64_t>(op.getWidth());
+        const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset()));
+        if (mlir::isa<mlir::FloatType>(valueType))
+        {
+            return "crate::dsdl_runtime::get_f" + std::to_string(width) + "(" + prefix + ")";
+        }
+        const std::string result = typeName(valueType);
+        if (width == 1 && !op.getIsSigned())
+        {
+            return "crate::dsdl_runtime::get_bit(" + prefix + ") as " + result;
+        }
+        // The runtime answers in the narrowest standard width that holds the field; a signed read
+        // arrives sign-extended and keeps its value across the widening.
+        const unsigned holder = holderWidthFor(width);
+        return "crate::dsdl_runtime::get_" + std::string(op.getIsSigned() ? "i" : "u") + std::to_string(holder) + "(" +
+               prefix + ", " + std::to_string(width) + "u8) as " + result;
+    }
+
+    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    {
+        // A bool array is a container of bools, so a run of its bits goes one element at a time.
+        const auto        container = boolContainerOf(op.getSource(), names);
+        const std::string index     = fresh("bit");
+        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
+        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getDestination()) + ", " +
+               asSize(names(op.getDestinationBitOffset())) + " + " + index + ", " + container.first + "[" +
+               container.second + " + " + asSize(names(op.getSourceBitOffset())) + " + " + index + "]);");
+        w.close("}");
+    }
+
+    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    {
+        const auto        container = boolContainerOf(op.getDestination(), names);
+        const std::string index     = fresh("bit");
+        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
+        w.line(container.first + "[" + container.second + " + " + index + "] = crate::dsdl_runtime::get_bit(" +
+               names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + " + " + index + ");");
+        w.close("}");
+    }
+
+    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by
+        // the size the plan handed in; its answer is the size it used, which the plan reads back
+        // through the local. The bound is taken before the slice is, so the length read ends first.
+        const bool        serialize = op.getDirection() == "serialize";
+        const std::string buffer    = names(op.getBuffer());
+        const std::string size      = names(op.getSize());
+        const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
+                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+        const std::string used = isRead(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
+        return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
+               used + " Err(_code) => _code }";
     }
 
 private:
-    const EmitterContext&                               ctx_;
-    const std::unordered_map<std::string, std::string>& poolClassConstExprByField_;
-    std::size_t                                         id_{0};
-
-    std::string poolClassConstExprForField(const std::string& fieldName) const
+    struct Member final
     {
-        const auto it = poolClassConstExprByField_.find(fieldName);
-        if (it == poolClassConstExprByField_.end())
-        {
-            return "crate::dsdl_runtime::AllocationClassId(0u32)";
-        }
-        return it->second;
-    }
-
-    std::string nextName(const std::string& prefix)
-    {
-        return "_" + prefix + std::to_string(id_++) + "_";
-    }
-
-    static std::string helperBindingName(const std::string& helperSymbol)
-    {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, helperSymbol);
-    }
-
-    static void emitMlirHelperBindings(SourceWriter&                   w,
-                                       const SectionHelperBindingPlan& plan,
-                                       const HelperDirection           direction,
-                                       const bool                      emitCapacityCheck)
-    {
-        RustHelperBodySpelling spelling(w);
-        for (const auto& body : buildSectionHelperBodies(
-                 plan,
-                 direction,
-                 [](const std::string& symbol) { return helperBindingName(symbol); },
-                 emitCapacityCheck))
-        {
-            renderHelperBody(body, spelling);
-        }
-    }
-
-    static void emitSerializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
-    {
-        emitMlirHelperBindings(w, plan, HelperDirection::Serialize, /*emitCapacityCheck=*/true);
-    }
-
-    static void emitDeserializeMlirHelperBindings(SourceWriter& w, const SectionHelperBindingPlan& plan)
-    {
-        emitMlirHelperBindings(w, plan, HelperDirection::Deserialize, /*emitCapacityCheck=*/false);
-    }
-
-    void emitAlignSerialize(SourceWriter& w, const std::int64_t alignmentBits)
-    {
-        if (alignmentBits <= 1)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Align, alignmentBits);
-        const auto err = nextName("err");
-        w.open("while (offset_bits % " + std::to_string(alignmentBits) + "usize) != 0 {");
-        w.line("let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, false);");
-        w.line("if " + err + " < 0 { return Err(" + err + "); }");
-        w.line("offset_bits += 1;");
-        w.close("}");
-    }
-
-    void emitAlignDeserialize(SourceWriter& w, const std::int64_t alignmentBits) const
-    {
-        if (alignmentBits <= 1)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Align, alignmentBits);
-        w.line("offset_bits = (offset_bits + " + std::to_string(alignmentBits - 1) + ") & !" +
-               std::to_string(alignmentBits - 1) + "usize;");
-    }
-
-    void emitSerializePadding(SourceWriter& w, const SemanticFieldType& type)
-    {
-        if (type.bitLength == 0)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Pad, type.bitLength);
-        const auto err = nextName("err");
-        w.line("let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, 0, " +
-               std::to_string(type.bitLength) + "u8);");
-        w.line("if " + err + " < 0 { return Err(" + err + "); }");
-        trace(EmitTraceOp::Advance, type.bitLength);
-        w.line("offset_bits += " + std::to_string(type.bitLength) + ";");
-    }
-
-    void emitDeserializePadding(SourceWriter& w, const SemanticFieldType& type) const
-    {
-        if (type.bitLength == 0)
-        {
-            return;
-        }
-        trace(EmitTraceOp::Pad, type.bitLength);
-        trace(EmitTraceOp::Advance, type.bitLength);
-        w.line("offset_bits += " + std::to_string(type.bitLength) + ";");
-    }
-
-    /// @brief Rust spelling of the shared union-prologue steps (see EmitStep.h).
-    class UnionSpelling final : public UnionSectionSpelling
-    {
-    public:
-        UnionSpelling(FunctionBodyEmitter&            owner,
-                      SourceWriter&                   w,
-                      const std::int64_t              tagBits,
-                      const SectionHelperBindingPlan& helperBindings)
-            : owner_(owner)
-            , w_(w)
-            , tagBits_(tagBits)
-            , helperBindings_(helperBindings)
-        {
-        }
-
-        void spellSerializeValidateTag() override
-        {
-            const auto validateHelper =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
-            owner_.trace(EmitTraceOp::ValidateTag);
-            w_.line("let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
-            w_.line("if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
-        }
-
-        void spellSerializeWriteMaskedTag() override
-        {
-            const auto tagHelper = FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
-            const auto tagExpr   = tagHelper + "(self._tag_ as u64)";
-            const auto tagErr    = owner_.nextName("err");
-            owner_.trace(EmitTraceOp::MaskTag);
-            owner_.trace(EmitTraceOp::WriteTag, tagBits_);
-            w_.line("let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + tagExpr + ", " +
-                    std::to_string(tagBits_) + "u8);");
-            w_.line("if " + tagErr + " < 0 { return Err(" + tagErr + "); }");
-        }
-
-        void spellDeserializeReadMaskStoreTag() override
-        {
-            const auto rawTag = owner_.nextName("tag_raw");
-            owner_.trace(EmitTraceOp::ReadTag, tagBits_);
-            w_.line("let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                    std::to_string(tagBits_) + "u8);");
-            const auto tagHelper = FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagMask->symbol);
-            owner_.trace(EmitTraceOp::MaskTag);
-            owner_.trace(EmitTraceOp::StoreTag);
-            w_.line("self._tag_ = (" + tagHelper + "(" + rawTag + ")) as " +
-                    unsignedStorageType(static_cast<std::uint32_t>(tagBits_)) + ";");
-        }
-
-        void spellDeserializeValidateTag() override
-        {
-            const auto validateHelper =
-                FunctionBodyEmitter::helperBindingName(helperBindings_.unionTagValidate->symbol);
-            owner_.trace(EmitTraceOp::ValidateTag);
-            w_.line("let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
-            w_.line("if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
-        }
-
-        void spellAdvanceTag() override
-        {
-            owner_.trace(EmitTraceOp::Advance, tagBits_);
-            w_.line("offset_bits += " + std::to_string(tagBits_) + ";");
-        }
-
-        void spellBeginDispatch() override
-        {
-            owner_.trace(EmitTraceOp::Switch);
-            w_.open("match self._tag_ {");
-        }
-
-        void spellBeginCase(const std::int64_t optionIndex, const bool /*firstCase*/) override
-        {
-            owner_.trace(EmitTraceOp::Case, optionIndex);
-            w_.open(std::to_string(optionIndex) + " => {");
-        }
-
-        void spellEndCase() override
-        {
-            w_.close("}");
-        }
-
-        void spellBadTagDefault() override
-        {
-            owner_.trace(EmitTraceOp::DefaultBadTag);
-            w_.line("_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
-        }
-
-        void spellEndDispatch() override
-        {
-            w_.close("}");
-        }
-
-    private:
-        FunctionBodyEmitter&            owner_;
-        SourceWriter&                   w_;
-        const std::int64_t              tagBits_;
-        const SectionHelperBindingPlan& helperBindings_;
+        std::string      rustName;
+        mlir::dsdl::IOOp io;
     };
 
-    void emitSerializeUnion(SourceWriter&                        w,
-                            const SemanticSection&               section,
-                            const std::vector<PlannedFieldStep>& unionBranches,
-                            const LoweredSectionFacts* const     sectionFacts,
-                            const SectionHelperBindingPlan&      helperBindings)
+    struct Plan final
     {
-        const NamingScope            fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
-        const auto                   tagBits    = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling                spelling(*this, w, static_cast<std::int64_t>(tagBits), helperBindings);
-        std::vector<UnionCaseRender> cases;
-        cases.reserve(unionBranches.size());
-        for (const auto& step : unionBranches)
-        {
-            const auto& field = *step.field;
-            cases.push_back(
-                UnionCaseRender{field.unionOptionIndex, [this, &w, &step, &field, &fieldScope]() {
-                                    emitAlignSerialize(w, field.resolvedType.alignmentBits);
-                                    emitSerializeAny(w,
-                                                     field.resolvedType,
-                                                     "self." + fieldScope.get(IdentifierRole::FieldName, field.name),
-                                                     step.arrayLengthPrefixBits,
-                                                     step.fieldFacts);
-                                }});
-        }
-        renderUnionSection(EmitTraceDirection::Serialize, cases, spelling);
-    }
-
-    void emitDeserializeUnion(SourceWriter&                        w,
-                              const SemanticSection&               section,
-                              const std::vector<PlannedFieldStep>& unionBranches,
-                              const LoweredSectionFacts* const     sectionFacts,
-                              const SectionHelperBindingPlan&      helperBindings)
-    {
-        const NamingScope            fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
-        const auto                   tagBits    = resolveUnionTagBits(section, sectionFacts);
-        UnionSpelling                spelling(*this, w, static_cast<std::int64_t>(tagBits), helperBindings);
-        std::vector<UnionCaseRender> cases;
-        cases.reserve(unionBranches.size());
-        for (const auto& step : unionBranches)
-        {
-            const auto& field = *step.field;
-            cases.push_back(
-                UnionCaseRender{field.unionOptionIndex, [this, &w, &step, &field, &fieldScope]() {
-                                    emitAlignDeserialize(w, field.resolvedType.alignmentBits);
-                                    emitDeserializeAny(w,
-                                                       field.resolvedType,
-                                                       "self." + fieldScope.get(IdentifierRole::FieldName, field.name),
-                                                       step.arrayLengthPrefixBits,
-                                                       step.fieldFacts,
-                                                       poolClassConstExprForField(field.name));
-                                }});
-        }
-        renderUnionSection(EmitTraceDirection::Deserialize, cases, spelling);
-    }
-
-    /// @brief Rust spelling of the shared recursive field-body steps (see EmitStep.h).
-    ///
-    /// Leaf statement idioms only; all cross-group and recursive ordering comes
-    /// from renderFieldSteps. Constructed per field render with the direction and
-    /// (for deserialise) the pool-class expression.
-    class FieldSpelling final : public FieldStepSpelling
-    {
-    public:
-        FieldSpelling(FunctionBodyEmitter&         owner,
-                      SourceWriter&                w,
-                      const HelperBindingDirection direction,
-                      std::string                  poolClassConstExpr)
-            : owner_(owner)
-            , w_(w)
-            , direction_(direction)
-            , poolClassConstExpr_(std::move(poolClassConstExpr))
-        {
-        }
-
-        void spellPad(const FieldEmitStep& step) override
-        {
-            if (direction_ == HelperBindingDirection::Serialize)
-            {
-                owner_.emitSerializePadding(w_, step.type);
-            }
-            else
-            {
-                owner_.emitDeserializePadding(w_, step.type);
-            }
-        }
-
-        void spellScalarSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            switch (step.kind)
-            {
-            case FieldStepKind::ScalarBool: {
-                const auto err = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarBool, 1);
-                w_.line("let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, " + expr + ");");
-                w_.line("if " + err + " < 0 { return Err(" + err + "); }");
-                owner_.trace(EmitTraceOp::Advance, 1);
-                w_.line("offset_bits += 1;");
-                break;
-            }
-            case FieldStepKind::ScalarUint: {
-                std::string valueExpr = expr + " as u64";
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                valueExpr         = helper + "(" + valueExpr + ")";
-
-                const auto err = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarUint, step.bits);
-                w_.line("let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + valueExpr + ", " +
-                        std::to_string(step.bits) + "u8);");
-                w_.line("if " + err + " < 0 { return Err(" + err + "); }");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            case FieldStepKind::ScalarSint: {
-                std::string valueExpr = expr + " as i64";
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                valueExpr         = helper + "(" + valueExpr + ")";
-
-                const auto err = owner_.nextName("err");
-                owner_.trace(EmitTraceOp::WriteScalarSint, step.bits);
-                w_.line("let " + err + " = crate::dsdl_runtime::set_ixx(buffer, offset_bits, " + valueExpr + ", " +
-                        std::to_string(step.bits) + "u8);");
-                w_.line("if " + err + " < 0 { return Err(" + err + "); }");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            case FieldStepKind::ScalarFloat: {
-                const auto  err            = owner_.nextName("err");
-                const auto  floatType      = std::string(step.bits == 64 ? "f64" : "f32");
-                std::string normalizedExpr = expr + " as " + floatType;
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                normalizedExpr    = helper + "(" + normalizedExpr + ")";
-                std::string setCall;
-                if (step.bits == 16)
-                {
-                    setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + normalizedExpr + ")";
-                }
-                else if (step.bits == 32)
-                {
-                    setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + normalizedExpr + ")";
-                }
-                else
-                {
-                    setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + normalizedExpr + ")";
-                }
-                owner_.trace(EmitTraceOp::WriteScalarFloat, step.bits);
-                w_.line("let " + err + " = " + setCall + ";");
-                w_.line("if " + err + " < 0 { return Err(" + err + "); }");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            default:
-                assert(false && "not a scalar step");
-                break;
-            }
-        }
-
-        void spellScalarDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            switch (step.kind)
-            {
-            case FieldStepKind::ScalarBool:
-                owner_.trace(EmitTraceOp::ReadScalarBool, 1);
-                w_.line(expr + " = crate::dsdl_runtime::get_bit(buffer, offset_bits);");
-                owner_.trace(EmitTraceOp::Advance, 1);
-                w_.line("offset_bits += 1;");
-                break;
-            case FieldStepKind::ScalarUint: {
-                const std::string getter =
-                    "get_u" + std::string(scalarWidthSuffix(static_cast<std::uint32_t>(step.bits)));
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                const auto raw    = owner_.nextName("raw");
-                owner_.trace(EmitTraceOp::ReadScalarUint, step.bits);
-                w_.line("let " + raw + " = crate::dsdl_runtime::" + getter + "(buffer, offset_bits, " +
-                        std::to_string(step.bits) + "u8) as u64;");
-                w_.line(expr + " = " + helper + "(" + raw + ") as " +
-                        unsignedStorageType(static_cast<std::uint32_t>(step.bits)) + ";");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            case FieldStepKind::ScalarSint: {
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                const auto raw    = owner_.nextName("raw");
-                owner_.trace(EmitTraceOp::ReadScalarSint, step.bits);
-                w_.line("let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                        std::to_string(step.bits) + "u8) as i64;");
-                w_.line(expr + " = " + helper + "(" + raw + ") as " +
-                        signedStorageType(static_cast<std::uint32_t>(step.bits)) + ";");
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            case FieldStepKind::ScalarFloat: {
-                assert(!step.scalarHelperSymbol.empty());
-                const auto helper = FunctionBodyEmitter::helperBindingName(step.scalarHelperSymbol);
-                owner_.trace(EmitTraceOp::ReadScalarFloat, step.bits);
-                if (step.bits == 16)
-                {
-                    w_.line(expr + " = " + helper +
-                            "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f32) as f32;");
-                }
-                else if (step.bits == 32)
-                {
-                    w_.line(expr + " = " + helper +
-                            "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f32) as f32;");
-                }
-                else
-                {
-                    w_.line(expr + " = " + helper +
-                            "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
-                }
-                owner_.trace(EmitTraceOp::Advance, step.bits);
-                w_.line("offset_bits += " + std::to_string(step.bits) + ";");
-                break;
-            }
-            default:
-                assert(false && "not a scalar step");
-                break;
-            }
-        }
-
-        void spellFixedArrayLenCheck(const FieldEmitStep& step, const std::string& expr) override
-        {
-            owner_.trace(EmitTraceOp::LenCheck, step.capacity);
-            w_.line("if " + expr + ".len() != " + std::to_string(step.capacity) +
-                    "usize { return "
-                    "Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
-        }
-
-        void spellVariableArrayLenSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            assert(step.arrayHelpers.has_value());
-            assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("len_rc");
-            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
-            w_.line("let " + validateRc + " = " + validateHelper + "(" + expr + ".len() as i64);");
-            w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            std::string prefixExpr = expr + ".len() as u64";
-            assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto serPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err             = owner_.nextName("err");
-            owner_.trace(EmitTraceOp::LenWrite, step.prefixBits);
-            w_.line("let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " + prefixExpr + ", " +
-                    std::to_string(step.prefixBits) + "u8);");
-            w_.line("if " + err + " < 0 { return Err(" + err + "); }");
-            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
-            w_.line("offset_bits += " + std::to_string(step.prefixBits) + ";");
-        }
-
-        std::string spellVariableArrayLenDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            emitPoolContract(expr);
-            const auto count    = owner_.nextName("count");
-            const auto rawCount = owner_.nextName("count_raw");
-            owner_.trace(EmitTraceOp::LenRead, step.prefixBits);
-            w_.line("let " + rawCount + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                    std::to_string(step.prefixBits) + "u8);");
-            owner_.trace(EmitTraceOp::Advance, step.prefixBits);
-            w_.line("offset_bits += " + std::to_string(step.prefixBits) + ";");
-            std::string countExpr = rawCount + " as usize";
-            assert(step.arrayHelpers.has_value());
-            assert(!step.arrayHelpers->prefixSymbol.empty());
-            const auto deserPrefixHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->prefixSymbol);
-            countExpr                    = deserPrefixHelper + "(" + rawCount + ") as usize";
-            w_.line("let " + count + " = " + countExpr + ";");
-            assert(!step.arrayHelpers->validateSymbol.empty());
-            const auto validateHelper = FunctionBodyEmitter::helperBindingName(step.arrayHelpers->validateSymbol);
-            const auto validateRc     = owner_.nextName("len_rc");
-            owner_.trace(EmitTraceOp::LenValidate, step.prefixBits);
-            w_.line("let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
-            w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            emitClearReserve(expr, count);
-            return count;
-        }
-
-        std::string spellFixedArrayCountDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            emitPoolContract(expr);
-            const auto count = owner_.nextName("count");
-            w_.line("let " + count + " = " + std::to_string(step.capacity) + "usize;");
-            emitClearReserve(expr, count);
-            return count;
-        }
-
-        std::string spellBeginElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            const auto index = owner_.nextName("index");
-            const auto count =
-                step.kind == FieldStepKind::VariableArray ? (expr + ".len()") : std::to_string(step.capacity) + "usize";
-
-            owner_.trace(EmitTraceOp::ElemLoop);
-            w_.open("for " + index + " in 0.." + count + " {");
-            return expr + "[" + index + "]";
-        }
-
-        std::string spellBeginElemLoopDeserialize(const FieldEmitStep& step,
-                                                  const std::string&   expr,
-                                                  const std::string&   countExpr) override
-        {
-            (void) expr;
-            const auto index = owner_.nextName("index");
-            owner_.trace(EmitTraceOp::ElemLoop);
-            w_.open("for " + index + " in 0.." + countExpr + " {");
-            assert(itemVar_.empty() && "DSDL forbids arrays of arrays; loops never nest");
-            itemVar_ = owner_.nextName("item");
-            w_.line("let mut " + itemVar_ + " = " + defaultExpr(step.children.front().type, owner_.ctx_) + ";");
-            return itemVar_;
-        }
-
-        void spellEndElemLoopSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            (void) step;
-            (void) expr;
-            w_.close("}");
-        }
-
-        void spellEndElemLoopDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            (void) step;
-            w_.line(expr + ".push(" + itemVar_ + ");");
-            itemVar_.clear();
-            w_.close("}");
-        }
-
-        void spellCompositeSerialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-            const auto sizeVar = owner_.nextName("size_bytes");
-            const auto errVar  = owner_.nextName("err");
-
-            if (!step.type.compositeSealed)
-            {
-                w_.line("offset_bits += 32;  // Delimiter header");
-            }
-
-            w_.line("let mut " + sizeVar + " = " + std::to_string((step.type.bitLengthSet.max() + 7) / 8) + "usize;");
-            if (!step.type.compositeSealed)
-            {
-                w_.line("let _remaining = "
-                        "buffer.len().saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
-                        "buffer.len()));");
-                assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
-                const auto validateRc = owner_.nextName("rc");
-                w_.line("let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
-                w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            }
-            w_.line("let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-            w_.line("let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
-            w_.line("let " + errVar + " = " + expr + ".serialize(&mut buffer[_start.._end]);");
-            w_.open("match " + errVar + " {");
-            w_.line("Ok(v) => " + sizeVar + " = v,");
-            w_.line("Err(e) => return Err(e),");
-            w_.close("}");
-
-            if (!step.type.compositeSealed)
-            {
-                const auto hdrErr = owner_.nextName("err");
-                w_.line("let " + hdrErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits - 32, " + sizeVar +
-                        " as u64, 32u8);");
-                w_.line("if " + hdrErr + " < 0 { return Err(" + hdrErr + "); }");
-            }
-
-            w_.line("offset_bits += " + sizeVar + " * 8;");
-        }
-
-        void spellCompositeDeserialize(const FieldEmitStep& step, const std::string& expr) override
-        {
-            owner_.trace(step.type.compositeSealed ? EmitTraceOp::CompositeInline : EmitTraceOp::CompositeDelimHeader);
-            const auto sizeVar = owner_.nextName("size_bytes");
-
-            if (!step.type.compositeSealed)
-            {
-                w_.line("let " + sizeVar + " = crate::dsdl_runtime::get_u32(buffer, offset_bits, 32u8) as usize;");
-                w_.line("offset_bits += 32;");
-                w_.line("let _remaining = "
-                        "capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, "
-                        "capacity_bytes));");
-                assert(!step.delimiterValidateSymbol.empty());
-                const auto helper     = FunctionBodyEmitter::helperBindingName(step.delimiterValidateSymbol);
-                const auto validateRc = owner_.nextName("rc");
-                w_.line("let " + validateRc + " = " + helper + "(" + sizeVar + " as i64, _remaining as i64);");
-                w_.line("if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-                w_.line("let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-                w_.line("let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
-                w_.line("if let Err(e) = " + expr + ".deserialize(&buffer[_start.._end]) { return Err(e); }");
-                w_.line("offset_bits += " + sizeVar + " * 8;");
-                return;
-            }
-
-            w_.line("let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
-            w_.line("let _slice = &buffer[_start..buffer.len()];");
-            w_.line("let _consumed = match " + expr +
-                    ".deserialize(_slice) { Ok(v) => v, Err(e) => return Err(e) };\n");
-            w_.line("offset_bits += _consumed * 8;");
-        }
-
-    private:
-        void emitPoolContract(const std::string& expr)
-        {
-            if (!poolClassConstExpr_.empty())
-            {
-                w_.line(expr +
-                        ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
-                        "Self::__LLVMDSDL_MEMORY_MODE, "
-                        "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                        poolClassConstExpr_ + "));");
-            }
-        }
-
-        void emitClearReserve(const std::string& expr, const std::string& count)
-        {
-            w_.line(expr + ".clear();");
-            w_.open("if Self::__LLVMDSDL_MEMORY_MODE == "
-                    "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
-            w_.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
-            w_.open("if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count +
-                    ", &mut _pool)"
-                    " {");
-            w_.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
-            w_.close("}");
-            w_.midway("} else {");
-            w_.line(expr + ".reserve(" + count + ");");
-            w_.close("}");
-        }
-
-        FunctionBodyEmitter&         owner_;
-        SourceWriter&                w_;
-        const HelperBindingDirection direction_;
-        const std::string            poolClassConstExpr_;
-        std::string                  itemVar_;
+        std::int64_t                 unionTagBits{0};
+        llvm::StringMap<Member>      members;
+        llvm::StringMap<std::string> poolClass;
     };
 
-    void emitSerializeAny(SourceWriter&                      w,
-                          const SemanticFieldType&           type,
-                          const std::string&                 expr,
-                          const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
-                          const LoweredFieldFacts* const     fieldFacts                    = nullptr)
+    /// @brief The plan the object a pointer names belongs to.
+    const Plan& planOf(const mlir::Value object) const
     {
-        const auto steps =
-            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Serialize);
-        FieldSpelling spelling(*this, w, HelperBindingDirection::Serialize, "");
-        renderFieldSteps(steps, expr, HelperBindingDirection::Serialize, spelling);
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? plans_.find(identity.getIdentity()) : plans_.end();
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Rust spelling: an object that no plan of this schema describes");
+        }
+        return found->second;
     }
 
-    void emitDeserializeAny(SourceWriter&                      w,
-                            const SemanticFieldType&           type,
-                            const std::string&                 expr,
-                            const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
-                            const LoweredFieldFacts* const     fieldFacts                    = nullptr,
-                            const std::string&                 poolClassConstExpr            = "")
+    Member memberOf(const mlir::Value object, const llvm::StringRef member) const
     {
-        const auto steps =
-            buildFieldEmitSteps(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
-        FieldSpelling spelling(*this, w, HelperBindingDirection::Deserialize, poolClassConstExpr);
-        renderFieldSteps(steps, expr, HelperBindingDirection::Deserialize, spelling);
+        const Plan& plan  = planOf(object);
+        const auto  found = plan.members.find(member);
+        if (found == plan.members.end())
+        {
+            llvm::report_fatal_error("Rust spelling: a member the schema does not declare: " + member);
+        }
+        return found->second;
     }
+
+    std::string poolClassOf(const mlir::Value object, const llvm::StringRef member) const
+    {
+        const Plan& plan  = planOf(object);
+        const auto  found = plan.poolClass.find(member);
+        if (found == plan.poolClass.end())
+        {
+            llvm::report_fatal_error("Rust spelling: a length set on a member that is not a variable-length array: " +
+                                     member);
+        }
+        return found->second;
+    }
+
+    std::string memberAccess(const mlir::Value object, const llvm::StringRef member, const ValueNames& names) const
+    {
+        return names(object) + "." + memberOf(object, member).rustName;
+    }
+
+    std::string elementAccess(const mlir::Value     object,
+                              const llvm::StringRef member,
+                              const std::string&    index,
+                              const ValueNames&     names) const
+    {
+        return memberAccess(object, member, names) + "[" + asSize(index) + "]";
+    }
+
+    /// @brief The container expression and element base of the bool array @p address names.
+    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
+    {
+        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
+        if (!element)
+        {
+            llvm::report_fatal_error("Rust spelling: a bit copy whose storage is not an array element");
+        }
+        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
+                              asSize(names(element.getIndex())));
+    }
+
+    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
+    static bool isRead(const mlir::Value pointer)
+    {
+        return llvm::any_of(pointer.getUsers(),
+                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
+    }
+
+    /// @brief The Rust type the struct declares a scalar field or element as.
+    static std::string scalarType(mlir::dsdl::IOOp io)
+    {
+        const llvm::StringRef category = io.getScalarCategory();
+        const auto            bits     = static_cast<std::uint32_t>(io.getBitLength());
+        if (category == "bool")
+        {
+            return "bool";
+        }
+        if (category == "signed")
+        {
+            return signedStorageType(bits);
+        }
+        if (category == "float")
+        {
+            return bits == 64U ? "f64" : "f32";
+        }
+        return unsignedStorageType(bits);
+    }
+
+    /// @brief @p value converted for storage in a field of @p type.
+    static std::string storedValue(const std::string& value, const std::string& type)
+    {
+        if (type == "bool")
+        {
+            return value + " != 0u64";
+        }
+        return value + " as " + type;
+    }
+
+    // Types.
+
+    static bool isBool(const mlir::Type type)
+    {
+        return type.isInteger(1);
+    }
+
+    /// @brief Whether @p literal is the zero constant of an unsigned type.
+    static bool isZero(const llvm::StringRef literal)
+    {
+        return literal.starts_with("0u") || literal == "0usize";
+    }
+
+    /// @brief Whether @p type is spelled as a signed Rust type.
+    static bool isSignedSpelt(const mlir::Type type)
+    {
+        return type.isInteger(8);
+    }
+
+    static unsigned widthOf(const mlir::Type type)
+    {
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(type))
+        {
+            return integer.getWidth();
+        }
+        return 64U;
+    }
+
+    static std::string asSigned(const llvm::StringRef value, const mlir::Type type)
+    {
+        return value.str() + " as " + signedStorageType(widthOf(type));
+    }
+
+    static std::string asUnsigned(const llvm::StringRef value, const mlir::Type type)
+    {
+        return value.str() + " as " + unsignedStorageType(widthOf(type));
+    }
+
+    static std::string asSize(const std::string& value)
+    {
+        return value + " as usize";
+    }
+
+    static std::string typeName(const mlir::Type type)
+    {
+        if (mlir::isa<mlir::IndexType>(type))
+        {
+            return "usize";
+        }
+        if (type.isF32())
+        {
+            return "f32";
+        }
+        if (type.isF64())
+        {
+            return "f64";
+        }
+        if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(type))
+        {
+            if (integer.getWidth() == 1)
+            {
+                return "bool";
+            }
+            return isSignedSpelt(type) ? signedStorageType(integer.getWidth())
+                                       : unsignedStorageType(integer.getWidth());
+        }
+        if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type))
+        {
+            if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
+            {
+                return pointer.getIsConst() ? "&[u8]" : "&mut [u8]";
+            }
+            if (mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()))
+            {
+                return "usize";
+            }
+        }
+        llvm::report_fatal_error("Rust spelling: a value of a type no plan body carries");
+    }
+
+    static std::string comparisonToken(const Comparison comparison)
+    {
+        switch (comparison)
+        {
+        case Comparison::Eq:
+            return "==";
+        case Comparison::Ne:
+            return "!=";
+        case Comparison::LtS:
+        case Comparison::LtU:
+            return "<";
+        case Comparison::LeS:
+        case Comparison::LeU:
+            return "<=";
+        case Comparison::GtS:
+        case Comparison::GtU:
+            return ">";
+        case Comparison::GeS:
+        case Comparison::GeU:
+            return ">=";
+        }
+        return "==";
+    }
+
+    /// @brief A name for a local the spelling introduces on its own, apart from the values.
+    std::string fresh(const std::string& stem) const
+    {
+        return "_" + stem + std::to_string(counter_++) + "_";
+    }
+
+    mlir::SymbolTable     symbols_;
+    llvm::StringMap<Plan> plans_;
+    mutable std::size_t   counter_{0};
+    mutable bool          inBody_{false};
 };
 
 std::string rustConstType(const TypeExprAST& type)
@@ -1375,38 +1189,42 @@ std::string rustConstType(const TypeExprAST& type, const Value& value)
     return rustConstType(type);
 }
 
-void emitSectionType(SourceWriter&                    w,
-                     const std::string&               typeName,
-                     const SemanticSection&           section,
-                     const EmitterContext&            ctx,
-                     const Options&                   options,
-                     const std::string&               fullName,
-                     std::uint32_t                    majorVersion,
-                     std::uint32_t                    minorVersion,
-                     const AttachedDoc&               typeDoc,
-                     const std::string&               definitionFullName,
-                     const LoweredSectionFacts* const sectionFacts)
+/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+struct SectionBodies final
 {
-    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
-    std::unordered_map<std::string, std::string>       poolClassConstExprByField;
-    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
-    std::set<std::string>                              usedPoolConstNames;
-    std::uint32_t                                      nextPoolClassId = 1U;
+    mlir::func::FuncOp serialize;
+    mlir::func::FuncOp deserialize;
+};
+
+llvm::Error emitSectionType(SourceWriter&                         w,
+                            const std::string&                    typeName,
+                            const SemanticSection&                section,
+                            const EmitterContext&                 ctx,
+                            const Options&                        options,
+                            const std::string&                    fullName,
+                            std::uint32_t                         majorVersion,
+                            std::uint32_t                         minorVersion,
+                            const AttachedDoc&                    typeDoc,
+                            const std::string&                    definitionFullName,
+                            const mlir::dsdl::SerializationPlanOp plan,
+                            const RustSpelling&                   spelling,
+                            const SectionBodies&                  bodies)
+{
+    const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
+    std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
     {
-        if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
+        if (!field.isPadding && isVariableArray(field.resolvedType.arrayKind))
         {
-            continue;
+            variableArrayFields.push_back(field.name);
         }
-        const std::string baseName =
-            "__LLVMDSDL_POOL_CLASS_" +
-            codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, field.name);
-        std::string constName = baseName;
-        for (std::uint32_t suffix = 1U; !usedPoolConstNames.insert(constName).second; ++suffix)
-        {
-            constName = baseName + "_" + std::to_string(suffix);
-        }
-        poolClassConstExprByField.emplace(field.name, "Self::" + constName);
+    }
+    std::unordered_map<std::string, std::string>       poolClassConstExprByField;
+    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
+    std::uint32_t                                      nextPoolClassId = 1U;
+    for (const auto& [fieldName, constName] : poolClassConstantNames(variableArrayFields))
+    {
+        poolClassConstExprByField.emplace(fieldName, "Self::" + constName);
         poolClassConstants.emplace_back(constName, nextPoolClassId++);
     }
 
@@ -1437,7 +1255,7 @@ void emitSectionType(SourceWriter&                    w,
     {
         // The tag storage must match the wire tag width (8 bits for <=256 options,
         // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-        w.line("pub _tag_: " + unsignedStorageType(resolveUnionTagBits(section, sectionFacts)) + ",");
+        w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
     }
 
     if (fieldCount == 0 && !section.isUnion)
@@ -1466,20 +1284,14 @@ void emitSectionType(SourceWriter&                    w,
         {
             continue;
         }
-        if (field.resolvedType.arrayKind != ArrayKind::None)
+        if (isVariableArray(field.resolvedType.arrayKind))
         {
-            const auto  classExprIt = poolClassConstExprByField.find(field.name);
-            std::string classExpr   = "crate::dsdl_runtime::AllocationClassId(0u32)";
-            if (classExprIt != poolClassConstExprByField.end())
-            {
-                classExpr = classExprIt->second;
-            }
             w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
                    ": crate::dsdl_runtime::DsdlVec::with_contract("
                    "crate::dsdl_runtime::VarArrayMemoryContract::new("
                    "Self::__LLVMDSDL_MEMORY_MODE, "
                    "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                   classExpr + ")),");
+                   poolClassConstExprByField.at(field.name) + ")),");
             continue;
         }
         w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + defaultExpr(field.resolvedType, ctx) +
@@ -1506,10 +1318,7 @@ void emitSectionType(SourceWriter&                    w,
     w.line("pub const EXTENT_BYTES: usize = " + std::to_string(section.extentBits.value_or(0) / 8) + ";");
     w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
            std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                             ? sectionFacts->zohAliasReason
-                                             : "not-proven";
+    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
     w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
     w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + zohAliasReason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
@@ -1550,14 +1359,28 @@ void emitSectionType(SourceWriter&                    w,
     }
     w.blank();
 
-    const auto canonicalSectionName =
-        fullName + "." + std::to_string(majorVersion) + "." + std::to_string(minorVersion);
-    FunctionBodyEmitter body(ctx, poolClassConstExprByField);
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Serialize);
-    body.emitSerialize(w, typeName, section, sectionFacts);
+    if (!bodies.serialize || !bodies.deserialize)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no plan bodies for %s in the lowered module",
+                                       fullName.c_str());
+    }
+    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    {
+        return err;
+    }
     w.blank();
-    ctx.traceSection(canonicalSectionName, EmitTraceDirection::Deserialize);
-    body.emitDeserialize(w, typeName, section, sectionFacts);
+    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    {
+        return err;
+    }
+    w.blank();
+    w.open("pub fn deserialize_with_consumed(&mut self, buffer: &[u8]) -> (i8, usize) {");
+    w.open("match self.deserialize(buffer) {");
+    w.line("Ok(consumed) => (0, consumed),");
+    w.line("Err(rc) => (rc, buffer.len()),");
+    w.close("}");
+    w.close("}");
     w.blank();
 
     w.open("pub fn try_deserialize_view<'a>(buffer: &'a [u8]) -> core::result::Result<(&'a [u8], usize), i8> {");
@@ -1605,13 +1428,37 @@ void emitSectionType(SourceWriter&                    w,
     w.close("}");
     w.close("}");
     w.blank();
+    return llvm::Error::success();
 }
 
-std::string renderDefinitionFile(const SemanticDefinition& def,
-                                 const EmitterContext&     ctx,
-                                 const LoweredFactsMap&    loweredFacts,
-                                 const Options&            options)
+llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
+                                                 const EmitterContext&     ctx,
+                                                 const Options&            options,
+                                                 mlir::ModuleOp            module)
 {
+    mlir::dsdl::SchemaOp schema = schemaOf(module, def);
+    if (!schema)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no schema for %s in the lowered module",
+                                       def.info.fullName.c_str());
+    }
+    const RustSpelling                   spelling(module, schema);
+    std::vector<mlir::func::FuncOp>      helpers;
+    std::map<std::string, SectionBodies> bodies;
+    for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            helpers.push_back(fn);
+            continue;
+        }
+        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
+        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+    }
+
     std::ostringstream out;
     SourceWriter       w = makeRustWriter(out);
     w.line(generatedCommentLine("Rust backend"));
@@ -1624,11 +1471,12 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
 
     const auto deps = collectDefinitionCompositeDependencies(def);
 
-    const auto selfKey = loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+    const auto selfKey = definitionTypeKey(def.info);
 
     for (const auto& depRef : deps)
     {
-        if (loweredTypeKey(depRef.fullName, depRef.majorVersion, depRef.minorVersion) == selfKey)
+        if ((depRef.fullName + ":" + std::to_string(depRef.majorVersion) + ":" + std::to_string(depRef.minorVersion)) ==
+            selfKey)
         {
             continue;
         }
@@ -1650,53 +1498,78 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         out << "\n";
     }
 
+    // The helpers the plans call, ahead of the types whose bodies call them.
+    for (const mlir::func::FuncOp helper : helpers)
+    {
+        if (auto err = translateFunction(helper, spelling, w))
+        {
+            return std::move(err);
+        }
+        w.blank();
+    }
+
     const auto baseType = ctx.rustTypeName(def.info);
 
     if (!def.isService)
     {
-        emitSectionType(w,
-                        baseType,
-                        def.request,
-                        ctx,
-                        options,
-                        def.info.fullName,
-                        def.info.majorVersion,
-                        def.info.minorVersion,
-                        def.doc,
-                        def.info.fullName,
-                        lookupLoweredSectionFacts(loweredFacts, def, ""));
+        if (auto err = emitSectionType(w,
+                                       baseType,
+                                       def.request,
+                                       ctx,
+                                       options,
+                                       def.info.fullName,
+                                       def.info.majorVersion,
+                                       def.info.minorVersion,
+                                       def.doc,
+                                       def.info.fullName,
+                                       sectionPlan(schema, ""),
+                                       spelling,
+                                       bodies[""]))
+        {
+            return std::move(err);
+        }
         return out.str();
     }
 
     const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "request");
     const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "response");
 
-    emitSectionType(w,
-                    reqType,
-                    def.request,
-                    ctx,
-                    options,
-                    def.info.fullName + ".Request",
-                    def.info.majorVersion,
-                    def.info.minorVersion,
-                    def.doc,
-                    def.info.fullName,
-                    lookupLoweredSectionFacts(loweredFacts, def, "request"));
+    if (auto err = emitSectionType(w,
+                                   reqType,
+                                   def.request,
+                                   ctx,
+                                   options,
+                                   def.info.fullName + ".Request",
+                                   def.info.majorVersion,
+                                   def.info.minorVersion,
+                                   def.doc,
+                                   def.info.fullName,
+                                   sectionPlan(schema, "request"),
+                                   spelling,
+                                   bodies["request"]))
+    {
+        return std::move(err);
+    }
 
     if (def.response)
     {
         out << "\n";
-        emitSectionType(w,
-                        respType,
-                        *def.response,
-                        ctx,
-                        options,
-                        def.info.fullName + ".Response",
-                        def.info.majorVersion,
-                        def.info.minorVersion,
-                        def.doc,
-                        def.info.fullName,
-                        lookupLoweredSectionFacts(loweredFacts, def, "response"));
+        if (auto err = emitSectionType(w,
+                                       respType,
+                                       *def.response,
+                                       ctx,
+                                       options,
+                                       def.info.fullName + ".Response",
+                                       def.info.majorVersion,
+                                       def.info.minorVersion,
+                                       def.doc,
+                                       def.info.fullName,
+                                       sectionPlan(schema, "response"),
+                                       spelling,
+                                       bodies["response"]))
+        {
+            return std::move(err);
+        }
     }
 
     out << "\n";
@@ -1774,26 +1647,11 @@ std::string renderCargoToml(const Options& options)
 
 }  // namespace
 
-llvm::Error emit(const SemanticModule& semantic,
-                 mlir::ModuleOp        module,
-                 const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink)
+llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Options& options)
 {
     if (options.outDir.empty())
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
-    }
-    const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Rust");
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic,
-                                     module,
-                                     diagnostics,
-                                     "Rust",
-                                     &loweredFacts,
-                                     options.optimizeLoweredSerDes))
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
     std::filesystem::path const outRoot(options.outDir);
     std::filesystem::path const srcRoot          = outRoot / "src";
@@ -1849,8 +1707,7 @@ llvm::Error emit(const SemanticModule& semantic,
         }
     }
 
-    EmitterContext ctx(semantic, options.typeNameVersioning);
-    ctx.setTraceSink(traceSink);
+    const EmitterContext ctx(semantic, options.typeNameVersioning);
 
     std::map<std::string, std::set<std::string>> dirToSubdirs;
     std::map<std::string, std::set<std::string>> dirToFiles;
@@ -1891,10 +1748,12 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        if (auto err = writeGeneratedFile(dir / (modName + ".rs"),
-                                          renderDefinitionFile(def, ctx, loweredFacts, options),
-                                          options.writePolicy,
-                                          requiredTypeKeys))
+        auto file = renderDefinitionFile(def, ctx, options, module);
+        if (!file)
+        {
+            return file.takeError();
+        }
+        if (auto err = writeGeneratedFile(dir / (modName + ".rs"), *file, options.writePolicy, requiredTypeKeys))
         {
             return err;
         }

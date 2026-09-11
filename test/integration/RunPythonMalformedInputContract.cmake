@@ -148,7 +148,7 @@ def assert_semantic_malformed_contract(package: str, runtime_module, context: st
     expect_value_error(
         context,
         "union-invalid-tag",
-        "decoded invalid union tag",
+        "invalid union tag",
         lambda: union_type.deserialize(bytes(union_payload)),
     )
 
@@ -157,7 +157,7 @@ def assert_semantic_malformed_contract(package: str, runtime_module, context: st
     expect_value_error(
         context,
         "helpers-array-length",
-        "decoded length for field 'c' exceeds max length 5",
+        "array length out of range",
         lambda: helpers_type.deserialize(bytes(helpers_payload)),
     )
 
@@ -171,7 +171,7 @@ def assert_semantic_malformed_contract(package: str, runtime_module, context: st
     expect_value_error(
         context,
         "uses-delimited-invalid-header",
-        "decoded payload size for composite field 'nested' exceeds remaining buffer space",
+        "invalid delimiter header",
         lambda: uses_delimited_type.deserialize(bytes(delimited_payload)),
     )
 

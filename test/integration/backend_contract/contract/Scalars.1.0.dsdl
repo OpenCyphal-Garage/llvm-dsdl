@@ -1,0 +1,7 @@
+# One field per scalar op class the gates perturb, plus padding that absorbs each perturbation so the
+# serialised size is constant across rows: a backend cannot tell rows apart by their totals.
+truncated uint3 a
+saturated int7 b
+float16 c
+void22
+@sealed

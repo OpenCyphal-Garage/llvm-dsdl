@@ -71,6 +71,7 @@ import json
 import os
 import sys
 import unittest
+from array import array
 from pathlib import Path
 
 PORTABLE_OUT = Path("@PORTABLE_OUT@")
@@ -152,6 +153,17 @@ class PythonEmitterRuntimeUnitTests(unittest.TestCase):
         extracted = runtime.extract_bits(bytes([0xAA]), 0, 16)
         self.assertEqual(extracted, bytes([0xAA, 0x00]))
 
+        # A memoryview is addressed by byte whatever the format of its buffer; a read-only view
+        # and a strided view are rejected, as the accelerator rejects them.
+        words = array("I", [0, 0])
+        runtime.write_unsigned(memoryview(words), 32, 16, 0xBEEF, False)
+        self.assertEqual(runtime.read_unsigned(memoryview(words), 32, 16), 0xBEEF)
+        self.assertEqual(runtime.read_unsigned(memoryview(words).cast("B")[4:], 0, 16), 0xBEEF)
+        with self.assertRaises(TypeError):
+            runtime.write_unsigned(memoryview(bytes(2)), 0, 8, 1, False)
+        with self.assertRaises(TypeError):
+            runtime.read_unsigned(memoryview(bytearray(4))[::2], 0, 8)
+
     def test_runtime_helpers_fast(self) -> None:
         runtime = import_from_generated(FAST_OUT, FAST_PACKAGE, "_dsdl_runtime")
 
@@ -162,6 +174,17 @@ class PythonEmitterRuntimeUnitTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             runtime.extract_bits(bytes([0xAA]), 0, 16)
+
+        # A memoryview is addressed by byte whatever the format of its buffer; a read-only view
+        # and a strided view are rejected, as the accelerator rejects them.
+        words = array("I", [0, 0])
+        runtime.write_unsigned(memoryview(words), 32, 16, 0xBEEF, False)
+        self.assertEqual(runtime.read_unsigned(memoryview(words), 32, 16), 0xBEEF)
+        self.assertEqual(runtime.read_unsigned(memoryview(words).cast("B")[4:], 0, 16), 0xBEEF)
+        with self.assertRaises(TypeError):
+            runtime.write_unsigned(memoryview(bytes(2)), 0, 8, 1, False)
+        with self.assertRaises(TypeError):
+            runtime.read_unsigned(memoryview(bytearray(4))[::2], 0, 8)
 
     def test_runtime_loader_modes(self) -> None:
         package_root = PORTABLE_OUT / PORTABLE_PACKAGE.replace(".", "/")

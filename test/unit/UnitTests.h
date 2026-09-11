@@ -79,10 +79,6 @@ bool runAnalyzerTests();
 /// @return True when every case in the suite passed.
 bool runRuntimeTests();
 
-/// @brief Runs the ArrayWirePlanTests suite.
-/// @return True when every case in the suite passed.
-bool runArrayWirePlanTests();
-
 /// @brief Runs the CHeaderRenderTests suite.
 /// @return True when every case in the suite passed.
 bool runCHeaderRenderTests();
@@ -111,42 +107,6 @@ bool runDefinitionIndexTests();
 /// @return True when every case in the suite passed.
 bool runDefinitionPathProjectionTests();
 
-/// @brief Runs the NativeHelperContractTests suite.
-/// @return True when every case in the suite passed.
-bool runNativeHelperContractTests();
-
-/// @brief Runs the LoweredBodyPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runLoweredBodyPlanTests();
-
-/// @brief Runs the LoweredFactsLookupTests suite.
-/// @return True when every case in the suite passed.
-bool runLoweredFactsLookupTests();
-
-/// @brief Runs the LoweredRenderIRTests suite.
-/// @return True when every case in the suite passed.
-bool runLoweredRenderIRTests();
-
-/// @brief Runs the NativeEmitterTraversalTests suite.
-/// @return True when every case in the suite passed.
-bool runNativeEmitterTraversalTests();
-
-/// @brief Runs the SectionHelperBindingPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runSectionHelperBindingPlanTests();
-
-/// @brief Runs the SerDesStatementPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runSerDesStatementPlanTests();
-
-/// @brief Runs the ScriptedBodyPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runScriptedBodyPlanTests();
-
-/// @brief Runs the ScriptedOperationPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runScriptedOperationPlanTests();
-
 /// @brief Runs the HelperBodyPlanTests suite.
 /// @return True when every case in the suite passed.
 bool runHelperBodyPlanTests();
@@ -155,10 +115,6 @@ bool runHelperBodyPlanTests();
 /// @return True when every case in the suite passed.
 bool runHelperBindingNamingTests();
 
-/// @brief Runs the RuntimeHelperBindingsTests suite.
-/// @return True when every case in the suite passed.
-bool runRuntimeHelperBindingsTests();
-
 /// @brief Runs the NamingPolicyTests suite.
 /// @return True when every case in the suite passed.
 bool runNamingPolicyTests();
@@ -166,22 +122,6 @@ bool runNamingPolicyTests();
 /// @brief Runs the NamingGoldenTests suite.
 /// @return True when every case in the suite passed.
 bool runNamingGoldenTests();
-
-/// @brief Runs the RuntimeLoweredPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runRuntimeLoweredPlanTests();
-
-/// @brief Runs the RuntimeLoweredOrderingTests suite.
-/// @return True when every case in the suite passed.
-bool runRuntimeLoweredOrderingTests();
-
-/// @brief Runs the HelperSymbolResolverTests suite.
-/// @return True when every case in the suite passed.
-bool runHelperSymbolResolverTests();
-
-/// @brief Runs the WireLayoutFactsTests suite.
-/// @return True when every case in the suite passed.
-bool runWireLayoutFactsTests();
 
 /// @brief Runs the TypeStorageTests suite.
 /// @return True when every case in the suite passed.
@@ -194,10 +134,6 @@ bool runStorageTypeTokensTests();
 /// @brief Runs the LoweredContractVersionTests suite.
 /// @return True when every case in the suite passed.
 bool runLoweredContractVersionTests();
-
-/// @brief Runs the LoweredMetadataHardeningTests suite.
-/// @return True when every case in the suite passed.
-bool runLoweredMetadataHardeningTests();
 
 /// @brief Runs the UavcanEmbeddedCatalogTests suite.
 /// @return True when every case in the suite passed.

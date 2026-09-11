@@ -1,0 +1,18 @@
+# The pointer handed to a nested type is formed at the byte the cursor reached, bounded by the
+# buffer's capacity: a read past the end zero-extends and still advances the cursor, and every
+# backend can address the bounded byte.
+#
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s
+
+# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__serialize_ir_
+# CHECK: %[[FITS:[0-9]+]] = arith.cmpi {{ult|ugt}}, %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
+# CHECK-NEXT: %[[AT:[0-9]+]] = arith.select %[[FITS]], %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
+# CHECK: dsdl.buffer_at %{{[0-9a-z]+}}[%[[AT]]]
+# CHECK-NEXT: dsdl.call_serdes @fixtures_vendor_Delimited_1_0__serialize_ir_
+
+# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__deserialize_ir_
+# CHECK: %[[FITS:[0-9]+]] = arith.cmpi {{ult|ugt}}, %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
+# CHECK-NEXT: %[[AT:[0-9]+]] = arith.select %[[FITS]], %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
+# CHECK: dsdl.buffer_at %{{[0-9a-z]+}}[%[[AT]]]
+# CHECK-NEXT: dsdl.call_serdes @fixtures_vendor_Delimited_1_0__deserialize_ir_

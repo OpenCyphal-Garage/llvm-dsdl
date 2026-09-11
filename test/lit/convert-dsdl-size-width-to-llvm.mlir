@@ -22,7 +22,7 @@
 // HOST-DAG: llvm.func @dsdl_runtime_set_uxx(!llvm.ptr, i64, i64, i64, i8)
 // SMALL-DAG: llvm.func @dsdl_runtime_set_uxx(!llvm.ptr, i32, i32, i64, i8)
 
-module attributes {llvmdsdl.names_final} {
+module {
   dsdl.schema @demo_T_1_0 attributes {c_type_name = "demo__T", full_name = "demo.T", header_path = "demo/T_1_0.h", major = 1 : i32, minor = 0 : i32, sealed} {
     dsdl.field {c_name = "tail", name = "tail", type_name = "saturated uint8[<=4]"}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "demo__T__deserialize_", c_serialize_symbol = "demo__T__serialize_", c_type_name = "demo__T", max_bits = 40 : i64, min_bits = 8 : i64, sealed} {
@@ -30,13 +30,13 @@ module attributes {llvmdsdl.names_final} {
     }
   }
 
-  func.func @count(%obj: !dsdl.ptr<!dsdl.opaque<"const demo__T">>) -> i64 {
-    %n = dsdl.load_member %obj ["tail", "count"] {indices = array<i64: 0, 1>} : <!dsdl.opaque<"const demo__T">> -> i64
+  func.func @count(%obj: !dsdl.ptr<const !dsdl.object<"demo.T.1.0">>) -> i64 {
+    %n = dsdl.array_length %obj "tail" : <const !dsdl.object<"demo.T.1.0">>
     return %n : i64
   }
 
-  func.func @write(%buf: !dsdl.ptr<!dsdl.opaque<"uint8_t">>, %off: i64, %v: i64, %cap: i64) -> i8 {
-    %e = dsdl.write_bits %buf[%off], %v, size %cap {width = 8 : i64} : !dsdl.ptr<!dsdl.opaque<"uint8_t">>, i64
+  func.func @write(%buf: !dsdl.ptr<!dsdl.byte>, %off: i64, %v: i64, %cap: i64) -> i8 {
+    %e = dsdl.write_bits %buf[%off], %v, size %cap {width = 8 : i64} : !dsdl.ptr<!dsdl.byte>, i64
     return %e : i8
   }
 }

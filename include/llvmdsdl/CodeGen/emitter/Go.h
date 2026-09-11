@@ -30,7 +30,6 @@ class ModuleOp;
 namespace llvmdsdl
 {
 class DiagnosticEngine;
-class EmitTraceSink;
 struct SemanticModule;
 }  // namespace llvmdsdl
 
@@ -58,9 +57,6 @@ struct Options final
     /// @brief Emits `go.mod` when true.
     bool emitGoMod{true};
 
-    /// @brief Enables optional lowered-serdes optimisation before emission.
-    bool optimizeLoweredSerDes{false};
-
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 
@@ -73,15 +69,14 @@ struct Options final
 
 /// @brief Emits Go artifacts from semantic and lowered MLIR inputs.
 /// @param[in] semantic Resolved semantic module.
-/// @param[in] module Lowered MLIR module.
+/// @param[in] module The module after `lower-dsdl-bodies`.
 /// @param[in] options Backend configuration.
 /// @param[in,out] diagnostics Diagnostic sink.
 /// @return Success or detailed failure.
 llvm::Error emit(const SemanticModule& semantic,
                  mlir::ModuleOp        module,
                  const Options&        options,
-                 DiagnosticEngine&     diagnostics,
-                 EmitTraceSink*        traceSink = nullptr);
+                 DiagnosticEngine&     diagnostics);
 
 }  // namespace llvmdsdl::emitter::go
 

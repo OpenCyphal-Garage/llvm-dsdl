@@ -89,11 +89,6 @@ std::string encodedCompositePayloadExceedsRemainingBufferSpace(const std::string
 /// @return Diagnostic text.
 std::string decodedCompositePayloadExceedsRemainingBufferSpace(const std::string& fieldName);
 
-/// @brief Returns canonical MLIR schema-coverage preflight failure text.
-/// @param[in] backendName Backend display label.
-/// @return Diagnostic text.
-std::string mlirSchemaCoverageValidationFailedForEmission(const std::string& backendName);
-
 }  // namespace llvmdsdl::codegen_diagnostic_text
 
 #endif  // LLVMDSDL_CODEGEN_CODEGEN_DIAGNOSTIC_TEXT_H

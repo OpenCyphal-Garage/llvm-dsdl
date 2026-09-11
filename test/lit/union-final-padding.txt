@@ -1,0 +1,6 @@
+# A union ends where its selected arm ends, so its final padding runs from the cursor: an arm
+# of seven bits after an eight-bit tag pads to two bytes, and an arm of sixteen bits fills three
+# bytes with nothing written past them.
+#
+# RUN: rm -rf %t && %dsdlc --target-language python %S/../integration/backend_contract --outdir %t --py-package union_padding --py-runtime-specialization portable > /dev/null 2>&1
+# RUN: python3 %S/union_final_padding.py %t

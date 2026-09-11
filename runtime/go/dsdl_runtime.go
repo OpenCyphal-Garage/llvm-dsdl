@@ -41,6 +41,28 @@ func ChooseMin(a, b int) int {
 	return b
 }
 
+// BoolToUint64 returns 1 for true and 0 for false, the value a bool field carries on the wire.
+func BoolToUint64(value bool) uint64 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+// Resize returns a slice of length n with every element zeroed, reusing the storage of s where
+// it suffices.
+func Resize[T any](s []T, n int) []T {
+	if cap(s) < n {
+		return make([]T, n)
+	}
+	s = s[:n]
+	var zero T
+	for i := range s {
+		s[i] = zero
+	}
+	return s
+}
+
 // SaturateFragmentBits returns the number of bits that can be consumed from a
 // fragment without running past the end of a byte buffer.
 func SaturateFragmentBits(bufferSizeBytes, fragmentOffsetBits, fragmentLengthBits int) int {

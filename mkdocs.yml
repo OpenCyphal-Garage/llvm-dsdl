@@ -39,7 +39,6 @@ nav:
           - Backends: reference/codegen/backends.md
           - Identifier Naming: reference/codegen/identifier-naming.md
           - Object Backend: reference/codegen/object.md
-          - Emit Order: reference/codegen/emit-order.md
       - Language Server:
           - Lint Rules: reference/lsp/lint-rules.md
           - Index Schema: reference/lsp/index-schema.md
@@ -60,12 +59,12 @@ nav:
       - Testing and CI: development/testing.md
       - Architecture: development/architecture.md
       - Direct Object Lowering: development/direct-object-lowering.md
+      - Backend Translation: development/backend-translation.md
       - Authoring Lint Rules: development/lint-rule-authoring.md
       - Project:
           - Review & Release Roadmap: development/roadmap.md
           - Release Packaging: development/release-packaging.md
           - Distribution Channels (backlog): development/distribution-channels.md
-          - Consistency Lint: development/convergence-scorecard.md
   - For Agents:
       - Agent Guide: agents/index.md
       - Documentation Index: agents/index-format.md

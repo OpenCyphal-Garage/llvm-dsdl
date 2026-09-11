@@ -60,40 +60,6 @@ string(REPLACE ";"
 
 if(PYTHON_EXECUTABLE)
   add_test(
-    NAME llvmdsdl-convergence-scorecard
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/report.json
-        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/CONVERGENCE_SCORECARD.md
-        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
-        -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-convergence-scorecard
-    PROPERTIES
-      LABELS "integration;convergence;release-blocking"
-  )
-
-  add_test(
-    NAME llvmdsdl-convergence-scorecard-selftest
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReportSelftest.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-convergence-scorecard-selftest
-    PROPERTIES
-      LABELS "integration;convergence"
-  )
-
-  add_test(
     NAME llvmdsdl-convergence-matrix-reports-selftest
     COMMAND
       ${CMAKE_COMMAND}
@@ -187,36 +153,6 @@ if(PYTHON_EXECUTABLE)
   endif()
 
   add_test(
-    NAME llvmdsdl-execution-engine-boundary-guard
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuard.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-execution-engine-boundary-guard
-    PROPERTIES
-      LABELS "integration;convergence;release-blocking"
-  )
-
-  add_test(
-    NAME llvmdsdl-execution-engine-boundary-guard-selftest
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuardSelftest.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-execution-engine-boundary-guard-selftest
-    PROPERTIES
-      LABELS "integration;convergence"
-  )
-
-  add_test(
     NAME llvmdsdl-hard-cut-integrity-guard
     COMMAND
       ${CMAKE_COMMAND}
@@ -244,67 +180,6 @@ if(PYTHON_EXECUTABLE)
     llvmdsdl-hard-cut-integrity-guard-selftest
     PROPERTIES
       LABELS "integration;convergence"
-  )
-
-  # Emit-order verifier (golden step-trace): runs dsdlc over fixtures with the LLVMDSDL_EMIT_TRACE side
-  # channel and checks every backend's emit-order trace is a member of the proven-safe
-  # equivalence class (the ordering the Dafny oracle proves for the canonical), plus
-  # cross-backend payload-aware wire-skeleton agreement per (type, direction). When the
-  # UAVCAN submodule is present the full public regulated corpus is verified too (~424
-  # segments, sub-second per backend). Only needs dsdlc + Python (no target toolchains).
-  set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS "")
-  if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
-    set(LLVMDSDL_EMIT_ORDER_CORPUS_ARGS --corpus "${LLVMDSDL_UAVCAN_ROOT}")
-  endif()
-  add_test(
-    NAME llvmdsdl-emit-order-verifier
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --dsdlc $<TARGET_FILE:dsdlc>
-        ${LLVMDSDL_EMIT_ORDER_CORPUS_ARGS}
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
-  )
-
-  # Negative control: the membership check must reject a mask-before-validate reorder,
-  # detect payload divergence, and honor the declared D3 bulk-copy equivalence.
-  add_test(
-    NAME llvmdsdl-emit-order-verifier-selftest
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --selftest
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier-selftest
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
-  )
-
-  # End-to-end mutation negative control: dsdlc re-runs with
-  # LLVMDSDL_EMIT_TRACE_MUTATE=swap-tag-validate (a mask-before-validate reorder
-  # of the recorded trace) and the verifier must go red. Proves the whole pipeline
-  # (emitter run -> trace side channel -> comparator) detects a reorder, not merely that
-  # the checker rejects a hand-written list.
-  add_test(
-    NAME llvmdsdl-emit-order-verifier-mutation
-    COMMAND
-      ${PYTHON_EXECUTABLE}
-        ${LLVMDSDL_SOURCE_DIR}/tools/convergence/emit_order_verifier.py
-        --dsdlc $<TARGET_FILE:dsdlc>
-        --mutation-test
-  )
-
-  set_tests_properties(
-    llvmdsdl-emit-order-verifier-mutation
-    PROPERTIES
-      LABELS "integration;convergence;emit-order"
   )
 
   if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
@@ -3525,6 +3400,42 @@ if(LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ
       TIMEOUT 2400
   )
 endif()
+
+# Backend-contract gates (DESIGN.md, Backend Contract). One test per backend. Each row perturbs
+# either the plan operations or the semantic module and checks which of the two the generated
+# bodies follow. A backend in the enforced list fails its test on a gap; the others report the
+# gap. A backend joins the list in the change that makes its bodies translations of the plan
+# operations, and does not leave it.
+set(LLVMDSDL_BACKEND_CONTRACT_ENFORCED "c;obj;cpp;rust;go;ts;python" CACHE STRING
+    "Backends whose backend-contract gate fails on a gap rather than reporting it.")
+
+add_executable(llvmdsdl-backend-contract-tool BackendContractTool.cpp)
+target_link_libraries(llvmdsdl-backend-contract-tool PRIVATE llvmdsdlCodeGen)
+target_include_directories(llvmdsdl-backend-contract-tool PRIVATE
+  ${LLVMDSDL_SOURCE_DIR}/include
+  ${LLVMDSDL_BINARY_DIR}/include
+)
+
+foreach(backend c obj cpp rust go ts python)
+  set(_backend_contract_strict_flag "")
+  if(backend IN_LIST LLVMDSDL_BACKEND_CONTRACT_ENFORCED)
+    set(_backend_contract_strict_flag --strict)
+  endif()
+  add_test(
+    NAME llvmdsdl-backend-contract-${backend}
+    COMMAND
+      $<TARGET_FILE:llvmdsdl-backend-contract-tool>
+        --backend ${backend}
+        --namespace-root ${CMAKE_CURRENT_SOURCE_DIR}/backend_contract/contract
+        --work-dir ${CMAKE_CURRENT_BINARY_DIR}/backend-contract/${backend}
+        ${_backend_contract_strict_flag}
+  )
+  set_tests_properties(
+    llvmdsdl-backend-contract-${backend}
+    PROPERTIES
+      LABELS "integration;backend-contract"
+  )
+endforeach()
 
 # Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
 # through LLVM IR has and a generator that writes C and drives a host compiler does not. All of

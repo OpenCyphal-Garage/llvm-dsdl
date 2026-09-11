@@ -222,18 +222,19 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
         return std::nullopt;
     }
     const auto e = exp.asWideInteger().value_or(0);
-    if (e < 0)
-    {
-        return std::nullopt;
-    }
     // Special-case the bases whose powers never overflow, so a huge exponent cannot spin the loop
-    // (a denial-of-service vector): 1**e == 1, 0**e is 0 (or 1 for e == 0), and (-1)**e alternates.
+    // (a denial-of-service vector): 1**e == 1, 0**e is 0 (or 1 for e == 0; negative e is undefined),
+    // and (-1)**e alternates. `e % 2` distinguishes odd/even for either sign of e.
     if (base == Rational(1, 1))
     {
         return Rational(1, 1);
     }
     if (base == Rational(0, 1))
     {
+        if (e < 0)
+        {
+            return std::nullopt;
+        }
         return (e == 0) ? Rational(1, 1) : Rational(0, 1);
     }
     if (base == Rational(-1, 1))
@@ -241,11 +242,23 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
         return ((e % 2) == 0) ? Rational(1, 1) : Rational(-1, 1);
     }
     // Every other base has |value| != 1, so the running product leaves 64-bit range within a few
-    // dozen iterations; bail as soon as it overflows, which also bounds the loop.
-    Rational out(1, 1);
-    for (__int128 i = 0; i < e; ++i)
+    // dozen iterations; bail as soon as it overflows, which also bounds the loop. A negative exponent
+    // raises to the positive magnitude and reciprocates, since base != 0 here. The magnitude is
+    // formed in unsigned arithmetic, where negating the most negative exponent is defined.
+    const unsigned __int128 magnitude = (e < 0) ? static_cast<unsigned __int128>(0) - static_cast<unsigned __int128>(e)
+                                                : static_cast<unsigned __int128>(e);
+    Rational                out(1, 1);
+    for (unsigned __int128 i = 0; i < magnitude; ++i)
     {
         out = out * base;
+        if (out.overflowed())
+        {
+            return std::nullopt;
+        }
+    }
+    if (e < 0)
+    {
+        out = Rational(1, 1) / out;
         if (out.overflowed())
         {
             return std::nullopt;

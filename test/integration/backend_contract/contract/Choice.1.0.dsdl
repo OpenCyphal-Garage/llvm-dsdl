@@ -1,0 +1,4 @@
+@union
+uint7 small
+uint16 wide
+@sealed

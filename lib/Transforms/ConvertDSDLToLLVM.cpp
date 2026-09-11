@@ -19,9 +19,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <llvm/ADT/DenseMap.h>
 #include <limits>
+#include <optional>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/CommandLine.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
@@ -429,14 +430,14 @@ mlir::Type scalarStorage(mlir::MLIRContext* ctx, llvm::StringRef category, const
 /// @param[in] module The module being converted.
 /// @param[in] fallback What to answer when the module states no layout.
 /// @return The width in bits.
-mlir::Type fieldStorage(mlir::MLIRContext*                           ctx,
-                        llvm::StringRef                              category,
-                        const std::int64_t                           bits,
-                        llvm::StringRef                              arrayKind,
-                        const std::int64_t                           capacity,
-                        llvm::StringRef                              compositeType,
-                        llvm::DenseMap<llvm::StringRef, mlir::Type>& composites,
-                        const unsigned                               sizeBits)
+mlir::Type fieldStorage(mlir::MLIRContext*                 ctx,
+                        llvm::StringRef                    category,
+                        const std::int64_t                 bits,
+                        llvm::StringRef                    arrayKind,
+                        const std::int64_t                 capacity,
+                        llvm::StringRef                    compositeType,
+                        const llvm::StringMap<mlir::Type>& composites,
+                        const unsigned                     sizeBits)
 {
     const bool isArray = !arrayKind.empty() && (arrayKind != "none");
     // A bool array is bitpacked, one bit per element, whether or not its length varies.
@@ -473,38 +474,35 @@ mlir::Type fieldStorage(mlir::MLIRContext*                           ctx,
     return mlir::LLVM::LLVMStructType::getLiteral(ctx, {storage, mlir::IntegerType::get(ctx, sizeBits)});
 }
 
-/// @brief What each published serdes wrapper is called beneath the header.
-///
-/// A generated header publishes `X__serialize_` as a static inline that calls the body the plan
-/// was built into. Only the body is a symbol, so a call between objects has to name it.
-llvm::DenseMap<llvm::StringRef, std::string> buildSerdesBodies(mlir::ModuleOp module)
+/// @brief Where the members of one plan's struct sit.
+struct PlanLayout final
 {
-    llvm::DenseMap<llvm::StringRef, std::string> bodies;
-    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
-    {
-        if (schema.getBody().empty())
-        {
-            continue;
-        }
-        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
-        {
-            const std::string suffix           = plan.getSection() ? ("__" + plan.getSection()->str()) : std::string{};
-            const std::string stem             = schema.getSymName().str() + suffix;
-            bodies[plan.getCSerializeSymbol()] = stem + "__serialize_ir_";
-            bodies[plan.getCDeserializeSymbol()] = stem + "__deserialize_ir_";
-        }
-    }
-    return bodies;
-}
+    /// @brief Member position by DSDL field name.
+    llvm::StringMap<std::int64_t> index;
+
+    /// @brief Fields held as a variable-length array: elements in the member's first position, count in its second.
+    llvm::StringMap<bool> variable;
+
+    /// @brief The position of a union's tag, after its options.
+    std::int64_t tagIndex{-1};
+};
+
+/// @brief The structs the published layout gives every plan, keyed by plan identity.
+struct Layouts final
+{
+    llvm::StringMap<mlir::Type> structs;
+    llvm::StringMap<PlanLayout> plans;
+};
 
 /// @brief Builds a struct per schema section, matching what the C backend emits.
 ///
-/// Keyed by the spelling `!dsdl.opaque` carries, the name a plan gives the thing it was
-/// handed. A type whose members cannot all be described is left out rather than guessed at.
-llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, const unsigned sizeBits)
+/// Keyed by the identity `!dsdl.object` carries. A type whose members cannot all be described
+/// is left out rather than guessed at.
+Layouts buildLayouts(mlir::ModuleOp module, const unsigned sizeBits)
 {
-    auto*                                       ctx = module.getContext();
-    llvm::DenseMap<llvm::StringRef, mlir::Type> composites;
+    auto*                        ctx = module.getContext();
+    Layouts                      layouts;
+    llvm::StringMap<mlir::Type>& composites = layouts.structs;
 
     // A nested type has to be described before the type holding it can be, and a chain of them
     // takes one round per link. This runs until a round describes nothing new; DSDL forbids a
@@ -525,7 +523,13 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
                 {
                     continue;
                 }
+                const std::string identity = planIdentity(schema, plan);
+                if (composites.contains(identity))
+                {
+                    continue;
+                }
                 mlir::SmallVector<mlir::Type, 8> members;
+                PlanLayout                       layout;
                 bool                             describable = true;
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
@@ -533,19 +537,27 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
                     {
                         continue;  // Padding reserves wire bits and holds no member.
                     }
-                    auto storage = fieldStorage(ctx,
-                                                io.getScalarCategory(),
-                                                io.getBitLength(),
-                                                io.getArrayKind(),
-                                                io.getArrayCapacity(),
-                                                io.getCompositeCTypeName().value_or(llvm::StringRef{}),
-                                                composites,
-                                                sizeBits);
+                    const std::string nested  = io.getCompositeFullName()
+                                                    ? planIdentity(*io.getCompositeFullName(),
+                                                                   io.getCompositeMajor().value_or(0),
+                                                                   io.getCompositeMinor().value_or(0),
+                                                                   {})
+                                                    : std::string{};
+                    auto              storage = fieldStorage(ctx,
+                                                             io.getScalarCategory(),
+                                                             io.getBitLength(),
+                                                             io.getArrayKind(),
+                                                             io.getArrayCapacity(),
+                                                             nested,
+                                                             composites,
+                                                             sizeBits);
                     if (!storage)
                     {
                         describable = false;
                         break;
                     }
+                    layout.index[io.getName()]    = static_cast<std::int64_t>(members.size());
+                    layout.variable[io.getName()] = isVariableArrayKind(io.getArrayKind());
                     members.push_back(storage);
                 }
                 if (!describable)
@@ -554,6 +566,7 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
                 }
                 if (plan.getIsUnion())
                 {
+                    layout.tagIndex = static_cast<std::int64_t>(members.size());
                     members.push_back(scalarStorage(ctx, "unsigned", *plan.getUnionTagBits()));
                 }
                 if (members.empty())
@@ -561,27 +574,23 @@ llvm::DenseMap<llvm::StringRef, mlir::Type> buildStructs(mlir::ModuleOp module, 
                     // C has no empty struct, so the backend gives it a member nothing maps to.
                     members.push_back(mlir::IntegerType::get(ctx, 8));
                 }
-                composites[plan.getCTypeName()] = mlir::LLVM::LLVMStructType::getLiteral(ctx, members);
+                composites[identity]    = mlir::LLVM::LLVMStructType::getLiteral(ctx, members);
+                layouts.plans[identity] = layout;
             }
         }
     }
-    return composites;
+    return layouts;
 }
 
-/// @brief The struct a pointer's own spelling names, if one was described.
-mlir::Type structBehind(mlir::Type pointee, const llvm::DenseMap<llvm::StringRef, mlir::Type>& composites)
+/// @brief The struct a pointer's object identity names, if one was described.
+mlir::Type structBehind(mlir::Type pointee, const llvm::StringMap<mlir::Type>& composites)
 {
-    auto named = mlir::dyn_cast<mlir::dsdl::OpaqueType>(pointee);
-    if (!named)
+    auto object = mlir::dyn_cast<mlir::dsdl::ObjectType>(pointee);
+    if (!object)
     {
         return {};
     }
-    // The spelling is the C spelling of the pointee, `const struct <tag>`; both words are shed to
-    // reach the tag the plan is keyed by.
-    llvm::StringRef spelling = named.getName();
-    spelling.consume_front("const ");
-    spelling.consume_front("struct ");
-    const auto found = composites.find(spelling);
+    const auto found = composites.find(object.getIdentity());
     return (found == composites.end()) ? mlir::Type{} : found->second;
 }
 
@@ -726,21 +735,14 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
 /// @brief A nested type's own entry point, which lives in its own object.
 struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>
 {
-    CallSerdesLowering(const mlir::TypeConverter&                          converter,
-                       mlir::MLIRContext*                                  ctx,
-                       const llvm::DenseMap<llvm::StringRef, std::string>& bodies)
-        : mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>(converter, ctx)
-        , bodies_(bodies)
-    {
-    }
+    using mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>::OpConversionPattern;
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::CallSerdesOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        auto              module = op->getParentOfType<mlir::ModuleOp>();
-        const auto        found  = bodies_.find(op.getCallee());
-        const std::string callee = (found == bodies_.end()) ? op.getCallee().str() : found->second;
+        auto                                    module = op->getParentOfType<mlir::ModuleOp>();
+        const std::string                       callee = op.getCallee().str();
         const mlir::SmallVector<mlir::Value, 3> arguments{adaptor.getObject(), adaptor.getBuffer(), adaptor.getSize()};
 
         // A nested type in this same module is called directly; one from another is declared.
@@ -756,7 +758,6 @@ struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::C
     }
 
 private:
-    const llvm::DenseMap<llvm::StringRef, std::string>& bodies_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -771,18 +772,73 @@ private:
 template <typename OpT>
 struct MemberAccess : public mlir::OpConversionPattern<OpT>
 {
-    MemberAccess(const mlir::TypeConverter&                         converter,
-                 mlir::MLIRContext*                                 ctx,
-                 const llvm::DenseMap<llvm::StringRef, mlir::Type>& composites)
+    MemberAccess(const mlir::TypeConverter& converter, mlir::MLIRContext* ctx, const Layouts& planLayouts)
         : mlir::OpConversionPattern<OpT>(converter, ctx)
-        , structs(composites)
+        , layouts(planLayouts)
     {
     }
 
-    /// @brief The address the operation's path and indices designate.
+    /// @brief The layout of the plan the object operand addresses within.
+    const PlanLayout* layoutOf(OpT op) const
+    {
+        auto pointerType = mlir::dyn_cast<mlir::dsdl::PtrType>(op.getObject().getType());
+        auto object =
+            pointerType ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointerType.getPointee()) : mlir::dsdl::ObjectType{};
+        if (!object)
+        {
+            return nullptr;
+        }
+        const auto found = layouts.plans.find(object.getIdentity());
+        return (found == layouts.plans.end()) ? nullptr : &found->second;
+    }
+
+    /// @brief The positions a member's storage is reached through.
+    ///
+    /// A variable-length array is a pair: its elements first, its count second.
+    std::optional<mlir::SmallVector<std::int64_t, 2>> positions(OpT                   op,
+                                                                const llvm::StringRef member,
+                                                                const bool            elements,
+                                                                const bool            count) const
+    {
+        const PlanLayout* layout = layoutOf(op);
+        if (layout == nullptr)
+        {
+            return std::nullopt;
+        }
+        const auto index = layout->index.find(member);
+        if (index == layout->index.end())
+        {
+            return std::nullopt;
+        }
+        mlir::SmallVector<std::int64_t, 2> path{index->second};
+        const bool                         variable = layout->variable.lookup(member);
+        if (count)
+        {
+            path.push_back(1);
+        }
+        else if (elements && variable)
+        {
+            path.push_back(0);
+        }
+        return path;
+    }
+
+    /// @brief The position of a union's tag.
+    std::optional<mlir::SmallVector<std::int64_t, 2>> tagPosition(OpT op) const
+    {
+        const PlanLayout* layout = layoutOf(op);
+        if ((layout == nullptr) || (layout->tagIndex < 0))
+        {
+            return std::nullopt;
+        }
+        return mlir::SmallVector<std::int64_t, 2>{layout->tagIndex};
+    }
+
+    /// @brief The address the positions designate within the object.
     mlir::Value address(OpT                              op,
                         mlir::Value                      object,
                         mlir::ConversionPatternRewriter& rewriter,
+                        llvm::ArrayRef<std::int64_t>     positions,
                         mlir::Value                      elementIndex = {}) const
     {
         auto pointerType = mlir::dyn_cast<mlir::dsdl::PtrType>(op.getObject().getType());
@@ -790,13 +846,13 @@ struct MemberAccess : public mlir::OpConversionPattern<OpT>
         {
             return {};
         }
-        const mlir::Type owner = structBehind(pointerType.getPointee(), structs);
+        const mlir::Type owner = structBehind(pointerType.getPointee(), layouts.structs);
         if (!owner)
         {
             return {};
         }
         mlir::SmallVector<mlir::LLVM::GEPArg, 4> path{0};
-        for (const std::int64_t index : op.getIndices())
+        for (const std::int64_t index : positions)
         {
             path.push_back(static_cast<std::int32_t>(index));
         }
@@ -813,20 +869,20 @@ struct MemberAccess : public mlir::OpConversionPattern<OpT>
                                          path);
     }
 
-    /// @brief The type of the member the path reaches.
+    /// @brief The type of the member the positions reach.
     ///
     /// A plan carries scalars at the width it computes on, and the struct holds them at the
     /// width C declares them. Reading the wider type would take the neighbouring members with
     /// it, which is a value that then saturates rather than one that is wrong-looking.
-    mlir::Type memberType(OpT op, const bool element) const
+    mlir::Type memberType(OpT op, llvm::ArrayRef<std::int64_t> positions, const bool element) const
     {
         auto pointerType = mlir::dyn_cast<mlir::dsdl::PtrType>(op.getObject().getType());
         if (!pointerType)
         {
             return {};
         }
-        mlir::Type at = structBehind(pointerType.getPointee(), structs);
-        for (const std::int64_t index : op.getIndices())
+        mlir::Type at = structBehind(pointerType.getPointee(), layouts.structs);
+        for (const std::int64_t index : positions)
         {
             auto owner = mlir::dyn_cast_or_null<mlir::LLVM::LLVMStructType>(at);
             if (!owner || (index < 0) || (std::cmp_greater_equal(index, owner.getBody().size())))
@@ -847,7 +903,7 @@ struct MemberAccess : public mlir::OpConversionPattern<OpT>
         return at;
     }
 
-    const llvm::DenseMap<llvm::StringRef, mlir::Type>& structs;
+    const Layouts& layouts;
 };
 
 /// @brief Converts @p value between the width a member is held at and the width a plan uses.
@@ -883,101 +939,166 @@ mlir::Value fit(mlir::ConversionPatternRewriter& rewriter,
     return value;
 }
 
+/// @brief Loads through the positions and widens to the plan's type.
+template <typename OpT>
+mlir::LogicalResult loadThrough(const MemberAccess<OpT>&         pattern,
+                                OpT                              op,
+                                mlir::Value                      object,
+                                llvm::ArrayRef<std::int64_t>     positions,
+                                const bool                       element,
+                                mlir::Value                      elementIndex,
+                                mlir::ConversionPatternRewriter& rewriter)
+{
+    const mlir::Value at   = pattern.address(op, object, rewriter, positions, elementIndex);
+    const mlir::Type  held = pattern.memberType(op, positions, element);
+    if (!at || !held)
+    {
+        return mlir::failure();
+    }
+    const mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
+    rewriter.replaceOp(op,
+                       fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
+    return mlir::success();
+}
+
+/// @brief Narrows to the member's width and stores through the positions.
+template <typename OpT>
+mlir::LogicalResult storeThrough(const MemberAccess<OpT>&         pattern,
+                                 OpT                              op,
+                                 mlir::Value                      object,
+                                 mlir::Value                      value,
+                                 llvm::ArrayRef<std::int64_t>     positions,
+                                 const bool                       element,
+                                 mlir::Value                      elementIndex,
+                                 mlir::ConversionPatternRewriter& rewriter)
+{
+    const mlir::Value at   = pattern.address(op, object, rewriter, positions, elementIndex);
+    const mlir::Type  held = pattern.memberType(op, positions, element);
+    if (!at || !held)
+    {
+        return mlir::failure();
+    }
+    rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(op, fit(rewriter, op.getLoc(), value, held, false), at);
+    return mlir::success();
+}
+
 struct LoadMemberLowering final : public MemberAccess<mlir::dsdl::LoadMemberOp>
 {
     using MemberAccess<mlir::dsdl::LoadMemberOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadMemberOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at   = address(op, adaptor.getObject(), rewriter);
-        const mlir::Type  held = memberType(op, false);
-        if (!at || !held)
-        {
-            return mlir::failure();
-        }
-        const mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
-        rewriter
-            .replaceOp(op,
-                       fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
-        return mlir::success();
+        const auto where = positions(op, op.getMember(), false, false);
+        return where ? loadThrough(*this, op, adaptor.getObject(), *where, false, {}, rewriter) : mlir::failure();
     }
 };
 
 struct StoreMemberLowering final : public MemberAccess<mlir::dsdl::StoreMemberOp>
 {
     using MemberAccess<mlir::dsdl::StoreMemberOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreMemberOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at   = address(op, adaptor.getObject(), rewriter);
-        const mlir::Type  held = memberType(op, false);
-        if (!at || !held)
-        {
-            return mlir::failure();
-        }
-        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(op,
-                                                         fit(rewriter, op.getLoc(), adaptor.getValue(), held, false),
-                                                         at);
-        return mlir::success();
+        const auto where = positions(op, op.getMember(), false, false);
+        return where ? storeThrough(*this, op, adaptor.getObject(), adaptor.getValue(), *where, false, {}, rewriter)
+                     : mlir::failure();
+    }
+};
+
+struct ArrayLengthLowering final : public MemberAccess<mlir::dsdl::ArrayLengthOp>
+{
+    using MemberAccess<mlir::dsdl::ArrayLengthOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ArrayLengthOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto where = positions(op, op.getMember(), false, true);
+        return where ? loadThrough(*this, op, adaptor.getObject(), *where, false, {}, rewriter) : mlir::failure();
+    }
+};
+
+struct SetArrayLengthLowering final : public MemberAccess<mlir::dsdl::SetArrayLengthOp>
+{
+    using MemberAccess<mlir::dsdl::SetArrayLengthOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::SetArrayLengthOp     op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto where = positions(op, op.getMember(), false, true);
+        return where ? storeThrough(*this, op, adaptor.getObject(), adaptor.getValue(), *where, false, {}, rewriter)
+                     : mlir::failure();
+    }
+};
+
+struct UnionTagLowering final : public MemberAccess<mlir::dsdl::UnionTagOp>
+{
+    using MemberAccess<mlir::dsdl::UnionTagOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::UnionTagOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto where = tagPosition(op);
+        return where ? loadThrough(*this, op, adaptor.getObject(), *where, false, {}, rewriter) : mlir::failure();
+    }
+};
+
+struct SetUnionTagLowering final : public MemberAccess<mlir::dsdl::SetUnionTagOp>
+{
+    using MemberAccess<mlir::dsdl::SetUnionTagOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::SetUnionTagOp        op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto where = tagPosition(op);
+        return where ? storeThrough(*this, op, adaptor.getObject(), adaptor.getValue(), *where, false, {}, rewriter)
+                     : mlir::failure();
     }
 };
 
 struct LoadElementLowering final : public MemberAccess<mlir::dsdl::LoadElementOp>
 {
     using MemberAccess<mlir::dsdl::LoadElementOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadElementOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at   = address(op, adaptor.getObject(), rewriter, adaptor.getIndex());
-        const mlir::Type  held = memberType(op, true);
-        if (!at || !held)
-        {
-            return mlir::failure();
-        }
-        const mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter, op.getLoc(), held, at);
-        rewriter
-            .replaceOp(op,
-                       fit(rewriter, op.getLoc(), loaded, op.getValue().getType(), op->hasAttr("llvmdsdl.is_signed")));
-        return mlir::success();
+        const auto where = positions(op, op.getMember(), true, false);
+        return where ? loadThrough(*this, op, adaptor.getObject(), *where, true, adaptor.getIndex(), rewriter)
+                     : mlir::failure();
     }
 };
 
 struct StoreElementLowering final : public MemberAccess<mlir::dsdl::StoreElementOp>
 {
     using MemberAccess<mlir::dsdl::StoreElementOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreElementOp       op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at   = address(op, adaptor.getObject(), rewriter, adaptor.getIndex());
-        const mlir::Type  held = memberType(op, true);
-        if (!at || !held)
-        {
-            return mlir::failure();
-        }
-        rewriter.replaceOpWithNewOp<mlir::LLVM::StoreOp>(op,
-                                                         fit(rewriter, op.getLoc(), adaptor.getValue(), held, false),
-                                                         at);
-        return mlir::success();
+        const auto where = positions(op, op.getMember(), true, false);
+        return where ? storeThrough(*this,
+                                    op,
+                                    adaptor.getObject(),
+                                    adaptor.getValue(),
+                                    *where,
+                                    true,
+                                    adaptor.getIndex(),
+                                    rewriter)
+                     : mlir::failure();
     }
 };
 
 struct MemberAddrLowering final : public MemberAccess<mlir::dsdl::MemberAddrOp>
 {
     using MemberAccess<mlir::dsdl::MemberAddrOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::MemberAddrOp         op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at = address(op, adaptor.getObject(), rewriter);
+        const auto        where = positions(op, op.getMember(), false, false);
+        const mlir::Value at    = where ? address(op, adaptor.getObject(), rewriter, *where) : mlir::Value{};
         if (!at)
         {
             return mlir::failure();
@@ -990,12 +1111,13 @@ struct MemberAddrLowering final : public MemberAccess<mlir::dsdl::MemberAddrOp>
 struct ElementAddrLowering final : public MemberAccess<mlir::dsdl::ElementAddrOp>
 {
     using MemberAccess<mlir::dsdl::ElementAddrOp>::MemberAccess;
-
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::ElementAddrOp        op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Value at = address(op, adaptor.getObject(), rewriter, adaptor.getIndex());
+        const auto        where = positions(op, op.getMember(), true, false);
+        const mlir::Value at =
+            where ? address(op, adaptor.getObject(), rewriter, *where, adaptor.getIndex()) : mlir::Value{};
         if (!at)
         {
             return mlir::failure();
@@ -1047,8 +1169,7 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
         auto module = getOperation();
 
         // An LLVM pointer carries no pointee, so every dialect pointer converts to the same
-        // type and the spelling `!dsdl.opaque` holds is not consulted here. What the C
-        // path needs that name for, this path answers with an index instead.
+        // type; the object a pointer names is consulted for its layout when a member is reached.
         mlir::TypeConverter converter;
         converter.addConversion([](mlir::Type type) { return type; });
         converter.addConversion(
@@ -1057,16 +1178,19 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
         // The struct each plan addresses within, derived from the schema before it is erased.
         const unsigned sizeBits = targetSizeBits(module, static_cast<unsigned>(sizeBitsOption));
         module->setAttr(kSizeBitsAttr, mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), sizeBits));
-        const llvm::DenseMap<llvm::StringRef, mlir::Type>  composites = buildStructs(module, sizeBits);
-        const llvm::DenseMap<llvm::StringRef, std::string> bodies     = buildSerdesBodies(module);
+        const Layouts layouts = buildLayouts(module, sizeBits);
 
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<LoadMemberLowering,
                      StoreMemberLowering,
+                     ArrayLengthLowering,
+                     SetArrayLengthLowering,
+                     UnionTagLowering,
+                     SetUnionTagLowering,
                      LoadElementLowering,
                      StoreElementLowering,
                      MemberAddrLowering,
-                     ElementAddrLowering>(converter, &getContext(), composites);
+                     ElementAddrLowering>(converter, &getContext(), layouts);
         patterns.add<IsNullLowering,
                      LoadScalarLowering,
                      StoreScalarLowering,
@@ -1076,8 +1200,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      WriteBitsLowering,
                      ReadBitsLowering,
                      BitWriteLowering,
-                     BitReadLowering>(converter, &getContext());
-        patterns.add<CallSerdesLowering>(converter, &getContext(), bodies);
+                     BitReadLowering,
+                     CallSerdesLowering>(converter, &getContext());
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
         // A signature is not only its arguments. A body that answers with a pointer would
         // otherwise leave the conversion stranded at its own return.
@@ -1092,6 +1216,10 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::LoadMemberOp,
                             mlir::dsdl::StoreMemberOp,
+                            mlir::dsdl::ArrayLengthOp,
+                            mlir::dsdl::SetArrayLengthOp,
+                            mlir::dsdl::UnionTagOp,
+                            mlir::dsdl::SetUnionTagOp,
                             mlir::dsdl::LoadElementOp,
                             mlir::dsdl::StoreElementOp,
                             mlir::dsdl::MemberAddrOp,

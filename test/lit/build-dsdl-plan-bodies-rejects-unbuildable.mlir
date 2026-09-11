@@ -3,7 +3,7 @@
 // A plan the builder cannot express fails the pass, in every lane. A body that is not
 // operations is a body that does not exist.
 
-module attributes {llvmdsdl.names_final, llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64} {
+module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64} {
   func.func private @llvmdsdl_plan_capacity_check__test_WideBool_1_0(i64) -> i8
 
   dsdl.schema @test_WideBool_1_0 attributes {full_name = "test.WideBool", major = 1 : i32, minor = 0 : i32, sealed} {

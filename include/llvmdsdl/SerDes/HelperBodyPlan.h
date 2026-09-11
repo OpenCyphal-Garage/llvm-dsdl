@@ -10,49 +10,21 @@
 /// @file
 /// Backend-neutral shapes of the serialisation helper bodies.
 ///
-/// A helper binding is a small function the generated code calls to normalise a
-/// value or to check one: mask a scalar to its wire width, saturate it, sign-extend
-/// it, or answer whether a length is in range. Each backend used to decide which of
-/// those a descriptor called for and spell it in one step, from a table of canned
-/// lines -- so the decision was stated five times and the emitted body carried its
-/// own indentation as text.
-///
-/// @ref buildSectionHelperBodies makes that decision once. A backend supplies a
-/// @ref HelperBodySpelling that renders each shape in its own idiom, through a
-/// @ref SourceWriter that owns the block depth.
+/// A helper is a small function the generated code calls to normalise a value: mask a
+/// scalar to its wire width, saturate it, or sign-extend it. @ref helperBodyForScalar
+/// decides which shape a field's helper takes, and `lower-dsdl-exec` synthesises the body
+/// from that shape.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_SERDES_HELPER_BODY_PLAN_H
 #define LLVMDSDL_SERDES_HELPER_BODY_PLAN_H
 
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 
 namespace llvmdsdl
 {
-struct SectionHelperBindingPlan;
-
-/// @brief Target language, for the literals a spelling needs.
-enum class HelperSpellingLanguage
-{
-    /// @brief C++ target.
-    Cpp,
-
-    /// @brief Rust target.
-    Rust,
-
-    /// @brief Go target.
-    Go,
-
-    /// @brief TypeScript target.
-    TypeScript,
-
-    /// @brief Python target.
-    Python,
-};
-
 /// @brief Which direction a section's helpers are built for.
 ///
 /// Scalar shapes differ by direction: serialisation saturates or truncates a value
@@ -65,12 +37,6 @@ enum class HelperDirection
     /// @brief Helpers used on the way back.
     Deserialize,
 };
-
-/// @brief Renders the all-ones literal for a @p bits-wide field.
-/// @param[in] language Target language.
-/// @param[in] bits Wire width; zero and widths at or above 64 have their own spellings.
-/// @return The literal.
-std::string renderMaskLiteral(HelperSpellingLanguage language, std::uint32_t bits);
 
 /// @brief The wire category of a scalar field, in terms the shape decision needs.
 ///
@@ -187,56 +153,6 @@ struct HelperBody final
     std::vector<std::int64_t> allowedTags;
 };
 
-/// @brief Per-backend spelling of the helper body shapes.
-///
-/// Each method renders one shape in the backend's idiom and is free to spell it
-/// however the language reads best -- a guard, a ternary, a clamp expression. What
-/// a spelling cannot do is choose a different shape: that decision belongs to
-/// @ref buildSectionHelperBodies and is shared by every backend.
-class HelperBodySpelling
-{
-public:
-    HelperBodySpelling()                                     = default;
-    HelperBodySpelling(const HelperBodySpelling&)            = delete;
-    HelperBodySpelling(HelperBodySpelling&&)                 = delete;
-    HelperBodySpelling& operator=(const HelperBodySpelling&) = delete;
-    HelperBodySpelling& operator=(HelperBodySpelling&&)      = delete;
-    virtual ~HelperBodySpelling()                            = default;
-
-    /// @brief Returns the argument unchanged.
-    /// @param[in] body The binding.
-    virtual void spellIdentity(const HelperBody& body) = 0;
-
-    /// @brief Returns the argument masked to its wire width.
-    /// @param[in] body The binding.
-    virtual void spellMask(const HelperBody& body) = 0;
-
-    /// @brief Clamps an unsigned argument to its wire width.
-    /// @param[in] body The binding.
-    virtual void spellSaturateUnsigned(const HelperBody& body) = 0;
-
-    /// @brief Clamps a signed argument to its wire range.
-    /// @param[in] body The binding.
-    virtual void spellSaturateSigned(const HelperBody& body) = 0;
-
-    /// @brief Masks to the wire width, then propagates the sign bit.
-    /// @param[in] body The binding.
-    virtual void spellSignExtend(const HelperBody& body) = 0;
-
-    /// @brief Answers a status, erroring when the guard trips.
-    /// @param[in] body The binding.
-    virtual void spellStatusGuard(const HelperBody& body) = 0;
-
-    /// @brief Answers a status, succeeding on an accepted union tag.
-    /// @param[in] body The binding.
-    virtual void spellTagMembership(const HelperBody& body) = 0;
-};
-
-/// @brief Dispatches one helper body to its spelling.
-/// @param[in] body The binding.
-/// @param[in,out] spelling Backend spelling.
-void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling);
-
 /// @brief The body shape a scalar field's helper takes.
 ///
 /// THE single statement of the decision, and the reason this lives below both the
@@ -255,23 +171,6 @@ void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling);
 /// @param[in] direction Which way the helper runs.
 /// @return The shape, with the operands it needs. The symbol is left empty.
 HelperBody helperBodyForScalar(HelperScalarKind kind, std::uint32_t bits, bool saturated, HelperDirection direction);
-
-/// @brief Builds the helper bodies a section needs, in emission order.
-///
-/// THE single in-code decision of which shape each descriptor calls for: masking
-/// versus saturation, sign extension versus identity, and the width and bounds each
-/// carries. Every backend renders the result.
-///
-/// @param[in] plan Helper bindings the section requires.
-/// @param[in] scalarDirection Serialise or deserialise; scalar shapes differ by direction.
-/// @param[in] helperNameResolver Projects a helper symbol to the target language's identifier.
-/// @param[in] emitCapacityCheck Controls whether the capacity check is included.
-/// @return The bodies, in the order they are emitted.
-std::vector<HelperBody> buildSectionHelperBodies(
-    const SectionHelperBindingPlan&                       plan,
-    HelperDirection                                       scalarDirection,
-    const std::function<std::string(const std::string&)>& helperNameResolver,
-    bool                                                  emitCapacityCheck);
 
 }  // namespace llvmdsdl
 

@@ -8,68 +8,9 @@
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 
 #include <cstdint>
-#include <string>
 
 namespace llvmdsdl
 {
-
-std::string renderMaskLiteral(const HelperSpellingLanguage language, const std::uint32_t bits)
-{
-    switch (language)
-    {
-    case HelperSpellingLanguage::Cpp:
-        if (bits == 0U)
-        {
-            return "0ULL";
-        }
-        if (bits >= 64U)
-        {
-            return "18446744073709551615ULL";
-        }
-        return std::to_string((1ULL << bits) - 1ULL) + "ULL";
-    case HelperSpellingLanguage::Rust:
-        if (bits == 0U)
-        {
-            return "0u64";
-        }
-        if (bits >= 64U)
-        {
-            return "u64::MAX";
-        }
-        return std::to_string((1ULL << bits) - 1ULL) + "u64";
-    case HelperSpellingLanguage::Go:
-        if (bits == 0U)
-        {
-            return "uint64(0)";
-        }
-        if (bits >= 64U)
-        {
-            return "^uint64(0)";
-        }
-        return "uint64(" + std::to_string((1ULL << bits) - 1ULL) + ")";
-    case HelperSpellingLanguage::TypeScript:
-        if (bits == 0U)
-        {
-            return "0n";
-        }
-        if (bits >= 64U)
-        {
-            return "18446744073709551615n";
-        }
-        return std::to_string((1ULL << bits) - 1ULL) + "n";
-    case HelperSpellingLanguage::Python:
-        if (bits == 0U)
-        {
-            return "0";
-        }
-        if (bits >= 64U)
-        {
-            return "18446744073709551615";
-        }
-        return std::to_string((1ULL << bits) - 1ULL);
-    }
-    return "0";
-}
 
 HelperBody helperBodyForScalar(const HelperScalarKind kind,
                                const std::uint32_t    bits,
@@ -124,34 +65,6 @@ HelperBody helperBodyForScalar(const HelperScalarKind kind,
         break;
     }
     return body;
-}
-
-void renderHelperBody(const HelperBody& body, HelperBodySpelling& spelling)
-{
-    switch (body.kind)
-    {
-    case HelperBodyKind::Identity:
-        spelling.spellIdentity(body);
-        break;
-    case HelperBodyKind::Mask:
-        spelling.spellMask(body);
-        break;
-    case HelperBodyKind::SaturateUnsigned:
-        spelling.spellSaturateUnsigned(body);
-        break;
-    case HelperBodyKind::SaturateSigned:
-        spelling.spellSaturateSigned(body);
-        break;
-    case HelperBodyKind::SignExtend:
-        spelling.spellSignExtend(body);
-        break;
-    case HelperBodyKind::StatusGuard:
-        spelling.spellStatusGuard(body);
-        break;
-    case HelperBodyKind::TagMembership:
-        spelling.spellTagMembership(body);
-        break;
-    }
 }
 
 }  // namespace llvmdsdl

@@ -46,7 +46,7 @@ Claim audit tally across the review: **28 holds · 32 partial · 5 overstated ·
 
 | # | Stated goal | Verdict | Grade |
 |---|-------------|---------|------:|
-| G1 | "Shared semantics, multiple syntaxes" | **Partial** — shared *planning*, per-backend *rendering* | C+ |
+| G1 | "Shared semantics, multiple syntaxes" | **Partial → holds (2026-09-11)** — every backend's bodies are translations of one plan-body IR; spellings carry surface idiom only | C+→A− |
 | G2 | LLVM/MLIR as real infrastructure | **Holds** — operational | A− |
 | G3 | Contract boundaries / drift detection | **Overstated** — presence/identity guard, not drift detection | C |
 | G4 | Backend parity / convergence = 100 | **Overstated → addressed (2026-07-03)** — parity/malformed/determinism now behavioural (executed pass/fail); convergence relabeled as a lint | C−→B |
@@ -60,19 +60,12 @@ This is the load-bearing claim, and the truth is in the middle. A **substantial 
 
 But the actual **control-flow emission is hand-written per backend.** `emitSerializeUnion` is independently coded in `lib/CodeGen/emitter/Rust.cpp:559` and `lib/CodeGen/emitter/Go.cpp:585` — same intended behaviour, six separate hand-written renderings. A bug like "mask-before-validate vs validate-before-mask" in one backend would not be caught by the convergence machinery. So G1 is *aspirationally true and structurally partial*: the semantics are **planned once and rendered six times**, with cross-language agreement enforced by tests rather than by construction.
 
-> **Update 2026-07-12 — both halves of this critique are now addressed for the union
-> prologue.** The named failure mode ("mask-before-validate in one backend") is caught two
-> independent ways: the **emit-order verifier** (behavioural trace comparison per (type,
-> direction) against the Dafny-proven ordering class, in ctest/CI, with an end-to-end
-> mutation negative control) and the **shared render template**
-> (`include/llvmdsdl/CodeGen/EmitStep.h`): all five string emitters now render the union
-> serialise/deserialize prologue from one canonical step list, so the order is correct *by
-> construction*, with per-backend spelling classes carrying only surface idiom. And the
-> same holds recursively for field bodies on the native backends (P2 step 2d, same day):
-> scalar/array/composite rendering — including array-element and composite nesting — is
-> driven by a shared recursive step tree, and TS/Python render through the same tree via
-> the shared scripted operation plan — all five backends' spellings carry zero sequencing.
-> See [docs/reference/codegen/emit-order.md](../reference/codegen/emit-order.md).
+> **Update 2026-09-11 — addressed.** Every backend's serialise and deserialise bodies are
+> translations of the `build-dsdl-plan-bodies` IR through one translator
+> (`lib/CodeGen/BodyTranslator.cpp`), so the order is correct *by construction*; a spelling
+> per language carries surface idiom only. `ctest -L backend-contract` perturbs the bodies
+> and fails a backend whose output does not follow. See
+> `docs/development/backend-translation.md`.
 
 ### G2 — MLIR as real infrastructure → **Holds**
 This is the project's strongest claim and it is **true**. There is a proper ODS dialect (`include/llvmdsdl/IR/DSDLOps.td`, `DSDLTypes.td`, `DSDLAttrs.td`), ops with **real verifiers** (`SerializationPlanOp::verify()`, `IOOp::verify()` reject malformed union/array/cast metadata), a working pass pipeline, and an EmitC lowering path producing C. MLIR is operational infrastructure here, not scaffolding. (Minor: `dsdl.field`/`dsdl.constant` ops appear to be dead — defined but unconsumed — and should be removed or documented.)
@@ -193,8 +186,8 @@ library implementations rests on the lint rather than on a differential build.
   ✅ **Closed (2026-07-12) — reframed as corroboration, expansion retired by decision.**
   **The authority hierarchy is now explicit:** the **Cyphal Specification is the truth**;
   **`spec/dafny/CyphalSerdes.dfy` is the machine-checked oracle** (op ordering, round-trip,
-  read-path bounds safety — re-verified in CI); enforcement is spec-derived — the emit-order
-  verifier (all 5 string backends vs the proven ordering class, full corpus), the
+  read-path bounds safety — re-verified in CI); enforcement is spec-derived — the backend-contract
+  gate (every backend's bodies are translations of the plan-body IR), the
   spec-derived primitive golden vectors (`test/integration/primitive_vectors.txt`, absolute
   wire bytes at the primitive level, all 5 runtimes), cross-backend byte parity
   (C↔{Cpp,Rust,Go,TS} + Python), and the sanitizer/fuzz lanes. **Nunavut is a pinned peer
@@ -437,7 +430,7 @@ library implementations rests on the lint rather than on a differential build.
 
 ### P2 — Maturity / maintainability
 
-- [x] Reduce per-backend control-flow duplication (shared render template, or a verifier that the six emit orders match) — directly strengthens G1. Sequenced emit-order verifier → shared render template; the resulting contract is specified in **[docs/reference/codegen/emit-order.md](../reference/codegen/emit-order.md)** (the execution plan was retired once the work closed). ✅ **Phases 0–1 done (2026-07-12, branch `p2-emit-order-dedup`): the emit-order verifier is live.** All 5 string emitters (honest scope: C has no string emitter — it is covered by MLIR/EmitC + the C↔{Go,Rust,Cpp} parity harnesses) trace their abstract serialise/deserialize op stream per (type, direction) through a zero-cost-when-off side channel (`LLVMDSDL_EMIT_TRACE`); the comparator (`tools/convergence/emit_order_verifier.py`, three ctests incl. a checker selftest and an end-to-end trace-mutation negative control) asserts per-backend membership in the Dafny-proven safe ordering class (`spec/dafny/CyphalSerdes.dfy`, re-verified in CI) **and** cross-backend payload-aware wire-skeleton equality over union/array/float/padding/composite/service fixtures (26 segments) **plus the full UAVCAN public-regulated corpus (424 segments)** — all green, zero unmodeled divergences (accepted D2/D3/D4 differences are explicitly modeled in the comparator, D3 via an honest `BULK_COPY` op). The convergence scorecard preamble now points behavioural step-order claims at this verifier. ✅ **Phase 2 union prologue done (2026-07-12): the shared render template is live.** All five string backends render the union serialise/deserialize prologue through one shared step template (`include/llvmdsdl/CodeGen/EmitStep.h` — `buildUnionSectionSteps` is the single in-code statement of the canonical order) with per-backend `UnionSectionSpelling` classes expressing only the real divergence axes (match/switch/if-chain dispatch, Result/(rc,0)/negative-int/throw/raise error channels, mask folding). Proven behaviour-preserving: Rust/Go/C++ full-corpus generated output is **byte-identical** pre/post (rebuild-and-diff), and the TS/Python diff is exactly the deliberate D4 bookkeeping normalization (now all five backends emit the canonical `READ→MASK→STORE→VALIDATE→ADVANCE` order by construction — D4 closed; lit snapshots updated; C↔TS parity + Python runtime suites green). ✅ **2d for the native backends also done (2026-07-12): the recursion is shared.** `buildFieldEmitSteps` builds a recursive step *tree* (array nodes own their element's step subtree) from shared facts, and `renderFieldSteps` owns every cross-statement ordering decision — scalar helper-before-write, array length-group-before-loop, loop-contains-element, composite delimiter mechanics — recursively, for Rust/Go/C++, whose spellings now carry zero sequencing (D2/D3 became declared interface points: `spellFixedArrayLenCheck`, `trySpellArrayBulkFastPath`). Each backend proven full-corpus byte-identical pre/post. ✅ **TS/Python converged onto the same tree (same day)**: the shared scripted operation plan carries per-field step trees from the same builder, and both scripted emitters render through `renderFieldSteps` (`PyFieldSpelling`, `TsFieldSpelling`), proven full-corpus byte-identical. **All five string backends now derive their complete serdes-body sequencing from one shared source; adding a backend means writing only spelling classes. The P2 item is closed** (this was the G1 end-state).
+- [x] Reduce per-backend control-flow duplication — directly strengthens G1. ✅ **Done (2026-09-11):** every backend's serialise and deserialise bodies are translations of the `build-dsdl-plan-bodies` IR through one translator (`lib/CodeGen/BodyTranslator.cpp`); a spelling per language carries surface idiom only, and `ctest -L backend-contract` fails a backend whose output does not follow a perturbed body. See `docs/development/backend-translation.md`. This was the G1 end-state.
 - [x] Remove dead `dsdl.field`/`dsdl.constant` ops; add proactive verifiers in lowering.
   ✅ **Done (2026-07-12) — premise corrected + verifiers made proactive.** The review's
   "dead ops" premise was **wrong**: `dsdl.field`/`dsdl.constant` are *not* dead — they are
@@ -583,6 +576,6 @@ Everything above — P0 → P1, with P2 as maturity work — **is the alpha.** L
   - **Ferrocene** — a `core`-only / `no_std` **profile of the existing Rust backend** compiled by a *certified* toolchain (ISO 26262 ASIL D, IEC 61508 SIL 3; DO-178C **not** yet achieved). Lowest syntax risk, highest ROI, and the one candidate with real first-party demand (no-std Rust).
   - **MicroPython** — a bignum / GC / `uctypes` **profile of the existing Python backend**; convenience and education nodes, non-safety-critical.
   - **WASM** — deployment target for edge / app-processor Cyphal nodes; reachable through the Rust backend (and, later, a TinyGo profile of Go); `i32`/`i64`-only, so it needs explicit narrowing codegen.
-  - *Tenet to revisit when scoping:* pin the **execution model** (imperative, mutable in-place buffer, monotonic bit cursor) rather than "C-informed syntax," and let "could Ada slot in as a backend?" be the test of whether the shared-render / emit-order abstraction (P2) is language-neutral.
+  - *Tenet to revisit when scoping:* pin the **execution model** (imperative, mutable in-place buffer, monotonic bit cursor) rather than "C-informed syntax," and let "could Ada slot in as a backend?" be the test of whether the body translator (P2) is language-neutral.
 
-- [ ] **Beta 1 roadmap — authored after alpha feedback lands.** Not written now, by design. **Breaking changes are expected and acceptable across the alpha → beta-1 boundary** — this is the window to rework interfaces, land the shared-render / emit-order-verifier refactor (P2), and revise whatever alpha exposes, before API stability starts to matter.
+- [ ] **Beta 1 roadmap — authored after alpha feedback lands.** Not written now, by design. **Breaking changes are expected and acceptable across the alpha → beta-1 boundary** — this is the window to rework interfaces and revise whatever alpha exposes, before API stability starts to matter.

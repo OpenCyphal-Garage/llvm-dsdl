@@ -62,39 +62,22 @@ add_custom_target(llvmdsdl-embedded-runtime-sources
 
 add_library(llvmdsdlCodeGen
   EmbeddedRuntimeSources.cpp
-  ArrayWirePlan.cpp
+  BodyTranslator.cpp
   CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
   DefinitionDependencies.cpp
   DefinitionIndex.cpp
   DefinitionPathProjection.cpp
   EmitCommon.cpp
-  EmitStepRender.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
-  SectionHelperBodies.cpp
-  HelperSymbolResolver.cpp
-  LoweredBodyPlan.cpp
-  LoweredFactsLookup.cpp
-  LoweredRenderIR.cpp
-  NativeHelperContract.cpp
-  NativeEmitterTraversal.cpp
-  NativeFunctionSkeleton.cpp
-  MlirLoweredFacts.cpp
-  RuntimeHelperBindings.cpp
-  RuntimeLoweredPlan.cpp
-  ScriptedBodyPlan.cpp
   NamingManifest.cpp
+  SchemaLookup.cpp
   SchemaNaming.cpp
   SectionNaming.cpp
-  ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
-  SectionHelperBindingPlan.cpp
-  SerDesStatementPlan.cpp
-  SerDesHelperDescriptors.cpp
   SourceWriter.cpp
   TypeStorage.cpp
-  WireLayoutFacts.cpp
   UavcanEmbeddedCatalog.cpp
   emitter/C.cpp
   emitter/CHeaderRender.cpp
