@@ -72,7 +72,7 @@ class UsesDelimited:
                 v12 = v11
                 v13 = v5 == 0
                 if v13:
-                    v16 = buffer[min(4, len(buffer)):]
+                    v16 = buffer[min(v10, len(buffer)):]
                     _bound0_ = min(v12, len(v16))
                     _result1_ = self.nested._serialize_into(v16[:_bound0_])
                     if _result1_ < 0:
@@ -137,7 +137,7 @@ class UsesDelimited:
             v12 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(v7, v10)
             v13 = v12 == 0
             if v13:
-                v16 = buffer[min(4, len(buffer)):]
+                v16 = buffer[min(v9, len(buffer)):]
                 _bound2_ = min(v11, len(v16))
                 _result3_ = self.nested._deserialize_from(v16[:_bound2_])
                 if _result3_ < 0:

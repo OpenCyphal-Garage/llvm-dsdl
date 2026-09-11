@@ -742,13 +742,24 @@ PlanCursor buildAlignment(mlir::OpBuilder& b,
     return buildFinalPadding(b, loc, buffer, capacityBytes, cursor, std::nullopt);
 }
 
-/// @brief The space the wire buffer has left at the plan's current position.
-mlir::Value remainingBytes(mlir::OpBuilder& b, mlir::Location loc, mlir::Value capacityBytes, mlir::Value bitOffset)
+/// @brief Where the cursor at @p bitOffset stands in a buffer of @p capacityBytes: the byte it
+/// reached, bounded by the capacity, and the bytes left from there.
+///
+/// A read past the end zero-extends and still advances the cursor, so the bit offset can exceed
+/// the capacity; the pointer handed to a nested type is formed at the bounded byte, which every
+/// backend can address.
+struct BufferPosition
+{
+    mlir::Value byteOffset;
+    mlir::Value remaining;
+};
+
+BufferPosition bufferPosition(mlir::OpBuilder& b, mlir::Location loc, mlir::Value capacityBytes, mlir::Value bitOffset)
 {
     const mlir::Value used  = mlir::arith::DivUIOp::create(b, loc, bitOffset, constantI64(b, loc, 8));
     const mlir::Value fits  = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, used, capacityBytes);
     const mlir::Value taken = mlir::arith::SelectOp::create(b, loc, fits, used, capacityBytes);
-    return mlir::arith::SubIOp::create(b, loc, capacityBytes, taken);
+    return BufferPosition{taken, mlir::arith::SubIOp::create(b, loc, capacityBytes, taken)};
 }
 
 /// @brief The dialect's pointer to @p step's nested type, qualified for the direction.
@@ -781,10 +792,10 @@ PlanCursor buildSealedNested(mlir::OpBuilder& b,
     auto  i64Ty   = b.getIntegerType(64);
     auto  sizePtr = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::SizeType::get(ctx));
 
-    const mlir::Value available  = remainingBytes(b, loc, capacityBytes, inner.bitOffset);
-    const mlir::Value sizeSlot   = mlir::dsdl::LocalOp::create(b, loc, sizePtr, available);
-    const mlir::Value byteOffset = mlir::arith::DivUIOp::create(b, loc, inner.bitOffset, constantI64(b, loc, 8));
-    const mlir::Value at = mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, byteOffset);
+    const BufferPosition position = bufferPosition(b, loc, capacityBytes, inner.bitOffset);
+    const mlir::Value    sizeSlot = mlir::dsdl::LocalOp::create(b, loc, sizePtr, position.remaining);
+    const mlir::Value    at =
+        mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, position.byteOffset);
 
     auto call = mlir::dsdl::CallSerdesOp::create(b,
                                                  loc,
@@ -846,11 +857,11 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
     }
     const mlir::Value afterHeader =
         mlir::arith::AddIOp::create(b, loc, headerOffset, constantI64(b, loc, kDelimiterHeaderBits));
-    const mlir::Value remaining = remainingBytes(b, loc, capacityBytes, afterHeader);
+    const BufferPosition position = bufferPosition(b, loc, capacityBytes, afterHeader);
 
     // Serialising does not know the length until the nested type reports it, so the header
     // is reserved here and written once the encoding below has run.
-    const mlir::Value sizeInit = writing ? remaining : declared;
+    const mlir::Value sizeInit = writing ? position.remaining : declared;
     const mlir::Value sizeSlot = mlir::dsdl::LocalOp::create(b, loc, sizePtr, sizeInit);
 
     mlir::Value error = inner.error;
@@ -859,16 +870,15 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
         error = foldError(b,
                           loc,
                           error,
-                          callErrorHelper(b, loc, step.delimiterValidateHelper, mlir::ValueRange{declared, remaining}));
+                          callErrorHelper(b,
+                                          loc,
+                                          step.delimiterValidateHelper,
+                                          mlir::ValueRange{declared, position.remaining}));
     }
 
     return guarded(b, loc, PlanCursor{afterHeader, error}, [&](PlanCursor ready) {
         const mlir::Value at =
-            mlir::dsdl::BufferAtOp::create(b,
-                                           loc,
-                                           wirePointerType(ctx, writing),
-                                           buffer,
-                                           mlir::arith::DivUIOp::create(b, loc, ready.bitOffset, eight));
+            mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, position.byteOffset);
 
         auto call = mlir::dsdl::CallSerdesOp::create(b,
                                                      loc,
@@ -893,7 +903,10 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
             err = foldError(b,
                             loc,
                             err,
-                            callErrorHelper(b, loc, step.delimiterValidateHelper, mlir::ValueRange{span, remaining}));
+                            callErrorHelper(b,
+                                            loc,
+                                            step.delimiterValidateHelper,
+                                            mlir::ValueRange{span, position.remaining}));
         }
 
         return guarded(b, loc, PlanCursor{ready.bitOffset, err}, [&](PlanCursor done) {

@@ -66,7 +66,7 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
       let v14: bigint;
       let v15: number;
       if (v13) {
-        const v16 = buffer.subarray(Math.min(Number(4n), buffer.length));
+        const v16 = buffer.subarray(Math.min(Number(v10), buffer.length));
         const _bound0_ = Math.min(v12, v16.length);
         const _result1_ = serializeDelimitedInto(obj.nested, v16.subarray(0, _bound0_));
         let v17: number;
@@ -148,7 +148,7 @@ export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Ar
     let v15: bigint;
     let v16: number;
     if (v14) {
-      const v17 = buffer.subarray(Math.min(Number(4n), buffer.length));
+      const v17 = buffer.subarray(Math.min(Number(v10), buffer.length));
       const _bound2_ = Math.min(v12, v17.length);
       const _result3_ = deserializeDelimitedFrom(v7, v17.subarray(0, _bound2_));
       let v18: number;
