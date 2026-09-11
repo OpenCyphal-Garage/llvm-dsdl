@@ -243,10 +243,12 @@ std::optional<Rational> intPow(const Rational& base, const Rational& exp)
     }
     // Every other base has |value| != 1, so the running product leaves 64-bit range within a few
     // dozen iterations; bail as soon as it overflows, which also bounds the loop. A negative exponent
-    // raises to the positive magnitude and reciprocates, since base != 0 here.
-    const __int128 magnitude = (e < 0) ? -static_cast<__int128>(e) : static_cast<__int128>(e);
-    Rational       out(1, 1);
-    for (__int128 i = 0; i < magnitude; ++i)
+    // raises to the positive magnitude and reciprocates, since base != 0 here. The magnitude is
+    // formed in unsigned arithmetic, where negating the most negative exponent is defined.
+    const unsigned __int128 magnitude = (e < 0) ? static_cast<unsigned __int128>(0) - static_cast<unsigned __int128>(e)
+                                                : static_cast<unsigned __int128>(e);
+    Rational                out(1, 1);
+    for (unsigned __int128 i = 0; i < magnitude; ++i)
     {
         out = out * base;
         if (out.overflowed())

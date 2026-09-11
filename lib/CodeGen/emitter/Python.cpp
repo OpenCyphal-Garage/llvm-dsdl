@@ -918,7 +918,7 @@ public:
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         // The object becomes the option the tag names, holding that option's default for the
-        // plan to store into: an option that is an object or an array is storage the plan
+        // plan to store into: an option that is an object or an array is the storage the plan
         // addresses.
         const Plan&       plan   = planOf(op.getObject());
         const std::string object = names(op.getObject());

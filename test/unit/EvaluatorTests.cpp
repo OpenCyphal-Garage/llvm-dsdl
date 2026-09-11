@@ -691,6 +691,17 @@ bool runEvaluatorTests()
         }
     }
     {
+        // The most negative 128-bit exponent is reachable from a legal expression; its magnitude must
+        // be formed without overflow, so the power overflows and is diagnosed rather than folding to 1.
+        llvmdsdl::DiagnosticEngine diag;
+        auto                       value = evaluateAssertExpression("2 ** ((0 - 2 ** 126) * 2)", diag);
+        if (value || !hasErrorContaining(diag, "invalid rational operation"))
+        {
+            std::cerr << "2 ** INT128_MIN should fail with a diagnostic\n";
+            return false;
+        }
+    }
+    {
         // Trivial bases must be special-cased so a huge exponent cannot spin the loop (DoS). If this
         // were unbounded the test would hang rather than fail.
         llvmdsdl::DiagnosticEngine diag;

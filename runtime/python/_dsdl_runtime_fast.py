@@ -38,7 +38,7 @@ def byte_length_for_bits(total_bits: int) -> int:
 def _byte_view(view: memoryview) -> memoryview:
     # A view is addressed by byte, whatever the format of the buffer it was taken from; the
     # accelerator reads the same buffer as bytes.
-    if view.format == "B" and view.ndim == 1:
+    if view.format == "B" and view.ndim == 1 and view.c_contiguous:
         return view
     return view.cast("B")
 
