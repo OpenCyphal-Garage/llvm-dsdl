@@ -1,0 +1,4 @@
+# A variable-length array whose length prefix is 64 bits wide; the capacity is what one row
+# perturbs, so the validate helper every backend translates has to follow it.
+bool[<=8589934592] flags
+@sealed
