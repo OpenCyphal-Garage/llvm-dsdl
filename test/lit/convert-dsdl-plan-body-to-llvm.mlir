@@ -23,6 +23,11 @@ func.func @widget_serialize(
   // CHECK: llvm.load %[[SZ]] : !llvm.ptr -> i64
   %cap = dsdl.load_scalar %sz : !dsdl.ptr<!dsdl.size> -> i64
 
+  // A 64-bit index, the default here, holds every count; a narrower target truncates and
+  // sign-extends the count back to compare.
+  // CHECK: llvm.mlir.constant(true)
+  %held = dsdl.index_holds %cap
+
   // The space left goes into a stack slot the callee can write back through.
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[SLOT:.*]] = llvm.alloca %[[ONE]] x i64

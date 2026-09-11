@@ -212,6 +212,7 @@ public:
     [[nodiscard]] virtual bool spellsInline(mlir::Operation* op) const = 0;
 
     [[nodiscard]] virtual std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const               = 0;
+    [[nodiscard]] virtual std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const       = 0;
     [[nodiscard]] virtual std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const = 0;
     [[nodiscard]] virtual std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const           = 0;
     [[nodiscard]] virtual std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const       = 0;

@@ -395,6 +395,10 @@ private:
                 define(read.getResult(), spelling_.isNull(read, *this), true);
                 return llvm::Error::success();
             })
+            .Case<mlir::dsdl::IndexHoldsOp>([&](mlir::dsdl::IndexHoldsOp test) {
+                define(test.getHolds(), spelling_.indexHolds(test, *this), true);
+                return llvm::Error::success();
+            })
             .Case<mlir::dsdl::BufferOrEmptyOp>([&](mlir::dsdl::BufferOrEmptyOp read) {
                 define(read.getResult(), spelling_.bufferOrEmpty(read, *this), true);
                 return llvm::Error::success();

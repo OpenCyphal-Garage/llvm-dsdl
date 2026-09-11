@@ -292,6 +292,37 @@ struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNul
     }
 };
 
+struct IndexHoldsLowering final : public mlir::OpConversionPattern<mlir::dsdl::IndexHoldsOp>
+{
+    IndexHoldsLowering(const mlir::TypeConverter& converter, mlir::MLIRContext* context, const unsigned sizeBits)
+        : mlir::OpConversionPattern<mlir::dsdl::IndexHoldsOp>(converter, context)
+        , sizeBits_(sizeBits)
+    {
+    }
+
+    // Truncated to the target's index width and sign-extended back: a count past the signed range
+    // of the index does not come back as itself. A 64-bit index holds every count.
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::IndexHoldsOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        if (sizeBits_ >= 64U)
+        {
+            rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(op, rewriter.getI1Type(), rewriter.getBoolAttr(true));
+            return mlir::success();
+        }
+        const auto        narrowTy  = rewriter.getIntegerType(sizeBits_);
+        const mlir::Value truncated = mlir::LLVM::TruncOp::create(rewriter, loc, narrowTy, adaptor.getValue());
+        const mlir::Value back = mlir::LLVM::SExtOp::create(rewriter, loc, adaptor.getValue().getType(), truncated);
+        rewriter.replaceOpWithNewOp<mlir::LLVM::ICmpOp>(op, mlir::LLVM::ICmpPredicate::eq, back, adaptor.getValue());
+        return mlir::success();
+    }
+
+private:
+    unsigned sizeBits_;
+};
+
 struct LoadScalarLowering final : public mlir::OpConversionPattern<mlir::dsdl::LoadScalarOp>
 {
     using mlir::OpConversionPattern<mlir::dsdl::LoadScalarOp>::OpConversionPattern;
@@ -1202,6 +1233,7 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      BitWriteLowering,
                      BitReadLowering,
                      CallSerdesLowering>(converter, &getContext());
+        patterns.add<IndexHoldsLowering>(converter, &getContext(), sizeBits);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
         // A signature is not only its arguments. A body that answers with a pointer would
         // otherwise leave the conversion stranded at its own return.
@@ -1225,6 +1257,7 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                             mlir::dsdl::MemberAddrOp,
                             mlir::dsdl::ElementAddrOp,
                             mlir::dsdl::IsNullOp,
+                            mlir::dsdl::IndexHoldsOp,
                             mlir::dsdl::LoadScalarOp,
                             mlir::dsdl::StoreScalarOp,
                             mlir::dsdl::BufferAtOp,

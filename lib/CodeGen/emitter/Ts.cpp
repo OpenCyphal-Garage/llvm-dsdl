@@ -780,6 +780,14 @@ public:
         return !deserialize_ && mlir::isa<mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(op);
     }
 
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
+    {
+        // Through Number and back: a count a Number does not hold exactly does not come back as
+        // itself.
+        const std::string value = names(op.getValue());
+        return "(BigInt(Number(" + value + ")) === " + value + ")";
+    }
+
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
         // The object arrives by reference and may be missing; a buffer and a local are never null.
@@ -888,15 +896,10 @@ public:
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        // Sized within its capacity -- a count past it is what the plan's validation rejects
-        // next -- for the plan to store into.
-        const Member      member = memberOf(op.getObject(), op.getMember());
-        mlir::dsdl::IOOp  io     = member.io;
-        const std::string count  = fresh("count");
-        w.line("const " + count + " = Math.min(" + asNumber(op.getValue(), names) + ", " +
-               std::to_string(io.getArrayCapacity()) + ");");
+        // Sized to the count the plan validated, for the plan to store into.
+        const Member member = memberOf(op.getObject(), op.getMember());
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = new Array<" + elementTsType(member) + ">(" +
-               count + ");");
+               asNumber(op.getValue(), names) + ");");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override

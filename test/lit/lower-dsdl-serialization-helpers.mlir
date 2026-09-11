@@ -33,4 +33,5 @@ module {
 // CHECK-DAG: func.func @llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__ser
 // CHECK-DAG: func.func @llvmdsdl_plan_scalar_float__test_Helpers_1_0__{{[0-9]+}}__deser
 // CHECK-DAG: func.func @llvmdsdl_plan_validate_array_length__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.array_length_validate
+// CHECK-DAG: dsdl.index_holds %{{.*}}
 // CHECK-DAG: func.func @llvmdsdl_plan_validate_delimiter_header__test_Helpers_1_0__{{[0-9]+}}(%{{[^:]+}}: i64, %{{[^:]+}}: i64) -> i8 attributes {llvmdsdl.delimiter_header_validate

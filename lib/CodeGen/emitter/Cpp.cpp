@@ -698,6 +698,15 @@ public:
         return "(" + names(op.getPointer()) + " == nullptr)";
     }
 
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
+    {
+        // Through std::size_t and back as std::ptrdiff_t: a count past the signed range of the
+        // target's index does not come back as itself.
+        const std::string value = names(op.getValue());
+        return "(static_cast<std::uint64_t>(static_cast<std::ptrdiff_t>(static_cast<std::size_t>(" + value +
+               "))) == " + value + ")";
+    }
+
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
     {
         const std::string buffer = names(op.getBuffer());
@@ -777,13 +786,11 @@ public:
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        // A count past the capacity is what the plan's validation rejects next; the container is
-        // sized within its capacity so that a malformed count never sizes it further.
+        // The plan validated the count before handing it over; the container is sized to it.
         const Member      member = memberOf(op.getObject(), op.getMember());
         mlir::dsdl::IOOp  io     = member.io;
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
-        const std::string count  = "dsdl_runtime_choose_min(" + asSize(names(op.getValue())) + ", " +
-                                   std::to_string(io.getArrayCapacity()) + "U)";
+        const std::string count  = asSize(names(op.getValue()));
         if (!isPmrFlavor(flavor_))
         {
             w.line(access + ".resize(" + count + ");");

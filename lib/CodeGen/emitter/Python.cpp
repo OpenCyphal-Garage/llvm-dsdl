@@ -814,6 +814,12 @@ public:
                 op);
     }
 
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        // An int holds every count.
+        return "True";
+    }
+
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
         // The object arrives by reference; a buffer and a local are never null.
@@ -901,13 +907,9 @@ public:
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        // Sized within its capacity -- a count past it is what the plan's validation rejects
-        // next -- with default elements for the plan to store into.
-        const Member      member = memberOf(op.getObject(), op.getMember());
-        mlir::dsdl::IOOp  io     = member.io;
-        const std::string count  = fresh("count");
-        line(w, count + " = min(" + names(op.getValue()) + ", " + std::to_string(io.getArrayCapacity()) + ")");
-        line(w, memberAccess(op.getObject(), op.getMember(), names) + " = " + arrayOf(member, count));
+        // Sized to the count the plan validated, with default elements for the plan to store into.
+        const Member member = memberOf(op.getObject(), op.getMember());
+        line(w, memberAccess(op.getObject(), op.getMember(), names) + " = " + arrayOf(member, names(op.getValue())));
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override

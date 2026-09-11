@@ -754,7 +754,12 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
         auto capConst   = mlir::arith::ConstantIntOp::create(builder, loc, capacity, 64);
         auto isNegative = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
         auto tooLarge   = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
-        auto invalid    = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
+        // A length the target's index type cannot hold is rejected on that target.
+        auto held       = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
+        auto falseConst = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1);
+        auto unheld     = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, held, falseConst);
+        auto outOfRange = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
+        auto invalid    = mlir::arith::OrIOp::create(builder, loc, outOfRange, unheld);
         auto status     = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);
         {
             mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();

@@ -728,6 +728,14 @@ public:
         return "false";
     }
 
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
+    {
+        // Through isize and back: a count past the signed range of the target's index does not
+        // come back as itself.
+        const std::string value = names(op.getValue());
+        return "(" + value + " as isize) as u64 == " + value;
+    }
+
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
     {
         return names(op.getBuffer());
@@ -807,11 +815,9 @@ public:
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        // The container takes the section's memory contract, is sized within its capacity -- a
-        // count past it is what the plan's validation rejects next -- and holds default elements
-        // for the plan to store into. A pool that cannot provide the storage ends the function.
-        const Member      member = memberOf(op.getObject(), op.getMember());
-        mlir::dsdl::IOOp  io     = member.io;
+        // The container takes the section's memory contract, is sized to the count the plan
+        // validated, and holds default elements for the plan to store into. A pool that cannot
+        // provide the storage ends the function.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
         const std::string count  = fresh("count");
         w.line(access +
@@ -819,8 +825,7 @@ public:
                "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::" +
                poolClassOf(op.getObject(), op.getMember()) + "));");
         w.line(access + ".clear();");
-        w.line("let " + count + ": usize = core::cmp::min(" + asSize(names(op.getValue())) + ", " +
-               std::to_string(io.getArrayCapacity()) + "usize);");
+        w.line("let " + count + ": usize = " + asSize(names(op.getValue())) + ";");
         w.open("if Self::__LLVMDSDL_MEMORY_MODE == crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
         w.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
         w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
