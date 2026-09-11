@@ -28,14 +28,15 @@ a particular language.
 - Schema and serialisation plans are represented as explicit IR ops, and every fact they carry is a
   declared attribute the verifier checks
 - Passes stamp and validate lowered contract metadata
-- Backends consume facts from validated lowered state, never from raw IR
+- Backends translate the functions the pipeline built, never raw IR
 
 ### Pass sequence
 
 1. `lower-dsdl-exec`
 2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
-3. optional `optimize-dsdl-lowered-serdes`
-4. `build-dsdl-plan-bodies` — every plan becomes a serialise and a deserialise function of plan operations
+3. `build-dsdl-plan-bodies` — every plan becomes a serialise and a deserialise function of plan operations
+4. optional `optimize-dsdl-lowered-serdes` — the canonicaliser and common-subexpression elimination over
+   the helpers and bodies, so every backend translates the simplified functions
 5. translation of those functions, one per backend: `convert-dsdl-to-emitc` and EmitC translation for
    C, `convert-dsdl-to-llvm` and `emit-dsdl-runtime` for objects, a translator per language for the
    rest. A backend is this translation and nothing more; `ctest -L backend-contract` reports which

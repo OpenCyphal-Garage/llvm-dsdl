@@ -1353,11 +1353,12 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLowe
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLAnnotateAliasabilityPass());
+    pm.addPass(createBuildDSDLPlanBodiesPass());
+    // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
         addOptimizeLoweredSerDesPipeline(pm);
     }
-    pm.addPass(createBuildDSDLPlanBodiesPass());
 }
 
 void registerDSDLPasses()

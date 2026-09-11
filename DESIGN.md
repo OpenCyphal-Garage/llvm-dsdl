@@ -114,9 +114,9 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
 - `dsdl-annotate-aliasability`
-- optional `optimize-dsdl-lowered-serdes` pipeline
 - `build-dsdl-plan-bodies`
-- `lower-dsdl-bodies`: the pipeline of the three above, which every backend's bodies are translations of
+- optional `optimize-dsdl-lowered-serdes` pipeline: the canonicaliser and common-subexpression elimination over the helpers and bodies
+- `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of
 - `convert-dsdl-to-emitc`
 - `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 

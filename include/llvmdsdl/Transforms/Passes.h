@@ -86,10 +86,11 @@ void registerDSDLToLLVMPasses();
 ///        deserialise function of dialect operations. A backend is a translation of that output
 ///        (DESIGN.md, *Backend Contract*). Registered with `dsdl-opt` as `lower-dsdl-bodies`.
 /// @param[in] pm Pass manager to extend.
-/// @param[in] optimizeLoweredSerDes Adds the optional canonicalisation pipeline before the bodies are built.
+/// @param[in] optimizeLoweredSerDes Canonicalises the helpers and bodies once they are built, so every backend
+///                                  translates the simplified functions.
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, bool optimizeLoweredSerDes);
 
-/// @brief Adds optional lowered-serdes optimisation passes to a pipeline.
+/// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm);
 
