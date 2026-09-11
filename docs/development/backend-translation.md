@@ -29,7 +29,8 @@ dialect. Consuming lowered facts is not translating lowered operations.
 `lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-annotate-aliasability` and
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
-receives. The C lane takes each definition's schema, and the functions built for it, from that
+receives; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
+`build-dsdl-plan-bodies`, so it acts on every backend alike. The C lane takes each definition's schema, and the functions built for it, from that
 module; stamps C names on the schema; and converts them.
 
 ## The body IR is target-neutral
@@ -66,11 +67,13 @@ has the shape of `mlir::emitc::translateToCpp`: it walks a function, names its v
 `scf.if`, `scf.while` and `scf.for` as the language's structured statements, and dispatches each
 operation through a `BodySpelling` — types and literals, operators with width and sign, runtime
 primitive calls, member, element, array and union access, signatures. One skeleton; one spelling
-per language. It takes the function and nothing else: no `SemanticModule` and no
-`LoweredFactsMap`.
+per language. It takes the function and nothing else: no `SemanticModule`.
 
 Declarations, module layout, manifests, constants, deprecation notices and runtime embedding stay
-in each emitter and keep reading the semantic module. The body half of an emitter — its
+in each emitter and keep reading the semantic module; a declaration takes the alias verdict and a
+union's tag width from the plan operation itself, through
+[`include/llvmdsdl/CodeGen/SchemaLookup.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/CodeGen/SchemaLookup.h).
+The body half of an emitter — its
 function-body emitters, helper-binding spellings, alignment, padding and composite renderers — is
 replaced by a call into the translator.
 
@@ -150,19 +153,6 @@ deserialised object has the storage the plan addresses; a union's option is crea
 plan sets the tag. Python has no empty block, so a block that spelled no statement closes with
 `pass`. The C↔Python parity lanes and their variants, the malformed-input and decode-fuzz lanes,
 the runtime parity and smoke lanes, and the generation lane accept it.
-
-## Removed
-
-With the last backend converted, the planners went — `SerDesStatementPlan`,
-`NativeEmitterTraversal`, `RuntimeLoweredPlan`, `ScriptedOperationPlan`, `ScriptedBodyPlan`,
-`LoweredBodyPlan`, `LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`,
-`NativeHelperContract`, `SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts`
-with them: a declaration takes the alias verdict and a union's tag width from the plan operation
-itself. The convergence report and its scorecard page, and the execution-engine boundary guard,
-graded an emitter by the markers present in its source; the backend-contract gate replaced them.
-The emit-order trace machinery went with its last recorder, the Python planner, and the
-facts-channel check in the gate tool with the channel. `--optimize-lowered-serdes` sits after
-`build-dsdl-plan-bodies` in the shared pipeline and acts on every backend alike.
 
 ## Acceptance
 

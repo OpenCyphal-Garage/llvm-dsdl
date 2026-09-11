@@ -77,7 +77,7 @@ class UnionTag:
     @classmethod
     def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag":
         value = cls()
-        result = value._deserialize_from(memoryview(data))
+        result = value._deserialize_from(memoryview(data).cast("B"))
         if result < 0:
             raise ValueError(error_message(result))
         return value

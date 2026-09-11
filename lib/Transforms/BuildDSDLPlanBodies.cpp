@@ -1430,9 +1430,10 @@ PlanCursor buildArrayRead(mlir::OpBuilder& b,
         const mlir::Value offset =
             mlir::arith::AddIOp::create(b, loc, bitOffset, constantI64(b, loc, step.arrayLengthPrefixBits));
 
-        // The length off the wire is stored as it was read and then validated, not clamped to
-        // the declared capacity. A prefix longer than the array can hold is malformed input, and
-        // a decoder that quietly truncated it would accept a message the sender did not send.
+        // The length off the wire is stored first, bounded by the declared capacity so that the
+        // storage a spelling sizes fits the array, and then validated against the same capacity:
+        // a prefix longer than the array can hold is malformed input, and the decoder rejects the
+        // message rather than accept it at the truncated count.
         mlir::dsdl::SetArrayLengthOp::create(b, loc, object, b.getStringAttr(step.name), wireLength);
         const mlir::Value count = wireLength;
         const mlir::Value error = callErrorHelper(b, loc, step.arrayLengthValidateHelper, mlir::ValueRange{count});
