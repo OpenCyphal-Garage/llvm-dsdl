@@ -139,6 +139,27 @@ if(NOT _pysk)
 endif()
 set(py_skipped "${CMAKE_MATCH_1}")
 
+# The accelerator answers the same vectors as the pure runtime, through the same driver.
+set(accel_ran FALSE)
+if(DEFINED ACCEL_MODULE AND NOT "${ACCEL_MODULE}" STREQUAL "" AND EXISTS "${ACCEL_MODULE}")
+  execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" "${driver_dir}/PrimitiveEquivalenceDriver.py"
+      "${VECTORS_FILE}" "${ACCEL_MODULE}"
+    RESULT_VARIABLE accel_rc OUTPUT_VARIABLE accel_out ERROR_VARIABLE accel_err)
+  if(NOT accel_rc EQUAL 0)
+    message(FATAL_ERROR "Python accelerator primitive equivalence FAILED:\n${accel_out}\n${accel_err}")
+  endif()
+  extract_processed("Python accelerator" accel_out accel_count)
+  string(REGEX MATCH "SKIPPED ([0-9]+)" _accelsk "${accel_out}")
+  if(NOT _accelsk)
+    message(FATAL_ERROR "Python accelerator driver did not report a SKIPPED count:\n${accel_out}")
+  endif()
+  set(accel_skipped "${CMAKE_MATCH_1}")
+  set(accel_ran TRUE)
+elseif(REQUIRE_ACCEL)
+  message(FATAL_ERROR "primitive equivalence requires the Python accelerator, but ACCEL_MODULE is missing")
+endif()
+
 # ------------------------------------------------------- TypeScript driver ----
 # Optional: only runs when tsc, node, and dsdlc are all available (the generated
 # TS runtime must be produced by dsdlc first). TS is double-typed like Python, so
@@ -202,6 +223,16 @@ if(NOT py_total EQUAL c_count)
     "but the native runtimes ran ${c_count}")
 endif()
 
+set(accel_summary "Python accelerator=skipped")
+if(accel_ran)
+  math(EXPR accel_total "${accel_count} + ${accel_skipped}")
+  if(NOT accel_total EQUAL c_count)
+    message(FATAL_ERROR
+      "Python accelerator covered ${accel_total} vectors (processed=${accel_count} skipped=${accel_skipped}) "
+      "but the native runtimes ran ${c_count}")
+  endif()
+  set(accel_summary "Python accelerator agreed on ${accel_count} (${accel_skipped} double-typed skip(s))")
+endif()
 set(ts_summary "TypeScript=skipped")
 if(ts_ran)
   math(EXPR ts_total "${ts_count} + ${ts_skipped}")
@@ -215,6 +246,6 @@ endif()
 
 message(STATUS
   "Primitive equivalence PASS: C, Rust, Go agreed on all ${c_count} shared vectors; "
-  "Python agreed on ${py_count} (${py_skipped} double-typed skip(s)); ${ts_summary}")
+  "Python agreed on ${py_count} (${py_skipped} double-typed skip(s)); ${accel_summary}; ${ts_summary}")
 file(WRITE "${OUT_DIR}/primitive-equivalence-summary.txt"
   "vectors=${c_count}\npython_skipped=${py_skipped}\n${c_out}${go_out}${rs_out}${py_out}")

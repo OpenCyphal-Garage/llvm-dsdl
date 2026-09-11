@@ -270,6 +270,19 @@ static int read_i64(PyObject* valueObj, long long* outValue, int* outOverflow)
     return 1;
 }
 
+// Reduces a Python integer of any width modulo 2**64, which is what the Python runtimes do when they mask a value
+// with (1 << len_bits) - 1.
+static int read_u64_mask(PyObject* valueObj, uint64_t* outValue)
+{
+    const unsigned long long v = PyLong_AsUnsignedLongLongMask(valueObj);
+    if ((v == (unsigned long long) -1) && (PyErr_Occurred() != NULL))
+    {
+        return 0;
+    }
+    *outValue = (uint64_t) v;
+    return 1;
+}
+
 static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
 {
     (void) self;
@@ -296,33 +309,32 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
         return NULL;
     }
 
-    long long signedValue = 0;
-    int       overflow    = 0;
-    if (!read_i64(valueObj, &signedValue, &overflow))
-    {
-        return NULL;
-    }
-    // A value past the signed range is read again as unsigned: a 64-bit field holds up to
-    // UINT64_MAX, which the plan hands over as the value it is.
-    uint64_t wide      = 0;
-    int      wideValid = 0;
-    if (overflow > 0)
-    {
-        wide = PyLong_AsUnsignedLongLong(valueObj);
-        if (PyErr_Occurred())
-        {
-            PyErr_Clear();
-        }
-        else
-        {
-            wideValid = 1;
-        }
-    }
-
     const uint64_t mask = (lenBits == 64U) ? UINT64_MAX : ((UINT64_C(1) << lenBits) - UINT64_C(1));
     uint64_t       out  = 0;
     if (saturating)
     {
+        long long signedValue = 0;
+        int       overflow    = 0;
+        if (!read_i64(valueObj, &signedValue, &overflow))
+        {
+            return NULL;
+        }
+        // A value past the signed range is read again as unsigned: a 64-bit field holds up to
+        // UINT64_MAX, which the plan hands over as the value it is.
+        uint64_t wide      = 0;
+        int      wideValid = 0;
+        if (overflow > 0)
+        {
+            wide = PyLong_AsUnsignedLongLong(valueObj);
+            if (PyErr_Occurred())
+            {
+                PyErr_Clear();
+            }
+            else
+            {
+                wideValid = 1;
+            }
+        }
         if (overflow < 0 || (overflow == 0 && signedValue < 0))
         {
             out = 0;
@@ -338,19 +350,11 @@ static PyObject* py_write_unsigned(PyObject* self, PyObject* args)
     }
     else
     {
-        if (overflow > 0 && wideValid)
+        if (!read_u64_mask(valueObj, &out))
         {
-            out = wide & mask;
-        }
-        else if (overflow != 0)
-        {
-            PyErr_SetString(PyExc_OverflowError, "write_unsigned value does not fit into 64 bits");
             return NULL;
         }
-        else
-        {
-            out = ((uint64_t) signedValue) & mask;
-        }
+        out &= mask;
     }
 
     const int8_t rc = dsdl_runtime_set_uxx(dst, (size_t) dstSize, (size_t) offBits, out, lenBits);
@@ -389,16 +393,15 @@ static PyObject* py_write_signed(PyObject* self, PyObject* args)
         return NULL;
     }
 
-    long long signedValue = 0;
-    int       overflow    = 0;
-    if (!read_i64(valueObj, &signedValue, &overflow))
-    {
-        return NULL;
-    }
-
     int64_t outValue = 0;
     if (saturating)
     {
+        long long signedValue = 0;
+        int       overflow    = 0;
+        if (!read_i64(valueObj, &signedValue, &overflow))
+        {
+            return NULL;
+        }
         const int64_t minValue = (lenBits == 64U) ? INT64_MIN : -((int64_t) UINT64_C(1) << (lenBits - 1U));
         const int64_t maxValue = (lenBits == 64U) ? INT64_MAX : (((int64_t) UINT64_C(1) << (lenBits - 1U)) - 1);
         if (overflow < 0)
@@ -424,12 +427,14 @@ static PyObject* py_write_signed(PyObject* self, PyObject* args)
     }
     else
     {
-        if (overflow != 0)
+        uint64_t bits = 0;
+        if (!read_u64_mask(valueObj, &bits))
         {
-            PyErr_SetString(PyExc_OverflowError, "write_signed value does not fit into signed 64-bit range");
             return NULL;
         }
-        outValue = (int64_t) signedValue;
+        // Two's complement reinterpretation with the same idiom as dsdl_runtime_get_i64; the out-of-range
+        // conversion from uint64_t is implementation-defined before C23.
+        outValue = (bits > (uint64_t) INT64_MAX) ? ((-(int64_t) ~bits) - 1) : (int64_t) bits;
     }
 
     const int8_t rc = dsdl_runtime_set_ixx(dst, (size_t) dstSize, (size_t) offBits, outValue, lenBits);

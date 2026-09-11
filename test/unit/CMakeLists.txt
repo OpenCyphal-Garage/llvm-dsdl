@@ -78,6 +78,14 @@ set_tests_properties(
 
 find_program(PYTHON_EXECUTABLE python3 QUIET)
 if(PYTHON_EXECUTABLE)
+  set(python_unit_accel_args
+    -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+  )
+  set(python_unit_labels "unit;python")
+  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+    list(APPEND python_unit_accel_args -DREQUIRE_ACCEL=ON)
+    list(APPEND python_unit_labels "python-accel-required")
+  endif()
   add_test(
     NAME llvmdsdl-python-unit-tests
     COMMAND
@@ -86,13 +94,14 @@ if(PYTHON_EXECUTABLE)
         -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
         -DFIXTURES_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/python-unit-tests-out
+        ${python_unit_accel_args}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonUnitTests.cmake
   )
 
   set_tests_properties(
     llvmdsdl-python-unit-tests
     PROPERTIES
-      LABELS "unit;python"
+      LABELS "${python_unit_labels}"
   )
 
   add_test(

@@ -750,6 +750,14 @@ endif()
 # (C, Rust, Go) is checked against one shared golden-vector file, per primitive
 # direction, so paired bugs cannot mask each other.
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE AND PYTHON_EXECUTABLE)
+  # The Python accelerator answers the same vectors as the pure runtime; with the accelerator
+  # configured, the lane fails rather than skips when the module is missing.
+  set(primitive_equivalence_accel_args "")
+  set(primitive_equivalence_labels "integration;runtime;differential;go;rust;python;ts;go-differential")
+  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+    list(APPEND primitive_equivalence_accel_args -DREQUIRE_ACCEL=ON)
+    list(APPEND primitive_equivalence_labels "python-accel-required")
+  endif()
   add_test(
     NAME llvmdsdl-primitive-equivalence
     COMMAND
@@ -764,13 +772,15 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE AND PYTHON_EXECUTABLE
         -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/primitive-equivalence-out
         -DVECTORS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/primitive_vectors.txt
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        ${primitive_equivalence_accel_args}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPrimitiveEquivalence.cmake
   )
 
   set_tests_properties(
     llvmdsdl-primitive-equivalence
     PROPERTIES
-      LABELS "integration;runtime;differential;go;rust;python;ts;go-differential"
+      LABELS "${primitive_equivalence_labels}"
   )
 else()
   message(STATUS

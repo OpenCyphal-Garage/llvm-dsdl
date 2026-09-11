@@ -15,6 +15,8 @@
 #   geti      <type_bits> <len_bits> <off_bits> <buf_hex>  <expect_i64_twos:16hex>
 #   getu      <type_bits> <len_bits> <off_bits> <buf_hex>  <expect_u64:16hex>
 #   copybits  <dst_off> <len_bits> <src_off> <src_hex> <dst_init_hex>  <expect_dst_hex>
+#   setu      <len_bits> <off_bits> <dst_init_hex> <value_u64:16hex>  <expect_dst_hex>
+#   seti      <len_bits> <off_bits> <dst_init_hex> <value_i64_twos:16hex>  <expect_dst_hex>
 # where type_bits selects the get_i8/16/32/64 (or get_u*) variant, buffers are
 # even-length hex byte strings in serialized (little-endian bit) order, and the
 # expected integer is the value widened to 64 bits.
@@ -75,3 +77,19 @@ copybits 0 4  4 a5     00     0a      # read high nibble (src offset 4)
 copybits 2 3  0 07     00     1c      # set bits 2..4 in a zero byte
 copybits 2 3  0 00     ff     e3      # clear bits 2..4 in an all-ones byte (preserves the rest)
 copybits 3 17 2 123456 000000 20680c  # unaligned src and dst, spans three bytes
+# ---- integer writes: the low len_bits of a 64-bit value at a bit offset ------
+# A write copies len_bits of the value and nothing above them; a signed write is the same bits.
+setu 8 0 0000 00000000000000ab ab00
+setu 8 0 0000 000000000000f1ab ab00                   # bits above len_bits are not written
+setu 4 4 0000 000000000000000f f000
+setu 12 4 0000 0000000000000abc c0ab
+setu 64 0 0000000000000000 fedcba9876543210 1032547698badcfe
+setu 64 8 000000000000000000 ffffffffffffffff 00ffffffffffffffff
+setu 1 7 00 ffffffffffffffff 80
+setu 16 0 ffff 0000000000000000 0000                   # zeros overwrite ones
+seti 8 0 0000 ffffffffffffffff ff00                   # -1
+seti 8 0 0000 ffffffffffffff80 8000                   # -128
+seti 5 3 0000 fffffffffffffff5 a800                   # -11 in five bits at offset 3
+seti 64 0 0000000000000000 8000000000000000 0000000000000080   # INT64_MIN
+seti 16 4 000000 0000000000007fff f0ff07
+seti 8 0 0000 0000000000000123 2300                   # bits above len_bits are not written

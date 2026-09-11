@@ -205,6 +205,41 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
+        else if ((strcmp(op, "setu") == 0 || strcmp(op, "seti") == 0) && n == 6)
+        {
+            const uint8_t  len_bits = (uint8_t) strtoul(a[0], NULL, 10);
+            const size_t   off_bits = (size_t) strtoul(a[1], NULL, 10);
+            uint8_t        dst[64];
+            uint8_t        want[64];
+            const int      dlen  = parseHexBytes(a[2], dst, sizeof(dst));
+            const uint64_t value = parseHexU64(a[3]);
+            const int      wlen  = parseHexBytes(a[4], want, sizeof(want));
+            if (dlen < 0 || wlen < 0 || dlen != wlen)
+            {
+                fail(op, "bad buffer hex / length");
+                return 1;
+            }
+            const int8_t rc = (strcmp(op, "setu") == 0)
+                                  ? dsdl_runtime_set_uxx(dst, (size_t) dlen, off_bits, value, len_bits)
+                                  : dsdl_runtime_set_ixx(dst, (size_t) dlen, off_bits, (int64_t) value, len_bits);
+            if (rc != 0 || memcmp(dst, want, (size_t) dlen) != 0)
+            {
+                char d[256];
+                int  k = snprintf(d,
+                                  sizeof(d),
+                                  "len=%u off=%zu value=%016llx rc=%d got=",
+                                  (unsigned) len_bits,
+                                  off_bits,
+                                  (unsigned long long) value,
+                                  rc);
+                for (int i = 0; i < dlen && k < (int) sizeof(d) - 3; i++)
+                {
+                    k += snprintf(d + k, sizeof(d) - (size_t) k, "%02x", dst[i]);
+                }
+                fail(op, d);
+                return 1;
+            }
+        }
         else if (strcmp(op, "copybits") == 0 && n == 7)
         {
             const size_t dst_off  = (size_t) strtoul(a[0], NULL, 10);
