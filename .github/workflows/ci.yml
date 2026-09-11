@@ -206,7 +206,7 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
-      - name: Behavioural scorecard gates (convergence lint + parity/malformed/determinism pass-fail)
+      - name: Behavioural report gates (parity/malformed/determinism pass-fail)
         # Runs after the suite so it can consume the executed JUnit results. `if: always()`
         # ensures the gate still runs (and can fail the job) even if an earlier test failed.
         if: always()

@@ -39,14 +39,12 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -1199,19 +1197,19 @@ struct SectionBodies final
     mlir::func::FuncOp deserialize;
 };
 
-llvm::Error emitSectionType(SourceWriter&                    w,
-                            const std::string&               typeName,
-                            const SemanticSection&           section,
-                            const EmitterContext&            ctx,
-                            const Options&                   options,
-                            const std::string&               fullName,
-                            std::uint32_t                    majorVersion,
-                            std::uint32_t                    minorVersion,
-                            const AttachedDoc&               typeDoc,
-                            const std::string&               definitionFullName,
-                            const LoweredSectionFacts* const sectionFacts,
-                            const RustSpelling&              spelling,
-                            const SectionBodies&             bodies)
+llvm::Error emitSectionType(SourceWriter&                         w,
+                            const std::string&                    typeName,
+                            const SemanticSection&                section,
+                            const EmitterContext&                 ctx,
+                            const Options&                        options,
+                            const std::string&                    fullName,
+                            std::uint32_t                         majorVersion,
+                            std::uint32_t                         minorVersion,
+                            const AttachedDoc&                    typeDoc,
+                            const std::string&                    definitionFullName,
+                            const mlir::dsdl::SerializationPlanOp plan,
+                            const RustSpelling&                   spelling,
+                            const SectionBodies&                  bodies)
 {
     const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::vector<std::string> variableArrayFields;
@@ -1258,7 +1256,7 @@ llvm::Error emitSectionType(SourceWriter&                    w,
     {
         // The tag storage must match the wire tag width (8 bits for <=256 options,
         // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-        w.line("pub _tag_: " + unsignedStorageType(resolveUnionTagBits(section, sectionFacts)) + ",");
+        w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
     }
 
     if (fieldCount == 0 && !section.isUnion)
@@ -1321,10 +1319,7 @@ llvm::Error emitSectionType(SourceWriter&                    w,
     w.line("pub const EXTENT_BYTES: usize = " + std::to_string(section.extentBits.value_or(0) / 8) + ";");
     w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
            std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                             ? sectionFacts->zohAliasReason
-                                             : "not-proven";
+    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
     w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
     w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + zohAliasReason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
@@ -1437,24 +1432,8 @@ llvm::Error emitSectionType(SourceWriter&                    w,
     return llvm::Error::success();
 }
 
-/// @brief The schema of @p def in the lowered module, by identity.
-mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& def)
-{
-    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
-    {
-        if (schema.getFullName() == def.info.fullName &&
-            static_cast<std::uint32_t>(schema.getMajor()) == def.info.majorVersion &&
-            static_cast<std::uint32_t>(schema.getMinor()) == def.info.minorVersion)
-        {
-            return schema;
-        }
-    }
-    return {};
-}
-
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
-                                                 const LoweredFactsMap&    loweredFacts,
                                                  const Options&            options,
                                                  mlir::ModuleOp            module)
 {
@@ -1493,11 +1472,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto deps = collectDefinitionCompositeDependencies(def);
 
-    const auto selfKey = loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+    const auto selfKey = definitionTypeKey(def.info);
 
     for (const auto& depRef : deps)
     {
-        if (loweredTypeKey(depRef.fullName, depRef.majorVersion, depRef.minorVersion) == selfKey)
+        if ((depRef.fullName + ":" + std::to_string(depRef.majorVersion) + ":" + std::to_string(depRef.minorVersion)) ==
+            selfKey)
         {
             continue;
         }
@@ -1543,7 +1523,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.minorVersion,
                                        def.doc,
                                        def.info.fullName,
-                                       lookupLoweredSectionFacts(loweredFacts, def, ""),
+                                       sectionPlan(schema, ""),
                                        spelling,
                                        bodies[""]))
         {
@@ -1565,7 +1545,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    def.info.minorVersion,
                                    def.doc,
                                    def.info.fullName,
-                                   lookupLoweredSectionFacts(loweredFacts, def, "request"),
+                                   sectionPlan(schema, "request"),
                                    spelling,
                                    bodies["request"]))
     {
@@ -1585,7 +1565,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.minorVersion,
                                        def.doc,
                                        def.info.fullName,
-                                       lookupLoweredSectionFacts(loweredFacts, def, "response"),
+                                       sectionPlan(schema, "response"),
                                        spelling,
                                        bodies["response"]))
         {
@@ -1676,12 +1656,6 @@ llvm::Error emit(const SemanticModule& semantic,
     if (options.outDir.empty())
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
-    }
-    const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Rust");
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Rust", &loweredFacts))
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
     std::filesystem::path const outRoot(options.outDir);
     std::filesystem::path const srcRoot          = outRoot / "src";
@@ -1778,7 +1752,7 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, loweredFacts, options, module);
+        auto file = renderDefinitionFile(def, ctx, options, module);
         if (!file)
         {
             return file.takeError();

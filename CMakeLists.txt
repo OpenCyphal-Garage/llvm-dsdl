@@ -467,8 +467,8 @@ add_custom_target(distclean
 set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
   "JUnit XML from an executed ctest run; enables behavioural parity/malformed/determinism gating.")
 
-# Where the four report generators put their markdown: straight into docs/, because that markdown
-# *is* the published page (Reference > Guarantees, plus the consistency lint under Development).
+# Where the three report generators put their markdown: straight into docs/, because that markdown
+# *is* the published page (Reference > Guarantees).
 # Generating it is what keeps the numbers on the site the numbers the gates just computed; a
 # committed copy could only ever be a snapshot of some earlier run. Like docs/showroom, these pages
 # are gitignored and produced at publish time -- see the Docs workflow.
@@ -478,31 +478,6 @@ set(LLVMDSDL_REPORT_GATE_JUNIT "" CACHE FILEPATH
 set(LLVMDSDL_DOCS_GUARANTEES_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/guarantees")
 set(LLVMDSDL_DOCS_DEVELOPMENT_DIR "${LLVMDSDL_SOURCE_DIR}/docs/development")
 set(LLVMDSDL_DOCS_COMMANDS_DIR "${LLVMDSDL_SOURCE_DIR}/docs/reference/commands")
-
-if(LLVMDSDL_PYTHON3_EXE)
-  add_custom_target(convergence-report
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/report.json
-        -DOUTPUT_MD=${LLVMDSDL_DOCS_DEVELOPMENT_DIR}/convergence-scorecard.md
-        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
-        -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
-    USES_TERMINAL
-    VERBATIM
-    COMMENT "Generating convergence score report and scorecard"
-  )
-else()
-  add_custom_target(convergence-report
-    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run convergence-report"
-    COMMAND ${CMAKE_COMMAND} -E false
-    USES_TERMINAL
-    VERBATIM
-    COMMENT "convergence-report requires python3"
-  )
-endif()
 
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(parity-matrix-report
@@ -589,7 +564,7 @@ else()
 endif()
 
 add_custom_target(release-blocking-report-gates
-  DEPENDS convergence-report parity-matrix-report malformed-contract-report determinism-matrix-report
+  DEPENDS parity-matrix-report malformed-contract-report determinism-matrix-report
 )
 
 add_subdirectory(include/llvmdsdl)

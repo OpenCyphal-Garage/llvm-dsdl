@@ -15,7 +15,6 @@ add_executable(llvmdsdl-unit-tests
   SupportGenerationTests.cpp
   AnalyzerTests.cpp
   RuntimeTests.cpp
-  ArrayWirePlanTests.cpp
   CHeaderRenderTests.cpp
   CodegenDiagnosticTextTests.cpp
   ConstantLiteralRenderTests.cpp
@@ -23,28 +22,13 @@ add_executable(llvmdsdl-unit-tests
   DefinitionDependenciesTests.cpp
   DefinitionIndexTests.cpp
   DefinitionPathProjectionTests.cpp
-  NativeHelperContractTests.cpp
-  LoweredBodyPlanTests.cpp
-  LoweredFactsLookupTests.cpp
-  LoweredRenderIRTests.cpp
-  NativeEmitterTraversalTests.cpp
-  SectionHelperBindingPlanTests.cpp
-  SerDesStatementPlanTests.cpp
-  ScriptedBodyPlanTests.cpp
-  ScriptedOperationPlanTests.cpp
   HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp
-  RuntimeHelperBindingsTests.cpp
   NamingPolicyTests.cpp
   NamingGoldenTests.cpp
-  RuntimeLoweredPlanTests.cpp
-  RuntimeLoweredOrderingTests.cpp
-  HelperSymbolResolverTests.cpp
-  WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
   StorageTypeTokensTests.cpp
   LoweredContractVersionTests.cpp
-  LoweredMetadataHardeningTests.cpp
   UavcanEmbeddedCatalogTests.cpp
   LspDocumentStoreTests.cpp
   LspRequestSchedulerTests.cpp

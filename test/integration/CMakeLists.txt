@@ -60,40 +60,6 @@ string(REPLACE ";"
 
 if(PYTHON_EXECUTABLE)
   add_test(
-    NAME llvmdsdl-convergence-scorecard
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/report.json
-        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/CONVERGENCE_SCORECARD.md
-        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
-        -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-convergence-scorecard
-    PROPERTIES
-      LABELS "integration;convergence;release-blocking"
-  )
-
-  add_test(
-    NAME llvmdsdl-convergence-scorecard-selftest
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReportSelftest.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-convergence-scorecard-selftest
-    PROPERTIES
-      LABELS "integration;convergence"
-  )
-
-  add_test(
     NAME llvmdsdl-convergence-matrix-reports-selftest
     COMMAND
       ${CMAKE_COMMAND}
@@ -185,36 +151,6 @@ if(PYTHON_EXECUTABLE)
   else()
     message(STATUS "Skipping containerised .deb packaging check: docker unavailable")
   endif()
-
-  add_test(
-    NAME llvmdsdl-execution-engine-boundary-guard
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuard.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-execution-engine-boundary-guard
-    PROPERTIES
-      LABELS "integration;convergence;release-blocking"
-  )
-
-  add_test(
-    NAME llvmdsdl-execution-engine-boundary-guard-selftest
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuardSelftest.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-execution-engine-boundary-guard-selftest
-    PROPERTIES
-      LABELS "integration;convergence"
-  )
 
   add_test(
     NAME llvmdsdl-hard-cut-integrity-guard

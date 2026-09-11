@@ -96,12 +96,5 @@ bool runCodegenDiagnosticTextTests()
         std::cerr << "decodedCompositePayloadExceedsRemainingBufferSpace mismatch\n";
         return false;
     }
-    if (text::mlirSchemaCoverageValidationFailedForEmission("TypeScript") !=
-        "MLIR schema coverage validation failed for TypeScript emission")
-    {
-        std::cerr << "mlirSchemaCoverageValidationFailedForEmission mismatch\n";
-        return false;
-    }
-
     return true;
 }

@@ -36,25 +36,9 @@ FORBIDDEN_PHRASES: Sequence[Tuple[str, str]] = (
 )
 
 REQUIRED_CANONICAL_MARKERS: Dict[str, Sequence[str]] = {
-    "lib/CodeGen/NativeFunctionSkeleton.cpp": (
-        "emitNativeFunctionSkeleton(",
-        "validateNativeSectionHelperContract(",
-    ),
-    "lib/CodeGen/ScriptedOperationPlan.cpp": (
-        "buildScriptedSectionOperationPlan(",
-        "validateScriptedSectionOperationPlanContract(",
-    ),
-    "lib/CodeGen/RuntimeLoweredPlan.cpp": (
-        "buildRuntimeSectionPlan(",
-        "validateRuntimeSectionPlanContract(",
-    ),
-    "tools/convergence/validate_execution_engine_boundaries.py": (
-        "SOURCE_RULES",
-        "GUARD_RULES",
-        "BACKEND_GUARD_REQUIRED_MARKERS",
-    ),
+    "lib/CodeGen/BodyTranslator.cpp": ("translateFunction(",),
     "test/integration/CMakeLists.txt": (
-        "llvmdsdl-convergence-scorecard",
+        "llvmdsdl-backend-contract-",
         "llvmdsdl-parity-matrix-coverage",
         "llvmdsdl-malformed-contract-matrix",
         "llvmdsdl-determinism-matrix-coverage",

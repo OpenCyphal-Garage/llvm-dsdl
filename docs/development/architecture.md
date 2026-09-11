@@ -49,7 +49,7 @@ bringing every backend onto it.
 
 - Raw or unlowered IR reaching a backend is caught by a contract version and producer-identity guard.
   That guard detects *unlowered state*, not field-level semantic-compatibility drift.
-- Backend emitters stay aligned, because they read the same validated facts.
+- Backend emitters stay aligned, because every body is a translation of the same plan bodies.
 - Unsupported and malformed states produce deterministic diagnostics.
 
 ## Canonical references
@@ -58,4 +58,4 @@ bringing every backend onto it.
 - Dialect definitions: `include/llvmdsdl/IR/*`
 - Transform passes: `include/llvmdsdl/Transforms/*`, `lib/Transforms/*`
 - Lowered contract: `include/llvmdsdl/Transforms/LoweredSerDesContract.h`,
-  `lib/Transforms/LoweredSerDesContractValidation.cpp`, `lib/CodeGen/MlirLoweredFacts.cpp`
+  `lib/Transforms/LoweredSerDesContractValidation.cpp`

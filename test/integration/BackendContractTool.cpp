@@ -46,7 +46,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
@@ -76,7 +75,6 @@ enum class Verdict : std::uint8_t
 {
     Pass,
     Gap,
-    Unscored,
     Error,
 };
 
@@ -88,8 +86,6 @@ const char* verdictName(const Verdict verdict)
         return "PASS";
     case Verdict::Gap:
         return "GAP";
-    case Verdict::Unscored:
-        return "UNSCORED";
     default:
         return "ERROR";
     }
@@ -343,59 +339,6 @@ std::vector<std::string> differingFiles(const std::map<fs::path, std::string>& a
     }
     std::ranges::sort(out);
     return out;
-}
-
-// --- lowered-facts channel ----------------------------------------------------------------------
-
-/// A canonical rendering of everything a fact-walking emitter can see, so a row can be checked for
-/// leaking through that channel.
-std::optional<std::string> factsDigest(const llvmdsdl::SemanticModule& semantic, mlir::ModuleOp module)
-{
-    llvmdsdl::DiagnosticEngine diagnostics;
-    llvmdsdl::LoweredFactsMap  facts;
-    if (!llvmdsdl::collectLoweredFactsFromMlir(semantic, module, diagnostics, "backend-contract", &facts))
-    {
-        return std::nullopt;
-    }
-    std::map<std::string, std::string> sorted;
-    for (const auto& [typeKey, sections] : facts)
-    {
-        for (const auto& [sectionName, section] : sections)
-        {
-            std::ostringstream s;
-            s << section.capacityCheckHelper << '|' << section.unionTagBits.value_or(-1) << '|'
-              << section.unionTagValidateHelper << '|' << section.serUnionTagHelper << '|'
-              << section.deserUnionTagHelper << '|' << section.zohAliasEligible << '|' << section.zohAliasReason;
-            std::map<std::string, std::string> fields;
-            for (const auto& [fieldName, f] : section.fieldsByName)
-            {
-                std::ostringstream fss;
-                fss << f.stepIndex.value_or(-1) << '|' << f.arrayLengthPrefixBits.value_or(0) << '|'
-                    << f.serArrayLengthPrefixHelper << '|' << f.deserArrayLengthPrefixHelper << '|'
-                    << f.arrayLengthValidateHelper << '|' << f.delimiterValidateHelper << '|' << f.serUnsignedHelper
-                    << '|' << f.deserUnsignedHelper << '|' << f.serSignedHelper << '|' << f.deserSignedHelper << '|'
-                    << f.serFloatHelper << '|' << f.deserFloatHelper;
-                fields.emplace(fieldName, fss.str());
-            }
-            for (const auto& [fieldName, text] : fields)
-            {
-                s << "\n  " << fieldName << ": " << text;
-            }
-            std::string key = typeKey;
-            key += "/";
-            key += sectionName;
-            sorted.emplace(key, s.str());
-        }
-    }
-    std::string digest;
-    for (const auto& [key, text] : sorted)
-    {
-        digest += key;
-        digest += ": ";
-        digest += text;
-        digest += "\n";
-    }
-    return digest;
 }
 
 // --- perturbations ------------------------------------------------------------------------------
@@ -680,7 +623,6 @@ struct Session final
             record("determinism", "baseline", Verdict::Error, "baseline produced no in-scope files");
             return true;
         }
-        const auto baselineFacts = factsDigest(*semantic, *baselineModule);
 
         // Determinism: the same inputs into a different directory.
         {
@@ -718,20 +660,6 @@ struct Session final
             if (!lowerBodies(*module))
             {
                 record("operation-reflection", row.name, Verdict::Error, "lowering failed on perturbed operations");
-                continue;
-            }
-            const auto facts = factsDigest(*semantic, *module);
-            if (!baselineFacts || !facts)
-            {
-                record("operation-reflection", row.name, Verdict::Error, "lowered-facts collection failed");
-                continue;
-            }
-            if (*facts != *baselineFacts)
-            {
-                record("operation-reflection",
-                       row.name,
-                       Verdict::Unscored,
-                       "perturbation is visible through the lowered-facts channel");
                 continue;
             }
             const auto generated = generate("ir-" + row.name, *semantic, *module);

@@ -156,8 +156,6 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 | Model independence | the semantic module's cast mode and field widths | the MLIR module | be identical to the baseline |
 | Determinism | nothing; the baseline is generated twice into different directories | everything | be identical |
 
-Operation reflection is also checked through the lowered-facts channel: a row whose perturbation is visible in `LoweredFactsMap` is reported and not scored, since a fact-walking emitter could reflect it. The rows are chosen so that none is.
-
 A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds every backend: `c;obj;cpp;rust;go;ts;python`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
 ## 5. Backend Architecture (As Implemented)
@@ -315,7 +313,7 @@ Important characteristics of the current suite:
 - Contract checks between lowering and conversion are tested directly.
 - Multi-language generation outputs are smoke-tested and structurally validated.
 - Parity/malformed-input lanes enforce consistent behaviour under invalid or adversarial decode paths.
-- CMake exposes coverage and convergence/parity report targets for ongoing hardening.
+- CMake exposes coverage and parity report targets for ongoing hardening.
 
 ## 10. Why LLVM/MLIR Here, Specifically
 
@@ -327,7 +325,6 @@ This yields:
 - Pass-managed normalisation/hardening (`lower-dsdl-serialization`) rather than ad-hoc per-backend logic.
 - Contract versioning/producer checks across pipeline stages.
 - A concrete C emission path via [EmitC](https://mlir.llvm.org/docs/Dialects/EmitC/).
-- Shared lowered-facts extraction for non-C backends, improving cross-language consistency.
 
 ## 11. Deliberate Tradeoffs and Current Boundaries
 
@@ -340,7 +337,7 @@ Current tradeoffs:
   [Direct Object Lowering](docs/development/direct-object-lowering.md).
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
 - Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalogue; `ast` remains source-only.
-- Guardrails are intentionally strict: convergence/parity/malformed/determinism and runtime/architecture gates are release-blocking.
+- Guardrails are intentionally strict: the backend contract, parity/malformed/determinism and runtime/architecture gates are release-blocking.
 
 This gives the project a stable multi-backend compiler with one canonical semantic flow and explicit boundaries for where backend-specific code is allowed.
 

@@ -23,7 +23,7 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -55,11 +55,9 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
@@ -351,11 +349,12 @@ void emitArrayMacros(SourceWriter& w, const std::string& typeName, const Semanti
     }
 }
 
-void emitSectionTypedef(SourceWriter&          w,
-                        const std::string&     typeName,
-                        const SemanticSection& section,
-                        const EmitterContext&  ctx,
-                        const bool             deprecatedAttribute)
+void emitSectionTypedef(SourceWriter&                         w,
+                        const std::string&                    typeName,
+                        const SemanticSection&                section,
+                        const EmitterContext&                 ctx,
+                        const bool                            deprecatedAttribute,
+                        const mlir::dsdl::SerializationPlanOp plan)
 {
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
     // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
@@ -420,9 +419,7 @@ void emitSectionTypedef(SourceWriter&          w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8_t truncates a wide tag and mis-dispatches.
-        // sectionFacts isn't threaded here; resolveUnionTagBits falls back to the
-        // analyzer-set per-field width, which is authoritative.
-        w.line(unsignedStorageType(resolveUnionTagBits(section, nullptr)) + " _tag_;");
+        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_;");
         ++emitted;
     }
 
@@ -482,13 +479,13 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     }
 }
 
-void emitSectionMetadata(SourceWriter&                    w,
-                         const std::string&               typeName,
-                         const std::string&               fullName,
-                         std::uint32_t                    majorVersion,
-                         std::uint32_t                    minorVersion,
-                         const SemanticSection&           section,
-                         const LoweredSectionFacts* const sectionFacts)
+void emitSectionMetadata(SourceWriter&                         w,
+                         const std::string&                    typeName,
+                         const std::string&                    fullName,
+                         std::uint32_t                         majorVersion,
+                         std::uint32_t                         minorVersion,
+                         const SemanticSection&                section,
+                         const mlir::dsdl::SerializationPlanOp plan)
 {
     HeaderTypeMetadata metadata;
     metadata.typeName                     = typeName;
@@ -501,33 +498,24 @@ void emitSectionMetadata(SourceWriter&                    w,
     {
         w.line(line);
     }
-    const bool  zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    std::string zohAliasReason   = "not-proven";
-    if (zohAliasEligible)
-    {
-        zohAliasReason = "eligible";
-    }
-    else if (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-    {
-        zohAliasReason = sectionFacts->zohAliasReason;
-    }
+    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
     w.line("#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
     w.line("#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
     w.line("#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     w.blank();
 }
 
-void emitSection(SourceWriter&                    w,
-                 const EmitterContext&            ctx,
-                 const SemanticDefinition&        def,
-                 const std::string&               typeName,
-                 const std::string&               fullName,
-                 const std::string&               sectionName,
-                 const SemanticSection&           section,
-                 const AttachedDoc&               typeDoc,
-                 const LoweredSectionFacts* const sectionFacts)
+void emitSection(SourceWriter&                         w,
+                 const EmitterContext&                 ctx,
+                 const SemanticDefinition&             def,
+                 const std::string&                    typeName,
+                 const std::string&                    fullName,
+                 const std::string&                    sectionName,
+                 const SemanticSection&                section,
+                 const AttachedDoc&                    typeDoc,
+                 const mlir::dsdl::SerializationPlanOp plan)
 {
-    emitSectionMetadata(w, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
+    emitSectionMetadata(w, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, plan);
     emitSectionConstants(w, typeName, section);
     emitArrayMacros(w, typeName, section);
     emitAttachedDocC(w,
@@ -536,7 +524,7 @@ void emitSection(SourceWriter&                    w,
                                               def.info.fullName,
                                               def.info.majorVersion,
                                               def.info.minorVersion));
-    emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes());
+    emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes(), plan);
 
     const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);
@@ -634,12 +622,13 @@ llvm::Expected<std::string> loadRuntimeHeader()
     return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: dsdl_runtime.h");
 }
 
-std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)
+std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, mlir::ModuleOp module)
 {
-    std::ostringstream out;
-    SourceWriter       w            = makeCWriter(out);
-    const auto         guard        = headerGuard(def.info);
-    const auto         baseTypeName = ctx.cTypeName(def);
+    const mlir::dsdl::SchemaOp schema = schemaOf(module, def);
+    std::ostringstream         out;
+    SourceWriter               w            = makeCWriter(out);
+    const auto                 guard        = headerGuard(def.info);
+    const auto                 baseTypeName = ctx.cTypeName(def);
 
     out << generatedCommentLine("C backend") << "\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -702,7 +691,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                     "request",
                     def.request,
                     def.doc,
-                    lookupLoweredSectionFacts(loweredFacts, def, "request"));
+                    sectionPlan(schema, "request"));
         if (def.response)
         {
             emitSection(w,
@@ -713,7 +702,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                         "response",
                         *def.response,
                         def.doc,
-                        lookupLoweredSectionFacts(loweredFacts, def, "response"));
+                        sectionPlan(schema, "response"));
         }
         for (const auto& line :
              renderServiceAliasBridgeLines(baseTypeName,
@@ -731,15 +720,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     else
     {
-        emitSection(w,
-                    ctx,
-                    def,
-                    baseTypeName,
-                    def.info.fullName,
-                    "",
-                    def.request,
-                    def.doc,
-                    lookupLoweredSectionFacts(loweredFacts, def, ""));
+        emitSection(w, ctx, def, baseTypeName, def.info.fullName, "", def.request, def.doc, sectionPlan(schema, ""));
     }
 
     out << "#endif /* " << guard << " */\n";
@@ -911,15 +892,6 @@ llvm::Error emit(const SemanticModule& semantic,
     }
     const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
 
-    const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
-
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", &loweredFacts))
-    {
-        diagnostics.error({"<mlir>", 1, 1}, mlirCoverageDiagnostic);
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
-    }
-
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
     llvm::StringMap<mlir::Operation*>                 schemaByKey;
     for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
@@ -1082,7 +1054,7 @@ llvm::Error emit(const SemanticModule& semantic,
             dir /= ns;
         }
         if (auto err = writeGeneratedFile(dir / headerFileName(def.info),
-                                          renderHeader(def, ctx, loweredFacts),
+                                          renderHeader(def, ctx, module),
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

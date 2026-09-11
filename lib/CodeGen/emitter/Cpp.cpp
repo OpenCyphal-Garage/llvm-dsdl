@@ -44,13 +44,11 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
@@ -1327,17 +1325,17 @@ void emitFunctionPrototypes(SourceWriter&      w,
     w.blank();
 }
 
-void emitSectionStruct(SourceWriter&                    w,
-                       const std::string&               typeName,
-                       const std::string&               declaredName,
-                       const std::string&               fullName,
-                       std::uint32_t                    majorVersion,
-                       std::uint32_t                    minorVersion,
-                       const SemanticSection&           section,
-                       const EmitterContext&            ctx,
-                       const CppFlavor                  flavor,
-                       const AttachedDoc&               typeDoc,
-                       const LoweredSectionFacts* const sectionFacts)
+void emitSectionStruct(SourceWriter&                         w,
+                       const std::string&                    typeName,
+                       const std::string&                    declaredName,
+                       const std::string&                    fullName,
+                       std::uint32_t                         majorVersion,
+                       std::uint32_t                         minorVersion,
+                       const SemanticSection&                section,
+                       const EmitterContext&                 ctx,
+                       const CppFlavor                       flavor,
+                       const AttachedDoc&                    typeDoc,
+                       const mlir::dsdl::SerializationPlanOp plan)
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     emitAttachedDocCpp(w, typeDoc);
@@ -1424,7 +1422,7 @@ void emitSectionStruct(SourceWriter&                    w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(resolveUnionTagBits(section, sectionFacts)) + " _tag_{0U};");
+        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{0U};");
         ++emitted;
     }
 
@@ -1482,10 +1480,7 @@ void emitSectionStruct(SourceWriter&                    w,
     w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(section.extentBits.value_or(0) / 8) + "U;");
     w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
            std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
-    const bool        zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
-    const std::string zohAliasReason   = (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
-                                             ? sectionFacts->zohAliasReason
-                                             : "not-proven";
+    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
     w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
     w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + zohAliasReason + "\";");
     if (section.isUnion)
@@ -1645,17 +1640,17 @@ struct SectionBodies final
     mlir::func::FuncOp deserialize;
 };
 
-llvm::Error emitSection(SourceWriter&                    w,
-                        const EmitterContext&            ctx,
-                        const SemanticDefinition&        def,
-                        const std::string&               typeName,
-                        const std::string&               fullName,
-                        const SemanticSection&           section,
-                        const CppFlavor                  flavor,
-                        const AttachedDoc&               typeDoc,
-                        const LoweredSectionFacts* const sectionFacts,
-                        const CppSpelling&               spelling,
-                        const SectionBodies&             bodies)
+llvm::Error emitSection(SourceWriter&                         w,
+                        const EmitterContext&                 ctx,
+                        const SemanticDefinition&             def,
+                        const std::string&                    typeName,
+                        const std::string&                    fullName,
+                        const SemanticSection&                section,
+                        const CppFlavor                       flavor,
+                        const AttachedDoc&                    typeDoc,
+                        const mlir::dsdl::SerializationPlanOp plan,
+                        const CppSpelling&                    spelling,
+                        const SectionBodies&                  bodies)
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitFunctionPrototypes(w, typeName, declaredName, flavor);
@@ -1673,7 +1668,7 @@ llvm::Error emitSection(SourceWriter&                    w,
                                                def.info.fullName,
                                                def.info.majorVersion,
                                                def.info.minorVersion),
-                      sectionFacts);
+                      plan);
     if (!bodies.serialize || !bodies.deserialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1714,25 +1709,9 @@ llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
                                    std::string(relativeRuntimeHeader).c_str());
 }
 
-/// @brief The schema of @p def in the lowered module, by identity.
-mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& def)
-{
-    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
-    {
-        if (schema.getFullName() == def.info.fullName &&
-            static_cast<std::uint32_t>(schema.getMajor()) == def.info.majorVersion &&
-            static_cast<std::uint32_t>(schema.getMinor()) == def.info.minorVersion)
-        {
-            return schema;
-        }
-    }
-    return {};
-}
-
 llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                          const EmitterContext&     ctx,
                                          const CppFlavor           flavor,
-                                         const LoweredFactsMap&    loweredFacts,
                                          mlir::ModuleOp            module)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
@@ -1846,7 +1825,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.request,
                                    flavor,
                                    def.doc,
-                                   lookupLoweredSectionFacts(loweredFacts, def, "request"),
+                                   sectionPlan(schema, "request"),
                                    spelling,
                                    bodies["request"]))
         {
@@ -1862,7 +1841,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        *def.response,
                                        flavor,
                                        def.doc,
-                                       lookupLoweredSectionFacts(loweredFacts, def, "response"),
+                                       sectionPlan(schema, "response"),
                                        spelling,
                                        bodies["response"]))
             {
@@ -1925,7 +1904,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.request,
                                    flavor,
                                    def.doc,
-                                   lookupLoweredSectionFacts(loweredFacts, def, ""),
+                                   sectionPlan(schema, ""),
                                    spelling,
                                    bodies[""]))
         {
@@ -1942,7 +1921,6 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
                         mlir::ModuleOp                         module,
                         const std::filesystem::path&           outRoot,
                         const CppFlavor                        flavor,
-                        const LoweredFactsMap&                 loweredFacts,
                         const Options&                         options,
                         const std::unordered_set<std::string>& selectedTypeKeys)
 {
@@ -2001,7 +1979,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         {
             dir /= ns;
         }
-        auto header = renderHeader(def, ctx, flavor, loweredFacts, module);
+        auto header = renderHeader(def, ctx, flavor, module);
         if (!header)
         {
             return header.takeError();
@@ -2027,35 +2005,27 @@ llvm::Error emit(const SemanticModule& semantic,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
-    const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C++");
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C++", &loweredFacts))
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
-    }
-
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.profile == Profile::Std)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Std, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, module, outRoot, CppFlavor::Std, options, selectedTypeKeys);
     }
     if (options.profile == Profile::Pmr)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, module, outRoot, CppFlavor::Pmr, options, selectedTypeKeys);
     }
     if (options.profile == Profile::Autosar)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Autosar, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, module, outRoot, CppFlavor::Autosar, options, selectedTypeKeys);
     }
 
-    if (auto err =
-            emitProfile(semantic, module, outRoot / "std", CppFlavor::Std, loweredFacts, options, selectedTypeKeys))
+    if (auto err = emitProfile(semantic, module, outRoot / "std", CppFlavor::Std, options, selectedTypeKeys))
     {
         return err;
     }
-    return emitProfile(semantic, module, outRoot / "pmr", CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
+    return emitProfile(semantic, module, outRoot / "pmr", CppFlavor::Pmr, options, selectedTypeKeys);
 }
 
 }  // namespace llvmdsdl::emitter::cpp

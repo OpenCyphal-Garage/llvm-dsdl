@@ -40,7 +40,6 @@
 #include <cstdint>
 #include <utility>
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
@@ -49,7 +48,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
-#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
+#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -1379,21 +1378,6 @@ struct SectionBodies final
     mlir::func::FuncOp deserialize;
 };
 
-/// @brief The schema of @p def in the lowered module, by identity.
-mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& def)
-{
-    for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
-    {
-        if (schema.getFullName() == def.info.fullName &&
-            static_cast<std::uint32_t>(schema.getMajor()) == def.info.majorVersion &&
-            static_cast<std::uint32_t>(schema.getMinor()) == def.info.minorVersion)
-        {
-            return schema;
-        }
-    }
-    return {};
-}
-
 /// @brief The entry points a consumer calls, which wrap the translated bodies: a value serialises
 /// into a buffer of the type's largest size, and a deserialisation fills an empty object.
 void emitEntryPoints(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
@@ -1462,7 +1446,6 @@ llvm::Error emitSection(SourceWriter&             w,
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
-                                                 const LoweredFactsMap&    loweredFacts,
                                                  mlir::ModuleOp            module)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
@@ -1653,24 +1636,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("export const DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "true" : "false") + ";");
     w.line("export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
     w.line("export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
-    const LoweredSectionFacts* requestSectionFacts =
-        lookupLoweredSectionFacts(loweredFacts, def, def.isService ? "request" : "");
-    const bool        requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
-    const std::string requestZohReason =
-        (requestSectionFacts != nullptr && !requestSectionFacts->zohAliasReason.empty())
-            ? requestSectionFacts->zohAliasReason
-            : "not-proven";
+    const auto [requestZohEligible, requestZohReason] =
+        aliasVerdict(sectionPlan(schema, def.isService ? "request" : ""));
     w.line("export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "true" : "false") +
            ";");
     w.line("export const DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\";");
     if (def.response)
     {
-        const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
-        const bool responseZohEligible = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
-        const std::string responseZohReason =
-            (responseSectionFacts != nullptr && !responseSectionFacts->zohAliasReason.empty())
-                ? responseSectionFacts->zohAliasReason
-                : "not-proven";
+        const auto [responseZohEligible, responseZohReason] = aliasVerdict(sectionPlan(schema, "response"));
         w.line("export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " +
                std::string(responseZohEligible ? "true" : "false") + ";");
         w.line("export const DSDL_RESPONSE_ZOH_ALIAS_REASON = \"" + responseZohReason + "\";");
@@ -2101,14 +2074,6 @@ llvm::Error emit(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    const auto mlirCoverageDiagnostic =
-        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("TypeScript");
-    LoweredFactsMap loweredFacts;
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "TypeScript", &loweredFacts))
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
-    }
-
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
@@ -2178,7 +2143,7 @@ llvm::Error emit(const SemanticModule& semantic,
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
-        auto       rendered = renderDefinitionFile(*def, ctx, loweredFacts, module);
+        auto       rendered = renderDefinitionFile(*def, ctx, module);
         if (!rendered)
         {
             return rendered.takeError();

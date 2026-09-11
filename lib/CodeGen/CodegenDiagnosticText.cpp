@@ -89,9 +89,4 @@ std::string decodedCompositePayloadExceedsRemainingBufferSpace(const std::string
     return "decoded payload size for composite field '" + fieldName + "' exceeds remaining buffer space";
 }
 
-std::string mlirSchemaCoverageValidationFailedForEmission(const std::string& backendName)
-{
-    return "MLIR schema coverage validation failed for " + backendName + " emission";
-}
-
 }  // namespace llvmdsdl::codegen_diagnostic_text

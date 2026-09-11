@@ -151,18 +151,18 @@ plan sets the tag. Python has no empty block, so a block that spelled no stateme
 `pass`. The C↔Python parity lanes and their variants, the malformed-input and decode-fuzz lanes,
 the runtime parity and smoke lanes, and the generation lane accept it.
 
-## What is removed
+## Removed
 
-With the last backend converted: the planners — `SerDesStatementPlan`, `NativeEmitterTraversal`,
-`RuntimeLoweredPlan`, `ScriptedOperationPlan`, `ScriptedBodyPlan`, `LoweredBodyPlan`,
-`LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`, `NativeHelperContract`,
-`SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts` with them. The
-convergence report and its scorecard page, which grade an emitter by the presence of
-`collectLoweredFactsFromMlir(` in its source. The emit-order trace machinery, whose last
-recorder was the Python planner. The facts-channel check in the gate tool, which has no channel
-left to check.
-`--optimize-lowered-serdes` then sits after `build-dsdl-plan-bodies` in the shared pipeline and
-acts on every backend alike, or is removed with its `-optimized` lanes.
+With the last backend converted, the planners went — `SerDesStatementPlan`,
+`NativeEmitterTraversal`, `RuntimeLoweredPlan`, `ScriptedOperationPlan`, `ScriptedBodyPlan`,
+`LoweredBodyPlan`, `LoweredRenderIR`, `SectionHelperBodies`, `RuntimeHelperBindings`,
+`NativeHelperContract`, `SectionHelperBindingPlan`, `LoweredFactsLookup` — and `MlirLoweredFacts`
+with them: a declaration takes the alias verdict and a union's tag width from the plan operation
+itself. The convergence report and its scorecard page, and the execution-engine boundary guard,
+graded an emitter by the markers present in its source; the backend-contract gate replaced them.
+The emit-order trace machinery went with its last recorder, the Python planner, and the
+facts-channel check in the gate tool with the channel. `--optimize-lowered-serdes` sits after
+`build-dsdl-plan-bodies` in the shared pipeline and acts on every backend alike.
 
 ## Acceptance
 

@@ -40,8 +40,7 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 
 ### The guarantee pages are generated
 
-`parity-matrix`, `malformed-input`, and `determinism`, along with the [Consistency
-Lint](../development/convergence-scorecard.md) under Development, are written by the report
-generators under `tools/convergence/` and rebuilt whenever the site is published.
+`parity-matrix`, `malformed-input`, and `determinism` are written by the report generators
+under `tools/convergence/` and rebuilt whenever the site is published.
 
 Each page carries a **gating mode** banner.

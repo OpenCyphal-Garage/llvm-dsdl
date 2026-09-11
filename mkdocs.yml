@@ -65,7 +65,6 @@ nav:
           - Review & Release Roadmap: development/roadmap.md
           - Release Packaging: development/release-packaging.md
           - Distribution Channels (backlog): development/distribution-channels.md
-          - Consistency Lint: development/convergence-scorecard.md
   - For Agents:
       - Agent Guide: agents/index.md
       - Documentation Index: agents/index-format.md
