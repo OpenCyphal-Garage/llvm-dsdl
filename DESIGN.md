@@ -158,6 +158,18 @@ A backend is accepted by the gates below, and by nothing else. The gates are wri
 
 A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report the gap. The list holds every backend: `c;obj;cpp;rust;go;ts;python`. A backend joins it in the change that makes its bodies translations of the plan operations, and does not leave it. [Backend Translation](docs/development/backend-translation.md) is the record of that work.
 
+### 4.2 Where a fix goes
+
+A defect in generated serialisation is fixed where its meaning lives, once, and proved by a gate every backend runs.
+
+| Defect | Fix | Proof |
+|---|---|---|
+| Wire semantics: what is read or written, what is validated, and in what order | [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp), or the helper lowering in [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp). A question only the target can answer becomes an operation of the dialect, as `dsdl.index_holds` is. | a lit test on the operations, and a lane that runs the generated code of every language |
+| Surface idiom: how one language spells an operation, its integer widths, its containers, what its linters accept | that language's `BodySpelling`, which may not add, remove or reorder a check | the backend-contract gate, held strict, and the language's parity lanes |
+| Runtime primitive: `set_uxx`, `copy_bits`, `write_unsigned` and their kin | the runtime, with a vector in [`test/integration/primitive_vectors.txt`](test/integration/primitive_vectors.txt) that every runtime answers, the Python accelerator included | `llvmdsdl-primitive-equivalence` |
+
+One defect is one change covering every backend: the lane the defect fails is written first and shown to fail, the fix lands in one of the three places above, and the lane passes for all of them. A change under `lib/CodeGen/emitter/` that alters what a body does is the shape the contract gate exists to reject; a fix made there for a defect the other languages share is a second copy of the defect's history, not a fix.
+
 ## 5. Backend Architecture (As Implemented)
 
 ### 5.1 C backend (`emitter::c::emit`)
