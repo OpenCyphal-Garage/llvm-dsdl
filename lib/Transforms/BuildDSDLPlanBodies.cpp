@@ -1018,10 +1018,10 @@ bool stepIsBitpackedArray(const PlanStep& step)
     return stepIsArray(step) && (step.scalarCategory == "bool");
 }
 
-/// @brief Moves a bool array, which is stored bitpacked rather than as elements.
+/// @brief Moves a bool array as one run of wire bits rather than a loop over elements.
 ///
-/// One run of bits rather than a loop: the storage already has the layout the wire wants, so
-/// the whole array travels in a single copy whose length is the array's count.
+/// The copy's length in bits is the array's count. A spelling maps the run onto its own
+/// storage, bitpacked or one element per bool.
 PlanCursor buildBitpackedArray(mlir::OpBuilder& b,
                                mlir::Location   loc,
                                const PlanStep&  step,
