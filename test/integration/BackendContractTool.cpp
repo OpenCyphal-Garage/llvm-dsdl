@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
