@@ -75,17 +75,11 @@ struct PlanCursor final
     mlir::Value error;
 };
 
-/// @brief Whether a plan's steps can be built as operations yet.
-///
-/// Scalars and arrays of scalars. Composites and unions each need their own shape and are
-/// still rendered as text, so a plan containing one falls back whole rather than in part: a
-/// function is one body, and it is either operations or a string.
-/// @brief Whether one field step can be built as operations.
+/// @brief Why one field cannot be built as operations, or nothing when it can.
 ///
 /// Shared by the two shapes a plan comes in. A union is one field per option and a struct is
 /// a sequence of them, but what a single field needs is the same either way, and having the
 /// two disagree is how an option gets accepted that the arm builder cannot emit.
-/// @brief Why one field cannot be built as operations, or nothing when it can.
 std::optional<std::string> unsupportedFieldReason(const PlanStep& step)
 {
     const std::string field = "field '" + step.name + "'";
@@ -1244,10 +1238,11 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
         // boundary whatever its count. Either way the trailing padding is not a loop.
         std::optional<std::int64_t> staticEnd;
         // A nested composite's length is its own to decide, so anything after one is as
-        // unknown as anything after an array.
-        const bool anyVariable = std::ranges::any_of(steps, [](const PlanStep& step) {
-            return stepIsArray(step) || stepIsComposite(step) || (step.kind == PlanStepKind::Align);
-        });
+        // unknown as anything after an array; a union ends where its selected arm ends.
+        const bool anyVariable =
+            isUnion || std::ranges::any_of(steps, [](const PlanStep& step) {
+                return stepIsArray(step) || stepIsComposite(step) || (step.kind == PlanStepKind::Align);
+            });
         if (!anyVariable)
         {
             std::int64_t total = 0;
@@ -1331,12 +1326,11 @@ PlanCursor buildScalarRead(mlir::OpBuilder& b,
                       cursor.error};
 }
 
-/// @brief Deserialises one variable-length array.
-///
-/// The count comes off the wire and is clamped to the declared capacity before it is used to
-/// bound the loop: a length prefix is attacker-controlled, and a decoder that trusted it would
-/// write past the elements it has.
 /// @brief Reads @p count elements into the object, advancing past them.
+///
+/// The count is the declared length of a fixed array or, for a variable one, the length prefix
+/// after the plan has validated it against the declared capacity: a prefix is
+/// attacker-controlled, and a decoder that trusted it would write past the elements it has.
 PlanCursor buildArrayElementReads(mlir::OpBuilder& b,
                                   mlir::Location   loc,
                                   const PlanStep&  step,
