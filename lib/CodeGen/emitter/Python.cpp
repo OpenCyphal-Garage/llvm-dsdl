@@ -408,7 +408,7 @@ void emitClassMethods(SourceWriter& w, const std::string& typeName, const Semant
     w.line("@classmethod");
     w.open("def deserialize(cls, data: bytes | bytearray | memoryview) -> \"" + typeName + "\":");
     w.line("value = cls()");
-    w.line("result = value._deserialize_from(memoryview(data))");
+    w.line("result = value._deserialize_from(memoryview(data).cast(\"B\"))");
     w.open("if result < 0:");
     w.line("raise ValueError(error_message(result))");
     w.dedent();

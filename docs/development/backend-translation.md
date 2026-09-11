@@ -177,7 +177,7 @@ once per backend over
 | model independence | the semantic module's cast mode; its field widths | the MLIR module | be identical |
 | determinism | nothing; the baseline is generated twice | everything | be identical |
 
-A row visible through `LoweredFactsMap` is reported and not scored. A backend in
-`LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report it. A gate the
+A backend in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap; the others report
+it. A gate the
 current tree passes proves nothing about a change: each gate above was shown to fail the five
 backends before any of them was written.

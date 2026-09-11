@@ -35,18 +35,28 @@ def byte_length_for_bits(total_bits: int) -> int:
     return (total_bits + 7) // 8
 
 
+def _byte_view(view: memoryview) -> memoryview:
+    # A view is addressed by byte, whatever the format of the buffer it was taken from; the
+    # accelerator reads the same buffer as bytes.
+    if view.format == "B" and view.ndim == 1:
+        return view
+    return view.cast("B")
+
+
 def _as_readonly_bytes(data: BytesLike) -> BytesLike:
     # A view is read in place: a body hands its nested bodies views into one buffer.
-    if isinstance(data, (bytes, bytearray, memoryview)):
+    if isinstance(data, (bytes, bytearray)):
         return data
+    if isinstance(data, memoryview):
+        return _byte_view(data)
     raise TypeError(f"expected bytes-like object, got {type(data)!r}")
 
 
-def _check_mutable_buffer(buf: WritableBytes) -> None:
+def _as_writable_bytes(buf: WritableBytes) -> WritableBytes:
     if isinstance(buf, bytearray):
-        return
+        return buf
     if isinstance(buf, memoryview) and not buf.readonly:
-        return
+        return _byte_view(buf)
     raise TypeError(f"expected bytearray or writable memoryview, got {type(buf)!r}")
 
 
@@ -57,7 +67,7 @@ def _mask_bits(length_bits: int) -> int:
 
 
 def set_bit(buf: WritableBytes, off_bits: int, value: bool) -> int:
-    _check_mutable_buffer(buf)
+    buf = _as_writable_bytes(buf)
     byte_index = off_bits // 8
     bit_index = off_bits % 8
     if byte_index < 0 or byte_index >= len(buf):
@@ -80,7 +90,7 @@ def get_bit(buf: BytesLike, off_bits: int) -> bool:
 
 
 def copy_bits(dst: WritableBytes, dst_off_bits: int, src: BytesLike, src_off_bits: int, len_bits: int) -> None:
-    _check_mutable_buffer(dst)
+    dst = _as_writable_bytes(dst)
     source = _as_readonly_bytes(src)
     if len_bits <= 0:
         return
@@ -96,7 +106,7 @@ def extract_bits(src: BytesLike, src_off_bits: int, len_bits: int) -> bytes:
 
 
 def write_unsigned(buf: WritableBytes, off_bits: int, len_bits: int, value: int, saturating: bool) -> int:
-    _check_mutable_buffer(buf)
+    buf = _as_writable_bytes(buf)
     if len_bits <= 0:
         return 0
     value_int = int(value)
@@ -114,7 +124,7 @@ def write_unsigned(buf: WritableBytes, off_bits: int, len_bits: int, value: int,
 
 
 def write_signed(buf: WritableBytes, off_bits: int, len_bits: int, value: int, saturating: bool) -> int:
-    _check_mutable_buffer(buf)
+    buf = _as_writable_bytes(buf)
     if len_bits <= 0:
         return 0
     value_int = int(value)
