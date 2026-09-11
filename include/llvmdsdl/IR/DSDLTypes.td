@@ -50,7 +50,8 @@ def DSDL_ByteType : TypeDef<DSDL_Dialect, "Byte"> {
 
 def DSDL_SizeType : TypeDef<DSDL_Dialect, "Size"> {
   let mnemonic = "size";
-  let summary = "The buffer size a plan is handed and the length it reports back";
+  let summary =
+      "The buffer size a plan is handed and the length it reports back";
 }
 
 def DSDL_PtrType : TypeDef<DSDL_Dialect, "Ptr"> {
@@ -65,11 +66,9 @@ def DSDL_PtrType : TypeDef<DSDL_Dialect, "Ptr"> {
   }];
   let parameters = (ins "::mlir::Type":$pointee, "bool":$isConst);
   let assemblyFormat = "`<` custom<Pointee>($isConst, $pointee) `>`";
-  let builders = [
-    TypeBuilder<(ins "::mlir::Type":$pointee), [{
+  let builders = [TypeBuilder<(ins "::mlir::Type":$pointee), [{
       return $_get($_ctxt, pointee, false);
-    }]>
-  ];
+    }]>];
 }
 
 #endif // LLVMDSDL_IR_DSDL_TYPES_TD

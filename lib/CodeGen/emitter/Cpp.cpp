@@ -636,9 +636,28 @@ public:
                 a = asUnsigned(lhs, type);
                 b = asUnsigned(rhs, type);
             }
+            // An unsigned value is never below zero. GCC rejects the comparison that says so
+            // under -Wtype-limits, so it is spelled as the constant it is, with the value it
+            // compared read so that a helper's parameter is not left unread.
+            if ((comparison == Comparison::LtU && isZeroLiteral(b)) ||
+                (comparison == Comparison::GtU && isZeroLiteral(a)))
+            {
+                return "(static_cast<void>(" + (isZeroLiteral(b) ? a : b) + "), false)";
+            }
+            if ((comparison == Comparison::GeU && isZeroLiteral(b)) ||
+                (comparison == Comparison::LeU && isZeroLiteral(a)))
+            {
+                return "(static_cast<void>(" + (isZeroLiteral(b) ? a : b) + "), true)";
+            }
             break;
         }
         return "(" + a + " " + comparisonToken(comparison) + " " + b + ")";
+    }
+
+    /// @brief Whether @p value is the zero literal of an unsigned type this spelling writes.
+    static bool isZeroLiteral(const llvm::StringRef value)
+    {
+        return value == "0U" || value == "0ULL";
     }
 
     [[nodiscard]] std::string select(const llvm::StringRef condition,
