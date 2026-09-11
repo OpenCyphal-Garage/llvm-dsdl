@@ -8,7 +8,6 @@
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 
 #include <cstdint>
-#include <string>
 
 namespace llvmdsdl
 {

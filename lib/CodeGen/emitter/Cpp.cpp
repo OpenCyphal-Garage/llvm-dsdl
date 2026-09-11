@@ -40,7 +40,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -1996,10 +1995,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
 
 }  // namespace
 
-llvm::Error emit(const SemanticModule& semantic,
-                 mlir::ModuleOp        module,
-                 const Options&        options,
-                 DiagnosticEngine&     diagnostics)
+llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Options& options)
 {
     if (options.outDir.empty())
     {

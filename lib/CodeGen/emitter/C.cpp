@@ -33,6 +33,7 @@
 #include <mlir/Conversion/SCFToEmitC/SCFToEmitC.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -51,7 +52,6 @@
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"

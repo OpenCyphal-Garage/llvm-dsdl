@@ -207,13 +207,13 @@ llvm::Error emitWith(const std::string&              backend,
     {
         llvmdsdl::emitter::cpp::Options options;
         options.outDir = outDir.string();
-        return llvmdsdl::emitter::cpp::emit(semantic, module, options, diagnostics);
+        return llvmdsdl::emitter::cpp::emit(semantic, module, options);
     }
     if (backend == "rust")
     {
         llvmdsdl::emitter::rust::Options options;
         options.outDir = outDir.string();
-        return llvmdsdl::emitter::rust::emit(semantic, module, options, diagnostics);
+        return llvmdsdl::emitter::rust::emit(semantic, module, options);
     }
     if (backend == "go")
     {
@@ -225,13 +225,13 @@ llvm::Error emitWith(const std::string&              backend,
     {
         llvmdsdl::emitter::ts::Options options;
         options.outDir = outDir.string();
-        return llvmdsdl::emitter::ts::emit(semantic, module, options, diagnostics);
+        return llvmdsdl::emitter::ts::emit(semantic, module, options);
     }
     if (backend == "python")
     {
         llvmdsdl::emitter::python::Options options;
         options.outDir = outDir.string();
-        return llvmdsdl::emitter::python::emit(semantic, module, options, diagnostics);
+        return llvmdsdl::emitter::python::emit(semantic, module, options);
     }
     return llvm::createStringError(llvm::inconvertibleErrorCode(), "unknown backend: " + backend);
 }

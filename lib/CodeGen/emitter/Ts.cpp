@@ -2064,10 +2064,7 @@ std::string renderTsRuntimeModule(const RuntimeSpecialization runtimeSpecializat
 
 }  // namespace
 
-llvm::Error emit(const SemanticModule& semantic,
-                 mlir::ModuleOp        module,
-                 const Options&        options,
-                 DiagnosticEngine&     diagnostics)
+llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Options& options)
 {
     if (options.outDir.empty())
     {

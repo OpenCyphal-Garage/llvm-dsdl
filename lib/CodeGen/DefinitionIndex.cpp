@@ -16,6 +16,9 @@
 
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 
+#include <cstdint>
+#include <string>
+
 #include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl

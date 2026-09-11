@@ -2070,7 +2070,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err = llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2099,7 +2099,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
 
-        if (auto err = llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::rust::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2148,7 +2148,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitter::ts::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::ts::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -2173,7 +2173,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
-        if (auto err = llvmdsdl::emitter::python::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        if (auto err = llvmdsdl::emitter::python::emit(closureSemantic, *mlirModule, emitOptions))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
