@@ -1322,7 +1322,9 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
             return constScope.get(IdentifierRole::MacroName,
                                   arrayMetadataName(CodegenNamingLanguage::Cpp, field.name, kind));
         };
-        w.line("static constexpr std::size_t " + named(ArrayMetadataKind::Capacity) + " = " +
+        // A declared capacity is a fact of the schema, not of the target: on a 32-bit target a
+        // capacity past 2^32 does not fit std::size_t.
+        w.line("static constexpr std::uint64_t " + named(ArrayMetadataKind::Capacity) + " = " +
                std::to_string(field.resolvedType.arrayCapacity) + "U;");
         w.line("static constexpr bool " + named(ArrayMetadataKind::IsVariableLength) + " = " +
                std::string(isVariableArray(field.resolvedType.arrayKind) ? "true" : "false") + ";");

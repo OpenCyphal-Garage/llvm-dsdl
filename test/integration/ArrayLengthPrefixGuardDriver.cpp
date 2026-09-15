@@ -30,6 +30,10 @@ using Prefix64 = prefixguard::Prefix64@V1_0@;
 
 constexpr std::int8_t kBadArrayLength = -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
 
+// The declared capacities survive the header on every target, a 32-bit std::size_t included.
+static_assert(Prefix32::PAYLOAD_ARRAY_CAPACITY == 65536ULL, "Prefix32 declares uint8[<=65536]");
+static_assert(Prefix64::FLAGS_ARRAY_CAPACITY == 8589934592ULL, "Prefix64 declares bool[<=8589934592]");
+
 unsigned g_passed  = 0U;
 unsigned g_skipped = 0U;
 unsigned g_failed  = 0U;
