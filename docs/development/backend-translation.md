@@ -75,6 +75,71 @@ operation through a `BodySpelling` — types and literals, operators with width 
 primitive calls, member, element, array and union access, signatures. One skeleton; one spelling
 per language. It takes the function and nothing else: no `SemanticModule`.
 
+## A value is named by the operation that defines it
+
+A `dsdl` operation states what its result is, and several name the DSDL member it belongs to:
+`dsdl.member_addr` and `dsdl.element_addr` carry a member, `dsdl.call_serdes` carries the member
+it calls, `dsdl.array_length` the array it counts, and lowering marks each helper it synthesises
+with what that helper answers. The translator reads a `ValueRole` from the operation alone, so it
+is the same role in every language, and asks the spelling for an identifier through
+`BodySpelling::valueName`. `snakeValueName` and `camelValueName` render the two styles the
+backends use: C++, Rust and Python take the first, Go and TypeScript the second.
+
+| the operation | the value is spelled |
+|---|---|
+| `dsdl.member_addr %obj "frequency"` | `frequency_addr`, `frequencyAddr` |
+| `dsdl.call_serdes @… {member = "frequency"}` | `frequency_err`, `frequencyErr` |
+| `dsdl.local`, and the `dsdl.load_scalar` that reads it back | `frequency_size`, `frequencySize` |
+| `dsdl.array_length %obj "name"` | `name_count`, `nameCount` |
+| `dsdl.is_null`, `dsdl.union_tag`, `dsdl.buffer_at` | `is_null`, `tag`, `buf` |
+| a helper call, by the marker lowering left on the helper | `err`, `value`, `count`, `tag` |
+
+An `scf` result takes the role the values yielded into it share, which is how the error a plan
+threads through its fields keeps the name at every step. Two arms agreeing on the role but not on
+the member give the role alone. An operation that states nothing about its result, and every
+`arith` operation, leaves the value to the translator's own `v<N>`.
+
+Two roles are not in any operation. The bit offset a plan threads from step to step and the error
+it carries beside it are `scf` results of the plan's own shape, and `guarded`, the union arm, the
+element loops and the epilogue each build them knowing which is which.
+`build-dsdl-plan-bodies` writes that down as `llvmdsdl.result_roles`, one name per result:
+
+```mlir
+%10:2 = scf.if %9 -> (i64, i8) {
+  ...
+} {llvmdsdl.result_roles = ["offset", "error"]}
+```
+
+`test/lit/plan-cursor-result-roles.txt` holds the stamp on the guard, the loops and the epilogue.
+The translator takes a stamp only while its length still equals the operation's result count:
+canonicalisation drops a result nothing reads and carries the attribute onto the operation it
+rebuilds, so a stamp that has outlived its results names none of them, and the yielded values are
+asked instead.
+
+A name is asked for with a rising ordinal until the function has not used the answer, so a repeat
+is distinguished in the spelling's own style — `err_2` or `err2`. The joined identifier collapses
+its underscore runs: a member that already trails one, which is how a target escapes a reserved
+word, would otherwise reach C++ as the `__` it reserves.
+
+## What a local must not capture
+
+The pool a name is claimed from holds the function's parameters and `BodySpelling::reservedLocals`
+— the identifiers a spelling's bodies use without qualifying them. Go's bodies convert with the
+predeclared type names and measure with `len`; Python's call `len`, `min` and `memoryview`;
+TypeScript's construct through `BigInt`, `Number` and the typed arrays. A local of any of those
+names captures the call, and the capture is legal code that means something else: Go stops
+compiling, and Python makes the name local for the whole function so the builtin is gone from its
+first line. Rust and C++ answer with nothing — Rust resolves a conversion in the type namespace
+and reaches the runtime by path, C++ qualifies every standard-library call and prefixes every
+runtime one.
+
+Stropping does not cover this. `codegenIsKeyword` holds keywords, and `len` is not one in either
+language; shadowing a predeclared identifier is permitted, so there is no illegal spelling for an
+escape to fix. It is a question about the scope, which is where it is answered.
+
+A role word is therefore chosen for how it reads. `count` rather than `len` is still the better
+word — `len` is claimed, so every array count would come back as `len2`.
+
 Declarations, module layout, manifests, constants, deprecation notices and runtime embedding stay
 in each emitter and keep reading the semantic module; a declaration takes the alias verdict and a
 union's tag width from the plan operation itself, through

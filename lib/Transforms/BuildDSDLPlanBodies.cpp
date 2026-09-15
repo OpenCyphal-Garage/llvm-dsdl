@@ -29,6 +29,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -74,6 +75,26 @@ struct PlanCursor final
     mlir::Value bitOffset;
     mlir::Value error;
 };
+
+/// @brief The roles a plan's own structure gives to the results of its structured operations.
+constexpr llvm::StringLiteral RoleOffset = "offset";
+constexpr llvm::StringLiteral RoleError  = "error";
+
+/// @brief Names what each result of @p op holds, for a backend to declare it by.
+///
+/// The offset a plan threads through its steps and the error it carries alongside are `scf`
+/// results of the plan's own shape, and no operation that builds one says which it is. This is
+/// where that is known, so this is where it is written down.
+void stampResultRoles(mlir::Operation* const op, const llvm::ArrayRef<llvm::StringRef> roles)
+{
+    mlir::SmallVector<mlir::Attribute, 2> names;
+    names.reserve(roles.size());
+    for (const llvm::StringRef role : roles)
+    {
+        names.push_back(mlir::StringAttr::get(op->getContext(), role));
+    }
+    op->setAttr("llvmdsdl.result_roles", mlir::ArrayAttr::get(op->getContext(), names));
+}
 
 /// @brief Why one field cannot be built as operations, or nothing when it can.
 ///
@@ -446,6 +467,7 @@ PlanCursor guarded(mlir::OpBuilder& b, mlir::Location loc, PlanCursor cursor, Bo
 {
     const mlir::SmallVector<mlir::Type, 2> types{b.getIntegerType(64), b.getIntegerType(8)};
     auto guard = mlir::scf::IfOp::create(b, loc, types, isHealthy(b, loc, cursor.error), true);
+    stampResultRoles(guard, {RoleOffset, RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(guard.thenBlock());
@@ -532,6 +554,7 @@ PlanCursor buildArrayWrite(mlir::OpBuilder& b,
 
             const mlir::SmallVector<mlir::Type, 2> loopTypes{i64Ty, b.getIntegerType(8)};
             auto loop = mlir::scf::WhileOp::create(b, loc, loopTypes, mlir::ValueRange{start, afterPrefix.error});
+            stampResultRoles(loop, {RoleOffset, RoleError});
 
             {
                 mlir::OpBuilder::InsertionGuard const g(b);
@@ -600,6 +623,7 @@ PlanCursor buildZeroBitsTo(mlir::OpBuilder& b,
                                            loc,
                                            mlir::TypeRange{i64Ty, i8Ty},
                                            mlir::ValueRange{cursor.bitOffset, cursor.error});
+    stampResultRoles(loop, {RoleOffset, RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         mlir::Block*                          before = b.createBlock(&loop.getBefore(), {}, {i64Ty, i8Ty}, {loc, loc});
@@ -999,6 +1023,7 @@ PlanCursor buildUnionOption(mlir::OpBuilder& b,
 
     const mlir::SmallVector<mlir::Type, 2> types{b.getIntegerType(64), b.getIntegerType(8)};
     auto                                   arm = mlir::scf::IfOp::create(b, loc, types, selected, true);
+    stampResultRoles(arm, {RoleOffset, RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(arm.thenBlock());
@@ -1081,6 +1106,7 @@ PlanCursor buildCompositeElementLoop(mlir::OpBuilder& b,
     const mlir::Value bound = mlir::arith::IndexCastOp::create(b, loc, indexTy, count);
 
     auto loop = mlir::scf::ForOp::create(b, loc, zero, bound, one, mlir::ValueRange{cursor.bitOffset, cursor.error});
+    stampResultRoles(loop, {RoleOffset, RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(loop.getBody());
@@ -1153,6 +1179,7 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
     }
 
     auto outerIf = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, anyNull, true);
+    stampResultRoles(outerIf, {RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToStart(outerIf.thenBlock());
@@ -1273,6 +1300,7 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
 
         auto epilogue =
             mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, isHealthy(builder, loc, cursor.error), true);
+        stampResultRoles(epilogue, {RoleError});
         {
             mlir::OpBuilder::InsertionGuard const g3(builder);
             builder.setInsertionPointToStart(epilogue.thenBlock());
@@ -1358,6 +1386,7 @@ PlanCursor buildArrayElementReads(mlir::OpBuilder& b,
         mlir::arith::AddIOp::create(b, loc, start, mlir::arith::MulIOp::create(b, loc, count, width));
 
     auto loop = mlir::scf::WhileOp::create(b, loc, mlir::TypeRange{i64Ty}, mlir::ValueRange{start});
+    stampResultRoles(loop, {RoleOffset});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         mlir::Block*                          before = b.createBlock(&loop.getBefore(), {}, {i64Ty}, {loc});
@@ -1515,6 +1544,7 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
     }
 
     auto outerIf = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, rejected.getResult(0), true);
+    stampResultRoles(outerIf, {RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToStart(outerIf.thenBlock());
@@ -1621,6 +1651,7 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
         // report: the size is written only on the path that succeeded.
         auto epilogue =
             mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, isHealthy(builder, loc, cursor.error), true);
+        stampResultRoles(epilogue, {RoleError});
         {
             mlir::OpBuilder::InsertionGuard const g2(builder);
             builder.setInsertionPointToStart(epilogue.thenBlock());

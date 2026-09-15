@@ -450,6 +450,21 @@ public:
         w.blank();
     }
 
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return snakeValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body calls the runtime through its prefixed free functions, the standard library
+        // through `std::`, and a nested type through its own scope. Nothing it calls is looked up
+        // unqualified, so nothing it calls can be captured.
+        return {};
+    }
+
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, callee);

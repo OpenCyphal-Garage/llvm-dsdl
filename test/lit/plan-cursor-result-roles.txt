@@ -1,0 +1,22 @@
+# The offset a plan threads through its steps, and the error carried beside it, are results of the
+# plan's own shape: the operations that build them state neither. build-dsdl-plan-bodies knows
+# which result is which as it builds, and writes it down, so a backend declares them by name.
+#
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s
+
+# An array's elements are walked by a loop carrying the pair, and each step is guarded on it.
+# CHECK-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__serialize_ir_
+# CHECK: scf.for
+# CHECK: } {llvmdsdl.result_roles = ["offset", "error"]}
+
+# CHECK-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__deserialize_ir_
+# CHECK: } {llvmdsdl.result_roles = ["offset", "error"]}
+
+# A padding run is an scf.while, which spells its attributes the long way.
+# CHECK-LABEL: func.func @fixtures_vendor_Helpers_1_0__serialize_ir_
+# CHECK: scf.while
+# CHECK: } attributes {llvmdsdl.result_roles = ["offset", "error"]}
+
+# The epilogue answers with the code the body returns, and nothing else.
+# CHECK: } {llvmdsdl.result_roles = ["error"]}

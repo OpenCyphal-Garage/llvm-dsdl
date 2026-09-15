@@ -19,6 +19,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 
+#include <cctype>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -29,6 +30,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -41,12 +43,14 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
 
 namespace llvmdsdl
 {
@@ -81,6 +85,228 @@ Comparison comparisonOf(const mlir::arith::CmpIPredicate predicate)
     return Comparison::Eq;
 }
 
+/// @brief What an operation states about the value it defines.
+struct Role final
+{
+    ValueRole       role{ValueRole::Anonymous};
+    llvm::StringRef member;
+};
+
+/// @brief The member of the nested call that reads @p value, when one does.
+///
+/// A size local and a buffer address are built for a single `dsdl.call_serdes` and carry no
+/// member of their own; the call they are built for names it.
+llvm::StringRef memberOfNestedCaller(const mlir::Value value)
+{
+    for (mlir::Operation* const user : value.getUsers())
+    {
+        if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(user))
+        {
+            return call.getMember();
+        }
+    }
+    return {};
+}
+
+/// @brief Whether @p pointer addresses a size.
+bool addressesSize(const mlir::Value pointer)
+{
+    const auto type = mlir::dyn_cast<mlir::dsdl::PtrType>(pointer.getType());
+    return type && mlir::isa<mlir::dsdl::SizeType>(type.getPointee());
+}
+
+/// @brief The role of a helper's answer, from the marker lowering left on the helper.
+Role roleOfCall(mlir::func::CallOp call)
+{
+    static constexpr std::pair<llvm::StringLiteral, ValueRole> Markers[] = {
+        {"llvmdsdl.plan_capacity_check", ValueRole::Error},
+        {"llvmdsdl.array_length_validate", ValueRole::Error},
+        {"llvmdsdl.union_tag_validate", ValueRole::Error},
+        {"llvmdsdl.delimiter_header_validate", ValueRole::Error},
+        {"llvmdsdl.scalar_float_helper", ValueRole::Scalar},
+        {"llvmdsdl.scalar_signed_helper", ValueRole::Scalar},
+        {"llvmdsdl.scalar_unsigned_helper", ValueRole::Scalar},
+        {"llvmdsdl.array_length_prefix_helper", ValueRole::Length},
+        {"llvmdsdl.union_tag_helper", ValueRole::Tag},
+    };
+    auto* const callee = mlir::SymbolTable::lookupNearestSymbolFrom(call, call.getCalleeAttr());
+    if (callee != nullptr)
+    {
+        for (const auto& [marker, role] : Markers)
+        {
+            if (callee->hasAttr(marker))
+            {
+                return {role, {}};
+            }
+        }
+    }
+    return {};
+}
+
+/// @brief The role `build-dsdl-plan-bodies` stamped on result @p index of @p op, if it did.
+///
+/// A plan's offset and the error beside it are results of its own shape, which the operations
+/// that build them do not state; the pass that does know writes it down as it builds.
+Role stampedRole(mlir::Operation* const op, const unsigned index)
+{
+    const auto roles = op->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles");
+    // Canonicalisation drops a result nothing reads, which moves every result after it. The
+    // stamp is one name per result as it was built, so a count that no longer agrees is a stamp
+    // that no longer says which result is which, and the yielded values are asked instead.
+    if (!roles || (roles.size() != op->getNumResults()) || (index >= roles.size()))
+    {
+        return {};
+    }
+    const auto name = mlir::dyn_cast<mlir::StringAttr>(roles[index]);
+    if (!name)
+    {
+        return {};
+    }
+    if (name.getValue() == "offset")
+    {
+        return {ValueRole::Offset, {}};
+    }
+    if (name.getValue() == "error")
+    {
+        return {ValueRole::Error, {}};
+    }
+    return {};
+}
+
+/// @brief How deep a structured result is followed to the values yielded into it.
+///
+/// A loop carries a value that yields itself, so the walk is bounded rather than cycle-free.
+constexpr unsigned MaxInheritDepth = 4;
+
+Role roleOf(mlir::Value value, unsigned depth);
+
+/// @brief The role shared by the values yielded into one result, or nothing they share.
+///
+/// Two arms agreeing on the role but not on the member give the role alone: a failure that
+/// reaches the same variable from two fields is an error either way, and naming it after one
+/// of them would say the other cannot arrive there.
+Role roleOfYielded(mlir::ValueRange yielded, const unsigned depth)
+{
+    std::optional<Role> shared;
+    for (const mlir::Value value : yielded)
+    {
+        const Role role = roleOf(value, depth + 1);
+        if (role.role == ValueRole::Anonymous)
+        {
+            return {};
+        }
+        if (!shared.has_value())
+        {
+            shared = role;
+            continue;
+        }
+        if (shared->role != role.role)
+        {
+            return {};
+        }
+        if (shared->member != role.member)
+        {
+            shared->member = {};
+        }
+    }
+    return shared.value_or(Role{});
+}
+
+/// @brief The values yielded into result @p index of @p op, over all of its arms.
+std::vector<mlir::Value> yieldedInto(mlir::Operation* const op, const unsigned index)
+{
+    std::vector<mlir::Value> out;
+    if (auto ifOp = mlir::dyn_cast<mlir::scf::IfOp>(op))
+    {
+        for (mlir::Region* const region : {&ifOp.getThenRegion(), &ifOp.getElseRegion()})
+        {
+            if (!region->empty())
+            {
+                if (auto yield = mlir::dyn_cast<mlir::scf::YieldOp>(region->front().getTerminator()))
+                {
+                    out.push_back(yield.getOperand(index));
+                }
+            }
+        }
+        return out;
+    }
+    if (auto whileOp = mlir::dyn_cast<mlir::scf::WhileOp>(op))
+    {
+        if (auto condition = mlir::dyn_cast<mlir::scf::ConditionOp>(whileOp.getBefore().front().getTerminator()))
+        {
+            out.push_back(condition.getArgs()[index]);
+        }
+        return out;
+    }
+    if (auto forOp = mlir::dyn_cast<mlir::scf::ForOp>(op))
+    {
+        out.push_back(forOp.getInitArgs()[index]);
+        if (auto yield = mlir::dyn_cast<mlir::scf::YieldOp>(forOp.getBody()->getTerminator()))
+        {
+            out.push_back(yield.getOperand(index));
+        }
+        return out;
+    }
+    return out;
+}
+
+/// @brief What the operation defining @p value states about it.
+Role roleOf(const mlir::Value value, const unsigned depth)
+{
+    if (depth > MaxInheritDepth)
+    {
+        return {};
+    }
+    if (const auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+    {
+        mlir::Operation* const owner = argument.getOwner()->getParentOp();
+        if (auto forOp = mlir::dyn_cast_or_null<mlir::scf::ForOp>(owner))
+        {
+            if (argument == forOp.getInductionVar())
+            {
+                return {ValueRole::Index, {}};
+            }
+            return roleOf(forOp.getResult(argument.getArgNumber() - 1), depth + 1);
+        }
+        if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
+        {
+            const Role stamped = stampedRole(whileOp, argument.getArgNumber());
+            return (stamped.role == ValueRole::Anonymous) ? roleOfYielded(whileOp.getInits(), depth) : stamped;
+        }
+        return {};
+    }
+    const auto             result = mlir::cast<mlir::OpResult>(value);
+    mlir::Operation* const op     = result.getOwner();
+    return llvm::TypeSwitch<mlir::Operation*, Role>(op)
+        .Case<mlir::dsdl::MemberAddrOp>([](auto read) { return Role{ValueRole::Object, read.getMember()}; })
+        .Case<mlir::dsdl::ElementAddrOp>([](auto read) { return Role{ValueRole::Object, read.getMember()}; })
+        .Case<mlir::dsdl::LoadMemberOp>([](auto read) { return Role{ValueRole::Scalar, read.getMember()}; })
+        .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Role{ValueRole::Scalar, read.getMember()}; })
+        .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Role{ValueRole::Length, read.getMember()}; })
+        .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Role{ValueRole::Error, call.getMember()}; })
+        .Case<mlir::dsdl::UnionTagOp>([](auto) { return Role{ValueRole::Tag, {}}; })
+        .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Role{ValueRole::Error, {}}; })
+        .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Role{ValueRole::Scalar, {}}; })
+        .Case<mlir::dsdl::IsNullOp>([](auto) { return Role{ValueRole::Null, {}}; })
+        .Case<mlir::dsdl::LocalOp>([&](auto) { return Role{ValueRole::Size, memberOfNestedCaller(result)}; })
+        .Case<mlir::dsdl::BufferAtOp>([&](auto) { return Role{ValueRole::Buffer, memberOfNestedCaller(result)}; })
+        .Case<mlir::dsdl::BufferOrEmptyOp>([](auto) { return Role{ValueRole::Buffer, {}}; })
+        .Case<mlir::dsdl::LoadScalarOp>([&](auto read) {
+            // Reading back the size a nested call wrote is that member's size, and the local it
+            // was written to is the operation that names the member.
+            return addressesSize(read.getPointer()) ? Role{ValueRole::Size, roleOf(read.getPointer(), depth + 1).member}
+                                                    : Role{ValueRole::Scalar, {}};
+        })
+        .Case<mlir::func::CallOp>([](auto call) { return roleOfCall(call); })
+        .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
+            const Role stamped = stampedRole(op, result.getResultNumber());
+            return (stamped.role == ValueRole::Anonymous)
+                       ? roleOfYielded(yieldedInto(op, result.getResultNumber()), depth)
+                       : stamped;
+        })
+        .Default([](mlir::Operation*) { return Role{}; });
+}
+
 /// @brief One function's translation: the names of its values and the walk over its blocks.
 class Translator final : public ValueNames
 {
@@ -108,9 +334,14 @@ public:
                                            fn.getNumArguments(),
                                            fn.getSymName().str().c_str());
         }
+        for (const llvm::StringRef reserved : spelling_.reservedLocals())
+        {
+            taken_.insert(reserved);
+        }
         for (const auto& [argument, name] : llvm::zip(fn.getArguments(), parameters))
         {
             names_[argument] = name;
+            taken_.insert(name);
         }
         if (auto err = block(fn.getBody().front(), {}, {}))
         {
@@ -123,13 +354,43 @@ public:
 private:
     std::string fresh()
     {
-        return "v" + std::to_string(counter_++);
+        std::string name = "v" + std::to_string(counter_++);
+        while (!taken_.insert(name).second)
+        {
+            name = "v" + std::to_string(counter_++);
+        }
+        return name;
+    }
+
+    /// @brief The name @p value is declared under: what its operation says it is, or a fresh one.
+    ///
+    /// The spelling is asked with a rising ordinal until it answers with a name the function has
+    /// not used, so a repeated role is distinguished in the spelling's own style.
+    std::string nameFor(const mlir::Value value)
+    {
+        const Role role = roleOf(value, 0);
+        if (role.role != ValueRole::Anonymous)
+        {
+            for (std::size_t ordinal = 0; ordinal < MaxNameOrdinals; ++ordinal)
+            {
+                std::string candidate = spelling_.valueName(role.role, role.member, ordinal);
+                if (candidate.empty())
+                {
+                    break;
+                }
+                if (taken_.insert(candidate).second)
+                {
+                    return candidate;
+                }
+            }
+        }
+        return fresh();
     }
 
     /// @brief Declares a variable for @p value that a structured operation's arms assign.
     std::string variable(const mlir::Value value, const bool reassigned)
     {
-        const std::string name = fresh();
+        const std::string name = nameFor(value);
         spelling_.declareVariable(w_, value.getType(), name, reassigned);
         names_[value] = name;
         return name;
@@ -153,7 +414,7 @@ private:
             }
             return;
         }
-        const std::string name = fresh();
+        const std::string name = nameFor(result);
         spelling_.declare(w_, result.getType(), name, expr);
         names_[result] = name;
     }
@@ -252,7 +513,7 @@ private:
             spelling_.assign(w_, carried.back(), (*this)(init));
             names_[result] = carried.back();
         }
-        const std::string induction  = fresh();
+        const std::string induction  = nameFor(op.getInductionVar());
         names_[op.getInductionVar()] = induction;
         spelling_.openFor(w_,
                           induction,
@@ -332,7 +593,7 @@ private:
             .Case<mlir::arith::SelectOp>([&](mlir::arith::SelectOp select) {
                 if (!select.getResult().use_empty())
                 {
-                    const std::string name = fresh();
+                    const std::string name = nameFor(select.getResult());
                     spelling_.declareSelect(w_,
                                             select.getType(),
                                             name,
@@ -440,7 +701,7 @@ private:
                 return llvm::Error::success();
             })
             .Case<mlir::dsdl::LocalOp>([&](mlir::dsdl::LocalOp local) {
-                names_[local.getResult()] = spelling_.local(w_, local, fresh(), *this);
+                names_[local.getResult()] = spelling_.local(w_, local, nameFor(local.getResult()), *this);
                 return llvm::Error::success();
             })
             // The dialect: writes and calls.
@@ -449,7 +710,7 @@ private:
                 return llvm::Error::success();
             })
             .Case<mlir::dsdl::CallSerdesOp>([&](mlir::dsdl::CallSerdesOp call) {
-                const std::string name = call.getResult().use_empty() ? std::string{} : fresh();
+                const std::string name = call.getResult().use_empty() ? std::string{} : nameFor(call.getResult());
                 spelling_.declareCallSerdes(w_, name, call, *this);
                 if (!name.empty())
                 {
@@ -492,13 +753,135 @@ private:
             });
     }
 
+    /// @brief How many spellings of one role a function asks for before naming the value itself.
+    static constexpr std::size_t MaxNameOrdinals = 1024;
+
     const BodySpelling&                      spelling_;
     SourceWriter&                            w_;
     llvm::DenseMap<mlir::Value, std::string> names_;
+    llvm::StringSet<>                        taken_;
     std::size_t                              counter_{0};
 };
 
 }  // namespace
+
+namespace
+{
+
+/// @brief The word a role is named by, in the snake-cased languages.
+llvm::StringRef roleWord(const ValueRole role)
+{
+    switch (role)
+    {
+    case ValueRole::Offset:
+        return "offset";
+    case ValueRole::Object:
+        return "addr";
+    case ValueRole::Buffer:
+        return "buf";
+    case ValueRole::Size:
+        return "size";
+    case ValueRole::Length:
+        return "count";
+    case ValueRole::Tag:
+        return "tag";
+    case ValueRole::Scalar:
+        return "value";
+    case ValueRole::Error:
+        return "err";
+    case ValueRole::Null:
+        return "is_null";
+    case ValueRole::Index:
+        return "i";
+    case ValueRole::Anonymous:
+        break;
+    }
+    return {};
+}
+
+/// @brief @p text with its underscore runs collapsed and its leading and trailing ones dropped.
+///
+/// A DSDL member may lead or trail with an underscore, and a target may already have escaped a
+/// reserved word by trailing one; joining either to a role word doubles it, which C++ reserves.
+std::string collapseUnderscores(const llvm::StringRef text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text)
+    {
+        if (c == '_' && (out.empty() || out.back() == '_'))
+        {
+            continue;
+        }
+        out.push_back(c);
+    }
+    while (!out.empty() && out.back() == '_')
+    {
+        out.pop_back();
+    }
+    return out;
+}
+
+/// @brief @p text with each underscore-separated word after the first capitalised.
+std::string camelTail(const llvm::StringRef text)
+{
+    std::string out;
+    out.reserve(text.size());
+    bool capitalise = false;
+    for (const char c : text)
+    {
+        if (c == '_')
+        {
+            capitalise = true;
+            continue;
+        }
+        out.push_back(capitalise ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c);
+        capitalise = false;
+    }
+    return out;
+}
+
+}  // namespace
+
+std::string snakeValueName(const ValueRole role, const llvm::StringRef member, const std::size_t ordinal)
+{
+    const llvm::StringRef word = roleWord(role);
+    if (word.empty())
+    {
+        return {};
+    }
+    std::string name = collapseUnderscores(member.empty() ? word.str() : (member.str() + "_" + word.str()));
+    if (name.empty())
+    {
+        name = word.str();
+    }
+    if (ordinal > 0)
+    {
+        name += "_" + std::to_string(ordinal + 1);
+    }
+    return name;
+}
+
+std::string camelValueName(const ValueRole role, const llvm::StringRef member, const std::size_t ordinal)
+{
+    const llvm::StringRef word = roleWord(role);
+    if (word.empty())
+    {
+        return {};
+    }
+    std::string name =
+        member.empty() ? camelTail(word) : (camelTail(collapseUnderscores(member)) + camelTail("_" + word.str()));
+    if (name.empty())
+    {
+        name = camelTail(word);
+    }
+    name.front() = static_cast<char>(std::tolower(static_cast<unsigned char>(name.front())));
+    if (ordinal > 0)
+    {
+        name += std::to_string(ordinal + 1);
+    }
+    return name;
+}
 
 llvm::Error translateFunction(mlir::func::FuncOp fn, const BodySpelling& spelling, SourceWriter& w)
 {

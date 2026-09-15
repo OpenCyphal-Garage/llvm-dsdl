@@ -568,6 +568,27 @@ public:
         w.close("}");
     }
 
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return camelValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body constructs bigints and typed arrays and clamps through Math, each by its global
+        // name. The lower-cased ones matter most: a camel-cased role lands in that shape.
+        static const llvm::StringRef names[] = {"Array",      "BigInt",       "Boolean",      "DataView",
+                                                "Error",      "Float32Array", "Float64Array", "Infinity",
+                                                "JSON",       "Map",          "Math",         "NaN",
+                                                "Number",     "Object",       "Set",          "String",
+                                                "Symbol",     "Uint8Array",   "Uint16Array",  "Uint32Array",
+                                                "globalThis", "isFinite",     "isNaN",        "parseFloat",
+                                                "parseInt",   "undefined"};
+        return names;
+    }
+
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::TypeScript, callee);

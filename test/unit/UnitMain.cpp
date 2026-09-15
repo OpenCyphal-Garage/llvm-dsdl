@@ -35,6 +35,7 @@ int main()
     ok      = runDefinitionIndexTests() && ok;
     ok      = runDefinitionPathProjectionTests() && ok;
     ok      = runHelperBodyPlanTests() && ok;
+    ok      = runBodyValueNamingTests() && ok;
     ok      = runHelperBindingNamingTests() && ok;
     ok      = runNamingPolicyTests() && ok;
     ok      = runNamingGoldenTests() && ok;

@@ -25,6 +25,7 @@
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
@@ -595,6 +596,31 @@ public:
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
     {
         closeBlock(w);
+    }
+
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return snakeValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body measures with len, clamps with min, and slices a memoryview; the rest are the
+        // builtins a body would reach for next. Python has no declaration, so an assignment makes
+        // the name local for the whole function and the builtin is gone from its first line.
+        static const llvm::StringRef names[] = {"abs",        "all",        "any",        "bin",    "bool",
+                                                "bytearray",  "bytes",      "chr",        "dict",   "divmod",
+                                                "enumerate",  "filter",     "float",      "format", "frozenset",
+                                                "getattr",    "hash",       "hex",        "id",     "int",
+                                                "isinstance", "issubclass", "iter",       "len",    "list",
+                                                "map",        "max",        "memoryview", "min",    "next",
+                                                "object",     "oct",        "ord",        "pow",    "print",
+                                                "range",      "repr",       "reversed",   "round",  "set",
+                                                "setattr",    "slice",      "sorted",     "str",    "sum",
+                                                "tuple",      "type",       "zip"};
+        return names;
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override

@@ -430,6 +430,21 @@ public:
         w.close("}");
     }
 
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return snakeValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body reaches the runtime and the standard library by path, and a local never captures
+        // a type: Rust resolves `x as u64` in the type namespace and a binding lives in the value
+        // namespace. There is nothing here for a local to shadow.
+        return {};
+    }
+
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, callee);

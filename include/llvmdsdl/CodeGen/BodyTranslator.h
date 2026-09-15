@@ -22,6 +22,7 @@
 #ifndef LLVMDSDL_CODEGEN_BODY_TRANSLATOR_H
 #define LLVMDSDL_CODEGEN_BODY_TRANSLATOR_H
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -82,6 +83,26 @@ enum class Conversion : std::uint8_t
     SignExtend,
     Truncate,
     IndexCast,
+};
+
+/// @brief What the operation that defines a value says the value is.
+///
+/// The translator reads the role from the operation alone, so it is the same in every
+/// language; a spelling renders it as one of its own identifiers. `Anonymous` is an operation
+/// that says nothing about its result, and the translator names those itself.
+enum class ValueRole : std::uint8_t
+{
+    Anonymous,
+    Offset,  ///< The bit offset a plan threads through its steps.
+    Object,  ///< The address of a member, or of one element of an array member.
+    Buffer,  ///< An address within the wire buffer.
+    Size,    ///< A size in bytes, held where a nested call can write back to it.
+    Length,  ///< An array member's element count.
+    Tag,     ///< A union's tag.
+    Scalar,  ///< A member's value, or a scalar read out of the buffer.
+    Error,   ///< An error code.
+    Null,    ///< Whether a pointer the plan was handed is null.
+    Index,   ///< A loop's induction variable.
 };
 
 /// @brief The spelled form of each value in the function being translated.
@@ -164,6 +185,29 @@ public:
     virtual void closeBlock(SourceWriter& w) const = 0;
 
     // Values.
+
+    /// @brief The identifier a value of @p role is declared under.
+    ///
+    /// @p member is the DSDL member the defining operation names, empty when it names none.
+    /// @p ordinal is zero for the first value a function declares under a given role and
+    /// member, and counts up for each one after it, so a spelling decides how a repeat is
+    /// distinguished as well as how the name is cased. @ref snakeValueName and
+    /// @ref camelValueName render the two styles the backends use.
+    ///
+    /// The translator names a value itself when this answers with an empty string, which is
+    /// what @ref ValueRole::Anonymous is given.
+    [[nodiscard]] virtual std::string valueName(ValueRole role, llvm::StringRef member, std::size_t ordinal) const = 0;
+
+    /// @brief The identifiers this spelling's bodies use without qualifying them.
+    ///
+    /// A body that reaches into the language's own namespace -- Go's predeclared conversions and
+    /// `len`, Python's builtins, TypeScript's globals -- is captured by a local of the same name,
+    /// and the capture is legal code that means something else. The translator claims these
+    /// before it names anything, so a value whose role lands on one is distinguished the way a
+    /// repeat is, and a role word is chosen for how it reads rather than for what it avoids.
+    ///
+    /// A spelling that qualifies every call it makes answers with nothing.
+    [[nodiscard]] virtual llvm::ArrayRef<llvm::StringRef> reservedLocals() const = 0;
 
     [[nodiscard]] virtual std::string constant(mlir::TypedAttr value) const = 0;
 
@@ -258,6 +302,14 @@ public:
         declare(w, op.getError().getType(), name, callSerdes(op, names));
     }
 };
+
+/// @brief Renders @p role as `member_role`, `role` when @p member is empty, and appends
+///        `_<ordinal + 1>` to a repeat.
+std::string snakeValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);
+
+/// @brief Renders @p role as `memberRole`, `role` when @p member is empty, and appends
+///        `<ordinal + 1>` to a repeat.
+std::string camelValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);
 
 /// @brief Spells @p fn through @p spelling into @p w.
 /// @return An error naming the first operation the translator has no spelling for.

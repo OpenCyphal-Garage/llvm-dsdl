@@ -101,99 +101,99 @@ class Helpers:
         v0 = self is None or False
         v1 = v0 or False
         if v1:
-            v2 = -2
+            err = -2
         else:
-            v3 = inout_buffer_size_bytes
-            v4 = v3 * 8
-            v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v4)
-            v6 = v5 == 0
-            v7 = (13 if v6 else 0)
-            if v6:
-                v9 = int(self.a)
-                v10 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(v9)
-                v11 = dsdl_runtime.write_signed(buffer, 0, 13, v10, False)
-                v8 = v11
+            size = inout_buffer_size_bytes
+            v2 = size * 8
+            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v2)
+            v3 = err_2 == 0
+            v4 = (13 if v3 else 0)
+            if v3:
+                a_value = int(self.a)
+                value = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(a_value)
+                err_4 = dsdl_runtime.write_signed(buffer, 0, 13, value, False)
+                err_3 = err_4
             else:
-                v8 = v5
-            v12 = v8 == 0
-            if v12:
-                v15 = float(self.b)
-                v16 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(v15)
-                v17 = dsdl_runtime.write_float(buffer, v7, 16, v16)
-                v18 = v7 + 16
-                v13 = v18
-                v14 = v17
+                err_3 = err_2
+            v5 = err_3 == 0
+            if v5:
+                b_value = float(self.b)
+                value_2 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(b_value)
+                err_6 = dsdl_runtime.write_float(buffer, v4, 16, value_2)
+                v6 = v4 + 16
+                offset = v6
+                err_5 = err_6
             else:
-                v13 = v7
-                v14 = v8
-            v19 = v14 == 0
-            if v19:
-                v22 = len(self.c)
-                v23 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v22)
-                v24 = v23 == 0
-                if v24:
-                    v27 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(v22)
-                    v28 = dsdl_runtime.write_unsigned(buffer, v13, 8, v27, False)
-                    v29 = v13 + 8
-                    v30 = v22 * 8
-                    v31 = v29 + v30
-                    v32 = v29
-                    v33 = v28
+                offset = v4
+                err_5 = err_3
+            v7 = err_5 == 0
+            if v7:
+                c_count = len(self.c)
+                err_8 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(c_count)
+                v8 = err_8 == 0
+                if v8:
+                    count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(c_count)
+                    err_10 = dsdl_runtime.write_unsigned(buffer, offset, 8, count, False)
+                    v9 = offset + 8
+                    v10 = c_count * 8
+                    v11 = v9 + v10
+                    offset_4 = v9
+                    err_11 = err_10
                     while True:
-                        v36 = v32 < v31
-                        v37 = v33 == 0
-                        v38 = v36 and v37
-                        v34 = v32
-                        v35 = v33
-                        if not (v38):
+                        v12 = offset_4 < v11
+                        v13 = err_11 == 0
+                        v14 = v12 and v13
+                        offset_5 = offset_4
+                        err_12 = err_11
+                        if not (v14):
                             break
-                        v39 = v34 - v29
-                        v40 = v39 // 8
-                        v41 = int(self.c[v40])
-                        v42 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(v41)
-                        v43 = dsdl_runtime.write_unsigned(buffer, v34, 8, v42, False)
-                        v44 = v34 + 8
-                        v45 = v35 == 0
-                        v46 = (v43 if v45 else v35)
-                        v32 = v44
-                        v33 = v46
-                    v25 = v34
-                    v26 = v35
+                        v15 = offset_5 - v9
+                        v16 = v15 // 8
+                        c_value = int(self.c[v16])
+                        value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(c_value)
+                        err_13 = dsdl_runtime.write_unsigned(buffer, offset_5, 8, value_3, False)
+                        v17 = offset_5 + 8
+                        v18 = err_12 == 0
+                        v19 = (err_13 if v18 else err_12)
+                        offset_4 = v17
+                        err_11 = v19
+                    offset_3 = offset_5
+                    err_9 = err_12
                 else:
-                    v25 = v13
-                    v26 = v23
-                v20 = v25
-                v21 = v26
+                    offset_3 = offset
+                    err_9 = err_8
+                offset_2 = offset_3
+                err_7 = err_9
             else:
-                v20 = v13
-                v21 = v14
-            v47 = v20 + 7
-            v48 = v47 // 8
-            v49 = v48 * 8
-            v50 = v20
-            v51 = v21
+                offset_2 = offset
+                err_7 = err_5
+            v20 = offset_2 + 7
+            v21 = v20 // 8
+            v22 = v21 * 8
+            offset_6 = offset_2
+            err_14 = err_7
             while True:
-                v54 = v50 < v49
-                v55 = v51 == 0
-                v56 = v54 and v55
-                v52 = v50
-                v53 = v51
-                if not (v56):
+                v23 = offset_6 < v22
+                v24 = err_14 == 0
+                v25 = v23 and v24
+                offset_7 = offset_6
+                err_15 = err_14
+                if not (v25):
                     break
-                v57 = dsdl_runtime.set_bit(buffer, v52, False)
-                v58 = v52 + 1
-                v59 = v53 == 0
-                v60 = (v57 if v59 else v53)
-                v50 = v58
-                v51 = v60
-            v61 = v53 == 0
-            if v61:
-                v62 = v52 // 8
-                inout_buffer_size_bytes = v62
-            v2 = v53
-        if v2 == 0:
+                err_16 = dsdl_runtime.set_bit(buffer, offset_7, False)
+                v26 = offset_7 + 1
+                v27 = err_15 == 0
+                v28 = (err_16 if v27 else err_15)
+                offset_6 = v26
+                err_14 = v28
+            v29 = err_15 == 0
+            if v29:
+                v30 = offset_7 // 8
+                inout_buffer_size_bytes = v30
+            err = err_15
+        if err == 0:
             return inout_buffer_size_bytes
-        return v2
+        return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         inout_buffer_size_bytes = len(buffer)
@@ -201,55 +201,55 @@ class Helpers:
         if v0:
             v1 = True
         else:
-            v2 = inout_buffer_size_bytes
-            v3 = v2 != 0
-            v4 = False and v3
-            v1 = v4
+            size = inout_buffer_size_bytes
+            v2 = size != 0
+            v3 = False and v2
+            v1 = v3
         if v1:
-            v5 = -2
+            err = -2
         else:
-            v6 = inout_buffer_size_bytes
-            v7 = dsdl_runtime.read_signed(buffer, 0, 13)
-            v8 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(v7)
-            self.a = v8
-            v9 = dsdl_runtime.read_float(buffer, 13, 16)
-            v10 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(v9)
-            self.b = v10
-            v11 = dsdl_runtime.read_unsigned(buffer, 29, 8)
-            v12 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(v11)
-            v13 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v12)
-            v14 = v13 == 0
-            if v14:
-                self.c = [0] * v12
-                v16 = v12 * 8
-                v17 = v16 + 37
-                v18 = 37
+            size_2 = inout_buffer_size_bytes
+            value = dsdl_runtime.read_signed(buffer, 0, 13)
+            value_2 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value)
+            self.a = value_2
+            value_3 = dsdl_runtime.read_float(buffer, 13, 16)
+            value_4 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(value_3)
+            self.b = value_4
+            value_5 = dsdl_runtime.read_unsigned(buffer, 29, 8)
+            count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value_5)
+            err_2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count)
+            v4 = err_2 == 0
+            if v4:
+                self.c = [0] * count
+                v6 = count * 8
+                v7 = v6 + 37
+                offset = 37
                 while True:
-                    v20 = v18 < v17
-                    v19 = v18
-                    if not (v20):
+                    v8 = offset < v7
+                    offset_2 = offset
+                    if not (v8):
                         break
-                    v21 = v19 - 37
-                    v22 = v21 // 8
-                    v23 = dsdl_runtime.read_unsigned(buffer, v19, 8)
-                    v24 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(v23)
-                    self.c[v22] = v24
-                    v25 = v19 + 8
-                    v18 = v25
-                v15 = v19
+                    v9 = offset_2 - 37
+                    v10 = v9 // 8
+                    value_6 = dsdl_runtime.read_unsigned(buffer, offset_2, 8)
+                    value_7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value_6)
+                    self.c[v10] = value_7
+                    v11 = offset_2 + 8
+                    offset = v11
+                v5 = offset_2
             else:
-                v15 = 37
-            v26 = v15 + 7
-            v27 = v26 // 8
-            v28 = v27 * 8
-            v29 = v6 * 8
-            v30 = v28 < v29
-            v31 = (v28 if v30 else v29)
-            v32 = v13 == 0
-            if v32:
-                v33 = v31 // 8
-                inout_buffer_size_bytes = v33
-            v5 = v13
-        if v5 == 0:
+                v5 = 37
+            v12 = v5 + 7
+            v13 = v12 // 8
+            v14 = v13 * 8
+            v15 = size_2 * 8
+            v16 = v14 < v15
+            v17 = (v14 if v16 else v15)
+            v18 = err_2 == 0
+            if v18:
+                v19 = v17 // 8
+                inout_buffer_size_bytes = v19
+            err = err_2
+        if err == 0:
             return inout_buffer_size_bytes
-        return v5
+        return err

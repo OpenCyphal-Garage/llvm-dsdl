@@ -95,127 +95,127 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
   const v1 = v0 || false;
-  let v2: number;
+  let err: number;
   if (v1) {
-    v2 = -2;
+    err = -2;
   } else {
-    const v3 = BigInt(inoutBufferSizeBytes);
-    const v4 = v3 * 8n;
-    const v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v4);
-    const v6 = v5 === 0;
-    const v7 = v6 ? 13n : 0n;
-    let v8: number;
-    if (v6) {
-      const v9 = dsdlRuntime.toBigIntValue(obj.a);
-      const v10 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(v9);
-      const v11 = dsdlRuntime.writeSigned(buffer, Number(0n), 13, v10, false);
-      v8 = v11;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v2 = size * 8n;
+    const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v2);
+    const v3 = err2 === 0;
+    const v4 = v3 ? 13n : 0n;
+    let err3: number;
+    if (v3) {
+      const aValue = dsdlRuntime.toBigIntValue(obj.a);
+      const value = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(aValue);
+      const err4 = dsdlRuntime.writeSigned(buffer, Number(0n), 13, value, false);
+      err3 = err4;
     } else {
-      v8 = v5;
+      err3 = err2;
     }
-    const v12 = v8 === 0;
-    let v13: bigint;
-    let v14: number;
-    if (v12) {
-      const v15 = obj.b;
-      const v16 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(v15);
-      const v17 = dsdlRuntime.writeFloat(buffer, Number(v7), 16, v16);
-      const v18 = v7 + 16n;
-      v13 = v18;
-      v14 = v17;
+    const v5 = err3 === 0;
+    let offset: bigint;
+    let err5: number;
+    if (v5) {
+      const bValue = obj.b;
+      const value2 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(bValue);
+      const err6 = dsdlRuntime.writeFloat(buffer, Number(v4), 16, value2);
+      const v6 = v4 + 16n;
+      offset = v6;
+      err5 = err6;
     } else {
-      v13 = v7;
-      v14 = v8;
+      offset = v4;
+      err5 = err3;
     }
-    const v19 = v14 === 0;
-    let v20: bigint;
-    let v21: number;
-    if (v19) {
-      const v22 = BigInt(obj.c.length);
-      const v23 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v22);
-      const v24 = v23 === 0;
-      let v25: bigint;
-      let v26: number;
-      if (v24) {
-        const v27 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(v22);
-        const v28 = dsdlRuntime.writeUnsigned(buffer, Number(v13), 8, v27, false);
-        const v29 = v13 + 8n;
-        const v30 = v22 * 8n;
-        const v31 = v29 + v30;
-        let v32: bigint;
-        v32 = v29;
-        let v33: number;
-        v33 = v28;
-        let v34: bigint;
-        let v35: number;
+    const v7 = err5 === 0;
+    let offset2: bigint;
+    let err7: number;
+    if (v7) {
+      const cCount = BigInt(obj.c.length);
+      const err8 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cCount);
+      const v8 = err8 === 0;
+      let offset3: bigint;
+      let err9: number;
+      if (v8) {
+        const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(cCount);
+        const err10 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 8, count, false);
+        const v9 = offset + 8n;
+        const v10 = cCount * 8n;
+        const v11 = v9 + v10;
+        let offset4: bigint;
+        offset4 = v9;
+        let err11: number;
+        err11 = err10;
+        let offset5: bigint;
+        let err12: number;
         for (;;) {
-          const v36 = v32 < v31;
-          const v37 = v33 === 0;
-          const v38 = v36 && v37;
-          v34 = v32;
-          v35 = v33;
-          if (!(v38)) {
+          const v12 = offset4 < v11;
+          const v13 = err11 === 0;
+          const v14 = v12 && v13;
+          offset5 = offset4;
+          err12 = err11;
+          if (!(v14)) {
             break;
           }
-          const v39 = v34 - v29;
-          const v40 = v39 / 8n;
-          const v41 = dsdlRuntime.toBigIntValue(obj.c[Number(v40)]);
-          const v42 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(v41);
-          const v43 = dsdlRuntime.writeUnsigned(buffer, Number(v34), 8, v42, false);
-          const v44 = v34 + 8n;
-          const v45 = v35 === 0;
-          const v46 = v45 ? v43 : v35;
-          v32 = v44;
-          v33 = v46;
+          const v15 = offset5 - v9;
+          const v16 = v15 / 8n;
+          const cValue = dsdlRuntime.toBigIntValue(obj.c[Number(v16)]);
+          const value3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(cValue);
+          const err13 = dsdlRuntime.writeUnsigned(buffer, Number(offset5), 8, value3, false);
+          const v17 = offset5 + 8n;
+          const v18 = err12 === 0;
+          const v19 = v18 ? err13 : err12;
+          offset4 = v17;
+          err11 = v19;
         }
-        v25 = v34;
-        v26 = v35;
+        offset3 = offset5;
+        err9 = err12;
       } else {
-        v25 = v13;
-        v26 = v23;
+        offset3 = offset;
+        err9 = err8;
       }
-      v20 = v25;
-      v21 = v26;
+      offset2 = offset3;
+      err7 = err9;
     } else {
-      v20 = v13;
-      v21 = v14;
+      offset2 = offset;
+      err7 = err5;
     }
-    const v47 = v20 + 7n;
-    const v48 = v47 / 8n;
-    const v49 = v48 * 8n;
-    let v50: bigint;
-    v50 = v20;
-    let v51: number;
-    v51 = v21;
-    let v52: bigint;
-    let v53: number;
+    const v20 = offset2 + 7n;
+    const v21 = v20 / 8n;
+    const v22 = v21 * 8n;
+    let offset6: bigint;
+    offset6 = offset2;
+    let err14: number;
+    err14 = err7;
+    let offset7: bigint;
+    let err15: number;
     for (;;) {
-      const v54 = v50 < v49;
-      const v55 = v51 === 0;
-      const v56 = v54 && v55;
-      v52 = v50;
-      v53 = v51;
-      if (!(v56)) {
+      const v23 = offset6 < v22;
+      const v24 = err14 === 0;
+      const v25 = v23 && v24;
+      offset7 = offset6;
+      err15 = err14;
+      if (!(v25)) {
         break;
       }
-      const v57 = dsdlRuntime.setBit(buffer, Number(v52), false);
-      const v58 = v52 + 1n;
-      const v59 = v53 === 0;
-      const v60 = v59 ? v57 : v53;
-      v50 = v58;
-      v51 = v60;
+      const err16 = dsdlRuntime.setBit(buffer, Number(offset7), false);
+      const v26 = offset7 + 1n;
+      const v27 = err15 === 0;
+      const v28 = v27 ? err16 : err15;
+      offset6 = v26;
+      err14 = v28;
     }
-    const v61 = v53 === 0;
-    if (v61) {
-      const v62 = v52 / 8n;
-      inoutBufferSizeBytes = Number(v62);
+    const v29 = err15 === 0;
+    if (v29) {
+      const v30 = offset7 / 8n;
+      inoutBufferSizeBytes = Number(v30);
     }
-    v2 = v53;
+    err = err15;
   }
-  if (v2 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v2;
+  return err;
 }
 
 export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number {
@@ -225,69 +225,69 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
   if (v0) {
     v1 = true;
   } else {
-    const v2 = BigInt(inoutBufferSizeBytes);
-    const v3 = v2 !== 0n;
-    const v4 = false && v3;
-    v1 = v4;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v2 = size !== 0n;
+    const v3 = false && v2;
+    v1 = v3;
   }
-  let v5: number;
+  let err: number;
   if (v1) {
-    v5 = -2;
+    err = -2;
   } else {
-    const v6 = BigInt(inoutBufferSizeBytes);
-    const v7 = dsdlRuntime.readSignedBigInt(buffer, Number(0n), 13);
-    const v8 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(v7);
-    obj.a = Number(v8);
-    const v9 = dsdlRuntime.readFloat(buffer, Number(13n), 16);
-    const v10 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(v9);
-    obj.b = v10;
-    const v11 = dsdlRuntime.readUnsignedBigInt(buffer, Number(29n), 8);
-    const v12 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(v11);
-    const v13 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v12);
-    const v14 = v13 === 0;
-    let v15: bigint;
-    if (v14) {
-      obj.c = new Array<number>(Number(v12));
-      const v16 = v12 * 8n;
-      const v17 = v16 + 37n;
-      let v18: bigint;
-      v18 = 37n;
-      let v19: bigint;
+    const size2 = BigInt(inoutBufferSizeBytes);
+    const value = dsdlRuntime.readSignedBigInt(buffer, Number(0n), 13);
+    const value2 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value);
+    obj.a = Number(value2);
+    const value3 = dsdlRuntime.readFloat(buffer, Number(13n), 16);
+    const value4 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(value3);
+    obj.b = value4;
+    const value5 = dsdlRuntime.readUnsignedBigInt(buffer, Number(29n), 8);
+    const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value5);
+    const err2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count);
+    const v4 = err2 === 0;
+    let v5: bigint;
+    if (v4) {
+      obj.c = new Array<number>(Number(count));
+      const v6 = count * 8n;
+      const v7 = v6 + 37n;
+      let offset: bigint;
+      offset = 37n;
+      let offset2: bigint;
       for (;;) {
-        const v20 = v18 < v17;
-        v19 = v18;
-        if (!(v20)) {
+        const v8 = offset < v7;
+        offset2 = offset;
+        if (!(v8)) {
           break;
         }
-        const v21 = v19 - 37n;
-        const v22 = v21 / 8n;
-        const v23 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v19), 8);
-        const v24 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(v23);
-        (obj.c ??= [])[Number(v22)] = Number(v24);
-        const v25 = v19 + 8n;
-        v18 = v25;
+        const v9 = offset2 - 37n;
+        const v10 = v9 / 8n;
+        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(offset2), 8);
+        const value7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value6);
+        (obj.c ??= [])[Number(v10)] = Number(value7);
+        const v11 = offset2 + 8n;
+        offset = v11;
       }
-      v15 = v19;
+      v5 = offset2;
     } else {
-      v15 = 37n;
+      v5 = 37n;
     }
-    const v26 = v15 + 7n;
-    const v27 = v26 / 8n;
-    const v28 = v27 * 8n;
-    const v29 = v6 * 8n;
-    const v30 = v28 < v29;
-    const v31 = v30 ? v28 : v29;
-    const v32 = v13 === 0;
-    if (v32) {
-      const v33 = v31 / 8n;
-      inoutBufferSizeBytes = Number(v33);
+    const v12 = v5 + 7n;
+    const v13 = v12 / 8n;
+    const v14 = v13 * 8n;
+    const v15 = size2 * 8n;
+    const v16 = v14 < v15;
+    const v17 = v16 ? v14 : v15;
+    const v18 = err2 === 0;
+    if (v18) {
+      const v19 = v17 / 8n;
+      inoutBufferSizeBytes = Number(v19);
     }
-    v5 = v13;
+    err = err2;
   }
-  if (v5 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v5;
+  return err;
 }
 
 export function serializeHelpers(value: Helpers): Uint8Array {
