@@ -816,8 +816,8 @@ public:
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
         // The container takes the section's memory contract, is sized to the count the plan
-        // validated, and holds default elements for the plan to store into. A pool that cannot
-        // provide the storage ends the function.
+        // validated, and holds default elements for the plan to store into. Storage the pool or
+        // the allocator cannot provide ends the function with the allocation's code.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
         const std::string count  = fresh("count");
         w.line(access +
@@ -832,7 +832,9 @@ public:
         w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
         w.close("}");
         w.midway("} else {");
-        w.line(access + ".reserve(" + count + ");");
+        w.open("if let Err(_alloc_err) = " + access + ".try_reserve(" + count + ") {");
+        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        w.close("}");
         w.close("}");
         w.line(access + ".resize(" + count + ", Default::default());");
     }
