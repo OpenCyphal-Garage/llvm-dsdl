@@ -332,6 +332,24 @@ constexpr llvm::StringLiteral DisagreeingLoop = R"mlir(
   }
 )mlir";
 
+/// @brief A counted loop that returns its carried value unchanged, under a stamp gone stale.
+///
+/// The body yields the iteration argument it was given, so following the carry reaches the value
+/// the walk is already inside. That says nothing about it, and taking it for a role of its own
+/// would let the carry veto what the initialiser states.
+constexpr llvm::StringLiteral SelfCarryingLoop = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>) -> i64 {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c4 = arith.constant 4 : index
+    %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %1 = scf.for %i = %c0 to %c4 step %c1 iter_args(%carried = %0) -> (i64) {
+      scf.yield %carried : i64
+    } {llvmdsdl.result_roles = ["offset", "error"]}
+    return %1 : i64
+  }
+)mlir";
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
@@ -474,6 +492,22 @@ bool runBodyValueNamingTests()
         if (!name.starts_with("count"))
         {
             std::cerr << "a loop value fell back to '" << name << "' rather than keeping its role\n";
+            ok = false;
+        }
+    }
+
+    // A loop that returns its carry unchanged says nothing new about it, so the role its
+    // initialiser states stands. Reading the self-carry as a role of its own loses it.
+    const auto carried = declaredNamesFor(SelfCarryingLoop, {});
+    if (!carried.has_value())
+    {
+        return false;
+    }
+    for (const std::string& name : *carried)
+    {
+        if (!name.starts_with("count") && !name.starts_with("i"))
+        {
+            std::cerr << "a self-carried loop value fell back to '" << name << "'\n";
             ok = false;
         }
     }

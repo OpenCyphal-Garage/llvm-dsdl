@@ -185,9 +185,15 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
 /// belong to one operation and reach each other, and that is the walk doing its work.
 using RoleWalk = llvm::SmallDenseSet<mlir::Value, 8>;
 
-Role roleOf(mlir::Value value, RoleWalk& walk);
+/// @brief What @p value is, or nothing when the walk is already inside it.
+///
+/// A carry that reaches itself says nothing about the value it returns unchanged, which is not
+/// the same as saying the value has no role: the one is an absence of information and the other
+/// is information. Answering with `Anonymous` for both would let a self-carry veto the role its
+/// initialiser states.
+std::optional<Role> roleOf(mlir::Value value, RoleWalk& walk);
 
-/// @brief @ref roleOf without the bookkeeping that ends a carry reaching itself.
+/// @brief @ref roleOf for a value the walk has just entered.
 Role roleOfReached(mlir::Value value, RoleWalk& walk);
 
 /// @brief The role shared by the values yielded into one result, or nothing they share.
@@ -200,7 +206,13 @@ Role roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
     std::optional<Role> shared;
     for (const mlir::Value value : yielded)
     {
-        const Role role = roleOf(value, walk);
+        const std::optional<Role> reached = roleOf(value, walk);
+        if (!reached.has_value())
+        {
+            // The walk is already inside this one: it carries whatever the others say.
+            continue;
+        }
+        const Role role = *reached;
         if (role.role == ValueRole::Anonymous)
         {
             return {};
@@ -283,12 +295,11 @@ std::vector<mlir::Value> incomingTo(mlir::scf::WhileOp loop, const unsigned inde
     return out;
 }
 
-/// @brief What the operation defining @p value states about it.
-Role roleOf(mlir::Value value, RoleWalk& walk)
+std::optional<Role> roleOf(mlir::Value value, RoleWalk& walk)
 {
     if (!walk.insert(value).second)
     {
-        return {};
+        return std::nullopt;
     }
     const Role role = roleOfReached(value, walk);
     walk.erase(value);
@@ -306,7 +317,7 @@ Role roleOfReached(mlir::Value value, RoleWalk& walk)
             {
                 return {ValueRole::Index, {}};
             }
-            return roleOf(forOp.getResult(argument.getArgNumber() - 1), walk);
+            return roleOf(forOp.getResult(argument.getArgNumber() - 1), walk).value_or(Role{});
         }
         if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
         {
@@ -337,8 +348,9 @@ Role roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::LoadScalarOp>([&](auto read) {
             // Reading back the size a nested call wrote is that member's size, and the local it
             // was written to is the operation that names the member.
-            return addressesSize(read.getPointer()) ? Role{ValueRole::Size, roleOf(read.getPointer(), walk).member}
-                                                    : Role{ValueRole::Scalar, {}};
+            return addressesSize(read.getPointer())
+                       ? Role{ValueRole::Size, roleOf(read.getPointer(), walk).value_or(Role{}).member}
+                       : Role{ValueRole::Scalar, {}};
         })
         .Case<mlir::func::CallOp>([](auto call) { return roleOfCall(call); })
         .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
@@ -412,7 +424,7 @@ private:
     std::string nameFor(const mlir::Value value)
     {
         RoleWalk   walk;
-        const Role role = roleOf(value, walk);
+        const Role role = roleOf(value, walk).value_or(Role{});
         if (role.role != ValueRole::Anonymous)
         {
             for (std::size_t ordinal = 0; ordinal < MaxNameOrdinals; ++ordinal)
@@ -813,11 +825,13 @@ llvm::StringRef roleWord(const ValueRole role)
 
 /// @brief @p member and @p word joined as one snake_case name.
 ///
-/// The member is folded by `canonicalSnakeCase`, which is the projection the emitters and the
-/// frontend's collision check already share, so `fooBar` and `FOO_BAR` reach a local the way they
-/// reach the field they belong to. The fold also settles the underscores: a DSDL member may lead
-/// or trail with one, and a target may already have escaped a reserved word by trailing one, so
-/// joining either to a role word would double it, which C++ reserves.
+/// The member is folded by `canonicalSnakeCase`, the projection the frontend's collision check
+/// and the naming policy already share, so `fooBar` and `FOO_BAR` reach one spelling however the
+/// DSDL author cased them, and the two renderings of a name differ in case alone. What a language
+/// calls the field itself is its own policy's answer and not always this one: C++ and Rust keep
+/// the member's spelling, Go makes it Pascal. The fold also settles the underscores: a member may
+/// lead or trail with one, and a target may already have escaped a reserved word by trailing one,
+/// so joining either to a role word would double it, which C++ reserves.
 std::string joinSnake(const llvm::StringRef member, const llvm::StringRef word)
 {
     // The fold drops a leading underscore itself; a trailing one it keeps, and joining that to a
