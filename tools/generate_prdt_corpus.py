@@ -18,7 +18,6 @@ environment at the Nunavut release CI's differential-parity lane pins.
 
     python3 tools/generate_prdt_corpus.py
     python3 tools/generate_prdt_corpus.py --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc
-    python3 tools/generate_prdt_corpus.py --dsdlc-arg=--optimize-lowered-serdes
     cmake --build --preset build-dev-homebrew --target prdt-corpus
 
 nnvg runs with ``--jobs 1``: Nunavut 3.0.1b1's worker pool cannot pickle its state under Python 3.14

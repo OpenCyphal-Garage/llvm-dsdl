@@ -100,9 +100,11 @@ threads through its fields keeps the name at every step. Two arms agreeing on th
 the member give the role alone. An operation that states nothing about its result, and every
 `arith` operation, leaves the value to the translator's own `v<N>`.
 
-Two roles are not in any operation. The bit offset a plan threads from step to step and the error
-it carries beside it are `scf` results of the plan's own shape, and `guarded`, the union arm, the
-element loops and the epilogue each build them knowing which is which.
+A plan's own structure states what no operation in it does. The bit offset threaded from step to
+step, and the error carried beside it, reach a body as `scf` results, and the operations that build
+those results say nothing about either -- an error has a role above only where an operation answers
+with one. `guarded`, the union arm, the element loops and the epilogue each build the pair knowing
+which is which.
 `build-dsdl-plan-bodies` writes that down as `llvmdsdl.result_roles`, one name per result:
 
 ```mlir
