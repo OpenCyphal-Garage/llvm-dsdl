@@ -85,7 +85,13 @@ is the same role in every language, and asks the spelling for an identifier thro
 `BodySpelling::valueName`. `snakeValueName` and `camelValueName` render the two styles the
 backends use: C++, Rust and Python take the first, Go and TypeScript the second.
 
-| the operation | the value is spelled |
+A name is claimed only where the translator declares a value. An operation a spelling answers
+`spellsInline` for is spelled at each use instead and claims nothing, which is why a row below
+reaches one language and not another: C++ forms every address inline and declares its null tests,
+the others form a member and an element address inline and declare the buffer's, and TypeScript
+declares a deserialiser's member address because that is where the storage is created.
+
+| the operation, where its value is declared | the value is spelled |
 |---|---|
 | `dsdl.member_addr %obj "frequency"` | `frequency_addr`, `frequencyAddr` |
 | `dsdl.call_serdes @… {member = "frequency"}` | `frequency_err`, `frequencyErr` |
@@ -98,8 +104,9 @@ backends use: C++, Rust and Python take the first, Go and TypeScript the second.
 
 An `scf` result takes the role the values yielded into it share, which is how the error a plan
 threads through its fields keeps the name at every step. Two arms agreeing on the role but not on
-the member give the role alone. An operation that states nothing about its result, and every
-`arith` operation, leaves the value to the translator's own `v<N>`.
+the member give the role alone. An operation that states nothing about its result takes the
+translator's own `v<N>`, and so does an `arith` result a body declares; a constant is spelled where
+it is used and claims no name at all.
 
 A plan's own structure states what no operation in it does. The bit offset threaded from step to
 step, and the error carried beside it, reach a body as `scf` results, and the operations that build
