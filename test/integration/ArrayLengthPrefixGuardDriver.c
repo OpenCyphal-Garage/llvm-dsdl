@@ -29,6 +29,25 @@ typedef struct prefixguard__Prefix64@CV1_0@ Prefix64;
 
 static const int8_t kBadArrayLength = -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
 
+// Prefix64 embeds its bit-packed capacity, 1 GiB, so one static object serves every case rather
+// than an allocation per probe: a rejected decode never touches the array, and the accepting case
+// writes one byte, which the next case clears.
+static Prefix32 g_prefix32;
+static Prefix64 g_prefix64;
+
+static Prefix32* fresh_prefix32(void)
+{
+    g_prefix32.payload.count = 0U;
+    return &g_prefix32;
+}
+
+static Prefix64* fresh_prefix64(void)
+{
+    g_prefix64.flags.count        = 0U;
+    g_prefix64.flags.bitpacked[0] = 0U;
+    return &g_prefix64;
+}
+
 static unsigned g_passed  = 0U;
 static unsigned g_skipped = 0U;
 static unsigned g_failed  = 0U;
@@ -98,19 +117,18 @@ static void expect_rejected(const char* const name, const uint64_t prefix, const
 
 static void prefix32_rejects_above_capacity(const uint32_t prefix)
 {
-    Prefix32* const obj    = calloc(1U, sizeof *obj);
+    Prefix32* const obj    = fresh_prefix32();
     uint8_t* const  buffer = with_prefix(prefix, 4U, 0U);
     size_t          size   = 4U;
     const int8_t    rc     = PREFIX32_DESERIALIZE(obj, buffer, &size);
     expect_rejected("prefix32_rejects_above_capacity", prefix, rc, obj->payload.count);
     free(buffer);
-    free(obj);
 }
 
 static void prefix32_accepts_capacity(void)
 {
     const size_t    capacity = 65536U;
-    Prefix32* const obj      = calloc(1U, sizeof *obj);
+    Prefix32* const obj      = fresh_prefix32();
     uint8_t* const  buffer   = with_prefix(capacity, 4U, capacity);
     size_t          size     = 4U + capacity;
     const int8_t    rc       = PREFIX32_DESERIALIZE(obj, buffer, &size);
@@ -139,18 +157,16 @@ static void prefix32_accepts_capacity(void)
         outcome("PASS", "prefix32_accepts_capacity", capacity, NULL);
     }
     free(buffer);
-    free(obj);
 }
 
 static void prefix64_rejects_above_capacity(const uint64_t prefix)
 {
-    Prefix64* const obj    = calloc(1U, sizeof *obj);
+    Prefix64* const obj    = fresh_prefix64();
     uint8_t* const  buffer = with_prefix(prefix, 8U, 0U);
     size_t          size   = 8U;
     const int8_t    rc     = PREFIX64_DESERIALIZE(obj, buffer, &size);
     expect_rejected("prefix64_rejects_above_capacity", prefix, rc, obj->flags.count);
     free(buffer);
-    free(obj);
 }
 
 // A length within the type's capacity that size_t cannot hold is rejected as a bad array length.
@@ -162,18 +178,17 @@ static void prefix64_rejects_beyond_index(const uint64_t prefix)
         outcome("SKIP", "prefix64_rejects_beyond_index", prefix, "size_t holds every length Prefix64 allows");
         return;
     }
-    Prefix64* const obj    = calloc(1U, sizeof *obj);
+    Prefix64* const obj    = fresh_prefix64();
     uint8_t* const  buffer = with_prefix(prefix, 8U, 0U);
     size_t          size   = 8U;
     const int8_t    rc     = PREFIX64_DESERIALIZE(obj, buffer, &size);
     expect_rejected("prefix64_rejects_beyond_index", prefix, rc, obj->flags.count);
     free(buffer);
-    free(obj);
 }
 
 static void prefix64_accepts_small_length(void)
 {
-    Prefix64* const obj    = calloc(1U, sizeof *obj);
+    Prefix64* const obj    = fresh_prefix64();
     uint8_t* const  buffer = with_prefix(3U, 8U, 1U);
     size_t          size   = 9U;
     char            detail[128];
@@ -203,7 +218,6 @@ static void prefix64_accepts_small_length(void)
         outcome("PASS", "prefix64_accepts_small_length", 3U, NULL);
     }
     free(buffer);
-    free(obj);
 }
 
 int main(void)

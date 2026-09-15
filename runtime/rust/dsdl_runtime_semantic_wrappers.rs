@@ -430,9 +430,9 @@ impl<T> VarArray<T> {
 
     /// Ensures capacity while honoring pool-mode allocation contract.
     ///
-    /// In `max-inline` mode this behaves like [`VarArray::reserve`]. In
+    /// In `max-inline` mode this behaves like [`VarArray::try_reserve`]. In
     /// `inline-then-pool` mode, crossing the inline threshold triggers a pool
-    /// allocation request before reserving backing storage.
+    /// allocation request before reserving backing storage, fallibly.
     pub fn reserve_with_pool<P: PoolProvider>(
         &mut self,
         additional: usize,
