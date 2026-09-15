@@ -579,13 +579,34 @@ public:
     {
         // A body constructs bigints and typed arrays and clamps through Math, each by its global
         // name. The lower-cased ones matter most: a camel-cased role lands in that shape.
-        static const llvm::StringRef names[] = {"Array",      "BigInt",       "Boolean",      "DataView",
-                                                "Error",      "Float32Array", "Float64Array", "Infinity",
-                                                "JSON",       "Map",          "Math",         "NaN",
-                                                "Number",     "Object",       "Set",          "String",
-                                                "Symbol",     "Uint8Array",   "Uint16Array",  "Uint32Array",
-                                                "globalThis", "isFinite",     "isNaN",        "parseFloat",
-                                                "parseInt",   "undefined"};
+        static const llvm::StringRef names[] = {"Array",
+                                                "BigInt",
+                                                "Boolean",
+                                                "DataView",
+                                                "Error",
+                                                "Float32Array",
+                                                "Float64Array",
+                                                "Infinity",
+                                                "JSON",
+                                                "Map",
+                                                "Math",
+                                                "NaN",
+                                                "Number",
+                                                "Object",
+                                                "Set",
+                                                "String",
+                                                "Symbol",
+                                                "Uint8Array",
+                                                "Uint16Array",
+                                                "Uint32Array",
+                                                "globalThis",
+                                                "isFinite",
+                                                "isNaN",
+                                                "parseFloat",
+                                                "parseInt",
+                                                "undefined",
+                                                // The runtime module, reached by its import name.
+                                                "dsdlRuntime"};
         return names;
     }
 
