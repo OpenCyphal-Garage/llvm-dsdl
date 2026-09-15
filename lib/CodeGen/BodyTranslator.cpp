@@ -250,6 +250,29 @@ std::vector<mlir::Value> yieldedInto(mlir::Operation* const op, const unsigned i
     return out;
 }
 
+/// @brief The values that reach before-region argument @p index of @p loop.
+///
+/// The initialiser at that position carries the first iteration, the after region's `scf.yield`
+/// every one after it. Both are per-argument: asking what every initialiser shares would answer
+/// for the offset and the error together, which are the two a loop carries.
+std::vector<mlir::Value> incomingTo(mlir::scf::WhileOp loop, const unsigned index)
+{
+    std::vector<mlir::Value> out;
+    if (index >= loop.getInits().size())
+    {
+        return out;
+    }
+    out.push_back(loop.getInits()[index]);
+    if (auto yield = mlir::dyn_cast<mlir::scf::YieldOp>(loop.getAfter().front().getTerminator()))
+    {
+        if (index < yield.getNumOperands())
+        {
+            out.push_back(yield.getOperand(index));
+        }
+    }
+    return out;
+}
+
 /// @brief What the operation defining @p value states about it.
 Role roleOf(const mlir::Value value, const unsigned depth)
 {
@@ -271,7 +294,9 @@ Role roleOf(const mlir::Value value, const unsigned depth)
         if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
         {
             const Role stamped = stampedRole(whileOp, argument.getArgNumber());
-            return (stamped.role == ValueRole::Anonymous) ? roleOfYielded(whileOp.getInits(), depth) : stamped;
+            return (stamped.role == ValueRole::Anonymous)
+                       ? roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), depth)
+                       : stamped;
         }
         return {};
     }

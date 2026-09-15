@@ -111,9 +111,12 @@ bool runDefinitionPathProjectionTests();
 /// @return True when every case in the suite passed.
 bool runHelperBodyPlanTests();
 
-/// @brief Runs the HelperBindingNamingTests suite.
+/// @brief Runs the BodyValueNamingTests suite.
 /// @return True when every case in the suite passed.
 bool runBodyValueNamingTests();
+
+/// @brief Runs the HelperBindingNamingTests suite.
+/// @return True when every case in the suite passed.
 bool runHelperBindingNamingTests();
 
 /// @brief Runs the NamingPolicyTests suite.
