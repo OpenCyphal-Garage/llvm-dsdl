@@ -19,6 +19,7 @@
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -99,16 +100,12 @@ public:
         declared.emplace_back(name);
     }
 
-    /// @brief Names every value after a builtin a body of this language would call.
+    /// @brief Names a value after its role alone, so a case can tell which role was inferred.
     [[nodiscard]] std::string valueName(const ValueRole role,
                                         llvm::StringRef /*member*/,
                                         const std::size_t ordinal) const override
     {
-        if (role == ValueRole::Anonymous)
-        {
-            return {};
-        }
-        return (ordinal == 0) ? "len" : ("len" + std::to_string(ordinal + 1));
+        return llvmdsdl::snakeValueName(role, {}, ordinal);
     }
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
@@ -123,9 +120,10 @@ public:
     }
     void declareVariable(SourceWriter& /*w*/,
                          mlir::Type /*type*/,
-                         llvm::StringRef /*name*/,
+                         const llvm::StringRef name,
                          bool /*reassigned*/) const override
     {
+        declared.emplace_back(name);
     }
     void assign(SourceWriter& /*w*/, llvm::StringRef /*name*/, llvm::StringRef /*expr*/) const override {}
     void discard(SourceWriter& /*w*/, llvm::StringRef /*expr*/) const override {}
@@ -269,25 +267,45 @@ public:
     }
 };
 
-/// @brief Translates one body that reads an array's length, and answers the names it declared.
-///
-/// `dsdl.array_length` states a role, so the translator asks the spelling for a name rather than
-/// numbering the value itself. That is the path the reserved pool guards.
-std::optional<std::vector<std::string>> declaredNamesFor(const llvm::ArrayRef<llvm::StringRef> reserved)
-{
-    static constexpr llvm::StringLiteral Source = R"mlir(
-      func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>) -> i64 {
-        %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
-        return %0 : i64
-      }
-    )mlir";
+/// @brief A body that reads an array's length: one operation that states a role.
+constexpr llvm::StringLiteral ArrayLengthBody = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>) -> i64 {
+    %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    return %0 : i64
+  }
+)mlir";
 
+/// @brief The same read, feeding an `scf.if` whose stamp names more results than it has.
+///
+/// This is what canonicalisation leaves behind: it drops a result nothing reads and carries the
+/// attribute onto the operation it rebuilds, so the stamp no longer says which result is which.
+/// The role has to come from the value yielded into it instead.
+constexpr llvm::StringLiteral StaleStampBody = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %arg1: i1) -> i64 {
+    %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %1 = scf.if %arg1 -> (i64) {
+      scf.yield %0 : i64
+    } else {
+      scf.yield %0 : i64
+    } {llvmdsdl.result_roles = ["offset", "error"]}
+    return %1 : i64
+  }
+)mlir";
+
+/// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
+///
+/// An operation that states a role has the spelling asked for a name rather than being numbered,
+/// which is the path both the reserved pool and the stamp's arity check sit on.
+std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef                 source,
+                                                         const llvm::ArrayRef<llvm::StringRef> reserved)
+{
     mlir::DialectRegistry registry;
-    registry.insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect>();
+    registry
+        .insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
     mlir::MLIRContext context(registry);
     context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
 
-    mlir::OwningOpRef<mlir::ModuleOp> module = mlir::parseSourceString<mlir::ModuleOp>(Source, &context);
+    mlir::OwningOpRef<mlir::ModuleOp> module = mlir::parseSourceString<mlir::ModuleOp>(source, &context);
     if (!module)
     {
         std::cerr << "the naming fixture did not parse\n";
@@ -357,19 +375,33 @@ bool runBodyValueNamingTests()
     // The renderings above are half of it. The translator claims each name from a pool holding
     // the function's parameters and the spelling's reserved locals, so a role landing on a
     // builtin the body calls is bumped instead of capturing the call. Drive that.
-    const auto unreserved = declaredNamesFor({});
-    const auto reserved   = declaredNamesFor({llvm::StringRef{"len"}});
+    const auto unreserved = declaredNamesFor(ArrayLengthBody, {});
+    const auto reserved   = declaredNamesFor(ArrayLengthBody, {llvm::StringRef{"count"}});
     if (!unreserved.has_value() || !reserved.has_value())
     {
         return false;
     }
     if ((unreserved->size() != 1) || (reserved->size() != 1))
     {
-        std::cerr << "expected one declared value per translation\n";
+        std::cerr << "expected one declared value from the array-length body\n";
         return false;
     }
-    ok = expect(unreserved->front(), "len", "a name nothing claims is taken as offered") && ok;
-    ok = expect(reserved->front(), "len2", "a name the spelling reserves is bumped") && ok;
+    ok = expect(unreserved->front(), "count", "a name nothing claims is taken as offered") && ok;
+    ok = expect(reserved->front(), "count_2", "a name the spelling reserves is bumped") && ok;
+
+    // A stamp that has outlived its results names none of them, so the role comes from the value
+    // yielded in. Taking the stamp at face value would name this one after its first entry.
+    const auto stale = declaredNamesFor(StaleStampBody, {});
+    if (!stale.has_value())
+    {
+        return false;
+    }
+    if (stale->size() != 2)
+    {
+        std::cerr << "expected two declared values from the stale-stamp body\n";
+        return false;
+    }
+    ok = expect(stale->at(1), "count_2", "a stale stamp defers to the value yielded in") && ok;
 
     return ok;
 }
