@@ -127,8 +127,10 @@ canonicalisation drops a result nothing reads and carries the attribute onto the
 rebuilds, so a stamp that has outlived its results names none of them, and the yielded values are
 asked instead.
 
-A name is asked for with a rising ordinal until the function has not used the answer, so a repeat
-is distinguished in the spelling's own style — `err_2` or `err2`. The joined identifier collapses
+A name is asked for from ordinal zero upwards until the function has not used the answer, so a
+repeat is distinguished in the spelling's own style — `err_2` or `err2`. The ordinal counts
+candidates rather than values: a role whose plain form a parameter or a reserved local has claimed
+takes its first value from an ordinal above zero. The joined identifier collapses
 its underscore runs: a member that already trails one, which is how a target escapes a reserved
 word, would otherwise reach C++ as the `__` it reserves.
 

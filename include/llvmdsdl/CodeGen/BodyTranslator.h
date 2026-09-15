@@ -190,10 +190,14 @@ public:
     /// @brief The identifier a value of @p role is declared under.
     ///
     /// @p member is the DSDL member the defining operation names, empty when it names none.
-    /// @p ordinal is zero for the first value a function declares under a given role and
-    /// member, and counts up for each one after it, so a spelling decides how a repeat is
-    /// distinguished as well as how the name is cased. @ref snakeValueName and
-    /// @ref camelValueName render the two styles the backends use.
+    ///
+    /// @p ordinal is which candidate is being asked for, not which value is being named: the
+    /// translator asks from zero upwards until it is offered a name the function has not already
+    /// used, so a value takes the first offer that is free. The first value of a role may
+    /// therefore be named from an ordinal above zero, when a parameter or a reserved local has
+    /// claimed the one below it. A spelling decides how a later candidate differs from an earlier
+    /// one as well as how the name is cased; @ref snakeValueName and @ref camelValueName render
+    /// the two styles the backends use.
     ///
     /// The translator names a value itself when this answers with an empty string, which is
     /// what @ref ValueRole::Anonymous is given.
