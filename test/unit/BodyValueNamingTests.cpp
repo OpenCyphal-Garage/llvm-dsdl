@@ -5,6 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <iostream>
 #include <optional>
@@ -292,6 +294,44 @@ constexpr llvm::StringLiteral StaleStampBody = R"mlir(
   }
 )mlir";
 
+/// @brief A loop whose stamp has outlived its results, carrying a value that states a role.
+///
+/// An `scf.while` answers with what its `scf.condition` forwards, and that is a before-region
+/// argument, which the initialiser carries on the first pass and the after region's `scf.yield` on
+/// every one after it. Both have to be asked: taking the initialiser alone would claim a role the
+/// carried path may contradict.
+constexpr llvm::StringLiteral StaleStampLoop = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %arg1: i1) -> i64 {
+    %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %1 = scf.while (%a = %0) : (i64) -> i64 {
+      scf.condition(%arg1) %a : i64
+    } do {
+    ^bb0(%b: i64):
+      %2 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+      scf.yield %2 : i64
+    } attributes {llvmdsdl.result_roles = ["offset", "error"]}
+    return %1 : i64
+  }
+)mlir";
+
+/// @brief The same loop, carrying a count in and a union tag back.
+///
+/// The two paths disagree, so the value is one thing on entry and another on every iteration
+/// after it, and no role describes it. Asking the initialiser alone would name it after the count.
+constexpr llvm::StringLiteral DisagreeingLoop = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %arg1: i1) -> i64 {
+    %0 = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %1 = scf.while (%a = %0) : (i64) -> i64 {
+      scf.condition(%arg1) %a : i64
+    } do {
+    ^bb0(%b: i64):
+      %2 = dsdl.union_tag %arg0 : <!dsdl.object<"a.B.1.0">>
+      scf.yield %2 : i64
+    } attributes {llvmdsdl.result_roles = ["offset", "error"]}
+    return %1 : i64
+  }
+)mlir";
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
@@ -402,6 +442,45 @@ bool runBodyValueNamingTests()
         return false;
     }
     ok = expect(stale->at(1), "count_2", "a stale stamp defers to the value yielded in") && ok;
+
+    // A loop answers with what its condition forwards, which is a before-region argument reached
+    // from the initialiser and from the after region's yield. A stale stamp on one must not cost
+    // the role those carry.
+    const auto loop = declaredNamesFor(StaleStampLoop, {});
+    if (!loop.has_value())
+    {
+        return false;
+    }
+    if (loop->empty())
+    {
+        std::cerr << "expected the loop body to declare something\n";
+        return false;
+    }
+    for (const std::string& name : *loop)
+    {
+        if (!name.starts_with("count"))
+        {
+            std::cerr << "a loop value fell back to '" << name << "' rather than keeping its role\n";
+            ok = false;
+        }
+    }
+
+    // When the two paths disagree the value is a count on entry and a tag thereafter, so no role
+    // describes it and the translator names it itself. Asking the initialiser alone would call it
+    // a count on every iteration but the first.
+    const auto disagreeing = declaredNamesFor(DisagreeingLoop, {});
+    if (!disagreeing.has_value())
+    {
+        return false;
+    }
+    const bool carriedIsAnonymous = std::any_of(disagreeing->begin(), disagreeing->end(), [](const std::string& name) {
+        return (name.size() > 1) && (name.front() == 'v') && (std::isdigit(name[1]) != 0);
+    });
+    if (!carriedIsAnonymous)
+    {
+        std::cerr << "a loop whose paths disagree kept a role it cannot claim\n";
+        ok = false;
+    }
 
     return ok;
 }
