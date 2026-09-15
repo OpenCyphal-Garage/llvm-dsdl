@@ -91,7 +91,8 @@ backends use: C++, Rust and Python take the first, Go and TypeScript the second.
 | `dsdl.call_serdes @… {member = "frequency"}` | `frequency_err`, `frequencyErr` |
 | `dsdl.local`, and the `dsdl.load_scalar` that reads it back | `frequency_size`, `frequencySize` |
 | `dsdl.array_length %obj "name"` | `name_count`, `nameCount` |
-| `dsdl.is_null`, `dsdl.union_tag`, `dsdl.buffer_at` | `is_null`, `tag`, `buf` |
+| `dsdl.buffer_at`, named by the nested call it addresses for | `frequency_buf`, `frequencyBuf` |
+| `dsdl.is_null`, `dsdl.union_tag`, `dsdl.buffer_or_empty` | `is_null`, `tag`, `buf` |
 | `dsdl.index_holds`, in an array length's validation helper | `index_holds`, `indexHolds` |
 | a helper call, by the marker lowering left on the helper | `err`, `value`, `count`, `tag` |
 
