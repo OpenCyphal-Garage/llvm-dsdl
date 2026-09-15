@@ -1,7 +1,10 @@
 # Leading and trailing underscores survive DSDL validation (only `_name_` is reserved) but the
 # snake_case projection drops a leading one and keeps a trailing one, so `_foo` and `foo_` stay
 # distinct by luck rather than by design.
+# `_9axis` is legal too, and the projection drops the underscore that made it legal: a name
+# beginning with a digit is an identifier in no target.
 uint8 _foo
 uint8 foo_
+uint8 _9axis
 uint8 bar
 @sealed

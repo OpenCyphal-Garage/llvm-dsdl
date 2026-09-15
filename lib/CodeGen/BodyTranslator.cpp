@@ -820,9 +820,24 @@ llvm::StringRef roleWord(const ValueRole role)
 /// joining either to a role word would double it, which C++ reserves.
 std::string joinSnake(const llvm::StringRef member, const llvm::StringRef word)
 {
-    const std::string     folded = canonicalSnakeCase(member);
-    const llvm::StringRef trimmed(llvm::StringRef(folded).trim('_'));
+    // The fold drops a leading underscore itself; a trailing one it keeps, and joining that to a
+    // role word would double it, which C++ reserves.
+    const std::string     folded  = canonicalSnakeCase(member);
+    const llvm::StringRef trimmed = llvm::StringRef(folded).rtrim('_');
     return trimmed.empty() ? word.str() : (trimmed.str() + "_" + word.str());
+}
+
+/// @brief @p name with a leading underscore where it would otherwise begin with a digit.
+///
+/// A DSDL member may begin with an underscore and a digit -- `_9axis` is a legal name -- and the
+/// fold drops the underscore, leaving a spelling no target accepts as an identifier.
+std::string leadable(std::string name)
+{
+    if (!name.empty() && (std::isdigit(static_cast<unsigned char>(name.front())) != 0))
+    {
+        name.insert(name.begin(), '_');
+    }
+    return name;
 }
 
 /// @brief @p text with each underscore-separated word after the first capitalised.
@@ -853,7 +868,7 @@ std::string snakeValueName(const ValueRole role, const llvm::StringRef member, c
     {
         return {};
     }
-    std::string name = joinSnake(member, word);
+    std::string name = leadable(joinSnake(member, word));
     if (ordinal > 0)
     {
         name += "_" + std::to_string(ordinal + 1);
@@ -870,7 +885,7 @@ std::string camelValueName(const ValueRole role, const llvm::StringRef member, c
     }
     // The same snake_case fold, then the camel spelling of it, so the two renderings differ in
     // case alone and a member reaches both the way it reaches its field.
-    std::string name = camelTail(joinSnake(member, word));
+    std::string name = leadable(camelTail(joinSnake(member, word)));
     if (ordinal > 0)
     {
         name += std::to_string(ordinal + 1);

@@ -400,6 +400,11 @@ bool runBodyValueNamingTests()
     ok = expect(snakeValueName(ValueRole::Scalar, "FOO_BAR", 0), "foo_bar_value", "snake shouting member") && ok;
     ok = expect(camelValueName(ValueRole::Scalar, "FOO_BAR", 0), "fooBarValue", "camel shouting member") && ok;
 
+    // `_9axis` is a legal DSDL name, and the fold drops its underscore: no target accepts an
+    // identifier that begins with a digit, so one is put back.
+    ok = expect(snakeValueName(ValueRole::Scalar, "_9axis", 0), "_9axis_value", "snake digit-led member") && ok;
+    ok = expect(camelValueName(ValueRole::Scalar, "_9axis", 0), "_9axisValue", "camel digit-led member") && ok;
+
     // An array's count is spelled 'count' rather than 'len' because it reads better and stays
     // free: BodySpelling::reservedLocals claims the builtin a Go or Python body calls, so a role
     // landing on one is bumped rather than capturing the call.
