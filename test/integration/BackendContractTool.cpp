@@ -69,6 +69,7 @@ namespace fs = std::filesystem;
 constexpr const char* kFixtureType  = "contract.Scalars";
 constexpr const char* kSequenceType = "contract.Sequence";
 constexpr const char* kChoiceType   = "contract.Choice";
+constexpr const char* kPrefixedType = "contract.Prefixed";
 
 enum class Verdict : std::uint8_t
 {
@@ -415,6 +416,18 @@ std::vector<IrRow> irRows()
              }
              mlir::OpBuilder builder(items.getContext());
              items.setBitLengthAttr(builder.getI64IntegerAttr(items.getBitLength() - 1));
+             return true;
+         }},
+        {"array-capacity",
+         [](mlir::ModuleOp module) {
+             auto plan  = fixturePlan(module, kPrefixedType);
+             auto flags = plan ? fieldOp(plan, "flags") : mlir::dsdl::IOOp{};
+             if (!flags || flags.getArrayCapacity() < 2)
+             {
+                 return false;
+             }
+             mlir::OpBuilder builder(flags.getContext());
+             flags.setArrayCapacityAttr(builder.getI64IntegerAttr(flags.getArrayCapacity() / 2));
              return true;
          }},
         {"union-option-width",

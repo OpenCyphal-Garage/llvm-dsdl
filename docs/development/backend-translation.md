@@ -58,9 +58,15 @@ struct, and validated on C, where the answer is known.
 
 The body vocabulary is fixed: the `dsdl` operations above, of which ten map onto runtime
 primitives every language runtime already provides (`set_uxx`, `get_u8` to `get_u64`, `set_f16`,
-`copy_bits` and their kin); a dozen `arith` operations; `scf.if`, `scf.while` and `scf.for`;
-`func.call` and `func.return`; and the helper functions lowering synthesises, which are `arith`
-and `scf` and translate like any other function.
+`copy_bits` and their kin); `dsdl.index_holds`, which answers whether the target's index type
+holds a count and so belongs to the target rather than to a cast a pass may fold; a dozen `arith`
+operations; `scf.if`, `scf.while` and `scf.for`; `func.call` and `func.return`; and the helper
+functions lowering synthesises, which translate like any other function.
+
+An array length read off the wire is validated by its helper before anything is sized by it:
+past the declared capacity, or not held by the target's index, and the message is rejected with
+the array untouched. `dsdl.set_array_length` therefore receives a validated count, and a spelling
+narrows it without bounding it.
 
 `translateFunction`, in [`lib/CodeGen/BodyTranslator.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/BodyTranslator.cpp),
 has the shape of `mlir::emitc::translateToCpp`: it walks a function, names its values, spells

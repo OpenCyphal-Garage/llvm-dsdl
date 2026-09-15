@@ -25,6 +25,12 @@
 // CHECK: emitc.subscript
 // CHECK: emitc.load
 // CHECK: emitc.cast
+// Whether the target's index holds a count is asked through size_t and back as ptrdiff_t; the
+// casts are C casts of C types, which nothing folds.
+// CHECK: emitc.cast %{{.*}} : i64 to !emitc.opaque<"size_t">
+// CHECK: emitc.cast %{{.*}} : !emitc.opaque<"size_t"> to !emitc.opaque<"ptrdiff_t">
+// CHECK: emitc.cast %{{.*}} : !emitc.opaque<"ptrdiff_t"> to i64
+// CHECK: emitc.cmp eq
 // CHECK: "emitc.member_of_ptr"({{.*}}) <{member = "foo"}>
 // CHECK: emitc.call_opaque "dsdl_runtime_set_uxx"
 // Writing the consumed size back casts in the other direction.
@@ -73,6 +79,7 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmd
       scf.yield %inval : i8
     } else {
       %cap = dsdl.load_scalar %sz : !dsdl.ptr<!dsdl.size> -> i64
+      %held = dsdl.index_holds %cap
       %capbits = arith.muli %cap, %c8 : i64
       %cerr = func.call @llvmdsdl_plan_capacity_check__vendor_Widget_1_0(%capbits) : (i64) -> i8
       %bad = arith.cmpi slt, %cerr, %ok : i8

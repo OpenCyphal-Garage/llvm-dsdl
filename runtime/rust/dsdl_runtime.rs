@@ -359,6 +359,16 @@ mod tests {
     }
 
     #[test]
+    fn try_reserve_answers_a_count_the_allocator_cannot_serve() {
+        let mut values = DsdlVec::<u64>::default();
+        let error = values
+            .try_reserve(usize::MAX / 4)
+            .expect_err("a reservation whose byte size overflows isize is an error, not a panic");
+        assert_eq!(error.kind, AllocationErrorKind::OutOfMemory);
+        assert!(values.try_reserve(4).is_ok());
+    }
+
+    #[test]
     fn reserve_with_pool_max_inline_does_not_allocate() {
         let mut values = DsdlVec::<u8>::with_contract(VarArrayMemoryContract::new(
             DsdlMemoryMode::MaxInline,

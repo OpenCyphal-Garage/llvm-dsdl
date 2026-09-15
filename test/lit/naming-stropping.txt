@@ -343,9 +343,9 @@
 # `baz`'s capacity constant already has. In C the generated macro keeps its trailing `_`, which is
 # what separates it from a DSDL constant of the same name, so only the C++ constant moves.
 # CPP_ARRAYS: static constexpr auto BAZ_ARRAY_CAPACITY_2 = 7;
-# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY = 4U;
-# CPP_ARRAYS: static constexpr std::size_t FOOBAR_ARRAY_CAPACITY_2 = 5U;
-# CPP_ARRAYS: static constexpr std::size_t BAZ_ARRAY_CAPACITY = 6U;
+# CPP_ARRAYS: static constexpr std::uint64_t FOOBAR_ARRAY_CAPACITY = 4U;
+# CPP_ARRAYS: static constexpr std::uint64_t FOOBAR_ARRAY_CAPACITY_2 = 5U;
+# CPP_ARRAYS: static constexpr std::uint64_t BAZ_ARRAY_CAPACITY = 6U;
 # C_ARRAYS: #define fixtures_naming__naming__Arrays_BAZ_ARRAY_CAPACITY (7)
 # C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_ 4U
 # C_ARRAYS: #define fixtures_naming__naming__Arrays_FOOBAR_ARRAY_CAPACITY_2 5U

@@ -415,11 +415,24 @@ impl<T> VarArray<T> {
         self.inner.reserve(additional);
     }
 
+    /// Ensures capacity for at least `additional` extra elements, answering an allocation
+    /// error where [`VarArray::reserve`] would panic: a count the allocator cannot serve, or
+    /// one whose byte size overflows `isize`.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), AllocationError> {
+        self.inner.try_reserve(additional).map_err(|_| {
+            AllocationError::new(
+                AllocationErrorKind::OutOfMemory,
+                self.contract.allocation_class,
+                additional.saturating_mul(core::mem::size_of::<T>()),
+            )
+        })
+    }
+
     /// Ensures capacity while honoring pool-mode allocation contract.
     ///
-    /// In `max-inline` mode this behaves like [`VarArray::reserve`]. In
+    /// In `max-inline` mode this behaves like [`VarArray::try_reserve`]. In
     /// `inline-then-pool` mode, crossing the inline threshold triggers a pool
-    /// allocation request before reserving backing storage.
+    /// allocation request before reserving backing storage, fallibly.
     pub fn reserve_with_pool<P: PoolProvider>(
         &mut self,
         additional: usize,
@@ -437,8 +450,7 @@ impl<T> VarArray<T> {
                 }
             }
         }
-        self.inner.reserve(additional);
-        Ok(())
+        self.try_reserve(additional)
     }
 
     /// Resizes the array to `new_len`, cloning `value` when needed.

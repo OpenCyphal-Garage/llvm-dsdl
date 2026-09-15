@@ -255,6 +255,19 @@ def DSDL_IsNullOp : DSDL_Op<"is_null", [NoMemoryEffect]> {
   let assemblyFormat = "$pointer attr-dict `:` type($pointer)";
 }
 
+def DSDL_IndexHoldsOp : DSDL_Op<"index_holds", [NoMemoryEffect]> {
+  let summary = "Whether the index type of the target holds a count exactly";
+  let description = [{
+    True when `value`, an element count, survives the round trip through the target's index
+    type as a signed quantity, which bounds it by the largest count a container there can hold.
+    The answer depends on the target, so it is an operation of its own: a pass that folded a
+    cast round trip on the assumption of a 64-bit index would answer for the host.
+  }];
+  let arguments = (ins I64:$value);
+  let results = (outs I1:$holds);
+  let assemblyFormat = "$value attr-dict";
+}
+
 def DSDL_BufferOrEmptyOp : DSDL_Op<"buffer_or_empty", [NoMemoryEffect]> {
   let summary = "The buffer, or a readable empty one when it is null";
   let description = [{
@@ -381,6 +394,11 @@ def DSDL_ArrayLengthOp : DSDL_Op<"array_length"> {
 
 def DSDL_SetArrayLengthOp : DSDL_Op<"set_array_length"> {
   let summary = "Set the element count of a variable-length array member";
+  let description = [{
+    Sizes the member to `value` elements. A body hands over a validated length: at most the
+    declared capacity, and held exactly by the index type of the target, so a spelling narrows
+    the value without bounding it.
+  }];
   let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, I64:$value);
   let assemblyFormat = "$object $member `,` $value attr-dict `:` type($object)";
 }

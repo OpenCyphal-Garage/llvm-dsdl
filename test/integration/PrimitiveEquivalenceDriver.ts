@@ -25,6 +25,8 @@ import {
   readFloat,
   readSignedBigInt,
   readUnsignedBigInt,
+  writeUnsigned,
+  writeSigned,
   copyBits,
 } from "./dsdl_runtime";
 
@@ -129,6 +131,19 @@ function main(): number {
       const got = BigInt.asUintN(64, raw);
       if (got !== want) {
         fail(`len=${lenBits} off=${offBits} buf=${f[4]} want=${want.toString(16)} got=${got.toString(16)}`);
+      }
+    } else if (op === "setu" || op === "seti") {
+      const lenBits = parseInt(f[1], 10);
+      const offBits = parseInt(f[2], 10);
+      const dst = hexBytes(f[3]);
+      const value = BigInt("0x" + f[4]);
+      const want = hexBytes(f[5]);
+      const rc =
+        op === "setu"
+          ? writeUnsigned(dst, offBits, lenBits, value, false)
+          : writeSigned(dst, offBits, lenBits, BigInt.asIntN(64, value), false);
+      if (rc !== 0 || !bytesEqual(dst, want)) {
+        fail(`len=${lenBits} off=${offBits} value=${value.toString(16)} rc=${rc} got=${toHex(dst)}`);
       }
     } else if (op === "copybits") {
       const dstOff = parseInt(f[1], 10);

@@ -750,6 +750,14 @@ endif()
 # (C, Rust, Go) is checked against one shared golden-vector file, per primitive
 # direction, so paired bugs cannot mask each other.
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE AND PYTHON_EXECUTABLE)
+  # The Python accelerator answers the same vectors as the pure runtime; with the accelerator
+  # configured, the lane fails rather than skips when the module is missing.
+  set(primitive_equivalence_accel_args "")
+  set(primitive_equivalence_labels "integration;runtime;differential;go;rust;python;ts;go-differential")
+  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+    list(APPEND primitive_equivalence_accel_args -DREQUIRE_ACCEL=ON)
+    list(APPEND primitive_equivalence_labels "python-accel-required")
+  endif()
   add_test(
     NAME llvmdsdl-primitive-equivalence
     COMMAND
@@ -764,17 +772,56 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE AND PYTHON_EXECUTABLE
         -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/primitive-equivalence-out
         -DVECTORS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/primitive_vectors.txt
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        ${primitive_equivalence_accel_args}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPrimitiveEquivalence.cmake
   )
 
   set_tests_properties(
     llvmdsdl-primitive-equivalence
     PROPERTIES
-      LABELS "integration;runtime;differential;go;rust;python;ts;go-differential"
+      LABELS "${primitive_equivalence_labels}"
   )
 else()
   message(STATUS
     "Skipping cross-language primitive equivalence: need C compiler, cargo, go, and python3")
+endif()
+
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # Array-length prefixes above the declared capacity and beyond the index width of the target,
+  # decoded by every backend. A 32-bit leg has to execute on a host that can run one: Go's
+  # linux/386 binary runs on an x86 Linux host, which is where the requirement is switched on.
+  set(array_length_prefix_guard_args "")
+  cmake_host_system_information(RESULT _guard_host_os QUERY OS_NAME)
+  cmake_host_system_information(RESULT _guard_host_platform QUERY OS_PLATFORM)
+  if(GO_EXECUTABLE AND _guard_host_os STREQUAL "Linux"
+     AND _guard_host_platform MATCHES "^(x86_64|amd64|i[3-6]86)$")
+    list(APPEND array_length_prefix_guard_args -DREQUIRE_32BIT_EXECUTION=ON)
+  endif()
+  add_test(
+    NAME llvmdsdl-array-length-prefix-guard
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/array-length-prefix-guard-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        ${array_length_prefix_guard_args}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunArrayLengthPrefixGuard.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-array-length-prefix-guard
+    PROPERTIES
+      LABELS "integration;fixtures;differential;c;cpp;rust;go;ts;python"
+  )
 endif()
 
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)

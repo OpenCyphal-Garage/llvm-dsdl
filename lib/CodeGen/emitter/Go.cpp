@@ -880,6 +880,14 @@ public:
                 op);
     }
 
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
+    {
+        // Through int and back: a count past the range of the target's int does not come back as
+        // itself.
+        const std::string value = names(op.getValue());
+        return "(uint64(int(" + value + ")) == " + value + ")";
+    }
+
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
         // The object arrives by pointer and may be nil; a slice and a local are never null.
@@ -967,15 +975,9 @@ public:
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        // Sized within its capacity -- a count past it is what the plan's validation rejects
-        // next -- with zeroed elements for the plan to store into.
-        const Member      member = memberOf(op.getObject(), op.getMember());
-        mlir::dsdl::IOOp  io     = member.io;
+        // Sized to the count the plan validated, with zeroed elements for the plan to store into.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
-        const std::string count  = fresh("count");
-        w.line(count + " := dsdlruntime.ChooseMin(" + asInt(names(op.getValue())) + ", " +
-               std::to_string(io.getArrayCapacity()) + ")");
-        w.line(access + " = dsdlruntime.Resize(" + access + ", " + count + ")");
+        w.line(access + " = dsdlruntime.Resize(" + access + ", " + asInt(names(op.getValue())) + ")");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override

@@ -137,6 +137,27 @@ func main() {
 				fail(fmt.Sprintf("type=%d len=%d off=%d buf=%s want=%016x got=%016x",
 					typeBits, lenBits, offBits, fields[4], want, got))
 			}
+		case "setu", "seti":
+			if len(fields) != 6 {
+				fail("arity")
+			}
+			lenBits, _ := strconv.Atoi(fields[1])
+			offBits, _ := strconv.Atoi(fields[2])
+			dst, e1 := parseHexBytes(fields[3])
+			value := hexU64(fields[4])
+			want, e2 := parseHexBytes(fields[5])
+			if e1 != nil || e2 != nil || len(dst) != len(want) {
+				fail("bad buffer hex / length")
+			}
+			var rc int8
+			if op == "setu" {
+				rc = rt.SetUxx(dst, offBits, value, uint8(lenBits))
+			} else {
+				rc = rt.SetIxx(dst, offBits, int64(value), uint8(lenBits))
+			}
+			if rc != 0 || !bytes.Equal(dst, want) {
+				fail(fmt.Sprintf("len=%d off=%d value=%016x rc=%d got=%x", lenBits, offBits, value, rc, dst))
+			}
 		case "copybits":
 			if len(fields) != 7 {
 				fail("arity")

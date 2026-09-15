@@ -18,46 +18,47 @@ endif()
 
 set(portable_out "${OUT_DIR}/portable")
 set(fast_out "${OUT_DIR}/fast")
+set(accel_out "${OUT_DIR}/accel")
 set(py_package_portable "llvmdsdl_py_unit_portable")
 set(py_package_fast "llvmdsdl_py_unit_fast")
+set(py_package_accel "llvmdsdl_py_unit_accel")
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
-execute_process(
-  COMMAND "${DSDLC}" --target-language python
-    # The harness below is written against versioned type names.
-    --versioned-type-names
-    "${FIXTURES_ROOT}"
-    --outdir "${portable_out}"
-    --py-package "${py_package_portable}"
-    --py-runtime-specialization portable
-  RESULT_VARIABLE portable_result
-  OUTPUT_VARIABLE portable_stdout
-  ERROR_VARIABLE portable_stderr
-)
-if(NOT portable_result EQUAL 0)
-  message(STATUS "portable dsdlc stdout:\n${portable_stdout}")
-  message(STATUS "portable dsdlc stderr:\n${portable_stderr}")
-  message(FATAL_ERROR "Failed to generate portable Python unit fixtures")
-endif()
+function(generate_python_package out_dir package specialization)
+  execute_process(
+    COMMAND "${DSDLC}" --target-language python
+      # The harness below is written against versioned type names.
+      --versioned-type-names
+      "${FIXTURES_ROOT}"
+      --outdir "${out_dir}"
+      --py-package "${package}"
+      --py-runtime-specialization "${specialization}"
+    RESULT_VARIABLE gen_result
+    OUTPUT_VARIABLE gen_stdout
+    ERROR_VARIABLE gen_stderr
+  )
+  if(NOT gen_result EQUAL 0)
+    message(STATUS "${package} dsdlc stdout:\n${gen_stdout}")
+    message(STATUS "${package} dsdlc stderr:\n${gen_stderr}")
+    message(FATAL_ERROR "Failed to generate Python unit fixtures for ${package}")
+  endif()
+endfunction()
 
-execute_process(
-  COMMAND "${DSDLC}" --target-language python
-    # The harness below is written against versioned type names.
-    --versioned-type-names
-    "${FIXTURES_ROOT}"
-    --outdir "${fast_out}"
-    --py-package "${py_package_fast}"
-    --py-runtime-specialization fast
-  RESULT_VARIABLE fast_result
-  OUTPUT_VARIABLE fast_stdout
-  ERROR_VARIABLE fast_stderr
-)
-if(NOT fast_result EQUAL 0)
-  message(STATUS "fast dsdlc stdout:\n${fast_stdout}")
-  message(STATUS "fast dsdlc stderr:\n${fast_stderr}")
-  message(FATAL_ERROR "Failed to generate fast Python unit fixtures")
+generate_python_package("${portable_out}" "${py_package_portable}" portable)
+generate_python_package("${fast_out}" "${py_package_fast}" fast)
+
+# The accelerator is staged into a package of its own and reached through the runtime loader, the
+# way generated code reaches it.
+set(has_accel FALSE)
+if(DEFINED ACCEL_MODULE AND NOT "${ACCEL_MODULE}" STREQUAL "" AND EXISTS "${ACCEL_MODULE}")
+  set(has_accel TRUE)
+  generate_python_package("${accel_out}" "${py_package_accel}" portable)
+  file(COPY "${ACCEL_MODULE}" DESTINATION "${accel_out}/${py_package_accel}")
+elseif(REQUIRE_ACCEL)
+  message(FATAL_ERROR
+    "Python unit tests require the accelerator module, but ACCEL_MODULE is missing.")
 endif()
 
 set(unit_script "${OUT_DIR}/python_unit_tests.py")
@@ -73,11 +74,15 @@ import sys
 import unittest
 from array import array
 from pathlib import Path
+from types import ModuleType
 
 PORTABLE_OUT = Path("@PORTABLE_OUT@")
 FAST_OUT = Path("@FAST_OUT@")
+ACCEL_OUT = Path("@ACCEL_OUT@")
 PORTABLE_PACKAGE = "@PORTABLE_PACKAGE@"
 FAST_PACKAGE = "@FAST_PACKAGE@"
+ACCEL_PACKAGE = "@ACCEL_PACKAGE@"
+HAS_ACCEL = @HAS_ACCEL@
 
 
 def clear_package_modules(prefix: str) -> None:
@@ -186,6 +191,33 @@ class PythonEmitterRuntimeUnitTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             runtime.read_unsigned(memoryview(bytearray(4))[::2], 0, 8)
 
+    def all_runtimes(self) -> list[tuple[str, ModuleType]]:
+        runtimes = [
+            ("portable", import_from_generated(PORTABLE_OUT, PORTABLE_PACKAGE, "_dsdl_runtime")),
+            ("fast", import_from_generated(FAST_OUT, FAST_PACKAGE, "_dsdl_runtime")),
+        ]
+        if HAS_ACCEL:
+            os.environ["LLVMDSDL_PY_RUNTIME_MODE"] = "accel"
+            loader = import_from_generated(ACCEL_OUT, ACCEL_PACKAGE, "_runtime_loader")
+            self.assertEqual(loader.BACKEND, "accel")
+            runtimes.append(("accel", loader.runtime))
+        return runtimes
+
+    def test_wide_integer_writes_wrap_across_runtimes(self) -> None:
+        runtimes = self.all_runtimes()
+        wide = 1 << 80
+        for value in (wide, -wide, wide | 0xA5A5_5A5A_F00D_BEEF, -wide - 1):
+            for len_bits in (1, 7, 8, 16, 33, 64):
+                for off_bits in (0, 5):
+                    expected = ((value & ((1 << len_bits) - 1)) << off_bits).to_bytes(16, "little")
+                    for name, runtime in runtimes:
+                        for write in (runtime.write_unsigned, runtime.write_signed):
+                            buf = bytearray(16)
+                            write(buf, off_bits, len_bits, value, False)
+                            self.assertEqual(
+                                bytes(buf), expected, (name, write.__name__, value, len_bits, off_bits)
+                            )
+
     def test_runtime_loader_modes(self) -> None:
         package_root = PORTABLE_OUT / PORTABLE_PACKAGE.replace(".", "/")
         accel_stub = package_root / "_dsdl_runtime_accel.py"
@@ -226,6 +258,13 @@ string(REPLACE "@PORTABLE_OUT@" "${portable_out}" unit_script_content "${unit_sc
 string(REPLACE "@FAST_OUT@" "${fast_out}" unit_script_content "${unit_script_content}")
 string(REPLACE "@PORTABLE_PACKAGE@" "${py_package_portable}" unit_script_content "${unit_script_content}")
 string(REPLACE "@FAST_PACKAGE@" "${py_package_fast}" unit_script_content "${unit_script_content}")
+string(REPLACE "@ACCEL_OUT@" "${accel_out}" unit_script_content "${unit_script_content}")
+string(REPLACE "@ACCEL_PACKAGE@" "${py_package_accel}" unit_script_content "${unit_script_content}")
+if(has_accel)
+  string(REPLACE "@HAS_ACCEL@" "True" unit_script_content "${unit_script_content}")
+else()
+  string(REPLACE "@HAS_ACCEL@" "False" unit_script_content "${unit_script_content}")
+endif()
 file(WRITE "${unit_script}" "${unit_script_content}")
 
 execute_process(

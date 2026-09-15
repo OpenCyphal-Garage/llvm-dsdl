@@ -358,6 +358,31 @@ mlir::Value scalarSlot(mlir::ConversionPatternRewriter& rewriter, mlir::Location
                                             zero);
 }
 
+struct IndexHoldsLowering final : public mlir::OpConversionPattern<mlir::dsdl::IndexHoldsOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::IndexHoldsOp>::OpConversionPattern;
+
+    // Through size_t and back as ptrdiff_t: a count past the signed range of the target's index
+    // does not come back as itself. The casts are C casts of C types, which nothing folds.
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::IndexHoldsOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc    = op.getLoc();
+        auto                 sizeTy = mlir::emitc::OpaqueType::get(rewriter.getContext(), "size_t");
+        auto                 diffTy = mlir::emitc::OpaqueType::get(rewriter.getContext(), "ptrdiff_t");
+        const mlir::Value    asSize = mlir::emitc::CastOp::create(rewriter, loc, sizeTy, adaptor.getValue());
+        const mlir::Value    asDiff = mlir::emitc::CastOp::create(rewriter, loc, diffTy, asSize);
+        const mlir::Value    back   = mlir::emitc::CastOp::create(rewriter, loc, adaptor.getValue().getType(), asDiff);
+        rewriter.replaceOpWithNewOp<mlir::emitc::CmpOp>(op,
+                                                        rewriter.getI1Type(),
+                                                        mlir::emitc::CmpPredicate::eq,
+                                                        back,
+                                                        adaptor.getValue());
+        return mlir::success();
+    }
+};
+
 struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl::BufferOrEmptyOp>
 {
     using mlir::OpConversionPattern<mlir::dsdl::BufferOrEmptyOp>::OpConversionPattern;
@@ -971,6 +996,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      BufferAtLowering,
                      LocalLowering,
                      IsNullLowering,
+                     IndexHoldsLowering,
                      BufferOrEmptyLowering,
                      LoadScalarLowering,
                      StoreScalarLowering>(converter, &getContext());
@@ -1011,6 +1037,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::LocalOp,
                             mlir::dsdl::CallSerdesOp,
                             mlir::dsdl::IsNullOp,
+                            mlir::dsdl::IndexHoldsOp,
                             mlir::dsdl::BufferOrEmptyOp,
                             mlir::dsdl::LoadScalarOp,
                             mlir::dsdl::StoreScalarOp>();

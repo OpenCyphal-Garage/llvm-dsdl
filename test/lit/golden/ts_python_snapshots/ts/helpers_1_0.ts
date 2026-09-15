@@ -61,14 +61,17 @@ function mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(
 function mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: bigint): number {
   const v0 = p0 < 0n;
   const v1 = p0 > 5n;
-  const v2 = v0 || v1;
-  let v3: number;
-  if (v2) {
-    v3 = -10;
+  const v2 = (p0 >= 0n && p0 <= 4294967295n);
+  const v3 = v2 === false;
+  const v4 = v0 || v1;
+  const v5 = v4 || v3;
+  let v6: number;
+  if (v5) {
+    v6 = -10;
   } else {
-    v3 = 0;
+    v6 = 0;
   }
-  return v3;
+  return v6;
 }
 
 function mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: bigint): bigint {
@@ -240,12 +243,11 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
     obj.b = v10;
     const v11 = dsdlRuntime.readUnsignedBigInt(buffer, Number(29n), 8);
     const v12 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(v11);
-    const _count0_ = Math.min(Number(v12), 5);
-    obj.c = new Array<number>(_count0_);
     const v13 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v12);
     const v14 = v13 === 0;
     let v15: bigint;
     if (v14) {
+      obj.c = new Array<number>(Number(v12));
       const v16 = v12 * 8n;
       const v17 = v16 + 37n;
       let v18: bigint;

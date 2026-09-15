@@ -2,6 +2,7 @@
 # Source: fixtures.vendor.Helpers.1.0
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 
 from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message
@@ -56,12 +57,15 @@ def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(p0: f
 def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: int) -> int:
     v0 = p0 < 0
     v1 = p0 > 5
-    v2 = v0 or v1
-    if v2:
-        v3 = -10
+    v2 = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
+    v3 = v2 == False
+    v4 = v0 or v1
+    v5 = v4 or v3
+    if v5:
+        v6 = -10
     else:
-        v3 = 0
-    return v3
+        v6 = 0
+    return v6
 
 def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:
     v0 = p0 & 255
@@ -213,11 +217,10 @@ class Helpers:
             self.b = v10
             v11 = dsdl_runtime.read_unsigned(buffer, 29, 8)
             v12 = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(v11)
-            _count0_ = min(v12, 5)
-            self.c = [0] * _count0_
             v13 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(v12)
             v14 = v13 == 0
             if v14:
+                self.c = [0] * v12
                 v16 = v12 * 8
                 v17 = v16 + 37
                 v18 = 37

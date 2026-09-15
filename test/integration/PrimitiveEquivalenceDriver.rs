@@ -135,6 +135,30 @@ fn main() {
                     );
                 }
             }
+            "setu" | "seti" => {
+                if f.len() != 6 {
+                    fail(op, "arity");
+                }
+                let len_bits: u8 = f[1].parse().unwrap_or(0);
+                let off_bits: usize = f[2].parse().unwrap_or(0);
+                let mut dst = parse_hex_bytes(f[3]).unwrap_or_else(|_| fail(op, "bad buffer hex"));
+                let value = hex_u64(f[4]);
+                let want = parse_hex_bytes(f[5]).unwrap_or_else(|_| fail(op, "bad buffer hex"));
+                if dst.len() != want.len() {
+                    fail(op, "dst/want length mismatch");
+                }
+                let rc = if op == "setu" {
+                    dsdl_runtime::set_uxx(&mut dst, off_bits, value, len_bits)
+                } else {
+                    dsdl_runtime::set_ixx(&mut dst, off_bits, value as i64, len_bits)
+                };
+                if rc != 0 || dst != want {
+                    fail(
+                        op,
+                        &format!("len={len_bits} off={off_bits} value={value:016x} rc={rc} got={dst:02x?}"),
+                    );
+                }
+            }
             "copybits" => {
                 if f.len() != 7 {
                     fail(op, "arity");

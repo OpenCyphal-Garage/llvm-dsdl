@@ -1,4 +1,5 @@
 // RUN: %dsdl-opt --convert-dsdl-to-llvm %s | FileCheck %s
+// RUN: %dsdl-opt --convert-dsdl-to-llvm="size-bits=32" %s | FileCheck --check-prefix=NARROW %s
 
 // A plan body of the shape build-dsdl-plan-bodies produces, lowered for object emission. The
 // same operations reach the C path through convert-dsdl-to-emitc; what differs is only how a
@@ -22,6 +23,15 @@ func.func @widget_serialize(
   // The size arrives by pointer and is loaded; there is no cast between spellings.
   // CHECK: llvm.load %[[SZ]] : !llvm.ptr -> i64
   %cap = dsdl.load_scalar %sz : !dsdl.ptr<!dsdl.size> -> i64
+
+  // A 64-bit index, the default here, holds every count; a 32-bit target truncates the count
+  // to its width and sign-extends it back to compare.
+  // CHECK: llvm.mlir.constant(true)
+  // NARROW-LABEL: func.func @widget_serialize
+  // NARROW: %[[NARROWED:.*]] = llvm.trunc %[[CAP:.*]] : i64 to i32
+  // NARROW: %[[WIDENED:.*]] = llvm.sext %[[NARROWED]] : i32 to i64
+  // NARROW: llvm.icmp "eq" %[[WIDENED]], %[[CAP]] : i64
+  %held = dsdl.index_holds %cap
 
   // The space left goes into a stack slot the callee can write back through.
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
