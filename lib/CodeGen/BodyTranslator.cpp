@@ -563,25 +563,29 @@ private:
                           llvm::ArrayRef<std::string> yieldTargets,
                           llvm::ArrayRef<std::string> conditionTargets)
     {
-        return llvm::TypeSwitch<mlir::Operation*, llvm::Error>(op)
+        // The switch answers nothing: an arm assigns the error it produced and an arm that
+        // cannot fail assigns none. Answering with an `llvm::Error` builds a
+        // `std::optional<llvm::Error>` inside the switch, which GCC cannot prove initialised
+        // once the arms inline into one another.
+        llvm::Error outcome = llvm::Error::success();
+        llvm::TypeSwitch<mlir::Operation*, void>(op)
             // Values the plan computes.
             .Case<mlir::arith::ConstantOp>([&](mlir::arith::ConstantOp constant) {
                 names_[constant.getResult()] = spelling_.constant(mlir::cast<mlir::TypedAttr>(constant.getValue()));
-                return llvm::Error::success();
             })
-            .Case<mlir::arith::AddIOp>([&](auto) { return binary(op, BinaryOperator::Add); })
-            .Case<mlir::arith::SubIOp>([&](auto) { return binary(op, BinaryOperator::Sub); })
-            .Case<mlir::arith::MulIOp>([&](auto) { return binary(op, BinaryOperator::Mul); })
-            .Case<mlir::arith::DivUIOp>([&](auto) { return binary(op, BinaryOperator::DivU); })
-            .Case<mlir::arith::DivSIOp>([&](auto) { return binary(op, BinaryOperator::DivS); })
-            .Case<mlir::arith::RemUIOp>([&](auto) { return binary(op, BinaryOperator::RemU); })
-            .Case<mlir::arith::RemSIOp>([&](auto) { return binary(op, BinaryOperator::RemS); })
-            .Case<mlir::arith::AndIOp>([&](auto) { return binary(op, BinaryOperator::And); })
-            .Case<mlir::arith::OrIOp>([&](auto) { return binary(op, BinaryOperator::Or); })
-            .Case<mlir::arith::XOrIOp>([&](auto) { return binary(op, BinaryOperator::Xor); })
-            .Case<mlir::arith::ShLIOp>([&](auto) { return binary(op, BinaryOperator::ShiftLeft); })
-            .Case<mlir::arith::ShRUIOp>([&](auto) { return binary(op, BinaryOperator::ShiftRightU); })
-            .Case<mlir::arith::ShRSIOp>([&](auto) { return binary(op, BinaryOperator::ShiftRightS); })
+            .Case<mlir::arith::AddIOp>([&](auto) { outcome = binary(op, BinaryOperator::Add); })
+            .Case<mlir::arith::SubIOp>([&](auto) { outcome = binary(op, BinaryOperator::Sub); })
+            .Case<mlir::arith::MulIOp>([&](auto) { outcome = binary(op, BinaryOperator::Mul); })
+            .Case<mlir::arith::DivUIOp>([&](auto) { outcome = binary(op, BinaryOperator::DivU); })
+            .Case<mlir::arith::DivSIOp>([&](auto) { outcome = binary(op, BinaryOperator::DivS); })
+            .Case<mlir::arith::RemUIOp>([&](auto) { outcome = binary(op, BinaryOperator::RemU); })
+            .Case<mlir::arith::RemSIOp>([&](auto) { outcome = binary(op, BinaryOperator::RemS); })
+            .Case<mlir::arith::AndIOp>([&](auto) { outcome = binary(op, BinaryOperator::And); })
+            .Case<mlir::arith::OrIOp>([&](auto) { outcome = binary(op, BinaryOperator::Or); })
+            .Case<mlir::arith::XOrIOp>([&](auto) { outcome = binary(op, BinaryOperator::Xor); })
+            .Case<mlir::arith::ShLIOp>([&](auto) { outcome = binary(op, BinaryOperator::ShiftLeft); })
+            .Case<mlir::arith::ShRUIOp>([&](auto) { outcome = binary(op, BinaryOperator::ShiftRightU); })
+            .Case<mlir::arith::ShRSIOp>([&](auto) { outcome = binary(op, BinaryOperator::ShiftRightS); })
             .Case<mlir::arith::CmpIOp>([&](mlir::arith::CmpIOp compare) {
                 define(compare.getResult(),
                        spelling_.compare(comparisonOf(compare.getPredicate()),
@@ -589,7 +593,6 @@ private:
                                          (*this)(compare.getRhs()),
                                          compare.getLhs().getType()),
                        true);
-                return llvm::Error::success();
             })
             .Case<mlir::arith::SelectOp>([&](mlir::arith::SelectOp select) {
                 if (!select.getResult().use_empty())
@@ -603,46 +606,44 @@ private:
                                             (*this)(select.getFalseValue()));
                     names_[select.getResult()] = name;
                 }
-                return llvm::Error::success();
             })
-            .Case<mlir::arith::ExtUIOp>([&](auto) { return conversion(op, Conversion::ZeroExtend); })
-            .Case<mlir::arith::ExtSIOp>([&](auto) { return conversion(op, Conversion::SignExtend); })
-            .Case<mlir::arith::TruncIOp>([&](auto) { return conversion(op, Conversion::Truncate); })
-            .Case<mlir::arith::IndexCastOp>([&](auto) { return conversion(op, Conversion::IndexCast); })
+            .Case<mlir::arith::ExtUIOp>([&](auto) { outcome = conversion(op, Conversion::ZeroExtend); })
+            .Case<mlir::arith::ExtSIOp>([&](auto) { outcome = conversion(op, Conversion::SignExtend); })
+            .Case<mlir::arith::TruncIOp>([&](auto) { outcome = conversion(op, Conversion::Truncate); })
+            .Case<mlir::arith::IndexCastOp>([&](auto) { outcome = conversion(op, Conversion::IndexCast); })
             // Calls and returns.
-            .Case<mlir::func::CallOp>([&](mlir::func::CallOp call) -> llvm::Error {
+            .Case<mlir::func::CallOp>([&](mlir::func::CallOp call) {
                 if (call.getNumResults() != 1)
                 {
-                    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                                   "call to %s has %u results; the translator spells one",
-                                                   call.getCallee().str().c_str(),
-                                                   call.getNumResults());
+                    outcome = llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                                      "call to %s has %u results; the translator spells one",
+                                                      call.getCallee().str().c_str(),
+                                                      call.getNumResults());
+                    return;
                 }
                 define(call.getResult(0),
                        spelling_.call(spelling_.functionName(call.getCallee()), operands(op)),
                        false);
-                return llvm::Error::success();
             })
-            .Case<mlir::func::ReturnOp>([&](mlir::func::ReturnOp ret) -> llvm::Error {
+            .Case<mlir::func::ReturnOp>([&](mlir::func::ReturnOp ret) {
                 if (ret.getNumOperands() != 1)
                 {
-                    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                                   "return with %u operands; the translator spells one",
-                                                   ret.getNumOperands());
+                    outcome = llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                                      "return with %u operands; the translator spells one",
+                                                      ret.getNumOperands());
+                    return;
                 }
                 spelling_.returnValue(w_, (*this)(ret.getOperand(0)));
-                return llvm::Error::success();
             })
             // Structure.
-            .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp ifOp) { return structured(ifOp); })
-            .Case<mlir::scf::WhileOp>([&](mlir::scf::WhileOp whileOp) { return structured(whileOp); })
-            .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp forOp) { return structured(forOp); })
+            .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp ifOp) { outcome = structured(ifOp); })
+            .Case<mlir::scf::WhileOp>([&](mlir::scf::WhileOp whileOp) { outcome = structured(whileOp); })
+            .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp forOp) { outcome = structured(forOp); })
             .Case<mlir::scf::YieldOp>([&](mlir::scf::YieldOp yield) {
                 for (const auto& [target, value] : llvm::zip(yieldTargets, yield.getOperands()))
                 {
                     spelling_.assign(w_, target, (*this)(value));
                 }
-                return llvm::Error::success();
             })
             .Case<mlir::scf::ConditionOp>([&](mlir::scf::ConditionOp condition) {
                 for (const auto& [target, value] : llvm::zip(conditionTargets, condition.getArgs()))
@@ -650,65 +651,46 @@ private:
                     spelling_.assign(w_, target, (*this)(value));
                 }
                 spelling_.breakUnless(w_, (*this)(condition.getCondition()));
-                return llvm::Error::success();
             })
             // The dialect: reads.
-            .Case<mlir::dsdl::IsNullOp>([&](mlir::dsdl::IsNullOp read) {
-                define(read.getResult(), spelling_.isNull(read, *this), true);
-                return llvm::Error::success();
-            })
+            .Case<mlir::dsdl::IsNullOp>(
+                [&](mlir::dsdl::IsNullOp read) { define(read.getResult(), spelling_.isNull(read, *this), true); })
             .Case<mlir::dsdl::IndexHoldsOp>([&](mlir::dsdl::IndexHoldsOp test) {
                 define(test.getHolds(), spelling_.indexHolds(test, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::BufferOrEmptyOp>([&](mlir::dsdl::BufferOrEmptyOp read) {
                 define(read.getResult(), spelling_.bufferOrEmpty(read, *this), true);
-                return llvm::Error::success();
             })
-            .Case<mlir::dsdl::BufferAtOp>([&](mlir::dsdl::BufferAtOp read) {
-                define(read.getResult(), spelling_.bufferAt(read, *this), true);
-                return llvm::Error::success();
-            })
+            .Case<mlir::dsdl::BufferAtOp>(
+                [&](mlir::dsdl::BufferAtOp read) { define(read.getResult(), spelling_.bufferAt(read, *this), true); })
             .Case<mlir::dsdl::LoadScalarOp>([&](mlir::dsdl::LoadScalarOp read) {
                 define(read.getResult(), spelling_.loadScalar(read, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::LoadMemberOp>([&](mlir::dsdl::LoadMemberOp read) {
                 define(read.getResult(), spelling_.loadMember(read, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::LoadElementOp>([&](mlir::dsdl::LoadElementOp read) {
                 define(read.getResult(), spelling_.loadElement(read, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::MemberAddrOp>([&](mlir::dsdl::MemberAddrOp read) {
                 define(read.getResult(), spelling_.memberAddr(read, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::ElementAddrOp>([&](mlir::dsdl::ElementAddrOp read) {
                 define(read.getResult(), spelling_.elementAddr(read, *this), true);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::ArrayLengthOp>([&](mlir::dsdl::ArrayLengthOp read) {
                 define(read.getResult(), spelling_.arrayLength(read, *this), true);
-                return llvm::Error::success();
             })
-            .Case<mlir::dsdl::UnionTagOp>([&](mlir::dsdl::UnionTagOp read) {
-                define(read.getResult(), spelling_.unionTag(read, *this), true);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::ReadBitsOp>([&](mlir::dsdl::ReadBitsOp read) {
-                define(read.getResult(), spelling_.readBits(read, *this), true);
-                return llvm::Error::success();
-            })
+            .Case<mlir::dsdl::UnionTagOp>(
+                [&](mlir::dsdl::UnionTagOp read) { define(read.getResult(), spelling_.unionTag(read, *this), true); })
+            .Case<mlir::dsdl::ReadBitsOp>(
+                [&](mlir::dsdl::ReadBitsOp read) { define(read.getResult(), spelling_.readBits(read, *this), true); })
             .Case<mlir::dsdl::LocalOp>([&](mlir::dsdl::LocalOp local) {
                 names_[local.getResult()] = spelling_.local(w_, local, nameFor(local.getResult()), *this);
-                return llvm::Error::success();
             })
             // The dialect: writes and calls.
             .Case<mlir::dsdl::WriteBitsOp>([&](mlir::dsdl::WriteBitsOp write) {
                 define(write.getResult(), spelling_.writeBits(write, *this), false);
-                return llvm::Error::success();
             })
             .Case<mlir::dsdl::CallSerdesOp>([&](mlir::dsdl::CallSerdesOp call) {
                 const std::string name = call.getResult().use_empty() ? std::string{} : nameFor(call.getResult());
@@ -717,41 +699,25 @@ private:
                 {
                     names_[call.getResult()] = name;
                 }
-                return llvm::Error::success();
             })
-            .Case<mlir::dsdl::StoreScalarOp>([&](mlir::dsdl::StoreScalarOp write) {
-                spelling_.storeScalar(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::StoreMemberOp>([&](mlir::dsdl::StoreMemberOp write) {
-                spelling_.storeMember(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::StoreElementOp>([&](mlir::dsdl::StoreElementOp write) {
-                spelling_.storeElement(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::SetArrayLengthOp>([&](mlir::dsdl::SetArrayLengthOp write) {
-                spelling_.setArrayLength(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::SetUnionTagOp>([&](mlir::dsdl::SetUnionTagOp write) {
-                spelling_.setUnionTag(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::BitWriteOp>([&](mlir::dsdl::BitWriteOp write) {
-                spelling_.bitWrite(w_, write, *this);
-                return llvm::Error::success();
-            })
-            .Case<mlir::dsdl::BitReadOp>([&](mlir::dsdl::BitReadOp read) {
-                spelling_.bitRead(w_, read, *this);
-                return llvm::Error::success();
-            })
+            .Case<mlir::dsdl::StoreScalarOp>(
+                [&](mlir::dsdl::StoreScalarOp write) { spelling_.storeScalar(w_, write, *this); })
+            .Case<mlir::dsdl::StoreMemberOp>(
+                [&](mlir::dsdl::StoreMemberOp write) { spelling_.storeMember(w_, write, *this); })
+            .Case<mlir::dsdl::StoreElementOp>(
+                [&](mlir::dsdl::StoreElementOp write) { spelling_.storeElement(w_, write, *this); })
+            .Case<mlir::dsdl::SetArrayLengthOp>(
+                [&](mlir::dsdl::SetArrayLengthOp write) { spelling_.setArrayLength(w_, write, *this); })
+            .Case<mlir::dsdl::SetUnionTagOp>(
+                [&](mlir::dsdl::SetUnionTagOp write) { spelling_.setUnionTag(w_, write, *this); })
+            .Case<mlir::dsdl::BitWriteOp>([&](mlir::dsdl::BitWriteOp write) { spelling_.bitWrite(w_, write, *this); })
+            .Case<mlir::dsdl::BitReadOp>([&](mlir::dsdl::BitReadOp read) { spelling_.bitRead(w_, read, *this); })
             .Default([&](mlir::Operation* other) {
-                return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                               "no spelling for '%s' in a plan body",
-                                               other->getName().getStringRef().str().c_str());
+                outcome = llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                                  "no spelling for '%s' in a plan body",
+                                                  other->getName().getStringRef().str().c_str());
             });
+        return outcome;
     }
 
     /// @brief How many spellings of one role a function asks for before naming the value itself.
