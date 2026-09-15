@@ -61,7 +61,7 @@ function mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(
 function mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: bigint): number {
   const v0 = p0 < 0n;
   const v1 = p0 > 5n;
-  const v2 = (BigInt(Number(p0)) === p0);
+  const v2 = (p0 >= 0n && p0 <= 4294967295n);
   const v3 = v2 === false;
   const v4 = v0 || v1;
   const v5 = v4 || v3;

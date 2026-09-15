@@ -814,10 +814,11 @@ public:
                 op);
     }
 
-    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp /*op*/, const ValueNames& /*names*/) const override
+    [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
     {
-        // An int holds every count.
-        return "True";
+        // An int holds every count; a list holds at most sys.maxsize elements.
+        const std::string value = names(op.getValue());
+        return "(-sys.maxsize - 1 <= " + value + " <= sys.maxsize)";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
@@ -1439,6 +1440,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
            std::to_string(def.info.minorVersion));
     w.line("from __future__ import annotations");
     w.blank();
+    w.line("import sys");
     w.line("from dataclasses import dataclass, field");
     w.blank();
 

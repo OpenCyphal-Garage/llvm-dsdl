@@ -7,9 +7,9 @@
 # ===----------------------------------------------------------------------===//
 #
 # Array-length prefixes decoded by the generated Python: above the capacity, beyond the index
-# width, and at the capacity. One line per case and a summary line the lane parses. A Python int
-# holds every length the fixtures allow, so the cases beyond a 32-bit index are reported as
-# skipped.
+# width, and at the capacity. One line per case and a summary line the lane parses. A list holds
+# at most sys.maxsize elements, so the cases beyond a 32-bit index are rejected on a 32-bit
+# interpreter and reported skipped on a wider one.
 #
 # Arguments: the generated output directory, the package name, and the runtime backend to load
 # (pure or accel). The driver fails when the loader settles on a different backend.
@@ -119,7 +119,17 @@ def main(argv: list[str]) -> int:
         )
 
     for prefix in (1 << 32, (1 << 32) + 3, 1 << 33):
-        outcome("SKIP", "prefix64_rejects_beyond_index", prefix, "int holds every length Prefix64 allows")
+        if sys.maxsize >= (1 << 33):
+            outcome("SKIP", "prefix64_rejects_beyond_index", prefix, "a list holds every length Prefix64 allows")
+            continue
+        obj = prefix64()
+        buffer = with_prefix(prefix, 8, 0)
+        expect_rejected(
+            "prefix64_rejects_beyond_index",
+            prefix,
+            lambda: obj._deserialize_from(memoryview(buffer)),
+            lambda: len(obj.flags),
+        )
 
     obj = prefix64()
     buffer = with_prefix(3, 8, 1)

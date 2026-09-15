@@ -2,6 +2,7 @@
 # Source: fixtures.vendor.UnionTag.1.0
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 
 from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message

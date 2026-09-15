@@ -6,9 +6,8 @@
 //===----------------------------------------------------------------------===//
 //
 // Array-length prefixes decoded by the generated TypeScript: above the capacity, beyond the
-// index width, and at the capacity. One line per case and a summary line the lane parses. A
-// JavaScript array index is a Number, which holds every length the fixtures allow, so the cases
-// beyond a 32-bit index are reported as skipped.
+// index width, and at the capacity. One line per case and a summary line the lane parses. An
+// Array holds at most 2^32 - 1 elements, so the cases beyond a 32-bit index are rejected here.
 //
 //===----------------------------------------------------------------------===//
 
@@ -115,7 +114,14 @@ function prefix64RejectsAboveCapacity(prefix: bigint): void {
 }
 
 function prefix64RejectsBeyondIndex(prefix: bigint): void {
-  outcome("SKIP", "prefix64_rejects_beyond_index", prefix, "Number holds every length Prefix64 allows");
+  const obj: prefix64.Prefix64@V1_0@ = { flags: [] };
+  const buffer = withPrefix(prefix, 8, 0);
+  expectRejected(
+    "prefix64_rejects_beyond_index",
+    prefix,
+    () => prefix64.deserializePrefix64@V1_0@From(obj, buffer),
+    () => obj.flags.length,
+  );
 }
 
 function prefix64AcceptsSmallLength(): void {

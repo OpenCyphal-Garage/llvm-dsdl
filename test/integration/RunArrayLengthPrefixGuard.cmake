@@ -335,7 +335,9 @@ if(DEFINED TSC_EXECUTABLE AND EXISTS "${TSC_EXECUTABLE}"
   endif()
   file(WRITE "${ts_out}/js/package.json" "{\n  \"type\": \"commonjs\"\n}\n")
   _guard_run("TypeScript (host)" "${NODE_EXECUTABLE}" "${ts_out}/js/driver.js")
-  _guard_check("TypeScript (host)" "${run_stdout}" FALSE)
+  # An Array holds at most 2^32 - 1 elements on every host, so the lengths beyond a 32-bit index
+  # are rejected here rather than skipped.
+  _guard_check("TypeScript (host)" "${run_stdout}" TRUE)
   list(APPEND legs "TypeScript host")
 else()
   message(STATUS "TypeScript: tsc or node not given; leg skipped")

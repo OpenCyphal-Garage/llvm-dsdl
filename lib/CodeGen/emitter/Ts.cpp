@@ -782,10 +782,9 @@ public:
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
     {
-        // Through Number and back: a count a Number does not hold exactly does not come back as
-        // itself.
+        // An Array holds at most 2^32 - 1 elements, whatever a Number represents.
         const std::string value = names(op.getValue());
-        return "(BigInt(Number(" + value + ")) === " + value + ")";
+        return "(" + value + " >= 0n && " + value + " <= 4294967295n)";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override

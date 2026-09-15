@@ -2,6 +2,7 @@
 # Source: fixtures.vendor.Helpers.1.0
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 
 from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message
@@ -56,7 +57,7 @@ def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(p0: f
 def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: int) -> int:
     v0 = p0 < 0
     v1 = p0 > 5
-    v2 = True
+    v2 = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
     v3 = v2 == False
     v4 = v0 or v1
     v5 = v4 or v3
