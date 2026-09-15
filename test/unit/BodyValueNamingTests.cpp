@@ -392,6 +392,14 @@ bool runBodyValueNamingTests()
     ok = expect(snakeValueName(ValueRole::Scalar, "_foo", 0), "foo_value", "snake leading underscore") && ok;
     ok = expect(camelValueName(ValueRole::Scalar, "_foo", 0), "fooValue", "camel leading underscore") && ok;
 
+    // A member is folded by the projection the emitters and the frontend's collision check share,
+    // so a name that is not already snake_case reaches a local the way it reaches its field, and
+    // the two renderings differ in case alone.
+    ok = expect(snakeValueName(ValueRole::Scalar, "fooBar", 0), "foo_bar_value", "snake camel member") && ok;
+    ok = expect(camelValueName(ValueRole::Scalar, "fooBar", 0), "fooBarValue", "camel camel member") && ok;
+    ok = expect(snakeValueName(ValueRole::Scalar, "FOO_BAR", 0), "foo_bar_value", "snake shouting member") && ok;
+    ok = expect(camelValueName(ValueRole::Scalar, "FOO_BAR", 0), "fooBarValue", "camel shouting member") && ok;
+
     // An array's count is spelled 'count' rather than 'len' because it reads better and stays
     // free: BodySpelling::reservedLocals claims the builtin a Go or Python body calls, so a role
     // landing on one is bumped rather than capturing the call.

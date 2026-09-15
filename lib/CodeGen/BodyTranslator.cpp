@@ -29,6 +29,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -49,6 +50,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/CodeGen/SourceWriter.h"
+#include "llvmdsdl/Support/NameCanonicalization.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 
@@ -173,24 +175,32 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
     return {};
 }
 
-/// @brief How deep a structured result is followed to the values yielded into it.
+/// @brief The values a walk is already inside, so a carry that reaches itself ends it.
 ///
-/// A loop carries a value that yields itself, so the walk is bounded rather than cycle-free.
-constexpr unsigned MaxInheritDepth = 4;
+/// A loop's argument is reached from the value yielded back into it, which is reached from that
+/// argument: what has to end is a cycle, not a depth. Stopping at a fixed depth would also stop a
+/// chain of nested results that is merely long, and a plan nests as deeply as its type does.
+///
+/// The values, not the operations that hold them: a loop's result and the argument it forwards
+/// belong to one operation and reach each other, and that is the walk doing its work.
+using RoleWalk = llvm::SmallDenseSet<mlir::Value, 8>;
 
-Role roleOf(mlir::Value value, unsigned depth);
+Role roleOf(mlir::Value value, RoleWalk& walk);
+
+/// @brief @ref roleOf without the bookkeeping that ends a carry reaching itself.
+Role roleOfReached(mlir::Value value, RoleWalk& walk);
 
 /// @brief The role shared by the values yielded into one result, or nothing they share.
 ///
 /// Two arms agreeing on the role but not on the member give the role alone: a failure that
 /// reaches the same variable from two fields is an error either way, and naming it after one
 /// of them would say the other cannot arrive there.
-Role roleOfYielded(mlir::ValueRange yielded, const unsigned depth)
+Role roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
 {
     std::optional<Role> shared;
     for (const mlir::Value value : yielded)
     {
-        const Role role = roleOf(value, depth + 1);
+        const Role role = roleOf(value, walk);
         if (role.role == ValueRole::Anonymous)
         {
             return {};
@@ -274,12 +284,19 @@ std::vector<mlir::Value> incomingTo(mlir::scf::WhileOp loop, const unsigned inde
 }
 
 /// @brief What the operation defining @p value states about it.
-Role roleOf(const mlir::Value value, const unsigned depth)
+Role roleOf(mlir::Value value, RoleWalk& walk)
 {
-    if (depth > MaxInheritDepth)
+    if (!walk.insert(value).second)
     {
         return {};
     }
+    const Role role = roleOfReached(value, walk);
+    walk.erase(value);
+    return role;
+}
+
+Role roleOfReached(mlir::Value value, RoleWalk& walk)
+{
     if (const auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
     {
         mlir::Operation* const owner = argument.getOwner()->getParentOp();
@@ -289,13 +306,13 @@ Role roleOf(const mlir::Value value, const unsigned depth)
             {
                 return {ValueRole::Index, {}};
             }
-            return roleOf(forOp.getResult(argument.getArgNumber() - 1), depth + 1);
+            return roleOf(forOp.getResult(argument.getArgNumber() - 1), walk);
         }
         if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
         {
             const Role stamped = stampedRole(whileOp, argument.getArgNumber());
             return (stamped.role == ValueRole::Anonymous)
-                       ? roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), depth)
+                       ? roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), walk)
                        : stamped;
         }
         return {};
@@ -320,14 +337,14 @@ Role roleOf(const mlir::Value value, const unsigned depth)
         .Case<mlir::dsdl::LoadScalarOp>([&](auto read) {
             // Reading back the size a nested call wrote is that member's size, and the local it
             // was written to is the operation that names the member.
-            return addressesSize(read.getPointer()) ? Role{ValueRole::Size, roleOf(read.getPointer(), depth + 1).member}
+            return addressesSize(read.getPointer()) ? Role{ValueRole::Size, roleOf(read.getPointer(), walk).member}
                                                     : Role{ValueRole::Scalar, {}};
         })
         .Case<mlir::func::CallOp>([](auto call) { return roleOfCall(call); })
         .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
             const Role stamped = stampedRole(op, result.getResultNumber());
             return (stamped.role == ValueRole::Anonymous)
-                       ? roleOfYielded(yieldedInto(op, result.getResultNumber()), depth)
+                       ? roleOfYielded(yieldedInto(op, result.getResultNumber()), walk)
                        : stamped;
         })
         .Default([](mlir::Operation*) { return Role{}; });
@@ -394,7 +411,8 @@ private:
     /// not used, so a repeated role is distinguished in the spelling's own style.
     std::string nameFor(const mlir::Value value)
     {
-        const Role role = roleOf(value, 0);
+        RoleWalk   walk;
+        const Role role = roleOf(value, walk);
         if (role.role != ValueRole::Anonymous)
         {
             for (std::size_t ordinal = 0; ordinal < MaxNameOrdinals; ++ordinal)
@@ -793,27 +811,18 @@ llvm::StringRef roleWord(const ValueRole role)
     return {};
 }
 
-/// @brief @p text with its underscore runs collapsed and its leading and trailing ones dropped.
+/// @brief @p member and @p word joined as one snake_case name.
 ///
-/// A DSDL member may lead or trail with an underscore, and a target may already have escaped a
-/// reserved word by trailing one; joining either to a role word doubles it, which C++ reserves.
-std::string collapseUnderscores(const llvm::StringRef text)
+/// The member is folded by `canonicalSnakeCase`, which is the projection the emitters and the
+/// frontend's collision check already share, so `fooBar` and `FOO_BAR` reach a local the way they
+/// reach the field they belong to. The fold also settles the underscores: a DSDL member may lead
+/// or trail with one, and a target may already have escaped a reserved word by trailing one, so
+/// joining either to a role word would double it, which C++ reserves.
+std::string joinSnake(const llvm::StringRef member, const llvm::StringRef word)
 {
-    std::string out;
-    out.reserve(text.size());
-    for (const char c : text)
-    {
-        if (c == '_' && (out.empty() || out.back() == '_'))
-        {
-            continue;
-        }
-        out.push_back(c);
-    }
-    while (!out.empty() && out.back() == '_')
-    {
-        out.pop_back();
-    }
-    return out;
+    const std::string     folded = canonicalSnakeCase(member);
+    const llvm::StringRef trimmed(llvm::StringRef(folded).trim('_'));
+    return trimmed.empty() ? word.str() : (trimmed.str() + "_" + word.str());
 }
 
 /// @brief @p text with each underscore-separated word after the first capitalised.
@@ -844,11 +853,7 @@ std::string snakeValueName(const ValueRole role, const llvm::StringRef member, c
     {
         return {};
     }
-    std::string name = collapseUnderscores(member.empty() ? word.str() : (member.str() + "_" + word.str()));
-    if (name.empty())
-    {
-        name = word.str();
-    }
+    std::string name = joinSnake(member, word);
     if (ordinal > 0)
     {
         name += "_" + std::to_string(ordinal + 1);
@@ -863,13 +868,9 @@ std::string camelValueName(const ValueRole role, const llvm::StringRef member, c
     {
         return {};
     }
-    std::string name =
-        member.empty() ? camelTail(word) : (camelTail(collapseUnderscores(member)) + camelTail("_" + word.str()));
-    if (name.empty())
-    {
-        name = camelTail(word);
-    }
-    name.front() = static_cast<char>(std::tolower(static_cast<unsigned char>(name.front())));
+    // The same snake_case fold, then the camel spelling of it, so the two renderings differ in
+    // case alone and a member reaches both the way it reaches its field.
+    std::string name = camelTail(joinSnake(member, word));
     if (ordinal > 0)
     {
         name += std::to_string(ordinal + 1);
