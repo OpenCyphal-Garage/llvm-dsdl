@@ -57,15 +57,15 @@ def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(p0: f
 def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: int) -> int:
     v0 = p0 < 0
     v1 = p0 > 5
-    v2 = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
-    v3 = v2 == False
-    v4 = v0 or v1
-    v5 = v4 or v3
-    if v5:
-        v6 = -10
+    index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
+    v2 = index_holds == False
+    v3 = v0 or v1
+    v4 = v3 or v2
+    if v4:
+        v5 = -10
     else:
-        v6 = 0
-    return v6
+        v5 = 0
+    return v5
 
 def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:
     v0 = p0 & 255

@@ -61,17 +61,17 @@ function mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(
 function mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: bigint): number {
   const v0 = p0 < 0n;
   const v1 = p0 > 5n;
-  const v2 = (p0 >= 0n && p0 <= 4294967295n);
-  const v3 = v2 === false;
-  const v4 = v0 || v1;
-  const v5 = v4 || v3;
-  let v6: number;
-  if (v5) {
-    v6 = -10;
+  const indexHolds = (p0 >= 0n && p0 <= 4294967295n);
+  const v2 = indexHolds === false;
+  const v3 = v0 || v1;
+  const v4 = v3 || v2;
+  let v5: number;
+  if (v4) {
+    v5 = -10;
   } else {
-    v6 = 0;
+    v5 = 0;
   }
-  return v6;
+  return v5;
 }
 
 function mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: bigint): bigint {

@@ -66,6 +66,10 @@ bool runBodyValueNamingTests()
     ok = expect(snakeValueName(ValueRole::Offset, {}, 1), "offset_2", "snake offset repeat") && ok;
     ok = expect(camelValueName(ValueRole::Offset, {}, 1), "offset2", "camel offset repeat") && ok;
 
+    // A predicate is named for what it asks, which is what the operation is called.
+    ok = expect(snakeValueName(ValueRole::Null, {}, 0), "is_null", "snake null") && ok;
+    ok = expect(camelValueName(ValueRole::IndexHolds, {}, 0), "indexHolds", "camel index holds") && ok;
+
     // An operation that says nothing about its result leaves the value to the translator.
     ok = expect(snakeValueName(ValueRole::Anonymous, "frequency", 0), "", "snake anonymous") && ok;
     ok = expect(camelValueName(ValueRole::Anonymous, "frequency", 0), "", "camel anonymous") && ok;

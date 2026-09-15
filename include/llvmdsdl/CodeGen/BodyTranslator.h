@@ -93,16 +93,17 @@ enum class Conversion : std::uint8_t
 enum class ValueRole : std::uint8_t
 {
     Anonymous,
-    Offset,  ///< The bit offset a plan threads through its steps.
-    Object,  ///< The address of a member, or of one element of an array member.
-    Buffer,  ///< An address within the wire buffer.
-    Size,    ///< A size in bytes, held where a nested call can write back to it.
-    Length,  ///< An array member's element count.
-    Tag,     ///< A union's tag.
-    Scalar,  ///< A member's value, or a scalar read out of the buffer.
-    Error,   ///< An error code.
-    Null,    ///< Whether a pointer the plan was handed is null.
-    Index,   ///< A loop's induction variable.
+    Offset,      ///< The bit offset a plan threads through its steps.
+    Object,      ///< The address of a member, or of one element of an array member.
+    Buffer,      ///< An address within the wire buffer.
+    Size,        ///< A size in bytes, held where a nested call can write back to it.
+    Length,      ///< An array member's element count.
+    Tag,         ///< A union's tag.
+    Scalar,      ///< A member's value, or a scalar read out of the buffer.
+    Error,       ///< An error code.
+    Null,        ///< Whether a pointer the plan was handed is null.
+    IndexHolds,  ///< Whether the target's index type holds a count.
+    Index,       ///< A loop's induction variable.
 };
 
 /// @brief The spelled form of each value in the function being translated.

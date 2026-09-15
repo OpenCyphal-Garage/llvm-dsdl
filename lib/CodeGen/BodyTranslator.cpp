@@ -288,6 +288,7 @@ Role roleOf(const mlir::Value value, const unsigned depth)
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Role{ValueRole::Error, {}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Role{ValueRole::Scalar, {}}; })
         .Case<mlir::dsdl::IsNullOp>([](auto) { return Role{ValueRole::Null, {}}; })
+        .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Role{ValueRole::IndexHolds, {}}; })
         .Case<mlir::dsdl::LocalOp>([&](auto) { return Role{ValueRole::Size, memberOfNestedCaller(result)}; })
         .Case<mlir::dsdl::BufferAtOp>([&](auto) { return Role{ValueRole::Buffer, memberOfNestedCaller(result)}; })
         .Case<mlir::dsdl::BufferOrEmptyOp>([](auto) { return Role{ValueRole::Buffer, {}}; })
@@ -791,6 +792,8 @@ llvm::StringRef roleWord(const ValueRole role)
         return "err";
     case ValueRole::Null:
         return "is_null";
+    case ValueRole::IndexHolds:
+        return "index_holds";
     case ValueRole::Index:
         return "i";
     case ValueRole::Anonymous:
