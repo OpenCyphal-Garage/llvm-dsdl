@@ -18,6 +18,7 @@ environment at the Nunavut release CI's differential-parity lane pins.
 
     python3 tools/generate_prdt_corpus.py
     python3 tools/generate_prdt_corpus.py --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc
+    python3 tools/generate_prdt_corpus.py --dsdlc-arg=--optimize-lowered-serdes
     cmake --build --preset build-dev-homebrew --target prdt-corpus
 
 nnvg runs with ``--jobs 1``: Nunavut 3.0.1b1's worker pool cannot pickle its state under Python 3.14
@@ -27,12 +28,14 @@ on macOS. ``cpp`` and ``py`` are experimental in that release and are enabled ex
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import pathlib
 import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 
 #: The tag the differential-parity lane checks out (NUNAVUT_SHA in .github/workflows/ci.yml).
 NUNAVUT_VERSION = "3.0.1b1"
@@ -93,11 +96,16 @@ def root_namespaces(corpus: pathlib.Path) -> list[pathlib.Path]:
 
 
 def dsdlc_command(
-    dsdlc: pathlib.Path, language: str, roots: list[pathlib.Path], outdir: pathlib.Path
+    dsdlc: pathlib.Path,
+    language: str,
+    roots: list[pathlib.Path],
+    outdir: pathlib.Path,
+    extra: Sequence[str] = (),
 ) -> list[str]:
     """One invocation over every root; dependencies resolve against the corpus alone, so the embedded
-    uavcan catalogue cannot stand in for a definition the checkout carries."""
-    command = [str(dsdlc), "--target-language", language, "--no-embedded-uavcan"]
+    uavcan catalogue cannot stand in for a definition the checkout carries. ``extra`` is passed to
+    every language."""
+    command = [str(dsdlc), "--target-language", language, "--no-embedded-uavcan", *extra]
     for root in roots:
         command += ["--lookup-dir", str(root)]
     command += [str(root) for root in roots]
@@ -201,6 +209,13 @@ def main() -> int:
         help=f"dsdlc target languages; none skips dsdlc (default: {' '.join(DSDLC_LANGUAGES)})",
     )
     parser.add_argument(
+        "--dsdlc-arg",
+        action="append",
+        default=[],
+        metavar="ARG",
+        help="extra argument for every dsdlc invocation, as --dsdlc-arg=--flag; repeat for more than one",
+    )
+    parser.add_argument(
         "--nnvg-languages",
         nargs="*",
         default=list(NNVG_LANGUAGES),
@@ -223,7 +238,11 @@ def main() -> int:
 
     outdir = args.outdir.resolve()
     summary: list[tuple[str, str, int]] = []
-    plan = (("dsdlc", dsdlc, args.dsdlc_languages, dsdlc_command), ("nnvg", nnvg, args.nnvg_languages, nnvg_command))
+    build_dsdlc_command = functools.partial(dsdlc_command, extra=tuple(args.dsdlc_arg))
+    plan = (
+        ("dsdlc", dsdlc, args.dsdlc_languages, build_dsdlc_command),
+        ("nnvg", nnvg, args.nnvg_languages, nnvg_command),
+    )
     for generator, tool, languages, make_command in plan:
         tree = outdir / generator
         shutil.rmtree(tree, ignore_errors=True)

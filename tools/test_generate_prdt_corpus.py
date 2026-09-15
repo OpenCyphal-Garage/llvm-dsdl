@@ -88,6 +88,13 @@ class CommandShapes(unittest.TestCase):
         self.assertIn("/c/uavcan", command[-4:])
         self.assertEqual(command[-2:], ["--outdir", "/o/c"])
 
+    def test_dsdlc_carries_extra_arguments(self) -> None:
+        command = gen.dsdlc_command(
+            pathlib.Path("/bin/dsdlc"), "c", self.ROOTS, pathlib.Path("/o/c"), ("--optimize-lowered-serdes",)
+        )
+        self.assertEqual(command[4], "--optimize-lowered-serdes")
+        self.assertEqual(command[-2:], ["--outdir", "/o/c"])
+
     def test_nnvg_runs_one_job_with_experimental_languages(self) -> None:
         command = gen.nnvg_command(pathlib.Path("/venv/bin/nnvg"), "py", self.ROOTS, pathlib.Path("/o/py"))
         self.assertEqual(command[:3], ["/venv/bin/nnvg", "--target-language", "py"])
