@@ -91,7 +91,6 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
     const v3 = err2 === 0;
     const v4 = v3 ? err3 : err2;
     const v5 = v4 === 0;
-    const v6 = v5 ? 8n : 0n;
     let err4: number;
     if (v5) {
       const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
@@ -99,58 +98,46 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
     } else {
       err4 = v4;
     }
-    const v7 = tag2 === 0n;
-    let offset: bigint;
+    const v6 = tag2 === 0n;
+    const v7 = v6 ? 16n : 8n;
     let err6: number;
-    if (v7) {
+    if (v6) {
       const v8 = err4 === 0;
-      let offset2: bigint;
       let err7: number;
       if (v8) {
         const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
         const value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(firstValue);
-        const err8 = dsdlRuntime.writeUnsigned(buffer, Number(v6), 8, value, false);
-        const v9 = v6 + 8n;
-        offset2 = v9;
+        const err8 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 8, value, false);
         err7 = err8;
       } else {
-        offset2 = v6;
         err7 = err4;
       }
-      offset = offset2;
       err6 = err7;
     } else {
-      offset = v6;
       err6 = err4;
     }
-    const v10 = tag2 === 1n;
-    let offset3: bigint;
+    const v9 = tag2 === 1n;
+    const v10 = v9 ? 24n : v7;
     let err9: number;
-    if (v10) {
-      const v11 = err6 === 0;
-      let offset4: bigint;
+    if (v9) {
+      const v11 = err4 === 0;
       let err10: number;
       if (v11) {
         const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
         const value2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(secondValue);
-        const err11 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 16, value2, false);
-        const v12 = offset + 16n;
-        offset4 = v12;
+        const err11 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 16, value2, false);
         err10 = err11;
       } else {
-        offset4 = offset;
-        err10 = err6;
+        err10 = err4;
       }
-      offset3 = offset4;
       err9 = err10;
     } else {
-      offset3 = offset;
       err9 = err6;
     }
-    const v13 = err9 === 0;
-    if (v13) {
-      const v14 = offset3 / 8n;
-      inoutBufferSizeBytes = Number(v14);
+    const v12 = err9 === 0;
+    if (v12) {
+      const v13 = v10 / 8n;
+      inoutBufferSizeBytes = Number(v13);
     }
     err = err9;
   }
@@ -181,42 +168,33 @@ export function deserializeUnionTagFrom(obj: UnionTag, buffer: Uint8Array): numb
     const tag = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value);
     const err2 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag);
     const v3 = err2 === 0;
-    const v4 = v3 ? 8n : 0n;
     if (v3) {
       (obj as { _tag: number })._tag = Number(tag);
     }
-    const v5 = tag === 0n;
-    let v6: bigint;
-    if (v5) {
-      const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v4), 8);
+    const v4 = tag === 0n;
+    const v5 = v4 ? 16n : 8n;
+    if (v4) {
+      const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 8);
       const value3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value2);
       (obj as { first: number }).first = Number(value3);
-      const v7 = v4 + 8n;
-      v6 = v7;
-    } else {
-      v6 = v4;
     }
-    const v8 = tag === 1n;
-    let v9: bigint;
-    if (v8) {
-      const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v6), 16);
+    const v6 = tag === 1n;
+    const v7 = v6 ? 24n : v5;
+    if (v6) {
+      const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 16);
       const value5 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value4);
       (obj as { second: number }).second = Number(value5);
-      const v10 = v6 + 16n;
-      v9 = v10;
-    } else {
-      v9 = v6;
     }
-    const v11 = v9 + 7n;
-    const v12 = v11 / 8n;
-    const v13 = v12 * 8n;
-    const v14 = size2 * 8n;
-    const v15 = v13 < v14;
-    const v16 = v15 ? v13 : v14;
-    const v17 = err2 === 0;
-    if (v17) {
-      const v18 = v16 / 8n;
-      inoutBufferSizeBytes = Number(v18);
+    const v8 = v7 + 7n;
+    const v9 = v8 / 8n;
+    const v10 = v9 * 8n;
+    const v11 = size2 * 8n;
+    const v12 = v10 < v11;
+    const v13 = v12 ? v10 : v11;
+    const v14 = err2 === 0;
+    if (v14) {
+      const v15 = v13 / 8n;
+      inoutBufferSizeBytes = Number(v15);
     }
     err = err2;
   }

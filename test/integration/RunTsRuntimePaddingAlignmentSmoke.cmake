@@ -75,10 +75,16 @@ endif()
 
 file(READ "${outer_file}" outer_text)
 file(READ "${choice_file}" choice_text)
+# Outer's layout is fixed, so the seven bits that align `inner` and the void field after it
+# are each one write at an offset that is a number. Choice's arms end at different bits, so
+# its final alignment is computed at run time.
+if(NOT outer_text MATCHES "writeUnsigned\\(buffer, Number\\(1n\\), 7, 0n, false\\)")
+  message(FATAL_ERROR "outer runtime is missing the 7-bit alignment write before the nested composite")
+endif()
+if(NOT outer_text MATCHES "writeUnsigned\\(buffer, Number\\(16n\\), 7, 0n, false\\)")
+  message(FATAL_ERROR "outer runtime is missing the void7 write")
+endif()
 foreach(pattern "= [A-Za-z0-9_]+ \\+ 7n;" "= [A-Za-z0-9_]+ / 8n;" "= [A-Za-z0-9_]+ \\* 8n;")
-  if(NOT outer_text MATCHES "${pattern}")
-    message(FATAL_ERROR "outer runtime is missing expected 8-bit alignment progression")
-  endif()
   if(NOT choice_text MATCHES "${pattern}")
     message(FATAL_ERROR "choice runtime is missing expected 8-bit alignment progression")
   endif()

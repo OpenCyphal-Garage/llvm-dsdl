@@ -55,62 +55,46 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
     const v2 = size * 8n;
     const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v2);
     const v3 = err2 === 0;
-    let offset: bigint;
     let err3: number;
     if (v3) {
-      const v4 = size > 4n;
-      const v5 = v4 ? 4n : size;
-      const v6 = size - v5;
-      let nestedSize = Number(v6);
-      const v7 = err2 === 0;
-      let offset2: bigint;
+      const v4 = size - 4n;
+      let nestedSize = Number(v4);
+      const v5 = err2 === 0;
       let err4: number;
-      if (v7) {
-        const nestedBuf = buffer.subarray(Math.min(Number(v5), buffer.length));
+      if (v5) {
+        const nestedBuf = buffer.subarray(Math.min(Number(4n), buffer.length));
         const _bound0_ = Math.min(nestedSize, nestedBuf.length);
         const _result1_ = serializeDelimitedInto(obj.nested, nestedBuf.subarray(0, _bound0_));
         let nestedErr: number;
         if (_result1_ < 0) {
           nestedErr = _result1_;
         } else {
-          nestedSize = _result1_;
           nestedErr = 0;
         }
-        const nestedSize2 = BigInt(nestedSize);
-        const err5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nestedSize2, v6);
-        const v8 = nestedErr === 0;
-        const v9 = v8 ? err5 : nestedErr;
-        const v10 = v9 === 0;
-        let offset3: bigint;
+        const err5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(1n, v4);
+        const v6 = nestedErr === 0;
+        const v7 = v6 ? err5 : nestedErr;
+        const v8 = v7 === 0;
         let err6: number;
-        if (v10) {
-          const v11 = nestedSize2 * 8n;
-          const v12 = v11 + 32n;
-          const err7 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, nestedSize2, false);
-          const v13 = v9 === 0;
-          const v14 = v13 ? err7 : v9;
-          offset3 = v12;
-          err6 = v14;
+        if (v8) {
+          const err7 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, 1n, false);
+          const v9 = v7 === 0;
+          const v10 = v9 ? err7 : v7;
+          err6 = v10;
         } else {
-          offset3 = 32n;
-          err6 = v9;
+          err6 = v7;
         }
-        offset2 = offset3;
         err4 = err6;
       } else {
-        offset2 = 32n;
         err4 = err2;
       }
-      offset = offset2;
       err3 = err4;
     } else {
-      offset = 0n;
       err3 = err2;
     }
-    const v15 = err3 === 0;
-    if (v15) {
-      const v16 = offset / 8n;
-      inoutBufferSizeBytes = Number(v16);
+    const v11 = err3 === 0;
+    if (v11) {
+      inoutBufferSizeBytes = Number(5n);
     }
     err = err3;
   }

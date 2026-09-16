@@ -57,8 +57,8 @@ leaving the declaration unread. The C backend now translates without it.
 The rest were values an `scf.while` carried and its body never read. MLIR keeps a while
 loop's results identical to the values its condition forwards, so a carried induction index
 is also a result -- and the canonicaliser does **not** drop an unused one, which was checked
-directly rather than assumed. Both element loops are driven by the offset alone now and
-recover the index from it, and every loop body reads the error it carries.
+directly rather than assumed. Every element loop is counted with `scf.for`, whose induction
+variable is not among its results, and a loop that carries the error reads it.
 
 Composites and arrays went live as a direct result. All 167 files of the UAVCAN corpus
 compile under `-Wall -Wextra -Werror`.
@@ -96,9 +96,11 @@ zero-extends, so the read takes the buffer's size and the write does not.
 
 A type with no fields encodes nothing, and its body is the prologue and epilogue alone.
 
-A `void` field is a run of reserved bits: written as zeros, and read as nothing, a decoder
-having no name to put them under. The writer pads to an alignment boundary,
-given an end offset instead of computing one.
+A `void` field is a run of reserved bits: written as zeros in one write, and read as nothing,
+a decoder having no name to put them under. The writer pads to an alignment boundary the same
+way while the offset modulo eight is a number -- which it stays across an array of whole-byte
+elements, a nested composite or a delimiter header -- and one bit at a time where it is not:
+after a variable-length array of narrower elements, or a union whose arms end at different bits.
 
 A union's options may be composites or arrays. What one field needs is the same whether it
 sits in a union or a struct, so both shapes ask `unsupportedFieldReason`; having the two disagree
@@ -106,11 +108,14 @@ is how an option gets accepted that the arm builder cannot emit. A union's step 
 carries alignment steps that are not options, and they are passed over here the same way the
 option collection passes over them.
 
-An array of composites is encoded element by element through the nested entry point, so the
-stride is whatever each element reports and the loop cannot be driven by the offset. It is
-counted, with `scf.for`, whose induction variable is not among its results -- an `scf.while`
-would make the index a result nothing reads, which is the dead declaration again. An array of
-delimited composites writes a header per element, through the same loop.
+An array is encoded element by element with a counted loop, `scf.for`, whose induction
+variable is not among its results -- an `scf.while` would make the index a result nothing
+reads, which is the dead declaration again. Elements of one width lie at the start plus the
+index times that width, and the loop carries the error alone. An array of composites goes
+through the nested entry point element by element; when the nested plan's width varies, or a
+reader steps by the header of each delimited element, the loop carries the offset each
+element reports as well. An array of delimited composites writes a header per element,
+through the same loop.
 
 A fixed-length array is the variable one without its bookkeeping: its length is in its
 declaration, so there is no count member to read, nothing that could be out of range, and

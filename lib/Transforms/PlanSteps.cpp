@@ -14,9 +14,11 @@
 #include "llvmdsdl/Transforms/PlanSteps.h"
 
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <cstdint>
@@ -39,6 +41,41 @@ std::int64_t ioStepBits(mlir::dsdl::IOOp io)
 std::string valueOrEmpty(const std::optional<llvm::StringRef> value)
 {
     return value ? value->str() : std::string{};
+}
+
+/// @brief The one width of the composite @p io nests, when its plan in the module has one.
+///
+/// A type's message plan is the one without a section. Its bounds are a whole number of bytes
+/// when they agree, since a composite is padded to a boundary; anything else is left as varying.
+std::optional<std::int64_t> nestedFixedBits(mlir::dsdl::IOOp io)
+{
+    auto module = io->getParentOfType<mlir::ModuleOp>();
+    if (!module || !io.isComposite() || !io.getCompositeFullName())
+    {
+        return std::nullopt;
+    }
+    auto schema = module.lookupSymbol<mlir::dsdl::SchemaOp>(
+        renderDefinitionSymbolBase(*io.getCompositeFullName(),
+                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+    if (!schema || schema.getBody().empty())
+    {
+        return std::nullopt;
+    }
+    for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+    {
+        if (plan.getSection())
+        {
+            continue;
+        }
+        const std::int64_t bits = plan.getMaxBits();
+        if ((bits == plan.getMinBits()) && (bits >= 0) && ((bits % 8) == 0))
+        {
+            return bits;
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 PlanStep stepFor(mlir::dsdl::IOOp io)
@@ -71,6 +108,7 @@ PlanStep stepFor(mlir::dsdl::IOOp io)
     step.delimiterValidateHelper      = valueOrEmpty(io.getLoweredDelimiterValidateHelper());
     step.compositeSealed              = io.getCompositeSealed().value_or(true);
     step.compositeExtentBits          = nonNegative(io.getCompositeExtentBits().value_or(0));
+    step.compositeFixedBits           = nestedFixedBits(io);
     return step;
 }
 
