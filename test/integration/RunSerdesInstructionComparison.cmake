@@ -342,19 +342,43 @@ foreach(case_index RANGE 0 ${last_case})
       set(per_milli_${key} "${per_milli}")
     endforeach()
 
+    # The peer and the empty loop are the same code in both drivers, so the two
+    # figures for each are a check that the drivers are measuring the same thing.
+    # What pins that exactly is the fixture digest, compared above; this is a
+    # bound on the rest. Two separately linked binaries do not execute the same
+    # count for the same source: the buffers are pinned to one alignment, but
+    # each driver still lays its code out its own way and reaches a library
+    # routine from its own call site, which cost an instruction in 167 on x86_64
+    # and two in 121 under `-flto`. A different payload or a driver linked
+    # against the wrong objects misses by far more than a twentieth.
     foreach(shared nnvg noop)
       set(from_c_driver "${per_milli_${shared}}")
       set(from_obj_driver "${per_milli_${shared}FromObjDriver}")
-      if(NOT from_c_driver EQUAL from_obj_driver)
+      math(EXPR spread "${from_c_driver} - ${from_obj_driver}")
+      if(spread LESS 0)
+        math(EXPR spread "0 - ${spread}")
+      endif()
+      # A twentieth of the figure, or one instruction, whichever is the larger.
+      math(EXPR allowed "${from_c_driver} / 20")
+      if(allowed LESS 1000)
+        set(allowed 1000)
+      endif()
+      if(spread GREATER allowed)
         message(FATAL_ERROR
           "case ${case_index} ${operation}: ${shared} costs ${from_c_driver} thousandths of an "
-          "instruction in the C driver and ${from_obj_driver} in the object driver. The same code "
-          "measured twice has to agree, or the two drivers are not comparable.")
+          "instruction in the C driver and ${from_obj_driver} in the object driver, further "
+          "apart than the ${allowed} this allows. Beyond layout, so the two drivers are not "
+          "measuring the same thing.")
       endif()
     endforeach()
 
+    # Each implementation carries the scaffolding of the driver it was measured
+    # in, so that is the figure subtracted from it.
+    set(scaffolding_c "${per_milli_noop}")
+    set(scaffolding_obj "${per_milli_noopFromObjDriver}")
+    set(scaffolding_nnvg "${per_milli_noop}")
     foreach(key c obj nnvg)
-      math(EXPR net_${key} "${per_milli_${key}} - ${per_milli_noop}")
+      math(EXPR net_${key} "${per_milli_${key}} - ${scaffolding_${key}}")
       if(net_${key} LESS_EQUAL 0)
         message(FATAL_ERROR
           "case ${case_index} ${key} ${operation} costs no more than the empty loop around it, "

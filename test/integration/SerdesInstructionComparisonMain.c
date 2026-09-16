@@ -115,19 +115,38 @@ enum
     kIterationDigits = 9,
 };
 
-static uint8_t g_candidate[kWireCapacity];
-static uint8_t g_fixture[kWireCapacity];
-static uint8_t g_dsdlcImage[kWireCapacity];
-static uint8_t g_nnvgImage[kWireCapacity];
-static uint8_t g_output[kWireCapacity];
-static uint8_t g_dsdlcObject[kObjectCapacity];
-static uint8_t g_nnvgObject[kObjectCapacity];
+/// Aligned, and not incidentally: a library `memcpy` takes a different number of
+/// instructions for the same size at a different alignment, and the two drivers
+/// lay their memory out differently. Pinning the alignment is what lets the same
+/// code measured in both of them answer the same number.
+enum
+{
+    kBufferAlignment = 64
+};
+
+_Alignas(kBufferAlignment) static uint8_t g_candidate[kWireCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_fixture[kWireCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_dsdlcImage[kWireCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_nnvgImage[kWireCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_output[kWireCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_dsdlcObject[kObjectCapacity];
+_Alignas(kBufferAlignment) static uint8_t g_nnvgObject[kObjectCapacity];
 
 /// Written at run time from the selected case, so the stub calls below are
 /// reached through a pointer no optimiser can resolve. A const table of stubs
 /// would be devirtualised and the loop around it elided, and the scaffolding
 /// cost this mode exists to measure would come back as zero.
 static DifferentialCaseInfo g_noopInfo;
+
+/// The implementation under measurement, handed to the loops through a volatile.
+///
+/// Internal linkage and a stub in this file are not an opaque boundary: whole
+/// program optimisation can see that this only ever holds one of three known
+/// addresses, inline the body -- the empty one especially -- and drop the loop,
+/// leaving the scaffolding measured as nothing and the subtraction meaningless.
+/// A volatile load has no known value, so every build calls indirectly and all
+/// three modes are measured in the same shape, which is what the ratios claim.
+static const DifferentialCaseInfo* volatile g_measured;
 
 static int8_t noopSerialize(const void* const obj, uint8_t* const buffer, size_t* const inoutSize)
 {
@@ -480,8 +499,10 @@ int main(int argc, char** argv)
         object                         = g_dsdlcObject;
     }
 
-    const int result =
-        isEncode ? measureEncode(info, object, iterations) : measureDecode(info, object, fixtureSize, iterations);
+    g_measured                                 = info;
+    const DifferentialCaseInfo* const measured = g_measured;
+    const int                         result   = isEncode ? measureEncode(measured, object, iterations)
+                                                          : measureDecode(measured, object, fixtureSize, iterations);
     if (result != 0)
     {
         fprintf(stderr, "case %s: the measured call failed mid-loop\n", testCase->name);
