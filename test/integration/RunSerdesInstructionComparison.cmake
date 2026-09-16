@@ -88,8 +88,14 @@ endif()
 # them. NDEBUG for the same reason -- the runtime's guards are asserts, a release
 # caller does not carry them, and they do not fall evenly on the two C sides.
 # These reach the C compiler only; the object column is dsdlc's own pipeline.
+#
+# Spelled as one string and split here, like DSDLC_EXTRA_ARGS below. A CMake list
+# arrives from `add_test` as separate arguments, and `-DNDEBUG` among them reads
+# as a second cache variable to define.
 if(NOT DEFINED OPTIMISATION_FLAGS OR "${OPTIMISATION_FLAGS}" STREQUAL "")
-  set(OPTIMISATION_FLAGS -O2 -DNDEBUG)
+  set(optimisation_flags -O2 -DNDEBUG)
+else()
+  separate_arguments(optimisation_flags NATIVE_COMMAND "${OPTIMISATION_FLAGS}")
 endif()
 
 set(dsdlc_extra_args "")
@@ -101,7 +107,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/DifferentialCorpus.cmake")
 llvmdsdl_differential_corpus(
   OUT_DIR "${OUT_DIR}"
   DSDLC_EXTRA_ARGS ${dsdlc_extra_args}
-  EXTRA_C_FLAGS ${OPTIMISATION_FLAGS}
+  EXTRA_C_FLAGS ${optimisation_flags}
   OBJECTS_VAR c_objects
   BUILD_DIR_VAR build_out
   NUNAVUT_OBJECT_VAR nunavut_object
@@ -109,7 +115,7 @@ llvmdsdl_differential_corpus(
 llvmdsdl_differential_obj_corpus(
   OUT_DIR "${OUT_DIR}"
   DSDLC_EXTRA_ARGS ${dsdlc_extra_args}
-  EXTRA_C_FLAGS ${OPTIMISATION_FLAGS}
+  EXTRA_C_FLAGS ${optimisation_flags}
   OBJECTS_VAR obj_objects
 )
 
@@ -123,7 +129,7 @@ execute_process(
   COMMAND
     "${C_COMPILER}"
       ${LLVMDSDL_DIFFERENTIAL_BASE_C_FLAGS}
-      ${OPTIMISATION_FLAGS}
+      ${optimisation_flags}
       -I "${SOURCE_ROOT}/test/integration"
       -c "${main_c}"
       -o "${main_obj}"
@@ -145,7 +151,7 @@ function(llvmdsdl_link_driver name)
   execute_process(
     COMMAND
       "${C_COMPILER}"
-        ${OPTIMISATION_FLAGS}
+        ${optimisation_flags}
         "${main_obj}"
         ${ARGN}
         -o "${exe}"
@@ -247,7 +253,7 @@ execute_process(
 )
 cmake_host_system_information(RESULT arch QUERY OS_PLATFORM)
 string(REPLACE ";" " " base_flags_text "${LLVMDSDL_DIFFERENTIAL_BASE_C_FLAGS}")
-string(REPLACE ";" " " optimisation_text "${OPTIMISATION_FLAGS}")
+string(REPLACE ";" " " optimisation_text "${optimisation_flags}")
 string(REPLACE ";" " " dsdlc_extra_text "${dsdlc_extra_args}")
 
 list(LENGTH LLVMDSDL_DIFFERENTIAL_DEFINITIONS definition_count)

@@ -3360,7 +3360,7 @@ if(_diff_parity_missing STREQUAL "")
   # The object column is dsdlc's own LLVM pipeline at O2 and does not move with
   # any of this. `-O2;-DNDEBUG;-flto` answers a further question: what the plans
   # cost with the optimiser able to see into our C as well as the peer's headers.
-  set(LLVMDSDL_SERDES_INSTRUCTION_OPTIMISATION_FLAGS "-O2;-DNDEBUG"
+  set(LLVMDSDL_SERDES_INSTRUCTION_OPTIMISATION_FLAGS "-O2 -DNDEBUG"
       CACHE STRING
       "Flags the C implementations are compiled with for the comparison.")
 
