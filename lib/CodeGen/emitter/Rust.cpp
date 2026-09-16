@@ -439,9 +439,12 @@ public:
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
     {
-        // A body reaches the runtime and the standard library by path, and a local never captures
+        // A body reaches the runtime and the standard library by path, and a `let` never captures
         // a type: Rust resolves `x as u64` in the type namespace and a binding lives in the value
-        // namespace. There is nothing here for a local to shadow.
+        // namespace. A synthesised helper it reaches by bare name, and that is a module-scope
+        // item in the value namespace, which a `let` would capture. None can be: the helper
+        // carries `mlir_llvmdsdl_`, and a role name is a role word, or a member and a role word
+        // joined, so it carries no prefix at all.
         return {};
     }
 

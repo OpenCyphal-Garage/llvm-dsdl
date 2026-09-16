@@ -459,9 +459,11 @@ public:
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
     {
-        // A body calls the runtime through its prefixed free functions, the standard library
-        // through `std::`, and a nested type through its own scope. Nothing it calls is looked up
-        // unqualified, so nothing it calls can be captured.
+        // A body qualifies the standard library with `std::` and a nested type with its own
+        // namespace, but it does reach two things by bare name: the runtime, whose functions
+        // carry `dsdl_runtime_`, and a synthesised helper, which carries `mlir_llvmdsdl_`. A
+        // local of either name would capture the call. None can be: a role name is a role word,
+        // or a member and a role word joined, so it carries no prefix at all.
         return {};
     }
 
