@@ -206,11 +206,11 @@ public:
 
     /// @brief The identifiers already in scope that a body depends on.
     ///
-    /// Two kinds. A body that reaches into the language's own namespace -- Go's predeclared
-    /// conversions and `len`, Python's builtins, TypeScript's globals -- is captured by a local of
-    /// the same name, and the capture is legal code that means something else. And a signature or
-    /// prologue may open the body with a name @ref openFunction cannot report, since that answers
-    /// one identifier per argument of the function being translated and a spelling may write more.
+    /// Two kinds. A body that reaches into the language's own namespace by bare name is captured
+    /// by a local of the same name, and the capture is legal code that means something else. And a
+    /// signature or prologue may open the body with a name @ref openFunction cannot report, since
+    /// that answers one identifier per argument of the function being translated and a spelling
+    /// may write more.
     ///
     /// The translator claims these before it names anything, so a value whose role lands on one is
     /// distinguished the way a repeat is, and a role word is chosen for how it reads rather than

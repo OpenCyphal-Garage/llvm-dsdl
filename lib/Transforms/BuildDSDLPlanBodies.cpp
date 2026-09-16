@@ -84,8 +84,8 @@ constexpr llvm::StringLiteral RoleRejected = "rejected";
 /// @brief Names what each result of @p op holds, for a backend to declare it by.
 ///
 /// The offset a plan threads through its steps and the error it carries alongside are `scf`
-/// results of the plan's own shape, and no operation that builds one says which it is. This is
-/// where that is known, so this is where it is written down.
+/// results of the plan's own shape. This pass knows which is which as it builds them, and writes
+/// that down for the backends.
 void stampResultRoles(mlir::Operation* const op, const llvm::ArrayRef<llvm::StringRef> roles)
 {
     mlir::SmallVector<mlir::Attribute, 2> names;

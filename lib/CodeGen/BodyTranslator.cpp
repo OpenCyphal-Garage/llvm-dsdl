@@ -162,16 +162,16 @@ Role roleOfCall(mlir::func::CallOp call)
     return {};
 }
 
-/// @brief The role `build-dsdl-plan-bodies` stamped on result @p index of @p op, if it did.
+/// @brief The role `build-dsdl-plan-bodies` stamped on result @p index of @p op.
 ///
-/// A plan's offset and the error beside it are results of its own shape, which the operations
-/// that build them do not state; the pass that does know writes it down as it builds.
+/// A plan's offset and the error beside it are results of its own shape, known to the pass that
+/// builds them and written down there.
 Role stampedRole(mlir::Operation* const op, const unsigned index)
 {
     const auto roles = op->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles");
-    // Canonicalisation drops a result nothing reads, which moves every result after it. The
-    // stamp is one name per result as it was built, so a count that no longer agrees is a stamp
-    // that no longer says which result is which, and the yielded values are asked instead.
+    // Canonicalisation drops a result nothing reads, which moves every result after it. The stamp
+    // is one name per result as it was built, so it says which result is which for as long as the
+    // counts agree; past that the yielded values are asked instead.
     if (!roles || (roles.size() != op->getNumResults()) || (index >= roles.size()))
     {
         return {};
@@ -196,22 +196,20 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
     return {};
 }
 
-/// @brief The values a walk is already inside, so a carry that reaches itself ends it.
-///
-/// A loop's argument is reached from the value yielded back into it, which is reached from that
-/// argument: what has to end is a cycle, not a depth. Stopping at a fixed depth would also stop a
-/// chain of nested results that is merely long, and a plan nests as deeply as its type does.
-///
-/// The values, not the operations that hold them: a loop's result and the argument it forwards
-/// belong to one operation and reach each other, and that is the walk doing its work.
 /// @brief No value beneath this one reached back onto the path.
 constexpr unsigned NoCarryBack = std::numeric_limits<unsigned>::max();
 
 /// @brief One function's role walk: the path being followed, and the values already answered.
 ///
 /// `path` holds the depth at which each value sits on the walk, so a value reached while it is
-/// still being answered is a carry reaching itself. `settled` holds the values whose answer does
-/// not depend on how they were reached, which is what makes it safe to keep.
+/// still being answered is a carry reaching itself. A loop's argument is reached from the value
+/// yielded back into it, which is reached from that argument, and it is that cycle the walk has
+/// to end. The map is keyed by value rather than by the operation holding it: a loop's result and
+/// the argument it forwards belong to one operation and reach each other, and that is the walk
+/// doing its work.
+///
+/// `settled` holds the values whose answer does not depend on how they were reached, which is
+/// what makes it safe to keep.
 struct RoleWalk final
 {
     llvm::SmallDenseMap<mlir::Value, unsigned, 16> path;
@@ -267,8 +265,8 @@ Reached roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
         const Role role = *reached.role;
         if (role.role == ValueRole::Anonymous)
         {
-            // No operation says what this one is, which is not a statement that it has no role.
-            // Letting it veto would take a role away from the arm that does state one.
+            // Nothing states what this one is, which is an absence of information rather than a
+            // role of its own. Letting it veto would take the role from the arm that states one.
             continue;
         }
         if (!shared.has_value())
@@ -296,8 +294,8 @@ Reached roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
 /// `scf.if`'s yield operands, an `scf.while`'s `scf.condition` arguments, an `scf.for`'s
 /// initialisers and body yield. So each read is in range, and MLIR's own ranges assert when one
 /// is not -- a guard here would answer "no role" for an index from the wrong list instead, which
-/// is the defect it would be hiding. An `scf.if` with no else region is the one real option, and
-/// that is what the emptiness test is for.
+/// is the defect it would be hiding. An `scf.if` may carry no else region, which is what the
+/// emptiness test is for.
 std::vector<mlir::Value> yieldedInto(mlir::Operation* const op, const unsigned index)
 {
     std::vector<mlir::Value> out;
@@ -356,8 +354,8 @@ bool forwardsArgumentsInOrder(mlir::scf::WhileOp loop)
 /// @brief The values that reach before-region argument @p index of @p loop.
 ///
 /// The initialiser at that position carries the first iteration, the after region's `scf.yield`
-/// every one after it. Both are per-argument: asking what every initialiser shares would answer
-/// for the offset and the error together, which are the two a loop carries.
+/// every one after it. Both are read per-argument, so an offset and the error beside it are
+/// answered apart.
 ///
 /// The index is a before-region argument's, and the verifier ties that list to both of these: a
 /// loop's initialisers match its before-region arguments, and its after region yields to them. So
@@ -528,10 +526,10 @@ private:
     /// The spelling is asked with a rising ordinal until it answers with a name the function has
     /// not used, so a repeated role is distinguished in the spelling's own style.
     ///
-    /// `NamingScope` claims names from a pool this way too, and would be the one to use if the
-    /// suffix were the same everywhere. It is not: it appends `_2` for every language, where Go
-    /// and TypeScript want `err2`. Reaching for it would need a camel projection and a camel
-    /// suffix in the policy first, and its `LocalName` row moved to them.
+    /// `NamingScope` claims names from a pool this way too, and would serve here once it can
+    /// render a camel-cased name and a camel-cased suffix -- it appends `_2` for every language,
+    /// and a camel spelling wants the digit bare. That means a camel projection and a camel
+    /// suffix in the policy, with its `LocalName` row moved to them.
     std::string nameFor(const mlir::Value value)
     {
         const Role role = roleOf(value, walk_).role.value_or(Role{});
@@ -726,10 +724,10 @@ private:
                           llvm::ArrayRef<std::string> yieldTargets,
                           llvm::ArrayRef<std::string> conditionTargets)
     {
-        // Every arm answers `void`, so an arm that tries to answer with its error does not
-        // compile. Answering with an `llvm::Error` instead would build a
-        // `std::optional<llvm::Error>` inside the switch, which GCC cannot prove initialised
-        // once the arms inline into one another.
+        // Each arm is annotated `-> void` and reports its failure through `outcome`, so an arm
+        // written to return its error is a compile error. Switching on an `llvm::Error` result
+        // instead -- the obvious form -- builds a `std::optional<llvm::Error>` inside the switch,
+        // which GCC 15 reports as possibly uninitialised once the arms inline into one another.
         //
         // An arm that can fail joins its error onto this one rather than assigning over it: a
         // success is unchecked, `Error::operator=` requires a checked left side, and joining
@@ -959,10 +957,7 @@ llvm::StringRef roleWord(const ValueRole role)
 /// The member is folded by `canonicalSnakeCase`, the projection the frontend's collision check
 /// and the naming policy already share, so `fooBar` and `FOO_BAR` reach one spelling however the
 /// DSDL author cased them, and the two renderings of a name differ in case alone. What a language
-/// calls the field itself is its own policy's answer and not always this one: C++ and Rust keep
-/// the member's spelling, Go makes it Pascal. The fold also settles the underscores: a member may
-/// lead or trail with one, and a target may already have escaped a reserved word by trailing one,
-/// so joining either to a role word would double it, which C++ reserves.
+/// calls the field itself is its own policy's answer.
 std::string joinSnake(const llvm::StringRef member, const llvm::StringRef word)
 {
     // The fold drops a leading underscore itself; a trailing one it keeps, and joining that to a
