@@ -3341,6 +3341,81 @@ if(_diff_parity_missing STREQUAL "")
     PROPERTIES
       LABELS "integration;uavcan;differential;slow;optimized"
   )
+
+  # What it costs to produce those bytes, over the same ten types and payloads,
+  # for the peer's C, our C and the object we emit ourselves. Reported rather
+  # than gated: the peer is corroboration, and that holds for speed as much as
+  # for bytes. See RunSerdesInstructionComparison.cmake for the measurement and
+  # what it leaves out. Skips where valgrind is absent, which includes macOS
+  # arm64.
+  set(LLVMDSDL_SERDES_INSTRUCTION_ITERATIONS 1000
+      CACHE STRING
+      "Iterations per measured loop in the C serdes instruction comparison.")
+  # Release semantics for the two C columns: a caller who cares what this costs
+  # builds with NDEBUG, and the runtime's guards are asserts. They are worth
+  # 62 instructions on Heartbeat encode, and they do not fall on both sides
+  # evenly -- the peer's fold away once its body is inlined at a constant offset
+  # and ours cannot, being out of line -- so leaving them in compares assert
+  # placement rather than the code. Drop NDEBUG here to measure what they cost.
+  # The object column is dsdlc's own LLVM pipeline at O2 and does not move with
+  # any of this. `-O2;-DNDEBUG;-flto` answers a further question: what the plans
+  # cost with the optimiser able to see into our C as well as the peer's headers.
+  set(LLVMDSDL_SERDES_INSTRUCTION_OPTIMISATION_FLAGS "-O2;-DNDEBUG"
+      CACHE STRING
+      "Flags the C implementations are compiled with for the comparison.")
+
+  add_test(
+    NAME llvmdsdl-serdes-instruction-comparison
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/serdes-instruction-comparison-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DNUNAVUT_REPO=${LLVMDSDL_NUNAVUT_REPO}
+        -DPYDSDL_REPO=${LLVMDSDL_PYDSDL_REPO}
+        -DITERATIONS=${LLVMDSDL_SERDES_INSTRUCTION_ITERATIONS}
+        -DOPTIMISATION_FLAGS=${LLVMDSDL_SERDES_INSTRUCTION_OPTIMISATION_FLAGS}
+        -DREPORT_JSON=${CMAKE_CURRENT_BINARY_DIR}/serdes-instruction-comparison-out/serdes-instruction-comparison.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSerdesInstructionComparison.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-serdes-instruction-comparison
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      # No RUN_SERIAL, unlike the wall-clock benchmarks: an instruction count is
+      # the same on a busy machine as on an idle one.
+      LABELS "integration;uavcan;differential;instructions;bench;slow"
+  )
+
+  add_test(
+    NAME llvmdsdl-serdes-instruction-comparison-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/serdes-instruction-comparison-optimized-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DNUNAVUT_REPO=${LLVMDSDL_NUNAVUT_REPO}
+        -DPYDSDL_REPO=${LLVMDSDL_PYDSDL_REPO}
+        -DITERATIONS=${LLVMDSDL_SERDES_INSTRUCTION_ITERATIONS}
+        -DOPTIMISATION_FLAGS=${LLVMDSDL_SERDES_INSTRUCTION_OPTIMISATION_FLAGS}
+        -DREPORT_JSON=${CMAKE_CURRENT_BINARY_DIR}/serdes-instruction-comparison-optimized-out/serdes-instruction-comparison.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSerdesInstructionComparison.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-serdes-instruction-comparison-optimized
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      LABELS "integration;uavcan;differential;instructions;bench;slow;optimized"
+  )
 else()
   string(REPLACE ";" ", " _diff_parity_missing_str "${_diff_parity_missing}")
   if(LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY)

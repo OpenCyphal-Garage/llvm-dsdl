@@ -36,7 +36,8 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
-#: The tag the differential-parity lane checks out (NUNAVUT_SHA in .github/workflows/ci.yml).
+#: The tag the differential lanes check out (NUNAVUT_SHA in
+#: .github/actions/provision-peer-dsdl-compiler/action.yml).
 NUNAVUT_VERSION = "3.0.1b1"
 
 DSDLC_LANGUAGES = ("c", "cpp", "rust", "go", "ts", "python", "obj")

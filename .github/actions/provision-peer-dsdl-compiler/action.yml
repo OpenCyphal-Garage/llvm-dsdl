@@ -1,0 +1,42 @@
+name: Provision the peer DSDL compiler
+description: >
+  Check out nunavut and pydsdl at pinned SHAs for the lanes that generate with
+  both compilers.
+
+  Nunavut is a pinned peer implementation used for corroboration, not an oracle:
+  the Cyphal Specification is the truth and spec/dafny/CyphalSerdes.dfy is the
+  machine-checked oracle. With the SHAs pinned, a mismatch that newly appears
+  implicates our change first. Bump them only as a deliberate, adjudicated
+  update.
+
+  The harnesses consume both repositories as source trees via PYTHONPATH --
+  nunavut vendors Jinja2 and pydsdl has no runtime dependencies, so nothing is
+  installed. The pins live here because two jobs need them and a second copy
+  would drift: the parity and instruction-comparison lanes have to be looking at
+  the same peer for the comparison between their results to mean anything.
+
+outputs:
+  nunavut-path:
+    description: The nunavut checkout, for LLVMDSDL_NUNAVUT_REPO.
+    value: ${{ steps.clone.outputs.nunavut-path }}
+  pydsdl-path:
+    description: The pydsdl checkout, for LLVMDSDL_PYDSDL_REPO.
+    value: ${{ steps.clone.outputs.pydsdl-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the pinned peer compiler
+      id: clone
+      shell: bash
+      env:
+        NUNAVUT_SHA: 37095abb9fac47f924a52500bf4cebe2256dcff5  # tag 3.0.1b1
+        PYDSDL_SHA: a1506ce424589cc049b3fe4fece1e52626b55529   # pydsdl 1.23.0-dev
+      run: |
+        set -euo pipefail
+        git clone --filter=blob:none https://github.com/OpenCyphal/nunavut.git .reference/nunavut
+        git -C .reference/nunavut checkout --detach "${NUNAVUT_SHA}"
+        git clone --filter=blob:none https://github.com/OpenCyphal/pydsdl.git .reference/pydsdl
+        git -C .reference/pydsdl checkout --detach "${PYDSDL_SHA}"
+        echo "nunavut-path=${GITHUB_WORKSPACE}/.reference/nunavut" >> "${GITHUB_OUTPUT}"
+        echo "pydsdl-path=${GITHUB_WORKSPACE}/.reference/pydsdl" >> "${GITHUB_OUTPUT}"

@@ -19,6 +19,10 @@ invariant to how fast that machine happens to be. An absolute second is not: it
 encodes the host's CPU, its standard library, and in the Python case the exact
 interpreter build. So the absolute thresholds in this repository are calibrated on
 one developer machine and enforced nowhere.
+
+The C comparison against Nunavut is reported in instructions, which is a property
+of the code rather than of the runner, and its ratios can therefore be read
+directly.
 """
 
 from __future__ import annotations
@@ -147,6 +151,110 @@ def _render_python(report: dict | None, out: list[str]) -> None:
             out.append(f"| {name} | {mode} | {family} | {value:.4f} |")
 
 
+def _serdes_net_ir(operation: dict, iterations: int) -> dict[str, float] | None:
+    """The per-iteration cost of each implementation, with the loop subtracted.
+
+    Each figure is the difference between the same measurement taken at the full
+    iteration count and at zero, which is what removes process start, the
+    harness's fixture search and its printing. `noop` is the loop and the
+    indirect call with no serialiser behind it.
+    """
+    if iterations <= 0:
+        return None
+
+    def per_iteration(key: str) -> float | None:
+        entry = operation.get(key)
+        if not entry:
+            return None
+        return (entry["irAtFull"] - entry["irAtZero"]) / iterations
+
+    noop = per_iteration("noop")
+    if noop is None:
+        return None
+    net = {}
+    for key in ("c", "obj", "nnvg"):
+        value = per_iteration(key)
+        if value is None:
+            return None
+        net[key] = value - noop
+    return net
+
+
+def _render_serdes(reports: list[tuple[pathlib.Path, dict | None]], out: list[str]) -> None:
+    out.append("## Generated C against Nunavut, in instructions")
+    if not reports:
+        return
+    out.append("")
+    out.append(
+        "Three implementations of the same ten types: `nnvg` is the peer's C, `c` is this "
+        "project's C compiled the same way, and `obj` is the object dsdlc emits itself through "
+        "its own LLVM pipeline at O2. All three decode the same wire image and are measured "
+        "behind the same indirect call, so the ratios compare bodies. This project emits its "
+        "serialisers out of line and Nunavut emits `static inline` definitions, so at a real call "
+        "site the peer's body is visible to the optimiser where ours is not; that difference is "
+        "inside these numbers."
+    )
+
+    for path, report in reports:
+        extra = (report or {}).get("meta", {}).get("dsdlcExtraArguments", "")
+        title = f"`{extra}`" if extra else "default flags"
+        out.append("")
+        out.append(f"### dsdlc: {title}")
+        out.append("")
+        if report is None:
+            out.append(f"_No report at `{path}`; the comparison skips where valgrind is absent._")
+            continue
+
+        meta = report.get("meta", {})
+        iterations = int(meta.get("iterations", 0))
+        out.append(
+            f"{meta.get('arch', '?')} · {iterations} iterations · "
+            f"`{meta.get('cCompiler', '?')}` `{meta.get('cFlags', '?')}` · "
+            f"{meta.get('valgrind', '?')}"
+        )
+        out.append("")
+        out.append(
+            "| type | wire bytes | fixture | op | nnvg (Ir) | c (Ir) | c/nnvg | obj (Ir) "
+            "| obj/nnvg | obj/c |"
+        )
+        out.append("|---|---:|---|---|---:|---:|---:|---:|---:|---:|")
+        ratios: dict[str, dict[str, list[float]]] = {}
+        for case in report.get("cases", []):
+            for operation in ("encode", "decode"):
+                net = _serdes_net_ir(case.get(operation, {}), iterations)
+                if net is None:
+                    continue
+                pairs = {
+                    "c/nnvg": net["c"] / net["nnvg"],
+                    "obj/nnvg": net["obj"] / net["nnvg"],
+                    "obj/c": net["obj"] / net["c"],
+                }
+                for name, value in pairs.items():
+                    ratios.setdefault(operation, {}).setdefault(name, []).append(value)
+                out.append(
+                    f"| {case.get('name', '?')} | {case.get('wireBytes', '?')} | "
+                    f"{case.get('fixtureSource', '?')} | {operation} | {net['nnvg']:,.1f} | "
+                    f"{net['c']:,.1f} | {pairs['c/nnvg']:.3f} | {net['obj']:,.1f} | "
+                    f"{pairs['obj/nnvg']:.3f} | {pairs['obj/c']:.3f} |"
+                )
+
+        if ratios:
+            out.append("")
+            out.append("| op | c/nnvg | obj/nnvg | obj/c |")
+            out.append("|---|---:|---:|---:|")
+            for operation, by_name in ratios.items():
+                cells = []
+                for name in ("c/nnvg", "obj/nnvg", "obj/c"):
+                    values = by_name[name]
+                    product = 1.0
+                    for value in values:
+                        product *= value
+                    cells.append(f"{product ** (1.0 / len(values)):.3f}")
+                out.append(f"| {operation} | " + " | ".join(cells) + " |")
+            out.append("")
+            out.append("Geometric means of the per-type ratios.")
+
+
 def _render_calibration(rust: dict | None, python: dict | None, out: list[str]) -> None:
     """Prints the observed elapsed times as threshold-file fragments.
 
@@ -191,6 +299,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--rust-report", type=pathlib.Path, required=True)
     parser.add_argument("--python-report", type=pathlib.Path, required=True)
     parser.add_argument(
+        "--serdes-report",
+        type=pathlib.Path,
+        action="append",
+        default=[],
+        help="A C serdes instruction comparison report; repeatable, one per dsdlc variant.",
+    )
+    parser.add_argument(
         "--markdown",
         type=pathlib.Path,
         help="Append the rendered report here (GITHUB_STEP_SUMMARY); stdout when omitted.",
@@ -217,6 +332,8 @@ def main(argv: list[str]) -> int:
     _render_rust(rust, out)
     out.append("")
     _render_python(python, out)
+    out.append("")
+    _render_serdes([(path, _load(path)) for path in args.serdes_report], out)
     _render_calibration(rust, python, out)
     out.append("")
 
