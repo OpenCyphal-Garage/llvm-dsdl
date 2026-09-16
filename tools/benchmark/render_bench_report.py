@@ -151,13 +151,20 @@ def _render_python(report: dict | None, out: list[str]) -> None:
             out.append(f"| {name} | {mode} | {family} | {value:.4f} |")
 
 
+#: The loop each implementation is measured inside. The object route runs in its
+#: own driver -- one binary cannot hold two definitions of the same entry points
+#: -- and that driver's loop is the one to take off its figures, which is what
+#: the lane itself subtracts.
+_SERDES_SCAFFOLDING = {"c": "noop", "nnvg": "noop", "obj": "noopFromObjDriver"}
+
+
 def _serdes_net_ir(operation: dict, iterations: int) -> dict[str, float] | None:
-    """The per-iteration cost of each implementation, with the loop subtracted.
+    """The per-iteration cost of each implementation, with its own loop subtracted.
 
     Each figure is the difference between the same measurement taken at the full
     iteration count and at zero, which is what removes process start, the
-    harness's fixture search and its printing. `noop` is the loop and the
-    indirect call with no serialiser behind it.
+    harness's fixture search and its printing. A `noop` figure is the loop and
+    the indirect call with no serialiser behind it.
     """
     if iterations <= 0:
         return None
@@ -168,15 +175,13 @@ def _serdes_net_ir(operation: dict, iterations: int) -> dict[str, float] | None:
             return None
         return (entry["irAtFull"] - entry["irAtZero"]) / iterations
 
-    noop = per_iteration("noop")
-    if noop is None:
-        return None
     net = {}
-    for key in ("c", "obj", "nnvg"):
+    for key, loop in _SERDES_SCAFFOLDING.items():
         value = per_iteration(key)
-        if value is None:
+        overhead = per_iteration(loop)
+        if value is None or overhead is None:
             return None
-        net[key] = value - noop
+        net[key] = value - overhead
     return net
 
 
