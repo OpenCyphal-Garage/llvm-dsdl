@@ -374,6 +374,47 @@ std::string guardChain(const unsigned depth)
     return out;
 }
 
+/// @brief A loop that does not forward its before-region arguments in order.
+///
+/// Two arguments go in, the condition forwards only the second, and the stamp names the one
+/// result it therefore has. A stamp names results, so reading it at a before-region argument's
+/// position describes whichever result happens to sit there -- here it would call the array's
+/// count an offset. The count is what flows in, and that is what the argument is.
+constexpr llvm::StringLiteral SkewedLoop = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %cond: i1) -> i64 {
+    %count = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %tag = dsdl.union_tag %arg0 : <!dsdl.object<"a.B.1.0">>
+    %r = scf.while (%a = %count, %b = %tag) : (i64, i64) -> i64 {
+      scf.condition(%cond) %b : i64
+    } do {
+    ^bb0(%x: i64):
+      scf.yield %count, %tag : i64, i64
+    } attributes {llvmdsdl.result_roles = ["offset"]}
+    return %r : i64
+  }
+)mlir";
+
+/// @brief A loop whose condition forwards something other than its argument.
+///
+/// The count goes in, a union tag comes out, and the after region hands its own argument back.
+/// Following the carry therefore reaches that after-region argument, which is fed by the
+/// condition and not by the initialiser: the carry is a count on entry and a tag thereafter, so
+/// no role describes it. Reading the after-region argument from the initialiser instead would
+/// have both paths agree on a count.
+constexpr llvm::StringLiteral ForwardedLoop = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %cond: i1) -> i64 {
+    %count = dsdl.array_length %arg0 "items" : <!dsdl.object<"a.B.1.0">>
+    %r = scf.while (%a = %count) : (i64) -> i64 {
+      %t = dsdl.union_tag %arg0 : <!dsdl.object<"a.B.1.0">>
+      scf.condition(%cond) %t : i64
+    } do {
+    ^bb0(%x: i64):
+      scf.yield %x : i64
+    } attributes {llvmdsdl.result_roles = ["offset", "error"]}
+    return %r : i64
+  }
+)mlir";
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
@@ -568,6 +609,39 @@ bool runBodyValueNamingTests()
     if (ms > 2000)
     {
         std::cerr << "the guard chain took " << ms << " ms: the role walk is re-deriving values it has settled\n";
+        ok = false;
+    }
+
+    // The count goes in at the first argument and the stamp's first name is `offset`, so a stamp
+    // read at an argument's position names it after a result it is not. Two values carry the
+    // count here -- the read and the argument it feeds -- so both must be spelled for it.
+    const auto skewed = declaredNamesFor(SkewedLoop, {});
+    if (!skewed.has_value())
+    {
+        return false;
+    }
+    const auto counts = std::count_if(skewed->begin(), skewed->end(), [](const std::string& name) {
+        return name.starts_with("count");
+    });
+    if (counts < 2)
+    {
+        std::cerr << "a loop argument took its name from the result slot beside it, not from what reaches it\n";
+        ok = false;
+    }
+
+    // The carry is a count on entry and a tag on every iteration after it, so the translator must
+    // name it itself. Only one value here is a count: the read that feeds the loop.
+    const auto forwarded = declaredNamesFor(ForwardedLoop, {});
+    if (!forwarded.has_value())
+    {
+        return false;
+    }
+    const auto onlyCount = std::count_if(forwarded->begin(), forwarded->end(), [](const std::string& name) {
+        return name.starts_with("count");
+    });
+    if (onlyCount != 1)
+    {
+        std::cerr << "a loop carry was called a count on every iteration, though only the first one is\n";
         ok = false;
     }
 

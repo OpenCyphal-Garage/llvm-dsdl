@@ -308,6 +308,24 @@ std::vector<mlir::Value> yieldedInto(mlir::Operation* const op, const unsigned i
     return out;
 }
 
+/// @brief Whether @p loop forwards its before-region arguments in order and entire.
+///
+/// A stamp names results, and a loop's results are what its `scf.condition` forwards. The same
+/// stamp describes a before-region argument only where the condition forwards the arguments
+/// unchanged, so that position means the same thing in both lists. The plans are built that way;
+/// the operation does not require it, and the two lists may differ in length and in order.
+bool forwardsArgumentsInOrder(mlir::scf::WhileOp loop)
+{
+    auto condition = mlir::dyn_cast<mlir::scf::ConditionOp>(loop.getBefore().front().getTerminator());
+    if (!condition)
+    {
+        return false;
+    }
+    const auto arguments = loop.getBefore().front().getArguments();
+    const auto forwarded = condition.getArgs();
+    return llvm::equal(arguments, forwarded);
+}
+
 /// @brief The values that reach before-region argument @p index of @p loop.
 ///
 /// The initialiser at that position carries the first iteration, the after region's `scf.yield`
@@ -370,12 +388,19 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         }
         if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
         {
-            const Role stamped = stampedRole(whileOp, argument.getArgNumber());
+            // Both regions answer this operation as their parent, and their arguments index
+            // different lists: a before-region argument is an initialiser's position, an
+            // after-region argument a result's. A stamp names results, so it describes the one
+            // outright and the other only where the condition forwards its arguments unchanged.
+            const bool before = argument.getOwner() == &whileOp.getBefore().front();
+            const Role stamped =
+                (!before || forwardsArgumentsInOrder(whileOp)) ? stampedRole(whileOp, argument.getArgNumber()) : Role{};
             if (stamped.role != ValueRole::Anonymous)
             {
                 return Reached{stamped};
             }
-            return roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), walk);
+            return before ? roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), walk)
+                          : roleOfYielded(yieldedInto(whileOp, argument.getArgNumber()), walk);
         }
         return Reached{Role{}};
     }
