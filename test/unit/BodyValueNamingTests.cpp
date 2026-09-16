@@ -84,6 +84,9 @@ public:
     llvm::SmallVector<llvm::StringRef, 1> reserved;
     mutable std::vector<std::string>      declared;
 
+    /// @brief Whether a name carries the member, or only the role it was inferred from.
+    bool withMember{false};
+
     std::vector<std::string> openFunction(SourceWriter& /*w*/, mlir::func::FuncOp fn) const override
     {
         std::vector<std::string> parameters;
@@ -104,11 +107,11 @@ public:
     }
 
     /// @brief Names a value after its role alone, so a case can tell which role was inferred.
-    [[nodiscard]] std::string valueName(const ValueRole role,
-                                        llvm::StringRef /*member*/,
-                                        const std::size_t ordinal) const override
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
     {
-        return llvmdsdl::snakeValueName(role, {}, ordinal);
+        return llvmdsdl::snakeValueName(role, withMember ? member : llvm::StringRef{}, ordinal);
     }
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
@@ -437,12 +440,34 @@ constexpr llvm::StringLiteral SilentArm = R"mlir(
   }
 )mlir";
 
+/// @brief One buffer address read by two nested calls, which name different members.
+///
+/// `dsdl.buffer_at` has no memory effect, so CSE may merge two that address the same offset. The
+/// address then belongs to both calls and to neither member, and the use list has no order that
+/// would prefer one of them.
+constexpr llvm::StringLiteral SharedAddress = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>,
+                  %buf: !dsdl.ptr<!dsdl.byte>,
+                  %size: !dsdl.ptr<!dsdl.size>) -> i8 {
+    %zero = arith.constant 0 : i64
+    %at = dsdl.buffer_at %buf[%zero] : <!dsdl.byte> -> <!dsdl.byte>
+    %alpha = dsdl.member_addr %arg0 "alpha" : <!dsdl.object<"a.B.1.0">> -> <!dsdl.object<"a.C.1.0">>
+    %beta = dsdl.member_addr %arg0 "beta" : <!dsdl.object<"a.B.1.0">> -> <!dsdl.object<"a.C.1.0">>
+    %e1 = dsdl.call_serdes @f(%alpha, %at, %size) {direction = "serialize", member = "alpha"} :
+        <!dsdl.object<"a.C.1.0">>, <!dsdl.byte>, <!dsdl.size>
+    %e2 = dsdl.call_serdes @f(%beta, %at, %size) {direction = "serialize", member = "beta"} :
+        <!dsdl.object<"a.C.1.0">>, <!dsdl.byte>, <!dsdl.size>
+    return %e1 : i8
+  }
+)mlir";
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
 /// which is the path both the reserved pool and the stamp's arity check sit on.
 std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef                 source,
-                                                         const llvm::ArrayRef<llvm::StringRef> reserved)
+                                                         const llvm::ArrayRef<llvm::StringRef> reserved,
+                                                         const bool                            withMember = false)
 {
     mlir::DialectRegistry registry;
     registry
@@ -464,6 +489,7 @@ std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef  
     }
 
     CollidingSpelling spelling;
+    spelling.withMember = withMember;
     spelling.reserved.assign(reserved.begin(), reserved.end());
     std::ostringstream out;
     SourceWriter       w(out, IndentPolicy::spaces(2));
@@ -682,6 +708,23 @@ bool runBodyValueNamingTests()
     {
         std::cerr << "an arm that states nothing took the offset away from the one that states it\n";
         ok = false;
+    }
+
+    // Neither member describes an address both calls read, so the name carries none. Taking the
+    // first user's would name it after whichever the use list happened to present.
+    const auto shared = declaredNamesFor(SharedAddress, {}, true);
+    if (!shared.has_value())
+    {
+        return false;
+    }
+    for (const std::string& name : *shared)
+    {
+        if (name.contains("_buf"))
+        {
+            std::cerr << "a shared buffer address was named '" << name
+                      << "', after one of the two calls that read it\n";
+            ok = false;
+        }
     }
 
     return ok;

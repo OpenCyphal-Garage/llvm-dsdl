@@ -95,20 +95,35 @@ struct Role final
     llvm::StringRef member;
 };
 
-/// @brief The member of the nested call that reads @p value, when one does.
+/// @brief The member the nested calls reading @p value agree on, where they agree.
 ///
 /// A size local and a buffer address are built for a single `dsdl.call_serdes` and carry no
-/// member of their own; the call they are built for names it.
+/// member of their own; the call they are built for names it. Two calls may come to share one
+/// address -- `dsdl.buffer_at` has no memory effect, so CSE may merge two addressing the same
+/// offset -- and then no member describes it, since naming it after one would say the other does
+/// not reach it. Taking whichever came first would also take whichever the use list happened to
+/// present, and that order is a rewriter's to change.
 llvm::StringRef memberOfNestedCaller(const mlir::Value value)
 {
+    std::optional<llvm::StringRef> shared;
     for (mlir::Operation* const user : value.getUsers())
     {
-        if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(user))
+        auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(user);
+        if (!call)
         {
-            return call.getMember();
+            continue;
+        }
+        if (!shared.has_value())
+        {
+            shared = call.getMember();
+            continue;
+        }
+        if (*shared != call.getMember())
+        {
+            return {};
         }
     }
-    return {};
+    return shared.value_or(llvm::StringRef{});
 }
 
 /// @brief Whether @p pointer addresses a size.
