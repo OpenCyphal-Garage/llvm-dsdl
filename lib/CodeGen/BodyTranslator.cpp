@@ -19,8 +19,10 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -29,7 +31,6 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -183,39 +184,72 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
 ///
 /// The values, not the operations that hold them: a loop's result and the argument it forwards
 /// belong to one operation and reach each other, and that is the walk doing its work.
-using RoleWalk = llvm::SmallDenseSet<mlir::Value, 8>;
+/// @brief No value beneath this one reached back onto the path.
+constexpr unsigned NoCarryBack = std::numeric_limits<unsigned>::max();
 
-/// @brief What @p value is, or nothing when the walk is already inside it.
+/// @brief One function's role walk: the path being followed, and the values already answered.
 ///
-/// A carry that reaches itself says nothing about the value it returns unchanged, which is not
-/// the same as saying the value has no role: the one is an absence of information and the other
-/// is information. Answering with `Anonymous` for both would let a self-carry veto the role its
-/// initialiser states.
-std::optional<Role> roleOf(mlir::Value value, RoleWalk& walk);
+/// `path` holds the depth at which each value sits on the walk, so a value reached while it is
+/// still being answered is a carry reaching itself. `settled` holds the values whose answer does
+/// not depend on how they were reached, which is what makes it safe to keep.
+struct RoleWalk final
+{
+    llvm::SmallDenseMap<mlir::Value, unsigned, 16> path;
+    llvm::DenseMap<mlir::Value, Role>              settled;
+    unsigned                                       depth{0};
+};
+
+/// @brief What a value is, and how far back up the walk anything beneath it reached.
+///
+/// `role` is nothing when the walk is already inside this value. A carry that reaches itself says
+/// nothing about the value it returns unchanged, which is not the same as saying the value has no
+/// role: the one is an absence of information and the other is information. Answering with
+/// `Anonymous` for both would let a self-carry veto the role its initialiser states.
+///
+/// `carryBack` is the shallowest path depth reached back to from here or below. A value whose
+/// subtree reached no further back than itself sits on no cycle: no value that can reach it is
+/// reachable from it, so no ancestor of it can ever be skipped while answering it, and its answer
+/// is the same however it was reached. Those are the ones worth keeping.
+struct Reached final
+{
+    std::optional<Role> role;
+    unsigned            carryBack{NoCarryBack};
+};
+
+Reached roleOf(mlir::Value value, RoleWalk& walk);
 
 /// @brief @ref roleOf for a value the walk has just entered.
-Role roleOfReached(mlir::Value value, RoleWalk& walk);
+Reached roleOfReached(mlir::Value value, RoleWalk& walk);
 
 /// @brief The role shared by the values yielded into one result, or nothing they share.
 ///
 /// Two arms agreeing on the role but not on the member give the role alone: a failure that
 /// reaches the same variable from two fields is an error either way, and naming it after one
 /// of them would say the other cannot arrive there.
-Role roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
+Reached roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
 {
     std::optional<Role> shared;
+    unsigned            carryBack = NoCarryBack;
+    bool                agreed    = true;
     for (const mlir::Value value : yielded)
     {
-        const std::optional<Role> reached = roleOf(value, walk);
-        if (!reached.has_value())
+        const Reached reached = roleOf(value, walk);
+        carryBack             = std::min(carryBack, reached.carryBack);
+        if (!agreed)
+        {
+            continue;  // The answer is settled, but the rest still say how far back they reach.
+        }
+        if (!reached.role.has_value())
         {
             // The walk is already inside this one: it carries whatever the others say.
             continue;
         }
-        const Role role = *reached;
+        const Role role = *reached.role;
         if (role.role == ValueRole::Anonymous)
         {
-            return {};
+            shared.reset();
+            agreed = false;
+            continue;
         }
         if (!shared.has_value())
         {
@@ -224,14 +258,16 @@ Role roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
         }
         if (shared->role != role.role)
         {
-            return {};
+            shared.reset();
+            agreed = false;
+            continue;
         }
         if (shared->member != role.member)
         {
             shared->member = {};
         }
     }
-    return shared.value_or(Role{});
+    return {shared.value_or(Role{}), carryBack};
 }
 
 /// @brief The values yielded into result @p index of @p op, over all of its arms.
@@ -295,18 +331,31 @@ std::vector<mlir::Value> incomingTo(mlir::scf::WhileOp loop, const unsigned inde
     return out;
 }
 
-std::optional<Role> roleOf(mlir::Value value, RoleWalk& walk)
+Reached roleOf(mlir::Value value, RoleWalk& walk)
 {
-    if (!walk.insert(value).second)
+    if (const auto onPath = walk.path.find(value); onPath != walk.path.end())
     {
-        return std::nullopt;
+        return {std::nullopt, onPath->second};
     }
-    const Role role = roleOfReached(value, walk);
-    walk.erase(value);
-    return role;
+    if (const auto answered = walk.settled.find(value); answered != walk.settled.end())
+    {
+        return {answered->second, NoCarryBack};
+    }
+
+    const unsigned here = walk.depth++;
+    walk.path.try_emplace(value, here);
+    const Reached reached = roleOfReached(value, walk);
+    walk.path.erase(value);
+    --walk.depth;
+
+    if (reached.carryBack > here)
+    {
+        walk.settled.try_emplace(value, reached.role.value_or(Role{}));
+    }
+    return reached;
 }
 
-Role roleOfReached(mlir::Value value, RoleWalk& walk)
+Reached roleOfReached(mlir::Value value, RoleWalk& walk)
 {
     if (const auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
     {
@@ -315,51 +364,59 @@ Role roleOfReached(mlir::Value value, RoleWalk& walk)
         {
             if (argument == forOp.getInductionVar())
             {
-                return {ValueRole::Index, {}};
+                return Reached{Role{ValueRole::Index, {}}};
             }
-            return roleOf(forOp.getResult(argument.getArgNumber() - 1), walk).value_or(Role{});
+            return roleOf(forOp.getResult(argument.getArgNumber() - 1), walk);
         }
         if (auto whileOp = mlir::dyn_cast_or_null<mlir::scf::WhileOp>(owner))
         {
             const Role stamped = stampedRole(whileOp, argument.getArgNumber());
-            return (stamped.role == ValueRole::Anonymous)
-                       ? roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), walk)
-                       : stamped;
+            if (stamped.role != ValueRole::Anonymous)
+            {
+                return Reached{stamped};
+            }
+            return roleOfYielded(incomingTo(whileOp, argument.getArgNumber()), walk);
         }
-        return {};
+        return Reached{Role{}};
     }
     const auto             result = mlir::cast<mlir::OpResult>(value);
     mlir::Operation* const op     = result.getOwner();
-    return llvm::TypeSwitch<mlir::Operation*, Role>(op)
-        .Case<mlir::dsdl::MemberAddrOp>([](auto read) { return Role{ValueRole::Object, read.getMember()}; })
-        .Case<mlir::dsdl::ElementAddrOp>([](auto read) { return Role{ValueRole::Object, read.getMember()}; })
-        .Case<mlir::dsdl::LoadMemberOp>([](auto read) { return Role{ValueRole::Scalar, read.getMember()}; })
-        .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Role{ValueRole::Scalar, read.getMember()}; })
-        .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Role{ValueRole::Length, read.getMember()}; })
-        .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Role{ValueRole::Error, call.getMember()}; })
-        .Case<mlir::dsdl::UnionTagOp>([](auto) { return Role{ValueRole::Tag, {}}; })
-        .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Role{ValueRole::Error, {}}; })
-        .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Role{ValueRole::Scalar, {}}; })
-        .Case<mlir::dsdl::IsNullOp>([](auto) { return Role{ValueRole::Null, {}}; })
-        .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Role{ValueRole::IndexHolds, {}}; })
-        .Case<mlir::dsdl::LocalOp>([&](auto) { return Role{ValueRole::Size, memberOfNestedCaller(result)}; })
-        .Case<mlir::dsdl::BufferAtOp>([&](auto) { return Role{ValueRole::Buffer, memberOfNestedCaller(result)}; })
-        .Case<mlir::dsdl::BufferOrEmptyOp>([](auto) { return Role{ValueRole::Buffer, {}}; })
+    return llvm::TypeSwitch<mlir::Operation*, Reached>(op)
+        .Case<mlir::dsdl::MemberAddrOp>([](auto read) { return Reached{Role{ValueRole::Object, read.getMember()}}; })
+        .Case<mlir::dsdl::ElementAddrOp>([](auto read) { return Reached{Role{ValueRole::Object, read.getMember()}}; })
+        .Case<mlir::dsdl::LoadMemberOp>([](auto read) { return Reached{Role{ValueRole::Scalar, read.getMember()}}; })
+        .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Reached{Role{ValueRole::Scalar, read.getMember()}}; })
+        .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Reached{Role{ValueRole::Length, read.getMember()}}; })
+        .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
+        .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
+        .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
+        .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
+        .Case<mlir::dsdl::IsNullOp>([](auto) { return Reached{Role{ValueRole::Null, {}}}; })
+        .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Reached{Role{ValueRole::IndexHolds, {}}}; })
+        .Case<mlir::dsdl::LocalOp>([&](auto) { return Reached{Role{ValueRole::Size, memberOfNestedCaller(result)}}; })
+        .Case<mlir::dsdl::BufferAtOp>(
+            [&](auto) { return Reached{Role{ValueRole::Buffer, memberOfNestedCaller(result)}}; })
+        .Case<mlir::dsdl::BufferOrEmptyOp>([](auto) { return Reached{Role{ValueRole::Buffer, {}}}; })
         .Case<mlir::dsdl::LoadScalarOp>([&](auto read) {
+            if (!addressesSize(read.getPointer()))
+            {
+                return Reached{Role{ValueRole::Scalar, {}}};
+            }
             // Reading back the size a nested call wrote is that member's size, and the local it
             // was written to is the operation that names the member.
-            return addressesSize(read.getPointer())
-                       ? Role{ValueRole::Size, roleOf(read.getPointer(), walk).value_or(Role{}).member}
-                       : Role{ValueRole::Scalar, {}};
+            const Reached pointer = roleOf(read.getPointer(), walk);
+            return Reached{Role{ValueRole::Size, pointer.role.value_or(Role{}).member}, pointer.carryBack};
         })
-        .Case<mlir::func::CallOp>([](auto call) { return roleOfCall(call); })
+        .Case<mlir::func::CallOp>([](auto call) { return Reached{roleOfCall(call)}; })
         .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
             const Role stamped = stampedRole(op, result.getResultNumber());
-            return (stamped.role == ValueRole::Anonymous)
-                       ? roleOfYielded(yieldedInto(op, result.getResultNumber()), walk)
-                       : stamped;
+            if (stamped.role != ValueRole::Anonymous)
+            {
+                return Reached{stamped};
+            }
+            return roleOfYielded(yieldedInto(op, result.getResultNumber()), walk);
         })
-        .Default([](mlir::Operation*) { return Role{}; });
+        .Default([](mlir::Operation*) { return Reached{Role{}}; });
 }
 
 /// @brief One function's translation: the names of its values and the walk over its blocks.
@@ -423,8 +480,7 @@ private:
     /// not used, so a repeated role is distinguished in the spelling's own style.
     std::string nameFor(const mlir::Value value)
     {
-        RoleWalk   walk;
-        const Role role = roleOf(value, walk).value_or(Role{});
+        const Role role = roleOf(value, walk_).role.value_or(Role{});
         if (role.role != ValueRole::Anonymous)
         {
             for (std::size_t ordinal = 0; ordinal < MaxNameOrdinals; ++ordinal)
@@ -799,6 +855,7 @@ private:
     const BodySpelling&                      spelling_;
     SourceWriter&                            w_;
     llvm::DenseMap<mlir::Value, std::string> names_;
+    RoleWalk                                 walk_;
     llvm::StringSet<>                        taken_;
     std::size_t                              counter_{0};
 };

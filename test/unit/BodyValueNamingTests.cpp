@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <iostream>
 #include <optional>
@@ -350,6 +351,29 @@ constexpr llvm::StringLiteral SelfCarryingLoop = R"mlir(
   }
 )mlir";
 
+/// @brief A chain of @p depth guards, each stamped for two results and left holding one.
+///
+/// Both arms of every guard yield the guard below it, so following the yielded values reaches
+/// that guard twice -- and each of those two reaches the one below twice again. A walk that
+/// settles nothing therefore costs 2^depth; one that settles a value the first time it answers
+/// costs depth. This is the shape `buildUnionOption` emits, once canonicalisation has taken a
+/// result away from under the stamps.
+std::string guardChain(const unsigned depth)
+{
+    std::string out = "  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<\"a.B.1.0\">>, %cond: i1) -> i64 {\n"
+                      "    %v0 = dsdl.array_length %arg0 \"items\" : <!dsdl.object<\"a.B.1.0\">>\n";
+    for (unsigned i = 1; i <= depth; ++i)
+    {
+        const std::string prev = "%v" + std::to_string(i - 1);
+        out.append("    %v").append(std::to_string(i));
+        out.append(" = scf.if %cond -> (i64) { scf.yield ").append(prev);
+        out.append(" : i64 } else { scf.yield ").append(prev);
+        out.append(" : i64 } {llvmdsdl.result_roles = [\"offset\", \"error\"]}\n");
+    }
+    out.append("    return %v").append(std::to_string(depth)).append(" : i64\n  }\n");
+    return out;
+}
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
@@ -526,6 +550,24 @@ bool runBodyValueNamingTests()
     if (!carriedIsAnonymous)
     {
         std::cerr << "a loop whose paths disagree kept a role it cannot claim\n";
+        ok = false;
+    }
+
+    // The walk must settle a value it has answered rather than re-derive it down every path
+    // that reaches it. At this depth the two costs are 2^25 visits and 25 -- six orders apart --
+    // so the budget below detects a walk that has stopped settling, and is not a measurement of
+    // one that has not.
+    const auto started = std::chrono::steady_clock::now();
+    const auto chained = declaredNamesFor(guardChain(25), {});
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    if (!chained.has_value())
+    {
+        return false;
+    }
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    if (ms > 2000)
+    {
+        std::cerr << "the guard chain took " << ms << " ms: the role walk is re-deriving values it has settled\n";
         ok = false;
     }
 
