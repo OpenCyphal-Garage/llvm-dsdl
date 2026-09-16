@@ -229,6 +229,15 @@ bool codegenIsKeyword(CodegenNamingLanguage language, llvm::StringRef name);
 /// @return Language-safe identifier.
 std::string codegenSanitizeIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
 
+/// @brief Repairs an identifier that would otherwise begin with a digit.
+///
+/// No target accepts one, so the repair is the same everywhere and takes no language. The
+/// projections below apply it as one of their stages; a caller that has already cased a name and
+/// only needs it to be spellable calls this alone.
+/// @param[in] name Identifier to repair.
+/// @return @p name, with a leading underscore where it began with a digit.
+[[nodiscard]] std::string escapeIdentifierStart(llvm::StringRef name);
+
 /// @brief Projects text into snake_case and sanitizes for the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Source text.

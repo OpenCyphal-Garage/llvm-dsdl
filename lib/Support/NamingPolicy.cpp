@@ -533,7 +533,7 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
         }
         if (std::isdigit(static_cast<unsigned char>(out.front())))
         {
-            out.insert(out.begin(), '_');
+            out     = escapeIdentifierStart(out);
             escaped = true;
         }
     }
@@ -670,6 +670,16 @@ bool codegenIsReservedNamespaceIdentifier(const CodegenNamingLanguage language, 
 bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
 {
     return keywordSet(language).contains(name);
+}
+
+std::string escapeIdentifierStart(const llvm::StringRef name)
+{
+    std::string out(name);
+    if (!out.empty() && (std::isdigit(static_cast<unsigned char>(out.front())) != 0))
+    {
+        out.insert(out.begin(), '_');
+    }
+    return out;
 }
 
 std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)

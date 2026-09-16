@@ -47,148 +47,148 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
   const v1 = v0 || false;
-  let v2: number;
+  let err: number;
   if (v1) {
-    v2 = -2;
+    err = -2;
   } else {
-    const v3 = BigInt(inoutBufferSizeBytes);
-    const v4 = v3 * 8n;
-    const v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v4);
-    const v6 = v5 === 0;
-    let v7: bigint;
-    let v8: number;
-    if (v6) {
-      const v9 = v3 > 4n;
-      const v10 = v9 ? 4n : v3;
-      const v11 = v3 - v10;
-      let v12 = Number(v11);
-      const v13 = v5 === 0;
-      let v14: bigint;
-      let v15: number;
-      if (v13) {
-        const v16 = buffer.subarray(Math.min(Number(v10), buffer.length));
-        const _bound0_ = Math.min(v12, v16.length);
-        const _result1_ = serializeDelimitedInto(obj.nested, v16.subarray(0, _bound0_));
-        let v17: number;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v2 = size * 8n;
+    const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v2);
+    const v3 = err2 === 0;
+    let offset: bigint;
+    let err3: number;
+    if (v3) {
+      const v4 = size > 4n;
+      const v5 = v4 ? 4n : size;
+      const v6 = size - v5;
+      let nestedSize = Number(v6);
+      const v7 = err2 === 0;
+      let offset2: bigint;
+      let err4: number;
+      if (v7) {
+        const nestedBuf = buffer.subarray(Math.min(Number(v5), buffer.length));
+        const _bound0_ = Math.min(nestedSize, nestedBuf.length);
+        const _result1_ = serializeDelimitedInto(obj.nested, nestedBuf.subarray(0, _bound0_));
+        let nestedErr: number;
         if (_result1_ < 0) {
-          v17 = _result1_;
+          nestedErr = _result1_;
         } else {
-          v12 = _result1_;
-          v17 = 0;
+          nestedSize = _result1_;
+          nestedErr = 0;
         }
-        const v18 = BigInt(v12);
-        const v19 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(v18, v11);
-        const v20 = v17 === 0;
-        const v21 = v20 ? v19 : v17;
-        const v22 = v21 === 0;
-        let v23: bigint;
-        let v24: number;
-        if (v22) {
-          const v25 = v18 * 8n;
-          const v26 = v25 + 32n;
-          const v27 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, v18, false);
-          const v28 = v21 === 0;
-          const v29 = v28 ? v27 : v21;
-          v23 = v26;
-          v24 = v29;
+        const nestedSize2 = BigInt(nestedSize);
+        const err5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nestedSize2, v6);
+        const v8 = nestedErr === 0;
+        const v9 = v8 ? err5 : nestedErr;
+        const v10 = v9 === 0;
+        let offset3: bigint;
+        let err6: number;
+        if (v10) {
+          const v11 = nestedSize2 * 8n;
+          const v12 = v11 + 32n;
+          const err7 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, nestedSize2, false);
+          const v13 = v9 === 0;
+          const v14 = v13 ? err7 : v9;
+          offset3 = v12;
+          err6 = v14;
         } else {
-          v23 = 32n;
-          v24 = v21;
+          offset3 = 32n;
+          err6 = v9;
         }
-        v14 = v23;
-        v15 = v24;
+        offset2 = offset3;
+        err4 = err6;
       } else {
-        v14 = 32n;
-        v15 = v5;
+        offset2 = 32n;
+        err4 = err2;
       }
-      v7 = v14;
-      v8 = v15;
+      offset = offset2;
+      err3 = err4;
     } else {
-      v7 = 0n;
-      v8 = v5;
+      offset = 0n;
+      err3 = err2;
     }
-    const v30 = v8 === 0;
-    if (v30) {
-      const v31 = v7 / 8n;
-      inoutBufferSizeBytes = Number(v31);
+    const v15 = err3 === 0;
+    if (v15) {
+      const v16 = offset / 8n;
+      inoutBufferSizeBytes = Number(v16);
     }
-    v2 = v8;
+    err = err3;
   }
-  if (v2 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v2;
+  return err;
 }
 
 export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
-  let v1: boolean;
+  let rejected: boolean;
   if (v0) {
-    v1 = true;
+    rejected = true;
   } else {
-    const v2 = BigInt(inoutBufferSizeBytes);
-    const v3 = v2 !== 0n;
-    const v4 = false && v3;
-    v1 = v4;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v1 = size !== 0n;
+    const v2 = false && v1;
+    rejected = v2;
   }
-  let v5: number;
-  if (v1) {
-    v5 = -2;
+  let err: number;
+  if (rejected) {
+    err = -2;
   } else {
-    const v6 = BigInt(inoutBufferSizeBytes);
-    const v7 = (obj.nested ??= {} as Delimited);
-    const v8 = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 32);
-    const v9 = v6 > 4n;
-    const v10 = v9 ? 4n : v6;
-    const v11 = v6 - v10;
-    let v12 = Number(v8);
-    const v13 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(v8, v11);
-    const v14 = v13 === 0;
-    let v15: bigint;
-    let v16: number;
-    if (v14) {
-      const v17 = buffer.subarray(Math.min(Number(v10), buffer.length));
-      const _bound2_ = Math.min(v12, v17.length);
-      const _result3_ = deserializeDelimitedFrom(v7, v17.subarray(0, _bound2_));
-      let v18: number;
+    const size2 = BigInt(inoutBufferSizeBytes);
+    const nestedAddr = (obj.nested ??= {} as Delimited);
+    const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 32);
+    const v3 = size2 > 4n;
+    const v4 = v3 ? 4n : size2;
+    const v5 = size2 - v4;
+    let nestedSize = Number(value);
+    const err2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v5);
+    const v6 = err2 === 0;
+    let offset: bigint;
+    let err3: number;
+    if (v6) {
+      const nestedBuf = buffer.subarray(Math.min(Number(v4), buffer.length));
+      const _bound2_ = Math.min(nestedSize, nestedBuf.length);
+      const _result3_ = deserializeDelimitedFrom(nestedAddr, nestedBuf.subarray(0, _bound2_));
+      let nestedErr: number;
       if (_result3_ < 0) {
-        v18 = _result3_;
+        nestedErr = _result3_;
       } else {
-        v18 = 0;
+        nestedErr = 0;
       }
-      const v19 = v18 === 0;
-      let v20: bigint;
-      if (v19) {
-        const v21 = v8 * 8n;
-        const v22 = v21 + 32n;
-        v20 = v22;
+      const v7 = nestedErr === 0;
+      let v8: bigint;
+      if (v7) {
+        const v9 = value * 8n;
+        const v10 = v9 + 32n;
+        v8 = v10;
       } else {
-        v20 = 32n;
+        v8 = 32n;
       }
-      v15 = v20;
-      v16 = v18;
+      offset = v8;
+      err3 = nestedErr;
     } else {
-      v15 = 32n;
-      v16 = v13;
+      offset = 32n;
+      err3 = err2;
     }
-    const v23 = v15 + 7n;
-    const v24 = v23 / 8n;
-    const v25 = v24 * 8n;
-    const v26 = v6 * 8n;
-    const v27 = v25 < v26;
-    const v28 = v27 ? v25 : v26;
-    const v29 = v16 === 0;
-    if (v29) {
-      const v30 = v28 / 8n;
-      inoutBufferSizeBytes = Number(v30);
+    const v11 = offset + 7n;
+    const v12 = v11 / 8n;
+    const v13 = v12 * 8n;
+    const v14 = size2 * 8n;
+    const v15 = v13 < v14;
+    const v16 = v15 ? v13 : v14;
+    const v17 = err3 === 0;
+    if (v17) {
+      const v18 = v16 / 8n;
+      inoutBufferSizeBytes = Number(v18);
     }
-    v5 = v16;
+    err = err3;
   }
-  if (v5 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v5;
+  return err;
 }
 
 export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {

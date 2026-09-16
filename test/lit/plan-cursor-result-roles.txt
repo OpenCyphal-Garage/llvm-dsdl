@@ -1,0 +1,45 @@
+# The offset a plan threads from step to step, and the error carried beside it, are results of the
+# plan's own shape: the operations that build them state neither. build-dsdl-plan-bodies knows
+# which result is which as it builds, and writes it down, so a backend declares them by name.
+#
+# Each assertion is tied to the operation it is about. A stamp is spelled on the line that closes
+# the operation it belongs to, and a guarded step nested inside a loop closes with the same text,
+# so matching the text alone would accept a loop whose own stamp had been removed. Under
+# --strict-whitespace the opening line's indentation is captured and the closing line is required
+# to share it, which no nested operation does.
+#
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir > %t.bodies.mlir
+# RUN: FileCheck %s --input-file=%t.bodies.mlir
+# RUN: FileCheck %s --input-file=%t.bodies.mlir --check-prefix=ANCHOR --strict-whitespace
+#
+# The pass writes these names and the translator reads them, each spelling them itself.
+# RUN: python3 %S/check_role_vocabulary.py %t.bodies.mlir
+
+# The vocabulary: a cursor-carrying operation names both of its results, and one that answers with
+# the code alone names just that.
+# CHECK: llvmdsdl.result_roles = ["offset", "error"]
+# CHECK: llvmdsdl.result_roles = ["error"]
+
+# An array's elements are walked by a counted loop carrying the pair.
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_DelimitedList_1_0__serialize_ir_
+# ANCHOR:{{^}}[[SER: +]]%{{[0-9]+}}:2 = scf.for
+# ANCHOR:{{^}}[[SER]]} {llvmdsdl.result_roles = ["offset", "error"]}
+
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_DelimitedList_1_0__deserialize_ir_
+# ANCHOR:{{^}}[[DESER: +]]%{{[0-9]+}}:2 = scf.for
+# ANCHOR:{{^}}[[DESER]]} {llvmdsdl.result_roles = ["offset", "error"]}
+
+# A padding run is an scf.while, which spells its attributes the long way.
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_Helpers_1_0__serialize_ir_
+# ANCHOR:{{^}}[[LOOP: +]]%{{[0-9]+}}:2 = scf.while
+# ANCHOR:{{^}}[[LOOP]]} attributes {llvmdsdl.result_roles = ["offset", "error"]}
+
+# A deserialise body opens by asking whether it can read its arguments at all, and that verdict is
+# neither an offset nor an error.
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_Helpers_1_0__deserialize_ir_
+# ANCHOR:{{^}}[[GUARD: +]]%{{[0-9]+}} = scf.if
+# ANCHOR:{{^}}[[GUARD]]} {llvmdsdl.result_roles = ["rejected"]}
+
+# The body's own guard answers with the code and nothing else, at the outermost depth of the body.
+# ANCHOR:{{^}}    } {llvmdsdl.result_roles = ["error"]}

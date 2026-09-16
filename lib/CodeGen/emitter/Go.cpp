@@ -621,6 +621,66 @@ public:
         w.close("}");
     }
 
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return camelValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // Go's predeclared identifiers, whole: a body converts with the type names, measures with
+        // len and compares against nil, and any of them is a name a local may legally take.
+        static const llvm::StringRef names[] = {"any",
+                                                "bool",
+                                                "byte",
+                                                "comparable",
+                                                "complex64",
+                                                "complex128",
+                                                "error",
+                                                "float32",
+                                                "float64",
+                                                "int",
+                                                "int8",
+                                                "int16",
+                                                "int32",
+                                                "int64",
+                                                "rune",
+                                                "string",
+                                                "uint",
+                                                "uint8",
+                                                "uint16",
+                                                "uint32",
+                                                "uint64",
+                                                "uintptr",
+                                                "true",
+                                                "false",
+                                                "iota",
+                                                "nil",
+                                                "append",
+                                                "cap",
+                                                "clear",
+                                                "close",
+                                                "complex",
+                                                "copy",
+                                                "delete",
+                                                "imag",
+                                                "len",
+                                                "make",
+                                                "max",
+                                                "min",
+                                                "new",
+                                                "panic",
+                                                "print",
+                                                "println",
+                                                "real",
+                                                "recover",
+                                                // The runtime package, reached by its name.
+                                                "dsdlruntime"};
+        return names;
+    }
+
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, callee);
@@ -1392,7 +1452,8 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             const std::map<std::string, std::string>& importAliases,
                             const mlir::dsdl::SerializationPlanOp     plan,
                             const GoSpelling&                         spelling,
-                            const SectionBodies&                      bodies)
+                            const SectionBodies&                      bodies,
+                            PlanBodyLookups&                          lookups)
 {
     const auto typeConstPrefix =
         codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
@@ -1484,18 +1545,19 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                                        "no plan bodies for %s in the lowered module",
                                        fullName.c_str());
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
     w.blank();
-    return translateFunction(bodies.deserialize, spelling, w);
+    return translateFunction(bodies.deserialize, spelling, w, lookups);
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const std::string&        moduleName,
-                                                 mlir::ModuleOp            module)
+                                                 mlir::ModuleOp            module,
+                                                 PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1538,7 +1600,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     SourceWriter       w = makeGoWriter(body);
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1559,7 +1621,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        imports,
                                        sectionPlan(schema, ""),
                                        spelling,
-                                       bodies[""]))
+                                       bodies[""],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1579,7 +1642,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        imports,
                                        sectionPlan(schema, "request"),
                                        spelling,
-                                       bodies["request"]))
+                                       bodies["request"],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1599,7 +1663,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            imports,
                                            sectionPlan(schema, "response"),
                                            spelling,
-                                           bodies["response"]))
+                                           bodies["response"],
+                                           lookups))
             {
                 return std::move(err);
             }
@@ -1762,6 +1827,7 @@ llvm::Error emit(const SemanticModule& semantic,
 
     const EmitterContext ctx(semantic, options.typeNameVersioning);
 
+    PlanBodyLookups lookups(module);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -1776,7 +1842,7 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, options.moduleName, module);
+        auto file = renderDefinitionFile(def, ctx, options.moduleName, module, lookups);
         if (!file)
         {
             return file.takeError();

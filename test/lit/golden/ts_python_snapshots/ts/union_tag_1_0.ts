@@ -78,152 +78,152 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
   const v1 = v0 || false;
-  let v2: number;
+  let err: number;
   if (v1) {
-    v2 = -2;
+    err = -2;
   } else {
-    const v3 = BigInt(inoutBufferSizeBytes);
-    const v4 = v3 * 8n;
-    const v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(v4);
-    const v6 = dsdlRuntime.toBigIntValue(obj._tag);
-    const v7 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(v6);
-    const v8 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(v7);
-    const v9 = v5 === 0;
-    const v10 = v9 ? v8 : v5;
-    const v11 = v10 === 0;
-    const v12 = v11 ? 8n : 0n;
-    let v13: number;
-    if (v11) {
-      const v14 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, v7, false);
-      v13 = v14;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v2 = size * 8n;
+    const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(v2);
+    const tag = dsdlRuntime.toBigIntValue(obj._tag);
+    const tag2 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag);
+    const err3 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag2);
+    const v3 = err2 === 0;
+    const v4 = v3 ? err3 : err2;
+    const v5 = v4 === 0;
+    const v6 = v5 ? 8n : 0n;
+    let err4: number;
+    if (v5) {
+      const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
+      err4 = err5;
     } else {
-      v13 = v10;
+      err4 = v4;
     }
-    const v15 = v7 === 0n;
-    let v16: bigint;
-    let v17: number;
-    if (v15) {
-      const v18 = v13 === 0;
-      let v19: bigint;
-      let v20: number;
-      if (v18) {
-        const v21 = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
-        const v22 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(v21);
-        const v23 = dsdlRuntime.writeUnsigned(buffer, Number(v12), 8, v22, false);
-        const v24 = v12 + 8n;
-        v19 = v24;
-        v20 = v23;
+    const v7 = tag2 === 0n;
+    let offset: bigint;
+    let err6: number;
+    if (v7) {
+      const v8 = err4 === 0;
+      let offset2: bigint;
+      let err7: number;
+      if (v8) {
+        const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
+        const value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(firstValue);
+        const err8 = dsdlRuntime.writeUnsigned(buffer, Number(v6), 8, value, false);
+        const v9 = v6 + 8n;
+        offset2 = v9;
+        err7 = err8;
       } else {
-        v19 = v12;
-        v20 = v13;
+        offset2 = v6;
+        err7 = err4;
       }
-      v16 = v19;
-      v17 = v20;
+      offset = offset2;
+      err6 = err7;
     } else {
-      v16 = v12;
-      v17 = v13;
+      offset = v6;
+      err6 = err4;
     }
-    const v25 = v7 === 1n;
-    let v26: bigint;
-    let v27: number;
-    if (v25) {
-      const v28 = v17 === 0;
-      let v29: bigint;
-      let v30: number;
-      if (v28) {
-        const v31 = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
-        const v32 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(v31);
-        const v33 = dsdlRuntime.writeUnsigned(buffer, Number(v16), 16, v32, false);
-        const v34 = v16 + 16n;
-        v29 = v34;
-        v30 = v33;
+    const v10 = tag2 === 1n;
+    let offset3: bigint;
+    let err9: number;
+    if (v10) {
+      const v11 = err6 === 0;
+      let offset4: bigint;
+      let err10: number;
+      if (v11) {
+        const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
+        const value2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(secondValue);
+        const err11 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 16, value2, false);
+        const v12 = offset + 16n;
+        offset4 = v12;
+        err10 = err11;
       } else {
-        v29 = v16;
-        v30 = v17;
+        offset4 = offset;
+        err10 = err6;
       }
-      v26 = v29;
-      v27 = v30;
+      offset3 = offset4;
+      err9 = err10;
     } else {
-      v26 = v16;
-      v27 = v17;
+      offset3 = offset;
+      err9 = err6;
     }
-    const v35 = v27 === 0;
-    if (v35) {
-      const v36 = v26 / 8n;
-      inoutBufferSizeBytes = Number(v36);
+    const v13 = err9 === 0;
+    if (v13) {
+      const v14 = offset3 / 8n;
+      inoutBufferSizeBytes = Number(v14);
     }
-    v2 = v27;
+    err = err9;
   }
-  if (v2 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v2;
+  return err;
 }
 
 export function deserializeUnionTagFrom(obj: UnionTag, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
-  let v1: boolean;
+  let rejected: boolean;
   if (v0) {
-    v1 = true;
+    rejected = true;
   } else {
-    const v2 = BigInt(inoutBufferSizeBytes);
-    const v3 = v2 !== 0n;
-    const v4 = false && v3;
-    v1 = v4;
+    const size = BigInt(inoutBufferSizeBytes);
+    const v1 = size !== 0n;
+    const v2 = false && v1;
+    rejected = v2;
   }
-  let v5: number;
-  if (v1) {
-    v5 = -2;
+  let err: number;
+  if (rejected) {
+    err = -2;
   } else {
-    const v6 = BigInt(inoutBufferSizeBytes);
-    const v7 = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 8);
-    const v8 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(v7);
-    const v9 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(v8);
-    const v10 = v9 === 0;
-    const v11 = v10 ? 8n : 0n;
-    if (v10) {
-      (obj as { _tag: number })._tag = Number(v8);
+    const size2 = BigInt(inoutBufferSizeBytes);
+    const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 8);
+    const tag = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value);
+    const err2 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag);
+    const v3 = err2 === 0;
+    const v4 = v3 ? 8n : 0n;
+    if (v3) {
+      (obj as { _tag: number })._tag = Number(tag);
     }
-    const v12 = v8 === 0n;
-    let v13: bigint;
-    if (v12) {
-      const v14 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v11), 8);
-      const v15 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(v14);
-      (obj as { first: number }).first = Number(v15);
-      const v16 = v11 + 8n;
-      v13 = v16;
+    const v5 = tag === 0n;
+    let v6: bigint;
+    if (v5) {
+      const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v4), 8);
+      const value3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value2);
+      (obj as { first: number }).first = Number(value3);
+      const v7 = v4 + 8n;
+      v6 = v7;
     } else {
-      v13 = v11;
+      v6 = v4;
     }
-    const v17 = v8 === 1n;
-    let v18: bigint;
+    const v8 = tag === 1n;
+    let v9: bigint;
+    if (v8) {
+      const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v6), 16);
+      const value5 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value4);
+      (obj as { second: number }).second = Number(value5);
+      const v10 = v6 + 16n;
+      v9 = v10;
+    } else {
+      v9 = v6;
+    }
+    const v11 = v9 + 7n;
+    const v12 = v11 / 8n;
+    const v13 = v12 * 8n;
+    const v14 = size2 * 8n;
+    const v15 = v13 < v14;
+    const v16 = v15 ? v13 : v14;
+    const v17 = err2 === 0;
     if (v17) {
-      const v19 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v13), 16);
-      const v20 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(v19);
-      (obj as { second: number }).second = Number(v20);
-      const v21 = v13 + 16n;
-      v18 = v21;
-    } else {
-      v18 = v13;
+      const v18 = v16 / 8n;
+      inoutBufferSizeBytes = Number(v18);
     }
-    const v22 = v18 + 7n;
-    const v23 = v22 / 8n;
-    const v24 = v23 * 8n;
-    const v25 = v6 * 8n;
-    const v26 = v24 < v25;
-    const v27 = v26 ? v24 : v25;
-    const v28 = v9 === 0;
-    if (v28) {
-      const v29 = v27 / 8n;
-      inoutBufferSizeBytes = Number(v29);
-    }
-    v5 = v9;
+    err = err2;
   }
-  if (v5 === 0) {
+  if (err === 0) {
     return inoutBufferSizeBytes;
   }
-  return v5;
+  return err;
 }
 
 export function serializeUnionTag(value: UnionTag): Uint8Array {

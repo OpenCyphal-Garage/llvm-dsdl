@@ -22,7 +22,9 @@
 #ifndef LLVMDSDL_CODEGEN_BODY_TRANSLATOR_H
 #define LLVMDSDL_CODEGEN_BODY_TRANSLATOR_H
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -82,6 +84,28 @@ enum class Conversion : std::uint8_t
     SignExtend,
     Truncate,
     IndexCast,
+};
+
+/// @brief What the operation that defines a value says the value is.
+///
+/// The translator reads the role from the operation alone, so it is the same in every
+/// language; a spelling renders it as one of its own identifiers. `Anonymous` is an operation
+/// that says nothing about its result, and the translator names those itself.
+enum class ValueRole : std::uint8_t
+{
+    Anonymous,
+    Offset,      ///< The bit offset a plan threads through its steps.
+    Object,      ///< The address of a member, or of one element of an array member.
+    Buffer,      ///< An address within the wire buffer.
+    Size,        ///< A size in bytes, held where a nested call can write back to it.
+    Length,      ///< An array member's element count.
+    Tag,         ///< A union's tag.
+    Scalar,      ///< A member's value, or a scalar read out of the buffer.
+    Error,       ///< An error code.
+    Null,        ///< Whether a pointer the plan was handed is null.
+    Rejected,    ///< Whether the arguments a body was handed can be read at all.
+    IndexHolds,  ///< Whether the target's index type holds a count.
+    Index,       ///< A loop's induction variable.
 };
 
 /// @brief The spelled form of each value in the function being translated.
@@ -164,6 +188,38 @@ public:
     virtual void closeBlock(SourceWriter& w) const = 0;
 
     // Values.
+
+    /// @brief The identifier a value of @p role is declared under.
+    ///
+    /// @p member is the DSDL member the defining operation names, empty when it names none.
+    ///
+    /// @p ordinal is which candidate is being asked for, not which value is being named: the
+    /// translator asks from zero upwards until it is offered a name the function has not already
+    /// used, so a value takes the first offer that is free. The first value of a role may
+    /// therefore be named from an ordinal above zero, when a parameter or a reserved local has
+    /// claimed the one below it. A spelling decides how a later candidate differs from an earlier
+    /// one as well as how the name is cased; @ref snakeValueName and @ref camelValueName render
+    /// the two styles the backends use.
+    ///
+    /// The translator names a value itself when this answers with an empty string, which is
+    /// what @ref ValueRole::Anonymous is given.
+    [[nodiscard]] virtual std::string valueName(ValueRole role, llvm::StringRef member, std::size_t ordinal) const = 0;
+
+    /// @brief The identifiers already in scope that a body depends on.
+    ///
+    /// Two kinds. A body that reaches into the language's own namespace by bare name is captured
+    /// by a local of the same name, and the capture is legal code that means something else. And a
+    /// signature or prologue may open the body with a name @ref openFunction cannot report, since
+    /// that answers one identifier per argument of the function being translated and a spelling
+    /// may write more.
+    ///
+    /// The translator claims these before it names anything, so a value whose role lands on one is
+    /// distinguished the way a repeat is, and a role word is chosen for how it reads rather than
+    /// for what it avoids.
+    ///
+    /// A spelling that qualifies every call it makes, and opens with nothing of its own, answers
+    /// with nothing.
+    [[nodiscard]] virtual llvm::ArrayRef<llvm::StringRef> reservedLocals() const = 0;
 
     [[nodiscard]] virtual std::string constant(mlir::TypedAttr value) const = 0;
 
@@ -259,9 +315,50 @@ public:
     }
 };
 
+/// @brief Renders @p role as `member_role`, `role` when @p member is empty, and appends
+///        `_<ordinal + 1>` to a repeat.
+std::string snakeValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);
+
+/// @brief Renders @p role as `memberRole`, `role` when @p member is empty, and appends
+///        `<ordinal + 1>` to a repeat.
+std::string camelValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);
+
+/// @brief What the translator asks of one module once, for every function it translates from it.
+///
+/// A helper states the role of its answer as an attribute on itself, so naming a call's result
+/// means resolving the callee, and resolving a symbol by walking the module's top-level operations
+/// costs a pass over every type the run generates. Asking once per call made that cost the
+/// catalogue's size squared; the answers hold for as long as the module does, so this holds them.
+///
+/// Build one from the module being generated, hand it to every @ref translateFunction called on
+/// that module's functions, and let it go before the module does. It answers about the operations
+/// the module holds, so it describes that module and no other.
+class PlanBodyLookups final
+{
+public:
+    explicit PlanBodyLookups(mlir::ModuleOp module);
+    PlanBodyLookups(const PlanBodyLookups&)            = delete;
+    PlanBodyLookups& operator=(const PlanBodyLookups&) = delete;
+    PlanBodyLookups(PlanBodyLookups&&)                 = delete;
+    PlanBodyLookups& operator=(PlanBodyLookups&&)      = delete;
+    ~PlanBodyLookups();
+
+    /// @brief The role the result of @p call carries, from the markers the lowering left.
+    /// @return @ref ValueRole::Anonymous where the callee carries none of them.
+    [[nodiscard]] ValueRole roleOfCallee(mlir::func::CallOp call);
+
+private:
+    struct State;
+    std::unique_ptr<State> state_;
+};
+
 /// @brief Spells @p fn through @p spelling into @p w.
+/// @param[in,out] lookups What @p fn's module has already been asked, shared across its functions.
 /// @return An error naming the first operation the translator has no spelling for.
-llvm::Error translateFunction(mlir::func::FuncOp fn, const BodySpelling& spelling, SourceWriter& w);
+llvm::Error translateFunction(mlir::func::FuncOp  fn,
+                              const BodySpelling& spelling,
+                              SourceWriter&       w,
+                              PlanBodyLookups&    lookups);
 
 /// @brief The functions `lower-dsdl-bodies` built for @p schemaSym, in module order.
 std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, llvm::StringRef schemaSym);

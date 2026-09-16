@@ -25,6 +25,7 @@
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
@@ -595,6 +596,73 @@ public:
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
     {
         closeBlock(w);
+    }
+
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return snakeValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body measures with len, clamps with min, and slices a memoryview; the rest are the
+        // builtins a body would reach for next. Python has no declaration, so an assignment makes
+        // the name local for the whole function and the builtin is gone from its first line.
+        static const llvm::StringRef names[] = {"abs",
+                                                "all",
+                                                "any",
+                                                "bin",
+                                                "bool",
+                                                "bytearray",
+                                                "bytes",
+                                                "chr",
+                                                "dict",
+                                                "divmod",
+                                                "enumerate",
+                                                "filter",
+                                                "float",
+                                                "format",
+                                                "frozenset",
+                                                "getattr",
+                                                "hash",
+                                                "hex",
+                                                "id",
+                                                "int",
+                                                "isinstance",
+                                                "issubclass",
+                                                "iter",
+                                                "len",
+                                                "list",
+                                                "map",
+                                                "max",
+                                                "memoryview",
+                                                "min",
+                                                "next",
+                                                "object",
+                                                "oct",
+                                                "ord",
+                                                "pow",
+                                                "print",
+                                                "range",
+                                                "repr",
+                                                "reversed",
+                                                "round",
+                                                "set",
+                                                "setattr",
+                                                "slice",
+                                                "sorted",
+                                                "str",
+                                                "sum",
+                                                "tuple",
+                                                "type",
+                                                "zip",
+                                                // Modules a body reads through, bound by an import
+                                                // and looked up like any other name.
+                                                "dsdl_runtime",
+                                                "sys"};
+        return names;
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
@@ -1386,7 +1454,8 @@ llvm::Error emitSection(SourceWriter&             w,
                         const EmitterContext&     ctx,
                         const SemanticDefinition& def,
                         const PythonSpelling&     spelling,
-                        const SectionBodies&      bodies)
+                        const SectionBodies&      bodies,
+                        PlanBodyLookups&          lookups)
 {
     if (!bodies.serialize || !bodies.deserialize)
     {
@@ -1403,12 +1472,12 @@ llvm::Error emitSection(SourceWriter&             w,
                     def.info.majorVersion,
                     def.info.minorVersion);
     w.blank();
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
     w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
     }
@@ -1423,7 +1492,8 @@ llvm::Error emitSection(SourceWriter&             w,
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
-                                                 mlir::ModuleOp            module)
+                                                 mlir::ModuleOp            module,
+                                                 PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1540,7 +1610,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1549,7 +1619,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        if (auto err = emitSection(w, baseType, def.request, def.doc, ctx, def, spelling, bodies[""]))
+        if (auto err = emitSection(w, baseType, def.request, def.doc, ctx, def, spelling, bodies[""], lookups))
         {
             return std::move(err);
         }
@@ -1558,14 +1628,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "request");
     const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "response");
-    if (auto err = emitSection(w, reqType, def.request, def.doc, ctx, def, spelling, bodies["request"]))
+    if (auto err = emitSection(w, reqType, def.request, def.doc, ctx, def, spelling, bodies["request"], lookups))
     {
         return std::move(err);
     }
     w.blank();
     if (def.response)
     {
-        if (auto err = emitSection(w, respType, *def.response, def.doc, ctx, def, spelling, bodies["response"]))
+        if (auto err =
+                emitSection(w, respType, *def.response, def.doc, ctx, def, spelling, bodies["response"], lookups))
         {
             return std::move(err);
         }
@@ -1837,6 +1908,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         return lhs->info.minorVersion < rhs->info.minorVersion;
     });
 
+    PlanBodyLookups lookups(module);
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
@@ -1852,7 +1924,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
             return err;
         }
 
-        auto rendered = renderDefinitionFile(*def, ctx, module);
+        auto rendered = renderDefinitionFile(*def, ctx, module, lookups);
         if (!rendered)
         {
             return rendered.takeError();

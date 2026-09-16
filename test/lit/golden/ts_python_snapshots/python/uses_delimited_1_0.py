@@ -60,114 +60,114 @@ class UsesDelimited:
         v0 = self is None or False
         v1 = v0 or False
         if v1:
-            v2 = -2
+            err = -2
         else:
-            v3 = inout_buffer_size_bytes
-            v4 = v3 * 8
-            v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v4)
-            v6 = v5 == 0
-            if v6:
-                v9 = v3 > 4
-                v10 = (4 if v9 else v3)
-                v11 = v3 - v10
-                v12 = v11
-                v13 = v5 == 0
-                if v13:
-                    v16 = buffer[min(v10, len(buffer)):]
-                    _bound0_ = min(v12, len(v16))
-                    _result1_ = self.nested._serialize_into(v16[:_bound0_])
+            size = inout_buffer_size_bytes
+            v2 = size * 8
+            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v2)
+            v3 = err_2 == 0
+            if v3:
+                v4 = size > 4
+                v5 = (4 if v4 else size)
+                v6 = size - v5
+                nested_size = v6
+                v7 = err_2 == 0
+                if v7:
+                    nested_buf = buffer[min(v5, len(buffer)):]
+                    _bound0_ = min(nested_size, len(nested_buf))
+                    _result1_ = self.nested._serialize_into(nested_buf[:_bound0_])
                     if _result1_ < 0:
-                        v17 = _result1_
+                        nested_err = _result1_
                     else:
-                        v12 = _result1_
-                        v17 = 0
-                    v18 = v12
-                    v19 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(v18, v11)
-                    v20 = v17 == 0
-                    v21 = (v19 if v20 else v17)
-                    v22 = v21 == 0
-                    if v22:
-                        v25 = v18 * 8
-                        v26 = v25 + 32
-                        v27 = dsdl_runtime.write_unsigned(buffer, 0, 32, v18, False)
-                        v28 = v21 == 0
-                        v29 = (v27 if v28 else v21)
-                        v23 = v26
-                        v24 = v29
+                        nested_size = _result1_
+                        nested_err = 0
+                    nested_size_2 = nested_size
+                    err_5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nested_size_2, v6)
+                    v8 = nested_err == 0
+                    v9 = (err_5 if v8 else nested_err)
+                    v10 = v9 == 0
+                    if v10:
+                        v11 = nested_size_2 * 8
+                        v12 = v11 + 32
+                        err_7 = dsdl_runtime.write_unsigned(buffer, 0, 32, nested_size_2, False)
+                        v13 = v9 == 0
+                        v14 = (err_7 if v13 else v9)
+                        offset_3 = v12
+                        err_6 = v14
                     else:
-                        v23 = 32
-                        v24 = v21
-                    v14 = v23
-                    v15 = v24
+                        offset_3 = 32
+                        err_6 = v9
+                    offset_2 = offset_3
+                    err_4 = err_6
                 else:
-                    v14 = 32
-                    v15 = v5
-                v7 = v14
-                v8 = v15
+                    offset_2 = 32
+                    err_4 = err_2
+                offset = offset_2
+                err_3 = err_4
             else:
-                v7 = 0
-                v8 = v5
-            v30 = v8 == 0
-            if v30:
-                v31 = v7 // 8
-                inout_buffer_size_bytes = v31
-            v2 = v8
-        if v2 == 0:
+                offset = 0
+                err_3 = err_2
+            v15 = err_3 == 0
+            if v15:
+                v16 = offset // 8
+                inout_buffer_size_bytes = v16
+            err = err_3
+        if err == 0:
             return inout_buffer_size_bytes
-        return v2
+        return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         inout_buffer_size_bytes = len(buffer)
         v0 = self is None or False
         if v0:
-            v1 = True
+            rejected = True
         else:
-            v2 = inout_buffer_size_bytes
-            v3 = v2 != 0
-            v4 = False and v3
-            v1 = v4
-        if v1:
-            v5 = -2
+            size = inout_buffer_size_bytes
+            v1 = size != 0
+            v2 = False and v1
+            rejected = v2
+        if rejected:
+            err = -2
         else:
-            v6 = inout_buffer_size_bytes
-            v7 = dsdl_runtime.read_unsigned(buffer, 0, 32)
-            v8 = v6 > 4
-            v9 = (4 if v8 else v6)
-            v10 = v6 - v9
-            v11 = v7
-            v12 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(v7, v10)
-            v13 = v12 == 0
-            if v13:
-                v16 = buffer[min(v9, len(buffer)):]
-                _bound2_ = min(v11, len(v16))
-                _result3_ = self.nested._deserialize_from(v16[:_bound2_])
+            size_2 = inout_buffer_size_bytes
+            value = dsdl_runtime.read_unsigned(buffer, 0, 32)
+            v3 = size_2 > 4
+            v4 = (4 if v3 else size_2)
+            v5 = size_2 - v4
+            nested_size = value
+            err_2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v5)
+            v6 = err_2 == 0
+            if v6:
+                nested_buf = buffer[min(v4, len(buffer)):]
+                _bound2_ = min(nested_size, len(nested_buf))
+                _result3_ = self.nested._deserialize_from(nested_buf[:_bound2_])
                 if _result3_ < 0:
-                    v17 = _result3_
+                    nested_err = _result3_
                 else:
-                    v17 = 0
-                v18 = v17 == 0
-                if v18:
-                    v20 = v7 * 8
-                    v21 = v20 + 32
-                    v19 = v21
+                    nested_err = 0
+                v7 = nested_err == 0
+                if v7:
+                    v9 = value * 8
+                    v10 = v9 + 32
+                    v8 = v10
                 else:
-                    v19 = 32
-                v14 = v19
-                v15 = v17
+                    v8 = 32
+                offset = v8
+                err_3 = nested_err
             else:
-                v14 = 32
-                v15 = v12
-            v22 = v14 + 7
-            v23 = v22 // 8
-            v24 = v23 * 8
-            v25 = v6 * 8
-            v26 = v24 < v25
-            v27 = (v24 if v26 else v25)
-            v28 = v15 == 0
-            if v28:
-                v29 = v27 // 8
-                inout_buffer_size_bytes = v29
-            v5 = v15
-        if v5 == 0:
+                offset = 32
+                err_3 = err_2
+            v11 = offset + 7
+            v12 = v11 // 8
+            v13 = v12 * 8
+            v14 = size_2 * 8
+            v15 = v13 < v14
+            v16 = (v13 if v15 else v14)
+            v17 = err_3 == 0
+            if v17:
+                v18 = v16 // 8
+                inout_buffer_size_bytes = v18
+            err = err_3
+        if err == 0:
             return inout_buffer_size_bytes
-        return v5
+        return err

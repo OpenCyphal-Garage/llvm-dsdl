@@ -450,6 +450,28 @@ public:
         w.blank();
     }
 
+    [[nodiscard]] std::string valueName(const ValueRole       role,
+                                        const llvm::StringRef member,
+                                        const std::size_t     ordinal) const override
+    {
+        return snakeValueName(role, member, ordinal);
+    }
+
+    [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
+    {
+        // A body qualifies the standard library with `std::` and a nested type with its own
+        // namespace, but it does reach two things by bare name: the runtime, whose functions
+        // carry `dsdl_runtime_`, and a synthesised helper, which carries `mlir_llvmdsdl_`. A
+        // local of either name would capture the call. None can be: a role name is a role word,
+        // or a member and a role word joined, so it carries no prefix at all.
+        //
+        // The pmr flavour opens with two names of its own: a memory resource parameter, which has
+        // no argument of the translated function to be reported against, and the local resolving
+        // it that `dsdl.set_array_length` reads further down the body.
+        static const llvm::StringRef pmr[] = {"memory_resource", "effective_memory_resource"};
+        return isPmrFlavor(flavor_) ? llvm::ArrayRef<llvm::StringRef>(pmr) : llvm::ArrayRef<llvm::StringRef>{};
+    }
+
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
         return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, callee);
@@ -1677,7 +1699,8 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const AttachedDoc&                    typeDoc,
                         const mlir::dsdl::SerializationPlanOp plan,
                         const CppSpelling&                    spelling,
-                        const SectionBodies&                  bodies)
+                        const SectionBodies&                  bodies,
+                        PlanBodyLookups&                      lookups)
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitFunctionPrototypes(w, typeName, declaredName, flavor);
@@ -1702,11 +1725,11 @@ llvm::Error emitSection(SourceWriter&                         w,
                                        "no plan bodies for %s in the lowered module",
                                        fullName.c_str());
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
-    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
     }
@@ -1739,7 +1762,8 @@ llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
 llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                          const EmitterContext&     ctx,
                                          const CppFlavor           flavor,
-                                         mlir::ModuleOp            module)
+                                         mlir::ModuleOp            module,
+                                         PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1821,7 +1845,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     // The helpers the plans call, ahead of the sections that call them.
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1854,7 +1878,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.doc,
                                    sectionPlan(schema, "request"),
                                    spelling,
-                                   bodies["request"]))
+                                   bodies["request"],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -1870,7 +1895,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        def.doc,
                                        sectionPlan(schema, "response"),
                                        spelling,
-                                       bodies["response"]))
+                                       bodies["response"],
+                                       lookups))
             {
                 return std::move(err);
             }
@@ -1933,7 +1959,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.doc,
                                    sectionPlan(schema, ""),
                                    spelling,
-                                   bodies[""]))
+                                   bodies[""],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -1993,6 +2020,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
     }
 
     const EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2006,7 +2034,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         {
             dir /= ns;
         }
-        auto header = renderHeader(def, ctx, flavor, module);
+        auto header = renderHeader(def, ctx, flavor, module, lookups);
         if (!header)
         {
             return header.takeError();

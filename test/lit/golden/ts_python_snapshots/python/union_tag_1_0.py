@@ -88,122 +88,122 @@ class UnionTag:
         v0 = self is None or False
         v1 = v0 or False
         if v1:
-            v2 = -2
+            err = -2
         else:
-            v3 = inout_buffer_size_bytes
-            v4 = v3 * 8
-            v5 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(v4)
-            v6 = int(self._tag)
-            v7 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(v6)
-            v8 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(v7)
-            v9 = v5 == 0
-            v10 = (v8 if v9 else v5)
-            v11 = v10 == 0
-            v12 = (8 if v11 else 0)
-            if v11:
-                v14 = dsdl_runtime.write_unsigned(buffer, 0, 8, v7, False)
-                v13 = v14
+            size = inout_buffer_size_bytes
+            v2 = size * 8
+            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(v2)
+            tag = int(self._tag)
+            tag_2 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag)
+            err_3 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_2)
+            v3 = err_2 == 0
+            v4 = (err_3 if v3 else err_2)
+            v5 = v4 == 0
+            v6 = (8 if v5 else 0)
+            if v5:
+                err_5 = dsdl_runtime.write_unsigned(buffer, 0, 8, tag_2, False)
+                err_4 = err_5
             else:
-                v13 = v10
-            v15 = v7 == 0
-            if v15:
-                v18 = v13 == 0
-                if v18:
-                    v21 = int(self.first)
-                    v22 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(v21)
-                    v23 = dsdl_runtime.write_unsigned(buffer, v12, 8, v22, False)
-                    v24 = v12 + 8
-                    v19 = v24
-                    v20 = v23
+                err_4 = v4
+            v7 = tag_2 == 0
+            if v7:
+                v8 = err_4 == 0
+                if v8:
+                    first_value = int(self.first)
+                    value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(first_value)
+                    err_8 = dsdl_runtime.write_unsigned(buffer, v6, 8, value, False)
+                    v9 = v6 + 8
+                    offset_2 = v9
+                    err_7 = err_8
                 else:
-                    v19 = v12
-                    v20 = v13
-                v16 = v19
-                v17 = v20
+                    offset_2 = v6
+                    err_7 = err_4
+                offset = offset_2
+                err_6 = err_7
             else:
-                v16 = v12
-                v17 = v13
-            v25 = v7 == 1
-            if v25:
-                v28 = v17 == 0
-                if v28:
-                    v31 = int(self.second)
-                    v32 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(v31)
-                    v33 = dsdl_runtime.write_unsigned(buffer, v16, 16, v32, False)
-                    v34 = v16 + 16
-                    v29 = v34
-                    v30 = v33
+                offset = v6
+                err_6 = err_4
+            v10 = tag_2 == 1
+            if v10:
+                v11 = err_6 == 0
+                if v11:
+                    second_value = int(self.second)
+                    value_2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(second_value)
+                    err_11 = dsdl_runtime.write_unsigned(buffer, offset, 16, value_2, False)
+                    v12 = offset + 16
+                    offset_4 = v12
+                    err_10 = err_11
                 else:
-                    v29 = v16
-                    v30 = v17
-                v26 = v29
-                v27 = v30
+                    offset_4 = offset
+                    err_10 = err_6
+                offset_3 = offset_4
+                err_9 = err_10
             else:
-                v26 = v16
-                v27 = v17
-            v35 = v27 == 0
-            if v35:
-                v36 = v26 // 8
-                inout_buffer_size_bytes = v36
-            v2 = v27
-        if v2 == 0:
+                offset_3 = offset
+                err_9 = err_6
+            v13 = err_9 == 0
+            if v13:
+                v14 = offset_3 // 8
+                inout_buffer_size_bytes = v14
+            err = err_9
+        if err == 0:
             return inout_buffer_size_bytes
-        return v2
+        return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         inout_buffer_size_bytes = len(buffer)
         v0 = self is None or False
         if v0:
-            v1 = True
+            rejected = True
         else:
-            v2 = inout_buffer_size_bytes
-            v3 = v2 != 0
-            v4 = False and v3
-            v1 = v4
-        if v1:
-            v5 = -2
+            size = inout_buffer_size_bytes
+            v1 = size != 0
+            v2 = False and v1
+            rejected = v2
+        if rejected:
+            err = -2
         else:
-            v6 = inout_buffer_size_bytes
-            v7 = dsdl_runtime.read_unsigned(buffer, 0, 8)
-            v8 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(v7)
-            v9 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(v8)
-            v10 = v9 == 0
-            v11 = (8 if v10 else 0)
-            if v10:
-                self._tag = v8
-                if v8 == 0:
+            size_2 = inout_buffer_size_bytes
+            value = dsdl_runtime.read_unsigned(buffer, 0, 8)
+            tag = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value)
+            err_2 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)
+            v3 = err_2 == 0
+            v4 = (8 if v3 else 0)
+            if v3:
+                self._tag = tag
+                if tag == 0:
                     self.first = 0
-                elif v8 == 1:
+                elif tag == 1:
                     self.second = 0
-            v12 = v8 == 0
-            if v12:
-                v14 = dsdl_runtime.read_unsigned(buffer, v11, 8)
-                v15 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(v14)
-                self.first = v15
-                v16 = v11 + 8
-                v13 = v16
+            v5 = tag == 0
+            if v5:
+                value_2 = dsdl_runtime.read_unsigned(buffer, v4, 8)
+                value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value_2)
+                self.first = value_3
+                v7 = v4 + 8
+                v6 = v7
             else:
-                v13 = v11
-            v17 = v8 == 1
+                v6 = v4
+            v8 = tag == 1
+            if v8:
+                value_4 = dsdl_runtime.read_unsigned(buffer, v6, 16)
+                value_5 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value_4)
+                self.second = value_5
+                v10 = v6 + 16
+                v9 = v10
+            else:
+                v9 = v6
+            v11 = v9 + 7
+            v12 = v11 // 8
+            v13 = v12 * 8
+            v14 = size_2 * 8
+            v15 = v13 < v14
+            v16 = (v13 if v15 else v14)
+            v17 = err_2 == 0
             if v17:
-                v19 = dsdl_runtime.read_unsigned(buffer, v13, 16)
-                v20 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(v19)
-                self.second = v20
-                v21 = v13 + 16
-                v18 = v21
-            else:
-                v18 = v13
-            v22 = v18 + 7
-            v23 = v22 // 8
-            v24 = v23 * 8
-            v25 = v6 * 8
-            v26 = v24 < v25
-            v27 = (v24 if v26 else v25)
-            v28 = v9 == 0
-            if v28:
-                v29 = v27 // 8
-                inout_buffer_size_bytes = v29
-            v5 = v9
-        if v5 == 0:
+                v18 = v16 // 8
+                inout_buffer_size_bytes = v18
+            err = err_2
+        if err == 0:
             return inout_buffer_size_bytes
-        return v5
+        return err
