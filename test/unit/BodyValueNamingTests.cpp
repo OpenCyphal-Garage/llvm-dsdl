@@ -36,6 +36,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 
@@ -725,6 +726,42 @@ bool runBodyValueNamingTests()
             std::cerr << "a shared buffer address was named '" << name
                       << "', after one of the two calls that read it\n";
             ok = false;
+        }
+    }
+
+    // A role word reaches a body as a local of that name, and the renderers do not strop: the
+    // translator bumps a name the function has taken, not one the language has. So no role word
+    // may be a keyword anywhere, and that is a property of the vocabulary rather than of a run.
+    static constexpr ValueRole                       EveryRole[]     = {ValueRole::Offset,
+                                                                        ValueRole::Object,
+                                                                        ValueRole::Buffer,
+                                                                        ValueRole::Size,
+                                                                        ValueRole::Length,
+                                                                        ValueRole::Tag,
+                                                                        ValueRole::Scalar,
+                                                                        ValueRole::Error,
+                                                                        ValueRole::Null,
+                                                                        ValueRole::Rejected,
+                                                                        ValueRole::IndexHolds,
+                                                                        ValueRole::Index};
+    static constexpr llvmdsdl::CodegenNamingLanguage EveryLanguage[] = {llvmdsdl::CodegenNamingLanguage::C,
+                                                                        llvmdsdl::CodegenNamingLanguage::Cpp,
+                                                                        llvmdsdl::CodegenNamingLanguage::Rust,
+                                                                        llvmdsdl::CodegenNamingLanguage::Go,
+                                                                        llvmdsdl::CodegenNamingLanguage::TypeScript,
+                                                                        llvmdsdl::CodegenNamingLanguage::Python};
+    for (const ValueRole role : EveryRole)
+    {
+        for (const std::string& word : {snakeValueName(role, {}, 0), camelValueName(role, {}, 0)})
+        {
+            for (const llvmdsdl::CodegenNamingLanguage language : EveryLanguage)
+            {
+                if (llvmdsdl::codegenIsKeyword(language, word))
+                {
+                    std::cerr << "the role word '" << word << "' is a keyword in one of the targets\n";
+                    ok = false;
+                }
+            }
         }
     }
 

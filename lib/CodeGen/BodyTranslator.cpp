@@ -52,6 +52,7 @@
 
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/Support/NameCanonicalization.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 
@@ -526,6 +527,11 @@ private:
     ///
     /// The spelling is asked with a rising ordinal until it answers with a name the function has
     /// not used, so a repeated role is distinguished in the spelling's own style.
+    ///
+    /// `NamingScope` claims names from a pool this way too, and would be the one to use if the
+    /// suffix were the same everywhere. It is not: it appends `_2` for every language, where Go
+    /// and TypeScript want `err2`. Reaching for it would need a camel projection and a camel
+    /// suffix in the policy first, and its `LocalName` row moved to them.
     std::string nameFor(const mlir::Value value)
     {
         const Role role = roleOf(value, walk_).role.value_or(Role{});
@@ -966,19 +972,6 @@ std::string joinSnake(const llvm::StringRef member, const llvm::StringRef word)
     return trimmed.empty() ? word.str() : (trimmed.str() + "_" + word.str());
 }
 
-/// @brief @p name with a leading underscore where it would otherwise begin with a digit.
-///
-/// A DSDL member may begin with an underscore and a digit -- `_9axis` is a legal name -- and the
-/// fold drops the underscore, leaving a spelling no target accepts as an identifier.
-std::string leadable(std::string name)
-{
-    if (!name.empty() && (std::isdigit(static_cast<unsigned char>(name.front())) != 0))
-    {
-        name.insert(name.begin(), '_');
-    }
-    return name;
-}
-
 /// @brief @p text with each underscore-separated word after the first capitalised.
 std::string camelTail(const llvm::StringRef text)
 {
@@ -1007,7 +1000,7 @@ std::string snakeValueName(const ValueRole role, const llvm::StringRef member, c
     {
         return {};
     }
-    std::string name = leadable(joinSnake(member, word));
+    std::string name = escapeIdentifierStart(joinSnake(member, word));
     if (ordinal > 0)
     {
         name += "_" + std::to_string(ordinal + 1);
@@ -1024,7 +1017,7 @@ std::string camelValueName(const ValueRole role, const llvm::StringRef member, c
     }
     // The same snake_case fold, then the camel spelling of it, so the two renderings differ in
     // case alone and a member reaches both the way it reaches its field.
-    std::string name = leadable(camelTail(joinSnake(member, word)));
+    std::string name = escapeIdentifierStart(camelTail(joinSnake(member, word)));
     if (ordinal > 0)
     {
         name += std::to_string(ordinal + 1);
