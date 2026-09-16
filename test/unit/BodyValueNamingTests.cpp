@@ -415,6 +415,28 @@ constexpr llvm::StringLiteral ForwardedLoop = R"mlir(
   }
 )mlir";
 
+/// @brief A guard whose stamp has gone stale, over one that still carries the offset.
+///
+/// The inner guard still names its result. The outer one reaches that offset down one arm and an
+/// `arith` value down the other, and no operation says what an `arith` value is. That silence is
+/// not a statement that the value has no role, so it must not take the offset away.
+constexpr llvm::StringLiteral SilentArm = R"mlir(
+  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>, %cond: i1) -> i64 {
+    %zero = arith.constant 0 : i64
+    %inner = scf.if %cond -> (i64) {
+      scf.yield %zero : i64
+    } else {
+      scf.yield %zero : i64
+    } {llvmdsdl.result_roles = ["offset"]}
+    %outer = scf.if %cond -> (i64) {
+      scf.yield %inner : i64
+    } else {
+      scf.yield %zero : i64
+    } {llvmdsdl.result_roles = ["offset", "error"]}
+    return %outer : i64
+  }
+)mlir";
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
@@ -642,6 +664,23 @@ bool runBodyValueNamingTests()
     if (onlyCount != 1)
     {
         std::cerr << "a loop carry was called a count on every iteration, though only the first one is\n";
+        ok = false;
+    }
+
+    // The offset reaches the outer guard down one arm, and nothing contradicts it down the other.
+    // An `Offset` is stated by a stamp and by nothing else, so a guard that loses it here has no
+    // second way to recover it.
+    const auto silent = declaredNamesFor(SilentArm, {});
+    if (!silent.has_value())
+    {
+        return false;
+    }
+    const auto offsets = std::count_if(silent->begin(), silent->end(), [](const std::string& name) {
+        return name.starts_with("offset");
+    });
+    if (offsets != 2)
+    {
+        std::cerr << "an arm that states nothing took the offset away from the one that states it\n";
         ok = false;
     }
 

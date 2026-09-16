@@ -92,67 +92,67 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
     const v4 = v3 ? err3 : err2;
     const v5 = v4 === 0;
     const v6 = v5 ? 8n : 0n;
-    let v7: number;
+    let err4: number;
     if (v5) {
-      const err4 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
-      v7 = err4;
+      const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
+      err4 = err5;
     } else {
-      v7 = v4;
+      err4 = v4;
     }
-    const v8 = tag2 === 0n;
+    const v7 = tag2 === 0n;
     let offset: bigint;
-    let err5: number;
-    if (v8) {
-      const v9 = v7 === 0;
+    let err6: number;
+    if (v7) {
+      const v8 = err4 === 0;
       let offset2: bigint;
-      let err6: number;
-      if (v9) {
+      let err7: number;
+      if (v8) {
         const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
         const value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(firstValue);
-        const err7 = dsdlRuntime.writeUnsigned(buffer, Number(v6), 8, value, false);
-        const v10 = v6 + 8n;
-        offset2 = v10;
-        err6 = err7;
+        const err8 = dsdlRuntime.writeUnsigned(buffer, Number(v6), 8, value, false);
+        const v9 = v6 + 8n;
+        offset2 = v9;
+        err7 = err8;
       } else {
         offset2 = v6;
-        err6 = v7;
+        err7 = err4;
       }
       offset = offset2;
-      err5 = err6;
+      err6 = err7;
     } else {
       offset = v6;
-      err5 = v7;
+      err6 = err4;
     }
-    const v11 = tag2 === 1n;
+    const v10 = tag2 === 1n;
     let offset3: bigint;
-    let err8: number;
-    if (v11) {
-      const v12 = err5 === 0;
+    let err9: number;
+    if (v10) {
+      const v11 = err6 === 0;
       let offset4: bigint;
-      let err9: number;
-      if (v12) {
+      let err10: number;
+      if (v11) {
         const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
         const value2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(secondValue);
-        const err10 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 16, value2, false);
-        const v13 = offset + 16n;
-        offset4 = v13;
-        err9 = err10;
+        const err11 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 16, value2, false);
+        const v12 = offset + 16n;
+        offset4 = v12;
+        err10 = err11;
       } else {
         offset4 = offset;
-        err9 = err5;
+        err10 = err6;
       }
       offset3 = offset4;
-      err8 = err9;
+      err9 = err10;
     } else {
       offset3 = offset;
-      err8 = err5;
+      err9 = err6;
     }
-    const v14 = err8 === 0;
-    if (v14) {
-      const v15 = offset3 / 8n;
-      inoutBufferSizeBytes = Number(v15);
+    const v13 = err9 === 0;
+    if (v13) {
+      const v14 = offset3 / 8n;
+      inoutBufferSizeBytes = Number(v14);
     }
-    err = err8;
+    err = err9;
   }
   if (err === 0) {
     return inoutBufferSizeBytes;

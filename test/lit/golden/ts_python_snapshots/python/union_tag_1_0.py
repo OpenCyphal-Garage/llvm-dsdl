@@ -101,51 +101,51 @@ class UnionTag:
             v5 = v4 == 0
             v6 = (8 if v5 else 0)
             if v5:
-                err_4 = dsdl_runtime.write_unsigned(buffer, 0, 8, tag_2, False)
-                v7 = err_4
+                err_5 = dsdl_runtime.write_unsigned(buffer, 0, 8, tag_2, False)
+                err_4 = err_5
             else:
-                v7 = v4
-            v8 = tag_2 == 0
-            if v8:
-                v9 = v7 == 0
-                if v9:
+                err_4 = v4
+            v7 = tag_2 == 0
+            if v7:
+                v8 = err_4 == 0
+                if v8:
                     first_value = int(self.first)
                     value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(first_value)
-                    err_7 = dsdl_runtime.write_unsigned(buffer, v6, 8, value, False)
-                    v10 = v6 + 8
-                    offset_2 = v10
-                    err_6 = err_7
+                    err_8 = dsdl_runtime.write_unsigned(buffer, v6, 8, value, False)
+                    v9 = v6 + 8
+                    offset_2 = v9
+                    err_7 = err_8
                 else:
                     offset_2 = v6
-                    err_6 = v7
+                    err_7 = err_4
                 offset = offset_2
-                err_5 = err_6
+                err_6 = err_7
             else:
                 offset = v6
-                err_5 = v7
-            v11 = tag_2 == 1
-            if v11:
-                v12 = err_5 == 0
-                if v12:
+                err_6 = err_4
+            v10 = tag_2 == 1
+            if v10:
+                v11 = err_6 == 0
+                if v11:
                     second_value = int(self.second)
                     value_2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(second_value)
-                    err_10 = dsdl_runtime.write_unsigned(buffer, offset, 16, value_2, False)
-                    v13 = offset + 16
-                    offset_4 = v13
-                    err_9 = err_10
+                    err_11 = dsdl_runtime.write_unsigned(buffer, offset, 16, value_2, False)
+                    v12 = offset + 16
+                    offset_4 = v12
+                    err_10 = err_11
                 else:
                     offset_4 = offset
-                    err_9 = err_5
+                    err_10 = err_6
                 offset_3 = offset_4
-                err_8 = err_9
+                err_9 = err_10
             else:
                 offset_3 = offset
-                err_8 = err_5
-            v14 = err_8 == 0
-            if v14:
-                v15 = offset_3 // 8
-                inout_buffer_size_bytes = v15
-            err = err_8
+                err_9 = err_6
+            v13 = err_9 == 0
+            if v13:
+                v14 = offset_3 // 8
+                inout_buffer_size_bytes = v14
+            err = err_9
         if err == 0:
             return inout_buffer_size_bytes
         return err

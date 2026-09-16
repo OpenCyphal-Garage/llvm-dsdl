@@ -104,7 +104,9 @@ declares a deserialiser's member address because that is where the storage is cr
 
 An `scf` result takes the role the values yielded into it share, which is how the error a plan
 threads through its fields keeps the name at every step. Two arms agreeing on the role but not on
-the member give the role alone. An operation that states nothing about its result takes the
+the member give the role alone, and two stating different roles give none. An arm whose value no
+operation describes states nothing rather than states no role, so it neither carries the answer
+nor takes it away. An operation that states nothing about its result takes the
 translator's own `v<N>`, and so does an `arith` result a body declares; a constant is spelled where
 it is used and claims no name at all.
 

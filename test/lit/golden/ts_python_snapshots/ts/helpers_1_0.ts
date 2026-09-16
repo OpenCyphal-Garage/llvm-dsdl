@@ -245,42 +245,42 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
     const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value5);
     const err2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count);
     const v4 = err2 === 0;
-    let v5: bigint;
+    let offset: bigint;
     if (v4) {
       obj.c = new Array<number>(Number(count));
-      const v6 = count * 8n;
-      const v7 = v6 + 37n;
-      let offset: bigint;
-      offset = 37n;
+      const v5 = count * 8n;
+      const v6 = v5 + 37n;
       let offset2: bigint;
+      offset2 = 37n;
+      let offset3: bigint;
       for (;;) {
-        const v8 = offset < v7;
-        offset2 = offset;
-        if (!(v8)) {
+        const v7 = offset2 < v6;
+        offset3 = offset2;
+        if (!(v7)) {
           break;
         }
-        const v9 = offset2 - 37n;
-        const v10 = v9 / 8n;
-        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(offset2), 8);
+        const v8 = offset3 - 37n;
+        const v9 = v8 / 8n;
+        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(offset3), 8);
         const value7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value6);
-        (obj.c ??= [])[Number(v10)] = Number(value7);
-        const v11 = offset2 + 8n;
-        offset = v11;
+        (obj.c ??= [])[Number(v9)] = Number(value7);
+        const v10 = offset3 + 8n;
+        offset2 = v10;
       }
-      v5 = offset2;
+      offset = offset3;
     } else {
-      v5 = 37n;
+      offset = 37n;
     }
-    const v12 = v5 + 7n;
-    const v13 = v12 / 8n;
-    const v14 = v13 * 8n;
-    const v15 = size2 * 8n;
-    const v16 = v14 < v15;
-    const v17 = v16 ? v14 : v15;
-    const v18 = err2 === 0;
-    if (v18) {
-      const v19 = v17 / 8n;
-      inoutBufferSizeBytes = Number(v19);
+    const v11 = offset + 7n;
+    const v12 = v11 / 8n;
+    const v13 = v12 * 8n;
+    const v14 = size2 * 8n;
+    const v15 = v13 < v14;
+    const v16 = v15 ? v13 : v14;
+    const v17 = err2 === 0;
+    if (v17) {
+      const v18 = v16 / 8n;
+      inoutBufferSizeBytes = Number(v18);
     }
     err = err2;
   }

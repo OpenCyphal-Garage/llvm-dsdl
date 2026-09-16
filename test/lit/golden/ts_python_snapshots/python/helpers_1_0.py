@@ -221,34 +221,34 @@ class Helpers:
             v4 = err_2 == 0
             if v4:
                 self.c = [0] * count
-                v6 = count * 8
-                v7 = v6 + 37
-                offset = 37
+                v5 = count * 8
+                v6 = v5 + 37
+                offset_2 = 37
                 while True:
-                    v8 = offset < v7
-                    offset_2 = offset
-                    if not (v8):
+                    v7 = offset_2 < v6
+                    offset_3 = offset_2
+                    if not (v7):
                         break
-                    v9 = offset_2 - 37
-                    v10 = v9 // 8
-                    value_6 = dsdl_runtime.read_unsigned(buffer, offset_2, 8)
+                    v8 = offset_3 - 37
+                    v9 = v8 // 8
+                    value_6 = dsdl_runtime.read_unsigned(buffer, offset_3, 8)
                     value_7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value_6)
-                    self.c[v10] = value_7
-                    v11 = offset_2 + 8
-                    offset = v11
-                v5 = offset_2
+                    self.c[v9] = value_7
+                    v10 = offset_3 + 8
+                    offset_2 = v10
+                offset = offset_3
             else:
-                v5 = 37
-            v12 = v5 + 7
-            v13 = v12 // 8
-            v14 = v13 * 8
-            v15 = size_2 * 8
-            v16 = v14 < v15
-            v17 = (v14 if v16 else v15)
-            v18 = err_2 == 0
-            if v18:
-                v19 = v17 // 8
-                inout_buffer_size_bytes = v19
+                offset = 37
+            v11 = offset + 7
+            v12 = v11 // 8
+            v13 = v12 * 8
+            v14 = size_2 * 8
+            v15 = v13 < v14
+            v16 = (v13 if v15 else v14)
+            v17 = err_2 == 0
+            if v17:
+                v18 = v16 // 8
+                inout_buffer_size_bytes = v18
             err = err_2
         if err == 0:
             return inout_buffer_size_bytes

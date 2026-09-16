@@ -247,8 +247,8 @@ Reached roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
         const Role role = *reached.role;
         if (role.role == ValueRole::Anonymous)
         {
-            shared.reset();
-            agreed = false;
+            // No operation says what this one is, which is not a statement that it has no role.
+            // Letting it veto would take a role away from the arm that does state one.
             continue;
         }
         if (!shared.has_value())
