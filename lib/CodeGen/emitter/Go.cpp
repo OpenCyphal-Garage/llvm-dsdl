@@ -1452,7 +1452,8 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             const std::map<std::string, std::string>& importAliases,
                             const mlir::dsdl::SerializationPlanOp     plan,
                             const GoSpelling&                         spelling,
-                            const SectionBodies&                      bodies)
+                            const SectionBodies&                      bodies,
+                            PlanBodyLookups&                          lookups)
 {
     const auto typeConstPrefix =
         codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
@@ -1544,18 +1545,19 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                                        "no plan bodies for %s in the lowered module",
                                        fullName.c_str());
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
     w.blank();
-    return translateFunction(bodies.deserialize, spelling, w);
+    return translateFunction(bodies.deserialize, spelling, w, lookups);
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const std::string&        moduleName,
-                                                 mlir::ModuleOp            module)
+                                                 mlir::ModuleOp            module,
+                                                 PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1598,7 +1600,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     SourceWriter       w = makeGoWriter(body);
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1619,7 +1621,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        imports,
                                        sectionPlan(schema, ""),
                                        spelling,
-                                       bodies[""]))
+                                       bodies[""],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1639,7 +1642,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        imports,
                                        sectionPlan(schema, "request"),
                                        spelling,
-                                       bodies["request"]))
+                                       bodies["request"],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1659,7 +1663,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            imports,
                                            sectionPlan(schema, "response"),
                                            spelling,
-                                           bodies["response"]))
+                                           bodies["response"],
+                                           lookups))
             {
                 return std::move(err);
             }
@@ -1822,6 +1827,7 @@ llvm::Error emit(const SemanticModule& semantic,
 
     const EmitterContext ctx(semantic, options.typeNameVersioning);
 
+    PlanBodyLookups lookups(module);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -1836,7 +1842,7 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, options.moduleName, module);
+        auto file = renderDefinitionFile(def, ctx, options.moduleName, module, lookups);
         if (!file)
         {
             return file.takeError();

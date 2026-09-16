@@ -1699,7 +1699,8 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const AttachedDoc&                    typeDoc,
                         const mlir::dsdl::SerializationPlanOp plan,
                         const CppSpelling&                    spelling,
-                        const SectionBodies&                  bodies)
+                        const SectionBodies&                  bodies,
+                        PlanBodyLookups&                      lookups)
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitFunctionPrototypes(w, typeName, declaredName, flavor);
@@ -1724,11 +1725,11 @@ llvm::Error emitSection(SourceWriter&                         w,
                                        "no plan bodies for %s in the lowered module",
                                        fullName.c_str());
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
-    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
     }
@@ -1761,7 +1762,8 @@ llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
 llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                          const EmitterContext&     ctx,
                                          const CppFlavor           flavor,
-                                         mlir::ModuleOp            module)
+                                         mlir::ModuleOp            module,
+                                         PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1843,7 +1845,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     // The helpers the plans call, ahead of the sections that call them.
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1876,7 +1878,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.doc,
                                    sectionPlan(schema, "request"),
                                    spelling,
-                                   bodies["request"]))
+                                   bodies["request"],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -1892,7 +1895,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        def.doc,
                                        sectionPlan(schema, "response"),
                                        spelling,
-                                       bodies["response"]))
+                                       bodies["response"],
+                                       lookups))
             {
                 return std::move(err);
             }
@@ -1955,7 +1959,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    def.doc,
                                    sectionPlan(schema, ""),
                                    spelling,
-                                   bodies[""]))
+                                   bodies[""],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -2015,6 +2020,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
     }
 
     const EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2028,7 +2034,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         {
             dir /= ns;
         }
-        auto header = renderHeader(def, ctx, flavor, module);
+        auto header = renderHeader(def, ctx, flavor, module, lookups);
         if (!header)
         {
             return header.takeError();

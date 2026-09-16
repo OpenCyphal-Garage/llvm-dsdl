@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -322,9 +323,42 @@ std::string snakeValueName(ValueRole role, llvm::StringRef member, std::size_t o
 ///        `<ordinal + 1>` to a repeat.
 std::string camelValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);
 
+/// @brief What the translator asks of one module once, for every function it translates from it.
+///
+/// A helper states the role of its answer as an attribute on itself, so naming a call's result
+/// means resolving the callee, and resolving a symbol by walking the module's top-level operations
+/// costs a pass over every type the run generates. Asking once per call made that cost the
+/// catalogue's size squared; the answers hold for as long as the module does, so this holds them.
+///
+/// Build one from the module being generated, hand it to every @ref translateFunction called on
+/// that module's functions, and let it go before the module does. It answers about the operations
+/// the module holds, so it describes that module and no other.
+class PlanBodyLookups final
+{
+public:
+    explicit PlanBodyLookups(mlir::ModuleOp module);
+    PlanBodyLookups(const PlanBodyLookups&)            = delete;
+    PlanBodyLookups& operator=(const PlanBodyLookups&) = delete;
+    PlanBodyLookups(PlanBodyLookups&&)                 = delete;
+    PlanBodyLookups& operator=(PlanBodyLookups&&)      = delete;
+    ~PlanBodyLookups();
+
+    /// @brief The role the result of @p call carries, from the markers the lowering left.
+    /// @return @ref ValueRole::Anonymous where the callee carries none of them.
+    [[nodiscard]] ValueRole roleOfCallee(mlir::func::CallOp call);
+
+private:
+    struct State;
+    std::unique_ptr<State> state_;
+};
+
 /// @brief Spells @p fn through @p spelling into @p w.
+/// @param[in,out] lookups What @p fn's module has already been asked, shared across its functions.
 /// @return An error naming the first operation the translator has no spelling for.
-llvm::Error translateFunction(mlir::func::FuncOp fn, const BodySpelling& spelling, SourceWriter& w);
+llvm::Error translateFunction(mlir::func::FuncOp  fn,
+                              const BodySpelling& spelling,
+                              SourceWriter&       w,
+                              PlanBodyLookups&    lookups);
 
 /// @brief The functions `lower-dsdl-bodies` built for @p schemaSym, in module order.
 std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, llvm::StringRef schemaSym);

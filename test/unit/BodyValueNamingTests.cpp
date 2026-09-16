@@ -88,6 +88,9 @@ public:
     /// @brief Whether a name carries the member, or only the role it was inferred from.
     bool withMember{false};
 
+    /// @brief How many candidates the translator has asked for, over every value it has named.
+    mutable std::size_t offers{0};
+
     std::vector<std::string> openFunction(SourceWriter& /*w*/, mlir::func::FuncOp fn) const override
     {
         std::vector<std::string> parameters;
@@ -112,6 +115,7 @@ public:
                                         const llvm::StringRef member,
                                         const std::size_t     ordinal) const override
     {
+        ++offers;
         return llvmdsdl::snakeValueName(role, withMember ? member : llvm::StringRef{}, ordinal);
     }
 
@@ -462,13 +466,96 @@ constexpr llvm::StringLiteral SharedAddress = R"mlir(
   }
 )mlir";
 
+/// @brief A body of @p count array lengths, every one of them wanting the name `count`.
+///
+/// Each takes the next free ordinal, so the names run `count`, `count_2`, `count_3`. Each is also
+/// summed into the result, since a value nothing reads is never spelled and so never named. What
+/// the case is about is how many candidates the translator has to ask for to reach those names.
+std::string sameRoleRun(const unsigned count)
+{
+    std::string out = "  func.func @body(%arg0: !dsdl.ptr<!dsdl.object<\"a.B.1.0\">>) -> i64 {\n";
+    for (unsigned i = 0; i < count; ++i)
+    {
+        out.append("    %v").append(std::to_string(i));
+        out.append(" = dsdl.array_length %arg0 \"items\" : <!dsdl.object<\"a.B.1.0\">>\n");
+    }
+    for (unsigned i = 1; i < count; ++i)
+    {
+        out.append("    %s").append(std::to_string(i)).append(" = arith.addi %");
+        out.append((i == 1) ? "v0" : ("s" + std::to_string(i - 1)));
+        out.append(", %v").append(std::to_string(i)).append(" : i64\n");
+    }
+    out.append("    return %s").append(std::to_string(count - 1)).append(" : i64\n  }\n");
+    return out;
+}
+
+/// @brief A body calling two helpers that differ only in the marker the lowering left on them.
+///
+/// Neither call says what its answer is; the function it resolves to does. Naming both from one
+/// module is what says the lookup answers about the callee it found rather than about the module,
+/// the first call it was asked, or the name it was asked under.
+constexpr llvm::StringLiteral MarkedCalls = R"mlir(
+  func.func private @check(i64) -> i8 attributes {llvmdsdl.plan_capacity_check}
+  func.func private @scalar(i64) -> i8 attributes {llvmdsdl.scalar_float_helper}
+  func.func @body(%arg0: i64) -> i8 {
+    %e = func.call @check(%arg0) : (i64) -> i8
+    %s = func.call @scalar(%arg0) : (i64) -> i8
+    %r = arith.addi %e, %s : i8
+    return %r : i8
+  }
+)mlir";
+
+/// @brief Translates `@body` of @p source and answers the names it declared.
+///
+/// The lookups are built from the module the body belongs to, which is how a run uses them: once
+/// per module, for every function generated from it.
+std::optional<std::vector<std::string>> declaredNamesOfBody(const llvm::StringRef source)
+{
+    mlir::DialectRegistry registry;
+    registry
+        .insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
+    mlir::MLIRContext context(registry);
+    context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
+
+    mlir::OwningOpRef<mlir::ModuleOp> module = mlir::parseSourceString<mlir::ModuleOp>(source, &context);
+    if (!module)
+    {
+        std::cerr << "the call fixture did not parse\n";
+        return std::nullopt;
+    }
+    mlir::func::FuncOp body;
+    for (mlir::func::FuncOp fn : module->getBody()->getOps<mlir::func::FuncOp>())
+    {
+        if (fn.getSymName() == "body")
+        {
+            body = fn;
+        }
+    }
+    if (!body)
+    {
+        std::cerr << "the call fixture holds no @body\n";
+        return std::nullopt;
+    }
+    CollidingSpelling         spelling;
+    std::ostringstream        out;
+    SourceWriter              w(out, IndentPolicy::spaces(2));
+    llvmdsdl::PlanBodyLookups lookups(*module);
+    if (auto err = translateFunction(body, spelling, w, lookups))
+    {
+        std::cerr << "translation failed: " << llvm::toString(std::move(err)) << "\n";
+        return std::nullopt;
+    }
+    return spelling.declared;
+}
+
 /// @brief Translates @p source through a spelling reserving @p reserved, and answers its names.
 ///
 /// An operation that states a role has the spelling asked for a name rather than being numbered,
 /// which is the path both the reserved pool and the stamp's arity check sit on.
 std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef                 source,
                                                          const llvm::ArrayRef<llvm::StringRef> reserved,
-                                                         const bool                            withMember = false)
+                                                         const bool                            withMember = false,
+                                                         std::size_t* const                    offers     = nullptr)
 {
     mlir::DialectRegistry registry;
     registry
@@ -492,12 +579,17 @@ std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef  
     CollidingSpelling spelling;
     spelling.withMember = withMember;
     spelling.reserved.assign(reserved.begin(), reserved.end());
-    std::ostringstream out;
-    SourceWriter       w(out, IndentPolicy::spaces(2));
-    if (auto err = translateFunction(fn, spelling, w))
+    std::ostringstream        out;
+    SourceWriter              w(out, IndentPolicy::spaces(2));
+    llvmdsdl::PlanBodyLookups lookups(*module);
+    if (auto err = translateFunction(fn, spelling, w, lookups))
     {
         std::cerr << "translation failed: " << llvm::toString(std::move(err)) << "\n";
         return std::nullopt;
+    }
+    if (offers != nullptr)
+    {
+        *offers = spelling.offers;
     }
     return spelling.declared;
 }
@@ -660,6 +752,59 @@ bool runBodyValueNamingTests()
     {
         std::cerr << "the guard chain took " << ms << " ms: the role walk is re-deriving values it has settled\n";
         ok = false;
+    }
+
+    // A role the body repeats takes the next free ordinal, and the search for it resumes where
+    // that role left off. Restarting at zero costs one offer per value already named, so 60
+    // values cost 1,830 offers rather than 60. The budget is above the one and far below the
+    // other, and the names are asserted alongside it: the search may be cheaper, never different.
+    std::size_t runOffers = 0;
+    const auto  run       = declaredNamesFor(sameRoleRun(60), {}, false, &runOffers);
+    if (!run.has_value())
+    {
+        return false;
+    }
+    std::vector<std::string> repeated;
+    for (const auto& name : *run)
+    {
+        if (llvm::StringRef(name).starts_with("count"))
+        {
+            repeated.push_back(name);
+        }
+    }
+    if (repeated.size() != 60)
+    {
+        std::cerr << "the same-role run named " << repeated.size() << " values `count`, expected 60\n";
+        ok = false;
+    }
+    else
+    {
+        ok = expect(repeated.front(), "count", "the first of a repeated role") && ok;
+        ok = expect(repeated.at(1), "count_2", "the second of a repeated role") && ok;
+        ok = expect(repeated.back(), "count_60", "the last of a repeated role") && ok;
+    }
+    if (runOffers > 120)
+    {
+        std::cerr << "naming 60 values of one role took " << runOffers
+                  << " offers: the ordinal search is restarting at zero\n";
+        ok = false;
+    }
+
+    // Two helpers, two markers, one module: each call is named from the function it resolves to.
+    const auto marked = declaredNamesOfBody(MarkedCalls);
+    if (!marked.has_value())
+    {
+        return false;
+    }
+    if (marked->size() < 2)
+    {
+        std::cerr << "a call to a marked helper was not named at all\n";
+        ok = false;
+    }
+    else
+    {
+        ok = expect(marked->at(0), "err", "the marker on a capacity check names its answer") && ok;
+        ok = expect(marked->at(1), "value", "the marker on a scalar helper names its answer") && ok;
     }
 
     // The count goes in at the first argument and the stamp's first name is `offset`, so a stamp

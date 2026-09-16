@@ -23,6 +23,7 @@
 #include <cctype>
 #include <cstddef>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -134,34 +135,6 @@ bool addressesSize(const mlir::Value pointer)
     return type && mlir::isa<mlir::dsdl::SizeType>(type.getPointee());
 }
 
-/// @brief The role of a helper's answer, from the marker lowering left on the helper.
-Role roleOfCall(mlir::func::CallOp call)
-{
-    static constexpr std::pair<llvm::StringLiteral, ValueRole> Markers[] = {
-        {"llvmdsdl.plan_capacity_check", ValueRole::Error},
-        {"llvmdsdl.array_length_validate", ValueRole::Error},
-        {"llvmdsdl.union_tag_validate", ValueRole::Error},
-        {"llvmdsdl.delimiter_header_validate", ValueRole::Error},
-        {"llvmdsdl.scalar_float_helper", ValueRole::Scalar},
-        {"llvmdsdl.scalar_signed_helper", ValueRole::Scalar},
-        {"llvmdsdl.scalar_unsigned_helper", ValueRole::Scalar},
-        {"llvmdsdl.array_length_prefix_helper", ValueRole::Length},
-        {"llvmdsdl.union_tag_helper", ValueRole::Tag},
-    };
-    auto* const callee = mlir::SymbolTable::lookupNearestSymbolFrom(call, call.getCalleeAttr());
-    if (callee != nullptr)
-    {
-        for (const auto& [marker, role] : Markers)
-        {
-            if (callee->hasAttr(marker))
-            {
-                return {role, {}};
-            }
-        }
-    }
-    return {};
-}
-
 /// @brief The role `build-dsdl-plan-bodies` stamped on result @p index of @p op.
 ///
 /// A plan's offset and the error beside it are results of its own shape, known to the pass that
@@ -212,6 +185,12 @@ constexpr unsigned NoCarryBack = std::numeric_limits<unsigned>::max();
 /// what makes it safe to keep.
 struct RoleWalk final
 {
+    explicit RoleWalk(PlanBodyLookups& moduleLookups)
+        : lookups(moduleLookups)
+    {
+    }
+
+    PlanBodyLookups&                               lookups;
     llvm::SmallDenseMap<mlir::Value, unsigned, 16> path;
     llvm::DenseMap<mlir::Value, Role>              settled;
     unsigned                                       depth{0};
@@ -454,7 +433,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
             const Reached pointer = roleOf(read.getPointer(), walk);
             return Reached{Role{ValueRole::Size, pointer.role.value_or(Role{}).member}, pointer.carryBack};
         })
-        .Case<mlir::func::CallOp>([](auto call) { return Reached{roleOfCall(call)}; })
+        .Case<mlir::func::CallOp>([&](auto call) { return Reached{Role{walk.lookups.roleOfCallee(call), {}}}; })
         .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
             const Role stamped = stampedRole(op, result.getResultNumber());
             if (stamped.role != ValueRole::Anonymous)
@@ -470,9 +449,10 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
 class Translator final : public ValueNames
 {
 public:
-    Translator(const BodySpelling& spelling, SourceWriter& w)
+    Translator(const BodySpelling& spelling, SourceWriter& w, PlanBodyLookups& lookups)
         : spelling_(spelling)
         , w_(w)
+        , walk_(lookups)
     {
     }
 
@@ -524,7 +504,9 @@ private:
     /// @brief The name @p value is declared under: what its operation says it is, or a fresh one.
     ///
     /// The spelling is asked with a rising ordinal until it answers with a name the function has
-    /// not used, so a repeated role is distinguished in the spelling's own style.
+    /// not used, so a repeated role is distinguished in the spelling's own style. The ordinal
+    /// resumes where the same role and member left off: a name is never given up once claimed, so
+    /// every ordinal below that one is spoken for and asking again would only confirm it.
     ///
     /// `NamingScope` claims names from a pool this way too, and would serve here once it can
     /// render a camel-cased name and a camel-cased suffix -- it appends `_2` for every language,
@@ -535,7 +517,8 @@ private:
         const Role role = roleOf(value, walk_).role.value_or(Role{});
         if (role.role != ValueRole::Anonymous)
         {
-            for (std::size_t ordinal = 0; ordinal < MaxNameOrdinals; ++ordinal)
+            std::size_t& reached = reached_[{static_cast<unsigned>(role.role), role.member}];
+            for (std::size_t ordinal = reached; ordinal < MaxNameOrdinals; ++ordinal)
             {
                 std::string candidate = spelling_.valueName(role.role, role.member, ordinal);
                 if (candidate.empty())
@@ -544,6 +527,7 @@ private:
                 }
                 if (taken_.insert(candidate).second)
                 {
+                    reached = ordinal + 1;
                     return candidate;
                 }
             }
@@ -907,9 +891,11 @@ private:
     const BodySpelling&                      spelling_;
     SourceWriter&                            w_;
     llvm::DenseMap<mlir::Value, std::string> names_;
-    RoleWalk                                 walk_;
-    llvm::StringSet<>                        taken_;
-    std::size_t                              counter_{0};
+    /// @brief The ordinal each role and member has claimed up to, so the search resumes there.
+    llvm::DenseMap<std::pair<unsigned, llvm::StringRef>, std::size_t> reached_;
+    RoleWalk                                                          walk_;
+    llvm::StringSet<>                                                 taken_;
+    std::size_t                                                       counter_{0};
 };
 
 }  // namespace
@@ -1020,9 +1006,60 @@ std::string camelValueName(const ValueRole role, const llvm::StringRef member, c
     return name;
 }
 
-llvm::Error translateFunction(mlir::func::FuncOp fn, const BodySpelling& spelling, SourceWriter& w)
+/// @brief What @ref PlanBodyLookups holds: the symbol table of the module it was built from.
+struct PlanBodyLookups::State final
 {
-    Translator translator(spelling, w);
+    explicit State(mlir::ModuleOp module)
+        : symbols(module)
+    {
+    }
+
+    mlir::SymbolTable symbols;
+};
+
+PlanBodyLookups::PlanBodyLookups(mlir::ModuleOp module)
+    : state_(std::make_unique<State>(module))
+{
+}
+
+PlanBodyLookups::~PlanBodyLookups() = default;
+
+ValueRole PlanBodyLookups::roleOfCallee(mlir::func::CallOp call)
+{
+    static constexpr std::pair<llvm::StringLiteral, ValueRole> Markers[] = {
+        {"llvmdsdl.plan_capacity_check", ValueRole::Error},
+        {"llvmdsdl.array_length_validate", ValueRole::Error},
+        {"llvmdsdl.union_tag_validate", ValueRole::Error},
+        {"llvmdsdl.delimiter_header_validate", ValueRole::Error},
+        {"llvmdsdl.scalar_float_helper", ValueRole::Scalar},
+        {"llvmdsdl.scalar_signed_helper", ValueRole::Scalar},
+        {"llvmdsdl.scalar_unsigned_helper", ValueRole::Scalar},
+        {"llvmdsdl.array_length_prefix_helper", ValueRole::Length},
+        {"llvmdsdl.union_tag_helper", ValueRole::Tag},
+    };
+    // The table is built once and indexed; `lookupNearestSymbolFrom` walks the module's top-level
+    // operations on every call.
+    mlir::Operation* const callee = state_->symbols.lookup(call.getCallee());
+    if (callee == nullptr)
+    {
+        return ValueRole::Anonymous;
+    }
+    for (const auto& [marker, role] : Markers)
+    {
+        if (callee->hasAttr(marker))
+        {
+            return role;
+        }
+    }
+    return ValueRole::Anonymous;
+}
+
+llvm::Error translateFunction(mlir::func::FuncOp  fn,
+                              const BodySpelling& spelling,
+                              SourceWriter&       w,
+                              PlanBodyLookups&    lookups)
+{
+    Translator translator(spelling, w, lookups);
     return translator.run(fn);
 }
 

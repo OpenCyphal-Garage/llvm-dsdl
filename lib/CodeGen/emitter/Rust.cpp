@@ -1233,7 +1233,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const std::string&                    definitionFullName,
                             const mlir::dsdl::SerializationPlanOp plan,
                             const RustSpelling&                   spelling,
-                            const SectionBodies&                  bodies)
+                            const SectionBodies&                  bodies,
+                            PlanBodyLookups&                      lookups)
 {
     const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::vector<std::string> variableArrayFields;
@@ -1390,12 +1391,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                                        "no plan bodies for %s in the lowered module",
                                        fullName.c_str());
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w))
+    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
     }
     w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w))
+    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
     }
@@ -1459,7 +1460,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const Options&            options,
-                                                 mlir::ModuleOp            module)
+                                                 mlir::ModuleOp            module,
+                                                 PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -1526,7 +1528,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // The helpers the plans call, ahead of the types whose bodies call them.
     for (const mlir::func::FuncOp helper : helpers)
     {
-        if (auto err = translateFunction(helper, spelling, w))
+        if (auto err = translateFunction(helper, spelling, w, lookups))
         {
             return std::move(err);
         }
@@ -1549,7 +1551,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.fullName,
                                        sectionPlan(schema, ""),
                                        spelling,
-                                       bodies[""]))
+                                       bodies[""],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1571,7 +1574,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    def.info.fullName,
                                    sectionPlan(schema, "request"),
                                    spelling,
-                                   bodies["request"]))
+                                   bodies["request"],
+                                   lookups))
     {
         return std::move(err);
     }
@@ -1591,7 +1595,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.fullName,
                                        sectionPlan(schema, "response"),
                                        spelling,
-                                       bodies["response"]))
+                                       bodies["response"],
+                                       lookups))
         {
             return std::move(err);
         }
@@ -1736,6 +1741,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
 
     std::map<std::string, std::set<std::string>> dirToSubdirs;
     std::map<std::string, std::set<std::string>> dirToFiles;
+    PlanBodyLookups                              lookups(module);
 
     for (const auto& def : semantic.definitions)
     {
@@ -1773,7 +1779,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, options, module);
+        auto file = renderDefinitionFile(def, ctx, options, module, lookups);
         if (!file)
         {
             return file.takeError();
