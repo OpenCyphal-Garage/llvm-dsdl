@@ -12,6 +12,9 @@
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir > %t.bodies.mlir
 # RUN: FileCheck %s --input-file=%t.bodies.mlir
 # RUN: FileCheck %s --input-file=%t.bodies.mlir --check-prefix=ANCHOR --strict-whitespace
+#
+# The pass writes these names and the translator reads them, each spelling them itself.
+# RUN: python3 %S/check_role_vocabulary.py %t.bodies.mlir
 
 # The vocabulary: a cursor-carrying operation names both of its results, and one that answers with
 # the code alone names just that.
