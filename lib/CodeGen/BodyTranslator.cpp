@@ -286,6 +286,13 @@ Reached roleOfYielded(mlir::ValueRange yielded, RoleWalk& walk)
 }
 
 /// @brief The values yielded into result @p index of @p op, over all of its arms.
+///
+/// The index is a result's, and the verifier ties every list read here to the result list: an
+/// `scf.if`'s yield operands, an `scf.while`'s `scf.condition` arguments, an `scf.for`'s
+/// initialisers and body yield. So each read is in range, and MLIR's own ranges assert when one
+/// is not -- a guard here would answer "no role" for an index from the wrong list instead, which
+/// is the defect it would be hiding. An `scf.if` with no else region is the one real option, and
+/// that is what the emptiness test is for.
 std::vector<mlir::Value> yieldedInto(mlir::Operation* const op, const unsigned index)
 {
     std::vector<mlir::Value> out;
@@ -346,20 +353,17 @@ bool forwardsArgumentsInOrder(mlir::scf::WhileOp loop)
 /// The initialiser at that position carries the first iteration, the after region's `scf.yield`
 /// every one after it. Both are per-argument: asking what every initialiser shares would answer
 /// for the offset and the error together, which are the two a loop carries.
+///
+/// The index is a before-region argument's, and the verifier ties that list to both of these: a
+/// loop's initialisers match its before-region arguments, and its after region yields to them. So
+/// each read is in range, on the same terms as @ref yieldedInto.
 std::vector<mlir::Value> incomingTo(mlir::scf::WhileOp loop, const unsigned index)
 {
     std::vector<mlir::Value> out;
-    if (index >= loop.getInits().size())
-    {
-        return out;
-    }
     out.push_back(loop.getInits()[index]);
     if (auto yield = mlir::dyn_cast<mlir::scf::YieldOp>(loop.getAfter().front().getTerminator()))
     {
-        if (index < yield.getNumOperands())
-        {
-            out.push_back(yield.getOperand(index));
-        }
+        out.push_back(yield.getOperand(index));
     }
     return out;
 }
