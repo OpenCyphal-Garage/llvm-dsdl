@@ -202,7 +202,11 @@ def _render_serdes(reports: list[tuple[pathlib.Path, dict | None]], out: list[st
         out.append(f"### dsdlc: {title}")
         out.append("")
         if report is None:
-            out.append(f"_No report at `{path}`; the comparison skips where valgrind is absent._")
+            out.append(
+                f"_No readable report at `{path}`. The lane skips where valgrind is absent, "
+                "and a run that failed or a report that cannot be parsed reaches here the same "
+                "way -- read the lane's own output to tell them apart._"
+            )
             continue
 
         meta = report.get("meta", {})
