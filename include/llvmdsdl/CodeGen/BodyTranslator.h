@@ -203,15 +203,20 @@ public:
     /// what @ref ValueRole::Anonymous is given.
     [[nodiscard]] virtual std::string valueName(ValueRole role, llvm::StringRef member, std::size_t ordinal) const = 0;
 
-    /// @brief The identifiers this spelling's bodies use without qualifying them.
+    /// @brief The identifiers already in scope that a body depends on.
     ///
-    /// A body that reaches into the language's own namespace -- Go's predeclared conversions and
-    /// `len`, Python's builtins, TypeScript's globals -- is captured by a local of the same name,
-    /// and the capture is legal code that means something else. The translator claims these
-    /// before it names anything, so a value whose role lands on one is distinguished the way a
-    /// repeat is, and a role word is chosen for how it reads rather than for what it avoids.
+    /// Two kinds. A body that reaches into the language's own namespace -- Go's predeclared
+    /// conversions and `len`, Python's builtins, TypeScript's globals -- is captured by a local of
+    /// the same name, and the capture is legal code that means something else. And a signature or
+    /// prologue may open the body with a name @ref openFunction cannot report, since that answers
+    /// one identifier per argument of the function being translated and a spelling may write more.
     ///
-    /// A spelling that qualifies every call it makes answers with nothing.
+    /// The translator claims these before it names anything, so a value whose role lands on one is
+    /// distinguished the way a repeat is, and a role word is chosen for how it reads rather than
+    /// for what it avoids.
+    ///
+    /// A spelling that qualifies every call it makes, and opens with nothing of its own, answers
+    /// with nothing.
     [[nodiscard]] virtual llvm::ArrayRef<llvm::StringRef> reservedLocals() const = 0;
 
     [[nodiscard]] virtual std::string constant(mlir::TypedAttr value) const = 0;

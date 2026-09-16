@@ -464,7 +464,12 @@ public:
         // carry `dsdl_runtime_`, and a synthesised helper, which carries `mlir_llvmdsdl_`. A
         // local of either name would capture the call. None can be: a role name is a role word,
         // or a member and a role word joined, so it carries no prefix at all.
-        return {};
+        //
+        // The pmr flavour opens with two names of its own: a memory resource parameter, which has
+        // no argument of the translated function to be reported against, and the local resolving
+        // it that `dsdl.set_array_length` reads further down the body.
+        static const llvm::StringRef pmr[] = {"memory_resource", "effective_memory_resource"};
+        return isPmrFlavor(flavor_) ? llvm::ArrayRef<llvm::StringRef>(pmr) : llvm::ArrayRef<llvm::StringRef>{};
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
