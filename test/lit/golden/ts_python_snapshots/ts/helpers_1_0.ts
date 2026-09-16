@@ -221,17 +221,17 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
 export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
-  let v1: boolean;
+  let rejected: boolean;
   if (v0) {
-    v1 = true;
+    rejected = true;
   } else {
     const size = BigInt(inoutBufferSizeBytes);
-    const v2 = size !== 0n;
-    const v3 = false && v2;
-    v1 = v3;
+    const v1 = size !== 0n;
+    const v2 = false && v1;
+    rejected = v2;
   }
   let err: number;
-  if (v1) {
+  if (rejected) {
     err = -2;
   } else {
     const size2 = BigInt(inoutBufferSizeBytes);
@@ -244,43 +244,43 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
     const value5 = dsdlRuntime.readUnsignedBigInt(buffer, Number(29n), 8);
     const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value5);
     const err2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count);
-    const v4 = err2 === 0;
+    const v3 = err2 === 0;
     let offset: bigint;
-    if (v4) {
+    if (v3) {
       obj.c = new Array<number>(Number(count));
-      const v5 = count * 8n;
-      const v6 = v5 + 37n;
+      const v4 = count * 8n;
+      const v5 = v4 + 37n;
       let offset2: bigint;
       offset2 = 37n;
       let offset3: bigint;
       for (;;) {
-        const v7 = offset2 < v6;
+        const v6 = offset2 < v5;
         offset3 = offset2;
-        if (!(v7)) {
+        if (!(v6)) {
           break;
         }
-        const v8 = offset3 - 37n;
-        const v9 = v8 / 8n;
+        const v7 = offset3 - 37n;
+        const v8 = v7 / 8n;
         const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(offset3), 8);
         const value7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value6);
-        (obj.c ??= [])[Number(v9)] = Number(value7);
-        const v10 = offset3 + 8n;
-        offset2 = v10;
+        (obj.c ??= [])[Number(v8)] = Number(value7);
+        const v9 = offset3 + 8n;
+        offset2 = v9;
       }
       offset = offset3;
     } else {
       offset = 37n;
     }
-    const v11 = offset + 7n;
-    const v12 = v11 / 8n;
-    const v13 = v12 * 8n;
-    const v14 = size2 * 8n;
-    const v15 = v13 < v14;
-    const v16 = v15 ? v13 : v14;
-    const v17 = err2 === 0;
-    if (v17) {
-      const v18 = v16 / 8n;
-      inoutBufferSizeBytes = Number(v18);
+    const v10 = offset + 7n;
+    const v11 = v10 / 8n;
+    const v12 = v11 * 8n;
+    const v13 = size2 * 8n;
+    const v14 = v12 < v13;
+    const v15 = v14 ? v12 : v13;
+    const v16 = err2 === 0;
+    if (v16) {
+      const v17 = v15 / 8n;
+      inoutBufferSizeBytes = Number(v17);
     }
     err = err2;
   }

@@ -102,6 +102,7 @@ enum class ValueRole : std::uint8_t
     Scalar,      ///< A member's value, or a scalar read out of the buffer.
     Error,       ///< An error code.
     Null,        ///< Whether a pointer the plan was handed is null.
+    Rejected,    ///< Whether the arguments a body was handed can be read at all.
     IndexHolds,  ///< Whether the target's index type holds a count.
     Index,       ///< A loop's induction variable.
 };

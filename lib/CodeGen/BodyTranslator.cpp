@@ -188,6 +188,10 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
     {
         return {ValueRole::Error, {}};
     }
+    if (name.getValue() == "rejected")
+    {
+        return {ValueRole::Rejected, {}};
+    }
     return {};
 }
 
@@ -932,6 +936,8 @@ llvm::StringRef roleWord(const ValueRole role)
         return "err";
     case ValueRole::Null:
         return "is_null";
+    case ValueRole::Rejected:
+        return "rejected";
     case ValueRole::IndexHolds:
         return "index_holds";
     case ValueRole::Index:

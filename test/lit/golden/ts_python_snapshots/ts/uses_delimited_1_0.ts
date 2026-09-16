@@ -123,32 +123,32 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
 export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
   const v0 = obj == null || false;
-  let v1: boolean;
+  let rejected: boolean;
   if (v0) {
-    v1 = true;
+    rejected = true;
   } else {
     const size = BigInt(inoutBufferSizeBytes);
-    const v2 = size !== 0n;
-    const v3 = false && v2;
-    v1 = v3;
+    const v1 = size !== 0n;
+    const v2 = false && v1;
+    rejected = v2;
   }
   let err: number;
-  if (v1) {
+  if (rejected) {
     err = -2;
   } else {
     const size2 = BigInt(inoutBufferSizeBytes);
     const nestedAddr = (obj.nested ??= {} as Delimited);
     const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 32);
-    const v4 = size2 > 4n;
-    const v5 = v4 ? 4n : size2;
-    const v6 = size2 - v5;
+    const v3 = size2 > 4n;
+    const v4 = v3 ? 4n : size2;
+    const v5 = size2 - v4;
     let nestedSize = Number(value);
-    const err2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v6);
-    const v7 = err2 === 0;
+    const err2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v5);
+    const v6 = err2 === 0;
     let offset: bigint;
     let err3: number;
-    if (v7) {
-      const nestedBuf = buffer.subarray(Math.min(Number(v5), buffer.length));
+    if (v6) {
+      const nestedBuf = buffer.subarray(Math.min(Number(v4), buffer.length));
       const _bound2_ = Math.min(nestedSize, nestedBuf.length);
       const _result3_ = deserializeDelimitedFrom(nestedAddr, nestedBuf.subarray(0, _bound2_));
       let nestedErr: number;
@@ -157,31 +157,31 @@ export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Ar
       } else {
         nestedErr = 0;
       }
-      const v8 = nestedErr === 0;
-      let v9: bigint;
-      if (v8) {
-        const v10 = value * 8n;
-        const v11 = v10 + 32n;
-        v9 = v11;
+      const v7 = nestedErr === 0;
+      let v8: bigint;
+      if (v7) {
+        const v9 = value * 8n;
+        const v10 = v9 + 32n;
+        v8 = v10;
       } else {
-        v9 = 32n;
+        v8 = 32n;
       }
-      offset = v9;
+      offset = v8;
       err3 = nestedErr;
     } else {
       offset = 32n;
       err3 = err2;
     }
-    const v12 = offset + 7n;
-    const v13 = v12 / 8n;
-    const v14 = v13 * 8n;
-    const v15 = size2 * 8n;
-    const v16 = v14 < v15;
-    const v17 = v16 ? v14 : v15;
-    const v18 = err3 === 0;
-    if (v18) {
-      const v19 = v17 / 8n;
-      inoutBufferSizeBytes = Number(v19);
+    const v11 = offset + 7n;
+    const v12 = v11 / 8n;
+    const v13 = v12 * 8n;
+    const v14 = size2 * 8n;
+    const v15 = v13 < v14;
+    const v16 = v15 ? v13 : v14;
+    const v17 = err3 === 0;
+    if (v17) {
+      const v18 = v16 / 8n;
+      inoutBufferSizeBytes = Number(v18);
     }
     err = err3;
   }

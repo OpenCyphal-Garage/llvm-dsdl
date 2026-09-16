@@ -199,13 +199,13 @@ class Helpers:
         inout_buffer_size_bytes = len(buffer)
         v0 = self is None or False
         if v0:
-            v1 = True
+            rejected = True
         else:
             size = inout_buffer_size_bytes
-            v2 = size != 0
-            v3 = False and v2
-            v1 = v3
-        if v1:
+            v1 = size != 0
+            v2 = False and v1
+            rejected = v2
+        if rejected:
             err = -2
         else:
             size_2 = inout_buffer_size_bytes
@@ -218,37 +218,37 @@ class Helpers:
             value_5 = dsdl_runtime.read_unsigned(buffer, 29, 8)
             count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value_5)
             err_2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count)
-            v4 = err_2 == 0
-            if v4:
+            v3 = err_2 == 0
+            if v3:
                 self.c = [0] * count
-                v5 = count * 8
-                v6 = v5 + 37
+                v4 = count * 8
+                v5 = v4 + 37
                 offset_2 = 37
                 while True:
-                    v7 = offset_2 < v6
+                    v6 = offset_2 < v5
                     offset_3 = offset_2
-                    if not (v7):
+                    if not (v6):
                         break
-                    v8 = offset_3 - 37
-                    v9 = v8 // 8
+                    v7 = offset_3 - 37
+                    v8 = v7 // 8
                     value_6 = dsdl_runtime.read_unsigned(buffer, offset_3, 8)
                     value_7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value_6)
-                    self.c[v9] = value_7
-                    v10 = offset_3 + 8
-                    offset_2 = v10
+                    self.c[v8] = value_7
+                    v9 = offset_3 + 8
+                    offset_2 = v9
                 offset = offset_3
             else:
                 offset = 37
-            v11 = offset + 7
-            v12 = v11 // 8
-            v13 = v12 * 8
-            v14 = size_2 * 8
-            v15 = v13 < v14
-            v16 = (v13 if v15 else v14)
-            v17 = err_2 == 0
-            if v17:
-                v18 = v16 // 8
-                inout_buffer_size_bytes = v18
+            v10 = offset + 7
+            v11 = v10 // 8
+            v12 = v11 * 8
+            v13 = size_2 * 8
+            v14 = v12 < v13
+            v15 = (v12 if v14 else v13)
+            v16 = err_2 == 0
+            if v16:
+                v17 = v15 // 8
+                inout_buffer_size_bytes = v17
             err = err_2
         if err == 0:
             return inout_buffer_size_bytes

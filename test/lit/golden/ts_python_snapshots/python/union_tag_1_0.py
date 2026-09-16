@@ -154,55 +154,55 @@ class UnionTag:
         inout_buffer_size_bytes = len(buffer)
         v0 = self is None or False
         if v0:
-            v1 = True
+            rejected = True
         else:
             size = inout_buffer_size_bytes
-            v2 = size != 0
-            v3 = False and v2
-            v1 = v3
-        if v1:
+            v1 = size != 0
+            v2 = False and v1
+            rejected = v2
+        if rejected:
             err = -2
         else:
             size_2 = inout_buffer_size_bytes
             value = dsdl_runtime.read_unsigned(buffer, 0, 8)
             tag = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value)
             err_2 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)
-            v4 = err_2 == 0
-            v5 = (8 if v4 else 0)
-            if v4:
+            v3 = err_2 == 0
+            v4 = (8 if v3 else 0)
+            if v3:
                 self._tag = tag
                 if tag == 0:
                     self.first = 0
                 elif tag == 1:
                     self.second = 0
-            v6 = tag == 0
-            if v6:
-                value_2 = dsdl_runtime.read_unsigned(buffer, v5, 8)
+            v5 = tag == 0
+            if v5:
+                value_2 = dsdl_runtime.read_unsigned(buffer, v4, 8)
                 value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value_2)
                 self.first = value_3
-                v8 = v5 + 8
-                v7 = v8
+                v7 = v4 + 8
+                v6 = v7
             else:
-                v7 = v5
-            v9 = tag == 1
-            if v9:
-                value_4 = dsdl_runtime.read_unsigned(buffer, v7, 16)
+                v6 = v4
+            v8 = tag == 1
+            if v8:
+                value_4 = dsdl_runtime.read_unsigned(buffer, v6, 16)
                 value_5 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value_4)
                 self.second = value_5
-                v11 = v7 + 16
-                v10 = v11
+                v10 = v6 + 16
+                v9 = v10
             else:
-                v10 = v7
-            v12 = v10 + 7
-            v13 = v12 // 8
-            v14 = v13 * 8
-            v15 = size_2 * 8
-            v16 = v14 < v15
-            v17 = (v14 if v16 else v15)
-            v18 = err_2 == 0
-            if v18:
-                v19 = v17 // 8
-                inout_buffer_size_bytes = v19
+                v9 = v6
+            v11 = v9 + 7
+            v12 = v11 // 8
+            v13 = v12 * 8
+            v14 = size_2 * 8
+            v15 = v13 < v14
+            v16 = (v13 if v15 else v14)
+            v17 = err_2 == 0
+            if v17:
+                v18 = v16 // 8
+                inout_buffer_size_bytes = v18
             err = err_2
         if err == 0:
             return inout_buffer_size_bytes

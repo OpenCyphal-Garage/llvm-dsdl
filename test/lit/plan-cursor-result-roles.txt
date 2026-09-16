@@ -32,5 +32,11 @@
 # ANCHOR:{{^}}[[LOOP: +]]%{{[0-9]+}}:2 = scf.while
 # ANCHOR:{{^}}[[LOOP]]} attributes {llvmdsdl.result_roles = ["offset", "error"]}
 
+# A deserialise body opens by asking whether it can read its arguments at all, and that verdict is
+# neither an offset nor an error.
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_Helpers_1_0__deserialize_ir_
+# ANCHOR:{{^}}[[GUARD: +]]%{{[0-9]+}} = scf.if
+# ANCHOR:{{^}}[[GUARD]]} {llvmdsdl.result_roles = ["rejected"]}
+
 # The body's own guard answers with the code and nothing else, at the outermost depth of the body.
 # ANCHOR:{{^}}    } {llvmdsdl.result_roles = ["error"]}

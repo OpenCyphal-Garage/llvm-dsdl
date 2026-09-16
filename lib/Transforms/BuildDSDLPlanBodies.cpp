@@ -77,8 +77,9 @@ struct PlanCursor final
 };
 
 /// @brief The roles a plan's own structure gives to the results of its structured operations.
-constexpr llvm::StringLiteral RoleOffset = "offset";
-constexpr llvm::StringLiteral RoleError  = "error";
+constexpr llvm::StringLiteral RoleOffset   = "offset";
+constexpr llvm::StringLiteral RoleError    = "error";
+constexpr llvm::StringLiteral RoleRejected = "rejected";
 
 /// @brief Names what each result of @p op holds, for a backend to declare it by.
 ///
@@ -1521,6 +1522,7 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
     const mlir::Value cannotRead = mlir::arith::OrIOp::create(builder, loc, objNull, sizeNull);
 
     auto rejected = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{builder.getI1Type()}, cannotRead, true);
+    stampResultRoles(rejected, {RoleRejected});
     {
         mlir::OpBuilder::InsertionGuard const g(builder);
         builder.setInsertionPointToStart(rejected.thenBlock());
