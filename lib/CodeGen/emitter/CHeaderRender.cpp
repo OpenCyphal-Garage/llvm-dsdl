@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <cstdint>
 #include <string>
@@ -24,15 +25,18 @@
 namespace llvmdsdl::emitter::c
 {
 
-std::vector<std::string> renderTypeMetadataMacros(const HeaderTypeMetadata& metadata)
+std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata)
 {
     return {
-        "#define " + metadata.typeName + "_FULL_NAME_ \"" + metadata.fullName + "\"",
-        "#define " + metadata.typeName + "_FULL_NAME_AND_VERSION_ \"" + metadata.fullName + "." +
+        "#define " + typeName + "_FULL_NAME_ \"" + metadata.fullName + "\"",
+        "#define " + typeName + "_FULL_NAME_AND_VERSION_ \"" + metadata.fullName + "." +
             std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"",
-        "#define " + metadata.typeName + "_EXTENT_BYTES_ " + std::to_string(metadata.extentBytes) + "UL",
-        "#define " + metadata.typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " +
+        "#define " + typeName + "_EXTENT_BYTES_ " + std::to_string(metadata.extentBytes) + "UL",
+        "#define " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " +
             std::to_string(metadata.serializationBufferSizeBytes) + "UL",
+        "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + (metadata.alias.eligible ? "true" : "false"),
+        "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + metadata.alias.reason + "\"",
+        "#define " + typeName + "_IS_DEPRECATED_ " + (metadata.deprecated ? "true" : "false"),
     };
 }
 

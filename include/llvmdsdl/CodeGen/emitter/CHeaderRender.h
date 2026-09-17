@@ -21,35 +21,16 @@
 #include <string>
 #include <vector>
 
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
+
 namespace llvmdsdl::emitter::c
 {
 
-/// @brief Metadata macro inputs for one generated C type.
-struct HeaderTypeMetadata final
-{
-    /// @brief Generated C type name stem.
-    std::string typeName;
-
-    /// @brief Fully-qualified DSDL full name.
-    std::string fullName;
-
-    /// @brief DSDL major version.
-    std::uint32_t majorVersion{0};
-
-    /// @brief DSDL minor version.
-    std::uint32_t minorVersion{0};
-
-    /// @brief Type extent in bytes.
-    std::uint64_t extentBytes{0};
-
-    /// @brief Type serialisation buffer size in bytes.
-    std::uint64_t serializationBufferSizeBytes{0};
-};
-
 /// @brief Renders C metadata macros for one generated type.
-/// @param[in] metadata Type metadata for macro rendering.
+/// @param[in] typeName Generated C type name stem.
+/// @param[in] metadata The section's facts.
 /// @return Ordered macro lines.
-std::vector<std::string> renderTypeMetadataMacros(const HeaderTypeMetadata& metadata);
+std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata);
 
 /// @brief Renders service alias identity metadata macro lines.
 /// @param[in] baseTypeName Alias base type name.

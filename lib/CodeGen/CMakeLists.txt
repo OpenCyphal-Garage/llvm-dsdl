@@ -77,6 +77,7 @@ add_library(llvmdsdlCodeGen
   SectionNaming.cpp
   StorageTypeTokens.cpp
   SourceWriter.cpp
+  TypeMetadata.cpp
   TypeStorage.cpp
   UavcanEmbeddedCatalog.cpp
   emitter/C.cpp

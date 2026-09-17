@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -352,6 +353,7 @@ void emitArrayMacros(SourceWriter& w, const std::string& typeName, const Semanti
 void emitSectionTypedef(SourceWriter&                         w,
                         const std::string&                    typeName,
                         const SemanticSection&                section,
+                        const SectionMetadata&                metadata,
                         const EmitterContext&                 ctx,
                         const bool                            deprecatedAttribute,
                         const mlir::dsdl::SerializationPlanOp plan)
@@ -444,17 +446,9 @@ void emitSectionTypedef(SourceWriter&                         w,
     }
     w.blank();
 
-    if (section.isUnion)
+    if (metadata.isUnion)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
-        {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
-        }
-        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(optionCount) + "U");
+        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(metadata.unionOptions.size()) + "U");
         w.blank();
     }
 }
@@ -479,43 +473,27 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     }
 }
 
-void emitSectionMetadata(SourceWriter&                         w,
-                         const std::string&                    typeName,
-                         const std::string&                    fullName,
-                         std::uint32_t                         majorVersion,
-                         std::uint32_t                         minorVersion,
-                         const SemanticSection&                section,
-                         const mlir::dsdl::SerializationPlanOp plan)
+void emitSectionMetadata(SourceWriter& w, const std::string& typeName, const SectionMetadata& metadata)
 {
-    HeaderTypeMetadata metadata;
-    metadata.typeName                     = typeName;
-    metadata.fullName                     = fullName;
-    metadata.majorVersion                 = majorVersion;
-    metadata.minorVersion                 = minorVersion;
-    metadata.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
-    metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
-    for (const auto& line : renderTypeMetadataMacros(metadata))
+    for (const auto& line : renderTypeMetadataMacros(typeName, metadata))
     {
         w.line(line);
     }
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line("#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
-    w.line("#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
-    w.line("#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     w.blank();
 }
 
-void emitSection(SourceWriter&                         w,
-                 const EmitterContext&                 ctx,
-                 const SemanticDefinition&             def,
-                 const std::string&                    typeName,
-                 const std::string&                    fullName,
-                 const std::string&                    sectionName,
-                 const SemanticSection&                section,
-                 const AttachedDoc&                    typeDoc,
-                 const mlir::dsdl::SerializationPlanOp plan)
+void emitSection(SourceWriter&                w,
+                 const EmitterContext&        ctx,
+                 const SemanticDefinition&    def,
+                 const std::string&           typeName,
+                 const std::string&           sectionName,
+                 const SemanticSection&       section,
+                 const AttachedDoc&           typeDoc,
+                 const mlir::dsdl::SchemaOp   schema)
 {
-    emitSectionMetadata(w, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, plan);
+    const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
+    const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
+    emitSectionMetadata(w, typeName, metadata);
     emitSectionConstants(w, typeName, section);
     emitArrayMacros(w, typeName, section);
     emitAttachedDocC(w,
@@ -524,7 +502,7 @@ void emitSection(SourceWriter&                         w,
                                               def.info.fullName,
                                               def.info.majorVersion,
                                               def.info.minorVersion));
-    emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes(), plan);
+    emitSectionTypedef(w, typeName, section, metadata, ctx, section.deprecated && ctx.emitDeprecationAttributes(), plan);
 
     const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);
@@ -683,26 +661,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         }
         w.blank();
 
-        emitSection(w,
-                    ctx,
-                    def,
-                    requestType,
-                    def.info.fullName + ".Request",
-                    "request",
-                    def.request,
-                    def.doc,
-                    sectionPlan(schema, "request"));
+        emitSection(w, ctx, def, requestType, "request", def.request, def.doc, schema);
         if (def.response)
         {
-            emitSection(w,
-                        ctx,
-                        def,
-                        responseType,
-                        def.info.fullName + ".Response",
-                        "response",
-                        *def.response,
-                        def.doc,
-                        sectionPlan(schema, "response"));
+            emitSection(w, ctx, def, responseType, "response", *def.response, def.doc, schema);
         }
         for (const auto& line :
              renderServiceAliasBridgeLines(baseTypeName,
@@ -720,7 +682,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     else
     {
-        emitSection(w, ctx, def, baseTypeName, def.info.fullName, "", def.request, def.doc, sectionPlan(schema, ""));
+        emitSection(w, ctx, def, baseTypeName, "", def.request, def.doc, schema);
     }
 
     out << "#endif /* " << guard << " */\n";

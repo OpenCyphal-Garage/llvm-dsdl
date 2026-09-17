@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
@@ -1377,9 +1378,7 @@ void emitFunctionPrototypes(SourceWriter&      w,
 void emitSectionStruct(SourceWriter&                         w,
                        const std::string&                    typeName,
                        const std::string&                    declaredName,
-                       const std::string&                    fullName,
-                       std::uint32_t                         majorVersion,
-                       std::uint32_t                         minorVersion,
+                       const SectionMetadata&                metadata,
                        const SemanticSection&                section,
                        const EmitterContext&                 ctx,
                        const CppFlavor                       flavor,
@@ -1522,27 +1521,19 @@ void emitSectionStruct(SourceWriter&                         w,
         w.line("std::uint8_t _dummy_{0U};");
     }
 
-    w.line("static constexpr const char* FULL_NAME = \"" + fullName + "\";");
-    w.line("static constexpr bool IS_DEPRECATED = " + std::string(section.deprecated ? "true" : "false") + ";");
-    w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + fullName + "." + std::to_string(majorVersion) +
-           "." + std::to_string(minorVersion) + "\";");
-    w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(section.extentBits.value_or(0) / 8) + "U;");
+    w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
+    w.line("static constexpr bool IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false") + ";");
+    w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
+    w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
     w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
-           std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
-    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + zohAliasReason + "\";");
-    if (section.isUnion)
+           std::to_string(metadata.serializationBufferSizeBytes) + "U;");
+    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (metadata.alias.eligible ? "true;" : "false;"));
+    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\";");
+    if (metadata.isUnion)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
-        {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
-        }
-        w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(optionCount) + "U;");
+        w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) +
+               "U;");
     }
 
     // Two DSDL constants can upper-case onto one name; a duplicate `static constexpr` does not
@@ -1693,7 +1684,7 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const EmitterContext&                 ctx,
                         const SemanticDefinition&             def,
                         const std::string&                    typeName,
-                        const std::string&                    fullName,
+                        const SectionMetadata&                metadata,
                         const SemanticSection&                section,
                         const CppFlavor                       flavor,
                         const AttachedDoc&                    typeDoc,
@@ -1707,9 +1698,7 @@ llvm::Error emitSection(SourceWriter&                         w,
     emitSectionStruct(w,
                       typeName,
                       declaredName,
-                      fullName,
-                      def.info.majorVersion,
-                      def.info.minorVersion,
+                      metadata,
                       section,
                       ctx,
                       flavor,
@@ -1723,7 +1712,7 @@ llvm::Error emitSection(SourceWriter&                         w,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
-                                       fullName.c_str());
+                                       metadata.fullName.c_str());
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1872,7 +1861,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    ctx,
                                    def,
                                    requestType,
-                                   def.info.fullName + ".Request",
+                                   sectionMetadata(def.info, def.request, schema, "request"),
                                    def.request,
                                    flavor,
                                    def.doc,
@@ -1889,7 +1878,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        ctx,
                                        def,
                                        responseType,
-                                       def.info.fullName + ".Response",
+                                       sectionMetadata(def.info, *def.response, schema, "response"),
                                        *def.response,
                                        flavor,
                                        def.doc,
@@ -1953,7 +1942,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    ctx,
                                    def,
                                    baseTypeName,
-                                   def.info.fullName,
+                                   sectionMetadata(def.info, def.request, schema, ""),
                                    def.request,
                                    flavor,
                                    def.doc,

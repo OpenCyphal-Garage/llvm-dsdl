@@ -13,18 +13,18 @@
 
 bool runCHeaderRenderTests()
 {
-    llvmdsdl::emitter::c::HeaderTypeMetadata metadata;
-    metadata.typeName                     = "uavcan__node__Heartbeat";
+    llvmdsdl::SectionMetadata metadata;
     metadata.fullName                     = "uavcan.node.Heartbeat";
     metadata.majorVersion                 = 1;
     metadata.minorVersion                 = 0;
     metadata.extentBytes                  = 7;
     metadata.serializationBufferSizeBytes = 12;
+    metadata.alias                        = {true, "eligible"};
 
-    const auto metadataLines = llvmdsdl::emitter::c::renderTypeMetadataMacros(metadata);
-    if (metadataLines.size() != 4U)
+    const auto metadataLines = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
+    if (metadataLines.size() != 7U)
     {
-        std::cerr << "renderTypeMetadataMacros expected 4 lines\n";
+        std::cerr << "renderTypeMetadataMacros expected 7 lines\n";
         return false;
     }
     if (metadataLines[0] != "#define uavcan__node__Heartbeat_FULL_NAME_ \"uavcan.node.Heartbeat\"")
@@ -35,6 +35,16 @@ bool runCHeaderRenderTests()
     if (metadataLines[2] != "#define uavcan__node__Heartbeat_EXTENT_BYTES_ 7UL")
     {
         std::cerr << "renderTypeMetadataMacros extent line mismatch\n";
+        return false;
+    }
+    if (metadataLines[4] != "#define uavcan__node__Heartbeat_ZOH_ALIAS_ELIGIBLE_ true")
+    {
+        std::cerr << "renderTypeMetadataMacros alias line mismatch\n";
+        return false;
+    }
+    if (metadataLines[6] != "#define uavcan__node__Heartbeat_IS_DEPRECATED_ false")
+    {
+        std::cerr << "renderTypeMetadataMacros deprecation line mismatch\n";
         return false;
     }
 

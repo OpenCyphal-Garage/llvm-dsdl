@@ -92,6 +92,14 @@ LogicalResult verifyUnionOptionIndices(SerializationPlanOp                      
         return success();
     }
 
+    // Schema space is introspection: a plan written by hand carries no `dsdl.field` ops at all, and
+    // that is a plan with nothing to cross-check rather than a plan missing something. What the pair
+    // rules out is a section that names its options and disagrees with itself.
+    if (fields.empty())
+    {
+        return success();
+    }
+
     std::int64_t expected = 0;
     for (FieldOp field : fields)
     {
