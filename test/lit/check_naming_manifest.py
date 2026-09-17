@@ -59,6 +59,32 @@ def main() -> int:
     if brk.get("file_stem") != "break__1_0":
         failures.append(f"expected Break to take the stem break__1_0, got {brk.get('file_stem')!r}")
 
+    # A union option's tag is the one fact about it that cannot be read off the generated type, so
+    # the manifest is the only place a build integration can get it. Both halves are checked: the
+    # name, which comes from the shared projection, and the value, which comes from the lowered
+    # schema. OptionTags declares its options after two DSDL constants named for their tags, so the
+    # projection has to move those and leave the options alone.
+    options = go.get("fixtures_naming.naming.OptionTags.1.0", {}).get("message", {}).get("union_options")
+    if options is None:
+        failures.append("expected OptionTags to report union_options")
+    else:
+        expected_options = {
+            "fooBar": {"name": "FOO_BAR_OPTION_TAG", "tag": 0},
+            "foo_bar": {"name": "FOO_BAR_OPTION_TAG_2", "tag": 1},
+            "other": {"name": "OTHER_OPTION_TAG", "tag": 2},
+        }
+        if options != expected_options:
+            failures.append(f"union_options for OptionTags is {options!r}, expected {expected_options!r}")
+
+    # A structure has no options to report, and reporting an empty map would read as a union with
+    # none rather than as a type that is not one.
+    if "union_options" in go.get("fixtures_naming.naming.Claimed.1.0", {}).get("message", {}):
+        failures.append("Claimed is not a union and should report no union_options")
+
+    ported = go.get("fixtures_naming.naming.Call.1.0", {})
+    if "fixed_port_id" in ported:
+        failures.append("Call has no fixed port-ID and should report none")
+
     for failure in failures:
         print(failure, file=sys.stderr)
     return 1 if failures else 0

@@ -75,3 +75,9 @@
 
 # TS_SERVICE: export const DSDL_HAS_FIXED_PORT_ID = true;
 # TS_SERVICE: export const DSDL_FIXED_PORT_ID = 200;
+
+# The manifest reports the port-ID too, so a build integration can route a transfer without reading
+# generated source. A service reports the service's, once, rather than one per section.
+
+# RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/mani --naming-manifest %t/names.json
+# RUN: %{python} %S/check_port_id_manifest.py %t/names.json

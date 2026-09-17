@@ -71,33 +71,44 @@ def read_defines(path: pathlib.Path) -> dict[str, str]:
     return out
 
 
-# Every generated type declares its own name, so every type prefix in a header is the text in front
-# of one of these. Reading the prefixes out of the file rather than matching a shape is what makes
-# this work for a service, which declares three of them, and for a namespace component the two
-# generators strop differently.
-ANCHORS = ("FULL_NAME_AND_VERSION_", "FULL_NAME_", "EXTENT_BYTES_")
+# Every generated type declares its own name, so a type prefix in a header is the text in front of
+# this. Reading the prefixes out of the file rather than matching a shape is what makes this work for
+# a namespace component the two generators strop differently.
+ANCHOR = "FULL_NAME_"
 
 
-def suffixes(defines: dict[str, str]) -> tuple[dict[str, str], set[str]]:
-    """Keys each constant by its name with the type prefix removed, upper-cased.
+def suffixes(defines: dict[str, str]) -> tuple[dict[tuple[str, str], str], set[tuple[str, str]]]:
+    """Keys each constant by the type that declares it and its own name, upper-cased.
 
-    Upper-casing is what lets an array field's metadata line up: the peer spells it after the DSDL
-    field name and we spell it after the macro projection of that name. Two constants on one side
-    that differ only in case would be merged by it, so those keys are dropped and reported rather
-    than compared wrongly.
+    A header can declare several types -- a service declares three, itself and its two sections --
+    and each spells the same constants under its own prefix. Keying by the name alone would collapse
+    a service's three `FULL_NAME_` onto one and compare whichever came last, which silently drops the
+    sections' extents from the comparison. The type is identified by the value of its `FULL_NAME_`,
+    which is the one thing both generators spell identically and which no prefix projection affects.
+
+    Upper-casing the rest is what lets an array field's metadata line up: the peer spells it after
+    the DSDL field name and we spell it after the macro projection of that name. Two constants of one
+    type that differ only in case would be merged by it, so those keys are returned separately for
+    the caller to report rather than compared wrongly.
     """
+    # Longest first: `<base>_FULL_NAME_` is a prefix of nothing, but `<base>_` is a prefix of
+    # `<base>_Request_...`, so the longest match is the one that owns the constant.
     prefixes = sorted(
-        {name[: -len(anchor)] for name in defines for anchor in ANCHORS if name.endswith(anchor)},
+        {name[: -len(ANCHOR)] for name in defines if name.endswith(ANCHOR)},
         key=len,
         reverse=True,
     )
-    out: dict[str, str] = {}
-    ambiguous: set[str] = set()
+    owner = {prefix: defines[prefix + ANCHOR] for prefix in prefixes}
+
+    out: dict[tuple[str, str], str] = {}
+    ambiguous: set[tuple[str, str]] = set()
     for name, value in defines.items():
         if name.endswith("_INCLUDED_") or name.startswith(PEER_ONLY_PREFIXES):
             continue
-        prefix = next((p for p in prefixes if name.startswith(p)), "")
-        key = name[len(prefix):].upper()
+        prefix = next((p for p in prefixes if name.startswith(p)), None)
+        if prefix is None:
+            continue
+        key = (owner[prefix], name[len(prefix):].upper())
         if key in out and out[key] != value:
             ambiguous.add(key)
         out[key] = value
@@ -128,18 +139,28 @@ def main() -> int:
 
         peer_defines, peer_ambiguous = suffixes(read_defines(peer_header))
         ours_defines, ours_ambiguous = suffixes(read_defines(ours_header))
+
+        # A key that two constants of one type reach is one this comparison cannot speak about, and
+        # saying nothing about it is how a disagreement hides. It is a failure of the comparison
+        # rather than of either generator, and it is reported as one.
+        for owner, key in sorted(peer_ambiguous | ours_ambiguous):
+            failures.append(
+                f"{relative}: two constants of {owner} reach the key {key}; "
+                f"the comparison cannot tell them apart"
+            )
         skip = peer_ambiguous | ours_ambiguous
 
         for key, peer_value in sorted(peer_defines.items()):
             if key in skip:
                 continue
+            owner, suffix = key
             if key not in ours_defines:
-                failures.append(f"{relative}: the peer declares {key} and we do not")
+                failures.append(f"{relative}: the peer declares {suffix} on {owner} and we do not")
                 continue
             compared += 1
             if normalise(peer_value) != normalise(ours_defines[key]):
                 failures.append(
-                    f"{relative}: {key} is {normalise(ours_defines[key])} for us "
+                    f"{relative}: {suffix} on {owner} is {normalise(ours_defines[key])} for us "
                     f"and {normalise(peer_value)} for the peer"
                 )
 
