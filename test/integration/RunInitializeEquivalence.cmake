@@ -19,7 +19,7 @@
 #
 cmake_minimum_required(VERSION 3.24)
 
-foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER CXX_COMPILER)
+foreach(var DSDLC SOURCE_ROOT UAVCAN_ROOT OUT_DIR C_COMPILER CXX_COMPILER)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
     message(FATAL_ERROR "Missing required variable: ${var}")
   endif()
