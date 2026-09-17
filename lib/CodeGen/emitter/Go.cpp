@@ -1467,9 +1467,26 @@ llvm::Error emitSectionType(SourceWriter&                             w,
            std::string(metadata.alias.eligible ? "true" : "false"));
     w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\"");
 
+    if (metadata.declaresPortId)
+    {
+        w.line("const " + typeConstPrefix + "_HAS_FIXED_PORT_ID = " +
+               std::string(metadata.fixedPortId ? "true" : "false"));
+        if (metadata.fixedPortId)
+        {
+            w.line("const " + typeConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId));
+        }
+    }
     if (metadata.isUnion)
     {
         w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()));
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
+        for (const auto& option : metadata.unionOptions)
+        {
+            w.line("const " + typeConstPrefix + "_" +
+                   tagScope.get(IdentifierRole::MacroName,
+                                unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
+                   " " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
+        }
     }
 
     std::vector<std::string> constNames;

@@ -12,6 +12,7 @@ DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
 DSDL_IS_DEPRECATED = False
 DSDL_VERSION_MAJOR = 1
 DSDL_VERSION_MINOR = 0
+DSDL_HAS_FIXED_PORT_ID = False
 DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = False
 DSDL_REQUEST_ZOH_ALIAS_REASON = "not-fixed-size"
 DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
@@ -191,3 +192,6 @@ class UnionTag:
         if err == 0:
             return inout_buffer_size_bytes
         return err
+
+UNION_TAG_FIRST_OPTION_TAG = 0
+UNION_TAG_SECOND_OPTION_TAG = 1

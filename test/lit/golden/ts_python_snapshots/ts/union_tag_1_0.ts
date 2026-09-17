@@ -7,6 +7,7 @@ export const DSDL_FULL_NAME = "fixtures.vendor.UnionTag";
 export const DSDL_IS_DEPRECATED = false;
 export const DSDL_VERSION_MAJOR = 1;
 export const DSDL_VERSION_MINOR = 0;
+export const DSDL_HAS_FIXED_PORT_ID = false;
 export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = false;
 export const DSDL_REQUEST_ZOH_ALIAS_REASON = "not-fixed-size";
 export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
@@ -73,6 +74,8 @@ export type UnionTag =
   | { _tag: 0; first: number; }
   | { _tag: 1; second: number; };
 
+export const UNION_TAG_FIRST_OPTION_TAG = 0;
+export const UNION_TAG_SECOND_OPTION_TAG = 1;
 
 export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;

@@ -9,6 +9,7 @@ export const DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited";
 export const DSDL_IS_DEPRECATED = false;
 export const DSDL_VERSION_MAJOR = 1;
 export const DSDL_VERSION_MINOR = 0;
+export const DSDL_HAS_FIXED_PORT_ID = false;
 export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = false;
 export const DSDL_REQUEST_ZOH_ALIAS_REASON = "invalid-bit-length";
 export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;

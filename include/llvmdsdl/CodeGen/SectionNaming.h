@@ -56,6 +56,21 @@ enum class ArrayMetadataKind : std::uint8_t
                                             llvm::StringRef       fieldName,
                                             ArrayMetadataKind     kind);
 
+/// @brief The name a union option's tag constant is declared under in a section scope.
+///
+/// A union's options are reachable only through the tag value that selects them, and the value
+/// itself is a position in the DSDL. Every language declares `<OPTION>_OPTION_TAG` beside the DSDL
+/// constants so that a caller writes the name instead of the number.
+///
+/// Composed from the DSDL field name for the reason @ref arrayMetadataName gives: the scope has to
+/// see a collision between two options whose projections are equal, and between an option's tag and
+/// a DSDL constant that projects onto the same name. It carries C's trailing `_` for the same
+/// reason too.
+/// @param[in] language Naming language.
+/// @param[in] fieldName DSDL name of the option.
+/// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
+[[nodiscard]] std::string unionOptionTagName(CodegenNamingLanguage language, llvm::StringRef fieldName);
+
 /// @brief Builds the field-name scope for @p section in @p language.
 ///
 /// Fields are declared in DSDL order, which makes the assignment reproducible; padding fields carry

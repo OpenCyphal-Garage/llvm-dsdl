@@ -18,6 +18,7 @@
 #define LLVMDSDL_CODEGEN_EMITTER_C_HEADER_RENDER_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,11 +38,13 @@ std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, c
 /// @param[in] fullName Service full DSDL name.
 /// @param[in] majorVersion DSDL major version.
 /// @param[in] minorVersion DSDL minor version.
+/// @param[in] fixedPortId The service's fixed service-ID, where it has one.
 /// @return Ordered macro lines.
-std::vector<std::string> renderServiceAliasIdentityMacros(const std::string& baseTypeName,
-                                                          const std::string& fullName,
-                                                          std::uint32_t      majorVersion,
-                                                          std::uint32_t      minorVersion);
+std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&           baseTypeName,
+                                                          const std::string&           fullName,
+                                                          std::uint32_t                majorVersion,
+                                                          std::uint32_t                minorVersion,
+                                                          std::optional<std::uint32_t> fixedPortId);
 
 /// @brief Renders service alias bridge lines after request type declaration.
 /// @param[in] baseTypeName Alias base type name.

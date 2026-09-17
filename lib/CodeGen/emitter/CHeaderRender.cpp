@@ -19,6 +19,7 @@
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,7 +28,7 @@ namespace llvmdsdl::emitter::c
 
 std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata)
 {
-    return {
+    std::vector<std::string> lines = {
         "#define " + typeName + "_FULL_NAME_ \"" + metadata.fullName + "\"",
         "#define " + typeName + "_FULL_NAME_AND_VERSION_ \"" + metadata.fullName + "." +
             std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"",
@@ -38,18 +39,34 @@ std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, c
         "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + metadata.alias.reason + "\"",
         "#define " + typeName + "_IS_DEPRECATED_ " + (metadata.deprecated ? "true" : "false"),
     };
+    if (metadata.declaresPortId)
+    {
+        lines.push_back("#define " + typeName + "_HAS_FIXED_PORT_ID_ " + (metadata.fixedPortId ? "true" : "false"));
+        if (metadata.fixedPortId)
+        {
+            lines.push_back("#define " + typeName + "_FIXED_PORT_ID_ " + std::to_string(*metadata.fixedPortId) + "U");
+        }
+    }
+    return lines;
 }
 
-std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&  baseTypeName,
-                                                          const std::string&  fullName,
-                                                          const std::uint32_t majorVersion,
-                                                          const std::uint32_t minorVersion)
+std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&                 baseTypeName,
+                                                          const std::string&                 fullName,
+                                                          const std::uint32_t                majorVersion,
+                                                          const std::uint32_t                minorVersion,
+                                                          const std::optional<std::uint32_t> fixedPortId)
 {
-    return {
+    std::vector<std::string> lines = {
         "#define " + baseTypeName + "_FULL_NAME_ \"" + fullName + "\"",
         "#define " + baseTypeName + "_FULL_NAME_AND_VERSION_ \"" + fullName + "." + std::to_string(majorVersion) + "." +
             std::to_string(minorVersion) + "\"",
+        "#define " + baseTypeName + "_HAS_FIXED_PORT_ID_ " + (fixedPortId ? "true" : "false"),
     };
+    if (fixedPortId)
+    {
+        lines.push_back("#define " + baseTypeName + "_FIXED_PORT_ID_ " + std::to_string(*fixedPortId) + "U");
+    }
+    return lines;
 }
 
 std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,

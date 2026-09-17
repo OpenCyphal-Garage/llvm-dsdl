@@ -80,19 +80,36 @@ void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, co
     }
 }
 
+/// @brief Declares @p section's union option tag constants into @p scope, in tag order.
+void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+{
+    if (!section.isUnion)
+    {
+        return;
+    }
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            (void) scope.declare(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
+        }
+    }
+}
+
 /// @brief Declares everything @p language puts in one region with @p section's constants.
 ///
 /// The order is what decides which name moves when two collide, and it runs from least to most
 /// willing to move. Fields are first because a field's identifier is the ABI a caller writes against
-/// and has to be predictable from the DSDL alone; the generated array metadata is next; DSDL
-/// constants are last; of the three, only they can be renamed without changing the wire format or
-/// breaking a field access.
+/// and has to be predictable from the DSDL alone; the generated array metadata and union option tags
+/// are next; DSDL constants are last; of the four, only they can be renamed without changing the
+/// wire format or breaking a field access.
 void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
 {
     if (emitsArrayMetadata(language))
     {
         declareArrayMetadata(scope, section, language);
     }
+    declareUnionOptionTags(scope, section, language);
     declareConstants(scope, section);
 }
 
@@ -104,6 +121,11 @@ std::string arrayMetadataName(const CodegenNamingLanguage language,
 {
     return fieldName.str() + ((kind == ArrayMetadataKind::Capacity) ? "_ARRAY_CAPACITY" : "_ARRAY_IS_VARIABLE_LENGTH") +
            ((language == CodegenNamingLanguage::C) ? "_" : "");
+}
+
+std::string unionOptionTagName(const CodegenNamingLanguage language, const llvm::StringRef fieldName)
+{
+    return fieldName.str() + "_OPTION_TAG" + ((language == CodegenNamingLanguage::C) ? "_" : "");
 }
 
 NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const SemanticSection& section)

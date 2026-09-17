@@ -326,6 +326,27 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
     return "uint8_t";
 }
 
+/// @brief Declares the tag value that selects each of a union's options.
+void emitUnionOptionTagMacros(SourceWriter&          w,
+                              const std::string&     typeName,
+                              const SemanticSection& section,
+                              const SectionMetadata& metadata)
+{
+    if (!metadata.isUnion)
+    {
+        return;
+    }
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    for (const auto& option : metadata.unionOptions)
+    {
+        w.line("#define " + typeName + "_" +
+               constScope.get(IdentifierRole::MacroName,
+                              unionOptionTagName(CodegenNamingLanguage::C, option.name)) +
+               " " + std::to_string(option.tag) + "U");
+    }
+    w.blank();
+}
+
 void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
     const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
@@ -482,6 +503,45 @@ void emitSectionMetadata(SourceWriter& w, const std::string& typeName, const Sec
     w.blank();
 }
 
+/// @brief Wraps each of a union's option tags in a test and a selector.
+///
+/// The tag constants say what a tag value means; these say it in the two places a caller reaches
+/// for. They read the constant rather than the number, so an option's tag is written down once.
+void emitUnionOptionWrappers(SourceWriter&          w,
+                             const std::string&     typeName,
+                             const SemanticSection& section,
+                             const SectionMetadata& metadata)
+{
+    if (!metadata.isUnion)
+    {
+        return;
+    }
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+    const NamingScope tagScope   = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    const std::string objectType = renderCTagSpelling(typeName);
+    for (const auto& option : metadata.unionOptions)
+    {
+        const std::string member = fieldScope.get(IdentifierRole::FieldName, option.name);
+        const std::string tag =
+            typeName + "_" +
+            tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name));
+
+        w.line("static inline bool " + typeName + "__is_" + member + "_(const " + objectType + "* const obj)");
+        w.open("{");
+        w.line("return (obj != NULL) && (obj->_tag_ == " + tag + ");");
+        w.close("}");
+        w.blank();
+
+        w.line("static inline void " + typeName + "__select_" + member + "_(" + objectType + "* const obj)");
+        w.open("{");
+        w.open("if (obj != NULL) {");
+        w.line("obj->_tag_ = " + tag + ";");
+        w.close("}");
+        w.close("}");
+        w.blank();
+    }
+}
+
 void emitSection(SourceWriter&                w,
                  const EmitterContext&        ctx,
                  const SemanticDefinition&    def,
@@ -496,6 +556,7 @@ void emitSection(SourceWriter&                w,
     emitSectionMetadata(w, typeName, metadata);
     emitSectionConstants(w, typeName, section);
     emitArrayMacros(w, typeName, section);
+    emitUnionOptionTagMacros(w, typeName, section, metadata);
     emitAttachedDocC(w,
                      docWithDeprecationNotice(typeDoc,
                                               section.deprecated,
@@ -589,6 +650,8 @@ void emitSection(SourceWriter&                w,
     w.close("#endif");
     w.close("}");
     w.blank();
+
+    emitUnionOptionWrappers(w, typeName, section, metadata);
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -655,7 +718,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
                                                                  def.info.fullName,
                                                                  def.info.majorVersion,
-                                                                 def.info.minorVersion))
+                                                                 def.info.minorVersion,
+                                                                 def.info.fixedPortId))
         {
             w.line(line);
         }

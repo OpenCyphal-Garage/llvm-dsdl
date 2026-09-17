@@ -1355,9 +1355,25 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                ": crate::dsdl_runtime::AllocationClassId = crate::dsdl_runtime::AllocationClassId(" +
                std::to_string(classId) + "u32);");
     }
+    if (metadata.declaresPortId)
+    {
+        w.line(std::string("pub const HAS_FIXED_PORT_ID: bool = ") + (metadata.fixedPortId ? "true;" : "false;"));
+        if (metadata.fixedPortId)
+        {
+            w.line("pub const FIXED_PORT_ID: u16 = " + std::to_string(*metadata.fixedPortId) + ";");
+        }
+    }
     if (metadata.isUnion)
     {
         w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
+        for (const auto& option : metadata.unionOptions)
+        {
+            w.line("pub const " +
+                   tagScope.get(IdentifierRole::MacroName,
+                                unionOptionTagName(CodegenNamingLanguage::Rust, option.name)) +
+                   ": " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
+        }
     }
 
     std::vector<std::string> constNames;

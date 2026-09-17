@@ -75,11 +75,23 @@ struct SectionMetadata final
     /// @brief The union's options in tag order; empty for a structure.
     std::vector<UnionOption> unionOptions;
 
-    /// @brief The definition's fixed port-ID, where it has one.
+    /// @brief The width of the tag the union's plan writes, in bits.
     ///
-    /// A service's port-ID is its service-ID and a message's is its subject-ID. It belongs to the
-    /// definition rather than to one of its sections, and is reported on both so that a caller
-    /// holding either section's metadata can reach it.
+    /// The option tag constants are declared at this width so that assigning one to the tag member
+    /// is not a narrowing conversion.
+    std::uint32_t unionTagBits{8};
+
+    /// @brief True when this section's type is the one that stands for the definition.
+    ///
+    /// The definition's port-ID is declared on that type and nowhere else. A message has one
+    /// section and it is that type; a service is reached through an alias, and its request and
+    /// response are two types under it. Asking a request for the service's port-ID is a question
+    /// about the service, so the request does not answer it.
+    bool declaresPortId{true};
+
+    /// @brief The fixed port-ID, where the definition has one; read only when @ref declaresPortId.
+    ///
+    /// A message's is its subject-ID and a service's is its service-ID.
     std::optional<std::uint32_t> fixedPortId;
 };
 

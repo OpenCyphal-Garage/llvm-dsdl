@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
+#include <optional>
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 
@@ -22,9 +23,9 @@ bool runCHeaderRenderTests()
     metadata.alias                        = {true, "eligible"};
 
     const auto metadataLines = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
-    if (metadataLines.size() != 7U)
+    if (metadataLines.size() != 8U)
     {
-        std::cerr << "renderTypeMetadataMacros expected 7 lines\n";
+        std::cerr << "renderTypeMetadataMacros expected 8 lines\n";
         return false;
     }
     if (metadataLines[0] != "#define uavcan__node__Heartbeat_FULL_NAME_ \"uavcan.node.Heartbeat\"")
@@ -47,17 +48,65 @@ bool runCHeaderRenderTests()
         std::cerr << "renderTypeMetadataMacros deprecation line mismatch\n";
         return false;
     }
-
-    const auto aliasIdentity =
-        llvmdsdl::emitter::c::renderServiceAliasIdentityMacros("uavcan__srv__NodeInfo", "uavcan.srv.NodeInfo", 2, 1);
-    if (aliasIdentity.size() != 2U)
+    if (metadataLines[7] != "#define uavcan__node__Heartbeat_HAS_FIXED_PORT_ID_ false")
     {
-        std::cerr << "renderServiceAliasIdentityMacros expected 2 lines\n";
+        std::cerr << "renderTypeMetadataMacros port-ID line mismatch\n";
+        return false;
+    }
+
+    // A message that has a subject-ID declares it beside the flag that says it has one.
+    metadata.fixedPortId  = 7509U;
+    const auto withPortId = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
+    if ((withPortId.size() != 9U) || (withPortId[8] != "#define uavcan__node__Heartbeat_FIXED_PORT_ID_ 7509U"))
+    {
+        std::cerr << "renderTypeMetadataMacros port-ID value mismatch\n";
+        return false;
+    }
+
+    // A service's request is not the type the service is reached through, so it declares neither.
+    metadata.declaresPortId = false;
+    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata).size() != 7U)
+    {
+        std::cerr << "renderTypeMetadataMacros emitted a port-ID for a section that declares none\n";
+        return false;
+    }
+
+    const auto aliasIdentity = llvmdsdl::emitter::c::renderServiceAliasIdentityMacros("uavcan__srv__NodeInfo",
+                                                                                      "uavcan.srv.NodeInfo",
+                                                                                      2,
+                                                                                      1,
+                                                                                      std::nullopt);
+    if (aliasIdentity.size() != 3U)
+    {
+        std::cerr << "renderServiceAliasIdentityMacros expected 3 lines\n";
         return false;
     }
     if (aliasIdentity[1] != "#define uavcan__srv__NodeInfo_FULL_NAME_AND_VERSION_ \"uavcan.srv.NodeInfo.2.1\"")
     {
         std::cerr << "renderServiceAliasIdentityMacros version line mismatch\n";
+        return false;
+    }
+    if (aliasIdentity[2] != "#define uavcan__srv__NodeInfo_HAS_FIXED_PORT_ID_ false")
+    {
+        std::cerr << "renderServiceAliasIdentityMacros port-ID line mismatch\n";
+        return false;
+    }
+
+    // A service that has a service-ID declares it on the alias, which is the type that stands for
+    // the service; its request and response declare nothing.
+    const auto aliasWithPortId = llvmdsdl::emitter::c::renderServiceAliasIdentityMacros("uavcan__node__ExecuteCommand",
+                                                                                        "uavcan.node.ExecuteCommand",
+                                                                                        1,
+                                                                                        3,
+                                                                                        435U);
+    if (aliasWithPortId.size() != 4U)
+    {
+        std::cerr << "renderServiceAliasIdentityMacros expected 4 lines with a port-ID\n";
+        return false;
+    }
+    if (aliasWithPortId[3] != "#define uavcan__node__ExecuteCommand_FIXED_PORT_ID_ 435U")
+    {
+        std::cerr << "renderServiceAliasIdentityMacros port-ID value mismatch\n";
         return false;
     }
 
