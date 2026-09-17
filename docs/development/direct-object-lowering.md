@@ -318,8 +318,8 @@ buffer.
 
 ### Calling a nested type
 
-A generated header publishes `X__serialize_` as a `static inline` that calls the body the plan
-was built into. Only that body is a symbol, so a call between objects names it; a nested type
+A generated header publishes `X__serialize_`, `X__deserialize_` and `X__initialize_` as `static inline`s
+that call the bodies the plan was built into. Only that body is a symbol, so a call between objects names it; a nested type
 in the same module is called directly rather than declared.
 
 ### A member is not its plan's width

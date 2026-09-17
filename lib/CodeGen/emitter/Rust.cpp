@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -288,21 +289,47 @@ std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContex
     return "0";
 }
 
-std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+/// @brief The Rust literal a stored constant is, for a member of @p type.
+std::string rustStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value)
 {
-    if (type.arrayKind == ArrayKind::Fixed)
+    if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
     {
-        const std::string element = scalarDefaultExpr(type, ctx);
-        const std::string count   = std::to_string(type.arrayCapacity);
-        // A composite is not `Copy`, so each element is made on its own.
-        if (type.scalarCategory == SemanticScalarCategory::Composite)
+        if (type.scalarCategory == SemanticScalarCategory::Bool)
         {
-            return "core::array::from_fn(|_| " + element + ")";
+            return integer.getInt() != 0 ? "true" : "false";
         }
-        return "[" + element + "; " + count + "]";
+        return std::to_string(integer.getInt());
     }
-    if (type.arrayKind != ArrayKind::None)
+    if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
     {
+        std::string text = std::to_string(real.getValueAsDouble());
+        // `std::to_string` writes six decimals; a Rust float literal wants the point and the width.
+        text.erase(text.find_last_not_of('0') + 1);
+        if (text.ends_with('.'))
+        {
+            text += '0';
+        }
+        return text + (type.bitLength == 64 ? "f64" : "f32");
+    }
+    llvm::report_fatal_error("Rust: an initialise body stored a value that is neither integer nor float");
+}
+
+/// @brief The value a field is set to, as the initialise body states it.
+std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const EmitterContext& ctx)
+{
+    switch (entry.kind)
+    {
+    case MemberDefault::Kind::Scalar:
+        return rustStoredLiteral(type, entry.value);
+    case MemberDefault::Kind::FixedScalarArray:
+        return "[" + rustStoredLiteral(type, entry.value) + "; " + std::to_string(entry.count) + "]";
+    case MemberDefault::Kind::BoolArray:
+        return "[false; " + std::to_string(entry.count) + "]";
+    case MemberDefault::Kind::FixedCompositeArray:
+        return "core::array::from_fn(|_| " + scalarDefaultExpr(type, ctx) + ")";
+    case MemberDefault::Kind::Composite:
+        return scalarDefaultExpr(type, ctx);
+    case MemberDefault::Kind::VariableArrayEmpty:
         return "crate::dsdl_runtime::DsdlVec::new()";
     }
     return scalarDefaultExpr(type, ctx);
@@ -1215,11 +1242,12 @@ std::string rustConstType(const TypeExprAST& type, const Value& value)
     return rustConstType(type);
 }
 
-/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+/// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
+    mlir::func::FuncOp initialize;
 };
 
 llvm::Error emitSectionType(SourceWriter&                         w,
@@ -1235,6 +1263,18 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const SectionBodies&                  bodies,
                             PlanBodyLookups&                      lookups)
 {
+    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no plan bodies for %s in the lowered module",
+                                       metadata.fullName.c_str());
+    }
+    auto initRead = readInitializer(bodies.initialize);
+    if (!initRead)
+    {
+        return initRead.takeError();
+    }
+    const InitializerShape&  init       = *initRead;
     const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
@@ -1300,6 +1340,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.blank();
     }
 
+    // Every member's default is what the initialise body stores for it.
+    llvm::StringMap<const MemberDefault*> defaults;
+    for (const auto& entry : init.members)
+    {
+        defaults[entry.member] = &entry;
+    }
     w.open("impl Default for " + declaredName + " {");
     w.open("fn default() -> Self {");
     w.open("Self {");
@@ -1308,6 +1354,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         if (field.isPadding)
         {
             continue;
+        }
+        const auto found = defaults.find(field.name);
+        if (found == defaults.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
+                                     field.name + "'");
         }
         if (isVariableArray(field.resolvedType.arrayKind))
         {
@@ -1319,12 +1371,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                    poolClassConstExprByField.at(field.name) + ")),");
             continue;
         }
-        w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + defaultExpr(field.resolvedType, ctx) +
-               ",");
+        w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+               rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
     }
     if (section.isUnion)
     {
-        w.line("_tag_: 0,");
+        w.line("_tag_: " + std::to_string(init.unionTag) + ",");
     }
     if (fieldCount == 0 && !section.isUnion)
     {
@@ -1391,12 +1443,6 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
     w.blank();
 
-    if (!bodies.serialize || !bodies.deserialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
-    }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
@@ -1489,7 +1535,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
         SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+        if (*direction == "serialize")
+        {
+            entry.serialize = fn;
+        }
+        else if (*direction == "deserialize")
+        {
+            entry.deserialize = fn;
+        }
+        else if (*direction == "initialize")
+        {
+            entry.initialize = fn;
+        }
+        else
+        {
+            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
+        }
     }
 
     std::ostringstream out;

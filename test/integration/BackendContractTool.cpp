@@ -491,6 +491,78 @@ std::vector<IrRow> irRows()
     };
 }
 
+/// @brief A perturbation of a built body, applied after `lower-dsdl-bodies` and before generation.
+///
+/// The operation rows perturb the plan and let the bodies follow; this perturbs a body directly.
+/// It exists for the one body a backend can render two ways: an initialiser read from the built
+/// operations changes with them, and one derived from the model's field list does not. A stored
+/// zero becoming seven is invisible to the second and unmissable in the first.
+using BodyPerturbation = std::function<bool(mlir::ModuleOp)>;
+struct BodyRow final
+{
+    std::string      name;
+    BodyPerturbation apply;
+};
+
+/// @brief The fixture's initialise body, as `build-dsdl-plan-bodies` names it.
+mlir::func::FuncOp fixtureInitializeBody(mlir::ModuleOp module, const llvm::StringRef fullName = kFixtureType)
+{
+    mlir::func::FuncOp found;
+    module->walk([&](mlir::func::FuncOp fn) {
+        const auto direction = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+        const auto owner     = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        if (found || !direction || direction.getValue() != "initialize" || !owner)
+        {
+            return;
+        }
+        auto schema = module.lookupSymbol<mlir::dsdl::SchemaOp>(owner.getValue());
+        if (schema && schema.getFullName() == fullName)
+        {
+            found = fn;
+        }
+    });
+    return found;
+}
+
+std::vector<BodyRow> bodyRows()
+{
+    return {
+        {"initialise-stored-value",
+         [](mlir::ModuleOp module) {
+             auto body = fixtureInitializeBody(module);
+             if (!body)
+             {
+                 return false;
+             }
+             // The first scalar the body stores: its constant becomes seven.
+             bool changed = false;
+             body->walk([&](mlir::dsdl::StoreMemberOp store) {
+                 if (changed)
+                 {
+                     return;
+                 }
+                 auto constant = store.getValue().getDefiningOp<mlir::arith::ConstantOp>();
+                 if (!constant)
+                 {
+                     return;
+                 }
+                 auto integer = mlir::dyn_cast<mlir::IntegerAttr>(constant.getValue());
+                 if (!integer || integer.getValue() != 0)
+                 {
+                     return;
+                 }
+                 mlir::OpBuilder builder(constant);
+                 auto            seven = mlir::arith::ConstantOp::create(builder,
+                                                                         constant.getLoc(),
+                                                                         builder.getIntegerAttr(integer.getType(), 7));
+                 store.getValueMutable().assign(seven);
+                 changed = true;
+             });
+             return changed;
+         }},
+    };
+}
+
 using ModelPerturbation = std::function<bool(llvmdsdl::SemanticModule&)>;
 
 struct ModelRow final
@@ -688,6 +760,31 @@ struct Session final
         }
 
         // Model independence: perturb the model, hold the operations.
+        for (const auto& row : bodyRows())
+        {
+            auto module = lower(*semantic);
+            if (!module || !lowerBodies(*module))
+            {
+                record("initialisation-reflection", row.name, Verdict::Error, "lowering failed");
+                continue;
+            }
+            if (!row.apply(*module))
+            {
+                record("initialisation-reflection", row.name, Verdict::Error, "fixture does not fit the row");
+                continue;
+            }
+            const auto generated = generate("body-" + row.name, *semantic, *module);
+            if (!generated)
+            {
+                record("initialisation-reflection", row.name, Verdict::Error, "generation failed on perturbed body");
+                continue;
+            }
+            const auto diff = differingFiles(*baseline, *generated);
+            record("initialisation-reflection",
+                   row.name,
+                   diff.empty() ? Verdict::Gap : Verdict::Pass,
+                   diff.empty() ? "initialiser identical to baseline" : "initialiser changed: " + diff.front());
+        }
         for (const auto& row : modelRows())
         {
             auto altered = analyse();

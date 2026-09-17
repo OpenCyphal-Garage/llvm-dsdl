@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -1433,12 +1434,114 @@ private:
     mutable bool          inBody_{false};
 };
 
-/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+/// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
+    mlir::func::FuncOp initialize;
 };
+
+/// @brief Whether a stored constant is its type's zero. No constant -- a length of nought, a bool
+/// array -- is zero.
+bool goStoredValueIsZero(const mlir::TypedAttr value)
+{
+    if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
+    {
+        return integer.getInt() == 0;
+    }
+    if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
+    {
+        return real.getValueAsDouble() == 0.0;
+    }
+    return true;
+}
+
+/// @brief The Go literal of a stored constant, for a member of @p type.
+std::string goStoredLiteral(const mlir::TypedAttr value, const SemanticFieldType& type)
+{
+    const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value);
+    if (type.scalarCategory == SemanticScalarCategory::Bool)
+    {
+        return (integer && integer.getInt() != 0) ? "true" : "false";
+    }
+    if (integer)
+    {
+        return std::to_string(integer.getInt());
+    }
+    const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value);
+    return std::to_string(real ? real.getValueAsDouble() : 0.0);
+}
+
+/// @brief The statement `lhs<op>rhs`.
+std::string goAssignment(const std::string& lhs, const char* const op, const std::string& rhs)
+{
+    std::string line = lhs;
+    line += op;
+    line += rhs;
+    return line;
+}
+
+/// @brief The call that constructs a value of the type spelt @p goType: `pkg.T` becomes `pkg.NewT()`.
+std::string goConstructorOf(const std::string& goType)
+{
+    const auto dot = goType.rfind('.');
+    if (dot == std::string::npos)
+    {
+        return "New" + goType + "()";
+    }
+    return goType.substr(0, dot + 1) + "New" + goType.substr(dot + 1) + "()";
+}
+
+/// @brief Whether an initialise body, and every nested body it calls, stores only zeros.
+///
+/// Go's zero value stands in for such a body. A nested member is zero only if the body it is
+/// initialised through is, so the question is asked of that body in turn.
+llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::ModuleOp module)
+{
+    if (shape.unionTag != 0)
+    {
+        return false;
+    }
+    for (const auto& entry : shape.members)
+    {
+        switch (entry.kind)
+        {
+        case MemberDefault::Kind::Scalar:
+        case MemberDefault::Kind::FixedScalarArray:
+            if (!goStoredValueIsZero(entry.value))
+            {
+                return false;
+            }
+            break;
+        case MemberDefault::Kind::VariableArrayEmpty:
+        case MemberDefault::Kind::BoolArray:
+            break;
+        case MemberDefault::Kind::Composite:
+        case MemberDefault::Kind::FixedCompositeArray: {
+            auto body = module.lookupSymbol<mlir::func::FuncOp>(entry.callee);
+            if (!body)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "an initialise body calls %s, which the lowered module does not hold",
+                                               entry.callee.c_str());
+            }
+            auto nested = readInitializer(body);
+            if (!nested)
+            {
+                return nested.takeError();
+            }
+            auto zero = goInitializerIsZero(*nested, module);
+            if (!zero || !*zero)
+            {
+                return zero;
+            }
+            break;
+        }
+        }
+    }
+    return true;
+}
 
 llvm::Error emitSectionType(SourceWriter&                             w,
                             const EmitterContext&                     ctx,
@@ -1452,6 +1555,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             const mlir::dsdl::SerializationPlanOp     plan,
                             const GoSpelling&                         spelling,
                             const SectionBodies&                      bodies,
+                            mlir::ModuleOp                            module,
                             PlanBodyLookups&                          lookups)
 {
     const auto typeConstPrefix =
@@ -1546,11 +1650,115 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     w.close("}");
     w.blank();
 
-    if (!bodies.serialize || !bodies.deserialize)
+    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
                                        metadata.fullName.c_str());
+    }
+    // Go's zero value is the language's, and it is the rendering of the initialise body wherever
+    // every store in that body, and in every nested body it calls, is its type's zero -- which is
+    // decidable from the bodies, so nothing is emitted on that decision rather than on an
+    // assumption. A body that stores anything else has no zero value to lean on and gets a
+    // constructor that sets what the body sets, member by member and element by element.
+    auto init = readInitializer(bodies.initialize);
+    if (!init)
+    {
+        return init.takeError();
+    }
+    const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
+        auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
+        if (!body)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "the initialise body of %s calls %s, which the lowered module does not hold",
+                                           metadata.fullName.c_str(),
+                                           callee.c_str());
+        }
+        auto nested = readInitializer(body);
+        if (!nested)
+        {
+            return nested.takeError();
+        }
+        return goInitializerIsZero(*nested, module);
+    };
+    auto allZero = goInitializerIsZero(*init, module);
+    if (!allZero)
+    {
+        return allZero.takeError();
+    }
+    if (!*allZero)
+    {
+        w.open("func New" + typeName + "() " + typeName + " {");
+        w.line("var obj " + typeName);
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            for (const auto& entry : init->members)
+            {
+                if (entry.member != field.name)
+                {
+                    continue;
+                }
+                const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
+                const auto stored = goStoredLiteral(entry.value, field.resolvedType);
+                switch (entry.kind)
+                {
+                case MemberDefault::Kind::Scalar:
+                    if (!goStoredValueIsZero(entry.value))
+                    {
+                        w.line(goAssignment(member, " = ", stored));
+                    }
+                    break;
+                case MemberDefault::Kind::FixedScalarArray:
+                    if (!goStoredValueIsZero(entry.value))
+                    {
+                        w.open("for i := range " + member + " {");
+                        w.line(goAssignment(member, "[i] = ", stored));
+                        w.close("}");
+                    }
+                    break;
+                case MemberDefault::Kind::Composite:
+                case MemberDefault::Kind::FixedCompositeArray: {
+                    auto zero = nestedIsZero(entry.callee);
+                    if (!zero)
+                    {
+                        return zero.takeError();
+                    }
+                    if (*zero)
+                    {
+                        break;
+                    }
+                    const auto made =
+                        goConstructorOf(goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                    if (entry.kind == MemberDefault::Kind::Composite)
+                    {
+                        w.line(goAssignment(member, " = ", made));
+                    }
+                    else
+                    {
+                        w.open("for i := range " + member + " {");
+                        w.line(goAssignment(member, "[i] = ", made));
+                        w.close("}");
+                    }
+                    break;
+                }
+                case MemberDefault::Kind::VariableArrayEmpty:
+                case MemberDefault::Kind::BoolArray:
+                    break;
+                }
+            }
+        }
+        if (init->isUnion && init->unionTag != 0)
+        {
+            w.line("obj.Tag = " + std::to_string(init->unionTag));
+        }
+        w.line("return obj");
+        w.close("}");
+        w.blank();
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1586,7 +1794,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
         SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+        if (*direction == "serialize")
+        {
+            entry.serialize = fn;
+        }
+        else if (*direction == "deserialize")
+        {
+            entry.deserialize = fn;
+        }
+        else if (*direction == "initialize")
+        {
+            entry.initialize = fn;
+        }
+        else
+        {
+            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
+        }
     }
 
     const auto currentPackagePath = EmitterContext::packagePath(def.info);
@@ -1627,6 +1850,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        sectionPlan(schema, ""),
                                        spelling,
                                        bodies[""],
+                                       module,
                                        lookups))
         {
             return std::move(err);
@@ -1646,6 +1870,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        sectionPlan(schema, "request"),
                                        spelling,
                                        bodies["request"],
+                                       module,
                                        lookups))
         {
             return std::move(err);
@@ -1665,6 +1890,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            sectionPlan(schema, "response"),
                                            spelling,
                                            bodies["response"],
+                                           module,
                                            lookups))
             {
                 return std::move(err);

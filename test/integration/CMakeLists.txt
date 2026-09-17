@@ -824,6 +824,35 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
+  # The default of a type in every language against the specification's definition of it:
+  # deserialising nothing. Compared on the wire, so every spelling of the initialise body is held
+  # to the same bytes.
+  add_test(
+    NAME llvmdsdl-initialize-equivalence
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/initialize-equivalence-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunInitializeEquivalence.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-initialize-equivalence
+    PROPERTIES
+      LABELS "integration;differential;c;cpp;rust;go;ts;python"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend

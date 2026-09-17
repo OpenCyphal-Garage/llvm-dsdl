@@ -71,6 +71,7 @@ add_library(llvmdsdlCodeGen
   EmitCommon.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
+  InitializerRender.cpp
   NamingManifest.cpp
   SchemaLookup.cpp
   SchemaNaming.cpp

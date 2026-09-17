@@ -50,6 +50,7 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvm/Support/Error.h"
@@ -332,19 +333,49 @@ std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx
 
 std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx);
 
-std::string pyDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+/// @brief The Python literal a stored constant is, for a member of @p type.
+std::string pyStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value, const EmitterContext& ctx)
 {
-    if (type.arrayKind == ArrayKind::Fixed)
+    if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
     {
-        const std::string count = std::to_string(type.arrayCapacity);
-        const std::string list  = type.scalarCategory == SemanticScalarCategory::Composite
-                                      ? "[" + pyElementDefaultExpr(type, ctx) + " for _ in range(" + count + ")]"
-                                      : "[" + pyElementDefaultExpr(type, ctx) + "] * " + count;
-        return "field(default_factory=lambda: " + list + ")";
+        if (type.scalarCategory == SemanticScalarCategory::Bool)
+        {
+            return integer.getInt() != 0 ? "True" : "False";
+        }
+        return std::to_string(integer.getInt());
     }
-    if (type.arrayKind != ArrayKind::None)
+    if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
     {
+        std::string text = std::to_string(real.getValueAsDouble());
+        text.erase(text.find_last_not_of('0') + 1);
+        if (text.ends_with('.'))
+        {
+            text += '0';
+        }
+        return text;
+    }
+    return pyElementDefaultExpr(type, ctx);
+}
+
+/// @brief The dataclass default a field takes, as the initialise body states it.
+std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const EmitterContext& ctx)
+{
+    switch (entry.kind)
+    {
+    case MemberDefault::Kind::Scalar:
+        return pyStoredLiteral(type, entry.value, ctx);
+    case MemberDefault::Kind::FixedScalarArray:
+        return "field(default_factory=lambda: [" + pyStoredLiteral(type, entry.value, ctx) + "] * " +
+               std::to_string(entry.count) + ")";
+    case MemberDefault::Kind::BoolArray:
+        return "field(default_factory=lambda: [False] * " + std::to_string(entry.count) + ")";
+    case MemberDefault::Kind::FixedCompositeArray:
+        return "field(default_factory=lambda: [" + pyElementDefaultExpr(type, ctx) + " for _ in range(" +
+               std::to_string(entry.count) + ")])";
+    case MemberDefault::Kind::VariableArrayEmpty:
         return "field(default_factory=list)";
+    case MemberDefault::Kind::Composite:
+        return "field(default_factory=lambda: " + pyElementDefaultExpr(type, ctx) + ")";
     }
     return pyElementDefaultExpr(type, ctx);
 }
@@ -439,14 +470,17 @@ void emitClassMethods(SourceWriter& w, const std::string& typeName, const Semant
     w.dedent();
 }
 
-void emitStructSectionType(SourceWriter&          w,
-                           const std::string&     typeName,
-                           const SemanticSection& section,
-                           const AttachedDoc&     typeDoc,
-                           const EmitterContext&  ctx,
-                           const std::string&     fullName,
-                           const std::uint32_t    majorVersion,
-                           const std::uint32_t    minorVersion)
+const MemberDefault* memberDefault(const InitializerShape& init, const std::string& name);
+
+void emitStructSectionType(SourceWriter&           w,
+                           const InitializerShape& init,
+                           const std::string&      typeName,
+                           const SemanticSection&  section,
+                           const AttachedDoc&      typeDoc,
+                           const EmitterContext&   ctx,
+                           const std::string&      fullName,
+                           const std::uint32_t     majorVersion,
+                           const std::uint32_t     minorVersion)
 {
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     w.line("@dataclass(slots=True)");
@@ -462,13 +496,15 @@ void emitStructSectionType(SourceWriter&          w,
         }
         emittedField = true;
         emitAttachedDocPy(w, field.doc);
-        const auto        fieldName   = fieldIdents.get(IdentifierRole::FieldName, field.name);
-        const std::string defaultExpr = pyDefaultExpr(field.resolvedType, ctx);
-        const bool        factory     = field.resolvedType.arrayKind != ArrayKind::None ||
-                                        field.resolvedType.scalarCategory == SemanticScalarCategory::Composite;
+        const auto  fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const auto* entry     = memberDefault(init, field.name);
+        if (entry == nullptr)
+        {
+            llvm::report_fatal_error(llvm::Twine("Python: the initialise body of ") + typeName + " does not set '" +
+                                     field.name + "'");
+        }
         w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
-               (factory && !defaultExpr.starts_with("field(") ? "field(default_factory=lambda: " + defaultExpr + ")"
-                                                              : defaultExpr));
+               pyDefaultFromBody(field.resolvedType, *entry, ctx));
     }
     if (emittedField)
     {
@@ -477,19 +513,35 @@ void emitStructSectionType(SourceWriter&          w,
     emitClassMethods(w, typeName, section);
 }
 
-void emitUnionSectionType(SourceWriter&          w,
-                          const std::string&     typeName,
-                          const SemanticSection& section,
-                          const AttachedDoc&     typeDoc,
-                          const EmitterContext&  ctx,
-                          const std::string&     fullName,
-                          const std::uint32_t    majorVersion,
-                          const std::uint32_t    minorVersion)
+/// @brief The member named @p name in @p init, or null.
+const MemberDefault* memberDefault(const InitializerShape& init, const std::string& name)
+{
+    for (const auto& entry : init.members)
+    {
+        if (entry.member == name)
+        {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+void emitUnionSectionType(SourceWriter&           w,
+                          const InitializerShape& init,
+                          const std::string&      typeName,
+                          const SemanticSection&  section,
+                          const AttachedDoc&      typeDoc,
+                          const EmitterContext&   ctx,
+                          const std::string&      fullName,
+                          const std::uint32_t     majorVersion,
+                          const std::uint32_t     minorVersion)
 {
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     w.line("@dataclass(slots=True)");
     w.open("class " + typeName + ":");
-    w.line("_tag: int = 0");
+    // A Python union holds one arm: the tag the body stores, and that arm at the default the body
+    // gives it. The other arms are absent, which is what `None` says.
+    w.line("_tag: int = " + std::to_string(init.unionTag));
 
     const NamingScope fieldIdents = makePyFieldIdents(section);
     for (const auto& field : section.fields)
@@ -499,30 +551,39 @@ void emitUnionSectionType(SourceWriter&          w,
             continue;
         }
         emitAttachedDocPy(w, field.doc);
-        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
-        w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " | None = None");
+        const auto  fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const auto* entry     = memberDefault(init, field.name);
+        if (entry == nullptr)
+        {
+            llvm::report_fatal_error(llvm::Twine("Python: the initialise body of ") + typeName + " does not set '" +
+                                     field.name + "'");
+        }
+        const bool selected = std::cmp_equal(field.unionOptionIndex, init.unionTag);
+        w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) +
+               " | None = " + (selected ? pyDefaultFromBody(field.resolvedType, *entry, ctx) : "None"));
     }
 
     w.blank();
     emitClassMethods(w, typeName, section);
 }
 
-void emitSectionType(SourceWriter&          w,
-                     const std::string&     typeName,
-                     const SemanticSection& section,
-                     const AttachedDoc&     typeDoc,
-                     const EmitterContext&  ctx,
-                     const std::string&     fullName,
-                     const std::uint32_t    majorVersion,
-                     const std::uint32_t    minorVersion)
+void emitSectionType(SourceWriter&           w,
+                     const InitializerShape& init,
+                     const std::string&      typeName,
+                     const SemanticSection&  section,
+                     const AttachedDoc&      typeDoc,
+                     const EmitterContext&   ctx,
+                     const std::string&      fullName,
+                     const std::uint32_t     majorVersion,
+                     const std::uint32_t     minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, init, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(w, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
+        emitStructSectionType(w, init, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
     }
 }
 
@@ -1460,11 +1521,12 @@ private:
     mutable unsigned      fresh_{0};
 };
 
-/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+/// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
+    mlir::func::FuncOp initialize;
 };
 
 /// @brief One section: its class with the two bodies and the methods that wrap them, then its
@@ -1480,13 +1542,19 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
-    if (!bodies.serialize || !bodies.deserialize)
+    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
+    auto init = readInitializer(bodies.initialize);
+    if (!init)
+    {
+        return init.takeError();
+    }
     emitSectionType(w,
+                    *init,
                     typeName,
                     section,
                     typeDoc,
@@ -1639,7 +1707,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
         SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+        if (*direction == "serialize")
+        {
+            entry.serialize = fn;
+        }
+        else if (*direction == "deserialize")
+        {
+            entry.deserialize = fn;
+        }
+        else if (*direction == "initialize")
+        {
+            entry.initialize = fn;
+        }
+        else
+        {
+            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
+        }
     }
     for (const mlir::func::FuncOp helper : helpers)
     {

@@ -313,6 +313,17 @@ public:
         }
         declare(w, op.getError().getType(), name, callSerdes(op, names));
     }
+
+    /// @brief Declares @p name as the error code a nested initialiser answers with.
+    ///
+    /// No spelling translates an initialise body as a function. The five languages with a body
+    /// translator render initialisation declaratively, from the same body, and C reaches it through
+    /// EmitC; so the default refuses, with a reason, rather than leaving a body it was handed
+    /// mis-spelt. A spelling that does translate one imperatively overrides this.
+    virtual void declareCallInitialize(SourceWriter&                w,
+                                       llvm::StringRef              name,
+                                       mlir::dsdl::CallInitializeOp op,
+                                       const ValueNames&            names) const;
 };
 
 /// @brief Renders @p role as `member_role`, `role` when @p member is empty, and appends

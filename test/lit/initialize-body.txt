@@ -1,0 +1,43 @@
+# The third body a plan builds: the object at its defaults, as operations.
+#
+# Every step becomes a store of the type's zero -- a scalar, a length of nought, a tag of nought
+# -- or a call into the nested type's own initialiser; there is no wire, so there is no cursor,
+# no size, and no error but the null object. A union initialises every arm, not the one its tag
+# selects: the value is observable only through the selected arm, and a type with no
+# indeterminate storage is the one three backends already produce.
+#
+# A bool array is a run of bits in every target, bitpacked or one element per bool, and the one
+# operation every target spells for that run is a bit read. Reading it from a buffer of no bytes
+# is the spec's own definition of the default, implicit zero extension, applied to that array.
+#
+# The labels follow the module's order, which is the order the schemas were lowered in.
+
+# RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s
+
+# A variable-length array is its length set to nought and nothing else; a fixed array of
+# composites is a counted loop of calls into the element type's own initialiser.
+# CHECK-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__initialize_ir_
+# CHECK: dsdl.set_array_length %{{.*}} "items"
+# CHECK: scf.for
+# CHECK: dsdl.element_addr %{{.*}} "pair"
+# CHECK-NEXT: dsdl.call_initialize @fixtures_vendor_Delimited_1_0__initialize_ir_
+
+# A structure: the null check, then one store per scalar.
+# CHECK-LABEL: func.func @fixtures_vendor_Helpers_1_0__initialize_ir_
+# CHECK-SAME: attributes {llvmdsdl.plan_body = "initialize"
+# CHECK: dsdl.is_null
+# CHECK: dsdl.store_member %{{.*}} "a"
+# CHECK: dsdl.store_member %{{.*}} "b"
+# CHECK: dsdl.set_array_length %{{.*}} "c"
+
+# A union: the tag first, then every option.
+# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__initialize_ir_
+# CHECK: dsdl.set_union_tag
+# CHECK: dsdl.store_member %{{.*}} "first"
+# CHECK: dsdl.store_member %{{.*}} "second"
+
+# A nested composite is initialised by its own body, through a call that carries no buffer.
+# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__initialize_ir_
+# CHECK: dsdl.member_addr %{{.*}} "nested"
+# CHECK-NEXT: dsdl.call_initialize @fixtures_vendor_Delimited_1_0__initialize_ir_

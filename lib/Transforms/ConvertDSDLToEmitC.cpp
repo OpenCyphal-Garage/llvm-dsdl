@@ -964,6 +964,29 @@ struct CallSerdesLowering final : public SpeltPattern<mlir::dsdl::CallSerdesOp>
     }
 };
 
+struct CallInitializeLowering final : public SpeltPattern<mlir::dsdl::CallInitializeOp>
+{
+    using SpeltPattern<mlir::dsdl::CallInitializeOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CallInitializeOp     op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        // The nested type's initialiser is what its header publishes, as its serdes pair are.
+        const auto         object = CSpelling::objectOf(op.getObject());
+        const std::string* tag    = object ? spelling.tagFor(object.getIdentity()) : nullptr;
+        if (tag == nullptr)
+        {
+            return mlir::failure();
+        }
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{rewriter.getIntegerType(8)},
+                                                               rewriter.getStringAttr(*tag + "__initialize_"),
+                                                               mlir::ValueRange{adaptor.getObject()});
+        return mlir::success();
+    }
+};
+
 struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
@@ -1010,7 +1033,8 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      SetArrayLengthLowering,
                      UnionTagLowering,
                      SetUnionTagLowering,
-                     CallSerdesLowering>(converter, &getContext(), spelling);
+                     CallSerdesLowering,
+                     CallInitializeLowering>(converter, &getContext(), spelling);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
 
         mlir::ConversionTarget target(getContext());
@@ -1036,6 +1060,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::ElementAddrOp,
                             mlir::dsdl::LocalOp,
                             mlir::dsdl::CallSerdesOp,
+                            mlir::dsdl::CallInitializeOp,
                             mlir::dsdl::IsNullOp,
                             mlir::dsdl::IndexHoldsOp,
                             mlir::dsdl::BufferOrEmptyOp,

@@ -112,6 +112,10 @@ std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseT
         "  return " + requestTypeName +
             "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);",
         "}",
+        "static inline int8_t " + baseTypeName + "__initialize_(" + objectType + "* const out_obj)",
+        "{",
+        "  return " + requestTypeName + "__initialize_(out_obj);",
+        "}",
     };
 }
 

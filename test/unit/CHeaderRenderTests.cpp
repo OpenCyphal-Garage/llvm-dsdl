@@ -139,9 +139,9 @@ bool runCHeaderRenderTests()
 
     const auto wrappers =
         llvmdsdl::emitter::c::renderServiceAliasWrapperLines("uavcan__srv__NodeInfo", "uavcan__srv__NodeInfo__Request");
-    if (wrappers.size() != 16U)
+    if (wrappers.size() != 20U)
     {
-        std::cerr << "renderServiceAliasWrapperLines expected 16 lines\n";
+        std::cerr << "renderServiceAliasWrapperLines expected 20 lines\n";
         return false;
     }
     if (wrappers[0] != "static inline int8_t uavcan__srv__NodeInfo__serialize_(const struct "

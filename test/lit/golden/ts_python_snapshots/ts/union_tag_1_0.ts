@@ -74,6 +74,10 @@ export type UnionTag =
   | { _tag: 0; first: number; }
   | { _tag: 1; second: number; };
 
+export function makeUnionTag(): UnionTag {
+  return { _tag: 0, first: 0 };
+}
+
 export const UNION_TAG_FIRST_OPTION_TAG = 0;
 export const UNION_TAG_SECOND_OPTION_TAG = 1;
 
@@ -217,7 +221,7 @@ export function serializeUnionTag(value: UnionTag): Uint8Array {
 }
 
 export function deserializeUnionTag(bytes: Uint8Array): { value: UnionTag; consumed: number } {
-  const value = {} as UnionTag;
+  const value = makeUnionTag();
   const result = deserializeUnionTagFrom(value, bytes);
   if (result < 0) {
     throw new Error(dsdlRuntime.errorMessage(result));
