@@ -52,11 +52,13 @@ SectionMetadata sectionMetadata(const DiscoveredDefinition& info,
     out.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
     out.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
     out.deprecated                   = section.deprecated;
-    out.alias                        = aliasVerdict(sectionPlan(schema, sectionName));
-    out.unionTagBits                 = unionTagBits(sectionPlan(schema, sectionName));
-    out.isUnion                      = section.isUnion;
-    out.declaresPortId               = sectionName.empty();
-    out.fixedPortId                  = out.declaresPortId ? info.fixedPortId : std::nullopt;
+    // Both readers answer for a null plan, which is what a null schema gives them.
+    const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, sectionName);
+    out.alias                                  = aliasVerdict(plan);
+    out.unionTagBits                           = unionTagBits(plan);
+    out.isUnion                                = section.isUnion;
+    out.declaresPortId                         = sectionName.empty();
+    out.fixedPortId                            = out.declaresPortId ? info.fixedPortId : std::nullopt;
 
     if (!out.isUnion || !schema || schema.getBody().empty())
     {
