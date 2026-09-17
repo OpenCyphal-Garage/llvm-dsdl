@@ -30,6 +30,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -55,6 +56,35 @@ bool isValidNameComponent(const std::string& s)
 {
     static const std::regex re("^[A-Za-z_][A-Za-z0-9_]*$");
     return std::regex_match(s, re);
+}
+
+/// @brief Reads one of the decimal fields of a DSDL file name.
+///
+/// The name is matched by a regex that accepts any run of digits, so the run can be longer than
+/// anything it will be read into. `std::stoul` answers such a run by throwing, and the value it does
+/// return is a `long`, which narrowing to the field's own width would wrap: `4294967296` becomes
+/// zero, and a port-ID nobody wrote is what the generated code then carries.
+///
+/// @param[in] text The matched digits.
+/// @param[out] out The value, when it fits.
+/// @return True when @p text names a value the field can hold.
+bool parseFileNameNumber(const std::string& text, std::uint32_t& out)
+{
+    std::uint64_t value = 0;
+    for (const char c : text)
+    {
+        if ((c < '0') || (c > '9'))
+        {
+            return false;
+        }
+        value = (value * 10U) + static_cast<std::uint64_t>(c - '0');
+        if (value > std::numeric_limits<std::uint32_t>::max())
+        {
+            return false;
+        }
+    }
+    out = static_cast<std::uint32_t>(value);
+    return true;
 }
 
 bool readTextFile(const std::filesystem::path& path, std::string& out)
@@ -129,12 +159,35 @@ void discoverInRoot(const std::filesystem::path&       root,
         def.filePath          = path.string();
         def.rootNamespacePath = canonicalRoot.string();
         def.shortName         = m[3].str();
-        def.majorVersion      = static_cast<std::uint32_t>(std::stoul(m[4].str()));
-        def.minorVersion      = static_cast<std::uint32_t>(std::stoul(m[5].str()));
 
+        const auto readNumber = [&](const std::string& text, const char* const what, std::uint32_t& out) {
+            if (parseFileNameNumber(text, out))
+            {
+                return true;
+            }
+            std::string message(what);
+            message.append(" ").append(text).append(" in ").append(fileName).append(" is too large");
+            diagnostics.error({path.string(), 1, 1}, message);
+            return false;
+        };
+
+        bool numbersRead = readNumber(m[4].str(), "major version", def.majorVersion);
+        numbersRead      = readNumber(m[5].str(), "minor version", def.minorVersion) && numbersRead;
         if (m[2].matched)
         {
-            def.fixedPortId = static_cast<std::uint32_t>(std::stoul(m[2].str()));
+            std::uint32_t portId = 0;
+            if (readNumber(m[2].str(), "fixed port-ID", portId))
+            {
+                def.fixedPortId = portId;
+            }
+            else
+            {
+                numbersRead = false;
+            }
+        }
+        if (!numbersRead)
+        {
+            continue;
         }
 
         if (def.majorVersion == 0 && def.minorVersion == 0)
