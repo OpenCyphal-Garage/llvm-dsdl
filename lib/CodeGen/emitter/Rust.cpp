@@ -1366,7 +1366,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     if (metadata.isUnion)
     {
         w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
         for (const auto& option : metadata.unionOptions)
         {
             w.line(
@@ -1382,7 +1382,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         constNames.push_back(c.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(w, c.doc);

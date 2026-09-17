@@ -303,6 +303,11 @@
 # over every type in the corpus, so a name added to an emitter and forgotten there is caught.
 # RUN: %{python} %S/check_no_duplicate_module_constants.py %t/py/naming_freeze %t/ts
 
+# The repair is said out loud, which it is only when the CLI builds the same scope the emitter did.
+# RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/pynote 2>&1 | FileCheck %s --check-prefix=PY_MODULE_NOTE
+# PY_MODULE_NOTE-DAG: note: constant 'FULL_NAME' is emitted as 'FULL_NAME_2' for target language 'python'
+# PY_MODULE_NOTE-DAG: note: constant 'HAS_FIXED_PORT_ID' is emitted as 'HAS_FIXED_PORT_ID_2' for target language 'python'
+
 # A duplicate `export const` is not a shadowing in TypeScript, it is a module that does not compile.
 # TS_MODULE: export const DSDL_FULL_NAME = "fixtures_naming.naming.DSDL";
 # TS_MODULE: export const DSDL_HAS_FIXED_PORT_ID = false;

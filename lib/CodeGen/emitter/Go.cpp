@@ -1479,7 +1479,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     if (metadata.isUnion)
     {
         w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()));
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
         for (const auto& option : metadata.unionOptions)
         {
             w.line("const " + typeConstPrefix + "_" +
@@ -1494,7 +1494,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     {
         constNames.push_back(c.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
     for (const auto& c : section.constants)
     {
         // gofmt separates a documented declaration from whatever precedes it, so a doc

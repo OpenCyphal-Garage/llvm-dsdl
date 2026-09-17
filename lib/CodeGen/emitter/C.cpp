@@ -336,7 +336,7 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     {
         return;
     }
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     for (const auto& option : metadata.unionOptions)
     {
         w.line("#define " + typeName + "_" +
@@ -348,7 +348,7 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
 
 void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -480,7 +480,7 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
     // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
     // the policy tables and escaped by the projection this reads back.
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(w, c.doc);
@@ -516,7 +516,7 @@ void emitUnionOptionWrappers(SourceWriter&          w,
         return;
     }
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    const NamingScope tagScope   = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    const NamingScope tagScope   = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     const std::string objectType = renderCTagSpelling(typeName);
     for (const auto& option : metadata.unionOptions)
     {

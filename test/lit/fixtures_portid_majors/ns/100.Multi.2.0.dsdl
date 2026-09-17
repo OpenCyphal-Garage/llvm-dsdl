@@ -1,0 +1,4 @@
+# A transmittable ID, outside the regulated range for this root namespace.
+uint8 v
+uint8 w
+@sealed

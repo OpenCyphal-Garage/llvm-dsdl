@@ -1754,11 +1754,30 @@ int runDsdlc(int argc, char** argv)
         {
             for (const auto& language : outputLanguages)
             {
-                const auto reportRepairs = [&](const llvmdsdl::SemanticSection& section) {
+                // The same prefix the emitter puts in front of this section's constants, which is
+                // what decides whether they are in reach of the module's own names. Built here from
+                // the same renderer the emitter uses; a scope built without it would report the name
+                // a constant would have had rather than the one written.
+                const std::string typeName = llvmdsdl::renderDefinitionTypeName(language.language,
+                                                                                def.info.namespaceComponents,
+                                                                                def.info.shortName,
+                                                                                def.info.majorVersion,
+                                                                                def.info.minorVersion,
+                                                                                options.typeNameVersioning);
+
+                const auto reportRepairs = [&](const llvmdsdl::SemanticSection& section,
+                                               const llvm::StringRef            sectionName) {
                     const llvmdsdl::NamingScope fieldScope =
                         llvmdsdl::makeSectionFieldScope(language.language, section);
+                    const std::string sectionTypeName =
+                        typeName + llvmdsdl::renderSectionTypeSuffix(language.language, sectionName);
                     const llvmdsdl::NamingScope constScope =
-                        llvmdsdl::makeSectionConstantScope(language.language, section);
+                        llvmdsdl::makeSectionConstantScope(language.language,
+                                                           section,
+                                                           llvmdsdl::codegenProjectIdentifier(language.language,
+                                                                                              llvmdsdl::IdentifierRole::
+                                                                                                  ConstantName,
+                                                                                              sectionTypeName));
 
                     const auto reportOne = [&](const llvmdsdl::NamingScope&   scope,
                                                const char* const              what,
@@ -1796,10 +1815,10 @@ int runDsdlc(int argc, char** argv)
                         reportOne(constScope, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
                     }
                 };
-                reportRepairs(def.request);
+                reportRepairs(def.request, def.isService ? "request" : "");
                 if (def.isService && def.response.has_value())
                 {
-                    reportRepairs(*def.response);
+                    reportRepairs(*def.response, "response");
                 }
             }
         }

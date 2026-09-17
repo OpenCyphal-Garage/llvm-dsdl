@@ -1334,7 +1334,7 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
 
 void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -1542,7 +1542,7 @@ void emitSectionStruct(SourceWriter&                         w,
     {
         w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) +
                "U;");
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
         for (const auto& option : metadata.unionOptions)
         {
             w.line(
@@ -1558,7 +1558,7 @@ void emitSectionStruct(SourceWriter&                         w,
 
     // constant named FULL_NAME is escaped before it reaches the scope.
 
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
 
     for (const auto& c : section.constants)
     {

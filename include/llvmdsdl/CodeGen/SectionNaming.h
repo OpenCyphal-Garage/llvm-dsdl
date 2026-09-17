@@ -95,11 +95,15 @@ enum class ArrayMetadataKind : std::uint8_t
 ///            behind the type's prefix, so a type whose prefix is one of theirs puts the two in
 ///            reach of each other -- `DSDL.1.0` with a constant `FULL_NAME` reaches
 ///            `DSDL_FULL_NAME`. Passing the prefix is what lets the scope see that. The other four
-///            languages put the two in different scopes and pass nothing.
+///            languages put the two in different scopes and pass an empty prefix.
+///
+///            There is no default. A caller that leaves it out gets a scope that disagrees with the
+///            one the emitter built, and the names it reads back are then names nothing writes --
+///            a silent wrong answer rather than a missing one.
 /// @return A scope with every constant declared.
 [[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage  language,
                                                    const SemanticSection& section,
-                                                   llvm::StringRef        typeConstantPrefix = {});
+                                                   llvm::StringRef        typeConstantPrefix);
 
 }  // namespace llvmdsdl
 

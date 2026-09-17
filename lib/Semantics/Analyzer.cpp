@@ -25,7 +25,6 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
-#include <unordered_set>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -1380,7 +1379,6 @@ private:
         // A port-ID wider than its field cannot be transmitted, so it is rejected whatever the
         // options say. `--allow-unregulated-fixed-port-id` widens which allocations may be used; it
         // does not widen the field they are carried in.
-        std::unordered_set<std::string> overWideFixedPortIds;
         for (const auto& result : results_)
         {
             if (!result || !result->info.fixedPortId)
@@ -1391,7 +1389,6 @@ private:
             const std::uint32_t maximum = maxPortId(sem.isService);
             if (*sem.info.fixedPortId > maximum)
             {
-                overWideFixedPortIds.insert(sem.info.fullName);
                 diagnostics_.error({sem.info.filePath, 1, 1},
                                    "fixed port-ID " + std::to_string(*sem.info.fixedPortId) + " for " +
                                        (sem.isService ? "service" : "message") + " type " + sem.info.fullName +
@@ -1410,8 +1407,10 @@ private:
                 const auto& sem = *result;
                 // Already reported as too wide to transmit. The diagnostic below offers a flag that
                 // widens which allocations may be used, and no allocation makes this value fit, so
-                // raising it here would send the author after a flag that cannot help.
-                if (overWideFixedPortIds.contains(sem.info.fullName))
+                // raising it here would send the author after a flag that cannot help. Asked of this
+                // definition rather than of a set keyed by name: two majors of one type are two
+                // definitions, and one of them being out of range says nothing about the other.
+                if (*sem.info.fixedPortId > maxPortId(sem.isService))
                 {
                     continue;
                 }
