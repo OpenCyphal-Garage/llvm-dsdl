@@ -146,6 +146,24 @@ function(llvmdsdl_differential_corpus)
     message(FATAL_ERROR "failed to generate nunavut reference C output")
   endif()
 
+  # The bytes are compared by the harness this corpus builds; the constants the two headers declare
+  # beside them are compared here, because nothing a round-trip does would show a disagreement.
+  execute_process(
+    COMMAND
+      "${PYTHON_EXECUTABLE}"
+        "${SOURCE_ROOT}/test/integration/compare_generated_constants.py"
+        "${ours_out}"
+        "${dsdl_out}"
+    RESULT_VARIABLE constants_result
+    OUTPUT_VARIABLE constants_stdout
+    ERROR_VARIABLE constants_stderr
+  )
+  message(STATUS "${constants_stdout}")
+  if(NOT constants_result EQUAL 0)
+    message(STATUS "${constants_stderr}")
+    message(FATAL_ERROR "the two generators disagree on the constants they declare")
+  endif()
+
   llvmdsdl_differential_ours_headers("${ours_out}")
 
   set(NV_HEARTBEAT_HEADER "${dsdl_out}/uavcan/node/Heartbeat_1_0.h")

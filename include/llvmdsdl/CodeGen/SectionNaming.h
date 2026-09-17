@@ -56,6 +56,21 @@ enum class ArrayMetadataKind : std::uint8_t
                                             llvm::StringRef       fieldName,
                                             ArrayMetadataKind     kind);
 
+/// @brief The name a union option's tag constant is declared under in a section scope.
+///
+/// A union's options are reachable only through the tag value that selects them, and the value
+/// itself is a position in the DSDL. Every language declares `<OPTION>_OPTION_TAG` beside the DSDL
+/// constants so that a caller writes the name instead of the number.
+///
+/// Composed from the DSDL field name for the reason @ref arrayMetadataName gives: the scope has to
+/// see a collision between two options whose projections are equal, and between an option's tag and
+/// a DSDL constant that projects onto the same name. It carries C's trailing `_` for the same
+/// reason too.
+/// @param[in] language Naming language.
+/// @param[in] fieldName DSDL name of the option.
+/// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
+[[nodiscard]] std::string unionOptionTagName(CodegenNamingLanguage language, llvm::StringRef fieldName);
+
 /// @brief Builds the field-name scope for @p section in @p language.
 ///
 /// Fields are declared in DSDL order, which makes the assignment reproducible; padding fields carry
@@ -74,8 +89,21 @@ enum class ArrayMetadataKind : std::uint8_t
 /// the type, or behind a macro prefix -- and get a scope of their own.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose constants are being named.
+/// @param[in] typeConstantPrefix The prefix the language puts in front of a section constant, where
+///            it uses one. Python and TypeScript declare a definition's own facts at module scope
+///            under a fixed prefix of their own, and a section constant lands in that same scope
+///            behind the type's prefix, so a type whose prefix is one of theirs puts the two in
+///            reach of each other -- `DSDL.1.0` with a constant `FULL_NAME` reaches
+///            `DSDL_FULL_NAME`. Passing the prefix is what lets the scope see that. The other four
+///            languages put the two in different scopes and pass an empty prefix.
+///
+///            There is no default. A caller that leaves it out gets a scope that disagrees with the
+///            one the emitter built, and the names it reads back are then names nothing writes --
+///            a silent wrong answer rather than a missing one.
 /// @return A scope with every constant declared.
-[[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage language, const SemanticSection& section);
+[[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage  language,
+                                                   const SemanticSection& section,
+                                                   llvm::StringRef        typeConstantPrefix);
 
 }  // namespace llvmdsdl
 

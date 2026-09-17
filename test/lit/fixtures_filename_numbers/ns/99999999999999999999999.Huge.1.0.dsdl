@@ -1,0 +1,3 @@
+# Longer than any integer it could be read into.
+uint8 v
+@sealed

@@ -274,7 +274,93 @@
 # and `<Type>_FULL_NAME_` cannot meet. The macro is also left unstropped -- a macro is not an
 # identifier in C's namespace ; this reads FULL_NAME, not FULL_NAME_.
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_HAS_FIXED_PORT_ID_ false
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_HAS_FIXED_PORT_ID (9)
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FIXED_PORT_ID (10)
+
+# ---------------------------------------------------------------------------------------------
+# The module's own names. Python and TypeScript declare a definition's facts at module scope under
+# a fixed prefix, and a section constant lands in the same scope behind the type's prefix, so a type
+# named DSDL is the one case where the two are in reach of each other.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/dsdl_1_0.py | FileCheck %s --check-prefix=PY_MODULE
+# RUN: cat %t/ts/fixtures_naming/naming/dsdl_1_0.ts | FileCheck %s --check-prefix=TS_MODULE
+
+# The module keeps its names and the DSDL constants move past them. `FIXED_PORT_ID` is reserved even
+# though this definition has none, for the reason the rest of the claimed names are: what a constant
+# is called should not depend on whether a later revision was given a port-ID.
+# PY_MODULE: DSDL_FULL_NAME = "fixtures_naming.naming.DSDL"
+# PY_MODULE: DSDL_HAS_FIXED_PORT_ID = False
+# PY_MODULE: DSDL_FULL_NAME_2 = 1
+# PY_MODULE: DSDL_HAS_FIXED_PORT_ID_2 = 2
+# PY_MODULE: DSDL_FIXED_PORT_ID_2 = 3
+# PY_MODULE: DSDL_VERSION_MAJOR_2 = 4
+
+# The list of module-owned names is a second copy of what the two emitters write, and a fixture can
+# only pin the names that exist when it is written. This pins the property that list exists to hold,
+# over every type in the corpus, so a name added to an emitter and forgotten there is caught.
+# RUN: %{python} %S/check_no_duplicate_module_constants.py %t/py/naming_freeze %t/ts
+
+# The repair is said out loud, which it is only when the CLI builds the same scope the emitter did.
+# RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/pynote 2>&1 | FileCheck %s --check-prefix=PY_MODULE_NOTE
+# PY_MODULE_NOTE-DAG: note: constant 'FULL_NAME' is emitted as 'FULL_NAME_2' for target language 'python'
+# PY_MODULE_NOTE-DAG: note: constant 'HAS_FIXED_PORT_ID' is emitted as 'HAS_FIXED_PORT_ID_2' for target language 'python'
+
+# A duplicate `export const` is not a shadowing in TypeScript, it is a module that does not compile.
+# TS_MODULE: export const DSDL_FULL_NAME = "fixtures_naming.naming.DSDL";
+# TS_MODULE: export const DSDL_HAS_FIXED_PORT_ID = false;
+# TS_MODULE: export const DSDL_FULL_NAME_2 = 1;
+# TS_MODULE: export const DSDL_HAS_FIXED_PORT_ID_2 = 2;
+
+# ---------------------------------------------------------------------------------------------
+# A union option's tag constant, and what it collides with. OptionTags.1.0 has two options whose
+# names fold onto one constant where the projection folds case, and DSDL constants named after the
+# tags its options generate.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: cat %t/c/fixtures_naming/naming/OptionTags_1_0.h | FileCheck %s --check-prefix=C_OPTION_TAGS
+# RUN: cat %t/go/fixtures_naming/naming/option_tags_1_0.go | FileCheck %s --check-prefix=GO_OPTION_TAGS
+# RUN: cat %t/rust/src/fixtures_naming/naming/option_tags_1_0.rs | FileCheck %s --check-prefix=RUST_OPTION_TAGS
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/option_tags_1_0.py | FileCheck %s --check-prefix=PY_OPTION_TAGS
+# RUN: cat %t/ts/fixtures_naming/naming/option_tags_1_0.ts | FileCheck %s --check-prefix=TS_OPTION_TAGS
+# RUN: cat %t/cpp/fixtures_naming/naming/OptionTags_1_0.hpp | FileCheck %s --check-prefix=CPP_OPTION_TAGS
+
+# A C macro keeps its case, so the two options are distinct without an escape; the DSDL constant
+# named after the third option's tag is the one that has to move.
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOO_BAR_OPTION_TAG (1)
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_OTHER_OPTION_TAG_2 (2)
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOOBAR_OPTION_TAG_ 0U
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOO_BAR_OPTION_TAG_ 1U
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_OTHER_OPTION_TAG_ 2U
+
+# The wrappers read the constant, not the number, and the member keeps its own spelling.
+# C_OPTION_TAGS: static inline bool fixtures_naming__naming__OptionTags__is_fooBar_
+# C_OPTION_TAGS: obj->_tag_ == fixtures_naming__naming__OptionTags_FOOBAR_OPTION_TAG_
+# C_OPTION_TAGS: static inline void fixtures_naming__naming__OptionTags__select_fooBar_
+
+# Go upper-snakes, so `fooBar` and `foo_bar` fold onto one name and the second option moves; the
+# DSDL constant named after it moves again, past both.
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG uint8 = 0
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 uint8 = 1
+# GO_OPTION_TAGS: const OPTION_TAGS_OTHER_OPTION_TAG uint8 = 2
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_3 = 1
+
+# RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG: u8 = 0;
+# RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG_2: u8 = 1;
+# RUST_OPTION_TAGS: pub const OTHER_OPTION_TAG: u8 = 2;
+
+# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG = 0
+# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1
+
+# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG = 0;
+# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1;
+
+# A C++ struct holds the option tags with the fields and the DSDL constants, so all three compete.
+# CPP_OPTION_TAGS: static constexpr std::uint8_t FOOBAR_OPTION_TAG = 0U;
+# CPP_OPTION_TAGS: static constexpr std::uint8_t FOO_BAR_OPTION_TAG = 1U;
+# CPP_OPTION_TAGS: static constexpr std::uint8_t OTHER_OPTION_TAG = 2U;
 
 # ---------------------------------------------------------------------------------------------
 # The naming manifest and the path-level rename note.

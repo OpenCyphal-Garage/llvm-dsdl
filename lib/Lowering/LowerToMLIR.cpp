@@ -273,6 +273,14 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 {
                     fieldState.addAttribute("section", builder.getStringAttr(sectionName));
                 }
+                // A padding field is not an option and carries no tag, which is what `dsdl.field`
+                // verifies. The analyser rejects padding in a union before this runs, so the guard
+                // is not what keeps the two apart -- it is what keeps this from contradicting the
+                // verifier if that rule ever moves.
+                if (section.isUnion && !field.isPadding)
+                {
+                    fieldState.addAttribute("union_option_index", builder.getI64IntegerAttr(field.unionOptionIndex));
+                }
                 (void) builder.create(fieldState);
             }
 

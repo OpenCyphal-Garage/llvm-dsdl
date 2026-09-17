@@ -1,0 +1,21 @@
+# The decimal fields of a DSDL file name, when they are longer than what reads them.
+#
+# The name regex accepts any run of digits. Read with `std::stoul` and narrowed, a run that does not
+# fit either wraps -- `4294967296` becomes a port-ID of zero, which no author wrote and which the
+# range check downstream finds nothing wrong with -- or throws, which leaves the process with an
+# unhandled exception rather than a diagnostic.
+#
+# Under `--allow-unregulated-fixed-port-id` the wrapped value reaches the generated code, so this is
+# checked with the flag as well as without it.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# RUN: not %dsdlc --target-language c %S/fixtures_filename_numbers --outdir %t/a 2>&1 | FileCheck %s
+# RUN: not %dsdlc --target-language c --allow-unregulated-fixed-port-id %S/fixtures_filename_numbers --outdir %t/b 2>&1 | FileCheck %s
+
+# CHECK-DAG: error: fixed port-ID 4294967296 in 4294967296.Wrapped.1.0.dsdl is too large
+# CHECK-DAG: error: fixed port-ID 99999999999999999999999 in 99999999999999999999999.Huge.1.0.dsdl is too large
+# CHECK-DAG: error: major version 99999999999999999999999 in Big.99999999999999999999999.0.dsdl is too large
+
+# A diagnostic, not a crash.
+# CHECK-NOT: unhandled exception

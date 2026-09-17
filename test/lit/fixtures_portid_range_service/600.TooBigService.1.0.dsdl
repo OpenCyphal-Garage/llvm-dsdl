@@ -1,0 +1,7 @@
+# A service-ID is nine bits on the wire, so this one cannot be transmitted, even though the same
+# number would be a valid subject-ID.
+uint8 request_value
+@sealed
+---
+uint8 response_value
+@sealed

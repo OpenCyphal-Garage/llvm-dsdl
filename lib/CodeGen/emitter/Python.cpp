@@ -50,6 +50,7 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
@@ -373,6 +374,27 @@ std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterCon
     return "None";
 }
 
+/// @brief Declares the tag value that selects each of a union's options.
+void emitUnionOptionTags(SourceWriter&          w,
+                         const std::string&     prefix,
+                         const SemanticSection& section,
+                         const SectionMetadata& metadata)
+{
+    if (!metadata.isUnion)
+    {
+        return;
+    }
+    const auto prefixupper =
+        codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
+    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
+    for (const auto& option : metadata.unionOptions)
+    {
+        w.line(prefixupper + "_" +
+               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Python, option.name)) +
+               " = " + std::to_string(option.tag));
+    }
+}
+
 void emitSectionConstants(SourceWriter& w, const std::string& prefix, const SemanticSection& section)
 {
     std::vector<std::string> constNames;
@@ -381,9 +403,9 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     {
         constNames.push_back(constant.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
-    const auto        prefixupper =
+    const auto prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(w, constant.doc);
@@ -1450,6 +1472,7 @@ struct SectionBodies final
 llvm::Error emitSection(SourceWriter&             w,
                         const std::string&        typeName,
                         const SemanticSection&    section,
+                        const SectionMetadata&    metadata,
                         const AttachedDoc&        typeDoc,
                         const EmitterContext&     ctx,
                         const SemanticDefinition& def,
@@ -1482,6 +1505,11 @@ llvm::Error emitSection(SourceWriter&             w,
         return err;
     }
     w.dedent();
+    if (metadata.isUnion)
+    {
+        w.blank();
+        emitUnionOptionTags(w, typeName, section, metadata);
+    }
     if (!section.constants.empty())
     {
         w.blank();
@@ -1555,6 +1583,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
     w.line("DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion));
     w.line("DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion));
+    w.line("DSDL_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "True" : "False"));
+    if (def.info.fixedPortId)
+    {
+        w.line("DSDL_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+    }
     const auto [requestZohEligible, requestZohReason] =
         aliasVerdict(sectionPlan(schema, def.isService ? "request" : ""));
     w.line("DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "True" : "False"));
@@ -1619,7 +1652,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        if (auto err = emitSection(w, baseType, def.request, def.doc, ctx, def, spelling, bodies[""], lookups))
+        if (auto err = emitSection(w,
+                                   baseType,
+                                   def.request,
+                                   sectionMetadata(def.info, def.request, schema, ""),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies[""],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -1628,15 +1670,32 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "request");
     const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "response");
-    if (auto err = emitSection(w, reqType, def.request, def.doc, ctx, def, spelling, bodies["request"], lookups))
+    if (auto err = emitSection(w,
+                               reqType,
+                               def.request,
+                               sectionMetadata(def.info, def.request, schema, "request"),
+                               def.doc,
+                               ctx,
+                               def,
+                               spelling,
+                               bodies["request"],
+                               lookups))
     {
         return std::move(err);
     }
     w.blank();
     if (def.response)
     {
-        if (auto err =
-                emitSection(w, respType, *def.response, def.doc, ctx, def, spelling, bodies["response"], lookups))
+        if (auto err = emitSection(w,
+                                   respType,
+                                   *def.response,
+                                   sectionMetadata(def.info, *def.response, schema, "response"),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies["response"],
+                                   lookups))
         {
             return std::move(err);
         }

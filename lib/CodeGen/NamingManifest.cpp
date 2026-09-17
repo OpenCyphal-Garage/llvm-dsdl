@@ -29,6 +29,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -38,10 +39,22 @@ namespace
 {
 
 /// @brief Renders one section's attribute names.
-llvm::json::Object renderSection(const CodegenNamingLanguage language, const SemanticSection& section)
+///
+/// @param[in] language Naming language.
+/// @param[in] section The section being reported.
+/// @param[in] sectionTypeName The generated type name the section's constants are prefixed with,
+///            which decides whether they are in reach of the module's own names. The emitters build
+///            their scope from it, so the manifest has to as well or it reports a name that is not
+///            the one written.
+llvm::json::Object renderSection(const CodegenNamingLanguage language,
+                                 const SemanticSection&      section,
+                                 const std::string&          sectionTypeName)
 {
     const NamingScope fieldScope = makeSectionFieldScope(language, section);
-    const NamingScope constScope = makeSectionConstantScope(language, section);
+    const NamingScope constScope =
+        makeSectionConstantScope(language,
+                                 section,
+                                 codegenProjectIdentifier(language, IdentifierRole::ConstantName, sectionTypeName));
 
     llvm::json::Object fields;
     for (const auto& field : section.fields)
@@ -60,6 +73,27 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language, const Sem
     llvm::json::Object out;
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
+
+    // A union option's tag is the one fact about it a caller cannot read off the type: the name maps
+    // to a member, and the member says nothing about which tag value selects it. The manifest is
+    // where a build integration reads a generated name without reimplementing the projection, so it
+    // is where the tag belongs too.
+    if (section.isUnion)
+    {
+        llvm::json::Object options;
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            llvm::json::Object option;
+            option["name"]      = constScope.get(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
+            option["tag"]       = static_cast<std::int64_t>(field.unionOptionIndex);
+            options[field.name] = std::move(option);
+        }
+        out["union_options"] = std::move(options);
+    }
     return out;
 }
 
@@ -85,32 +119,41 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
         namespaceParts.push_back(codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component));
     }
 
+    // The same name the emitters prefix a section's constants with. Reported only for the three
+    // languages whose type symbol is this projection, but needed for the scope in every language.
+    const std::string typeName = renderDefinitionTypeName(language,
+                                                          def.info.namespaceComponents,
+                                                          def.info.shortName,
+                                                          def.info.majorVersion,
+                                                          def.info.minorVersion,
+                                                          typeNameVersioning);
+
     llvm::json::Object out;
     if (typeSymbolIsSharedProjection(language))
     {
-        out["type_name"] = renderDefinitionTypeName(language,
-                                                    def.info.namespaceComponents,
-                                                    def.info.shortName,
-                                                    def.info.majorVersion,
-                                                    def.info.minorVersion,
-                                                    typeNameVersioning);
+        out["type_name"] = typeName;
     }
     // Exact for every backend: the FileStem role returns the raw short name for C and C++ and the
     // folded one for the other four -- both go through this one call.
     out["file_stem"] =
         renderVersionedFileStem(language, def.info.shortName, def.info.majorVersion, def.info.minorVersion);
     out["namespace"] = std::move(namespaceParts);
+    if (def.info.fixedPortId)
+    {
+        out["fixed_port_id"] = static_cast<std::int64_t>(*def.info.fixedPortId);
+    }
     if (def.isService)
     {
-        out["request"] = renderSection(language, def.request);
+        out["request"] = renderSection(language, def.request, typeName + renderSectionTypeSuffix(language, "request"));
         if (def.response.has_value())
         {
-            out["response"] = renderSection(language, *def.response);
+            out["response"] =
+                renderSection(language, *def.response, typeName + renderSectionTypeSuffix(language, "response"));
         }
     }
     else
     {
-        out["message"] = renderSection(language, def.request);
+        out["message"] = renderSection(language, def.request, typeName);
     }
     return out;
 }

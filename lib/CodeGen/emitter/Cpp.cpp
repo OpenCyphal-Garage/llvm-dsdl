@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
@@ -1333,7 +1334,7 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
 
 void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -1377,9 +1378,7 @@ void emitFunctionPrototypes(SourceWriter&      w,
 void emitSectionStruct(SourceWriter&                         w,
                        const std::string&                    typeName,
                        const std::string&                    declaredName,
-                       const std::string&                    fullName,
-                       std::uint32_t                         majorVersion,
-                       std::uint32_t                         minorVersion,
+                       const SectionMetadata&                metadata,
                        const SemanticSection&                section,
                        const EmitterContext&                 ctx,
                        const CppFlavor                       flavor,
@@ -1522,27 +1521,35 @@ void emitSectionStruct(SourceWriter&                         w,
         w.line("std::uint8_t _dummy_{0U};");
     }
 
-    w.line("static constexpr const char* FULL_NAME = \"" + fullName + "\";");
-    w.line("static constexpr bool IS_DEPRECATED = " + std::string(section.deprecated ? "true" : "false") + ";");
-    w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + fullName + "." + std::to_string(majorVersion) +
-           "." + std::to_string(minorVersion) + "\";");
-    w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(section.extentBits.value_or(0) / 8) + "U;");
+    w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
+    w.line("static constexpr bool IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false") + ";");
+    w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
+    w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
     w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
-           std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
-    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + zohAliasReason + "\";");
-    if (section.isUnion)
+           std::to_string(metadata.serializationBufferSizeBytes) + "U;");
+    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (metadata.alias.eligible ? "true;" : "false;"));
+    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\";");
+    if (metadata.declaresPortId)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
+        w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
+        if (metadata.fixedPortId)
         {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
+            w.line("static constexpr std::uint16_t FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId) + "U;");
         }
-        w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(optionCount) + "U;");
+    }
+    if (metadata.isUnion)
+    {
+        w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) +
+               "U;");
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
+        for (const auto& option : metadata.unionOptions)
+        {
+            w.line(
+                "static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
+                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Cpp, option.name)) +
+                " = " + std::to_string(option.tag) + "U;");
+        }
     }
 
     // Two DSDL constants can upper-case onto one name; a duplicate `static constexpr` does not
@@ -1551,7 +1558,7 @@ void emitSectionStruct(SourceWriter&                         w,
 
     // constant named FULL_NAME is escaped before it reaches the scope.
 
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
 
     for (const auto& c : section.constants)
     {
@@ -1693,7 +1700,7 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const EmitterContext&                 ctx,
                         const SemanticDefinition&             def,
                         const std::string&                    typeName,
-                        const std::string&                    fullName,
+                        const SectionMetadata&                metadata,
                         const SemanticSection&                section,
                         const CppFlavor                       flavor,
                         const AttachedDoc&                    typeDoc,
@@ -1707,9 +1714,7 @@ llvm::Error emitSection(SourceWriter&                         w,
     emitSectionStruct(w,
                       typeName,
                       declaredName,
-                      fullName,
-                      def.info.majorVersion,
-                      def.info.minorVersion,
+                      metadata,
                       section,
                       ctx,
                       flavor,
@@ -1723,7 +1728,7 @@ llvm::Error emitSection(SourceWriter&                         w,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
-                                       fullName.c_str());
+                                       metadata.fullName.c_str());
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1872,7 +1877,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    ctx,
                                    def,
                                    requestType,
-                                   def.info.fullName + ".Request",
+                                   sectionMetadata(def.info, def.request, schema, "request"),
                                    def.request,
                                    flavor,
                                    def.doc,
@@ -1889,7 +1894,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        ctx,
                                        def,
                                        responseType,
-                                       def.info.fullName + ".Response",
+                                       sectionMetadata(def.info, *def.response, schema, "response"),
                                        *def.response,
                                        flavor,
                                        def.doc,
@@ -1909,6 +1914,14 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         w.line("constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestDeclared + "::ZOH_ALIAS_ELIGIBLE;");
         w.line("constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestDeclared +
                "::ZOH_ALIAS_REASON;");
+        // The service-ID belongs to the service, and this alias is how the service is named.
+        w.line(std::string("constexpr bool ") + baseTypeName +
+               "_HAS_FIXED_PORT_ID = " + (def.info.fixedPortId ? "true;" : "false;"));
+        if (def.info.fixedPortId)
+        {
+            w.line("constexpr std::uint16_t " + baseTypeName +
+                   "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId) + "U;");
+        }
         w.blank();
 
         w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
@@ -1953,7 +1966,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                    ctx,
                                    def,
                                    baseTypeName,
-                                   def.info.fullName,
+                                   sectionMetadata(def.info, def.request, schema, ""),
                                    def.request,
                                    flavor,
                                    def.doc,

@@ -18,49 +18,33 @@
 #define LLVMDSDL_CODEGEN_EMITTER_C_HEADER_RENDER_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 
 namespace llvmdsdl::emitter::c
 {
 
-/// @brief Metadata macro inputs for one generated C type.
-struct HeaderTypeMetadata final
-{
-    /// @brief Generated C type name stem.
-    std::string typeName;
-
-    /// @brief Fully-qualified DSDL full name.
-    std::string fullName;
-
-    /// @brief DSDL major version.
-    std::uint32_t majorVersion{0};
-
-    /// @brief DSDL minor version.
-    std::uint32_t minorVersion{0};
-
-    /// @brief Type extent in bytes.
-    std::uint64_t extentBytes{0};
-
-    /// @brief Type serialisation buffer size in bytes.
-    std::uint64_t serializationBufferSizeBytes{0};
-};
-
 /// @brief Renders C metadata macros for one generated type.
-/// @param[in] metadata Type metadata for macro rendering.
+/// @param[in] typeName Generated C type name stem.
+/// @param[in] metadata The section's facts.
 /// @return Ordered macro lines.
-std::vector<std::string> renderTypeMetadataMacros(const HeaderTypeMetadata& metadata);
+std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata);
 
 /// @brief Renders service alias identity metadata macro lines.
 /// @param[in] baseTypeName Alias base type name.
 /// @param[in] fullName Service full DSDL name.
 /// @param[in] majorVersion DSDL major version.
 /// @param[in] minorVersion DSDL minor version.
+/// @param[in] fixedPortId The service's fixed service-ID, where it has one.
 /// @return Ordered macro lines.
-std::vector<std::string> renderServiceAliasIdentityMacros(const std::string& baseTypeName,
-                                                          const std::string& fullName,
-                                                          std::uint32_t      majorVersion,
-                                                          std::uint32_t      minorVersion);
+std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&           baseTypeName,
+                                                          const std::string&           fullName,
+                                                          std::uint32_t                majorVersion,
+                                                          std::uint32_t                minorVersion,
+                                                          std::optional<std::uint32_t> fixedPortId);
 
 /// @brief Renders service alias bridge lines after request type declaration.
 /// @param[in] baseTypeName Alias base type name.

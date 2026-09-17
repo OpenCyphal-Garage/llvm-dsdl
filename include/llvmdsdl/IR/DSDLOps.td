@@ -47,14 +47,22 @@ def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
       "A field declaration in schema space (introspection/documentation)";
   let description = [{
     Carries a field's schema-level identity (name, resolved type name, optional
-    generated C name, docs, and owning service section) for introspection and
-    comment propagation. It is NOT consumed by the serialisation path — the wire
-    layout lives in `dsdl.serialization_plan` — but it IS a first-class,
-    verified op so malformed schema IR is rejected during lowering.
+    generated C name, docs, owning service section, and union option index) for
+    introspection and comment propagation. It is NOT consumed by the
+    serialisation path — the wire layout lives in `dsdl.serialization_plan` —
+    but it IS a first-class, verified op so malformed schema IR is rejected
+    during lowering.
+
+    `union_option_index` is the tag value that selects this field, and it is
+    carried here as well as on the section's `dsdl.io` step because this is
+    where the field's name is. A backend that gives an option a symbolic name
+    reads both halves of the pair from one op. `dsdl.schema` checks the two
+    against each other.
   }];
   let arguments = (ins StrAttr:$name, StrAttr:$type_name,
       OptionalAttr<StrAttr>:$c_name, UnitAttr:$padding,
-      OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section);
+      OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section,
+      OptionalAttr<DSDL_I64Attr>:$union_option_index);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }

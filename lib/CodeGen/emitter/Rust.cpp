@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
@@ -1226,9 +1227,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const SemanticSection&                section,
                             const EmitterContext&                 ctx,
                             const Options&                        options,
-                            const std::string&                    fullName,
-                            std::uint32_t                         majorVersion,
-                            std::uint32_t                         minorVersion,
+                            const SectionMetadata&                metadata,
                             const AttachedDoc&                    typeDoc,
                             const std::string&                    definitionFullName,
                             const mlir::dsdl::SerializationPlanOp plan,
@@ -1259,8 +1258,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                         docWithDeprecationNotice(typeDoc,
                                                  section.deprecated,
                                                  definitionFullName,
-                                                 majorVersion,
-                                                 minorVersion));
+                                                 metadata.majorVersion,
+                                                 metadata.minorVersion));
     w.line("#[derive(Clone, Debug, PartialEq)]");
     w.open("pub struct " + declaredName + " {");
 
@@ -1295,7 +1294,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         if (options.emitDeprecationAttributes)
         {
-            w.line(rustDeprecatedAttribute(definitionFullName, majorVersion, minorVersion));
+            w.line(rustDeprecatedAttribute(definitionFullName, metadata.majorVersion, metadata.minorVersion));
         }
         w.line("pub type " + typeName + " = " + declaredName + ";");
         w.blank();
@@ -1337,16 +1336,15 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.blank();
 
     w.open("impl " + declaredName + " {");
-    w.line("pub const FULL_NAME: &'static str = \"" + fullName + "\";");
-    w.line(std::string("pub const IS_DEPRECATED: bool = ") + (section.deprecated ? "true;" : "false;"));
-    w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + fullName + "." + std::to_string(majorVersion) + "." +
-           std::to_string(minorVersion) + "\";");
-    w.line("pub const EXTENT_BYTES: usize = " + std::to_string(section.extentBits.value_or(0) / 8) + ";");
+    w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
+    w.line(std::string("pub const IS_DEPRECATED: bool = ") + (metadata.deprecated ? "true;" : "false;"));
+    w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + metadata.fullName + "." +
+           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
+    w.line("pub const EXTENT_BYTES: usize = " + std::to_string(metadata.extentBytes) + ";");
     w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
-           std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
-    w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + zohAliasReason + "\";");
+           std::to_string(metadata.serializationBufferSizeBytes) + ";");
+    w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (metadata.alias.eligible ? "true;" : "false;"));
+    w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + metadata.alias.reason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
            rustMemoryModeVariantPath(options) + ";");
     w.line("pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
@@ -1357,17 +1355,25 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                ": crate::dsdl_runtime::AllocationClassId = crate::dsdl_runtime::AllocationClassId(" +
                std::to_string(classId) + "u32);");
     }
-    if (section.isUnion)
+    if (metadata.declaresPortId)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
+        w.line(std::string("pub const HAS_FIXED_PORT_ID: bool = ") + (metadata.fixedPortId ? "true;" : "false;"));
+        if (metadata.fixedPortId)
         {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
+            w.line("pub const FIXED_PORT_ID: u16 = " + std::to_string(*metadata.fixedPortId) + ";");
         }
-        w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(optionCount) + ";");
+    }
+    if (metadata.isUnion)
+    {
+        w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
+        for (const auto& option : metadata.unionOptions)
+        {
+            w.line(
+                "pub const " +
+                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Rust, option.name)) +
+                ": " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
+        }
     }
 
     std::vector<std::string> constNames;
@@ -1376,7 +1382,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         constNames.push_back(c.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(w, c.doc);
@@ -1389,7 +1395,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
-                                       fullName.c_str());
+                                       metadata.fullName.c_str());
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1544,9 +1550,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.request,
                                        ctx,
                                        options,
-                                       def.info.fullName,
-                                       def.info.majorVersion,
-                                       def.info.minorVersion,
+                                       sectionMetadata(def.info, def.request, schema, ""),
                                        def.doc,
                                        def.info.fullName,
                                        sectionPlan(schema, ""),
@@ -1567,9 +1571,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    def.request,
                                    ctx,
                                    options,
-                                   def.info.fullName + ".Request",
-                                   def.info.majorVersion,
-                                   def.info.minorVersion,
+                                   sectionMetadata(def.info, def.request, schema, "request"),
                                    def.doc,
                                    def.info.fullName,
                                    sectionPlan(schema, "request"),
@@ -1588,9 +1590,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        *def.response,
                                        ctx,
                                        options,
-                                       def.info.fullName + ".Response",
-                                       def.info.majorVersion,
-                                       def.info.minorVersion,
+                                       sectionMetadata(def.info, *def.response, schema, "response"),
                                        def.doc,
                                        def.info.fullName,
                                        sectionPlan(schema, "response"),
@@ -1608,6 +1608,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
     }
     w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
+    // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
+    // alias carries no associated constants, so the pair is declared beside it.
+    const auto baseConstPrefix =
+        codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, baseType);
+    w.line("pub const " + baseConstPrefix +
+           "_HAS_FIXED_PORT_ID: bool = " + (def.info.fixedPortId ? "true;" : "false;"));
+    if (def.info.fixedPortId)
+    {
+        w.line("pub const " + baseConstPrefix + "_FIXED_PORT_ID: u16 = " + std::to_string(*def.info.fixedPortId) + ";");
+    }
 
     return out.str();
 }

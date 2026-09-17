@@ -18,7 +18,7 @@ namespace llvmdsdl::uavcan_embedded_mlir
 {
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = 189U;
 inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
-    "9d81987721570b5c86da5ea1072e451a6ec0e37accf8d3a78b1b4d229488d75c";
+    "a4b275c8a79899fc3fbcb9867a03e56fb12629af772cf0d5d744480423dfe5a3";
 inline constexpr const char kEmbeddedUavcanMlirText[] = R"LLVMDSDL_UAVCAN(
 module {
   dsdl.schema @uavcan_diagnostic_Record_1_1 attributes {c_type_name = "uavcan__diagnostic__Record", doc = "Generic human-readable text message for logging and displaying purposes.\0AGenerally, it should be published at the lowest priority level.", extent_bits = 2400 : i64, fixed_port_id = 8184 : i64, full_name = "uavcan.diagnostic.Record", header_path = "uavcan/diagnostic/Record_1_1.h", major = 1 : i32, minor = 1 : i32} {
@@ -404,8 +404,8 @@ module {
     }
   }
   dsdl.schema @uavcan_metatransport_can_ArbitrationID_0_1 attributes {c_type_name = "uavcan__metatransport__can__ArbitrationID", doc = "CAN frame arbitration field.", extent_bits = 40 : i64, full_name = "uavcan.metatransport.can.ArbitrationID", header_path = "uavcan/metatransport/can/ArbitrationID_0_1.h", major = 0 : i32, minor = 1 : i32, sealed} {
-    dsdl.field {c_name = "base", name = "base", type_name = "BaseArbitrationID.0.1"}
-    dsdl.field {c_name = "extended", name = "extended", type_name = "ExtendedArbitrationID.0.1"}
+    dsdl.field {c_name = "base", name = "base", type_name = "BaseArbitrationID.0.1", union_option_index = 0 : i64}
+    dsdl.field {c_name = "extended", name = "extended", type_name = "ExtendedArbitrationID.0.1", union_option_index = 1 : i64}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__metatransport__can__ArbitrationID__deserialize_", c_serialize_symbol = "uavcan__metatransport__can__ArbitrationID__serialize_", c_type_name = "uavcan__metatransport__can__ArbitrationID", extent_bits = 40 : i64, fixed_size, is_union, max_bits = 40 : i64, min_bits = 40 : i64, sealed, union_option_count = 2 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
       dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "base", cast_mode = "saturated", composite_c_type_name = "uavcan__metatransport__can__BaseArbitrationID", composite_extent_bits = 32 : i64, composite_full_name = "uavcan.metatransport.can.BaseArbitrationID", composite_major = 0 : i64, composite_minor = 1 : i64, composite_sealed = true, kind = "field", max_bits = 32 : i64, min_bits = 32 : i64, name = "base", scalar_category = "composite", type_name = "BaseArbitrationID.0.1", union_option_index = 0 : i64, union_tag_bits = 8 : i64}
@@ -461,10 +461,10 @@ module {
     }
   }
   dsdl.schema @uavcan_metatransport_can_Frame_0_2 attributes {c_type_name = "uavcan__metatransport__can__Frame", doc = "Classic CAN or CAN FD frame representation. This is the top-level data type in its namespace.", extent_bits = 568 : i64, full_name = "uavcan.metatransport.can.Frame", header_path = "uavcan/metatransport/can/Frame_0_2.h", major = 0 : i32, minor = 2 : i32, sealed} {
-    dsdl.field {c_name = "error", doc = "CAN error (intentional or disturbance)", name = "error", type_name = "Error.0.1"}
-    dsdl.field {c_name = "data_fd", doc = "Bit rate switch flag active", name = "data_fd", type_name = "DataFD.0.1"}
-    dsdl.field {c_name = "data_classic", doc = "Bit rate switch flag not active", name = "data_classic", type_name = "DataClassic.0.1"}
-    dsdl.field {c_name = "remote_transmission_request", doc = "Bit rate switch flag not active", name = "remote_transmission_request", type_name = "RTR.0.1"}
+    dsdl.field {c_name = "error", doc = "CAN error (intentional or disturbance)", name = "error", type_name = "Error.0.1", union_option_index = 0 : i64}
+    dsdl.field {c_name = "data_fd", doc = "Bit rate switch flag active", name = "data_fd", type_name = "DataFD.0.1", union_option_index = 1 : i64}
+    dsdl.field {c_name = "data_classic", doc = "Bit rate switch flag not active", name = "data_classic", type_name = "DataClassic.0.1", union_option_index = 2 : i64}
+    dsdl.field {c_name = "remote_transmission_request", doc = "Bit rate switch flag not active", name = "remote_transmission_request", type_name = "RTR.0.1", union_option_index = 3 : i64}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__metatransport__can__Frame__deserialize_", c_serialize_symbol = "uavcan__metatransport__can__Frame__serialize_", c_type_name = "uavcan__metatransport__can__Frame", extent_bits = 568 : i64, is_union, max_bits = 568 : i64, min_bits = 40 : i64, sealed, union_option_count = 4 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
       dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "error", cast_mode = "saturated", composite_c_type_name = "uavcan__metatransport__can__Error", composite_extent_bits = 32 : i64, composite_full_name = "uavcan.metatransport.can.Error", composite_major = 0 : i64, composite_minor = 1 : i64, composite_sealed = true, doc = "CAN error (intentional or disturbance)", kind = "field", max_bits = 32 : i64, min_bits = 32 : i64, name = "error", scalar_category = "composite", type_name = "Error.0.1", union_option_index = 0 : i64, union_tag_bits = 8 : i64}
@@ -487,10 +487,10 @@ module {
     }
   }
   dsdl.schema @uavcan_metatransport_can_Manifestation_0_1 attributes {c_type_name = "uavcan__metatransport__can__Manifestation", deprecated, doc = "CAN frame properties that can be manifested on the bus.", extent_bits = 568 : i64, full_name = "uavcan.metatransport.can.Manifestation", header_path = "uavcan/metatransport/can/Manifestation_0_1.h", major = 0 : i32, minor = 1 : i32, sealed} {
-    dsdl.field {c_name = "error", doc = "CAN error (intentional or disturbance)", name = "error", type_name = "Error.0.1"}
-    dsdl.field {c_name = "data_fd", doc = "Bit rate switch flag active", name = "data_fd", type_name = "DataFD.0.1"}
-    dsdl.field {c_name = "data_classic", doc = "Bit rate switch flag not active", name = "data_classic", type_name = "DataClassic.0.1"}
-    dsdl.field {c_name = "remote_transmission_request", doc = "Bit rate switch flag not active", name = "remote_transmission_request", type_name = "RTR.0.1"}
+    dsdl.field {c_name = "error", doc = "CAN error (intentional or disturbance)", name = "error", type_name = "Error.0.1", union_option_index = 0 : i64}
+    dsdl.field {c_name = "data_fd", doc = "Bit rate switch flag active", name = "data_fd", type_name = "DataFD.0.1", union_option_index = 1 : i64}
+    dsdl.field {c_name = "data_classic", doc = "Bit rate switch flag not active", name = "data_classic", type_name = "DataClassic.0.1", union_option_index = 2 : i64}
+    dsdl.field {c_name = "remote_transmission_request", doc = "Bit rate switch flag not active", name = "remote_transmission_request", type_name = "RTR.0.1", union_option_index = 3 : i64}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__metatransport__can__Manifestation__deserialize_", c_serialize_symbol = "uavcan__metatransport__can__Manifestation__serialize_", c_type_name = "uavcan__metatransport__can__Manifestation", extent_bits = 568 : i64, is_union, max_bits = 568 : i64, min_bits = 40 : i64, sealed, union_option_count = 4 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
       dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "error", cast_mode = "saturated", composite_c_type_name = "uavcan__metatransport__can__Error", composite_extent_bits = 32 : i64, composite_full_name = "uavcan.metatransport.can.Error", composite_major = 0 : i64, composite_minor = 1 : i64, composite_sealed = true, doc = "CAN error (intentional or disturbance)", kind = "field", max_bits = 32 : i64, min_bits = 32 : i64, name = "error", scalar_category = "composite", type_name = "Error.0.1", union_option_index = 0 : i64, union_tag_bits = 8 : i64}
@@ -823,8 +823,8 @@ module {
     }
   }
   dsdl.schema @uavcan_node_port_ID_1_0 attributes {c_type_name = "uavcan__node__port__ID", doc = "Used to refer either to a Service or to a Subject.\0AThe chosen tag identifies the kind of the port, then the numerical ID identifies the port within the kind.", extent_bits = 24 : i64, full_name = "uavcan.node.port.ID", header_path = "uavcan/node/port/ID_1_0.h", major = 1 : i32, minor = 0 : i32, sealed} {
-    dsdl.field {c_name = "subject_id", name = "subject_id", type_name = "SubjectID.1.0"}
-    dsdl.field {c_name = "service_id", name = "service_id", type_name = "ServiceID.1.0"}
+    dsdl.field {c_name = "subject_id", name = "subject_id", type_name = "SubjectID.1.0", union_option_index = 0 : i64}
+    dsdl.field {c_name = "service_id", name = "service_id", type_name = "ServiceID.1.0", union_option_index = 1 : i64}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__node__port__ID__deserialize_", c_serialize_symbol = "uavcan__node__port__ID__serialize_", c_type_name = "uavcan__node__port__ID", extent_bits = 24 : i64, fixed_size, is_union, max_bits = 24 : i64, min_bits = 24 : i64, sealed, union_option_count = 2 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
       dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "subject_id", cast_mode = "saturated", composite_c_type_name = "uavcan__node__port__SubjectID", composite_extent_bits = 16 : i64, composite_full_name = "uavcan.node.port.SubjectID", composite_major = 1 : i64, composite_minor = 0 : i64, composite_sealed = true, kind = "field", max_bits = 16 : i64, min_bits = 16 : i64, name = "subject_id", scalar_category = "composite", type_name = "SubjectID.1.0", union_option_index = 0 : i64, union_tag_bits = 8 : i64}
@@ -899,9 +899,9 @@ module {
     }
   }
   dsdl.schema @uavcan_node_port_SubjectIDList_1_0 attributes {c_type_name = "uavcan__node__port__SubjectIDList", doc = "A list of subject identifiers.\0AThe range of subject-ID is large, so using a fixed-size bitmask would make this type difficult to handle on\0Aresource-constrained systems. To address that, we provide two extra options: a simple variable-length list,\0Aand a special case that indicates that every subject-ID is in use.", extent_bits = 32776 : i64, full_name = "uavcan.node.port.SubjectIDList", header_path = "uavcan/node/port/SubjectIDList_1_0.h", major = 1 : i32, minor = 0 : i32} {
-    dsdl.field {c_name = "mask", doc = "The index represents the identifier value. True -- present/used. False -- absent/unused.", name = "mask", type_name = "bool[CAPACITY]"}
-    dsdl.field {c_name = "sparse_list", doc = "A list of identifiers that can be used instead of the mask if most of the identifiers are unused.", name = "sparse_list", type_name = "SubjectID.1.0[<256]"}
-    dsdl.field {c_name = "total", doc = "A special case indicating that all identifiers are in use.", name = "total", type_name = "uavcan.primitive.Empty.1.0"}
+    dsdl.field {c_name = "mask", doc = "The index represents the identifier value. True -- present/used. False -- absent/unused.", name = "mask", type_name = "bool[CAPACITY]", union_option_index = 0 : i64}
+    dsdl.field {c_name = "sparse_list", doc = "A list of identifiers that can be used instead of the mask if most of the identifiers are unused.", name = "sparse_list", type_name = "SubjectID.1.0[<256]", union_option_index = 1 : i64}
+    dsdl.field {c_name = "total", doc = "A special case indicating that all identifiers are in use.", name = "total", type_name = "uavcan.primitive.Empty.1.0", union_option_index = 2 : i64}
     dsdl.constant {name = "CAPACITY", type_name = "saturated uint16", value_text = "8192"}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__node__port__SubjectIDList__deserialize_", c_serialize_symbol = "uavcan__node__port__SubjectIDList__serialize_", c_type_name = "uavcan__node__port__SubjectIDList", extent_bits = 32776 : i64, is_union, max_bits = 8200 : i64, min_bits = 8 : i64, union_option_count = 3 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 1 : i32}
@@ -913,9 +913,9 @@ module {
     }
   }
   dsdl.schema @uavcan_node_port_SubjectIDList_0_1 attributes {c_type_name = "uavcan__node__port__SubjectIDList", deprecated, doc = "A list of subject identifiers.\0AThe range of subject-ID is large, so using a fixed-size bitmask would make this type difficult to handle on\0Aresource-constrained systems. To address that, we provide two extra options: a simple variable-length list,\0Aand a special case that indicates that every subject-ID is in use.", extent_bits = 32776 : i64, full_name = "uavcan.node.port.SubjectIDList", header_path = "uavcan/node/port/SubjectIDList_0_1.h", major = 0 : i32, minor = 1 : i32} {
-    dsdl.field {c_name = "mask", doc = "The index represents the identifier value. True -- present/used. False -- absent/unused.", name = "mask", type_name = "bool[CAPACITY]"}
-    dsdl.field {c_name = "sparse_list", doc = "A list of identifiers that can be used instead of the mask if most of the identifiers are unused.", name = "sparse_list", type_name = "SubjectID.1.0[<256]"}
-    dsdl.field {c_name = "total", doc = "A special case indicating that all identifiers are in use.", name = "total", type_name = "uavcan.primitive.Empty.1.0"}
+    dsdl.field {c_name = "mask", doc = "The index represents the identifier value. True -- present/used. False -- absent/unused.", name = "mask", type_name = "bool[CAPACITY]", union_option_index = 0 : i64}
+    dsdl.field {c_name = "sparse_list", doc = "A list of identifiers that can be used instead of the mask if most of the identifiers are unused.", name = "sparse_list", type_name = "SubjectID.1.0[<256]", union_option_index = 1 : i64}
+    dsdl.field {c_name = "total", doc = "A special case indicating that all identifiers are in use.", name = "total", type_name = "uavcan.primitive.Empty.1.0", union_option_index = 2 : i64}
     dsdl.constant {name = "CAPACITY", type_name = "saturated uint16", value_text = "8192"}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__node__port__SubjectIDList__deserialize_", c_serialize_symbol = "uavcan__node__port__SubjectIDList__serialize_", c_type_name = "uavcan__node__port__SubjectIDList", extent_bits = 32776 : i64, is_union, max_bits = 8200 : i64, min_bits = 8 : i64, union_option_count = 3 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 1 : i32}
@@ -1258,21 +1258,21 @@ module {
     }
   }
   dsdl.schema @uavcan_register_Value_1_0 attributes {c_type_name = "uavcan__register___Value", doc = "This union contains all possible value types supported by the register protocol.\0ANumeric types can be either scalars or arrays; the former is a special case of the latter.", extent_bits = 2072 : i64, full_name = "uavcan.register.Value", header_path = "uavcan/register/Value_1_0.h", major = 1 : i32, minor = 0 : i32, sealed} {
-    dsdl.field {c_name = "empty", doc = "Tag 0     Used to represent an undefined value", name = "empty", type_name = "uavcan.primitive.Empty.1.0"}
-    dsdl.field {c_name = "string", doc = "Tag 1     UTF-8 encoded text", name = "string", type_name = "uavcan.primitive.String.1.0"}
-    dsdl.field {c_name = "unstructured", doc = "Tag 2     Raw unstructured binary image", name = "unstructured", type_name = "uavcan.primitive.Unstructured.1.0"}
-    dsdl.field {c_name = "bit", doc = "Tag 3     Bit array", name = "bit", type_name = "uavcan.primitive.array.Bit.1.0"}
-    dsdl.field {c_name = "integer64", doc = "Tag 4", name = "integer64", type_name = "uavcan.primitive.array.Integer64.1.0"}
-    dsdl.field {c_name = "integer32", doc = "Tag 5", name = "integer32", type_name = "uavcan.primitive.array.Integer32.1.0"}
-    dsdl.field {c_name = "integer16", doc = "Tag 6", name = "integer16", type_name = "uavcan.primitive.array.Integer16.1.0"}
-    dsdl.field {c_name = "integer8", doc = "Tag 7", name = "integer8", type_name = "uavcan.primitive.array.Integer8.1.0"}
-    dsdl.field {c_name = "natural64", doc = "Tag 8", name = "natural64", type_name = "uavcan.primitive.array.Natural64.1.0"}
-    dsdl.field {c_name = "natural32", doc = "Tag 9", name = "natural32", type_name = "uavcan.primitive.array.Natural32.1.0"}
-    dsdl.field {c_name = "natural16", doc = "Tag 10", name = "natural16", type_name = "uavcan.primitive.array.Natural16.1.0"}
-    dsdl.field {c_name = "natural8", doc = "Tag 11", name = "natural8", type_name = "uavcan.primitive.array.Natural8.1.0"}
-    dsdl.field {c_name = "real64", doc = "Tag 12    Exactly representable integers: [-2**53,    +2**53]", name = "real64", type_name = "uavcan.primitive.array.Real64.1.0"}
-    dsdl.field {c_name = "real32", doc = "Tag 13    Exactly representable integers: [-16777216, +16777216]", name = "real32", type_name = "uavcan.primitive.array.Real32.1.0"}
-    dsdl.field {c_name = "real16", doc = "Tag 14    Exactly representable integers: [-2048,     +2048]", name = "real16", type_name = "uavcan.primitive.array.Real16.1.0"}
+    dsdl.field {c_name = "empty", doc = "Tag 0     Used to represent an undefined value", name = "empty", type_name = "uavcan.primitive.Empty.1.0", union_option_index = 0 : i64}
+    dsdl.field {c_name = "string", doc = "Tag 1     UTF-8 encoded text", name = "string", type_name = "uavcan.primitive.String.1.0", union_option_index = 1 : i64}
+    dsdl.field {c_name = "unstructured", doc = "Tag 2     Raw unstructured binary image", name = "unstructured", type_name = "uavcan.primitive.Unstructured.1.0", union_option_index = 2 : i64}
+    dsdl.field {c_name = "bit", doc = "Tag 3     Bit array", name = "bit", type_name = "uavcan.primitive.array.Bit.1.0", union_option_index = 3 : i64}
+    dsdl.field {c_name = "integer64", doc = "Tag 4", name = "integer64", type_name = "uavcan.primitive.array.Integer64.1.0", union_option_index = 4 : i64}
+    dsdl.field {c_name = "integer32", doc = "Tag 5", name = "integer32", type_name = "uavcan.primitive.array.Integer32.1.0", union_option_index = 5 : i64}
+    dsdl.field {c_name = "integer16", doc = "Tag 6", name = "integer16", type_name = "uavcan.primitive.array.Integer16.1.0", union_option_index = 6 : i64}
+    dsdl.field {c_name = "integer8", doc = "Tag 7", name = "integer8", type_name = "uavcan.primitive.array.Integer8.1.0", union_option_index = 7 : i64}
+    dsdl.field {c_name = "natural64", doc = "Tag 8", name = "natural64", type_name = "uavcan.primitive.array.Natural64.1.0", union_option_index = 8 : i64}
+    dsdl.field {c_name = "natural32", doc = "Tag 9", name = "natural32", type_name = "uavcan.primitive.array.Natural32.1.0", union_option_index = 9 : i64}
+    dsdl.field {c_name = "natural16", doc = "Tag 10", name = "natural16", type_name = "uavcan.primitive.array.Natural16.1.0", union_option_index = 10 : i64}
+    dsdl.field {c_name = "natural8", doc = "Tag 11", name = "natural8", type_name = "uavcan.primitive.array.Natural8.1.0", union_option_index = 11 : i64}
+    dsdl.field {c_name = "real64", doc = "Tag 12    Exactly representable integers: [-2**53,    +2**53]", name = "real64", type_name = "uavcan.primitive.array.Real64.1.0", union_option_index = 12 : i64}
+    dsdl.field {c_name = "real32", doc = "Tag 13    Exactly representable integers: [-16777216, +16777216]", name = "real32", type_name = "uavcan.primitive.array.Real32.1.0", union_option_index = 13 : i64}
+    dsdl.field {c_name = "real16", doc = "Tag 14    Exactly representable integers: [-2048,     +2048]", name = "real16", type_name = "uavcan.primitive.array.Real16.1.0", union_option_index = 14 : i64}
     dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__register___Value__deserialize_", c_serialize_symbol = "uavcan__register___Value__serialize_", c_type_name = "uavcan__register___Value", extent_bits = 2072 : i64, is_union, max_bits = 2072 : i64, min_bits = 8 : i64, sealed, union_option_count = 15 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
       dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "empty", cast_mode = "saturated", composite_c_type_name = "uavcan__primitive__Empty", composite_extent_bits = 0 : i64, composite_full_name = "uavcan.primitive.Empty", composite_major = 1 : i64, composite_minor = 0 : i64, composite_sealed = true, doc = "Tag 0     Used to represent an undefined value", kind = "field", max_bits = 0 : i64, min_bits = 0 : i64, name = "empty", scalar_category = "composite", type_name = "uavcan.primitive.Empty.1.0", union_option_index = 0 : i64, union_tag_bits = 8 : i64}

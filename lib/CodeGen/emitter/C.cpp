@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -325,9 +326,29 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
     return "uint8_t";
 }
 
+/// @brief Declares the tag value that selects each of a union's options.
+void emitUnionOptionTagMacros(SourceWriter&          w,
+                              const std::string&     typeName,
+                              const SemanticSection& section,
+                              const SectionMetadata& metadata)
+{
+    if (!metadata.isUnion)
+    {
+        return;
+    }
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    for (const auto& option : metadata.unionOptions)
+    {
+        w.line("#define " + typeName + "_" +
+               constScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name)) +
+               " " + std::to_string(option.tag) + "U");
+    }
+    w.blank();
+}
+
 void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -352,6 +373,7 @@ void emitArrayMacros(SourceWriter& w, const std::string& typeName, const Semanti
 void emitSectionTypedef(SourceWriter&                         w,
                         const std::string&                    typeName,
                         const SemanticSection&                section,
+                        const SectionMetadata&                metadata,
                         const EmitterContext&                 ctx,
                         const bool                            deprecatedAttribute,
                         const mlir::dsdl::SerializationPlanOp plan)
@@ -444,17 +466,9 @@ void emitSectionTypedef(SourceWriter&                         w,
     }
     w.blank();
 
-    if (section.isUnion)
+    if (metadata.isUnion)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
-        {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
-        }
-        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(optionCount) + "U");
+        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(metadata.unionOptions.size()) + "U");
         w.blank();
     }
 }
@@ -466,7 +480,7 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
     // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
     // the policy tables and escaped by the projection this reads back.
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(w, c.doc);
@@ -479,52 +493,86 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     }
 }
 
-void emitSectionMetadata(SourceWriter&                         w,
-                         const std::string&                    typeName,
-                         const std::string&                    fullName,
-                         std::uint32_t                         majorVersion,
-                         std::uint32_t                         minorVersion,
-                         const SemanticSection&                section,
-                         const mlir::dsdl::SerializationPlanOp plan)
+void emitSectionMetadata(SourceWriter& w, const std::string& typeName, const SectionMetadata& metadata)
 {
-    HeaderTypeMetadata metadata;
-    metadata.typeName                     = typeName;
-    metadata.fullName                     = fullName;
-    metadata.majorVersion                 = majorVersion;
-    metadata.minorVersion                 = minorVersion;
-    metadata.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
-    metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
-    for (const auto& line : renderTypeMetadataMacros(metadata))
+    for (const auto& line : renderTypeMetadataMacros(typeName, metadata))
     {
         w.line(line);
     }
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line("#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
-    w.line("#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
-    w.line("#define " + typeName + "_IS_DEPRECATED_ " + std::string(section.deprecated ? "true" : "false"));
     w.blank();
 }
 
-void emitSection(SourceWriter&                         w,
-                 const EmitterContext&                 ctx,
-                 const SemanticDefinition&             def,
-                 const std::string&                    typeName,
-                 const std::string&                    fullName,
-                 const std::string&                    sectionName,
-                 const SemanticSection&                section,
-                 const AttachedDoc&                    typeDoc,
-                 const mlir::dsdl::SerializationPlanOp plan)
+/// @brief Wraps each of a union's option tags in a test and a selector.
+///
+/// The tag constants say what a tag value means; these say it in the two places a caller reaches
+/// for. They read the constant rather than the number, so an option's tag is written down once.
+void emitUnionOptionWrappers(SourceWriter&          w,
+                             const std::string&     typeName,
+                             const SemanticSection& section,
+                             const SectionMetadata& metadata)
 {
-    emitSectionMetadata(w, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, plan);
+    if (!metadata.isUnion)
+    {
+        return;
+    }
+    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+    const NamingScope tagScope   = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    const std::string objectType = renderCTagSpelling(typeName);
+    for (const auto& option : metadata.unionOptions)
+    {
+        const std::string member = fieldScope.get(IdentifierRole::FieldName, option.name);
+        const std::string tag =
+            typeName + "_" +
+            tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name));
+
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("static inline bool " + typeName + "__is_" + member + "_(const " + objectType + "* const obj)");
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.open("{");
+        w.line("return (obj != NULL) && (obj->_tag_ == " + tag + ");");
+        w.close("}");
+        w.blank();
+
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("static inline void " + typeName + "__select_" + member + "_(" + objectType + "* const obj)");
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.open("{");
+        w.open("if (obj != NULL) {");
+        w.line("obj->_tag_ = " + tag + ";");
+        w.close("}");
+        w.close("}");
+        w.blank();
+    }
+}
+
+void emitSection(SourceWriter&              w,
+                 const EmitterContext&      ctx,
+                 const SemanticDefinition&  def,
+                 const std::string&         typeName,
+                 const std::string&         sectionName,
+                 const SemanticSection&     section,
+                 const AttachedDoc&         typeDoc,
+                 const mlir::dsdl::SchemaOp schema)
+{
+    const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
+    const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
+    emitSectionMetadata(w, typeName, metadata);
     emitSectionConstants(w, typeName, section);
     emitArrayMacros(w, typeName, section);
+    emitUnionOptionTagMacros(w, typeName, section, metadata);
     emitAttachedDocC(w,
                      docWithDeprecationNotice(typeDoc,
                                               section.deprecated,
                                               def.info.fullName,
                                               def.info.majorVersion,
                                               def.info.minorVersion));
-    emitSectionTypedef(w, typeName, section, ctx, section.deprecated && ctx.emitDeprecationAttributes(), plan);
+    emitSectionTypedef(w,
+                       typeName,
+                       section,
+                       metadata,
+                       ctx,
+                       section.deprecated && ctx.emitDeprecationAttributes(),
+                       plan);
 
     const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);
@@ -611,6 +659,8 @@ void emitSection(SourceWriter&                         w,
     w.close("#endif");
     w.close("}");
     w.blank();
+
+    emitUnionOptionWrappers(w, typeName, section, metadata);
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -677,32 +727,17 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
                                                                  def.info.fullName,
                                                                  def.info.majorVersion,
-                                                                 def.info.minorVersion))
+                                                                 def.info.minorVersion,
+                                                                 def.info.fixedPortId))
         {
             w.line(line);
         }
         w.blank();
 
-        emitSection(w,
-                    ctx,
-                    def,
-                    requestType,
-                    def.info.fullName + ".Request",
-                    "request",
-                    def.request,
-                    def.doc,
-                    sectionPlan(schema, "request"));
+        emitSection(w, ctx, def, requestType, "request", def.request, def.doc, schema);
         if (def.response)
         {
-            emitSection(w,
-                        ctx,
-                        def,
-                        responseType,
-                        def.info.fullName + ".Response",
-                        "response",
-                        *def.response,
-                        def.doc,
-                        sectionPlan(schema, "response"));
+            emitSection(w, ctx, def, responseType, "response", *def.response, def.doc, schema);
         }
         for (const auto& line :
              renderServiceAliasBridgeLines(baseTypeName,
@@ -720,7 +755,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     else
     {
-        emitSection(w, ctx, def, baseTypeName, def.info.fullName, "", def.request, def.doc, sectionPlan(schema, ""));
+        emitSection(w, ctx, def, baseTypeName, "", def.request, def.doc, schema);
     }
 
     out << "#endif /* " << guard << " */\n";

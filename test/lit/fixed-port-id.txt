@@ -1,0 +1,83 @@
+# Where a definition's fixed port-ID is declared, in every language.
+#
+# A message declares it on its own type. A service declares it on the type it is reached through --
+# never on its request or response, which are two types under that one and are not the service. In
+# C, C++, Go and Rust that type is an alias, so the pair is written beside the alias rather than
+# taken from the request.
+#
+# The differential lane checks our port-IDs against the peer's, but only in C, because that is the
+# only language the peer and we both generate. This is what covers the other five.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# RUN: %dsdlc --target-language c --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/c
+# RUN: cat %t/c/fixtures_unregulated/Unregulated_1_0.h | FileCheck %s --check-prefix=C_MESSAGE
+# RUN: cat %t/c/fixtures_unregulated/PortedCall_1_0.h | FileCheck %s --check-prefix=C_SERVICE
+
+# C_MESSAGE: #define fixtures_unregulated__Unregulated_HAS_FIXED_PORT_ID_ true
+# C_MESSAGE: #define fixtures_unregulated__Unregulated_FIXED_PORT_ID_ 1234U
+
+# The service's pair sits on the base name; neither section declares one.
+# C_SERVICE: #define fixtures_unregulated__PortedCall_HAS_FIXED_PORT_ID_ true
+# C_SERVICE: #define fixtures_unregulated__PortedCall_FIXED_PORT_ID_ 200U
+# C_SERVICE-NOT: fixtures_unregulated__PortedCall__Request_HAS_FIXED_PORT_ID_
+# C_SERVICE-NOT: fixtures_unregulated__PortedCall__Response_HAS_FIXED_PORT_ID_
+
+# RUN: %dsdlc --target-language cpp --cpp-profile std --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/cpp
+# RUN: cat %t/cpp/fixtures_unregulated/Unregulated_1_0.hpp | FileCheck %s --check-prefix=CPP_MESSAGE
+# RUN: cat %t/cpp/fixtures_unregulated/PortedCall_1_0.hpp | FileCheck %s --check-prefix=CPP_SERVICE
+
+# CPP_MESSAGE: static constexpr bool HAS_FIXED_PORT_ID = true;
+# CPP_MESSAGE: static constexpr std::uint16_t FIXED_PORT_ID = 1234U;
+
+# CPP_SERVICE: constexpr bool PortedCall_HAS_FIXED_PORT_ID = true;
+# CPP_SERVICE: constexpr std::uint16_t PortedCall_FIXED_PORT_ID = 200U;
+
+# RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/go
+# RUN: cat %t/go/fixtures_unregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE
+# RUN: cat %t/go/fixtures_unregulated/ported_call_1_0.go | FileCheck %s --check-prefix=GO_SERVICE
+
+# GO_MESSAGE: const UNREGULATED_HAS_FIXED_PORT_ID = true
+# GO_MESSAGE: const UNREGULATED_FIXED_PORT_ID = 1234
+
+# GO_SERVICE: const PORTED_CALL_HAS_FIXED_PORT_ID = true
+# GO_SERVICE: const PORTED_CALL_FIXED_PORT_ID = 200
+
+# RUN: %dsdlc --target-language rust --rust-crate-name ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/rust
+# RUN: cat %t/rust/src/fixtures_unregulated/unregulated_1_0.rs | FileCheck %s --check-prefix=RUST_MESSAGE
+# RUN: cat %t/rust/src/fixtures_unregulated/ported_call_1_0.rs | FileCheck %s --check-prefix=RUST_SERVICE
+
+# RUST_MESSAGE: pub const HAS_FIXED_PORT_ID: bool = true;
+# RUST_MESSAGE: pub const FIXED_PORT_ID: u16 = 1234;
+
+# RUST_SERVICE: pub const FIXTURES_UNREGULATED_PORTED_CALL_HAS_FIXED_PORT_ID: bool = true;
+# RUST_SERVICE: pub const FIXTURES_UNREGULATED_PORTED_CALL_FIXED_PORT_ID: u16 = 200;
+
+# Python and TypeScript declare the definition's facts at module scope, so a service's pair is
+# already the service's and needs no alias.
+
+# RUN: %dsdlc --target-language python --py-package ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/py
+# RUN: cat %t/py/ported/fixtures_unregulated/unregulated_1_0.py | FileCheck %s --check-prefix=PY_MESSAGE
+# RUN: cat %t/py/ported/fixtures_unregulated/ported_call_1_0.py | FileCheck %s --check-prefix=PY_SERVICE
+
+# PY_MESSAGE: DSDL_HAS_FIXED_PORT_ID = True
+# PY_MESSAGE: DSDL_FIXED_PORT_ID = 1234
+
+# PY_SERVICE: DSDL_HAS_FIXED_PORT_ID = True
+# PY_SERVICE: DSDL_FIXED_PORT_ID = 200
+
+# RUN: %dsdlc --target-language ts --ts-module ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/ts
+# RUN: cat %t/ts/fixtures_unregulated/unregulated_1_0.ts | FileCheck %s --check-prefix=TS_MESSAGE
+# RUN: cat %t/ts/fixtures_unregulated/ported_call_1_0.ts | FileCheck %s --check-prefix=TS_SERVICE
+
+# TS_MESSAGE: export const DSDL_HAS_FIXED_PORT_ID = true;
+# TS_MESSAGE: export const DSDL_FIXED_PORT_ID = 1234;
+
+# TS_SERVICE: export const DSDL_HAS_FIXED_PORT_ID = true;
+# TS_SERVICE: export const DSDL_FIXED_PORT_ID = 200;
+
+# The manifest reports the port-ID too, so a build integration can route a transfer without reading
+# generated source. A service reports the service's, once, rather than one per section.
+
+# RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/mani --naming-manifest %t/names.json
+# RUN: %{python} %S/check_port_id_manifest.py %t/names.json

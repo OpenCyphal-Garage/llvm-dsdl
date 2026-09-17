@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -1442,9 +1443,7 @@ struct SectionBodies final
 llvm::Error emitSectionType(SourceWriter&                             w,
                             const EmitterContext&                     ctx,
                             const std::string&                        typeName,
-                            const std::string&                        fullName,
-                            std::uint32_t                             majorVersion,
-                            std::uint32_t                             minorVersion,
+                            const SectionMetadata&                    metadata,
                             const SemanticSection&                    section,
                             const AttachedDoc&                        typeDoc,
                             const std::string&                        definitionFullName,
@@ -1457,28 +1456,36 @@ llvm::Error emitSectionType(SourceWriter&                             w,
 {
     const auto typeConstPrefix =
         codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
-    w.line("const " + typeConstPrefix + "_FULL_NAME = \"" + fullName + "\"");
-    w.line("const " + typeConstPrefix + "_IS_DEPRECATED = " + std::string(section.deprecated ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_FULL_NAME_AND_VERSION = \"" + fullName + "." + std::to_string(majorVersion) +
-           "." + std::to_string(minorVersion) + "\"");
-    w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(section.extentBits.value_or(0) / 8));
+    w.line("const " + typeConstPrefix + "_FULL_NAME = \"" + metadata.fullName + "\"");
+    w.line("const " + typeConstPrefix + "_IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
+    w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
     w.line("const " + typeConstPrefix +
-           "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
-    const auto [zohAliasEligible, zohAliasReason] = aliasVerdict(plan);
-    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + std::string(zohAliasEligible ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + zohAliasReason + "\"");
+           "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
+    w.line("const " + typeConstPrefix +
+           "_ZOH_ALIAS_ELIGIBLE = " + std::string(metadata.alias.eligible ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\"");
 
-    if (section.isUnion)
+    if (metadata.declaresPortId)
     {
-        std::size_t optionCount = 0;
-        for (const auto& f : section.fields)
+        w.line("const " + typeConstPrefix +
+               "_HAS_FIXED_PORT_ID = " + std::string(metadata.fixedPortId ? "true" : "false"));
+        if (metadata.fixedPortId)
         {
-            if (!f.isPadding)
-            {
-                ++optionCount;
-            }
+            w.line("const " + typeConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId));
         }
-        w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(optionCount));
+    }
+    if (metadata.isUnion)
+    {
+        w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()));
+        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
+        for (const auto& option : metadata.unionOptions)
+        {
+            w.line("const " + typeConstPrefix + "_" +
+                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
+                   " " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
+        }
     }
 
     std::vector<std::string> constNames;
@@ -1487,7 +1494,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     {
         constNames.push_back(c.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
     for (const auto& c : section.constants)
     {
         // gofmt separates a documented declaration from whatever precedes it, so a doc
@@ -1506,8 +1513,8 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                       docWithDeprecationNotice(typeDoc,
                                                section.deprecated,
                                                definitionFullName,
-                                               majorVersion,
-                                               minorVersion));
+                                               metadata.majorVersion,
+                                               metadata.minorVersion));
     w.open("type " + typeName + " struct {");
     const NamingScope fieldIdents = makeExportedFieldIdents(section);
 
@@ -1543,7 +1550,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
-                                       fullName.c_str());
+                                       metadata.fullName.c_str());
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1611,9 +1618,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         if (auto err = emitSectionType(w,
                                        ctx,
                                        baseType,
-                                       def.info.fullName,
-                                       def.info.majorVersion,
-                                       def.info.minorVersion,
+                                       sectionMetadata(def.info, def.request, schema, ""),
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
@@ -1632,9 +1637,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         if (auto err = emitSectionType(w,
                                        ctx,
                                        reqType,
-                                       def.info.fullName + ".Request",
-                                       def.info.majorVersion,
-                                       def.info.minorVersion,
+                                       sectionMetadata(def.info, def.request, schema, "request"),
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
@@ -1653,9 +1656,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             if (auto err = emitSectionType(w,
                                            ctx,
                                            respType,
-                                           def.info.fullName + ".Response",
-                                           def.info.majorVersion,
-                                           def.info.minorVersion,
+                                           sectionMetadata(def.info, *def.response, schema, "response"),
                                            *def.response,
                                            def.doc,
                                            def.info.fullName,
@@ -1680,6 +1681,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
         w.line("const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
         w.line("const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
+        // The service-ID belongs to the service, and this alias is how the service is named.
+        w.line("const " + baseConstPrefix +
+               "_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false"));
+        if (def.info.fixedPortId)
+        {
+            w.line("const " + baseConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+        }
     }
 
     std::ostringstream out;

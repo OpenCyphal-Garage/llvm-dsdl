@@ -322,20 +322,27 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
 /// surfaces as a duplicate declaration in a language that has to compile.
 llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage language, const IdentifierRole role)
 {
-    // `UNION_OPTION_COUNT` is emitted only for a union and the memory-resource pair only under the
-    // PMR profile, but both are claimed for every type: a member name that changed with
-    // `--cpp-profile`, or with whether a later revision of a type became a union, would be an ABI
-    // that depends on how the generator was invoked rather than on the DSDL.
-    static constexpr std::array<llvm::StringRef, 8> kMetadata = {"FULL_NAME",
-                                                                 "FULL_NAME_AND_VERSION",
-                                                                 "IS_DEPRECATED",
-                                                                 "EXTENT_BYTES",
-                                                                 "SERIALIZATION_BUFFER_SIZE_BYTES",
-                                                                 "ZOH_ALIAS_ELIGIBLE",
-                                                                 "ZOH_ALIAS_REASON",
-                                                                 "UNION_OPTION_COUNT"};
+    // `UNION_OPTION_COUNT` is emitted only for a union, `FIXED_PORT_ID` only for a definition that
+    // has one, and the memory-resource pair only under the PMR profile, but all are claimed for
+    // every type: a member name that changed with `--cpp-profile`, or with whether a later revision
+    // of a type became a union or was given a fixed port-ID, would be an ABI that depends on how the
+    // generator was invoked rather than on the DSDL.
 
-    static constexpr std::array<llvm::StringRef, 16> kCppMembers = {"FULL_NAME",
+    // A union option's `<OPTION>_OPTION_TAG` is not here because it is not a fixed name: it is
+    // derived from an option's own DSDL name, and `makeSectionConstantScope` declares it into the
+    // scope alongside the array metadata, which is derived the same way.
+    static constexpr std::array<llvm::StringRef, 10> kMetadata = {"FULL_NAME",
+                                                                  "FULL_NAME_AND_VERSION",
+                                                                  "IS_DEPRECATED",
+                                                                  "EXTENT_BYTES",
+                                                                  "SERIALIZATION_BUFFER_SIZE_BYTES",
+                                                                  "ZOH_ALIAS_ELIGIBLE",
+                                                                  "ZOH_ALIAS_REASON",
+                                                                  "UNION_OPTION_COUNT",
+                                                                  "HAS_FIXED_PORT_ID",
+                                                                  "FIXED_PORT_ID"};
+
+    static constexpr std::array<llvm::StringRef, 18> kCppMembers = {"FULL_NAME",
                                                                     "FULL_NAME_AND_VERSION",
                                                                     "IS_DEPRECATED",
                                                                     "EXTENT_BYTES",
@@ -343,6 +350,8 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                                     "ZOH_ALIAS_ELIGIBLE",
                                                                     "ZOH_ALIAS_REASON",
                                                                     "UNION_OPTION_COUNT",
+                                                                    "HAS_FIXED_PORT_ID",
+                                                                    "FIXED_PORT_ID",
                                                                     "serialize",
                                                                     "deserialize",
                                                                     "try_serialize_view",
@@ -368,14 +377,16 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // macro token -- preserve case, escape, upper-case, no strop -- which passes a source name's own
     // trailing underscore straight through, and DSDL reserves only names that both start and end
     // with one. `full_name_` is a conformant DSDL constant that reaches `FULL_NAME_`.
-    static constexpr std::array<llvm::StringRef, 8> kCMacros = {"FULL_NAME_",
-                                                                "FULL_NAME_AND_VERSION_",
-                                                                "IS_DEPRECATED_",
-                                                                "EXTENT_BYTES_",
-                                                                "SERIALIZATION_BUFFER_SIZE_BYTES_",
-                                                                "ZOH_ALIAS_ELIGIBLE_",
-                                                                "ZOH_ALIAS_REASON_",
-                                                                "UNION_OPTION_COUNT_"};
+    static constexpr std::array<llvm::StringRef, 10> kCMacros = {"FULL_NAME_",
+                                                                 "FULL_NAME_AND_VERSION_",
+                                                                 "IS_DEPRECATED_",
+                                                                 "EXTENT_BYTES_",
+                                                                 "SERIALIZATION_BUFFER_SIZE_BYTES_",
+                                                                 "ZOH_ALIAS_ELIGIBLE_",
+                                                                 "ZOH_ALIAS_REASON_",
+                                                                 "UNION_OPTION_COUNT_",
+                                                                 "HAS_FIXED_PORT_ID_",
+                                                                 "FIXED_PORT_ID_"};
 
     static constexpr std::array<llvm::StringRef, 0> kNone = {};
 

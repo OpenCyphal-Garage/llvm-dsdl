@@ -109,6 +109,15 @@ bool isStandardRootNamespace(llvm::StringRef root)
     return root == "uavcan" || root == "cyphal";
 }
 
+/// @brief The largest port-ID a transfer can carry.
+///
+/// A subject-ID is thirteen bits on the wire and a service-ID is nine, so these are the values that
+/// exist at all. The regulated ranges below are narrower; this is the field.
+std::uint32_t maxPortId(const bool isService)
+{
+    return isService ? 511U : 8191U;
+}
+
 bool isValidRegulatedPortId(const std::uint32_t portId, const bool isService, llvm::StringRef rootNamespace)
 {
     const bool standard = isStandardRootNamespace(rootNamespace.trim());
@@ -1367,6 +1376,26 @@ private:
             }
         }
 
+        // A port-ID wider than its field cannot be transmitted, so it is rejected whatever the
+        // options say. `--allow-unregulated-fixed-port-id` widens which allocations may be used; it
+        // does not widen the field they are carried in.
+        for (const auto& result : results_)
+        {
+            if (!result || !result->info.fixedPortId)
+            {
+                continue;
+            }
+            const auto&         sem     = *result;
+            const std::uint32_t maximum = maxPortId(sem.isService);
+            if (*sem.info.fixedPortId > maximum)
+            {
+                diagnostics_.error({sem.info.filePath, 1, 1},
+                                   "fixed port-ID " + std::to_string(*sem.info.fixedPortId) + " for " +
+                                       (sem.isService ? "service" : "message") + " type " + sem.info.fullName +
+                                       " exceeds the maximum of " + std::to_string(maximum));
+            }
+        }
+
         if (!options_.allowUnregulatedFixedPortId)
         {
             for (const auto& result : results_)
@@ -1375,7 +1404,16 @@ private:
                 {
                     continue;
                 }
-                const auto&     sem = *result;
+                const auto& sem = *result;
+                // Already reported as too wide to transmit. The diagnostic below offers a flag that
+                // widens which allocations may be used, and no allocation makes this value fit, so
+                // raising it here would send the author after a flag that cannot help. Asked of this
+                // definition rather than of a set keyed by name: two majors of one type are two
+                // definitions, and one of them being out of range says nothing about the other.
+                if (*sem.info.fixedPortId > maxPortId(sem.isService))
+                {
+                    continue;
+                }
                 llvm::StringRef rootNamespace;
                 if (!sem.info.namespaceComponents.empty())
                 {

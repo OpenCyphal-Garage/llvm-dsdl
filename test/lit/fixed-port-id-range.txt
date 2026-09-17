@@ -1,0 +1,34 @@
+# A fixed port-ID wider than the field that carries it.
+#
+# `--allow-unregulated-fixed-port-id` widens which allocations may be used; it does not widen the
+# field they are carried in. A subject-ID is thirteen bits and a service-ID is nine, so a value above
+# those cannot be transmitted whatever the options say, and is rejected under both.
+#
+# Left accepted, it reaches the generated code: Rust declares the constant as `u16`, where a literal
+# above 65535 does not compile at all, and C++ declares it as `std::uint16_t`, where it silently
+# becomes a different port-ID.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# RUN: not %dsdlc --target-language c %S/fixtures_portid_range --outdir %t/a 2>&1 | FileCheck %s --check-prefix=SUBJECT
+# RUN: not %dsdlc --target-language c --allow-unregulated-fixed-port-id %S/fixtures_portid_range --outdir %t/b 2>&1 | FileCheck %s --check-prefix=SUBJECT
+
+# SUBJECT: error: fixed port-ID 70000 for message type fixtures_portid_range.TooBig exceeds the maximum of 8191
+
+# 600 is a valid subject-ID and not a valid service-ID; the bound is the one for what it is.
+# RUN: not %dsdlc --target-language c --allow-unregulated-fixed-port-id %S/fixtures_portid_range_service --outdir %t/c 2>&1 | FileCheck %s --check-prefix=SERVICE
+
+# SERVICE: error: fixed port-ID 600 for service type fixtures_portid_range_service.TooBigService exceeds the maximum of 511
+
+# Two majors of one type are two definitions. One being too wide to transmit says nothing about the
+# other, which is merely unregulated and gets the diagnostic that offers the flag.
+# RUN: not %dsdlc --target-language c %S/fixtures_portid_majors --outdir %t/d 2>&1 | FileCheck %s --check-prefix=MAJORS
+
+# MAJORS-DAG: error: fixed port-ID 70000 for message type fixtures_portid_majors.ns.Multi exceeds the maximum of 8191
+# MAJORS-DAG: error: regulated port-ID 100 for message type fixtures_portid_majors.ns.Multi is not valid; use --allow-unregulated-fixed-port-id to override
+
+# And the over-wide one is reported once: the flag the second diagnostic offers widens which
+# allocations may be used, and no allocation makes 70000 fit a thirteen-bit field.
+# RUN: not %dsdlc --target-language c %S/fixtures_portid_range --outdir %t/e 2>&1 | FileCheck %s --check-prefix=ONCE
+# ONCE-COUNT-1: error:
+# ONCE-NOT: error:
