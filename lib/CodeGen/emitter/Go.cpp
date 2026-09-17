@@ -1442,6 +1442,98 @@ struct SectionBodies final
     mlir::func::FuncOp initialize;
 };
 
+/// @brief Whether a stored constant is its type's zero. No constant -- a length of nought, a bool
+/// array -- is zero.
+bool goStoredValueIsZero(const mlir::TypedAttr value)
+{
+    if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
+    {
+        return integer.getInt() == 0;
+    }
+    if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
+    {
+        return real.getValueAsDouble() == 0.0;
+    }
+    return true;
+}
+
+/// @brief The Go literal of a stored constant, for a member of @p type.
+std::string goStoredLiteral(const mlir::TypedAttr value, const SemanticFieldType& type)
+{
+    const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value);
+    if (type.scalarCategory == SemanticScalarCategory::Bool)
+    {
+        return (integer && integer.getInt() != 0) ? "true" : "false";
+    }
+    if (integer)
+    {
+        return std::to_string(integer.getInt());
+    }
+    const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value);
+    return std::to_string(real ? real.getValueAsDouble() : 0.0);
+}
+
+/// @brief The call that constructs a value of the type spelt @p goType: `pkg.T` becomes `pkg.NewT()`.
+std::string goConstructorOf(const std::string& goType)
+{
+    const auto dot = goType.rfind('.');
+    if (dot == std::string::npos)
+    {
+        return "New" + goType + "()";
+    }
+    return goType.substr(0, dot + 1) + "New" + goType.substr(dot + 1) + "()";
+}
+
+/// @brief Whether an initialise body, and every nested body it calls, stores only zeros.
+///
+/// Go's zero value stands in for such a body. A nested member is zero only if the body it is
+/// initialised through is, so the question is asked of that body in turn.
+llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::ModuleOp module)
+{
+    if (shape.unionTag != 0)
+    {
+        return false;
+    }
+    for (const auto& entry : shape.members)
+    {
+        switch (entry.kind)
+        {
+        case MemberDefault::Kind::Scalar:
+        case MemberDefault::Kind::FixedScalarArray:
+            if (!goStoredValueIsZero(entry.value))
+            {
+                return false;
+            }
+            break;
+        case MemberDefault::Kind::VariableArrayEmpty:
+        case MemberDefault::Kind::BoolArray:
+            break;
+        case MemberDefault::Kind::Composite:
+        case MemberDefault::Kind::FixedCompositeArray: {
+            auto body = module.lookupSymbol<mlir::func::FuncOp>(entry.callee);
+            if (!body)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "an initialise body calls %s, which the lowered module does not hold",
+                                               entry.callee.c_str());
+            }
+            auto nested = readInitializer(body);
+            if (!nested)
+            {
+                return nested.takeError();
+            }
+            auto zero = goInitializerIsZero(*nested, module);
+            if (!zero || !*zero)
+            {
+                return zero;
+            }
+            break;
+        }
+        }
+    }
+    return true;
+}
+
 llvm::Error emitSectionType(SourceWriter&                             w,
                             const EmitterContext&                     ctx,
                             const std::string&                        typeName,
@@ -1454,6 +1546,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             const mlir::dsdl::SerializationPlanOp     plan,
                             const GoSpelling&                         spelling,
                             const SectionBodies&                      bodies,
+                            mlir::ModuleOp                            module,
                             PlanBodyLookups&                          lookups)
 {
     const auto typeConstPrefix =
@@ -1555,66 +1648,108 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                                        metadata.fullName.c_str());
     }
     // Go's zero value is the language's, and it is the rendering of the initialise body wherever
-    // every store in that body is its type's zero -- which is decidable from the body, so nothing
-    // is emitted on that decision rather than on an assumption. A body that stores anything else
-    // has no zero value to lean on and gets a constructor.
-    if (auto init = readInitializer(bodies.initialize))
+    // every store in that body, and in every nested body it calls, is its type's zero -- which is
+    // decidable from the bodies, so nothing is emitted on that decision rather than on an
+    // assumption. A body that stores anything else has no zero value to lean on and gets a
+    // constructor that sets what the body sets, member by member and element by element.
+    auto init = readInitializer(bodies.initialize);
+    if (!init)
     {
-        const auto isZero = [](const mlir::TypedAttr value) {
-            if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
-            {
-                return integer.getInt() == 0;
-            }
-            if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
-            {
-                return real.getValueAsDouble() == 0.0;
-            }
-            return true;
-        };
-        bool allZero = init->unionTag == 0;
-        for (const auto& entry : init->members)
+        return init.takeError();
+    }
+    const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
+        auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
+        if (!body)
         {
-            allZero = allZero && isZero(entry.value);
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "the initialise body of %s calls %s, which the lowered module does not hold",
+                                           metadata.fullName.c_str(),
+                                           callee.c_str());
         }
-        if (!allZero)
+        auto nested = readInitializer(body);
+        if (!nested)
         {
-            w.open("func New" + typeName + "() " + typeName + " {");
-            w.open("return " + typeName + "{");
-            for (const auto& field : section.fields)
+            return nested.takeError();
+        }
+        return goInitializerIsZero(*nested, module);
+    };
+    auto allZero = goInitializerIsZero(*init, module);
+    if (!allZero)
+    {
+        return allZero.takeError();
+    }
+    if (!*allZero)
+    {
+        w.open("func New" + typeName + "() " + typeName + " {");
+        w.line("var obj " + typeName);
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
             {
-                if (field.isPadding)
+                continue;
+            }
+            for (const auto& entry : init->members)
+            {
+                if (entry.member != field.name)
                 {
                     continue;
                 }
-                for (const auto& entry : init->members)
+                const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
+                const auto stored = goStoredLiteral(entry.value, field.resolvedType);
+                switch (entry.kind)
                 {
-                    if (entry.member != field.name || isZero(entry.value))
+                case MemberDefault::Kind::Scalar:
+                    if (!goStoredValueIsZero(entry.value))
                     {
-                        continue;
+                        w.line(member + " = " + stored);
                     }
-                    const auto  integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(entry.value);
-                    const auto  real    = mlir::dyn_cast_or_null<mlir::FloatAttr>(entry.value);
-                    std::string literal = integer ? std::to_string(integer.getInt())
-                                                  : std::to_string(real ? real.getValueAsDouble() : 0.0);
-                    if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                    break;
+                case MemberDefault::Kind::FixedScalarArray:
+                    if (!goStoredValueIsZero(entry.value))
                     {
-                        literal = (integer && integer.getInt() != 0) ? "true" : "false";
+                        w.open("for i := range " + member + " {");
+                        w.line(member + "[i] = " + stored);
+                        w.close("}");
                     }
-                    w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " + literal + ",");
+                    break;
+                case MemberDefault::Kind::Composite:
+                case MemberDefault::Kind::FixedCompositeArray: {
+                    auto zero = nestedIsZero(entry.callee);
+                    if (!zero)
+                    {
+                        return zero.takeError();
+                    }
+                    if (*zero)
+                    {
+                        break;
+                    }
+                    const auto made =
+                        goConstructorOf(goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                    if (entry.kind == MemberDefault::Kind::Composite)
+                    {
+                        w.line(member + " = " + made);
+                    }
+                    else
+                    {
+                        w.open("for i := range " + member + " {");
+                        w.line(member + "[i] = " + made);
+                        w.close("}");
+                    }
+                    break;
+                }
+                case MemberDefault::Kind::VariableArrayEmpty:
+                case MemberDefault::Kind::BoolArray:
+                    break;
                 }
             }
-            if (init->isUnion && init->unionTag != 0)
-            {
-                w.line("Tag: " + std::to_string(init->unionTag) + ",");
-            }
-            w.close("}");
-            w.close("}");
-            w.blank();
         }
-    }
-    else
-    {
-        return init.takeError();
+        if (init->isUnion && init->unionTag != 0)
+        {
+            w.line("obj.Tag = " + std::to_string(init->unionTag));
+        }
+        w.line("return obj");
+        w.close("}");
+        w.blank();
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -1706,6 +1841,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        sectionPlan(schema, ""),
                                        spelling,
                                        bodies[""],
+                                       module,
                                        lookups))
         {
             return std::move(err);
@@ -1725,6 +1861,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        sectionPlan(schema, "request"),
                                        spelling,
                                        bodies["request"],
+                                       module,
                                        lookups))
         {
             return std::move(err);
@@ -1744,6 +1881,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            sectionPlan(schema, "response"),
                                            spelling,
                                            bodies["response"],
+                                           module,
                                            lookups))
             {
                 return std::move(err);

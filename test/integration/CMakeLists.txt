@@ -824,7 +824,7 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
   )
 endif()
 
-if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
   # The default of a type in every language against the specification's definition of it:
   # deserialising nothing. Compared on the wire, so every spelling of the initialise body is held
   # to the same bytes.
