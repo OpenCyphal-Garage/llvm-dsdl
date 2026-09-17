@@ -1438,11 +1438,12 @@ private:
     mutable unsigned      fresh_{0};
 };
 
-/// @brief The two bodies `lower-dsdl-bodies` built for one section.
+/// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
+    mlir::func::FuncOp initialize;
 };
 
 /// @brief The entry points a consumer calls, which wrap the translated bodies: a value serialises
@@ -1494,7 +1495,7 @@ llvm::Error emitSection(SourceWriter&             w,
     emitUnionOptionTags(w, typeName, section, metadata);
     emitSectionConstants(w, typeName, section);
     w.blank();
-    if (!bodies.serialize || !bodies.deserialize)
+    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
@@ -1656,7 +1657,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
         SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        (*direction == "serialize" ? entry.serialize : entry.deserialize) = fn;
+        if (*direction == "serialize")
+        {
+            entry.serialize = fn;
+        }
+        else if (*direction == "deserialize")
+        {
+            entry.deserialize = fn;
+        }
+        else if (*direction == "initialize")
+        {
+            entry.initialize = fn;
+        }
+        else
+        {
+            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
+        }
     }
 
     const auto baseType = ctx.typeName(def.info);

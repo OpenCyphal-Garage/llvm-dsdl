@@ -402,6 +402,16 @@ mlir::FlatSymbolRefAttr nestedCallee(mlir::OpBuilder& b, const PlanStep& step, c
                                                        writing));
 }
 
+/// @brief The nested type's initialise body, as this pass names it.
+mlir::FlatSymbolRefAttr nestedInitializeCallee(mlir::OpBuilder& b, const PlanStep& step)
+{
+    return mlir::FlatSymbolRefAttr::get(b.getContext(),
+                                        planInitializeSymbol(step.compositeFullName,
+                                                             step.compositeMajor,
+                                                             step.compositeMinor,
+                                                             {}));
+}
+
 bool stepIsBitpackedArray(const PlanStep& step);
 
 /// A bool array moves as one run of bits, and an array of composites element by element; both
@@ -1817,6 +1827,193 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
     return mlir::success();
 }
 
+/// @brief The zero of a scalar's holder: what a field is before anything has been read into it.
+mlir::Value zeroOf(mlir::OpBuilder& b, mlir::Location loc, mlir::Type type)
+{
+    if (mlir::isa<mlir::FloatType>(type))
+    {
+        return mlir::arith::ConstantOp::create(b, loc, b.getFloatAttr(type, 0.0));
+    }
+    return mlir::arith::ConstantOp::create(b, loc, b.getIntegerAttr(type, 0));
+}
+
+/// @brief Sets one field to its default, and folds what a nested initialiser answered into @p error.
+///
+/// A scalar is its holder's zero. A variable-length array is a length of nought and nothing else:
+/// what lies beyond the length is not part of the value. A fixed array is every element set. A
+/// nested composite is handed to its own initialise body, which is the only step that can answer
+/// anything, and it answers only for a null address this body never hands it.
+///
+/// A bool array is a run of bits in every target, bitpacked or one element per bool, and the one
+/// operation every target spells for that run is a bit read. Reading it from a buffer of no bytes
+/// is implicit zero extension applied to this array -- the spec's own definition of its default --
+/// through an operation each target has already given the meaning it needs here.
+mlir::Value buildInitializeStep(mlir::OpBuilder& b,
+                                mlir::Location   loc,
+                                const PlanStep&  step,
+                                mlir::Value      object,
+                                mlir::Value      error)
+{
+    auto*      ctx   = b.getContext();
+    auto       i8Ty  = b.getIntegerType(8);
+    auto       i64Ty = b.getIntegerType(64);
+    const auto name  = b.getStringAttr(step.name);
+
+    if (stepIsArray(step))
+    {
+        if (!stepIsFixedArray(step))
+        {
+            mlir::dsdl::SetArrayLengthOp::create(b, loc, object, name, constantI64(b, loc, 0));
+            return error;
+        }
+        const mlir::Value count = constantI64(b, loc, step.arrayCapacity);
+        if (stepIsBitpackedArray(step))
+        {
+            // The byte the read is pointed at is a local, and a local is written once to hold its
+            // value: it is not const, whatever the read would accept.
+            auto              bytePtr  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::ByteType::get(ctx), false);
+            auto              emptyPtr = bytePtr;
+            const mlir::Value packed   = mlir::dsdl::ElementAddrOp::create(b,
+                                                                           loc,
+                                                                           bytePtr,
+                                                                           object,
+                                                                           name,
+                                                                           constantI64(b, loc, 0),
+                                                                           b.getStringAttr("bool"),
+                                                                           b.getI64IntegerAttr(8));
+            const mlir::Value nothing  = mlir::dsdl::LocalOp::create(b, loc, emptyPtr, constantI8(b, loc, 0));
+            mlir::dsdl::BitReadOp::create(b,
+                                          loc,
+                                          packed,
+                                          nothing,
+                                          constantI64(b, loc, 0),
+                                          constantI64(b, loc, 0),
+                                          count);
+            return error;
+        }
+        if (stepIsComposite(step))
+        {
+            auto loop = countedLoop(b, loc, count, mlir::ValueRange{error});
+            stampResultRoles(loop, {RoleError});
+            {
+                mlir::OpBuilder::InsertionGuard const g(b);
+                b.setInsertionPointToStart(loop.getBody());
+                const mlir::Value index   = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
+                const mlir::Value element = mlir::dsdl::ElementAddrOp::create(b,
+                                                                              loc,
+                                                                              nestedPointerType(ctx, step, false),
+                                                                              object,
+                                                                              name,
+                                                                              index,
+                                                                              b.getStringAttr("composite"),
+                                                                              b.getI64IntegerAttr(0));
+                auto              call =
+                    mlir::dsdl::CallInitializeOp::create(b, loc, i8Ty, nestedInitializeCallee(b, step), name, element);
+                mlir::scf::YieldOp::create(b,
+                                           loc,
+                                           mlir::ValueRange{
+                                               foldError(b, loc, loop.getRegionIterArg(0), call.getError())});
+            }
+            return loop.getResult(0);
+        }
+        auto loop = countedLoop(b, loc, count, mlir::ValueRange{});
+        {
+            mlir::OpBuilder::InsertionGuard const g(b);
+            b.setInsertionPointToStart(loop.getBody());
+            const mlir::Value index = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
+            markSigned(mlir::dsdl::StoreElementOp::create(b,
+                                                          loc,
+                                                          object,
+                                                          name,
+                                                          index,
+                                                          zeroOf(b, loc, stepValueType(b, step)),
+                                                          b.getStringAttr(step.scalarCategory),
+                                                          b.getI64IntegerAttr(storageBitsFor(step))),
+                       step);
+        }
+        return error;
+    }
+    if (stepIsComposite(step))
+    {
+        const mlir::Value target =
+            mlir::dsdl::MemberAddrOp::create(b, loc, nestedPointerType(ctx, step, false), object, name);
+        auto call = mlir::dsdl::CallInitializeOp::create(b, loc, i8Ty, nestedInitializeCallee(b, step), name, target);
+        return foldError(b, loc, error, call.getError());
+    }
+    markSigned(mlir::dsdl::StoreMemberOp::create(b, loc, object, name, zeroOf(b, loc, stepValueType(b, step))), step);
+    return error;
+}
+
+/// @brief Builds a typed initialise body as operations.
+///
+/// The object at its defaults, which the spec defines as what deserialising nothing produces:
+/// every field is what implicit zero extension makes it. There is no wire, so there is no cursor,
+/// no size, and no error but a null object. A union initialises every arm rather than the one its
+/// tag selects. The value is observable only through the selected arm, so the two agree wherever
+/// a caller can look, and a type with no indeterminate storage is what three backends already
+/// produce and what a caller who reaches for `_initialize_` is asking for.
+mlir::LogicalResult buildTypedInitializeBody(mlir::OpBuilder&             builder,
+                                             mlir::ModuleOp               module,
+                                             mlir::Location               loc,
+                                             llvm::StringRef              functionName,
+                                             llvm::StringRef              identity,
+                                             const std::vector<PlanStep>& steps,
+                                             const bool                   isUnion)
+{
+    mlir::OpBuilder::InsertionGuard const outer(builder);
+    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+
+    auto* ctx    = builder.getContext();
+    auto  objTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::ObjectType::get(ctx, identity));
+    auto  i8Ty   = builder.getIntegerType(8);
+    auto  fnType = builder.getFunctionType(mlir::TypeRange{objTy}, mlir::TypeRange{i8Ty});
+    auto  fn     = mlir::func::FuncOp::create(builder, loc, functionName, fnType);
+    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr(kLoweredSerDesContractProducer));
+
+    mlir::Block* entry = fn.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    const mlir::Value object  = entry->getArgument(0);
+    const mlir::Value objNull = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), object);
+
+    auto outerIf = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, objNull, true);
+    stampResultRoles(outerIf, {RoleError});
+    {
+        mlir::OpBuilder::InsertionGuard const g(builder);
+        builder.setInsertionPointToStart(outerIf.thenBlock());
+        mlir::scf::YieldOp::create(builder,
+                                   loc,
+                                   mlir::ValueRange{constantI8(builder, loc, -kRuntimeErrorInvalidArgument)});
+    }
+    {
+        mlir::OpBuilder::InsertionGuard const g(builder);
+        builder.setInsertionPointToStart(outerIf.elseBlock());
+        mlir::Value error = constantI8(builder, loc, 0);
+        if (isUnion)
+        {
+            mlir::dsdl::SetUnionTagOp::create(builder, loc, object, constantI64(builder, loc, 0));
+            for (const PlanStep* option : unionOptionsOf(steps))
+            {
+                error = buildInitializeStep(builder, loc, *option, object, error);
+            }
+        }
+        else
+        {
+            for (const PlanStep& step : steps)
+            {
+                if (step.kind == PlanStepKind::Field)
+                {
+                    error = buildInitializeStep(builder, loc, step, object, error);
+                }
+            }
+        }
+        mlir::scf::YieldOp::create(builder, loc, mlir::ValueRange{error});
+    }
+
+    builder.setInsertionPointToEnd(entry);
+    mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{outerIf.getResult(0)});
+    return mlir::success();
+}
+
 /// @brief Builds every serialisation plan's bodies as operations, before a target is chosen.
 ///
 /// A plan becomes a serialise and a deserialise `func.func` over the plan operations, in the
@@ -1844,7 +2041,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                         mlir::scf::SCFDialect>();
     }
 
-    /// @brief Builds both bodies of @p plan, or says why it cannot.
+    /// @brief Builds the three bodies of @p plan, or says why it cannot.
     mlir::LogicalResult buildPlan(mlir::ModuleOp                             module,
                                   mlir::dsdl::SchemaOp                       schema,
                                   mlir::dsdl::SerializationPlanOp            plan,
@@ -1927,8 +2124,19 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         {
             return plan.emitOpError("deserialize body could not be built");
         }
+        if (mlir::failed(buildTypedInitializeBody(builder,
+                                                  module,
+                                                  plan.getLoc(),
+                                                  fnStem + "__initialize_ir_",
+                                                  identity,
+                                                  steps,
+                                                  isUnion)))
+        {
+            return plan.emitOpError("initialize body could not be built");
+        }
         for (const auto& [name, direction] : {std::pair{fnStem + "__serialize_ir_", "serialize"},
-                                              std::pair{fnStem + "__deserialize_ir_", "deserialize"}})
+                                              std::pair{fnStem + "__deserialize_ir_", "deserialize"},
+                                              std::pair{fnStem + "__initialize_ir_", "initialize"}})
         {
             auto fn = module.lookupSymbol<mlir::func::FuncOp>(name);
             if (!fn)

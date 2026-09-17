@@ -25,6 +25,7 @@ add_executable(llvmdsdl-unit-tests
   BodyValueNamingTests.cpp
   HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp
+  InitializerRenderTests.cpp
   NamingPolicyTests.cpp
   NamingGoldenTests.cpp
   TypeStorageTests.cpp

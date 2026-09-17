@@ -183,6 +183,16 @@ inline std::string planBodySymbol(const llvm::StringRef fullName,
            renderSectionSymbolSuffix(section) + (serialize ? "__serialize_ir_" : "__deserialize_ir_");
 }
 
+/// @brief The symbol `build-dsdl-plan-bodies` gives one plan's initialise body.
+inline std::string planInitializeSymbol(const llvm::StringRef fullName,
+                                        const std::int64_t    major,
+                                        const std::int64_t    minor,
+                                        const llvm::StringRef section)
+{
+    return renderDefinitionSymbolBase(fullName, static_cast<std::uint32_t>(major), static_cast<std::uint32_t>(minor)) +
+           renderSectionSymbolSuffix(section) + "__initialize_ir_";
+}
+
 }  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_TRANSFORMS_PLAN_STEPS_H

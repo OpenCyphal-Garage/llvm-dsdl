@@ -582,6 +582,7 @@ void emitSection(SourceWriter&              w,
     w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
            "* const out_obj, const uint8_t* buffer, size_t* const "
            "inout_buffer_size_bytes);");
+    w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* const out_obj);");
     w.blank();
 
     w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
@@ -597,6 +598,12 @@ void emitSection(SourceWriter&              w,
            "inout_buffer_size_bytes)");
     w.open("{");
     w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+    w.close("}");
+    w.blank();
+
+    w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
+    w.open("{");
+    w.line("return " + irStem + "__initialize_ir_(out_obj);");
     w.close("}");
     w.blank();
 

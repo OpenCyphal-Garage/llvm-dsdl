@@ -791,6 +791,30 @@ struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::C
 private:
 };
 
+struct CallInitializeLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallInitializeOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::CallInitializeOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CallInitializeOp     op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        auto                                    module = op->getParentOfType<mlir::ModuleOp>();
+        const std::string                       callee = op.getCallee().str();
+        const mlir::SmallVector<mlir::Value, 1> arguments{adaptor.getObject()};
+
+        // A nested type in this same module is called directly; one from another is declared.
+        if (auto body = module.lookupSymbol<mlir::func::FuncOp>(callee))
+        {
+            auto call = mlir::func::CallOp::create(rewriter, op.getLoc(), body, arguments);
+            rewriter.replaceOp(op, call.getResult(0));
+            return mlir::success();
+        }
+        rewriter.replaceOp(op, callRuntime(rewriter, op.getLoc(), module, callee, rewriter.getI8Type(), arguments));
+        return mlir::success();
+    }
+};
+
 //===----------------------------------------------------------------------===//
 // Members, by position
 //===----------------------------------------------------------------------===//
@@ -1232,7 +1256,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      ReadBitsLowering,
                      BitWriteLowering,
                      BitReadLowering,
-                     CallSerdesLowering>(converter, &getContext());
+                     CallSerdesLowering,
+                     CallInitializeLowering>(converter, &getContext());
         patterns.add<IndexHoldsLowering>(converter, &getContext(), sizeBits);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
         // A signature is not only its arguments. A body that answers with a pointer would
@@ -1267,7 +1292,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                             mlir::dsdl::ReadBitsOp,
                             mlir::dsdl::BitWriteOp,
                             mlir::dsdl::BitReadOp,
-                            mlir::dsdl::CallSerdesOp>();
+                            mlir::dsdl::CallSerdesOp,
+                            mlir::dsdl::CallInitializeOp>();
         target.addDynamicallyLegalOp<mlir::func::FuncOp>(
             [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
         target.addDynamicallyLegalOp<mlir::func::ReturnOp>(

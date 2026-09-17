@@ -19,6 +19,10 @@
 #ifndef LLVMDSDL_TEST_UNIT_TESTS_H
 #define LLVMDSDL_TEST_UNIT_TESTS_H
 
+/// @brief Runs the InitializerRenderTests suite.
+/// @return True when every case in the suite passed.
+bool runInitializerRenderTests();
+
 /// @brief Runs the LexerTests suite.
 /// @return True when every case in the suite passed.
 bool runLexerTests();

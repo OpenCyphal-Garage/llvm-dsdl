@@ -28,7 +28,7 @@ namespace llvmdsdl
 inline constexpr std::int64_t kLoweredSerDesContractMajor = 2;
 
 /// @brief Current lowered-serdes contract minor version.
-inline constexpr std::int64_t kLoweredSerDesContractMinor = 0;
+inline constexpr std::int64_t kLoweredSerDesContractMinor = 1;
 
 /// @brief Current lowered-serdes contract encoded version.
 /// @details Version 1 encoding stores the major version directly.

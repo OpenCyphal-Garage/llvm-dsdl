@@ -467,4 +467,21 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
   }];
 }
 
+def DSDL_CallInitializeOp : DSDL_Op<"call_initialize"> {
+  let summary = "Invoke a nested type's own initialise entry point";
+  let description = [{
+    `callee` is the nested type's initialise body, as `build-dsdl-plan-bodies` names it,
+    and `member` the field whose type is called. It is `dsdl.call_serdes` without a wire:
+    an initialiser reads and writes no buffer, and a call that carried one would be handing
+    the nested type two operands it has to ignore. A target calls whatever its own emission
+    of that type publishes, as it does for the serdes pair.
+  }];
+  let arguments = (ins FlatSymbolRefAttr:$callee, StrAttr:$member,
+      DSDL_PtrType:$object);
+  let results = (outs I8:$error);
+  let assemblyFormat = [{
+    $callee `(` $object `)` attr-dict `:` type($object)
+  }];
+}
+
 #endif // LLVMDSDL_IR_DSDL_OPS_TD

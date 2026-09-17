@@ -29,7 +29,7 @@ dialect. Consuming lowered facts is not translating lowered operations.
 `lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-annotate-aliasability` and
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
-receives; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
+receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
 `build-dsdl-plan-bodies`, so it acts on every backend alike. The C lane takes each definition's schema, and the functions built for it, from that
 module; stamps C names on the schema; and converts them.
 
@@ -45,6 +45,7 @@ A body spells nothing the way C does:
 | `dsdl.element_addr`, `dsdl.load_element`, `dsdl.store_element`, carrying the element's storage category and width | `.elements[i]`, or `.bitpacked` for a `bool` array |
 | `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |
 | `dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_`, carrying the member and the direction | `vendor__Inner__serialize_` |
+| `dsdl.call_initialize @vendor_Inner_1_0__initialize_ir_`, carrying the member | `vendor__Inner__initialize_` |
 
 `convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema
 when they run. `test/lit/lower-dsdl-bodies-neutral.txt` holds that a module after

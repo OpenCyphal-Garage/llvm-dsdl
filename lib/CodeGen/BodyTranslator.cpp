@@ -29,6 +29,8 @@
 #include <utility>
 #include <vector>
 
+#include <llvm/ADT/Twine.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -414,6 +416,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Reached{Role{ValueRole::Scalar, read.getMember()}}; })
         .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Reached{Role{ValueRole::Length, read.getMember()}}; })
         .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
+        .Case<mlir::dsdl::CallInitializeOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
@@ -862,6 +865,14 @@ private:
                     names_[call.getResult()] = name;
                 }
             })
+            .Case<mlir::dsdl::CallInitializeOp>([&](mlir::dsdl::CallInitializeOp call) -> void {
+                const std::string name = call.getResult().use_empty() ? std::string{} : nameFor(call.getResult());
+                spelling_.declareCallInitialize(w_, name, call, *this);
+                if (!name.empty())
+                {
+                    names_[call.getResult()] = name;
+                }
+            })
             .Case<mlir::dsdl::StoreScalarOp>(
                 [&](mlir::dsdl::StoreScalarOp write) -> void { spelling_.storeScalar(w_, write, *this); })
             .Case<mlir::dsdl::StoreMemberOp>(
@@ -1075,6 +1086,15 @@ std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, const llv
         }
     }
     return out;
+}
+
+void BodySpelling::declareCallInitialize(SourceWriter& /*w*/,
+                                         const llvm::StringRef /*name*/,
+                                         mlir::dsdl::CallInitializeOp op,
+                                         const ValueNames& /*names*/) const
+{
+    llvm::report_fatal_error(llvm::Twine("no spelling translates an initialise body as a function; '") +
+                             op.getCallee() + "' reached one");
 }
 
 std::optional<llvm::StringRef> planBodyDirection(mlir::func::FuncOp fn)

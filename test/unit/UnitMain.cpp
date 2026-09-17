@@ -56,6 +56,7 @@ int main()
     ok      = runLspStructuredLoggingTests() && ok;
     ok      = runLspAdversarialRequestTests() && ok;
     ok      = runLspJsonRpcFuzzTests() && ok;
+    ok      = runInitializerRenderTests() && ok;
     ok      = runLexerFuzzTests() && ok;
     ok      = runParserFuzzTests() && ok;
     if (!ok)
