@@ -1473,6 +1473,15 @@ std::string goStoredLiteral(const mlir::TypedAttr value, const SemanticFieldType
     return std::to_string(real ? real.getValueAsDouble() : 0.0);
 }
 
+/// @brief The statement `lhs<op>rhs`.
+std::string goAssignment(const std::string& lhs, const char* const op, const std::string& rhs)
+{
+    std::string line = lhs;
+    line += op;
+    line += rhs;
+    return line;
+}
+
 /// @brief The call that constructs a value of the type spelt @p goType: `pkg.T` becomes `pkg.NewT()`.
 std::string goConstructorOf(const std::string& goType)
 {
@@ -1701,14 +1710,14 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                 case MemberDefault::Kind::Scalar:
                     if (!goStoredValueIsZero(entry.value))
                     {
-                        w.line(member + " = " + stored);
+                        w.line(goAssignment(member, " = ", stored));
                     }
                     break;
                 case MemberDefault::Kind::FixedScalarArray:
                     if (!goStoredValueIsZero(entry.value))
                     {
                         w.open("for i := range " + member + " {");
-                        w.line(member + "[i] = " + stored);
+                        w.line(goAssignment(member, "[i] = ", stored));
                         w.close("}");
                     }
                     break;
@@ -1727,12 +1736,12 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                         goConstructorOf(goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
                     if (entry.kind == MemberDefault::Kind::Composite)
                     {
-                        w.line(member + " = " + made);
+                        w.line(goAssignment(member, " = ", made));
                     }
                     else
                     {
                         w.open("for i := range " + member + " {");
-                        w.line(member + "[i] = " + made);
+                        w.line(goAssignment(member, "[i] = ", made));
                         w.close("}");
                     }
                     break;
