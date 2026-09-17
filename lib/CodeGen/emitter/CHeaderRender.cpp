@@ -79,8 +79,6 @@ std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTy
         "#define " + baseTypeName + "_EXTENT_BYTES_ " + requestTypeName + "_EXTENT_BYTES_",
         "#define " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " + requestTypeName +
             "_SERIALIZATION_BUFFER_SIZE_BYTES_",
-        "#define " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE_ " + requestTypeName + "_ZOH_ALIAS_ELIGIBLE_",
-        "#define " + baseTypeName + "_ZOH_ALIAS_REASON_ " + requestTypeName + "_ZOH_ALIAS_REASON_",
     };
 }
 

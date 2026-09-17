@@ -14,10 +14,8 @@ DSDL_IS_DEPRECATED = False
 DSDL_VERSION_MAJOR = 1
 DSDL_VERSION_MINOR = 0
 DSDL_HAS_FIXED_PORT_ID = False
-DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = False
-DSDL_REQUEST_ZOH_ALIAS_REASON = "invalid-bit-length"
-DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False
-DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable"
+DSDL_ZOH_ALIAS_ELIGIBLE = False
+DSDL_ZOH_ALIAS_REASON = "composite-field"
 
 def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: int) -> int:
     v0 = 96 > p0

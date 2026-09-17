@@ -2016,9 +2016,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         w.line("constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared + "::EXTENT_BYTES;");
         w.line("constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared +
                "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-        w.line("constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestDeclared + "::ZOH_ALIAS_ELIGIBLE;");
-        w.line("constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestDeclared +
-               "::ZOH_ALIAS_REASON;");
         // The service-ID belongs to the service, and this alias is how the service is named.
         w.line(std::string("constexpr bool ") + baseTypeName +
                "_HAS_FIXED_PORT_ID = " + (def.info.fixedPortId ? "true;" : "false;"));

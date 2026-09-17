@@ -1236,7 +1236,14 @@ struct AnnotateDSDLAliasabilityPass
                 bool         hasPayloadFields = false;
                 std::int64_t offsetBits       = 0;
 
-                if (!child.getBody().empty())
+                // A union's steps are its options, not a sequence of fields, so walking them
+                // would measure offsets no encoding ever produces. Answer for the plan first.
+                if (child.getIsUnion())
+                {
+                    reason = "union-type";
+                }
+
+                if (reason.empty() && !child.getBody().empty())
                 {
                     for (mlir::Operation& stepOp : child.getBody().front())
                     {
@@ -1271,6 +1278,20 @@ struct AnnotateDSDLAliasabilityPass
                             reason = "unaligned-field";
                             break;
                         }
+                        // A composite carries its width in `min_bits`/`max_bits`, and `bit_length`
+                        // is zero, so this answers before the width tests read that zero.
+                        if (step.isComposite())
+                        {
+                            reason = "composite-field";
+                            break;
+                        }
+                        // Before the width tests: a `bool[<=n]` is refused for its length, which
+                        // widening the element cannot fix.
+                        if (step.isVariableArray())
+                        {
+                            reason = "variable-array";
+                            break;
+                        }
                         if (bitLength <= 0)
                         {
                             reason = "invalid-bit-length";
@@ -1281,23 +1302,17 @@ struct AnnotateDSDLAliasabilityPass
                             reason = "sub-byte-field";
                             break;
                         }
-                        if (step.isVariableArray())
-                        {
-                            reason = "variable-array";
-                            break;
-                        }
-                        if (step.isComposite())
-                        {
-                            reason = "composite-field";
-                            break;
-                        }
                         if (step.getScalarCategory() == "float" && bitLength != 16 && bitLength != 32 &&
                             bitLength != 64)
                         {
                             reason = "unsupported-float-width";
                             break;
                         }
-                        offsetBits += bitLength;
+                        // `bit_length` is one element's width; a fixed array's count is its
+                        // capacity. Only fixed arrays reach here -- variable ones broke out above.
+                        const std::int64_t elementCount =
+                            step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+                        offsetBits += bitLength * elementCount;
                     }
                 }
 
@@ -1308,10 +1323,6 @@ struct AnnotateDSDLAliasabilityPass
                 if (reason.empty() && !sealed)
                 {
                     reason = "not-sealed";
-                }
-                if (reason.empty() && child.getIsUnion())
-                {
-                    reason = "union-type";
                 }
                 if (reason.empty() && !hasPayloadFields)
                 {

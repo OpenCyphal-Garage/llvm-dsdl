@@ -1656,20 +1656,20 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         w.line("DSDL_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
     }
-    const auto [requestZohEligible, requestZohReason] =
-        aliasVerdict(sectionPlan(schema, def.isService ? "request" : ""));
-    w.line("DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "True" : "False"));
-    w.line("DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\"");
-    if (def.response)
+    // Aliasability is a property of a payload, so a service answers for each of its two and a
+    // message answers once, under the name of the thing the verdict is about.
+    const auto emitZohVerdict = [&w](const std::string& prefix, const AliasVerdict& verdict) {
+        w.line(prefix + "ZOH_ALIAS_ELIGIBLE = " + std::string(verdict.eligible ? "True" : "False"));
+        w.line(prefix + "ZOH_ALIAS_REASON = \"" + verdict.reason + "\"");
+    };
+    if (def.isService)
     {
-        const auto [responseZohEligible, responseZohReason] = aliasVerdict(sectionPlan(schema, "response"));
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " + std::string(responseZohEligible ? "True" : "False"));
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_REASON = \"" + responseZohReason + "\"");
+        emitZohVerdict("DSDL_REQUEST_", aliasVerdict(sectionPlan(schema, "request")));
+        emitZohVerdict("DSDL_RESPONSE_", aliasVerdict(sectionPlan(schema, "response")));
     }
     else
     {
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False");
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_REASON = \"not-applicable\"");
+        emitZohVerdict("DSDL_", aliasVerdict(sectionPlan(schema, "")));
     }
     w.blank();
 

@@ -114,10 +114,20 @@ bool runCHeaderRenderTests()
     const auto aliasBridge = llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
                                                                                  "uavcan__srv__NodeInfo__Request",
                                                                                  false);
-    if (aliasBridge.size() != 5U)
+    // The typedef and the two size macros. Aliasability is per payload, so it is stated on the
+    // request and the response, each under its own name.
+    if (aliasBridge.size() != 3U)
     {
-        std::cerr << "renderServiceAliasBridgeLines expected 5 lines\n";
+        std::cerr << "renderServiceAliasBridgeLines expected 3 lines\n";
         return false;
+    }
+    for (const auto& line : aliasBridge)
+    {
+        if (line.contains("ZOH_ALIAS"))
+        {
+            std::cerr << "renderServiceAliasBridgeLines states an aliasability verdict on the service name\n";
+            return false;
+        }
     }
     // The alias names the request type through its tag: the typedef is what carries a deprecation
     // attribute, and a tag never does.

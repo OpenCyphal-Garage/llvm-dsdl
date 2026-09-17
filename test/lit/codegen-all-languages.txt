@@ -152,9 +152,9 @@
 # TS_PORTABLE_RUNTIME-NOT: dst.set(src.subarray
 # TS_HELPERS: function mlir_
 # TS_HELPERS: mlir_
-# TS_TYPE: export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = true;
-# TS_TYPE: export const DSDL_REQUEST_ZOH_ALIAS_REASON = "eligible";
-# TS_TYPE: export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
+# Widget is a message, so it carries one verdict, not a request/response pair.
+# TS_TYPE: export const DSDL_ZOH_ALIAS_ELIGIBLE = true;
+# TS_TYPE: export const DSDL_ZOH_ALIAS_REASON = "eligible";
 
 # TS_FAST_SUMMARY: Run summary:
 # TS_FAST_SUMMARY: command: ts
@@ -195,5 +195,5 @@
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: def serialize(self) -> bytes:
 # PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)
-# PY_TYPE: DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = True
-# PY_TYPE: DSDL_REQUEST_ZOH_ALIAS_REASON = "eligible"
+# PY_TYPE: DSDL_ZOH_ALIAS_ELIGIBLE = True
+# PY_TYPE: DSDL_ZOH_ALIAS_REASON = "eligible"

@@ -26,6 +26,19 @@
 >   `-l obj … --target-endianness big` smoke test asserts big==little byte-parity; only the
 >   zero-copy *view* fast-path is (correctly) disabled on big-endian targets.
 
+> **Update 2026-09-17 — G6's aliasability strand re-audited, verdict corrected.**
+> Measured against `49b8883` by generating and running code from the embedded catalogue.
+> - **The 2026-07-03 note that the flag "flows out only as a generated boolean constant" is
+>   stale.** `ZOH_ALIAS_ELIGIBLE` also gates `try_deserialize_view_` / `try_serialize_view_` in
+>   C, C++ and Rust, present since `71dbebe` (2026-02-25). `serialize_`/`deserialize_` are
+>   untouched, so the sentence is defensible, but it reads as "the flag is inert" and it is not.
+> - **The criticism was too soft.** `dsdl-annotate-aliasability` decides a wire-layout property;
+>   the API it gates needs a host-memory-layout property; nothing connects the two. The flag is
+>   wrong for 9 of the 63 eligible catalogue types on arm64. See G6 in §2 and the P1 entry.
+> - **`try_deserialize_view_` returns the pointer it was given** after a bounds check, and
+>   `try_serialize_view_` `memcpy`s the whole payload. Neither is called by any test, and the
+>   API appears in no page under `docs/reference/`.
+
 **Scope reviewed:** ~45k LOC C++ (`lib/`, `include/`, `tools/`), ~3.6k LOC multi-language runtime, ~17k LOC tests, the MLIR `dsdl` dialect, 6 codegen backends, the LSP, and the build/CI/convergence tooling. Method: docs read first (DESIGN.md, the design pages under `docs/`, the four matrix docs), then implementation, then **adversarial verification of every headline claim** against the actual code. Version under review: **`0.1.0`**.
 
 ## 1. Verdict
@@ -51,7 +64,7 @@ Claim audit tally across the review: **28 holds · 32 partial · 5 overstated ·
 | G3 | Contract boundaries / drift detection | **Overstated** — presence/identity guard, not drift detection | C |
 | G4 | Backend parity / convergence = 100 | **Overstated → addressed (2026-07-03)** — parity/malformed/determinism now behavioural (executed pass/fail); convergence relabeled as a lint | C−→B |
 | G5 | Malformed safety + determinism + release-blocking gates | **Partial → improved (2026-07-03)** — real read-path safety; gates now behavioural; big-endian present (not "absent") | C |
-| G6 | Zero-overhead proof / verifier-first / fallback-free | **Overstated → partly addressed (2026-07-03)** — pass renamed `dsdl-annotate-aliasability` (drops "proof"); verifier-first/fallback-free still post-hoc/lint | C− |
+| G6 | Zero-overhead proof / verifier-first / fallback-free | **Overstated; re-audited 2026-09-17** — verifier-first closed; aliasability asserts a memory-layout property it never checks (wrong for 9 of 63 eligible catalogue types); fallback-free still a lint | C− |
 | G7 | DSDL v1.0 spec conformance | **Partial** — grammar strong; primitive widths unenforced; parity narrow | C+ |
 | G8 | Reproducible/deterministic builds | **Partial → holds (2026-08-20)** — per-backend determinism lanes; hashed-iteration lint; catalogue integrity gated | B−→B+ |
 
@@ -84,11 +97,27 @@ The generated C **read path is bounds-safe**: it inherits the Nunavut/libcanard 
 Weak where it matters most — ~~**(a)** there is **no ASan/UBSan/MSan anywhere**~~ and ~~**(b)** only the *Python* runtime … is fuzzed~~ **(both addressed 2026-07-03: the `ci-asan` preset + `sanitizers` CI lane run ASan/UBSan over the generated C/C++/Go decoders and a coverage-guided libFuzzer lane over the native C deserialisers on the real corpus — see P0)**; **(c)** ~~the "release-blocking malformed gate" is the name-presence metric above~~ **(fixed 2026-07-03: the malformed/parity/determinism gates now consume executed ctest pass/fail — behavioural, not name-presence)**; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
 
 ### G6 — Zero-overhead proof / verifier-first / fallback-free → **Overstated**
-All three were read directly:
+The three strands have moved apart. Re-audited 2026-09-17 against `49b8883`; the aliasability
+finding below is measured, not read.
 
-- **`dsdl-annotate-aliasability`** (renamed 2026-07-03 from `dsdl-prove-zero-overhead`; `lib/Transforms/Passes.cpp`) now matches its honest description — "annotate plans with *conservative* aliasability facts." It stamps `zoh_alias_eligible` on fixed-size/sealed/byte-aligned layouts; that flag flows out only as a generated **boolean constant** (`ZOH_ALIAS_ELIGIBLE = true/false`) and **does not switch the serialiser to a zero-copy path**. It proves nothing about emitted-code overhead. (It *is* well unit-tested as an annotator, incl. a negative case.) *(The emitted `ZOH_ALIAS_ELIGIBLE`/`zoh_alias_*` surface was deliberately left unrenamed — it is a generated-API and doesn't itself claim a proof.)*
-- **"verifier-first"** is **post-hoc**: invariants are validated on already-lowered IR, not enforced during lowering (`lib/Lowering/LowerToMLIR.cpp` adds no MLIR verifiers/constraints).
-- **"fallback-free"** is scored by grepping cmake gate files for regexes.
+- **Aliasability — the flag names a guarantee it does not hold.** `dsdl-annotate-aliasability`
+  (renamed 2026-07-03 from `dsdl-prove-zero-overhead`; `lib/Transforms/Passes.cpp:1203`) decides a
+  property of the **wire layout**: fixed, sealed, byte-aligned, byte-multiple, no variable arrays,
+  no composites. It stamps `zoh_alias_eligible`, which reaches the generated code as
+  `ZOH_ALIAS_ELIGIBLE` in all six languages and, in C, C++ and Rust, gates
+  `try_deserialize_view_` / `try_serialize_view_`. Those functions are only useful if the **host
+  struct** is a byte image of that wire layout, and nothing checks that: it is an ABI property of
+  the user's compiler, which `dsdlc` cannot observe when it emits a header. Measured over the
+  embedded catalogue, **9 of the 63 eligible types have a struct that is not a byte image of their
+  own wire form** on arm64 — `uavcan.time.SynchronizedTimestamp` is 8 bytes of struct against 7 of
+  wire (`uint56` in a `uint64_t`), `uavcan.primitive.scalar.Real16` is 4 against 2 (`float16` in a
+  `float`), `uavcan.metatransport.udp.Endpoint` is 24 against 32 (wire padding the struct omits).
+  The Rust struct carries no `repr`, so its field order is unspecified by the language. See P1.
+- **"verifier-first"** ✅ **closed (2026-07-12)**: `lowerToMLIR` calls `mlir::verify()` on its own
+  output under a scoped diagnostic handler (`lib/Lowering/LowerToMLIR.cpp:447`), so every backend
+  consumes verified IR. See the P2 entry.
+- **"fallback-free"** is scored by searching generated text for marker substrings
+  (`test/integration/RunUavcanGeneration.cmake`).
 
 ### G7 — DSDL v1.0 conformance → **Partial**
 Strong: the lexer/parser went through **6 documented rounds of grammar conformance** and reserved-identifier enforcement; all six directives (`@union/@sealed/@extent/@assert/@print/@deprecated`) are parsed and semantically checked; **delimited (non-sealed) bit-length sets are modeled correctly** (32-bit delimiter header + 0..extent), matching pydsdl/Nunavut.
@@ -122,7 +151,7 @@ library implementations rests on the lint rather than on a differential build.
 | Semantics | **7** | Solid BitLengthSet algebra; **unchecked `Rational` int64 overflow**, unbounded `repeatRange` expansion. |
 | Runtime (multi-language) | **7** | Read-path bounds-safe; **empty semantic-wrapper allowlist**; no isolated cross-language primitive tests. |
 | Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
-| Transforms | **6** | Real contract enforcement; zero-overhead/endianness passes renamed/redescribed (2026-07-03); big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. |
+| Transforms | **6** | Real contract enforcement; big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. `dsdl-annotate-aliasability` stamps a wire-layout verdict the generated view API reads as a memory-layout one (2026-09-17; P1). |
 | Codegen shared layer | **6** | Shared planning; semantics still re-rendered per backend. |
 | LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; ~~DocumentStore thread-safety still open~~ **verified thread-safe (2026-07-15): every method locks `mutex_` and `lookup` returns a snapshot copy, so no reference escapes to a concurrent scheduler-worker request.** |
 | Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
@@ -136,7 +165,7 @@ library implementations rests on the lint rather than on a differential build.
 **Highest leverage — make the claims true or relabel them:**
 
 1. **Re-found the three scorecards on behaviour, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/development/convergence-scorecard.md`) rather than made behavioural (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
-2. ✅ **Done (2026-07-03).** Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing.
+2. ⚠️ **Reopened 2026-09-17** (was ✅ Done 2026-07-03). Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing. The rename settled the pass's name, not its meaning — the verdict it stamps is about the wire and the API it gates is about host memory. Tracked under P1.
 3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads); coverage broadened 6 → 10 cases incl. a byte-exact non-float union, fixed+variable arrays, nested composites, and a narrow scalar. **Reframed and closed (2026-07-12):** Nunavut is a *pinned peer implementation used for corroboration*, not the oracle — the Cyphal Specification is the truth and `spec/dafny/CyphalSerdes.dfy` is the machine-checked oracle. Further coverage expansion is retired by decision; see the P0 entry for the authority hierarchy and rationale.
 
 **Safety / high-assurance:**
@@ -427,6 +456,29 @@ library implementations rests on the lint rather than on a differential build.
   `llvmdsdl-obj-cpp-backend-smoke` misses both because it compiles against
   `<outdir>/.obj_stage_cpp` — the staging tree — rather than the published output. Fixing the test
   to use the published tree is the part that keeps it fixed.
+
+- [ ] **Complete aliasability.** *(Found 2026-09-17; G6. Plan:
+  [ZERO_OVERHEAD.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/ZERO_OVERHEAD.md).)*
+  `dsdl-annotate-aliasability` decides whether the **wire** form of a type is a flat byte image.
+  `try_deserialize_view_` is useful only if the **host struct** is that same byte image. The two are
+  different properties and nothing connects them, so the flag is wrong for 9 of its 63 eligible
+  sections on arm64 — `uint56` and `uint40` stored in a `uint64_t`, `float16` in a `float`, and wire
+  padding the struct omits. The pass also misdiagnoses: a composite carries `bit_length = 0` and the
+  `bitLength <= 0` test precedes `isComposite()`, so nested composites report `invalid-bit-length` —
+  74 of the 118 ineligible verdicts, and the `composite-field` and `union-type` branches are
+  unreachable.
+
+  The plan separates the three properties the one flag was covering — **W** (the wire is flat,
+  decidable from the schema), **H** (the natural struct is that byte image, an ABI fact) and the
+  packed view type that makes W usable — and sizes them over the catalogue: today's flag accepts 63,
+  H is 54, W is 107. It adds an `@aliasable` directive asserting W so a performance-critical type
+  fails at the schema rather than degrading silently, with generated static assertions covering H on
+  the consumer's own target. Five phases, `@aliasable` at phase 2.
+
+  **Decide before phase 2:** `@aliasable` makes llvm-dsdl's accepted language a superset of the
+  reference implementation's — unknown directives are a hard error in both — so those types cannot
+  enter the Nunavut differential corpus. Ship as a documented extension, propose upstream, or drop
+  the directive.
 
 ### P2 — Maturity / maintainability
 
