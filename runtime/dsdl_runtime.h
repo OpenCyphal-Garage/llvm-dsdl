@@ -343,10 +343,10 @@ extern "C"
     /// @param[in] off_bits Source bit offset.
     /// @param[in] len_bits Requested bit width.
     /// @return Deserialised value.
-    static inline uint8_t dsdl_runtime_get_u8(const uint8_t* const buf,
-                                              const size_t         buf_size_bytes,
-                                              const size_t         off_bits,
-                                              const uint8_t        len_bits);
+    static inline uint8_t dsdl_runtime_get_u8(const uint8_t* buf,
+                                              size_t         buf_size_bytes,
+                                              size_t         off_bits,
+                                              uint8_t        len_bits);
 
     /// @brief Deserialises a single bit as boolean.
     /// @param[in] buf Source serialised buffer.
