@@ -20,6 +20,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <cstdint>
 
@@ -56,6 +57,97 @@ bool isSupportedArrayKind(llvm::StringRef arrayKind)
     return arrayKind == "none" || arrayKind == "fixed" || isVariableArrayKind(arrayKind);
 }
 
+/// @brief The section an op belongs to; empty for a message, which has only one.
+llvm::StringRef sectionOf(const std::optional<llvm::StringRef> section)
+{
+    return section.value_or(llvm::StringRef{});
+}
+
+/// @brief Checks one section's union option indices against its plan.
+///
+/// The tag value that selects an option is stamped twice -- on the `dsdl.field` that names it and on
+/// the `dsdl.io` step that serialises it -- because the name and the wire layout live in two
+/// different halves of the schema and each half needs the pair. They are produced by the same walk
+/// over one section, so a disagreement here is a lowering bug rather than malformed input, which is
+/// the reason to check it: a backend that reads one half and a serialiser that reads the other would
+/// otherwise disagree silently about which option a tag means.
+///
+/// @param[in] plan The section's plan.
+/// @param[in] fields The section's fields, in declaration order.
+/// @param[in] emitError Sink for the diagnostic.
+/// @return Success when the section's options agree.
+LogicalResult verifyUnionOptionIndices(SerializationPlanOp                                 plan,
+                                       llvm::ArrayRef<FieldOp>                             fields,
+                                       const llvm::function_ref<InFlightDiagnostic(Twine)> emitError)
+{
+    if (!plan.getIsUnion())
+    {
+        for (FieldOp field : fields)
+        {
+            if (field.getUnionOptionIndex())
+            {
+                return emitError("'union_option_index' on a field of a section that is not a union");
+            }
+        }
+        return success();
+    }
+
+    std::int64_t expected = 0;
+    for (FieldOp field : fields)
+    {
+        const auto optionIndex = field.getUnionOptionIndex();
+        if (!optionIndex)
+        {
+            return emitError("union option '" + field.getName() + "' requires a 'union_option_index'");
+        }
+        if (*optionIndex != expected)
+        {
+            return emitError("union option '" + field.getName() + "' has index " + Twine(*optionIndex) +
+                             ", expected " + Twine(expected) + " from its declaration order");
+        }
+        ++expected;
+    }
+
+    if (const auto optionCount = plan.getUnionOptionCount())
+    {
+        if (*optionCount != expected)
+        {
+            return emitError("'union_option_count' is " + Twine(*optionCount) + ", but the section declares " +
+                             Twine(expected) + " options");
+        }
+    }
+
+    // The plan's own steps carry the same index. Pairing is positional: a union has one field step
+    // per option, in option order.
+    std::size_t stepPosition = 0;
+    for (Operation& step : plan.getBody().front())
+    {
+        auto io = llvm::dyn_cast<IOOp>(step);
+        if (!io || (io.getKind() != "field"))
+        {
+            continue;
+        }
+        if (stepPosition >= fields.size())
+        {
+            return emitError("the plan has more option steps than the section declares options");
+        }
+        FieldOp            option   = fields[stepPosition];
+        const std::int64_t declared = *option.getUnionOptionIndex();
+        if (io.getUnionOptionIndex() != declared)
+        {
+            return emitError("option '" + option.getName() + "' is index " + Twine(declared) +
+                             " in schema space and " + Twine(io.getUnionOptionIndex()) + " in its plan step");
+        }
+        ++stepPosition;
+    }
+    if (stepPosition != fields.size())
+    {
+        return emitError("the section declares " + Twine(fields.size()) + " options, but the plan has " +
+                         Twine(stepPosition) + " option steps");
+    }
+    return success();
+}
+
 }  // namespace
 
 LogicalResult SchemaOp::verify()
@@ -67,6 +159,32 @@ LogicalResult SchemaOp::verify()
     if ((*this)->getNumRegions() == 0 || (*this)->getRegion(0).empty())
     {
         return emitOpError("must contain a non-empty body region");
+    }
+
+    // Fields and plans are siblings in the schema body, one group per section. A message has a
+    // single unnamed section; a service has `request` and `response`.
+    llvm::StringMap<llvm::SmallVector<FieldOp, 8>> fieldsBySection;
+    for (Operation& op : (*this)->getRegion(0).front())
+    {
+        if (auto field = llvm::dyn_cast<FieldOp>(op); field && !field.getPadding())
+        {
+            fieldsBySection[sectionOf(field.getSection())].push_back(field);
+        }
+    }
+    for (Operation& op : (*this)->getRegion(0).front())
+    {
+        auto plan = llvm::dyn_cast<SerializationPlanOp>(op);
+        if (!plan || plan.getBody().empty())
+        {
+            continue;
+        }
+        const llvm::StringRef section = sectionOf(plan.getSection());
+        if (failed(verifyUnionOptionIndices(plan,
+                                            fieldsBySection.lookup(section),
+                                            [&](const Twine message) { return emitOpError(message); })))
+        {
+            return failure();
+        }
     }
     return success();
 }
@@ -291,6 +409,17 @@ LogicalResult FieldOp::verify()
     if (getTypeName().empty())
     {
         return emitOpError("requires a non-empty 'type_name'");
+    }
+    if (const auto optionIndex = getUnionOptionIndex())
+    {
+        if (*optionIndex < 0)
+        {
+            return emitOpError("invalid 'union_option_index'");
+        }
+        if (getPadding())
+        {
+            return emitOpError("a padding field is not a union option and carries no 'union_option_index'");
+        }
     }
     return success();
 }
