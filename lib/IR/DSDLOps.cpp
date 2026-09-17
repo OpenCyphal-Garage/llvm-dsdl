@@ -144,6 +144,15 @@ LogicalResult verifyUnionOptionIndices(SerializationPlanOp                      
         }
         FieldOp            option   = fields[stepPosition];
         const std::int64_t declared = *option.getUnionOptionIndex();
+        // Pairing is by position, so the names are what confirm the two lists describe the same
+        // options in the same order. Without this an index-for-index match would accept a schema
+        // that names one option where its plan reads another, and the metadata a backend emits
+        // would name an option the serialiser does not write.
+        if (io.getName() != option.getName())
+        {
+            return emitError("option " + Twine(stepPosition) + " is '" + option.getName() + "' in schema space and '" +
+                             io.getName() + "' in its plan step");
+        }
         if (io.getUnionOptionIndex() != declared)
         {
             return emitError("option '" + option.getName() + "' is index " + Twine(declared) + " in schema space and " +

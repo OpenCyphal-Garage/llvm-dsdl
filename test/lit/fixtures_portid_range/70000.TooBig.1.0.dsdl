@@ -1,0 +1,3 @@
+# A subject-ID is thirteen bits on the wire, so this one cannot be transmitted.
+uint8 value
+@sealed
