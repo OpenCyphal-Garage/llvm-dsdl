@@ -161,23 +161,10 @@ jobs:
         uses: ./.github/actions/setup-language-toolchains
 
       - name: Provision peer DSDL compiler for corroboration (nunavut + pydsdl)
-        # The differential parity lane compares our generated C against Nunavut as a
-        # pinned PEER implementation — corroboration, not an oracle. The Cyphal
-        # Specification is the truth and spec/dafny/CyphalSerdes.dfy is the
-        # machine-checked oracle (see its Authority hierarchy); a mismatch here is an
-        # investigation adjudicated by the spec, as likely a Nunavut defect as ours.
-        # With the SHAs pinned, a newly appearing mismatch implicates our change
-        # first. The harness consumes both repos as source trees via PYTHONPATH — nunavut
-        # vendors Jinja2 and pydsdl has no runtime deps, so no pip install is
-        # needed. Bump both SHAs only as a deliberate, adjudicated update.
-        env:
-          NUNAVUT_SHA: 37095abb9fac47f924a52500bf4cebe2256dcff5  # tag 3.0.1b1
-          PYDSDL_SHA: a1506ce424589cc049b3fe4fece1e52626b55529   # pydsdl 1.23.0-dev
-        run: |
-          git clone --filter=blob:none https://github.com/OpenCyphal/nunavut.git .reference/nunavut
-          git -C .reference/nunavut checkout --detach "${NUNAVUT_SHA}"
-          git clone --filter=blob:none https://github.com/OpenCyphal/pydsdl.git .reference/pydsdl
-          git -C .reference/pydsdl checkout --detach "${PYDSDL_SHA}"
+        # The pins and the reasoning live in the action, which the benchmarks job
+        # uses too so that both lanes look at the same peer.
+        id: peer-dsdl
+        uses: ./.github/actions/provision-peer-dsdl-compiler
 
       - name: Configure (ci preset)
         # LLVMDSDL_REPORT_GATE_JUNIT makes the parity/malformed/determinism report gates
@@ -190,8 +177,8 @@ jobs:
           cmake --preset ci \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
             -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-linux.xml" \
-            -DLLVMDSDL_NUNAVUT_REPO="${GITHUB_WORKSPACE}/.reference/nunavut" \
-            -DLLVMDSDL_PYDSDL_REPO="${GITHUB_WORKSPACE}/.reference/pydsdl" \
+            -DLLVMDSDL_NUNAVUT_REPO="${{ steps.peer-dsdl.outputs.nunavut-path }}" \
+            -DLLVMDSDL_PYDSDL_REPO="${{ steps.peer-dsdl.outputs.pydsdl-path }}" \
             -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON
 
       - name: Build (Debug)
@@ -657,8 +644,9 @@ jobs:
     name: Runtime benchmarks (linux / toolshed)
     # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
-    # The runtime benchmarks measure generated Rust and generated Python doing real work. No other
-    # lane runs the generated code for speed rather than for correctness: `test-ci-full` filters
+    # The runtime benchmarks measure generated Rust, generated Python and generated C doing real
+    # work. No other lane runs the generated code for speed rather than for correctness:
+    # `test-ci-full` filters
     # `-LE bench`, so the `test-ci-bench` preset runs here and nowhere else, and a benchmark that
     # stops compiling fails here.
     #
@@ -687,7 +675,13 @@ jobs:
     # look for it: `llvmdsdl-fixtures-rust-runtime-instructions` counts instructions under cachegrind
     # rather than seconds, carries no `bench` label, and therefore runs and GATES in the `linux` job.
     # It is deterministic -- six runs, idle and oversubscribed, agreed to the digit -- so it needs no
-    # calibration at all. What is measured here is time, which is the thing that cannot be gated.
+    # calibration at all.
+    #
+    # The C comparison against Nunavut counts instructions too, and is here rather than in `linux`
+    # for a different reason: it is a ratio against a peer implementation. Nunavut is corroboration
+    # and not an oracle, for speed as much as for bytes, so the ratio is published and read rather
+    # than enforced. Its report carries the raw counts, which is what a threshold on OUR side would
+    # be built from.
     #
     # Independent of the `linux` job rather than needing it, like showroom-recipes: it builds dsdlc
     # and the Python accelerator and nothing else, so a broken benchmark reports in minutes rather
@@ -717,6 +711,12 @@ jobs:
         # nothing at all.
         uses: ./.github/actions/setup-language-toolchains
 
+      - name: Provision peer DSDL compiler (nunavut + pydsdl)
+        # The C comparison generates with both compilers, and is likewise not registered at
+        # configure time without them.
+        id: peer-dsdl
+        uses: ./.github/actions/provision-peer-dsdl-compiler
+
       - name: Configure (ci preset, thresholds reporting-only)
         # See the note at the top of this job for why the thresholds are off and what turning them
         # on requires. They are disabled here rather than deleted from the tree because the values
@@ -725,6 +725,9 @@ jobs:
         run: |
           cmake --preset ci \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
+            -DLLVMDSDL_NUNAVUT_REPO="${{ steps.peer-dsdl.outputs.nunavut-path }}" \
+            -DLLVMDSDL_PYDSDL_REPO="${{ steps.peer-dsdl.outputs.pydsdl-path }}" \
+            -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON \
             -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF \
             -DLLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF
 
@@ -751,6 +754,8 @@ jobs:
           python3 tools/benchmark/render_bench_report.py \
             --rust-report build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json \
             --python-report build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json \
+            --serdes-report build/matrix/ci/test/integration/serdes-instruction-comparison-out/serdes-instruction-comparison.json \
+            --serdes-report build/matrix/ci/test/integration/serdes-instruction-comparison-optimized-out/serdes-instruction-comparison.json \
             --markdown "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload reports
@@ -762,6 +767,8 @@ jobs:
           path: |
             build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json
             build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json
+            build/matrix/ci/test/integration/serdes-instruction-comparison-out/serdes-instruction-comparison.json
+            build/matrix/ci/test/integration/serdes-instruction-comparison-optimized-out/serdes-instruction-comparison.json
           if-no-files-found: warn
           retention-days: 90
 

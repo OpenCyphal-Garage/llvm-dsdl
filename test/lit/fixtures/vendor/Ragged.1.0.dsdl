@@ -1,0 +1,4 @@
+# A variable-length array of elements narrower than a byte: after it, neither the offset nor
+# its remainder modulo eight is known until run time, so the padding to the end is a loop.
+uint3[<=4] items
+@sealed

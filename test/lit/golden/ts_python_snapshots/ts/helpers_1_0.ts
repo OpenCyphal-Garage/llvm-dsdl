@@ -103,7 +103,6 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
     const v2 = size * 8n;
     const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v2);
     const v3 = err2 === 0;
-    const v4 = v3 ? 13n : 0n;
     let err3: number;
     if (v3) {
       const aValue = dsdlRuntime.toBigIntValue(obj.a);
@@ -113,104 +112,79 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
     } else {
       err3 = err2;
     }
-    const v5 = err3 === 0;
-    let offset: bigint;
+    const v4 = err3 === 0;
     let err5: number;
-    if (v5) {
+    if (v4) {
       const bValue = obj.b;
       const value2 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(bValue);
-      const err6 = dsdlRuntime.writeFloat(buffer, Number(v4), 16, value2);
-      const v6 = v4 + 16n;
-      offset = v6;
+      const err6 = dsdlRuntime.writeFloat(buffer, Number(13n), 16, value2);
       err5 = err6;
     } else {
-      offset = v4;
       err5 = err3;
     }
-    const v7 = err5 === 0;
-    let offset2: bigint;
+    const v5 = err5 === 0;
+    let offset: bigint;
     let err7: number;
-    if (v7) {
+    if (v5) {
       const cCount = BigInt(obj.c.length);
       const err8 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(cCount);
-      const v8 = err8 === 0;
-      let offset3: bigint;
+      const v6 = err8 === 0;
+      let offset2: bigint;
       let err9: number;
-      if (v8) {
+      if (v6) {
         const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(cCount);
-        const err10 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 8, count, false);
-        const v9 = offset + 8n;
-        const v10 = cCount * 8n;
-        const v11 = v9 + v10;
-        let offset4: bigint;
-        offset4 = v9;
+        const err10 = dsdlRuntime.writeUnsigned(buffer, Number(29n), 8, count, false);
+        const v7 = Number(cCount);
         let err11: number;
         err11 = err10;
-        let offset5: bigint;
-        let err12: number;
-        for (;;) {
-          const v12 = offset4 < v11;
-          const v13 = err11 === 0;
-          const v14 = v12 && v13;
-          offset5 = offset4;
-          err12 = err11;
-          if (!(v14)) {
-            break;
+        for (let i = 0; i < v7; i += 1) {
+          const v8 = BigInt(i);
+          const v9 = v8 * 8n;
+          const v10 = v9 + 37n;
+          const v11 = err11 === 0;
+          let err12: number;
+          if (v11) {
+            const cValue = dsdlRuntime.toBigIntValue(obj.c[Number(v8)]);
+            const value3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(cValue);
+            const err13 = dsdlRuntime.writeUnsigned(buffer, Number(v10), 8, value3, false);
+            err12 = err13;
+          } else {
+            err12 = err11;
           }
-          const v15 = offset5 - v9;
-          const v16 = v15 / 8n;
-          const cValue = dsdlRuntime.toBigIntValue(obj.c[Number(v16)]);
-          const value3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(cValue);
-          const err13 = dsdlRuntime.writeUnsigned(buffer, Number(offset5), 8, value3, false);
-          const v17 = offset5 + 8n;
-          const v18 = err12 === 0;
-          const v19 = v18 ? err13 : err12;
-          offset4 = v17;
-          err11 = v19;
+          err11 = err12;
         }
-        offset3 = offset5;
-        err9 = err12;
+        const v12 = cCount * 8n;
+        const v13 = v12 + 37n;
+        offset2 = v13;
+        err9 = err11;
       } else {
-        offset3 = offset;
+        offset2 = 29n;
         err9 = err8;
       }
-      offset2 = offset3;
+      offset = offset2;
       err7 = err9;
     } else {
-      offset2 = offset;
+      offset = 29n;
       err7 = err5;
     }
-    const v20 = offset2 + 7n;
-    const v21 = v20 / 8n;
-    const v22 = v21 * 8n;
-    let offset6: bigint;
-    offset6 = offset2;
+    const v14 = err7 === 0;
+    let offset3: bigint;
     let err14: number;
-    err14 = err7;
-    let offset7: bigint;
-    let err15: number;
-    for (;;) {
-      const v23 = offset6 < v22;
-      const v24 = err14 === 0;
-      const v25 = v23 && v24;
-      offset7 = offset6;
-      err15 = err14;
-      if (!(v25)) {
-        break;
-      }
-      const err16 = dsdlRuntime.setBit(buffer, Number(offset7), false);
-      const v26 = offset7 + 1n;
-      const v27 = err15 === 0;
-      const v28 = v27 ? err16 : err15;
-      offset6 = v26;
-      err14 = v28;
+    if (v14) {
+      const err15 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 3, 0n, false);
+      const v15 = offset + 3n;
+      offset3 = v15;
+      err14 = err15;
+    } else {
+      offset3 = offset;
+      err14 = err7;
     }
-    const v29 = err15 === 0;
-    if (v29) {
-      const v30 = offset7 / 8n;
-      inoutBufferSizeBytes = Number(v30);
+    const v16 = err14 === 0;
+    if (v16) {
+      const v17 = offset3 / 8n;
+      inoutBufferSizeBytes = Number(v17);
     }
-    err = err15;
+    err = err14;
   }
   if (err === 0) {
     return inoutBufferSizeBytes;
@@ -245,42 +219,34 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
     const count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value5);
     const err2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count);
     const v3 = err2 === 0;
-    let offset: bigint;
+    let v4: bigint;
     if (v3) {
       obj.c = new Array<number>(Number(count));
-      const v4 = count * 8n;
-      const v5 = v4 + 37n;
-      let offset2: bigint;
-      offset2 = 37n;
-      let offset3: bigint;
-      for (;;) {
-        const v6 = offset2 < v5;
-        offset3 = offset2;
-        if (!(v6)) {
-          break;
-        }
-        const v7 = offset3 - 37n;
-        const v8 = v7 / 8n;
-        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(offset3), 8);
+      const v5 = Number(count);
+      for (let i = 0; i < v5; i += 1) {
+        const v6 = BigInt(i);
+        const v7 = v6 * 8n;
+        const v8 = v7 + 37n;
+        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v8), 8);
         const value7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value6);
-        (obj.c ??= [])[Number(v8)] = Number(value7);
-        const v9 = offset3 + 8n;
-        offset2 = v9;
+        (obj.c ??= [])[Number(v6)] = Number(value7);
       }
-      offset = offset3;
+      const v9 = count * 8n;
+      const v10 = v9 + 37n;
+      v4 = v10;
     } else {
-      offset = 37n;
+      v4 = 37n;
     }
-    const v10 = offset + 7n;
-    const v11 = v10 / 8n;
-    const v12 = v11 * 8n;
-    const v13 = size2 * 8n;
-    const v14 = v12 < v13;
-    const v15 = v14 ? v12 : v13;
-    const v16 = err2 === 0;
-    if (v16) {
-      const v17 = v15 / 8n;
-      inoutBufferSizeBytes = Number(v17);
+    const v11 = v4 + 7n;
+    const v12 = v11 / 8n;
+    const v13 = v12 * 8n;
+    const v14 = size2 * 8n;
+    const v15 = v13 < v14;
+    const v16 = v15 ? v13 : v14;
+    const v17 = err2 === 0;
+    if (v17) {
+      const v18 = v16 / 8n;
+      inoutBufferSizeBytes = Number(v18);
     }
     err = err2;
   }

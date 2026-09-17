@@ -67,50 +67,37 @@ class UsesDelimited:
             err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v2)
             v3 = err_2 == 0
             if v3:
-                v4 = size > 4
-                v5 = (4 if v4 else size)
-                v6 = size - v5
-                nested_size = v6
-                v7 = err_2 == 0
-                if v7:
-                    nested_buf = buffer[min(v5, len(buffer)):]
+                v4 = size - 4
+                nested_size = v4
+                v5 = err_2 == 0
+                if v5:
+                    nested_buf = buffer[min(4, len(buffer)):]
                     _bound0_ = min(nested_size, len(nested_buf))
                     _result1_ = self.nested._serialize_into(nested_buf[:_bound0_])
                     if _result1_ < 0:
                         nested_err = _result1_
                     else:
-                        nested_size = _result1_
                         nested_err = 0
-                    nested_size_2 = nested_size
-                    err_5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(nested_size_2, v6)
-                    v8 = nested_err == 0
-                    v9 = (err_5 if v8 else nested_err)
-                    v10 = v9 == 0
-                    if v10:
-                        v11 = nested_size_2 * 8
-                        v12 = v11 + 32
-                        err_7 = dsdl_runtime.write_unsigned(buffer, 0, 32, nested_size_2, False)
-                        v13 = v9 == 0
-                        v14 = (err_7 if v13 else v9)
-                        offset_3 = v12
-                        err_6 = v14
+                    err_5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(1, v4)
+                    v6 = nested_err == 0
+                    v7 = (err_5 if v6 else nested_err)
+                    v8 = v7 == 0
+                    if v8:
+                        err_7 = dsdl_runtime.write_unsigned(buffer, 0, 32, 1, False)
+                        v9 = v7 == 0
+                        v10 = (err_7 if v9 else v7)
+                        err_6 = v10
                     else:
-                        offset_3 = 32
-                        err_6 = v9
-                    offset_2 = offset_3
+                        err_6 = v7
                     err_4 = err_6
                 else:
-                    offset_2 = 32
                     err_4 = err_2
-                offset = offset_2
                 err_3 = err_4
             else:
-                offset = 0
                 err_3 = err_2
-            v15 = err_3 == 0
-            if v15:
-                v16 = offset // 8
-                inout_buffer_size_bytes = v16
+            v11 = err_3 == 0
+            if v11:
+                inout_buffer_size_bytes = 5
             err = err_3
         if err == 0:
             return inout_buffer_size_bytes

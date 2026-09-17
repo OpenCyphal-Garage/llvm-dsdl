@@ -37,6 +37,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -67,13 +68,39 @@ constexpr std::int64_t kDelimiterHeaderBits         = 32;
 
 /// @brief What a step carries forward: how far into the wire it got, and what went wrong.
 ///
-/// Both travel as values rather than as constants folded at build time. A variable-length
-/// array makes the offset depend on a count read from the object, so no offset after the
-/// first array is known here.
+/// While every step so far had one width, the offset is also a number, and `staticBits` holds
+/// it: on the path where nothing has failed, `bitOffset` equals it. A step whose width the
+/// object or the wire decides -- a variable-length array, a nested type of varying size, a
+/// union -- ends that, and from there on only the value is known. What usually survives it is
+/// the offset modulo eight, which `staticResidue` holds: an array of whole-byte elements, a
+/// nested composite and a delimiter header each move the offset by whole bytes, so the bits to
+/// the next boundary stay a number after them.
 struct PlanCursor final
 {
-    mlir::Value bitOffset;
-    mlir::Value error;
+    mlir::Value                 bitOffset;
+    mlir::Value                 error;
+    std::optional<std::int64_t> staticBits;
+    std::optional<std::int64_t> staticResidue;
+};
+
+/// @brief The offset modulo eight that every arm of a union agrees on after it, or nothing.
+struct ResidueMeet final
+{
+    bool                        any{false};
+    std::optional<std::int64_t> value;
+
+    void meet(const std::optional<std::int64_t> residue)
+    {
+        if (!any)
+        {
+            value = residue;
+        }
+        else if (value != residue)
+        {
+            value = std::nullopt;
+        }
+        any = true;
+    }
 };
 
 /// @brief The roles a plan's own structure gives to the results of its structured operations.
@@ -267,6 +294,92 @@ mlir::Value isHealthy(mlir::OpBuilder& b, mlir::Location loc, mlir::Value error)
     return mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::eq, error, constantI8(b, loc, 0));
 }
 
+/// @brief The cursor @p bits past @p cursor, carrying @p error, and still a number when the
+///        cursor was one.
+///
+/// A value that is not yet a constant is added to rather than replaced, so that whatever
+/// defined it is still read.
+PlanCursor advancedBy(mlir::OpBuilder&   b,
+                      mlir::Location     loc,
+                      const PlanCursor&  cursor,
+                      mlir::Value        error,
+                      const std::int64_t bits)
+{
+    const auto residue = cursor.staticResidue ? std::optional{(*cursor.staticResidue + bits) % 8} : std::nullopt;
+    if (cursor.staticBits && mlir::matchPattern(cursor.bitOffset, mlir::m_Constant()))
+    {
+        const std::int64_t at = *cursor.staticBits + bits;
+        return PlanCursor{constantI64(b, loc, at), error, at, residue};
+    }
+    return PlanCursor{mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, constantI64(b, loc, bits)),
+                      error,
+                      cursor.staticBits ? std::optional{*cursor.staticBits + bits} : std::nullopt,
+                      residue};
+}
+
+/// @brief The count @p value holds when it is a constant.
+std::optional<std::int64_t> constantCount(mlir::Value value)
+{
+    llvm::APInt count;
+    if (mlir::matchPattern(value, mlir::m_ConstantInt(&count)))
+    {
+        return count.getSExtValue();
+    }
+    return std::nullopt;
+}
+
+/// @brief The cursor past @p count elements of @p elementBits each, carrying @p error.
+PlanCursor advancedByRun(mlir::OpBuilder&   b,
+                         mlir::Location     loc,
+                         const PlanCursor&  cursor,
+                         mlir::Value        error,
+                         mlir::Value        count,
+                         const std::int64_t elementBits)
+{
+    if (const auto elements = constantCount(count))
+    {
+        return advancedBy(b, loc, cursor, error, *elements * elementBits);
+    }
+    // A run of whole-byte elements moves the offset by whole bytes, however many there are.
+    const mlir::Value run = mlir::arith::MulIOp::create(b, loc, count, constantI64(b, loc, elementBits));
+    return PlanCursor{mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, run),
+                      error,
+                      std::nullopt,
+                      ((elementBits % 8) == 0) ? cursor.staticResidue : std::nullopt};
+}
+
+/// @brief An `scf.for` over `[0, count)` carrying @p carried, with the body left to the caller.
+mlir::scf::ForOp countedLoop(mlir::OpBuilder& b, mlir::Location loc, mlir::Value count, mlir::ValueRange carried)
+{
+    const mlir::Value zero  = mlir::arith::ConstantIndexOp::create(b, loc, 0);
+    const mlir::Value one   = mlir::arith::ConstantIndexOp::create(b, loc, 1);
+    const mlir::Value bound = mlir::arith::IndexCastOp::create(b, loc, b.getIndexType(), count);
+    return mlir::scf::ForOp::create(b, loc, zero, bound, one, carried);
+}
+
+/// @brief Runs @p body only while @p error is clear, and answers the error it leaves.
+///
+/// The shape of one element inside a counted loop: the loop carries the error and nothing
+/// else, so the guard answers with the code alone.
+template <typename BodyFn>
+mlir::Value errorGuarded(mlir::OpBuilder& b, mlir::Location loc, mlir::Value error, BodyFn body)
+{
+    auto guard = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{b.getIntegerType(8)}, isHealthy(b, loc, error), true);
+    stampResultRoles(guard, {RoleError});
+    {
+        mlir::OpBuilder::InsertionGuard const g(b);
+        b.setInsertionPointToStart(guard.thenBlock());
+        const mlir::Value next = body();
+        mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{next});
+    }
+    {
+        mlir::OpBuilder::InsertionGuard const g(b);
+        b.setInsertionPointToStart(guard.elseBlock());
+        mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{error});
+    }
+    return guard.getResult(0);
+}
+
 bool stepIsComposite(const PlanStep& step)
 {
     return !step.compositeFullName.empty();
@@ -458,21 +571,49 @@ PlanCursor emitWrite(mlir::OpBuilder&   b,
                                                  value,
                                                  b.getI64IntegerAttr(width),
                                                  isSigned ? b.getUnitAttr() : nullptr);
-    return PlanCursor{mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, constantI64(b, loc, width)),
-                      write.getError()};
+    return advancedBy(b, loc, cursor, write.getError(), width);
+}
+
+/// @brief Writes @p bits zero bits at the cursor: a void field, or the padding to a boundary.
+///
+/// One write per 64 bits, which is the most the wire primitives take at once. A single bit
+/// travels as a bool, as every one-bit write does.
+PlanCursor emitZeroBits(mlir::OpBuilder& b,
+                        mlir::Location   loc,
+                        mlir::Value      buffer,
+                        mlir::Value      capacityBytes,
+                        PlanCursor       cursor,
+                        std::int64_t     bits)
+{
+    while (bits > 0)
+    {
+        const std::int64_t width = std::min<std::int64_t>(bits, 64);
+        const mlir::Value  zero =
+            (width == 1) ? mlir::arith::ConstantOp::create(b, loc, b.getBoolAttr(false)) : constantI64(b, loc, 0);
+        cursor = emitWrite(b, loc, buffer, capacityBytes, cursor, zero, width, false);
+        bits -= width;
+    }
+    return cursor;
 }
 
 /// @brief Runs @p body only while nothing has failed, threading the cursor either way.
+///
+/// The guard answers the offset only when the body left it a value. When the body left it a
+/// number, the next step spells that number itself, and nothing reads the offset on the path
+/// that failed: the guard is rebuilt to answer the error alone, so no target declares a
+/// variable for a result nothing uses.
 template <typename BodyFn>
 PlanCursor guarded(mlir::OpBuilder& b, mlir::Location loc, PlanCursor cursor, BodyFn body)
 {
-    const mlir::SmallVector<mlir::Type, 2> types{b.getIntegerType(64), b.getIntegerType(8)};
-    auto guard = mlir::scf::IfOp::create(b, loc, types, isHealthy(b, loc, cursor.error), true);
-    stampResultRoles(guard, {RoleOffset, RoleError});
+    auto i64Ty = b.getIntegerType(64);
+    auto i8Ty  = b.getIntegerType(8);
+
+    auto guard = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i64Ty, i8Ty}, isHealthy(b, loc, cursor.error), true);
+    PlanCursor next;
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(guard.thenBlock());
-        const PlanCursor next = body(cursor);
+        next = body(cursor);
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{next.bitOffset, next.error});
     }
     {
@@ -480,7 +621,28 @@ PlanCursor guarded(mlir::OpBuilder& b, mlir::Location loc, PlanCursor cursor, Bo
         b.setInsertionPointToStart(guard.elseBlock());
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{cursor.bitOffset, cursor.error});
     }
-    return PlanCursor{guard.getResult(0), guard.getResult(1)};
+    if (!next.staticBits)
+    {
+        stampResultRoles(guard, {RoleOffset, RoleError});
+        return PlanCursor{guard.getResult(0), guard.getResult(1), std::nullopt, next.staticResidue};
+    }
+
+    mlir::scf::IfOp slim;
+    {
+        mlir::OpBuilder::InsertionGuard const g(b);
+        b.setInsertionPoint(guard);
+        slim = mlir::scf::IfOp::create(b, loc, mlir::TypeRange{i8Ty}, guard.getCondition(), true);
+    }
+    slim.getThenRegion().takeBody(guard.getThenRegion());
+    slim.getElseRegion().takeBody(guard.getElseRegion());
+    for (mlir::Region* region : {&slim.getThenRegion(), &slim.getElseRegion()})
+    {
+        auto yield = mlir::cast<mlir::scf::YieldOp>(region->front().getTerminator());
+        yield->setOperands(mlir::ValueRange{yield.getOperand(1)});
+    }
+    guard.erase();
+    stampResultRoles(slim, {RoleError});
+    return PlanCursor{constantI64(b, loc, *next.staticBits), slim.getResult(0), next.staticBits, next.staticResidue};
 }
 
 /// @brief Serialises one scalar field.
@@ -543,73 +705,54 @@ PlanCursor buildArrayWrite(mlir::OpBuilder& b,
                 return buildBitpackedArray(b, loc, step, object, buffer, capacityBytes, afterPrefix, count, true);
             }
 
-            // Driven by the offset rather than by a separate index. An scf.while's results
-            // are exactly the values its condition forwards, so a carried index would also
-            // be a result, and nothing after the loop reads it -- which the emitted C
-            // declares and never uses. The index is recoverable from the offset, the
-            // element width being fixed.
+            // Counted with scf.for, whose induction variable is not among its results. The
+            // loop answers the error alone; where each element lies is the start plus the
+            // index times the width, and where the array ends is the start plus the run.
             const mlir::Value start = afterPrefix.bitOffset;
             const mlir::Value width = constantI64(b, loc, step.bitLength);
-            const mlir::Value end =
-                mlir::arith::AddIOp::create(b, loc, start, mlir::arith::MulIOp::create(b, loc, count, width));
-
-            const mlir::SmallVector<mlir::Type, 2> loopTypes{i64Ty, b.getIntegerType(8)};
-            auto loop = mlir::scf::WhileOp::create(b, loc, loopTypes, mlir::ValueRange{start, afterPrefix.error});
-            stampResultRoles(loop, {RoleOffset, RoleError});
-
+            auto              loop  = countedLoop(b, loc, count, mlir::ValueRange{afterPrefix.error});
+            stampResultRoles(loop, {RoleError});
             {
                 mlir::OpBuilder::InsertionGuard const g(b);
-                mlir::Block* before = b.createBlock(&loop.getBefore(), {}, {i64Ty, b.getIntegerType(8)}, {loc, loc});
-                b.setInsertionPointToStart(before);
-                const mlir::Value more =
-                    mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, before->getArgument(0), end);
-                const mlir::Value keep =
-                    mlir::arith::AndIOp::create(b, loc, more, isHealthy(b, loc, before->getArgument(1)));
-                mlir::scf::ConditionOp::create(b, loc, keep, before->getArguments());
+                b.setInsertionPointToStart(loop.getBody());
+                const mlir::Value index = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
+                const mlir::Value at =
+                    mlir::arith::AddIOp::create(b, loc, start, mlir::arith::MulIOp::create(b, loc, index, width));
+                // An scf.for runs to its bound, so an element after a failure writes nothing.
+                const mlir::Value carried = errorGuarded(b, loc, loop.getRegionIterArg(0), [&]() {
+                    const mlir::Type valueType = stepValueType(b, step);
+                    mlir::Value element = mlir::dsdl::LoadElementOp::create(b,
+                                                                            loc,
+                                                                            valueType,
+                                                                            object,
+                                                                            b.getStringAttr(step.name),
+                                                                            index,
+                                                                            b.getStringAttr(step.scalarCategory),
+                                                                            b.getI64IntegerAttr(storageBitsFor(step)));
+                    markSigned(element.getDefiningOp(), step);
+                    element = normaliseScalar(b, loc, step, element, true);
+                    return emitWrite(b,
+                                     loc,
+                                     buffer,
+                                     capacityBytes,
+                                     PlanCursor{at, loop.getRegionIterArg(0), std::nullopt, std::nullopt},
+                                     element,
+                                     step.bitLength,
+                                     step.scalarCategory == "signed")
+                        .error;
+                });
+                mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{carried});
             }
-            {
-                mlir::OpBuilder::InsertionGuard const g(b);
-                mlir::Block* after = b.createBlock(&loop.getAfter(), {}, {i64Ty, b.getIntegerType(8)}, {loc, loc});
-                b.setInsertionPointToStart(after);
-                const mlir::Value offset   = after->getArgument(0);
-                const mlir::Value incoming = after->getArgument(1);
-                const mlir::Value index =
-                    mlir::arith::DivUIOp::create(b, loc, mlir::arith::SubIOp::create(b, loc, offset, start), width);
-
-                const mlir::Type valueType = stepValueType(b, step);
-                mlir::Value      element = mlir::dsdl::LoadElementOp::create(b,
-                                                                             loc,
-                                                                             valueType,
-                                                                             object,
-                                                                             b.getStringAttr(step.name),
-                                                                             index,
-                                                                             b.getStringAttr(step.scalarCategory),
-                                                                             b.getI64IntegerAttr(storageBitsFor(step)));
-                markSigned(element.getDefiningOp(), step);
-                element = normaliseScalar(b, loc, step, element, true);
-
-                const PlanCursor  written = emitWrite(b,
-                                                      loc,
-                                                      buffer,
-                                                      capacityBytes,
-                                                      PlanCursor{offset, incoming},
-                                                      element,
-                                                      step.bitLength,
-                                                      step.scalarCategory == "signed");
-                const mlir::Value carried =
-                    mlir::arith::SelectOp::create(b, loc, isHealthy(b, loc, incoming), written.error, incoming);
-                mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{written.bitOffset, carried});
-            }
-            return PlanCursor{loop.getResult(0), loop.getResult(1)};
+            return advancedByRun(b, loc, afterPrefix, loop.getResult(0), count, step.bitLength);
         });
     });
 }
 
-/// @brief Pads to the next byte boundary, one zero bit at a time.
+/// @brief Writes zero bits from the cursor up to @p end, one bit at a time.
 ///
-/// The count is not known here once an array is involved, so this is the loop the text form
-/// writes rather than the unrolled writes a fixed layout would allow.
-/// @brief Writes zero bits from the cursor up to @p end.
+/// For an end that is only known at run time: after a variable-length array of elements that
+/// are not whole bytes, or after a union whose arms end at different bits. Everywhere the end is
+/// a number, `emitZeroBits` writes the run at once.
 PlanCursor buildZeroBitsTo(mlir::OpBuilder& b,
                            mlir::Location   loc,
                            mlir::Value      buffer,
@@ -640,8 +783,14 @@ PlanCursor buildZeroBitsTo(mlir::OpBuilder& b,
         b.setInsertionPointToStart(after);
         const mlir::Value zeroBit  = mlir::arith::ConstantOp::create(b, loc, b.getBoolAttr(false));
         const mlir::Value incoming = after->getArgument(1);
-        const PlanCursor  written =
-            emitWrite(b, loc, buffer, capacityBytes, PlanCursor{after->getArgument(0), incoming}, zeroBit, 1, false);
+        const PlanCursor  written  = emitWrite(b,
+                                               loc,
+                                               buffer,
+                                               capacityBytes,
+                                               PlanCursor{after->getArgument(0), incoming, std::nullopt, std::nullopt},
+                                               zeroBit,
+                                               1,
+                                               false);
         // Every value a loop carries has to be read in its body. The condition already
         // guarantees this one is clear, so the select always takes the write's own result --
         // but binding it and dropping it leaves a declaration the emitted C never uses.
@@ -649,7 +798,7 @@ PlanCursor buildZeroBitsTo(mlir::OpBuilder& b,
             mlir::arith::SelectOp::create(b, loc, isHealthy(b, loc, incoming), written.error, incoming);
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{written.bitOffset, carried});
     }
-    return PlanCursor{loop.getResult(0), loop.getResult(1)};
+    return PlanCursor{loop.getResult(0), loop.getResult(1), std::nullopt, 0};
 }
 
 /// @brief Encodes or skips a void field of @p bits.
@@ -664,90 +813,40 @@ PlanCursor buildPaddingStep(mlir::OpBuilder&   b,
                             const std::int64_t bits,
                             const bool         writing)
 {
-    const mlir::Value end = mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, constantI64(b, loc, bits));
     if (!writing)
     {
-        return PlanCursor{end, cursor.error};
+        return advancedBy(b, loc, cursor, cursor.error, bits);
     }
     return guarded(b, loc, cursor, [&](PlanCursor inner) {
-        return buildZeroBitsTo(b, loc, buffer, capacityBytes, inner, end);
+        return emitZeroBits(b, loc, buffer, capacityBytes, inner, bits);
     });
-}
-
-PlanCursor buildFinalPadding(mlir::OpBuilder&            b,
-                             mlir::Location              loc,
-                             mlir::Value                 buffer,
-                             mlir::Value                 capacityBytes,
-                             PlanCursor                  cursor,
-                             std::optional<std::int64_t> staticBitOffset)
-{
-    // A plan of fixed-width scalars ends at a known offset, so the padding is a known number
-    // of writes and needs no loop. Only a variable-length array makes the end unknown.
-    if (staticBitOffset.has_value())
-    {
-        const std::int64_t aligned = ((*staticBitOffset + 7) / 8) * 8;
-        if (aligned == *staticBitOffset)
-        {
-            // Already on a boundary, so there is nothing to pad and the running offset
-            // stands as it is.
-            return cursor;
-        }
-        for (std::int64_t bit = *staticBitOffset; bit < aligned; ++bit)
-        {
-            cursor = guarded(b, loc, cursor, [&](PlanCursor inner) {
-                const mlir::Value zeroBit = mlir::arith::ConstantOp::create(b, loc, b.getBoolAttr(false));
-                return emitWrite(b, loc, buffer, capacityBytes, inner, zeroBit, 1, false);
-            });
-        }
-        return PlanCursor{constantI64(b, loc, aligned), cursor.error};
-    }
-
-    const mlir::Value seven   = constantI64(b, loc, 7);
-    const mlir::Value eight   = constantI64(b, loc, 8);
-    const mlir::Value rounded = mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, seven);
-    const mlir::Value bytes   = mlir::arith::DivUIOp::create(b, loc, rounded, eight);
-    const mlir::Value aligned = mlir::arith::MulIOp::create(b, loc, bytes, eight);
-    return buildZeroBitsTo(b, loc, buffer, capacityBytes, cursor, aligned);
-}
-
-/// @brief Whether a step leaves the plan on a byte boundary, given it began on one.
-///
-/// A composite does: it consumes whole bytes, whatever it contains, so the alignment before the
-/// next one is a no-op, and that holds without knowing any offset.
-bool stepPreservesByteAlignment(const PlanStep& step)
-{
-    if ((step.kind == PlanStepKind::Align) || stepIsComposite(step))
-    {
-        return true;
-    }
-    if (step.kind == PlanStepKind::Padding)
-    {
-        return (step.bits % 8) == 0;
-    }
-    if ((step.bitLength % 8) != 0)
-    {
-        return false;
-    }
-    return !stepIsArray(step) || ((step.arrayLengthPrefixBits % 8) == 0);
 }
 
 /// @brief Rounds the running offset up to a byte boundary.
 ///
-/// Serialising writes the bits it skips. Reading does not: the offset moves.
+/// Serialising writes the bits it skips. Reading does not: the offset moves. The bits to skip
+/// are a number whenever the offset modulo eight is one, whether or not the offset itself is.
 PlanCursor buildAlignment(mlir::OpBuilder& b,
                           mlir::Location   loc,
                           mlir::Value      buffer,
                           mlir::Value      capacityBytes,
                           PlanCursor       cursor,
-                          const bool       writing,
-                          const bool       alreadyAligned)
+                          const bool       writing)
 {
-    if (alreadyAligned)
+    if (cursor.staticResidue)
     {
-        // Nothing to skip to. Worth knowing statically rather than emitting a loop that
-        // never runs: every field before this one occupied whole bytes, or a nested
-        // composite left the plan on a boundary by construction.
-        return cursor;
+        const std::int64_t pad = (8 - *cursor.staticResidue) % 8;
+        if (pad == 0)
+        {
+            return cursor;
+        }
+        if (!writing)
+        {
+            return advancedBy(b, loc, cursor, cursor.error, pad);
+        }
+        return guarded(b, loc, cursor, [&](PlanCursor inner) {
+            return emitZeroBits(b, loc, buffer, capacityBytes, inner, pad);
+        });
     }
     const mlir::Value seven   = constantI64(b, loc, 7);
     const mlir::Value eight   = constantI64(b, loc, 8);
@@ -756,28 +855,37 @@ PlanCursor buildAlignment(mlir::OpBuilder& b,
     const mlir::Value aligned = mlir::arith::MulIOp::create(b, loc, bytes, eight);
     if (!writing)
     {
-        return PlanCursor{aligned, cursor.error};
+        return PlanCursor{aligned, cursor.error, std::nullopt, 0};
     }
-    return buildFinalPadding(b, loc, buffer, capacityBytes, cursor, std::nullopt);
+    return buildZeroBitsTo(b, loc, buffer, capacityBytes, cursor, aligned);
 }
 
 /// @brief Where the cursor at @p bitOffset stands in a buffer of @p capacityBytes: the byte it
-/// reached, bounded by the capacity, and the bytes left from there.
+/// reached and the bytes left from there.
 ///
-/// A read past the end zero-extends and still advances the cursor, so the bit offset can exceed
-/// the capacity; the pointer handed to a nested type is formed at the bounded byte, which every
-/// backend can address.
+/// A read past the end zero-extends and still advances the cursor, so a reader's bit offset can
+/// exceed the capacity; the pointer handed to a nested type is formed at the bounded byte, which
+/// every backend can address. A writer's cannot: the capacity check at the top of the plan
+/// established room for the whole layout, and a write that ran out of it stopped the plan.
 struct BufferPosition
 {
     mlir::Value byteOffset;
     mlir::Value remaining;
 };
 
-BufferPosition bufferPosition(mlir::OpBuilder& b, mlir::Location loc, mlir::Value capacityBytes, mlir::Value bitOffset)
+BufferPosition bufferPosition(mlir::OpBuilder& b,
+                              mlir::Location   loc,
+                              mlir::Value      capacityBytes,
+                              mlir::Value      bitOffset,
+                              const bool       writing)
 {
-    const mlir::Value used  = mlir::arith::DivUIOp::create(b, loc, bitOffset, constantI64(b, loc, 8));
-    const mlir::Value fits  = mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, used, capacityBytes);
-    const mlir::Value taken = mlir::arith::SelectOp::create(b, loc, fits, used, capacityBytes);
+    mlir::Value taken = mlir::arith::DivUIOp::create(b, loc, bitOffset, constantI64(b, loc, 8));
+    if (!writing)
+    {
+        const mlir::Value fits =
+            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, taken, capacityBytes);
+        taken = mlir::arith::SelectOp::create(b, loc, fits, taken, capacityBytes);
+    }
     return BufferPosition{taken, mlir::arith::SubIOp::create(b, loc, capacityBytes, taken)};
 }
 
@@ -795,9 +903,11 @@ mlir::dsdl::PtrType wirePointerType(mlir::MLIRContext* ctx, const bool writing)
 
 /// @brief Encodes or decodes one sealed nested composite at @p target through its own entry point.
 ///
-/// The nested type is handed its storage, the point the container reached, and the space left;
-/// it answers with what it used, and the container advances by that. The container does not
-/// know the nested layout and does not need to.
+/// The nested type is handed its storage, the point the container reached, and the space left.
+/// A nested type of one size advances the container by that size: on the wire it occupies
+/// exactly that, and a reader that ran out of bytes inside it finds only zeros after it
+/// wherever the cursor stands. One whose size varies reports what it used, and the container
+/// reads that back.
 PlanCursor buildSealedNested(mlir::OpBuilder& b,
                              mlir::Location   loc,
                              const PlanStep&  step,
@@ -811,7 +921,7 @@ PlanCursor buildSealedNested(mlir::OpBuilder& b,
     auto  i64Ty   = b.getIntegerType(64);
     auto  sizePtr = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::SizeType::get(ctx));
 
-    const BufferPosition position = bufferPosition(b, loc, capacityBytes, inner.bitOffset);
+    const BufferPosition position = bufferPosition(b, loc, capacityBytes, inner.bitOffset, writing);
     const mlir::Value    sizeSlot = mlir::dsdl::LocalOp::create(b, loc, sizePtr, position.remaining);
     const mlir::Value    at =
         mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, position.byteOffset);
@@ -826,17 +936,17 @@ PlanCursor buildSealedNested(mlir::OpBuilder& b,
                                                  at,
                                                  sizeSlot);
 
-    // Read back before branching on the error: the nested call reports what it used in the
-    // same place either way, and the select below decides whether it counts.
+    if (step.compositeFixedBits)
+    {
+        return advancedBy(b, loc, inner, call.getError(), *step.compositeFixedBits);
+    }
     const mlir::Value used = mlir::dsdl::LoadScalarOp::create(b, loc, i64Ty, sizeSlot);
     const mlir::Value advanced =
         mlir::arith::AddIOp::create(b,
                                     loc,
                                     inner.bitOffset,
                                     mlir::arith::MulIOp::create(b, loc, used, constantI64(b, loc, 8)));
-    const mlir::Value ok      = isHealthy(b, loc, call.getError());
-    const mlir::Value nextOff = mlir::arith::SelectOp::create(b, loc, ok, advanced, inner.bitOffset);
-    return PlanCursor{nextOff, call.getError()};
+    return PlanCursor{advanced, call.getError(), std::nullopt, inner.staticResidue};
 }
 
 /// @brief Encodes or decodes one delimited nested composite at @p target.
@@ -874,9 +984,8 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
                                                   b.getI64IntegerAttr(kDelimiterHeaderBits),
                                                   nullptr);
     }
-    const mlir::Value afterHeader =
-        mlir::arith::AddIOp::create(b, loc, headerOffset, constantI64(b, loc, kDelimiterHeaderBits));
-    const BufferPosition position = bufferPosition(b, loc, capacityBytes, afterHeader);
+    const PlanCursor     afterHeader = advancedBy(b, loc, inner, inner.error, kDelimiterHeaderBits);
+    const BufferPosition position    = bufferPosition(b, loc, capacityBytes, afterHeader.bitOffset, writing);
 
     // Serialising does not know the length until the nested type reports it, so the header
     // is reserved here and written once the encoding below has run.
@@ -895,59 +1004,99 @@ PlanCursor buildDelimitedNested(mlir::OpBuilder& b,
                                           mlir::ValueRange{declared, position.remaining}));
     }
 
-    return guarded(b, loc, PlanCursor{afterHeader, error}, [&](PlanCursor ready) {
-        const mlir::Value at =
-            mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, position.byteOffset);
+    // Serialising a nested type of one size knows the length it will write; the header is
+    // that number and the slot is never read back.
+    const std::optional<std::int64_t> fixedBytes =
+        (writing && step.compositeFixedBits) ? std::optional{*step.compositeFixedBits / 8} : std::nullopt;
 
-        auto call = mlir::dsdl::CallSerdesOp::create(b,
-                                                     loc,
-                                                     b.getIntegerType(8),
-                                                     nestedCallee(b, step, writing),
-                                                     b.getStringAttr(step.name),
-                                                     b.getStringAttr(writing ? "serialize" : "deserialize"),
-                                                     target,
-                                                     at,
-                                                     sizeSlot);
+    return guarded(b,
+                   loc,
+                   PlanCursor{afterHeader.bitOffset, error, afterHeader.staticBits, afterHeader.staticResidue},
+                   [&](PlanCursor ready) {
+                       const mlir::Value at = mlir::dsdl::BufferAtOp::create(b,
+                                                                             loc,
+                                                                             wirePointerType(ctx, writing),
+                                                                             buffer,
+                                                                             position.byteOffset);
 
-        mlir::Value err = call.getError();
+                       auto call =
+                           mlir::dsdl::CallSerdesOp::create(b,
+                                                            loc,
+                                                            b.getIntegerType(8),
+                                                            nestedCallee(b, step, writing),
+                                                            b.getStringAttr(step.name),
+                                                            b.getStringAttr(writing ? "serialize" : "deserialize"),
+                                                            target,
+                                                            at,
+                                                            sizeSlot);
 
-        // The length the reader will be told. Serialising learns it from the nested type,
-        // reading it back out of the slot the callee wrote. Decoding was told it up front
-        // and steps that far regardless of what the nested decode consumed, so it never
-        // reads the slot back at all.
-        const mlir::Value span = writing ? mlir::dsdl::LoadScalarOp::create(b, loc, i64Ty, sizeSlot) : declared;
+                       mlir::Value err = call.getError();
 
-        if (writing)
-        {
-            err = foldError(b,
-                            loc,
-                            err,
-                            callErrorHelper(b,
-                                            loc,
-                                            step.delimiterValidateHelper,
-                                            mlir::ValueRange{span, position.remaining}));
-        }
+                       // The length the reader will be told. Serialising learns it from the nested type,
+                       // reading it back out of the slot the callee wrote unless the type has one size.
+                       // Decoding was told it up front and steps that far regardless of what the nested
+                       // decode consumed, so it never reads the slot back at all.
+                       mlir::Value span = declared;
+                       if (fixedBytes)
+                       {
+                           span = constantI64(b, loc, *fixedBytes);
+                       }
+                       else if (writing)
+                       {
+                           span = mlir::dsdl::LoadScalarOp::create(b, loc, i64Ty, sizeSlot);
+                       }
 
-        return guarded(b, loc, PlanCursor{ready.bitOffset, err}, [&](PlanCursor done) {
-            const mlir::Value after =
-                mlir::arith::AddIOp::create(b, loc, done.bitOffset, mlir::arith::MulIOp::create(b, loc, span, eight));
-            mlir::Value outcome = done.error;
-            if (writing)
-            {
-                auto header = mlir::dsdl::WriteBitsOp::create(b,
-                                                              loc,
-                                                              b.getIntegerType(8),
-                                                              buffer,
-                                                              capacityBytes,
-                                                              headerOffset,
-                                                              span,
-                                                              b.getI64IntegerAttr(kDelimiterHeaderBits),
-                                                              nullptr);
-                outcome     = foldError(b, loc, outcome, header.getError());
-            }
-            return PlanCursor{after, outcome};
-        });
-    });
+                       if (writing)
+                       {
+                           err = foldError(b,
+                                           loc,
+                                           err,
+                                           callErrorHelper(b,
+                                                           loc,
+                                                           step.delimiterValidateHelper,
+                                                           mlir::ValueRange{span, position.remaining}));
+                       }
+
+                       return guarded(b,
+                                      loc,
+                                      PlanCursor{ready.bitOffset, err, ready.staticBits, ready.staticResidue},
+                                      [&](PlanCursor done) {
+                                          PlanCursor after;
+                                          if (fixedBytes)
+                                          {
+                                              after = advancedBy(b, loc, done, done.error, *fixedBytes * 8);
+                                          }
+                                          else
+                                          {
+                                              after = PlanCursor{mlir::arith::AddIOp::
+                                                                     create(b,
+                                                                            loc,
+                                                                            done.bitOffset,
+                                                                            mlir::arith::MulIOp::create(b,
+                                                                                                        loc,
+                                                                                                        span,
+                                                                                                        eight)),
+                                                                 done.error,
+                                                                 std::nullopt,
+                                                                 done.staticResidue};
+                                          }
+                                          if (writing)
+                                          {
+                                              auto header = mlir::dsdl::WriteBitsOp::create(b,
+                                                                                            loc,
+                                                                                            b.getIntegerType(8),
+                                                                                            buffer,
+                                                                                            capacityBytes,
+                                                                                            headerOffset,
+                                                                                            span,
+                                                                                            b.getI64IntegerAttr(
+                                                                                                kDelimiterHeaderBits),
+                                                                                            nullptr);
+                                              after.error = foldError(b, loc, after.error, header.getError());
+                                          }
+                                          return after;
+                                      });
+                   });
 }
 
 /// @brief Encodes or decodes the nested composite at @p target, sealed or delimited.
@@ -1001,19 +1150,23 @@ std::vector<const PlanStep*> unionOptionsOf(const std::vector<PlanStep>& steps)
     return options;
 }
 
-/// @brief Runs one option's steps when the tag selects it, and passes the cursor through
+/// @brief Runs one option's steps when the tag selects it, and passes @p chain through
 ///        untouched otherwise.
 ///
 /// A union encodes exactly one of its options, so the chain of tests is the plan: whichever
-/// arm the tag selects contributes, and the rest contribute nothing. An option that the tag
-/// did not select must not advance the offset, so each arm yields the cursor it
-/// was given rather than a merged one.
+/// arm the tag selects contributes, and the rest contribute nothing. An arm begins at
+/// @p afterTag, where the selected option always begins, rather than at the chain: the two are
+/// the same cursor when the arm runs, and only the former is a number. Where the arm ends,
+/// modulo eight, goes into @p armsEnd: the union ends where its selected arm does, so what every
+/// arm agrees on holds after the chain.
 template <typename StepFn>
 PlanCursor buildUnionOption(mlir::OpBuilder& b,
                             mlir::Location   loc,
                             mlir::Value      tag,
                             const PlanStep&  option,
-                            PlanCursor       cursor,
+                            PlanCursor       chain,
+                            PlanCursor       afterTag,
+                            ResidueMeet&     armsEnd,
                             StepFn           emitStep)
 {
     const mlir::Value selected = mlir::arith::CmpIOp::create(b,
@@ -1028,15 +1181,16 @@ PlanCursor buildUnionOption(mlir::OpBuilder& b,
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(arm.thenBlock());
-        const PlanCursor next = emitStep(cursor);
+        const PlanCursor next = emitStep(afterTag);
+        armsEnd.meet(next.staticResidue);
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{next.bitOffset, next.error});
     }
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(arm.elseBlock());
-        mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{cursor.bitOffset, cursor.error});
+        mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{chain.bitOffset, chain.error});
     }
-    return PlanCursor{arm.getResult(0), arm.getResult(1)};
+    return PlanCursor{arm.getResult(0), arm.getResult(1), std::nullopt, std::nullopt};
 }
 
 bool stepIsBitpackedArray(const PlanStep& step)
@@ -1078,7 +1232,14 @@ PlanCursor buildBitpackedArray(mlir::OpBuilder& b,
     {
         mlir::dsdl::BitReadOp::create(b, loc, packed, buffer, capacityBytes, cursor.bitOffset, count);
     }
-    return PlanCursor{mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, count), cursor.error};
+    if (const auto elements = constantCount(count))
+    {
+        return advancedBy(b, loc, cursor, cursor.error, *elements);
+    }
+    return PlanCursor{mlir::arith::AddIOp::create(b, loc, cursor.bitOffset, count),
+                      cursor.error,
+                      std::nullopt,
+                      std::nullopt};
 }
 
 /// @brief Encodes or decodes an array of nested composites, one element at a time.
@@ -1098,36 +1259,64 @@ PlanCursor buildCompositeElementLoop(mlir::OpBuilder& b,
                                      mlir::Value      count,
                                      const bool       writing)
 {
-    auto* ctx     = b.getContext();
-    auto  i64Ty   = b.getIntegerType(64);
-    auto  indexTy = b.getIndexType();
+    auto* ctx   = b.getContext();
+    auto  i64Ty = b.getIntegerType(64);
 
-    const mlir::Value zero  = mlir::arith::ConstantIndexOp::create(b, loc, 0);
-    const mlir::Value one   = mlir::arith::ConstantIndexOp::create(b, loc, 1);
-    const mlir::Value bound = mlir::arith::IndexCastOp::create(b, loc, indexTy, count);
+    const auto elementAddress = [&](mlir::Value index) {
+        return mlir::dsdl::ElementAddrOp::create(b,
+                                                 loc,
+                                                 nestedPointerType(ctx, step, writing),
+                                                 object,
+                                                 b.getStringAttr(step.name),
+                                                 index,
+                                                 b.getStringAttr("composite"),
+                                                 b.getI64IntegerAttr(0));
+    };
 
-    auto loop = mlir::scf::ForOp::create(b, loc, zero, bound, one, mlir::ValueRange{cursor.bitOffset, cursor.error});
+    // Elements of one width lie at the start plus the index times that width, so the loop
+    // carries the error alone. A reader of a delimited element steps by the header it read,
+    // whatever the nested plan's width, so only a sealed one or a writer has that.
+    if (step.compositeFixedBits && (step.compositeSealed || writing))
+    {
+        const std::int64_t elementBits = *step.compositeFixedBits + (step.compositeSealed ? 0 : kDelimiterHeaderBits);
+        const mlir::Value  start       = cursor.bitOffset;
+        auto               loop        = countedLoop(b, loc, count, mlir::ValueRange{cursor.error});
+        stampResultRoles(loop, {RoleError});
+        {
+            mlir::OpBuilder::InsertionGuard const g(b);
+            b.setInsertionPointToStart(loop.getBody());
+            const mlir::Value index = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
+            const mlir::Value at =
+                mlir::arith::AddIOp::create(b,
+                                            loc,
+                                            start,
+                                            mlir::arith::MulIOp::create(b,
+                                                                        loc,
+                                                                        index,
+                                                                        constantI64(b, loc, elementBits)));
+            const mlir::Value carried = errorGuarded(b, loc, loop.getRegionIterArg(0), [&]() {
+                const PlanCursor inner{at, loop.getRegionIterArg(0), std::nullopt, std::nullopt};
+                return buildNested(b, loc, step, elementAddress(index), buffer, capacityBytes, inner, writing).error;
+            });
+            mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{carried});
+        }
+        return advancedByRun(b, loc, cursor, loop.getResult(0), count, elementBits);
+    }
+
+    auto loop = countedLoop(b, loc, count, mlir::ValueRange{cursor.bitOffset, cursor.error});
     stampResultRoles(loop, {RoleOffset, RoleError});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
         b.setInsertionPointToStart(loop.getBody());
         const mlir::Value index = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
-        const PlanCursor  carried{loop.getRegionIterArg(0), loop.getRegionIterArg(1)};
+        const PlanCursor  carried{loop.getRegionIterArg(0), loop.getRegionIterArg(1), std::nullopt, std::nullopt};
 
         const PlanCursor next = guarded(b, loc, carried, [&](PlanCursor inner) {
-            const mlir::Value target = mlir::dsdl::ElementAddrOp::create(b,
-                                                                         loc,
-                                                                         nestedPointerType(ctx, step, writing),
-                                                                         object,
-                                                                         b.getStringAttr(step.name),
-                                                                         index,
-                                                                         b.getStringAttr("composite"),
-                                                                         b.getI64IntegerAttr(0));
-            return buildNested(b, loc, step, target, buffer, capacityBytes, inner, writing);
+            return buildNested(b, loc, step, elementAddress(index), buffer, capacityBytes, inner, writing);
         });
         mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{next.bitOffset, next.error});
     }
-    return PlanCursor{loop.getResult(0), loop.getResult(1)};
+    return PlanCursor{loop.getResult(0), loop.getResult(1), std::nullopt, cursor.staticResidue};
 }
 
 /// @brief Builds a typed serialise body as operations.
@@ -1198,8 +1387,7 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
         const mlir::Value capacityError =
             callErrorHelper(builder, loc, capacityCheckSymbol, mlir::ValueRange{capacityBits});
 
-        bool       byteAligned = true;
-        PlanCursor cursor{constantI64(builder, loc, 0), capacityError};
+        PlanCursor cursor{constantI64(builder, loc, 0), capacityError, 0, 0};
 
         if (isUnion)
         {
@@ -1215,34 +1403,35 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
                 return emitWrite(builder, loc, buffer, capacityBytes, inner, tagValue, unionTagBits, false);
             });
 
+            const PlanCursor afterTag = cursor;
+            ResidueMeet      armsEnd;
             for (const PlanStep* option : unionOptionsOf(steps))
             {
-                cursor = buildUnionOption(builder, loc, tagValue, *option, cursor, [&](PlanCursor arm) {
-                    if (option->alignmentBits > 1)
-                    {
-                        arm = buildAlignment(builder, loc, buffer, capacityBytes, arm, true, false);
-                    }
-                    if (stepIsArray(*option))
-                    {
-                        return buildArrayWrite(builder, loc, *option, object, buffer, capacityBytes, arm);
-                    }
-                    if (stepIsComposite(*option))
-                    {
-                        return buildCompositeStep(builder, loc, *option, object, buffer, capacityBytes, arm, true);
-                    }
-                    return buildScalarWrite(builder, loc, *option, object, buffer, capacityBytes, arm);
-                });
+                cursor =
+                    buildUnionOption(builder, loc, tagValue, *option, cursor, afterTag, armsEnd, [&](PlanCursor arm) {
+                        if (option->alignmentBits > 1)
+                        {
+                            arm = buildAlignment(builder, loc, buffer, capacityBytes, arm, true);
+                        }
+                        if (stepIsArray(*option))
+                        {
+                            return buildArrayWrite(builder, loc, *option, object, buffer, capacityBytes, arm);
+                        }
+                        if (stepIsComposite(*option))
+                        {
+                            return buildCompositeStep(builder, loc, *option, object, buffer, capacityBytes, arm, true);
+                        }
+                        return buildScalarWrite(builder, loc, *option, object, buffer, capacityBytes, arm);
+                    });
             }
-            byteAligned = false;
+            cursor.staticResidue = armsEnd.value;
         }
         for (std::size_t index = 0; isUnion ? false : (index < steps.size()); ++index)
         {
-            const PlanStep& step    = steps[index];
-            const bool      aligned = byteAligned;
-            byteAligned             = byteAligned && stepPreservesByteAlignment(step);
+            const PlanStep& step = steps[index];
             if (step.kind == PlanStepKind::Align)
             {
-                cursor = buildAlignment(builder, loc, buffer, capacityBytes, cursor, true, aligned);
+                cursor = buildAlignment(builder, loc, buffer, capacityBytes, cursor, true);
             }
             else if (step.kind == PlanStepKind::Padding)
             {
@@ -1261,43 +1450,7 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
                 cursor = buildScalarWrite(builder, loc, step, object, buffer, capacityBytes, cursor);
             }
         }
-        // Where the plan ends is known when nothing varies, and known to be byte-aligned
-        // whenever every width is a whole number of bytes -- an array of them lands on a
-        // boundary whatever its count. Either way the trailing padding is not a loop.
-        std::optional<std::int64_t> staticEnd;
-        // A nested composite's length is its own to decide, so anything after one is as
-        // unknown as anything after an array; a union ends where its selected arm ends.
-        const bool anyVariable =
-            isUnion || std::ranges::any_of(steps, [](const PlanStep& step) {
-                return stepIsArray(step) || stepIsComposite(step) || (step.kind == PlanStepKind::Align);
-            });
-        if (!anyVariable)
-        {
-            std::int64_t total = 0;
-            for (const auto& step : steps)
-            {
-                total += step.bitLength;
-            }
-            staticEnd = total;
-        }
-        else
-        {
-            const bool wholeBytes = std::ranges::all_of(steps, [](const PlanStep& step) {
-                if ((step.kind == PlanStepKind::Align) || stepIsComposite(step))
-                {
-                    // Both land the plan on a byte boundary by construction.
-                    return true;
-                }
-                const bool widthWhole  = (step.bitLength % 8) == 0;
-                const bool prefixWhole = !stepIsArray(step) || ((step.arrayLengthPrefixBits % 8) == 0);
-                return widthWhole && prefixWhole;
-            });
-            if (wholeBytes || byteAligned)
-            {
-                staticEnd = 0;
-            }
-        }
-        cursor = buildFinalPadding(builder, loc, buffer, capacityBytes, cursor, staticEnd);
+        cursor = buildAlignment(builder, loc, buffer, capacityBytes, cursor, true);
 
         auto epilogue =
             mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, isHealthy(builder, loc, cursor.error), true);
@@ -1351,8 +1504,7 @@ PlanCursor buildScalarRead(mlir::OpBuilder& b,
                                                      (step.scalarCategory == "signed") ? b.getUnitAttr() : nullptr);
     raw             = normaliseScalar(b, loc, step, raw, false);
     markSigned(mlir::dsdl::StoreMemberOp::create(b, loc, object, b.getStringAttr(step.name), raw), step);
-    return PlanCursor{mlir::arith::AddIOp::create(b, loc, bitOffset, constantI64(b, loc, step.bitLength)),
-                      cursor.error};
+    return advancedBy(b, loc, cursor, cursor.error, step.bitLength);
 }
 
 /// @brief Reads @p count elements into the object, advancing past them.
@@ -1377,32 +1529,17 @@ PlanCursor buildArrayElementReads(mlir::OpBuilder& b,
     {
         return buildBitpackedArray(b, loc, step, object, buffer, capacityBytes, cursor, count, false);
     }
-    auto              i64Ty  = b.getIntegerType(64);
-    const mlir::Value offset = cursor.bitOffset;
-    // Driven by the offset alone, for the same reason as the serialise side: a carried index
-    // would also be a loop result, and nothing after the loop reads it.
-    const mlir::Value start = offset;
+    auto              i64Ty = b.getIntegerType(64);
+    const mlir::Value start = cursor.bitOffset;
     const mlir::Value width = constantI64(b, loc, step.bitLength);
-    const mlir::Value end =
-        mlir::arith::AddIOp::create(b, loc, start, mlir::arith::MulIOp::create(b, loc, count, width));
-
-    auto loop = mlir::scf::WhileOp::create(b, loc, mlir::TypeRange{i64Ty}, mlir::ValueRange{start});
-    stampResultRoles(loop, {RoleOffset});
+    // Counted, like the serialise side, and carrying nothing: a read cannot fail.
+    auto loop = countedLoop(b, loc, count, mlir::ValueRange{});
     {
         mlir::OpBuilder::InsertionGuard const g(b);
-        mlir::Block*                          before = b.createBlock(&loop.getBefore(), {}, {i64Ty}, {loc});
-        b.setInsertionPointToStart(before);
-        const mlir::Value more =
-            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, before->getArgument(0), end);
-        mlir::scf::ConditionOp::create(b, loc, more, before->getArguments());
-    }
-    {
-        mlir::OpBuilder::InsertionGuard const g(b);
-        mlir::Block*                          after = b.createBlock(&loop.getAfter(), {}, {i64Ty}, {loc});
-        b.setInsertionPointToStart(after);
-        const mlir::Value at = after->getArgument(0);
-        const mlir::Value index =
-            mlir::arith::DivUIOp::create(b, loc, mlir::arith::SubIOp::create(b, loc, at, start), width);
+        b.setInsertionPointToStart(loop.getBody());
+        const mlir::Value index = mlir::arith::IndexCastOp::create(b, loc, i64Ty, loop.getInductionVar());
+        const mlir::Value at =
+            mlir::arith::AddIOp::create(b, loc, start, mlir::arith::MulIOp::create(b, loc, index, width));
 
         const mlir::Type valueType = stepValueType(b, step);
         mlir::Value      element =
@@ -1424,9 +1561,8 @@ PlanCursor buildArrayElementReads(mlir::OpBuilder& b,
                                                       b.getStringAttr(step.scalarCategory),
                                                       b.getI64IntegerAttr(storageBitsFor(step))),
                    step);
-        mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{mlir::arith::AddIOp::create(b, loc, at, width)});
     }
-    return PlanCursor{loop.getResult(0), cursor.error};
+    return advancedByRun(b, loc, cursor, cursor.error, count, step.bitLength);
 }
 
 PlanCursor buildArrayRead(mlir::OpBuilder& b,
@@ -1455,17 +1591,16 @@ PlanCursor buildArrayRead(mlir::OpBuilder& b,
             });
         }
 
-        mlir::Value wireLength = mlir::dsdl::ReadBitsOp::create(b,
-                                                                loc,
-                                                                i64Ty,
-                                                                buffer,
-                                                                capacityBytes,
-                                                                bitOffset,
-                                                                b.getI64IntegerAttr(step.arrayLengthPrefixBits),
-                                                                nullptr);
-        wireLength             = applyHelper(b, loc, step.deserArrayLengthPrefixHelper, wireLength);
-        const mlir::Value offset =
-            mlir::arith::AddIOp::create(b, loc, bitOffset, constantI64(b, loc, step.arrayLengthPrefixBits));
+        mlir::Value wireLength       = mlir::dsdl::ReadBitsOp::create(b,
+                                                                      loc,
+                                                                      i64Ty,
+                                                                      buffer,
+                                                                      capacityBytes,
+                                                                      bitOffset,
+                                                                      b.getI64IntegerAttr(step.arrayLengthPrefixBits),
+                                                                      nullptr);
+        wireLength                   = applyHelper(b, loc, step.deserArrayLengthPrefixHelper, wireLength);
+        const PlanCursor afterPrefix = advancedBy(b, loc, outer, outer.error, step.arrayLengthPrefixBits);
 
         // The length off the wire is validated before anything is sized by it. The helper rejects
         // a length past the declared capacity or beyond the index width of the target, so the
@@ -1473,10 +1608,13 @@ PlanCursor buildArrayRead(mlir::OpBuilder& b,
         const mlir::Value count = wireLength;
         const mlir::Value error = callErrorHelper(b, loc, step.arrayLengthValidateHelper, mlir::ValueRange{count});
 
-        return guarded(b, loc, PlanCursor{offset, error}, [&](PlanCursor inner) {
-            mlir::dsdl::SetArrayLengthOp::create(b, loc, object, b.getStringAttr(step.name), count);
-            return buildArrayElementReads(b, loc, step, object, buffer, capacityBytes, inner, count);
-        });
+        return guarded(b,
+                       loc,
+                       PlanCursor{afterPrefix.bitOffset, error, afterPrefix.staticBits, afterPrefix.staticResidue},
+                       [&](PlanCursor inner) {
+                           mlir::dsdl::SetArrayLengthOp::create(b, loc, object, b.getStringAttr(step.name), count);
+                           return buildArrayElementReads(b, loc, step, object, buffer, capacityBytes, inner, count);
+                       });
     });
 }
 
@@ -1561,8 +1699,7 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
         const mlir::Value capacityBytes = mlir::dsdl::LoadScalarOp::create(builder, loc, i64Ty, sizePtr);
         const mlir::Value readable      = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, bufTy, buffer);
 
-        bool       byteAligned = true;
-        PlanCursor cursor{constantI64(builder, loc, 0), constantI8(builder, loc, 0)};
+        PlanCursor cursor{constantI64(builder, loc, 0), constantI8(builder, loc, 0), 0, 0};
 
         if (isUnion)
         {
@@ -1581,41 +1718,45 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
                                      callErrorHelper(builder, loc, unionTagValidateSymbol, mlir::ValueRange{tagValue}));
             cursor       = guarded(builder, loc, cursor, [&](PlanCursor inner) {
                 mlir::dsdl::SetUnionTagOp::create(builder, loc, object, tagValue);
-                return PlanCursor{mlir::arith::AddIOp::create(builder,
-                                                              loc,
-                                                              inner.bitOffset,
-                                                              constantI64(builder, loc, unionTagBits)),
-                                  inner.error};
+                return advancedBy(builder, loc, inner, inner.error, unionTagBits);
             });
 
+            const PlanCursor afterTag = cursor;
+            ResidueMeet      armsEnd;
             for (const PlanStep* option : unionOptionsOf(steps))
             {
-                cursor = buildUnionOption(builder, loc, tagValue, *option, cursor, [&](PlanCursor arm) {
-                    if (option->alignmentBits > 1)
-                    {
-                        arm = buildAlignment(builder, loc, readable, capacityBytes, arm, false, false);
-                    }
-                    if (stepIsArray(*option))
-                    {
-                        return buildArrayRead(builder, loc, *option, object, readable, capacityBytes, arm);
-                    }
-                    if (stepIsComposite(*option))
-                    {
-                        return buildCompositeStep(builder, loc, *option, object, readable, capacityBytes, arm, false);
-                    }
-                    return buildScalarRead(builder, loc, *option, object, readable, capacityBytes, arm);
-                });
+                cursor =
+                    buildUnionOption(builder, loc, tagValue, *option, cursor, afterTag, armsEnd, [&](PlanCursor arm) {
+                        if (option->alignmentBits > 1)
+                        {
+                            arm = buildAlignment(builder, loc, readable, capacityBytes, arm, false);
+                        }
+                        if (stepIsArray(*option))
+                        {
+                            return buildArrayRead(builder, loc, *option, object, readable, capacityBytes, arm);
+                        }
+                        if (stepIsComposite(*option))
+                        {
+                            return buildCompositeStep(builder,
+                                                      loc,
+                                                      *option,
+                                                      object,
+                                                      readable,
+                                                      capacityBytes,
+                                                      arm,
+                                                      false);
+                        }
+                        return buildScalarRead(builder, loc, *option, object, readable, capacityBytes, arm);
+                    });
             }
-            byteAligned = false;
+            cursor.staticResidue = armsEnd.value;
         }
         for (std::size_t index = 0; isUnion ? false : (index < steps.size()); ++index)
         {
-            const PlanStep& step    = steps[index];
-            const bool      aligned = byteAligned;
-            byteAligned             = byteAligned && stepPreservesByteAlignment(step);
+            const PlanStep& step = steps[index];
             if (step.kind == PlanStepKind::Align)
             {
-                cursor = buildAlignment(builder, loc, readable, capacityBytes, cursor, false, aligned);
+                cursor = buildAlignment(builder, loc, readable, capacityBytes, cursor, false);
             }
             else if (step.kind == PlanStepKind::Padding)
             {

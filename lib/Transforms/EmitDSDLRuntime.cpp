@@ -216,6 +216,13 @@ mlir::Block* begin(mlir::OpBuilder& b, mlir::LLVM::LLVMFuncOp fn)
     // and an object built from this carries the same. Exported, each object would define the
     // primitives again and no two could be linked together.
     fn.setLinkage(mlir::LLVM::Linkage::Internal);
+    // `inline` is the other half of what the header asks for, and it has to be asked for here:
+    // a C compiler takes the hint, while this module's pipeline decides on cost alone and these
+    // carry loops, so it declined and left the write primitives out of line. An array then paid
+    // a call per element -- 65 instructions against the 6 the same plan costs through C, which
+    // inlines them and folds the run. Inlined, the offset at each call site is a constant and
+    // the run folds here too.
+    fn.setAlwaysInline(true);
     mlir::Block* entry = fn.addEntryBlock(b);
     b.setInsertionPointToStart(entry);
     return entry;

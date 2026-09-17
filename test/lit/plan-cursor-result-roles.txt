@@ -21,19 +21,16 @@
 # CHECK: llvmdsdl.result_roles = ["offset", "error"]
 # CHECK: llvmdsdl.result_roles = ["error"]
 
-# An array's elements are walked by a counted loop carrying the pair.
+# An array's elements are walked by a counted loop. Writing elements of one width, the loop
+# carries the error alone: each element lies at the start plus its index times that width.
 # ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_DelimitedList_1_0__serialize_ir_
-# ANCHOR:{{^}}[[SER: +]]%{{[0-9]+}}:2 = scf.for
-# ANCHOR:{{^}}[[SER]]} {llvmdsdl.result_roles = ["offset", "error"]}
+# ANCHOR:{{^}}[[SER: +]]%{{[0-9]+}} = scf.for
+# ANCHOR:{{^}}[[SER]]} {llvmdsdl.result_roles = ["error"]}
 
+# Reading delimited elements, the loop steps by the header each one carries, and carries the pair.
 # ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_DelimitedList_1_0__deserialize_ir_
 # ANCHOR:{{^}}[[DESER: +]]%{{[0-9]+}}:2 = scf.for
 # ANCHOR:{{^}}[[DESER]]} {llvmdsdl.result_roles = ["offset", "error"]}
-
-# A padding run is an scf.while, which spells its attributes the long way.
-# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_Helpers_1_0__serialize_ir_
-# ANCHOR:{{^}}[[LOOP: +]]%{{[0-9]+}}:2 = scf.while
-# ANCHOR:{{^}}[[LOOP]]} attributes {llvmdsdl.result_roles = ["offset", "error"]}
 
 # A deserialise body opens by asking whether it can read its arguments at all, and that verdict is
 # neither an offset nor an error.
@@ -43,3 +40,9 @@
 
 # The body's own guard answers with the code and nothing else, at the outermost depth of the body.
 # ANCHOR:{{^}}    } {llvmdsdl.result_roles = ["error"]}
+
+# A padding run whose end is only known at run time is an scf.while, which spells its attributes
+# the long way.
+# ANCHOR-LABEL:{{^}}  func.func @fixtures_vendor_Ragged_1_0__serialize_ir_
+# ANCHOR:{{^}}[[LOOP: +]]%{{[0-9]+}}:2 = scf.while
+# ANCHOR:{{^}}[[LOOP]]} attributes {llvmdsdl.result_roles = ["offset", "error"]}

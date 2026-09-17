@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -135,6 +136,11 @@ struct PlanStep final
     bool compositeSealed{true};
     /// @brief Extent of a delimited nested composite, in bits.
     std::int64_t compositeExtentBits{0};
+    /// @brief The width of a nested composite whose plan has exactly one, in bits.
+    ///
+    /// Absent when the nested layout varies, and when the nested type's plan is not in the
+    /// module the step was read from.
+    std::optional<std::int64_t> compositeFixedBits;
 };
 
 /// @brief Reads the steps of @p plan, in order.

@@ -107,7 +107,6 @@ class Helpers:
             v2 = size * 8
             err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v2)
             v3 = err_2 == 0
-            v4 = (13 if v3 else 0)
             if v3:
                 a_value = int(self.a)
                 value = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(a_value)
@@ -115,82 +114,63 @@ class Helpers:
                 err_3 = err_4
             else:
                 err_3 = err_2
-            v5 = err_3 == 0
-            if v5:
+            v4 = err_3 == 0
+            if v4:
                 b_value = float(self.b)
                 value_2 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(b_value)
-                err_6 = dsdl_runtime.write_float(buffer, v4, 16, value_2)
-                v6 = v4 + 16
-                offset = v6
+                err_6 = dsdl_runtime.write_float(buffer, 13, 16, value_2)
                 err_5 = err_6
             else:
-                offset = v4
                 err_5 = err_3
-            v7 = err_5 == 0
-            if v7:
+            v5 = err_5 == 0
+            if v5:
                 c_count = len(self.c)
                 err_8 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(c_count)
-                v8 = err_8 == 0
-                if v8:
+                v6 = err_8 == 0
+                if v6:
                     count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(c_count)
-                    err_10 = dsdl_runtime.write_unsigned(buffer, offset, 8, count, False)
-                    v9 = offset + 8
-                    v10 = c_count * 8
-                    v11 = v9 + v10
-                    offset_4 = v9
+                    err_10 = dsdl_runtime.write_unsigned(buffer, 29, 8, count, False)
+                    v7 = c_count
                     err_11 = err_10
-                    while True:
-                        v12 = offset_4 < v11
-                        v13 = err_11 == 0
-                        v14 = v12 and v13
-                        offset_5 = offset_4
-                        err_12 = err_11
-                        if not (v14):
-                            break
-                        v15 = offset_5 - v9
-                        v16 = v15 // 8
-                        c_value = int(self.c[v16])
-                        value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(c_value)
-                        err_13 = dsdl_runtime.write_unsigned(buffer, offset_5, 8, value_3, False)
-                        v17 = offset_5 + 8
-                        v18 = err_12 == 0
-                        v19 = (err_13 if v18 else err_12)
-                        offset_4 = v17
-                        err_11 = v19
-                    offset_3 = offset_5
-                    err_9 = err_12
+                    for i in range(0, v7, 1):
+                        v8 = i
+                        v9 = v8 * 8
+                        v10 = v9 + 37
+                        v11 = err_11 == 0
+                        if v11:
+                            c_value = int(self.c[v8])
+                            value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(c_value)
+                            err_13 = dsdl_runtime.write_unsigned(buffer, v10, 8, value_3, False)
+                            err_12 = err_13
+                        else:
+                            err_12 = err_11
+                        err_11 = err_12
+                    v12 = c_count * 8
+                    v13 = v12 + 37
+                    offset_2 = v13
+                    err_9 = err_11
                 else:
-                    offset_3 = offset
+                    offset_2 = 29
                     err_9 = err_8
-                offset_2 = offset_3
+                offset = offset_2
                 err_7 = err_9
             else:
-                offset_2 = offset
+                offset = 29
                 err_7 = err_5
-            v20 = offset_2 + 7
-            v21 = v20 // 8
-            v22 = v21 * 8
-            offset_6 = offset_2
-            err_14 = err_7
-            while True:
-                v23 = offset_6 < v22
-                v24 = err_14 == 0
-                v25 = v23 and v24
-                offset_7 = offset_6
-                err_15 = err_14
-                if not (v25):
-                    break
-                err_16 = dsdl_runtime.set_bit(buffer, offset_7, False)
-                v26 = offset_7 + 1
-                v27 = err_15 == 0
-                v28 = (err_16 if v27 else err_15)
-                offset_6 = v26
-                err_14 = v28
-            v29 = err_15 == 0
-            if v29:
-                v30 = offset_7 // 8
-                inout_buffer_size_bytes = v30
-            err = err_15
+            v14 = err_7 == 0
+            if v14:
+                err_15 = dsdl_runtime.write_unsigned(buffer, offset, 3, 0, False)
+                v15 = offset + 3
+                offset_3 = v15
+                err_14 = err_15
+            else:
+                offset_3 = offset
+                err_14 = err_7
+            v16 = err_14 == 0
+            if v16:
+                v17 = offset_3 // 8
+                inout_buffer_size_bytes = v17
+            err = err_14
         if err == 0:
             return inout_buffer_size_bytes
         return err
@@ -221,34 +201,29 @@ class Helpers:
             v3 = err_2 == 0
             if v3:
                 self.c = [0] * count
-                v4 = count * 8
-                v5 = v4 + 37
-                offset_2 = 37
-                while True:
-                    v6 = offset_2 < v5
-                    offset_3 = offset_2
-                    if not (v6):
-                        break
-                    v7 = offset_3 - 37
-                    v8 = v7 // 8
-                    value_6 = dsdl_runtime.read_unsigned(buffer, offset_3, 8)
+                v5 = count
+                for i in range(0, v5, 1):
+                    v6 = i
+                    v7 = v6 * 8
+                    v8 = v7 + 37
+                    value_6 = dsdl_runtime.read_unsigned(buffer, v8, 8)
                     value_7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value_6)
-                    self.c[v8] = value_7
-                    v9 = offset_3 + 8
-                    offset_2 = v9
-                offset = offset_3
+                    self.c[v6] = value_7
+                v9 = count * 8
+                v10 = v9 + 37
+                v4 = v10
             else:
-                offset = 37
-            v10 = offset + 7
-            v11 = v10 // 8
-            v12 = v11 * 8
-            v13 = size_2 * 8
-            v14 = v12 < v13
-            v15 = (v12 if v14 else v13)
-            v16 = err_2 == 0
-            if v16:
-                v17 = v15 // 8
-                inout_buffer_size_bytes = v17
+                v4 = 37
+            v11 = v4 + 7
+            v12 = v11 // 8
+            v13 = v12 * 8
+            v14 = size_2 * 8
+            v15 = v13 < v14
+            v16 = (v13 if v15 else v14)
+            v17 = err_2 == 0
+            if v17:
+                v18 = v16 // 8
+                inout_buffer_size_bytes = v18
             err = err_2
         if err == 0:
             return inout_buffer_size_bytes
