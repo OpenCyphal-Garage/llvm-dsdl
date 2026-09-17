@@ -89,8 +89,17 @@ enum class ArrayMetadataKind : std::uint8_t
 /// the type, or behind a macro prefix -- and get a scope of their own.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose constants are being named.
+/// @param[in] typeConstantPrefix The prefix the language puts in front of a section constant, where
+///            it uses one. Python and TypeScript declare a definition's own facts at module scope
+///            under a fixed prefix of their own, and a section constant lands in that same scope
+///            behind the type's prefix, so a type whose prefix is one of theirs puts the two in
+///            reach of each other -- `DSDL.1.0` with a constant `FULL_NAME` reaches
+///            `DSDL_FULL_NAME`. Passing the prefix is what lets the scope see that. The other four
+///            languages put the two in different scopes and pass nothing.
 /// @return A scope with every constant declared.
-[[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage language, const SemanticSection& section);
+[[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage  language,
+                                                   const SemanticSection& section,
+                                                   llvm::StringRef        typeConstantPrefix = {});
 
 }  // namespace llvmdsdl
 

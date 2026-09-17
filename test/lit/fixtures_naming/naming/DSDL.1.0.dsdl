@@ -1,0 +1,12 @@
+# A type whose own name is the prefix Python and TypeScript put their module-level metadata under.
+#
+# Those two declare a definition's facts at module scope as `DSDL_FULL_NAME` and the rest, and a
+# section constant lands in that same scope as `<TYPE>_<CONSTANT>`. For this type and no other the
+# two are in reach of each other, so the DSDL constants below have to move past names the module
+# already owns. In TypeScript a duplicate `export const` does not compile at all.
+uint8 FULL_NAME = 1
+uint8 HAS_FIXED_PORT_ID = 2
+uint8 FIXED_PORT_ID = 3
+uint8 VERSION_MAJOR = 4
+uint8 value
+@sealed

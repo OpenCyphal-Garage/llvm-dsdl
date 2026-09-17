@@ -384,9 +384,9 @@ void emitUnionOptionTags(SourceWriter&          w,
     {
         return;
     }
-    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
-    const auto        prefixupper =
+    const auto prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
+    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
         w.line(prefixupper + "_" +
@@ -403,9 +403,9 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     {
         constNames.push_back(constant.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section);
-    const auto        prefixupper =
+    const auto prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(w, constant.doc);

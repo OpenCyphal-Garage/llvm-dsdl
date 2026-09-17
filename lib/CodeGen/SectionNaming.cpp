@@ -13,6 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionNaming.h"
+
+#include <array>
+#include <vector>
+
+#include <llvm/ADT/ArrayRef.h>
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -96,13 +101,67 @@ void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, 
     }
 }
 
+/// @brief The names a Python or TypeScript module declares for the definition itself.
+///
+/// They sit in the module's scope, which is also where a section's constants are declared, so a
+/// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
+llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage language)
+{
+    static constexpr std::array<llvm::StringRef, 11> kNames = {"LLVMDSDL_GENERATOR_VERSION",
+                                                               "DSDL_FULL_NAME",
+                                                               "DSDL_IS_DEPRECATED",
+                                                               "DSDL_VERSION_MAJOR",
+                                                               "DSDL_VERSION_MINOR",
+                                                               "DSDL_HAS_FIXED_PORT_ID",
+                                                               "DSDL_FIXED_PORT_ID",
+                                                               "DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE",
+                                                               "DSDL_REQUEST_ZOH_ALIAS_REASON",
+                                                               "DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE",
+                                                               "DSDL_RESPONSE_ZOH_ALIAS_REASON"};
+    static constexpr std::array<llvm::StringRef, 0>  kNone  = {};
+    const bool                                       moduleScoped =
+        (language == CodegenNamingLanguage::Python) || (language == CodegenNamingLanguage::TypeScript);
+    return moduleScoped ? llvm::ArrayRef<llvm::StringRef>(kNames) : llvm::ArrayRef<llvm::StringRef>(kNone);
+}
+
+/// @brief The module names @p typeConstantPrefix puts a section constant in reach of.
+///
+/// A module name is reachable only when the type's constant prefix is the whole of its first
+/// component: for `DSDL.1.0` the prefix is `DSDL`, so `DSDL_FULL_NAME` is `FULL_NAME` behind that
+/// prefix and a DSDL constant of that name reaches it. For every other type nothing here is
+/// reachable and nothing is reserved, which keeps this from renaming constants on types that were
+/// never at risk.
+///
+/// These are reserved rather than declared: the scope treats a second `declare` of one source name
+/// as the same entry, which is right for a caller that walks a section twice and wrong here, where
+/// the module owns the name and the DSDL constant is the one that has to move.
+std::vector<std::string> reachableModuleMetadata(const CodegenNamingLanguage language,
+                                                 const llvm::StringRef       typeConstantPrefix)
+{
+    std::vector<std::string> out;
+    if (typeConstantPrefix.empty())
+    {
+        return out;
+    }
+    for (const llvm::StringRef name : moduleMetadataNames(language))
+    {
+        if (name.starts_with(typeConstantPrefix) && (name.size() > typeConstantPrefix.size()) &&
+            (name[typeConstantPrefix.size()] == '_'))
+        {
+            out.push_back(name.substr(typeConstantPrefix.size() + 1).str());
+        }
+    }
+    return out;
+}
+
 /// @brief Declares everything @p language puts in one region with @p section's constants.
 ///
 /// The order is what decides which name moves when two collide, and it runs from least to most
 /// willing to move. Fields are first because a field's identifier is the ABI a caller writes against
 /// and has to be predictable from the DSDL alone; the generated array metadata and union option tags
 /// are next; DSDL constants are last; of the four, only they can be renamed without changing the
-/// wire format or breaking a field access.
+/// wire format or breaking a field access. The module's own names sit outside this order: they are
+/// reserved before the scope is opened, so nothing declared here can take one.
 void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
 {
     if (emitsArrayMetadata(language))
@@ -139,13 +198,19 @@ NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const Se
     return scope;
 }
 
-NamingScope makeSectionConstantScope(const CodegenNamingLanguage language, const SemanticSection& section)
+NamingScope makeSectionConstantScope(const CodegenNamingLanguage language,
+                                     const SemanticSection&      section,
+                                     const llvm::StringRef       typeConstantPrefix)
 {
     if (constantsShareTheFieldScope(language))
     {
         return makeSectionFieldScope(language, section);
     }
-    NamingScope scope(language);
+    // The module's own names are reserved before anything is declared, so a DSDL constant that
+    // reaches one is escaped past it rather than redefining it.
+    const std::vector<std::string>     reserved = reachableModuleMetadata(language, typeConstantPrefix);
+    const std::vector<llvm::StringRef> reservedRefs(reserved.begin(), reserved.end());
+    NamingScope                        scope(language, reservedRefs);
     declareConstantRegion(scope, section, language);
     return scope;
 }

@@ -302,9 +302,9 @@ void emitUnionOptionTags(SourceWriter&          w,
     {
         return;
     }
-    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section);
-    const auto        prefixupper =
+    const auto prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
+    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
         w.line("export const " + prefixupper + "_" +
@@ -322,9 +322,9 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     {
         constNames.push_back(constant.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section);
-    const auto        prefixupper =
+    const auto prefixupper =
         codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
+    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(w, constant.doc);

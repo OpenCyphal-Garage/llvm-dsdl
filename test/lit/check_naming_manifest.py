@@ -85,6 +85,24 @@ def main() -> int:
     if "fixed_port_id" in ported:
         failures.append("Call has no fixed port-ID and should report none")
 
+    # A type named DSDL is the one case where a section constant is in reach of the module's own
+    # names in Python and TypeScript. The manifest reports what is written, so it has to report the
+    # moved name; reporting the unescaped one would name a constant the module does not define.
+    for language in ("python", "ts"):
+        constants = (
+            manifest["languages"][language]
+            .get("fixtures_naming.naming.DSDL.1.0", {})
+            .get("message", {})
+            .get("constants", {})
+        )
+        for source in ("FULL_NAME", "HAS_FIXED_PORT_ID", "FIXED_PORT_ID", "VERSION_MAJOR"):
+            reported = constants.get(source)
+            if reported != source + "_2":
+                failures.append(
+                    f"{language}: DSDL's constant {source} is reported as {reported!r}, "
+                    f"expected {source + '_2'!r}"
+                )
+
     for failure in failures:
         print(failure, file=sys.stderr)
     return 1 if failures else 0
