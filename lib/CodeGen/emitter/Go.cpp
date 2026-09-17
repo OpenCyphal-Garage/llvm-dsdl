@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -1552,6 +1553,68 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                        "no plan bodies for %s in the lowered module",
                                        metadata.fullName.c_str());
+    }
+    // Go's zero value is the language's, and it is the rendering of the initialise body wherever
+    // every store in that body is its type's zero -- which is decidable from the body, so nothing
+    // is emitted on that decision rather than on an assumption. A body that stores anything else
+    // has no zero value to lean on and gets a constructor.
+    if (auto init = readInitializer(bodies.initialize))
+    {
+        const auto isZero = [](const mlir::TypedAttr value) {
+            if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
+            {
+                return integer.getInt() == 0;
+            }
+            if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
+            {
+                return real.getValueAsDouble() == 0.0;
+            }
+            return true;
+        };
+        bool allZero = init->unionTag == 0;
+        for (const auto& entry : init->members)
+        {
+            allZero = allZero && isZero(entry.value);
+        }
+        if (!allZero)
+        {
+            w.open("func New" + typeName + "() " + typeName + " {");
+            w.open("return " + typeName + "{");
+            for (const auto& field : section.fields)
+            {
+                if (field.isPadding)
+                {
+                    continue;
+                }
+                for (const auto& entry : init->members)
+                {
+                    if (entry.member != field.name || isZero(entry.value))
+                    {
+                        continue;
+                    }
+                    const auto  integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(entry.value);
+                    const auto  real    = mlir::dyn_cast_or_null<mlir::FloatAttr>(entry.value);
+                    std::string literal = integer ? std::to_string(integer.getInt())
+                                                  : std::to_string(real ? real.getValueAsDouble() : 0.0);
+                    if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                    {
+                        literal = (integer && integer.getInt() != 0) ? "true" : "false";
+                    }
+                    w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " + literal + ",");
+                }
+            }
+            if (init->isUnion && init->unionTag != 0)
+            {
+                w.line("Tag: " + std::to_string(init->unionTag) + ",");
+            }
+            w.close("}");
+            w.close("}");
+            w.blank();
+        }
+    }
+    else
+    {
+        return init.takeError();
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {

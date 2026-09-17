@@ -2,7 +2,7 @@
 // Source: fixtures.vendor.UsesDelimited.1.0
 import * as dsdlRuntime from "../../dsdl_runtime";
 
-import { deserializeDelimitedFrom, serializeDelimitedInto } from "./delimited_1_0";
+import { deserializeDelimitedFrom, makeDelimited, serializeDelimitedInto } from "./delimited_1_0";
 import type { Delimited } from "./delimited_1_0";
 export const LLVMDSDL_GENERATOR_VERSION = "0.2.3";
 export const DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited";
@@ -41,6 +41,12 @@ function mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelim
 
 export interface UsesDelimited {
   nested: Delimited;
+}
+
+export function makeUsesDelimited(): UsesDelimited {
+  return {
+    nested: makeDelimited(),
+  };
 }
 
 
@@ -186,7 +192,7 @@ export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
 }
 
 export function deserializeUsesDelimited(bytes: Uint8Array): { value: UsesDelimited; consumed: number } {
-  const value = {} as UsesDelimited;
+  const value = makeUsesDelimited();
   const result = deserializeUsesDelimitedFrom(value, bytes);
   if (result < 0) {
     throw new Error(dsdlRuntime.errorMessage(result));

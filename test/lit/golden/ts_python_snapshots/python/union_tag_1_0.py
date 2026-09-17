@@ -66,7 +66,7 @@ def mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(p0: int) -
 @dataclass(slots=True)
 class UnionTag:
     _tag: int = 0
-    first: int | None = None
+    first: int | None = 0
     second: int | None = None
 
     def serialize(self) -> bytes:

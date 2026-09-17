@@ -1,0 +1,7 @@
+[package]
+name = "llvmdsdl_initialize_equivalence"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uavcan_dsdl_generated = { path = "@RUST_OUT@" }

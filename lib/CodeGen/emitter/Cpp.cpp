@@ -44,6 +44,7 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -1375,10 +1376,69 @@ void emitFunctionPrototypes(SourceWriter&      w,
     w.blank();
 }
 
+/// @brief The member initialiser a field's default renders to: `{}` for the type's zero, the
+///        value otherwise.
+///
+/// A zero is spelt `{}` and not `{0}` so that the text is what it was before the value came from
+/// the body; a member of a non-zero default is spelt with it, which is what makes an initialise
+/// body that stores something other than zero visible in the header.
+std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefault& entry)
+{
+    const auto literal = [&](const mlir::TypedAttr value) -> std::string {
+        if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
+        {
+            if (integer.getInt() == 0)
+            {
+                return {};
+            }
+            if (type.scalarCategory == SemanticScalarCategory::Bool)
+            {
+                return "true";
+            }
+            return std::to_string(integer.getInt()) +
+                   (type.scalarCategory == SemanticScalarCategory::SignedInt ? "" : "U");
+        }
+        if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
+        {
+            if (real.getValueAsDouble() == 0.0)
+            {
+                return {};
+            }
+            return std::to_string(real.getValueAsDouble()) + (type.bitLength <= 32 ? "F" : "");
+        }
+        return {};
+    };
+    switch (entry.kind)
+    {
+    case MemberDefault::Kind::Scalar:
+        return "{" + literal(entry.value) + "}";
+    case MemberDefault::Kind::FixedScalarArray: {
+        const std::string element = literal(entry.value);
+        if (element.empty())
+        {
+            return "{}";
+        }
+        std::string list = "{";
+        for (std::int64_t i = 0; i < entry.count; ++i)
+        {
+            list += (i == 0 ? "" : ", ") + element;
+        }
+        return list + "}";
+    }
+    case MemberDefault::Kind::VariableArrayEmpty:
+    case MemberDefault::Kind::FixedCompositeArray:
+    case MemberDefault::Kind::BoolArray:
+    case MemberDefault::Kind::Composite:
+        return "{}";
+    }
+    return "{}";
+}
+
 void emitSectionStruct(SourceWriter&                         w,
                        const std::string&                    typeName,
                        const std::string&                    declaredName,
                        const SectionMetadata&                metadata,
+                       const InitializerShape&               init,
                        const SemanticSection&                section,
                        const EmitterContext&                 ctx,
                        const CppFlavor                       flavor,
@@ -1386,6 +1446,22 @@ void emitSectionStruct(SourceWriter&                         w,
                        const mlir::dsdl::SerializationPlanOp plan)
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+    // Every member's default is what the initialise body stores for it. A field the body does not
+    // set has no default this backend may invent.
+    llvm::StringMap<const MemberDefault*> defaults;
+    for (const auto& entry : init.members)
+    {
+        defaults[entry.member] = &entry;
+    }
+    const auto defaultOf = [&](const SemanticField& field) -> const MemberDefault& {
+        const auto found = defaults.find(field.name);
+        if (found == defaults.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("C++: the initialise body of ") + typeName + " does not set '" +
+                                     field.name + "'");
+        }
+        return *found->second;
+    };
     emitAttachedDocCpp(w, typeDoc);
     w.open("struct " + declaredName + " {");
 
@@ -1406,10 +1482,11 @@ void emitSectionStruct(SourceWriter&                         w,
         const auto baseType = cppTypeFromFieldType(field.resolvedType, ctx);
         emitAttachedDocCpp(w, field.doc);
 
+        const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            w.line(baseType + " " + member + "{};");
+            w.line(baseType + " " + member + init_ + ";");
             if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 compositeScalarMembers.push_back(member);
@@ -1429,7 +1506,7 @@ void emitSectionStruct(SourceWriter&                         w,
             {
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
-                       member + "{};");
+                       member + init_ + ";");
                 // NOLINTEND(performance-inefficient-string-concatenation)
             }
             if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
@@ -1470,7 +1547,7 @@ void emitSectionStruct(SourceWriter&                         w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{0U};");
+        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
         ++emitted;
     }
 
@@ -1712,10 +1789,22 @@ llvm::Error emitSection(SourceWriter&                         w,
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     emitFunctionPrototypes(w, typeName, declaredName, flavor);
+    if (!bodies.initialize)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no initialise body for %s in the lowered module",
+                                       metadata.fullName.c_str());
+    }
+    auto init = readInitializer(bodies.initialize);
+    if (!init)
+    {
+        return init.takeError();
+    }
     emitSectionStruct(w,
                       typeName,
                       declaredName,
                       metadata,
+                      *init,
                       section,
                       ctx,
                       flavor,

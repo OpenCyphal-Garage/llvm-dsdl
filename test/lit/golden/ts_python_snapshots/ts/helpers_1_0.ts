@@ -91,6 +91,14 @@ export interface Helpers {
   c: Array<number>;
 }
 
+export function makeHelpers(): Helpers {
+  return {
+    a: 0,
+    b: 0.0,
+    c: [],
+  };
+}
+
 
 export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
   let inoutBufferSizeBytes = buffer.length;
@@ -267,7 +275,7 @@ export function serializeHelpers(value: Helpers): Uint8Array {
 }
 
 export function deserializeHelpers(bytes: Uint8Array): { value: Helpers; consumed: number } {
-  const value = {} as Helpers;
+  const value = makeHelpers();
   const result = deserializeHelpersFrom(value, bytes);
   if (result < 0) {
     throw new Error(dsdlRuntime.errorMessage(result));

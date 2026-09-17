@@ -49,6 +49,7 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
@@ -244,6 +245,13 @@ std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext&
         return "unknown";
     }
     return "unknown";
+}
+
+/// @brief The factory that makes a type at its defaults: `make` and the type's own name, as the
+///        serialise and deserialise entry points are verb and name.
+std::string tsMakeFn(const std::string& typeName)
+{
+    return "make" + typeName;
 }
 
 std::string tsFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1462,7 +1470,7 @@ void emitEntryPoints(SourceWriter& w, const std::string& typeName, const Semanti
     w.blank();
     w.open("export function " + tsRuntimeDeserializeFn(typeName) + "(bytes: Uint8Array): { value: " + typeName +
            "; consumed: number } {");
-    w.line("const value = {} as " + typeName + ";");
+    w.line("const value = " + tsMakeFn(typeName) + "();");
     w.line("const result = " + TsSpelling::deserializeFrom(typeName) + "(value, bytes);");
     w.open("if (result < 0) {");
     w.line("throw new Error(dsdlRuntime.errorMessage(result));");
@@ -1471,7 +1479,115 @@ void emitEntryPoints(SourceWriter& w, const std::string& typeName, const Semanti
     w.close("}");
 }
 
-/// @brief One section: its type, its constants, its two bodies and the entry points that wrap them.
+/// @brief The literal a stored constant is, for a member of @p type.
+std::string tsStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value)
+{
+    if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
+    {
+        if (type.scalarCategory == SemanticScalarCategory::Bool)
+        {
+            return integer.getInt() != 0 ? "true" : "false";
+        }
+        // A 64-bit member is a bigint in the interface; the rest are numbers.
+        const bool big = type.bitLength > 53;
+        return std::to_string(integer.getInt()) + (big ? "n" : "");
+    }
+    if (const auto real = mlir::dyn_cast_or_null<mlir::FloatAttr>(value))
+    {
+        std::string text = std::to_string(real.getValueAsDouble());
+        text.erase(text.find_last_not_of('0') + 1);
+        if (text.ends_with('.'))
+        {
+            text += '0';
+        }
+        return text;
+    }
+    llvm::report_fatal_error("TypeScript: an initialise body stored a value that is neither integer nor float");
+}
+
+/// @brief The value a member takes in the factory's literal, as the initialise body states it.
+std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& entry, const EmitterContext& ctx)
+{
+    const auto& type   = field.resolvedType;
+    const auto  nested = [&]() {
+        return type.compositeType ? tsMakeFn(ctx.typeName(*type.compositeType)) + "()" : "{}";
+    };
+    switch (entry.kind)
+    {
+    case MemberDefault::Kind::Scalar:
+        return tsStoredLiteral(type, entry.value);
+    case MemberDefault::Kind::VariableArrayEmpty:
+        return "[]";
+    case MemberDefault::Kind::FixedScalarArray: {
+        SemanticFieldType element = type;
+        element.arrayKind         = ArrayKind::None;
+        return "new Array<" + tsFieldType(element, ctx) + ">(" + std::to_string(entry.count) + ").fill(" +
+               tsStoredLiteral(type, entry.value) + ")";
+    }
+    case MemberDefault::Kind::BoolArray:
+        return "new Array<boolean>(" + std::to_string(entry.count) + ").fill(false)";
+    case MemberDefault::Kind::FixedCompositeArray:
+        return "Array.from({ length: " + std::to_string(entry.count) + " }, () => " + nested() + ")";
+    case MemberDefault::Kind::Composite:
+        return nested();
+    }
+    return "undefined";
+}
+
+/// @brief The factory: the type at its defaults, as an object literal read off the initialise body.
+///
+/// A union is one arm, so the literal is the arm the body's tag selects at the default the body
+/// gives it; the other arms have no place in the value.
+void emitMakeFunction(SourceWriter&           w,
+                      const std::string&      typeName,
+                      const SemanticSection&  section,
+                      const InitializerShape& init,
+                      const EmitterContext&   ctx)
+{
+    const NamingScope fieldIdents = makeTsFieldIdents(section);
+    const auto        entryOf     = [&](const SemanticField& field) -> const MemberDefault& {
+        for (const auto& entry : init.members)
+        {
+            if (entry.member == field.name)
+            {
+                return entry;
+            }
+        }
+        llvm::report_fatal_error(llvm::Twine("TypeScript: the initialise body of ") + typeName + " does not set '" +
+                                 field.name + "'");
+    };
+    w.open("export function " + tsMakeFn(typeName) + "(): " + typeName + " {");
+    if (section.isUnion)
+    {
+        std::string arm;
+        for (const auto& field : section.fields)
+        {
+            if (!field.isPadding && std::cmp_equal(field.unionOptionIndex, init.unionTag))
+            {
+                arm = ", " + fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
+                      tsDefaultFromBody(field, entryOf(field), ctx);
+            }
+        }
+        w.line("return { _tag: " + std::to_string(init.unionTag) + arm + " };");
+    }
+    else
+    {
+        w.open("return {");
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
+                   tsDefaultFromBody(field, entryOf(field), ctx) + ",");
+        }
+        w.close("};");
+    }
+    w.close("}");
+}
+
+/// @brief One section: its type, its constants, its three bodies and the entry points that wrap them.
 llvm::Error emitSection(SourceWriter&             w,
                         const std::string&        typeName,
                         const SemanticSection&    section,
@@ -1483,6 +1599,17 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
+    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "no plan bodies for %s in the lowered module",
+                                       metadata.fullName.c_str());
+    }
+    auto init = readInitializer(bodies.initialize);
+    if (!init)
+    {
+        return init.takeError();
+    }
     emitSectionType(w,
                     typeName,
                     section,
@@ -1492,15 +1619,11 @@ llvm::Error emitSection(SourceWriter&             w,
                     def.info.majorVersion,
                     def.info.minorVersion);
     w.blank();
+    emitMakeFunction(w, typeName, section, *init, ctx);
+    w.blank();
     emitUnionOptionTags(w, typeName, section, metadata);
     emitSectionConstants(w, typeName, section);
     w.blank();
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       def.info.fullName.c_str());
-    }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
@@ -1616,6 +1739,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                                TsSpelling::serializeInto(importSpec.typeName));
             bodyImportsByModule[importSpec.modulePath].emplace(TsSpelling::deserializeFrom(original),
                                                                TsSpelling::deserializeFrom(importSpec.typeName));
+            // And its factory, which this file's factory calls for a nested member.
+            bodyImportsByModule[importSpec.modulePath].emplace(tsMakeFn(original), tsMakeFn(importSpec.typeName));
         }
     };
     addSectionImports(def.request);

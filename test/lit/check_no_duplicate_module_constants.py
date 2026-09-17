@@ -16,7 +16,7 @@ the two emitters write.
 A fixture can only pin the names that exist when it is written. This pins the property the list
 exists to hold, so a name added to an emitter and forgotten there is caught by what it does rather
 than by being absent from a list. In Python the second assignment silently wins; in TypeScript a
-duplicate `export const` does not compile.
+duplicate `export const` or `export function` does not compile.
 """
 
 from __future__ import annotations
@@ -26,7 +26,9 @@ import re
 import sys
 
 PY_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=")
-TS_ASSIGNMENT = re.compile(r"^export const ([A-Za-z_$][A-Za-z0-9_$]*)\s*=")
+# A function is a declaration in the same scope as a const, and a factory is a function: two
+# `export function makeX` in one module do not compile either.
+TS_ASSIGNMENT = re.compile(r"^export (?:const|function) ([A-Za-z_$][A-Za-z0-9_$]*)\s*[=(]")
 
 
 def duplicates(path: pathlib.Path, pattern: re.Pattern[str]) -> list[str]:

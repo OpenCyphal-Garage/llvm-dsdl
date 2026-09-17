@@ -16,8 +16,8 @@
 # bodies -- they are all derived from the same local name, so they cannot disagree.
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED
 
-# ALIASED: import { deserializeVecFrom as deserializeVec__collide_alphaFrom, serializeVecInto as serializeVec__collide_alphaInto } from "./alpha/vec_1_0";
-# ALIASED: import { deserializeVecFrom as deserializeVec__collide_betaFrom, serializeVecInto as serializeVec__collide_betaInto } from "./beta/vec_1_0";
+# ALIASED: import { deserializeVecFrom as deserializeVec__collide_alphaFrom, makeVec as makeVec__collide_alpha, serializeVecInto as serializeVec__collide_alphaInto } from "./alpha/vec_1_0";
+# ALIASED: import { deserializeVecFrom as deserializeVec__collide_betaFrom, makeVec as makeVec__collide_beta, serializeVecInto as serializeVec__collide_betaInto } from "./beta/vec_1_0";
 # ALIASED: import type { Vec as Vec__collide_alpha } from "./alpha/vec_1_0";
 # ALIASED: import type { Vec as Vec__collide_beta } from "./beta/vec_1_0";
 
@@ -25,6 +25,9 @@
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=ALIASED_USE
 # ALIASED_USE: from_alpha: Vec__collide_alpha;
 # ALIASED_USE: from_beta: Vec__collide_beta;
+# The factory reaches each nested type's factory under the same alias its bodies use.
+# ALIASED_USE: from_alpha: makeVec__collide_alpha(),
+# ALIASED_USE: from_beta: makeVec__collide_beta(),
 
 # Aliasing is confined to the clash. A file whose referenced names are already unique imports them
 # unaliased, so ordinary output is untouched by this.
