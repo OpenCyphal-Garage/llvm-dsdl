@@ -1,0 +1,8 @@
+# A service with a fixed service-ID. The port-ID belongs to the service, so it is declared on the
+# type the service is reached through -- a type alias in four of the six languages, which carries no
+# constants of its own and needs the pair written beside it.
+uint8 request_value
+@sealed
+---
+uint8 response_value
+@sealed

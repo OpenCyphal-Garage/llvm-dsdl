@@ -1608,6 +1608,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
     }
     w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
+    // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
+    // alias carries no associated constants, so the pair is declared beside it.
+    const auto baseConstPrefix =
+        codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, baseType);
+    w.line("pub const " + baseConstPrefix +
+           "_HAS_FIXED_PORT_ID: bool = " + (def.info.fixedPortId ? "true;" : "false;"));
+    if (def.info.fixedPortId)
+    {
+        w.line("pub const " + baseConstPrefix + "_FIXED_PORT_ID: u16 = " + std::to_string(*def.info.fixedPortId) + ";");
+    }
 
     return out.str();
 }

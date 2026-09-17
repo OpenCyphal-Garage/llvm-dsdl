@@ -1681,6 +1681,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
         w.line("const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
         w.line("const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
+        // The service-ID belongs to the service, and this alias is how the service is named.
+        w.line("const " + baseConstPrefix +
+               "_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false"));
+        if (def.info.fixedPortId)
+        {
+            w.line("const " + baseConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+        }
     }
 
     std::ostringstream out;
