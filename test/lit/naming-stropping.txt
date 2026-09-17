@@ -274,7 +274,58 @@
 # and `<Type>_FULL_NAME_` cannot meet. The macro is also left unstropped -- a macro is not an
 # identifier in C's namespace ; this reads FULL_NAME, not FULL_NAME_.
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME_ "fixtures_naming.naming.Claimed"
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_HAS_FIXED_PORT_ID_ false
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FULL_NAME (1)
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_HAS_FIXED_PORT_ID (9)
+# C_CLAIMED: #define fixtures_naming__naming__Claimed_FIXED_PORT_ID (10)
+
+# ---------------------------------------------------------------------------------------------
+# A union option's tag constant, and what it collides with. OptionTags.1.0 has two options whose
+# names fold onto one constant where the projection folds case, and DSDL constants named after the
+# tags its options generate.
+# ---------------------------------------------------------------------------------------------
+
+# RUN: cat %t/c/fixtures_naming/naming/OptionTags_1_0.h | FileCheck %s --check-prefix=C_OPTION_TAGS
+# RUN: cat %t/go/fixtures_naming/naming/option_tags_1_0.go | FileCheck %s --check-prefix=GO_OPTION_TAGS
+# RUN: cat %t/rust/src/fixtures_naming/naming/option_tags_1_0.rs | FileCheck %s --check-prefix=RUST_OPTION_TAGS
+# RUN: cat %t/py/naming_freeze/fixtures_naming/naming/option_tags_1_0.py | FileCheck %s --check-prefix=PY_OPTION_TAGS
+# RUN: cat %t/ts/fixtures_naming/naming/option_tags_1_0.ts | FileCheck %s --check-prefix=TS_OPTION_TAGS
+# RUN: cat %t/cpp/fixtures_naming/naming/OptionTags_1_0.hpp | FileCheck %s --check-prefix=CPP_OPTION_TAGS
+
+# A C macro keeps its case, so the two options are distinct without an escape; the DSDL constant
+# named after the third option's tag is the one that has to move.
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOO_BAR_OPTION_TAG (1)
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_OTHER_OPTION_TAG_2 (2)
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOOBAR_OPTION_TAG_ 0U
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_FOO_BAR_OPTION_TAG_ 1U
+# C_OPTION_TAGS: #define fixtures_naming__naming__OptionTags_OTHER_OPTION_TAG_ 2U
+
+# The wrappers read the constant, not the number, and the member keeps its own spelling.
+# C_OPTION_TAGS: static inline bool fixtures_naming__naming__OptionTags__is_fooBar_
+# C_OPTION_TAGS: obj->_tag_ == fixtures_naming__naming__OptionTags_FOOBAR_OPTION_TAG_
+# C_OPTION_TAGS: static inline void fixtures_naming__naming__OptionTags__select_fooBar_
+
+# Go upper-snakes, so `fooBar` and `foo_bar` fold onto one name and the second option moves; the
+# DSDL constant named after it moves again, past both.
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG uint8 = 0
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 uint8 = 1
+# GO_OPTION_TAGS: const OPTION_TAGS_OTHER_OPTION_TAG uint8 = 2
+# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_3 = 1
+
+# RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG: u8 = 0;
+# RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG_2: u8 = 1;
+# RUST_OPTION_TAGS: pub const OTHER_OPTION_TAG: u8 = 2;
+
+# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG = 0
+# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1
+
+# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG = 0;
+# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1;
+
+# A C++ struct holds the option tags with the fields and the DSDL constants, so all three compete.
+# CPP_OPTION_TAGS: static constexpr std::uint8_t FOOBAR_OPTION_TAG = 0U;
+# CPP_OPTION_TAGS: static constexpr std::uint8_t FOO_BAR_OPTION_TAG = 1U;
+# CPP_OPTION_TAGS: static constexpr std::uint8_t OTHER_OPTION_TAG = 2U;
 
 # ---------------------------------------------------------------------------------------------
 # The naming manifest and the path-level rename note.

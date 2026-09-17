@@ -22,7 +22,9 @@
 #include <mlir/IR/Operation.h>
 
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
+#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {
@@ -45,9 +47,9 @@ SectionMetadata sectionMetadata(const DiscoveredDefinition& info,
     {
         out.fullName += ".Response";
     }
-    out.majorVersion = info.majorVersion;
-    out.minorVersion = info.minorVersion;
-    out.extentBytes  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
+    out.majorVersion                 = info.majorVersion;
+    out.minorVersion                 = info.minorVersion;
+    out.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
     out.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
     out.deprecated                   = section.deprecated;
     out.alias                        = aliasVerdict(sectionPlan(schema, sectionName));

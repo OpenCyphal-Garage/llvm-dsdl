@@ -20,8 +20,11 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Casting.h>
+#include <cstddef>
 #include <cstdint>
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
@@ -110,8 +113,8 @@ LogicalResult verifyUnionOptionIndices(SerializationPlanOp                      
         }
         if (*optionIndex != expected)
         {
-            return emitError("union option '" + field.getName() + "' has index " + Twine(*optionIndex) +
-                             ", expected " + Twine(expected) + " from its declaration order");
+            return emitError("union option '" + field.getName() + "' has index " + Twine(*optionIndex) + ", expected " +
+                             Twine(expected) + " from its declaration order");
         }
         ++expected;
     }
@@ -143,8 +146,8 @@ LogicalResult verifyUnionOptionIndices(SerializationPlanOp                      
         const std::int64_t declared = *option.getUnionOptionIndex();
         if (io.getUnionOptionIndex() != declared)
         {
-            return emitError("option '" + option.getName() + "' is index " + Twine(declared) +
-                             " in schema space and " + Twine(io.getUnionOptionIndex()) + " in its plan step");
+            return emitError("option '" + option.getName() + "' is index " + Twine(declared) + " in schema space and " +
+                             Twine(io.getUnionOptionIndex()) + " in its plan step");
         }
         ++stepPosition;
     }
@@ -187,9 +190,9 @@ LogicalResult SchemaOp::verify()
             continue;
         }
         const llvm::StringRef section = sectionOf(plan.getSection());
-        if (failed(verifyUnionOptionIndices(plan,
-                                            fieldsBySection.lookup(section),
-                                            [&](const Twine message) { return emitOpError(message); })))
+        if (failed(verifyUnionOptionIndices(plan, fieldsBySection.lookup(section), [&](const Twine message) {
+                return emitOpError(message);
+            })))
         {
             return failure();
         }

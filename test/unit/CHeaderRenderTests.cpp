@@ -8,6 +8,7 @@
 #include <iostream>
 #include <optional>
 
+#include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 
 #include "UnitTests.h"

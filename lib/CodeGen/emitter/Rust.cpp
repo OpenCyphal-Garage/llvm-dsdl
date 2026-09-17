@@ -1369,10 +1369,10 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section);
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("pub const " +
-                   tagScope.get(IdentifierRole::MacroName,
-                                unionOptionTagName(CodegenNamingLanguage::Rust, option.name)) +
-                   ": " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
+            w.line(
+                "pub const " +
+                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Rust, option.name)) +
+                ": " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
         }
     }
 

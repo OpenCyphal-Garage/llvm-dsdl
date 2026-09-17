@@ -1742,16 +1742,32 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        if (auto err = emitSection(w, baseType, def.request, sectionMetadata(def.info, def.request, schema, ""), def.doc, ctx, def,
-                                   spelling, bodies[""], lookups))
+        if (auto err = emitSection(w,
+                                   baseType,
+                                   def.request,
+                                   sectionMetadata(def.info, def.request, schema, ""),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies[""],
+                                   lookups))
         {
             return std::move(err);
         }
         return out.str();
     }
 
-    if (auto err = emitSection(w, reqType, def.request, sectionMetadata(def.info, def.request, schema, "request"), def.doc, ctx, def,
-                               spelling, bodies["request"], lookups))
+    if (auto err = emitSection(w,
+                               reqType,
+                               def.request,
+                               sectionMetadata(def.info, def.request, schema, "request"),
+                               def.doc,
+                               ctx,
+                               def,
+                               spelling,
+                               bodies["request"],
+                               lookups))
     {
         return std::move(err);
     }
@@ -1759,9 +1775,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        if (auto err =
-                emitSection(w, respType, *def.response, sectionMetadata(def.info, *def.response, schema, "response"), def.doc, ctx,
-                            def, spelling, bodies["response"], lookups))
+        if (auto err = emitSection(w,
+                                   respType,
+                                   *def.response,
+                                   sectionMetadata(def.info, *def.response, schema, "response"),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies["response"],
+                                   lookups))
         {
             return std::move(err);
         }

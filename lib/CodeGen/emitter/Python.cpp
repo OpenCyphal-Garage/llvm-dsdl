@@ -390,8 +390,7 @@ void emitUnionOptionTags(SourceWriter&          w,
     for (const auto& option : metadata.unionOptions)
     {
         w.line(prefixupper + "_" +
-               tagScope.get(IdentifierRole::MacroName,
-                            unionOptionTagName(CodegenNamingLanguage::Python, option.name)) +
+               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Python, option.name)) +
                " = " + std::to_string(option.tag));
     }
 }
@@ -1653,8 +1652,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (!def.isService)
     {
-        if (auto err = emitSection(w, baseType, def.request, sectionMetadata(def.info, def.request, schema, ""), def.doc, ctx, def,
-                                   spelling, bodies[""], lookups))
+        if (auto err = emitSection(w,
+                                   baseType,
+                                   def.request,
+                                   sectionMetadata(def.info, def.request, schema, ""),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies[""],
+                                   lookups))
         {
             return std::move(err);
         }
@@ -1663,17 +1670,32 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "request");
     const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "response");
-    if (auto err = emitSection(w, reqType, def.request, sectionMetadata(def.info, def.request, schema, "request"), def.doc, ctx, def,
-                               spelling, bodies["request"], lookups))
+    if (auto err = emitSection(w,
+                               reqType,
+                               def.request,
+                               sectionMetadata(def.info, def.request, schema, "request"),
+                               def.doc,
+                               ctx,
+                               def,
+                               spelling,
+                               bodies["request"],
+                               lookups))
     {
         return std::move(err);
     }
     w.blank();
     if (def.response)
     {
-        if (auto err =
-                emitSection(w, respType, *def.response, sectionMetadata(def.info, *def.response, schema, "response"), def.doc, ctx,
-                            def, spelling, bodies["response"], lookups))
+        if (auto err = emitSection(w,
+                                   respType,
+                                   *def.response,
+                                   sectionMetadata(def.info, *def.response, schema, "response"),
+                                   def.doc,
+                                   ctx,
+                                   def,
+                                   spelling,
+                                   bodies["response"],
+                                   lookups))
         {
             return std::move(err);
         }

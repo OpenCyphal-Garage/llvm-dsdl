@@ -340,8 +340,7 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     for (const auto& option : metadata.unionOptions)
     {
         w.line("#define " + typeName + "_" +
-               constScope.get(IdentifierRole::MacroName,
-                              unionOptionTagName(CodegenNamingLanguage::C, option.name)) +
+               constScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name)) +
                " " + std::to_string(option.tag) + "U");
     }
     w.blank();
@@ -526,13 +525,17 @@ void emitUnionOptionWrappers(SourceWriter&          w,
             typeName + "_" +
             tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name));
 
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("static inline bool " + typeName + "__is_" + member + "_(const " + objectType + "* const obj)");
+        // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
         w.line("return (obj != NULL) && (obj->_tag_ == " + tag + ");");
         w.close("}");
         w.blank();
 
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("static inline void " + typeName + "__select_" + member + "_(" + objectType + "* const obj)");
+        // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
         w.open("if (obj != NULL) {");
         w.line("obj->_tag_ = " + tag + ";");
@@ -542,14 +545,14 @@ void emitUnionOptionWrappers(SourceWriter&          w,
     }
 }
 
-void emitSection(SourceWriter&                w,
-                 const EmitterContext&        ctx,
-                 const SemanticDefinition&    def,
-                 const std::string&           typeName,
-                 const std::string&           sectionName,
-                 const SemanticSection&       section,
-                 const AttachedDoc&           typeDoc,
-                 const mlir::dsdl::SchemaOp   schema)
+void emitSection(SourceWriter&              w,
+                 const EmitterContext&      ctx,
+                 const SemanticDefinition&  def,
+                 const std::string&         typeName,
+                 const std::string&         sectionName,
+                 const SemanticSection&     section,
+                 const AttachedDoc&         typeDoc,
+                 const mlir::dsdl::SchemaOp schema)
 {
     const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
     const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
@@ -563,7 +566,13 @@ void emitSection(SourceWriter&                w,
                                               def.info.fullName,
                                               def.info.majorVersion,
                                               def.info.minorVersion));
-    emitSectionTypedef(w, typeName, section, metadata, ctx, section.deprecated && ctx.emitDeprecationAttributes(), plan);
+    emitSectionTypedef(w,
+                       typeName,
+                       section,
+                       metadata,
+                       ctx,
+                       section.deprecated && ctx.emitDeprecationAttributes(),
+                       plan);
 
     const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);

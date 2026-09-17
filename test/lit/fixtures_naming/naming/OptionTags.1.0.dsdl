@@ -1,0 +1,16 @@
+# A union whose options collide with the tag constants generated for them.
+#
+# Where the constant projection folds case -- Go, Rust, TypeScript, Python -- `fooBar` and `foo_bar`
+# reach one name, so the two options' tag constants collide with each other. In C and C++ a constant
+# is a macro token that keeps its case, and there the pair is distinct; what collides in every
+# language is the DSDL constant named after the tag an option generates.
+#
+# The generated tags are declared first and the DSDL constants move, which is the order that matters:
+# an option's tag is the name a caller writes to select it.
+@union
+uint8 FOO_BAR_OPTION_TAG = 1
+uint8 OTHER_OPTION_TAG_ = 2
+uint8 fooBar
+uint16 foo_bar
+uint32 other
+@sealed

@@ -275,8 +275,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 }
                 if (section.isUnion)
                 {
-                    fieldState.addAttribute("union_option_index",
-                                            builder.getI64IntegerAttr(field.unionOptionIndex));
+                    fieldState.addAttribute("union_option_index", builder.getI64IntegerAttr(field.unionOptionIndex));
                 }
                 (void) builder.create(fieldState);
             }

@@ -1463,14 +1463,14 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
     w.line("const " + typeConstPrefix +
            "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " +
-           std::string(metadata.alias.eligible ? "true" : "false"));
+    w.line("const " + typeConstPrefix +
+           "_ZOH_ALIAS_ELIGIBLE = " + std::string(metadata.alias.eligible ? "true" : "false"));
     w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\"");
 
     if (metadata.declaresPortId)
     {
-        w.line("const " + typeConstPrefix + "_HAS_FIXED_PORT_ID = " +
-               std::string(metadata.fixedPortId ? "true" : "false"));
+        w.line("const " + typeConstPrefix +
+               "_HAS_FIXED_PORT_ID = " + std::string(metadata.fixedPortId ? "true" : "false"));
         if (metadata.fixedPortId)
         {
             w.line("const " + typeConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId));
@@ -1483,8 +1483,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         for (const auto& option : metadata.unionOptions)
         {
             w.line("const " + typeConstPrefix + "_" +
-                   tagScope.get(IdentifierRole::MacroName,
-                                unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
+                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
                    " " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
         }
     }

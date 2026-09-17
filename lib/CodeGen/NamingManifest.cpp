@@ -29,6 +29,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -60,6 +61,27 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language, const Sem
     llvm::json::Object out;
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
+
+    // A union option's tag is the one fact about it a caller cannot read off the type: the name maps
+    // to a member, and the member says nothing about which tag value selects it. The manifest is
+    // where a build integration reads a generated name without reimplementing the projection, so it
+    // is where the tag belongs too.
+    if (section.isUnion)
+    {
+        llvm::json::Object options;
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            llvm::json::Object option;
+            option["name"]      = constScope.get(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
+            option["tag"]       = static_cast<std::int64_t>(field.unionOptionIndex);
+            options[field.name] = std::move(option);
+        }
+        out["union_options"] = std::move(options);
+    }
     return out;
 }
 
@@ -100,6 +122,10 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
     out["file_stem"] =
         renderVersionedFileStem(language, def.info.shortName, def.info.majorVersion, def.info.minorVersion);
     out["namespace"] = std::move(namespaceParts);
+    if (def.info.fixedPortId)
+    {
+        out["fixed_port_id"] = static_cast<std::int64_t>(*def.info.fixedPortId);
+    }
     if (def.isService)
     {
         out["request"] = renderSection(language, def.request);

@@ -1532,8 +1532,7 @@ void emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\";");
     if (metadata.declaresPortId)
     {
-        w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") +
-               (metadata.fixedPortId ? "true;" : "false;"));
+        w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
         if (metadata.fixedPortId)
         {
             w.line("static constexpr std::uint16_t FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId) + "U;");
@@ -1546,10 +1545,10 @@ void emitSectionStruct(SourceWriter&                         w,
         const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section);
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
-                   tagScope.get(IdentifierRole::MacroName,
-                                unionOptionTagName(CodegenNamingLanguage::Cpp, option.name)) +
-                   " = " + std::to_string(option.tag) + "U;");
+            w.line(
+                "static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
+                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Cpp, option.name)) +
+                " = " + std::to_string(option.tag) + "U;");
         }
     }
 
