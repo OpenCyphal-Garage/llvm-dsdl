@@ -3822,6 +3822,31 @@ if(PYTHON_EXECUTABLE AND LLVMDSDL_CLANG)
   endforeach()
 endif()
 
+# The folded host-image bodies, held to their instruction counts on two pinned triples. A static
+# count of an entry point's instructions is exact and host-independent, so this gates where the
+# cachegrind lanes skip.
+find_program(LLVMDSDL_LLVM_OBJDUMP NAMES llvm-objdump HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+if(LLVMDSDL_LLVM_OBJDUMP)
+  add_test(
+    NAME llvmdsdl-host-image-instruction-counts
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/host-image-instruction-counts-out
+        -DLLVM_OBJDUMP=${LLVMDSDL_LLVM_OBJDUMP}
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_host_image/vendor
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/test/integration/host_image_instruction_counts.json
+        -DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunHostImageInstructionCounts.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-host-image-instruction-counts
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      LABELS "integration;object;alias-layout;instructions;release-blocking"
+  )
+endif()
+
 # The serialisation primitives are `static inline` in the runtime header, so an object has no
 # symbol to link against and builds its own. Two implementations of one wire format.
 find_program(LLVMDSDL_MLIR_OPT NAMES mlir-opt HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)

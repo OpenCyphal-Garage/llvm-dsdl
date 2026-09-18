@@ -267,7 +267,7 @@ other 18 are variable-length arrays, unions and nested problems, and are silent.
 `tools/dsdlc/main.cpp`, with cases in `LspLintTests.cpp` and `aliasable-candidate.txt`, and the rule
 documented in `docs/reference/lsp/lint-rules.md`.
 
-### Phase 3 — bulk-copy bodies for H — M
+### Phase 3 — bulk-copy bodies for H — done 2026-09-18
 
 **Depends on** 1. Native backends only.
 
@@ -438,8 +438,24 @@ PMR profile it now carries no resource; the resource-taking constructor and `set
 stay as no-ops so a parent treats every member alike, and the free function takes the resource it
 is handed rather than reading one from the object.
 
-Still to do in this phase: the instruction-count gate. The numbers above were taken by hand from
-`llvm-objdump` and belong in a lane.
+**The instruction-count gate, 2026-09-18.** `llvmdsdl-host-image-instruction-counts` generates
+the fold fixtures as objects for two pinned triples, `aarch64-unknown-linux-gnu` and
+`x86_64-unknown-linux-gnu`, disassembles each entry point with `llvm-objdump`, and holds its
+instruction count to a baseline keyed by triple and LLVM major. A static count is a property of
+the emitted code — exact, the same on every host that can target the triple, and readable
+without a simulator — so this gates where the cachegrind lanes skip, Apple Silicon included; what
+it does not see is how often an instruction runs. The non-image fixture is in the baseline as the
+control, so a fold reaching a body it must not would move a number too. The baseline holds the
+table above: 35 and 16 for the eight-byte record on AArch64, 56 and 29 for the field-wise
+control. A key with no entry skips and prints the block to paste; a change to the lowering
+re-baselines in the commit that makes it, and a wrong baseline was confirmed to fail the lane.
+
+The acceptance named the cachegrind comparison, which cannot run on the machine this was built on;
+the static count asks the same question of the object and runs everywhere. Short buffers are the
+last acceptance item: the C/Go parity lane's directed truncated inputs on `node.Version`,
+`scalar.Natural8` and `scalar.Integer64` already ran through folded bodies on both sides, and the
+C/Rust lane now has the same on `scalar.Real32` and `scalar.Integer8`, checking that the bytes past
+the input come back as zero. Phase 3 is complete.
 
 ### Phase 4 — field accessors for W — M
 
@@ -502,8 +518,8 @@ and then the option at a fixed offset.
 | verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |
 | fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
-| bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count | to build |
-| zero-extension preservation | 3 | the copy path rejecting a short buffer | to build |
+| bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
+| zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust parity's truncated-image `Real32`, `Integer8` |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |
 
 ## Risks
@@ -535,6 +551,13 @@ ctest --test-dir <build> -L alias-layout -V
 ```
 
 Both print their counts, and the reality lane names every section whose claim the compiler disputes.
+The instruction counts of the folded bodies are the `host-image-instruction-counts` lane, which
+prints every count it takes:
+
+```bash
+ctest --test-dir <build> -R host-image-instruction-counts -V
+```
+
 To read the reasons directly instead:
 
 ```bash
