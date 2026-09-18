@@ -237,23 +237,35 @@ relaxing it in the pass made every `bool[8]` type fail the build with *"wire_fla
 field is not a whole number of bytes"*. That is the drift the pass exists to catch, caught on the
 first run.
 
-### Phase 2.2 — the aliasable-candidate lint — S
+### Phase 2.2 — the aliasable-candidate lint — done 2026-09-18
 
-*(Added 2026-09-18. Lands before phase 4 so that authors can design for the property.)*
+An author chooses a `uint2` health code or a `void4` early and would learn that it blocks the fast
+path only when the type is sealed, which is when it is most expensive to change. The verdict is
+known before then: for a delimited type it is the layout walk with the sealing test skipped, which
+is what `wire_flat` already answers.
 
-An author learns whether a type can be aliasable at the moment they seal it, which is the worst
-moment to learn it: a `uint2` health code, a `uint56` timestamp or a `void4` is chosen early and
-discovered late. The predicate already knows the answer earlier — "wire-flat except that it is not
-sealed" is the same walk with the sealing test skipped.
+- **`layout.aliasable_candidate`** in `dsdld`, at `Info` severity, so it reads as a hint in the
+  editor and can be disabled like any rule. `LintDocument` now carries the analysed definition:
+  analysis runs before the rules, and a rule that asks about layout needs the resolved model rather
+  than the AST.
+- **`dsdlc --warn-aliasable-candidates`** reports the same for a batch or a CI audit. Off by
+  default, because it answers a question about a type's future rather than about the code being
+  generated. It reads the local module rather than the merged one: advice about a definition is only
+  worth giving to someone who can edit it.
+- Two shapes are reported — *"would be @aliasable once sealed: its fields are already a contiguous
+  byte run"*, and *"would be @aliasable once sealed, except that field 'health' is not a whole
+  number of bytes wide"*.
+- It stays quiet where the blocker is a design decision rather than an oversight: a variable-length
+  array, a union, an empty type, and a nested type whose problem belongs to its own file. It says
+  nothing about a sealed type, which has already made its choice.
 
-- A `dsdld` lint rule (`include/llvmdsdl/LSP/Lint.h:129` has the framework) and a `dsdlc` warning:
-  *this delimited type would be aliasable once sealed*, and its inverse, *this delimited type would
-  be aliasable except for field `health`* — reported while the field is still cheap to change.
-- This is what makes the feature teach the property during development rather than enforce it at
-  lockdown, which is the difference between helping production and helping the path to it.
+**Noise, measured before building it.** Of the catalogue's 181 sections, 30 are delimited, and the
+rule fires on 12 of them: 7 that sealing alone would qualify, and 5 held up by one narrow field. The
+other 18 are variable-length arrays, unions and nested problems, and are silent.
 
-**Acceptance** A lint case per shape, including a delimited type that would qualify and one that
-would not, each naming the field.
+**Landed in** `lib/LSP/Lint.cpp`, `include/llvmdsdl/LSP/Lint.h`, `lib/LSP/Analysis.cpp`,
+`tools/dsdlc/main.cpp`, with cases in `LspLintTests.cpp` and `aliasable-candidate.txt`, and the rule
+documented in `docs/reference/lsp/lint-rules.md`.
 
 ### Phase 3 — bulk-copy bodies for H — M
 
@@ -356,7 +368,7 @@ and then the option at a fixed offset.
 | predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image | ✅ landed |
 | `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
 | verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
-| candidate lint | 2.2 | a delimited type that would qualify, reported without its field | to build |
+| candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |
 | bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count | to build |
 | zero-extension preservation | 3 | the copy path rejecting a short buffer | to build |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |

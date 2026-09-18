@@ -1,0 +1,15 @@
+# A field that blocks the fast path -- a narrow width, a misalignment -- is chosen early and would
+# otherwise surface when the type is sealed, which is when it is most expensive to change. The
+# verdict is already known before sealing, so `--warn-aliasable-candidates` says it then.
+#
+# The report stays quiet where the blocker is a design decision rather than an oversight.
+
+# RUN: %dsdlc --target-language c --dry-run --warn-aliasable-candidates %S/fixtures_aliasable_candidate 2>&1 | FileCheck %s --check-prefix=CANDIDATES
+# CANDIDATES-DAG: Evolving.1.0.dsdl:1:1: note: {{.*}}Evolving would be @aliasable once sealed: its fields are already a contiguous byte run
+# CANDIDATES-DAG: NearMiss.1.0.dsdl:1:1: note: {{.*}}NearMiss would be @aliasable once sealed, except that field 'health' is not a whole number of bytes wide
+# CANDIDATES-NOT: vendor.Deliberate
+
+# It answers a question about a type's future rather than about the code being generated, so it is
+# off unless asked for.
+# RUN: %dsdlc --target-language c --dry-run %S/fixtures_aliasable_candidate 2>&1 | FileCheck %s --check-prefix=QUIET
+# QUIET-NOT: @aliasable once sealed

@@ -64,6 +64,7 @@
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "llvmdsdl/Semantics/AliasLayout.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/CliPath.h"
@@ -98,6 +99,7 @@ struct CliOptions final
     bool noTargetNamespaces{false};
     bool noOverwrite{false};
     bool allowUnregulatedFixedPortId{false};
+    bool warnAliasableCandidates{false};
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
 
@@ -265,6 +267,11 @@ void printHelp()
                  << "      Output directory root for codegen languages (default: dsdl_out).\n"
                  << "  --allow-unregulated-fixed-port-id\n"
                  << "      Allow fixed port IDs outside regulated ranges.\n"
+                 << "  --warn-aliasable-candidates\n"
+                 << "      Report each delimited definition that sealing would make @aliasable, and\n"
+                 << "      each one that a single narrow or misaligned field still stands in the way\n"
+                 << "      of. Off by default: it answers a question about a type's future rather\n"
+                 << "      than about the code being generated.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -682,6 +689,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--allow-unregulated-fixed-port-id")
         {
             options.allowUnregulatedFixedPortId = true;
+            continue;
+        }
+        if (arg == "--warn-aliasable-candidates")
+        {
+            options.warnAliasableCandidates = true;
             continue;
         }
         if (arg == "--generate-support")
@@ -1334,6 +1346,51 @@ void emitScsvLists(const std::vector<std::string>& inputs,
     }
 }
 
+/// @brief Reports the definitions a lockdown would make aliasable, and the ones it would not.
+///
+/// A field that blocks the fast path is chosen early and would otherwise surface when the type is
+/// sealed, which is when it is most expensive to change. Quiet where the blocker is a design
+/// decision -- a variable-length array, a union, an empty type -- or belongs to a nested type's own
+/// file.
+void reportAliasableCandidates(const llvmdsdl::SemanticModule& semantic, llvmdsdl::DiagnosticEngine& diagnostics)
+{
+    const auto report = [&diagnostics](const llvmdsdl::SemanticDefinition& definition,
+                                       const llvmdsdl::SemanticSection&    section,
+                                       const std::string&                  sectionName) {
+        if (section.sealed || section.wireFlat.holds)
+        {
+            return;
+        }
+        const std::string subject = definition.info.fullName + (sectionName.empty() ? "" : ("'s " + sectionName));
+        // The note points at the file, so an editor can take the reader to the type it is about.
+        const llvmdsdl::SourceLocation where{definition.info.filePath, 1, 1};
+        switch (section.wireFlat.reason)
+        {
+        case llvmdsdl::AliasLayoutReason::NotSealed:
+            diagnostics.note(where,
+                             subject + " would be @aliasable once sealed: its fields are already a contiguous "
+                                       "byte run");
+            break;
+        case llvmdsdl::AliasLayoutReason::SubByteField:
+        case llvmdsdl::AliasLayoutReason::UnalignedField:
+            diagnostics.note(where,
+                             subject + " would be @aliasable once sealed, except that " +
+                                 llvmdsdl::describeAliasLayoutVerdict(section.wireFlat));
+            break;
+        default:
+            break;
+        }
+    };
+    for (const llvmdsdl::SemanticDefinition& definition : semantic.definitions)
+    {
+        report(definition, definition.request, definition.isService ? "request" : "");
+        if (definition.response)
+        {
+            report(definition, *definition.response, "response");
+        }
+    }
+}
+
 }  // namespace
 
 namespace
@@ -1562,6 +1619,13 @@ int runDsdlc(int argc, char** argv)
         llvm::consumeError(semantic.takeError());
         printDiagnostics(diagnostics);
         return 1;
+    }
+
+    // The local module, not the merged one: advice about a definition is only worth giving to
+    // someone who can edit it, and an embedded catalogue type is not one of those.
+    if (options.warnAliasableCandidates)
+    {
+        reportAliasableCandidates(*semantic, diagnostics);
     }
 
     const auto localSemantic = *semantic;

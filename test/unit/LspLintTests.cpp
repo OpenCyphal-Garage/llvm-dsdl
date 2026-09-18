@@ -20,6 +20,8 @@
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/LSP/Lint.h"
+#include "llvmdsdl/Semantics/Analyzer.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 
 #include "UnitTests.h"
@@ -87,6 +89,89 @@ std::set<std::string> findingIds(const std::vector<llvmdsdl::lsp::LintFinding>& 
         ids.insert(finding.ruleId);
     }
     return ids;
+}
+
+}  // namespace
+
+namespace
+{
+
+/// @brief Analyses one definition so a rule that asks about layout has a resolved model to read.
+std::optional<llvmdsdl::SemanticModule> analyseOne(const llvmdsdl::lsp::LintDocument& document)
+{
+    llvmdsdl::ASTModule module;
+    module.definitions.push_back(llvmdsdl::ParsedDefinition{document.info, document.ast});
+    llvmdsdl::DiagnosticEngine diagnostics;
+    auto                       analysed = llvmdsdl::analyze(module, diagnostics);
+    if (!analysed)
+    {
+        llvm::consumeError(analysed.takeError());
+        return std::nullopt;
+    }
+    return std::move(*analysed);
+}
+
+/// @brief The candidate rule's findings for one definition, or nullopt when analysis failed.
+std::optional<std::vector<std::string>> aliasableCandidateMessages(const std::string& shortName,
+                                                                   const std::string& text)
+{
+    auto document = makeDocument("/tmp/candidate.dsdl", "file:///tmp/candidate.dsdl", shortName, {"vendor"}, text);
+    if (!document.has_value())
+    {
+        return std::nullopt;
+    }
+    const auto analysed = analyseOne(*document);
+    if (!analysed.has_value())
+    {
+        return std::nullopt;
+    }
+    document->semantic = &analysed->definitions.front();
+
+    llvmdsdl::lsp::LintExecutionConfig config;
+    config.enabled = true;
+    const llvmdsdl::lsp::LintEngine engine(llvmdsdl::lsp::LintRegistry{}, config);
+    std::vector<std::string>        messages;
+    for (const auto& finding : engine.run({*document}).findings)
+    {
+        if (finding.ruleId == "layout.aliasable_candidate")
+        {
+            messages.push_back(finding.message);
+        }
+    }
+    return messages;
+}
+
+/// @brief Checks what the candidate rule says about one definition.
+bool expectCandidate(const std::string& shortName, const std::string& text, const std::string& expectedSubstring)
+{
+    const auto messages = aliasableCandidateMessages(shortName, text);
+    if (!messages.has_value())
+    {
+        std::cerr << "aliasable candidate: could not analyse " << shortName << "\n";
+        return false;
+    }
+    if (expectedSubstring.empty())
+    {
+        if (!messages->empty())
+        {
+            std::cerr << "aliasable candidate: " << shortName << " should say nothing, said '" << messages->front()
+                      << "'\n";
+            return false;
+        }
+        return true;
+    }
+    if (messages->size() != 1U)
+    {
+        std::cerr << "aliasable candidate: " << shortName << " produced " << messages->size() << " findings\n";
+        return false;
+    }
+    if (!messages->front().contains(expectedSubstring))
+    {
+        std::cerr << "aliasable candidate: " << shortName << " said '" << messages->front()
+                  << "', expected to mention '" << expectedSubstring << "'\n";
+        return false;
+    }
+    return true;
 }
 
 }  // namespace
@@ -278,6 +363,24 @@ bool runLspLintTests()
         if (dynamicRegistry.loadPluginLibrary("/definitely/not/a/real/plugin.so", &error))
         {
             std::cerr << "expected missing plugin load to fail\n";
+            return false;
+        }
+    }
+
+    // A field that blocks the fast path is chosen early and would otherwise surface at sealing,
+    // which is when it is most expensive to change. These say so while it is still cheap.
+    {
+        bool ok = true;
+        // Byte-clean already: sealing is all that stands in the way.
+        ok = expectCandidate("Evolving", "uint32 a\nuint16 b\n@extent 128\n", "would be @aliasable once sealed") && ok;
+        // One narrow field stands in the way, and the rule names it.
+        ok = expectCandidate("NearMiss", "uint2 health\nuint8 code\n@extent 128\n", "field 'health'") && ok;
+        // A variable-length array is a design decision rather than an oversight.
+        ok = expectCandidate("Deliberate", "uint8[<=64] payload\n@extent 1024\n", "") && ok;
+        // A sealed type has already made its choice, and @aliasable is how it states it.
+        ok = expectCandidate("Locked", "uint32 a\n@sealed\n", "") && ok;
+        if (!ok)
+        {
             return false;
         }
     }
