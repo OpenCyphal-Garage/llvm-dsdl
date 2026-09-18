@@ -383,6 +383,8 @@ std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const st
 /// to the buffer's end.
 class RustSpelling final : public BodySpelling
 {
+    struct Member;
+
 public:
     RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
         : symbols_(module)
@@ -432,6 +434,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
+        accessor_            = Accessor::None;
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -445,12 +448,77 @@ public:
                    typeName(fn.getResultTypes().front()) + " {");
             return parameters;
         }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
+        }
         const bool serialize = *direction == "serialize";
         w.open(serialize ? "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"
                          : "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
         // The size a plan is handed by pointer, read at entry and written back at the end.
         w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
         return {"self", "buffer", "inout_buffer_size_bytes"};
+    }
+
+    /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
+    ///        a slice and speaking the member's own storage type. The plan holds the size and the
+    ///        value in a `u64`: the size is the slice's own length, read as an expression rather
+    ///        than bound, since a slice read needs no size beside it; the value is rebound.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Member&     member  = accessorMember(fn);
+        const std::string storage = scalarType(member.io);
+        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(2).getType();
+        const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        if (getter)
+        {
+            returnCast_.clear();
+            if (storage == "bool")
+            {
+                returnCast_ = " != 0";
+            }
+            else if (integer)
+            {
+                returnCast_ = " as " + storage;
+            }
+            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]) -> " + storage + " {");
+            return {"buffer", "(buffer.len() as u64)"};
+        }
+        w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8], value: " + storage +
+               ") -> core::result::Result<(), i8> {");
+        if (integer)
+        {
+            w.line("let value = value as u64;");
+        }
+        return {"buffer", "(buffer.len() as u64)", "value"};
+    }
+
+    /// @brief The member an accessor reaches, through the plan its schema and section name.
+    const Member& accessorMember(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor of a member the plan does not declare");
+        }
+        return member->second;
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -511,6 +579,17 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code as a result.
+        if (accessor_ == Accessor::Getter)
+        {
+            w.line(expr.str() + returnCast_);
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            w.line("if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
+            return;
+        }
         // A body answers the runtime's error code; its Rust signature answers the size or the code.
         if (inBody_)
         {
@@ -1236,6 +1315,16 @@ private:
     llvm::StringMap<Plan> plans_;
     mutable std::size_t   counter_{0};
     mutable bool          inBody_{false};
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
 };
 
 std::string rustConstType(const TypeExprAST& type)
@@ -1280,6 +1369,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 llvm::Error emitSectionType(SourceWriter&                         w,
@@ -1546,6 +1637,16 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("let used = out.deserialize(buffer)?;");
     w.line("Ok((out, used))");
     w.close("}");
+
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    {
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
+    }
     w.close("}");
     w.blank();
     return llvm::Error::success();
@@ -1594,6 +1695,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         else if (*direction == "initialize")
         {
             entry.initialize = fn;
+        }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
         }
         else
         {

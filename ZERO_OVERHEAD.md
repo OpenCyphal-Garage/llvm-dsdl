@@ -478,6 +478,39 @@ language with no new ops and no per-backend logic beyond the function's name.
 six languages, on the catalogue and on the `@aliasable` fixtures; an accessor costs one load in the
 instruction lane.
 
+**Decisions taken, 2026-09-18.** The shape of an accessor, settled before the first language:
+
+- *A getter answers the value alone.* It takes the buffer and its size and returns the field's
+  value: no error channel, because a read cannot fail — a short buffer zero-extends, which is what
+  `deserialize_` does with it, so the two agree on every input `deserialize_` accepts. The one
+  input it rejects, a null pointer with a size, is a C question; the C wrapper reads a null
+  buffer as an empty one, and the other languages take a slice. A setter answers the runtime's
+  error code, as `serialize_` does, and refuses a null buffer the same way.
+- *One read, through the plan's own helper.* The getter's body is `dsdl.read_bits` at the field's
+  offset followed by the deserialise helper the field-wise body uses, so a getter saturates,
+  sign-extends and widens exactly as the body does; a setter is the serialise helper and one
+  `dsdl.write_bits`. The offsets come from walking the plan's steps as the bodies do, once, in the
+  pass.
+- *Bodies with a member.* `llvmdsdl.plan_body` is `get` or `set` and `llvmdsdl.member` names the
+  field; the symbol is `<stem>__get_<field>_ir_`. A backend that reads the member's plan step from
+  those two attributes spells the accessor in the member's own type: `u16` in Rust, `uint16_t`
+  in C, a `bool` for a bool. The plan holds every integer in an `i64`, so the spelling casts at
+  the boundary and nowhere else.
+- *Named `get_<field>` and `set_<field>`* in every language, so a field and its accessors never
+  share a name where a language puts members and functions in one scope.
+
+**Progress, 2026-09-18.** The bodies are built for every scalar field of a wire-flat section, with
+a lit test pinning the offsets after a fixed array and after a nested record and the absence of
+accessors on a section that is not wire-flat. C declares the lowered entry points and wraps each
+in a `static inline` function speaking the member's type; the object target exports them. Rust
+spells them as associated functions, `Type::get_b(&buffer)` and `Type::set_b(&mut buffer, v)`,
+which the deprecation gate forced ahead of the other languages: the accessors call the per-field
+helpers a folded body had left unreferenced, so the helpers stay emitted and something must call
+them. Both were checked by hand against `deserialize_`, on full and on short buffers, before the
+lane exists. Still to do: fixed arrays and nested composites, the C++, Go, TypeScript and Python
+spellings, the reserved-name registration, the six-language equivalence lane, and the
+instruction-count row.
+
 ### Phase 5 — `--aliasable-only` — S
 
 **Depends on** 4.

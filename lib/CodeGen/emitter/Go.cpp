@@ -1478,6 +1478,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 /// @brief Whether a stored constant is its type's zero. No constant -- a length of nought, a bool
@@ -1861,6 +1863,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         else if (*direction == "initialize")
         {
             entry.initialize = fn;
+        }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
         }
         else
         {
