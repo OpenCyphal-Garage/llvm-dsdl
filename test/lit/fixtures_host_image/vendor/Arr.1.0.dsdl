@@ -1,0 +1,4 @@
+# A fixed array lowers to a loop; under the verdict it is the same six bytes as anything else.
+uint8[4] head
+uint16 tail
+@sealed

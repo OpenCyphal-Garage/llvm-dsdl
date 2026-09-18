@@ -1293,115 +1293,30 @@ private:
         return schemaSym.str() + "/" + section.value_or(llvm::StringRef{}).str();
     }
 
-    /// @brief The region between taking the buffer and storing the consumed count.
+    /// @brief Folds a read body: everything between taking the buffer and keeping the consumed
+    ///        count becomes one move.
     ///
-    /// Returns the ops to replace, or nothing when the body does not have this shape or when one of
-    /// those ops is used by something outside the run -- which would make removing them a change in
-    /// meaning rather than in speed.
-    static std::optional<std::vector<mlir::Operation*>> fieldWorkAfter(mlir::Operation* anchorOp,
-                                                                       mlir::Operation* stopBefore,
-                                                                       mlir::Block&     block)
-    {
-        // The consumed count is computed between the field work and the store that keeps it, and it
-        // reads the available size rather than any field, so it survives the fold. Everything it is
-        // built from is excluded from the run before anything is removed.
-        llvm::SmallPtrSet<mlir::Operation*, 16> keep;
-        std::vector<mlir::Value> pending(stopBefore->getOperands().begin(), stopBefore->getOperands().end());
-        while (!pending.empty())
-        {
-            const mlir::Value value = pending.back();
-            pending.pop_back();
-            mlir::Operation* const definer = value.getDefiningOp();
-            if ((definer == nullptr) || (definer->getBlock() != &block) || !keep.insert(definer).second)
-            {
-                continue;
-            }
-            pending.insert(pending.end(), definer->getOperands().begin(), definer->getOperands().end());
-        }
-
-        std::vector<mlir::Operation*>           run;
-        llvm::SmallPtrSet<mlir::Operation*, 32> inRun;
-        bool                                    collecting = false;
-        for (mlir::Operation& op : block)
-        {
-            if (&op == anchorOp)
-            {
-                collecting = true;
-                continue;
-            }
-            if (&op == stopBefore)
-            {
-                break;
-            }
-            if (collecting && !keep.contains(&op))
-            {
-                run.push_back(&op);
-                inRun.insert(&op);
-            }
-        }
-        if (!collecting || run.empty())
-        {
-            return std::nullopt;
-        }
-        for (mlir::Operation* op : run)
-        {
-            for (const mlir::Value result : op->getResults())
-            {
-                for (const mlir::Operation* const user : result.getUsers())
-                {
-                    if (!inRun.contains(user))
-                    {
-                        return std::nullopt;
-                    }
-                }
-            }
-        }
-        return run;
-    }
-
-    static void eraseRun(std::vector<mlir::Operation*>& run)
-    {
-        // Backwards: a later op may use an earlier one's result, and erasing a value still in use
-        // is not allowed.
-        for (mlir::Operation* const op : llvm::reverse(run))
-        {
-            op->erase();
-        }
-    }
-
+    /// What survives the fold is the consumed count and the way it is kept -- a store, or a store
+    /// under a guard -- and the code the block yields. Everything those are built from within the
+    /// block stays; everything else after the buffer is taken is the field work, and goes.
+    ///
+    /// A nested type's own deserialise returns an error code, and the guard and the yield read it.
+    /// After the fold that call is gone, and an image read cannot fail, so the code becomes zero.
+    /// Any other value crossing from the field work to what survives means this is not a shape
+    /// the fold knows, and it declines.
     static mlir::LogicalResult foldDeserialize(mlir::func::FuncOp body, const std::int64_t bytes)
     {
-        // The accepted path is the `else` region of the rejection test, and the buffer is taken
-        // there once.
         mlir::dsdl::BufferOrEmptyOp buffer;
         body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
         if (!buffer)
         {
             return mlir::failure();
         }
-        mlir::dsdl::StoreScalarOp consumed;
-        for (mlir::Operation& op : *buffer->getBlock())
-        {
-            if (auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(op))
-            {
-                consumed = store;
-            }
-        }
-        if (!consumed)
-        {
-            return mlir::failure();
-        }
-        auto run = fieldWorkAfter(buffer, consumed.getOperation(), *buffer->getBlock());
-        if (!run)
-        {
-            return mlir::failure();
-        }
+        mlir::Block& block = *buffer->getBlock();
 
-        mlir::OpBuilder builder(consumed);
-        mlir::Value     size;
-        // The available byte count is what the field reads were given; it is loaded before the
-        // buffer is taken, and the consumed arithmetic still uses it.
-        for (mlir::Operation& op : *buffer->getBlock())
+        // The available byte count: loaded before the buffer is taken, read by the move.
+        mlir::Value size;
+        for (mlir::Operation& op : block)
         {
             if (auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(op))
             {
@@ -1413,13 +1328,125 @@ private:
         {
             return mlir::failure();
         }
+
+        llvm::SmallPtrSet<mlir::Operation*, 32> keep;
+        std::vector<mlir::Value>                pending;
+        const auto                              seed = [&pending](mlir::Operation* op) {
+            pending.insert(pending.end(), op->getOperands().begin(), op->getOperands().end());
+        };
+        for (mlir::Operation& op : block)
+        {
+            if (mlir::isa<mlir::dsdl::StoreScalarOp>(op))
+            {
+                keep.insert(&op);
+                seed(&op);
+                continue;
+            }
+            // A guarded store: the guard, its condition, and all it holds are kept.
+            if (auto guard = mlir::dyn_cast<mlir::scf::IfOp>(op))
+            {
+                bool keepsConsumed = false;
+                guard.walk([&](mlir::dsdl::StoreScalarOp) { keepsConsumed = true; });
+                if (keepsConsumed)
+                {
+                    keep.insert(&op);
+                    guard.walk([&](mlir::Operation* inner) { seed(inner); });
+                }
+            }
+        }
+        keep.insert(block.getTerminator());
+        seed(block.getTerminator());
+        while (!pending.empty())
+        {
+            const mlir::Value value = pending.back();
+            pending.pop_back();
+            mlir::Operation* const definer = value.getDefiningOp();
+            // A definer under a kept guard has had its operands seeded already; only block-level
+            // ops are kept by name. A nested type's own deserialise is field work, not something
+            // the survivors are built from: the guard reads its error code, and that code is what
+            // the fold replaces. Following into it would keep the call, and the fold would then
+            // add a move beside the work it was meant to replace.
+            if ((definer == nullptr) || (definer->getBlock() != &block) ||
+                mlir::isa<mlir::dsdl::CallSerdesOp>(definer) || !keep.insert(definer).second)
+            {
+                continue;
+            }
+            seed(definer);
+        }
+
+        std::vector<mlir::Operation*>           run;
+        llvm::SmallPtrSet<mlir::Operation*, 32> inRun;
+        bool                                    collecting = false;
+        for (mlir::Operation& op : block)
+        {
+            if (&op == buffer.getOperation())
+            {
+                collecting = true;
+                continue;
+            }
+            if (collecting && !keep.contains(&op))
+            {
+                run.push_back(&op);
+                inRun.insert(&op);
+            }
+        }
+        if (run.empty())
+        {
+            return mlir::failure();
+        }
+
+        // Values the field work defines that something surviving reads.
+        std::vector<mlir::Value> nestedCodes;
+        for (mlir::Operation* const op : run)
+        {
+            for (const mlir::Value result : op->getResults())
+            {
+                bool crosses = false;
+                for (mlir::Operation* user : result.getUsers())
+                {
+                    // Climb to the block-level op the user sits under.
+                    while ((user != nullptr) && (user->getBlock() != &block))
+                    {
+                        user = user->getParentOp();
+                    }
+                    if ((user == nullptr) || !inRun.contains(user))
+                    {
+                        crosses = true;
+                        break;
+                    }
+                }
+                if (!crosses)
+                {
+                    continue;
+                }
+                if (!mlir::isa<mlir::dsdl::CallSerdesOp>(op) || !result.getType().isInteger(8))
+                {
+                    return mlir::failure();
+                }
+                nestedCodes.push_back(result);
+            }
+        }
+
+        mlir::OpBuilder builder(run.front());
+        if (!nestedCodes.empty())
+        {
+            const mlir::Value zero =
+                mlir::arith::ConstantIntOp::create(builder, body.getLoc(), static_cast<std::int64_t>(0), 8);
+            for (mlir::Value code : nestedCodes)
+            {
+                code.replaceAllUsesWith(zero);
+            }
+        }
         mlir::dsdl::ImageReadOp::create(builder,
                                         body.getLoc(),
                                         body.getArgument(0),
                                         buffer.getResult(),
                                         size,
                                         builder.getI64IntegerAttr(bytes));
-        eraseRun(*run);
+        for (mlir::Operation* const op : llvm::reverse(run))
+        {
+            op->erase();
+        }
         return mlir::success();
     }
 
@@ -1453,27 +1480,52 @@ private:
                 candidates.push_back(step);
             }
         });
-        // The body's own accepted region threads an error the same way a field step does, and it
-        // holds every field step, so it matches too. A step that contains another is that wrapper
-        // rather than a field.
-        std::vector<mlir::scf::IfOp> fieldSteps;
-        for (const mlir::scf::IfOp step : candidates)
+        // A chain step forwards the code before it: its else-branch is a lone yield. The body's own
+        // accepted region threads an error too, but its else-branch holds the whole chain, so this
+        // tells the two apart.
+        const auto isChainStep = [](mlir::scf::IfOp op) {
+            mlir::Block* const elseBlock = op.elseBlock();
+            return (elseBlock != nullptr) && (elseBlock->getOperations().size() == 1) &&
+                   (elseBlock->getTerminator()->getNumOperands() == 1);
+        };
+        std::vector<mlir::scf::IfOp> steps;
+        for (const mlir::scf::IfOp candidate : candidates)
         {
-            const bool wrapsAnother = std::ranges::any_of(candidates, [&](mlir::scf::IfOp other) {
-                return (other != step) && step->isProperAncestor(other);
-            });
-            if (!wrapsAnother)
+            if (isChainStep(candidate))
             {
-                fieldSteps.push_back(step);
+                steps.push_back(candidate);
             }
         }
-        if (fieldSteps.empty())
+        // A step nested inside another step is that step's own structure -- the loop a fixed array
+        // lowers to threads an error the same way -- and goes with it. The chain is the outermost.
+        llvm::SmallPtrSet<mlir::Operation*, 8> outermost;
+        for (mlir::scf::IfOp step : steps)
+        {
+            const bool nested = std::ranges::any_of(steps, [&](mlir::scf::IfOp other) {
+                return (other != step) && other->isProperAncestor(step);
+            });
+            if (!nested)
+            {
+                outermost.insert(step.getOperation());
+            }
+        }
+        if (outermost.empty())
         {
             return mlir::failure();
         }
-        const mlir::Block* const block = fieldSteps.front()->getBlock();
-        if (std::ranges::any_of(fieldSteps, [block](mlir::scf::IfOp step) { return step->getBlock() != block; }))
+        // In block order, so the first is the chain's head.
+        std::vector<mlir::scf::IfOp> fieldSteps;
+        mlir::Block* const           block = (*outermost.begin())->getBlock();
+        for (mlir::Operation& op : *block)
         {
+            if (outermost.contains(&op))
+            {
+                fieldSteps.push_back(mlir::cast<mlir::scf::IfOp>(op));
+            }
+        }
+        if (fieldSteps.size() != outermost.size())
+        {
+            // Not all in one block: not one chain.
             return mlir::failure();
         }
 

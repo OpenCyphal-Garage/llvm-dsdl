@@ -1,0 +1,5 @@
+# Flat on the wire, three bytes; four in a structure that aligns the second field. Not a host
+# image, so the fold must leave its field-wise body alone.
+uint8 a
+uint16 b
+@sealed

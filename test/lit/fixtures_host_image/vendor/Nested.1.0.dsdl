@@ -1,0 +1,4 @@
+# A record holding a byte-image record, with no alignment added between: twelve bytes.
+vendor.Flat.1.0 inner
+uint32 code
+@sealed

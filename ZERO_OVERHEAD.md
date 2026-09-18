@@ -311,20 +311,35 @@ perturbed body; every parity, determinism and decoder-fuzz lane stays green, inc
 extension on a short buffer, which the copy path must preserve.
 
 **Progress, 2026-09-18.** The ops, the capability and the fold pass are in; nothing is wired to a
-backend yet, so no generated code has changed. Both directions fold for a scalar record; the read
-side also folds a fixed array. A nested composite's read body, and a fixed array's write body, still
-decline — safely, since a declined body is the one every backend already translates.
+backend yet, so no generated code has changed. Every host-image shape tried now folds in both
+directions with no field work left beside the move: a scalar record, a record holding a fixed
+array, and a record holding another byte-image record. A non-host-image body is left as it was.
 
-The write fold's first attempt segfaulted `dsdl-opt`, and the cause is worth recording because a
-release build hides it. The chain's guards read the step before them: `%11 = cmpi eq %10, 0` reads
-step `%10`'s result. The attempt redirected only the *last* step's result before erasing the chain,
-so erasing `%10` left `%11` reading freed memory, and the verifier overflowed its stack walking a
-type read from garbage. `Operation::erase()` asserts the op has no uses — in a Debug build. This
-tree is RelWithDebInfo, where that assertion is compiled out, so the failure surfaced far from its
-cause. The fix is to redirect every step's result to the capacity check's, which is also the right
-answer: once the fields are gone, every code in the chain *is* that one. Two lessons: run a Debug
-`dsdl-opt` against IR surgery before trusting a release one, and treat a stack overflow inside a
-verifier as a use-after-free until proven otherwise.
+Three things were learned building the pass, and each is worth more than the code.
+
+*A release build hides a use-after-free until it is somewhere else.* The write fold's first attempt
+erased a chain step while the guard after it still read that step's result. `Operation::erase()`
+asserts the op has no uses — in a Debug build. This tree is RelWithDebInfo, where the assertion is
+compiled out, so the corruption surfaced as a stack overflow in the verifier, far from the cause.
+The fix was to redirect every step's result to the capacity check's, which is also the right
+answer: once the fields are gone, every code in the chain *is* that one. Run a Debug `dsdl-opt`
+against IR surgery before trusting a release one; it names the op on the spot.
+
+*A count of moves passes a fold that did not fold.* The read side's first handling of a nested
+record produced the right count of `image_read` ops and a body that still called the nested
+deserialise beside it — correct output at twice the cost. The backward slice from the consumed-store
+guard had walked through the nested call's error code into the call itself and kept it. The slice
+now stops at `dsdl.call_serdes`: that code is what the fold replaces, not something the survivors
+are built from. The lit test asserts the field work is *gone*, not that a move appeared.
+
+*A decline can be a right answer.* The nested fixture first used — a byte-image record followed by
+a `uint8` — is not a host image: nine bytes of wire, twelve of structure. The pass refused it at
+the first gate, and an earlier report here listed that refusal as a shape gap. It was the verdict
+doing its job.
+
+Still to do in this phase: the four backend spellings, the capability wired per language in
+`dsdlc`, the static assertions, `#[repr(C)]`, the `__BYTE_ORDER__` guard, and the instruction-count
+gate.
 
 ### Phase 4 — field accessors for W — M
 
@@ -385,6 +400,7 @@ and then the option at a fixed offset.
 | `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
 | verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |
+| fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
 | bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count | to build |
 | zero-extension preservation | 3 | the copy path rejecting a short buffer | to build |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |
