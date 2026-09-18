@@ -454,8 +454,8 @@ The acceptance named the cachegrind comparison, which cannot run on the machine 
 the static count asks the same question of the object and runs everywhere. Short buffers are the
 last acceptance item: the C/Go parity lane's directed truncated inputs on `node.Version`,
 `scalar.Natural8` and `scalar.Integer64` already ran through folded bodies on both sides, and the
-C/Rust lane now has the same on `scalar.Real32` and `scalar.Integer8`, checking that the bytes past
-the input come back as zero. Phase 3 is complete.
+C/Rust and C++/C lanes now have the same on `scalar.Real32` and `scalar.Integer8`, checking that the
+bytes past the input come back as zero. Phase 3 is complete.
 
 ### Phase 4 — field accessors for W — M
 
@@ -519,7 +519,7 @@ and then the option at a fixed offset.
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |
 | fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
 | bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
-| zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust parity's truncated-image `Real32`, `Integer8` |
+| zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |
 
 ## Risks
