@@ -15,8 +15,6 @@ DSDL_VERSION_MINOR = 0
 DSDL_HAS_FIXED_PORT_ID = False
 DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "union-type"
-DSDL_HOST_IMAGE = False
-DSDL_HOST_IMAGE_REASON = "union-type"
 
 def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
     v0 = 24 > p0

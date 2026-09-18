@@ -30,6 +30,17 @@
 # RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Duplicated/vendor/Duplicated.1.0.dsdl -I %S/fixtures_aliasable_bad/Duplicated 2>&1 | FileCheck %s --check-prefix=DUPLICATED
 # DUPLICATED: error: duplicated @aliasable directive
 
+# A field blocker outranks sealing: the field is what is hard to change, and learning about it only
+# after sealing would cost the author a second round trip. Sealing is named alongside it.
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/UnsealedAndNarrow/vendor/UnsealedAndNarrow.1.0.dsdl -I %S/fixtures_aliasable_bad/UnsealedAndNarrow 2>&1 | FileCheck %s --check-prefix=BOTH
+# BOTH: error: @aliasable does not hold: field 'health' is not a whole number of bytes wide; the type is also delimited, so it needs @sealed
+
+# A nested refusal names a field in this file whose cause is in another one, so it carries the cause
+# across rather than leaving the author to go and find it.
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/NestedNarrow/vendor/NestedNarrow.1.0.dsdl -I %S/fixtures_aliasable_bad/NestedNarrow 2>&1 | FileCheck %s --check-prefix=NESTED
+# NESTED: error: @aliasable does not hold: field 'inner' has a type whose own layout is not a flat byte image
+# NESTED-NEXT: note: {{.*}}Narrow.1.0: field 'value' is not a whole number of bytes wide
+
 # A service has two payloads with independent layouts, so the directive scopes to a section and a
 # refusal says which one it is about.
 # RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_service/vendor/Svc.1.0.dsdl -I %S/fixtures_aliasable_service 2>&1 | FileCheck %s --check-prefix=SERVICE

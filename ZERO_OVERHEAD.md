@@ -200,34 +200,42 @@ only recursion into composites makes possible; a case per refusal reason asserti
 the two malformed spellings; a service whose response alone fails; and the verdict reaching the
 generated constants.
 
-### Phase 2.1 — revisit what landed — S
+### Phase 2.1 — revisit what landed — done 2026-09-18
 
-*(Added 2026-09-18 from the implementation review. Nothing here undoes committed work; each item is
-an addition or a relaxation.)*
+*(From the implementation review. Nothing committed was undone; each item is an addition or a
+relaxation.)*
 
-- **`HOST_IMAGE` is a native-target property, and TypeScript and Python print it.** It is
-  meaningless where an object has no byte image. Drop it from those two backends; `WIRE_FLAT` stays,
-  because the accessors make it mean something there.
-- **The verifier re-derives `wire_flat` only.** For `host_image` it checks the implication and stops,
-  so a mis-stamped H is caught only by the reality lane, which runs one ABI in one language. The
-  storage widths are a Support call and natural alignment is a few lines, so H is as re-derivable
-  from the steps as W is.
-- **Sealing hides every other blocker.** `not-sealed` is answered before the field walk, so an
-  unsealed type with a `uint2` field learns about the `uint2` only after sealing: two round trips
-  where one would do. Walk the fields first and mention sealing alongside the field blocker.
-- **A nested refusal should chain.** *"field 'position' has a type whose own layout is not a flat
-  byte image"* sends the author to another file. The nested verdict is cached and carries its own
-  field and reason, so a `note:` naming them costs one line of the check.
-- **`bool[N]` with `N % 8 == 0` is wire-flat**, and so is any fixed array whose total is a whole
-  number of bytes: the wire carries it as a contiguous byte run, and an accessor for element `i` is
-  a `read_bits` at `offset + i × width`. W refuses it today because the walk tests the *element*
-  width rather than the field's total. Test the total. H keeps refusing it, because whether a
-  backend stores a bool array packed is not uniform across backends — which it does already, since
-  a 1-bit element's storage width is 8. Status and capability masks are common in vendor schemas.
-  This is a relaxation, so no schema that is accepted today stops being accepted.
-- **A stale comment** at `lib/Transforms/Passes.cpp:1331` still says `LLVMDSDL_TARGET_ENDIANNESS_BIG`
-  gates the view helpers. The helpers are gone and nothing gates on endianness.
-- **Minor:** `SectionKey` is a tuple holding a `std::string`, copied per lookup.
+- **`HOST_IMAGE` is gone from TypeScript and Python.** An object there has no byte image, so whether
+  a structure could be one said nothing. `WIRE_FLAT` stays, and phase 4's accessors make it mean
+  something in both.
+- **The verifier re-derives `host_image`**, not only its implication. It indexes the module's message
+  plans so a nested composite's extent comes from its own steps, and reports a step the claim
+  contradicts: wire padding, a width the host would widen, or alignment the structure would insert.
+  A type the module does not carry is left to the analysis, which had the whole model.
+- **A field blocker outranks sealing.** An unsealed type with a `uint2` field reported only
+  `not-sealed`, so the field surfaced on a second round trip after sealing — and the field is the
+  part that is hard to change. The `@aliasable` check names the field and mentions sealing alongside
+  it. Over the catalogue this moved 23 sections off `not-sealed` and onto the field that also blocks
+  them: 30 → 7.
+- **A nested refusal chains.** The verdict carries the nested type's name, reason and field, so the
+  check emits *"vendor.Narrow.1.0: field 'value' is not a whole number of bytes wide"* as a note
+  rather than sending the author to another file.
+- **A fixed array's run is what has to land on a byte boundary**, not each element, so `bool[8]` is
+  wire-flat and `bool[4]` is not. H keeps refusing them, because a 1-bit element's storage width is
+  eight. The catalogue's counts did not move — its whole-byte bool arrays are all in delimited types
+  — so the case is covered by unit tests rather than by the census.
+- **The orphaned comment is gone.** It described `dsdl-legalize-endianness`, which is not in the
+  tree, and the view helpers, which phase 1 removed.
+- **The verdict caches key on the section's address** rather than a tuple holding a string.
+
+**Landed in** `lib/Semantics/AliasLayout.cpp`, `lib/Semantics/Analyzer.cpp`,
+`lib/Transforms/Passes.cpp`, `lib/CodeGen/emitter/{Ts,Python}.cpp`, with cases in
+`AliasLayoutTests.cpp` (19), `aliasable-directive.txt` and the snapshots.
+
+**The verifier earned its place during this phase:** relaxing the array rule in the analyser without
+relaxing it in the pass made every `bool[8]` type fail the build with *"wire_flat holds but this
+field is not a whole number of bytes"*. That is the drift the pass exists to catch, caught on the
+first run.
 
 ### Phase 2.2 — the aliasable-candidate lint — S
 
@@ -347,7 +355,7 @@ and then the option at a fixed offset.
 | catalogue W/H census | 1 | either count moving without the test moving with it | ✅ landed |
 | predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image | ✅ landed |
 | `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
-| verifier re-derives H | 2.1 | a `host_image` the steps contradict | to build |
+| verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | to build |
 | bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count | to build |
 | zero-extension preservation | 3 | the copy path rejecting a short buffer | to build |

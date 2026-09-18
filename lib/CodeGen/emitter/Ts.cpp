@@ -1858,11 +1858,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto emitLayoutVerdicts = [&w, schema](const std::string& prefix, const llvm::StringRef section) {
         const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
         const AliasVerdict                    flat = wireFlatVerdict(plan);
-        const AliasVerdict                    host = hostImageVerdict(plan);
         w.line("export const " + prefix + "WIRE_FLAT = " + std::string(flat.holds ? "true" : "false") + ";");
         w.line("export const " + prefix + "WIRE_FLAT_REASON = \"" + flat.reason + "\";");
-        w.line("export const " + prefix + "HOST_IMAGE = " + std::string(host.holds ? "true" : "false") + ";");
-        w.line("export const " + prefix + "HOST_IMAGE_REASON = \"" + host.reason + "\";");
     };
     if (def.isService)
     {

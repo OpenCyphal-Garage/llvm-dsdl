@@ -12,8 +12,6 @@ export const DSDL_VERSION_MINOR = 0;
 export const DSDL_HAS_FIXED_PORT_ID = false;
 export const DSDL_WIRE_FLAT = false;
 export const DSDL_WIRE_FLAT_REASON = "nested-not-flat";
-export const DSDL_HOST_IMAGE = false;
-export const DSDL_HOST_IMAGE_REASON = "nested-not-flat";
 
 function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: bigint): number {
   const v0 = 96n > p0;

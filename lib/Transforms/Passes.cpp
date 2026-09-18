@@ -18,6 +18,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <memory>
@@ -39,6 +40,7 @@
 #include <cstdint>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -53,6 +55,7 @@
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/ScalarStorage.h"
 
 namespace llvmdsdl
 {
@@ -1216,6 +1219,24 @@ struct VerifyDSDLAliasLayoutPass
     void runOnOperation() override
     {
         auto module = getOperation();
+        // A nested composite's own extent is what the holder's alignment turns on, and the module
+        // carries every type the holder names, so the plans are indexed before the walk.
+        llvm::StringMap<mlir::dsdl::SerializationPlanOp> messagePlans;
+        for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+        {
+            if (op.getBody().empty())
+            {
+                continue;
+            }
+            for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                if (!child.getSection())
+                {
+                    messagePlans[compositeKey(op.getFullName(), op.getMajor(), op.getMinor())] = child;
+                }
+            }
+        }
+
         for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
             if (op.getBody().empty())
@@ -1225,7 +1246,7 @@ struct VerifyDSDLAliasLayoutPass
             for (const mlir::dsdl::SerializationPlanOp child :
                  op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                if (mlir::failed(verifyPlan(child)))
+                if (mlir::failed(verifyPlan(child, messagePlans)))
                 {
                     signalPassFailure();
                     return;
@@ -1234,13 +1255,19 @@ struct VerifyDSDLAliasLayoutPass
         }
     }
 
+    static std::string compositeKey(const llvm::StringRef fullName, const std::int64_t major, const std::int64_t minor)
+    {
+        return fullName.str() + "." + std::to_string(major) + "." + std::to_string(minor);
+    }
+
 private:
     /// @brief Re-derives from the steps what the analysis recorded, and reports a disagreement.
     ///
     /// The steps say less than the schema did -- a composite's own verdict is not among them -- so
     /// this checks what they can decide: a plan whose steps are not a flat byte run cannot be
     /// `wire_flat`, and `host_image` never holds where `wire_flat` does not.
-    static mlir::LogicalResult verifyPlan(mlir::dsdl::SerializationPlanOp plan)
+    static mlir::LogicalResult verifyPlan(mlir::dsdl::SerializationPlanOp                         plan,
+                                          const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans)
     {
         const bool wireFlat  = plan.getWireFlat();
         const bool hostImage = plan.getHostImage();
@@ -1310,25 +1337,116 @@ private:
             {
                 return step.emitError("wire_flat holds but this field is a variable-length array");
             }
-            if (bits <= 0 || (bits % 8) != 0)
+            // The wire carries a fixed array as a contiguous run, so the run is what has to land on
+            // a byte boundary, not each element: `bool[8]` is one byte and `bool[4]` is not.
+            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            const std::int64_t total = bits * count;
+            if (bits <= 0 || (total % 8) != 0)
             {
                 return step.emitError("wire_flat holds but this field is not a whole number of bytes");
             }
-            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
-            offsetBits += bits * count;
+            offsetBits += total;
         }
         if (!hasPayload)
         {
             return plan.emitError("wire_flat holds for a plan with no payload field");
         }
-        return mlir::success();
+        if (!hostImage)
+        {
+            return mlir::success();
+        }
+        return verifyHostImage(plan, messagePlans).first;
+    }
+
+    /// @brief Re-derives a plan's host extent, reporting a step the `host_image` claim contradicts.
+    ///
+    /// The structure holds no member for padding and holds each scalar in a whole-byte storage
+    /// width, so a step that is padding, or whose width the host would widen, contradicts the claim.
+    /// The offsets are then walked under natural alignment, which is what decided the verdict.
+    /// @return Success or the error, paired with the plan's size and alignment in bytes.
+    static std::pair<mlir::LogicalResult, std::pair<std::int64_t, std::int64_t>> verifyHostImage(
+        mlir::dsdl::SerializationPlanOp                         plan,
+        const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans,
+        const unsigned                                          depth = 0)
+    {
+        const std::pair<std::int64_t, std::int64_t> unknown{0, 0};
+        // A cycle is not expressible in DSDL, so this bounds a malformed module rather than a schema.
+        if (depth > 64U)
+        {
+            return {plan.emitError("host_image verification recursed too deeply"), unknown};
+        }
+
+        std::int64_t offsetBytes = 0;
+        std::int64_t alignBytes  = 1;
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step)
+            {
+                continue;
+            }
+            if (step.isPadding())
+            {
+                return {step.emitError("host_image holds but this step is wire padding the structure does not hold"),
+                        unknown};
+            }
+
+            std::int64_t elementSize  = 0;
+            std::int64_t elementAlign = 1;
+            if (step.isComposite())
+            {
+                const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(""),
+                                                                   step.getCompositeMajor().value_or(0),
+                                                                   step.getCompositeMinor().value_or(0)));
+                // A type this module does not carry cannot be re-derived here; the analysis decided
+                // it with the whole model in hand, and the reality lane measures the result.
+                if (nested == messagePlans.end())
+                {
+                    return {mlir::success(), unknown};
+                }
+                const auto resolved = verifyHostImage(nested->second, messagePlans, depth + 1);
+                if (mlir::failed(resolved.first))
+                {
+                    return {step.emitError("host_image holds but a nested type is not a byte image"), unknown};
+                }
+                if (resolved.second.second == 0)
+                {
+                    return {mlir::success(), unknown};
+                }
+                elementSize  = resolved.second.first;
+                elementAlign = resolved.second.second;
+            }
+            else
+            {
+                const auto bits = static_cast<std::uint32_t>(step.getBitLength());
+                const auto storage =
+                    (step.getScalarCategory() == "float") ? floatStorageBits(bits) : scalarStorageBits(bits);
+                if (storage != bits)
+                {
+                    return {step.emitError("host_image holds but the host stores this field wider than the wire "
+                                           "carries it"),
+                            unknown};
+                }
+                elementSize  = bits / 8;
+                elementAlign = elementSize;
+            }
+
+            if ((elementAlign == 0) || ((offsetBytes % elementAlign) != 0))
+            {
+                return {step.emitError("host_image holds but the structure would pad before this field"), unknown};
+            }
+            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            offsetBytes += elementSize * count;
+            alignBytes = std::max(alignBytes, elementAlign);
+        }
+        if ((offsetBytes % alignBytes) != 0)
+        {
+            return {plan.emitError("host_image holds but the structure would pad after its last field"), unknown};
+        }
+        return {mlir::success(), {offsetBytes, alignBytes}};
     }
 };
 
-// Validation-only pass: it checks the target-endianness attribute and stamps a
-// legalized marker. It performs no byte reordering. The DSDL wire format is always
-// little-endian, so per-target endianness handling lives in the emitted code (the
-// `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
 }  // namespace
 
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()

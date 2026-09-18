@@ -10,8 +10,6 @@ export const DSDL_VERSION_MINOR = 0;
 export const DSDL_HAS_FIXED_PORT_ID = false;
 export const DSDL_WIRE_FLAT = false;
 export const DSDL_WIRE_FLAT_REASON = "union-type";
-export const DSDL_HOST_IMAGE = false;
-export const DSDL_HOST_IMAGE_REASON = "union-type";
 
 function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: bigint): number {
   const v0 = 24n > p0;

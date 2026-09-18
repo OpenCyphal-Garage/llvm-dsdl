@@ -306,8 +306,25 @@ public:
             return;
         }
         const std::string scope = sectionName.empty() ? std::string{} : (" for the " + sectionName.str());
-        diagnostics_.error(*section.aliasableDirective,
-                           "@aliasable does not hold" + scope + ": " + describeAliasLayoutVerdict(section.wireFlat));
+        std::string message = "@aliasable does not hold" + scope + ": " + describeAliasLayoutVerdict(section.wireFlat);
+        // A field blocker outranks sealing, so an unsealed type reports its field. Sealing is still
+        // required, and saying so here spares the author a second round trip to find that out.
+        if (!section.sealed && (section.wireFlat.reason != AliasLayoutReason::NotSealed))
+        {
+            message += "; the type is also delimited, so it needs @sealed";
+        }
+        diagnostics_.error(*section.aliasableDirective, message);
+
+        // A nested refusal names a field in this file whose cause is in another one. Carry the cause
+        // across rather than leaving the author to go and find it.
+        if (section.wireFlat.reason == AliasLayoutReason::NestedNotFlat)
+        {
+            AliasLayoutVerdict nested;
+            nested.reason    = section.wireFlat.nestedReason;
+            nested.fieldName = section.wireFlat.nestedFieldName;
+            diagnostics_.note(*section.aliasableDirective,
+                              section.wireFlat.nestedTypeName + ": " + describeAliasLayoutVerdict(nested));
+        }
     }
 
 private:

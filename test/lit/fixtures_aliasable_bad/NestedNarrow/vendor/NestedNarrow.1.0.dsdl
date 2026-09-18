@@ -1,0 +1,5 @@
+# The cause is in another file, so the refusal carries it across.
+@aliasable
+vendor.Narrow.1.0 inner
+uint8 code
+@sealed

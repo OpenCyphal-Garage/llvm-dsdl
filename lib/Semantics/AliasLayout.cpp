@@ -58,7 +58,18 @@ struct HostExtent final
 
 AliasLayoutVerdict blocked(const AliasLayoutReason reason, std::string fieldName = {})
 {
-    return AliasLayoutVerdict{/*holds=*/false, reason, std::move(fieldName)};
+    AliasLayoutVerdict verdict;
+    verdict.holds     = false;
+    verdict.reason    = reason;
+    verdict.fieldName = std::move(fieldName);
+    return verdict;
+}
+
+AliasLayoutVerdict holdsVerdict()
+{
+    AliasLayoutVerdict verdict;
+    verdict.holds = true;
+    return verdict;
 }
 
 /// @brief The wire width of a field's element, in bits, or zero when it has none of its own.
@@ -106,10 +117,10 @@ public:
     {
         for (SemanticDefinition& def : module_.definitions)
         {
-            annotate(def, def.request, /*response=*/false);
+            annotate(def.request);
             if (def.response)
             {
-                annotate(def, *def.response, /*response=*/true);
+                annotate(*def.response);
             }
         }
     }
@@ -153,43 +164,43 @@ private:
         return &def.request;
     }
 
-    void annotate(const SemanticDefinition& def, SemanticSection& section, const bool response)
+    void annotate(SemanticSection& section)
     {
-        const SectionKey key{def.info.fullName, def.info.majorVersion, def.info.minorVersion, response};
-        section.wireFlat  = wireFlat(key, section);
-        section.hostImage = hostImage(key, section);
+        section.wireFlat  = wireFlat(section);
+        section.hostImage = hostImage(section);
     }
 
     /// @brief Is the serialised form a contiguous byte image?
-    AliasLayoutVerdict wireFlat(const SectionKey& key, const SemanticSection& section)
+    ///
+    /// Keyed by the section's address: a name has to be resolved to one of these anyway, and the
+    /// definitions outlive the evaluator, so the address identifies the same thing without copying
+    /// a string per lookup.
+    AliasLayoutVerdict wireFlat(const SemanticSection& section)
     {
-        if (const auto cached = wireFlatCache_.find(key); cached != wireFlatCache_.end())
+        if (const auto cached = wireFlatCache_.find(&section); cached != wireFlatCache_.end())
         {
             return cached->second;
         }
-        if (!visiting_.insert(key).second)
+        if (!visiting_.insert(&section).second)
         {
             return blocked(AliasLayoutReason::NestedUnresolved);
         }
         AliasLayoutVerdict verdict = computeWireFlat(section);
-        visiting_.erase(key);
-        wireFlatCache_[key] = verdict;
+        visiting_.erase(&section);
+        wireFlatCache_[&section] = verdict;
         return verdict;
     }
 
     AliasLayoutVerdict computeWireFlat(const SemanticSection& section)
     {
-        if (!section.sealed)
-        {
-            return blocked(AliasLayoutReason::NotSealed);
-        }
         // A union's fields are its options, so they are not a sequence and have no shared offsets.
         if (section.isUnion)
         {
             return blocked(AliasLayoutReason::UnionType);
         }
-        // A varying length is a consequence; the field walk below names the field it comes from,
-        // and `NotFixedSize` is the answer only when no field accounts for it.
+        // Sealing and a varying length are both answered after the field walk. An unsealed type
+        // that also has a sub-byte field would otherwise learn about the field only after being
+        // sealed: two round trips where one does, and the field is the part that is hard to change.
 
         std::int64_t offsetBits = 0;
         bool         hasPayload = false;
@@ -224,20 +235,33 @@ private:
                 {
                     return blocked(AliasLayoutReason::NestedUnresolved, field.name);
                 }
-                const AliasLayoutVerdict nestedVerdict = wireFlat(nestedKey, *nested);
+                const AliasLayoutVerdict nestedVerdict = wireFlat(*nested);
                 if (!nestedVerdict.holds)
                 {
-                    return blocked(AliasLayoutReason::NestedNotFlat, field.name);
+                    AliasLayoutVerdict verdict = blocked(AliasLayoutReason::NestedNotFlat, field.name);
+                    verdict.nestedTypeName     = type.compositeType->fullName + "." +
+                                                 std::to_string(type.compositeType->majorVersion) + "." +
+                                                 std::to_string(type.compositeType->minorVersion);
+                    verdict.nestedReason       = nestedVerdict.reason;
+                    verdict.nestedFieldName    = nestedVerdict.fieldName;
+                    return verdict;
                 }
                 offsetBits += nested->maxBitLength * elementCount(type);
                 continue;
             }
-            const std::int64_t bits = elementBits(type);
-            if (bits <= 0 || (bits % 8) != 0)
+            // The wire carries a fixed array as a contiguous run, so what has to land on a byte
+            // boundary is the run, not each element. `bool[8]` is one byte; `bool[4]` is not.
+            const std::int64_t bits  = elementBits(type);
+            const std::int64_t total = bits * elementCount(type);
+            if (bits <= 0 || (total % 8) != 0)
             {
                 return blocked(AliasLayoutReason::SubByteField, field.name);
             }
-            offsetBits += bits * elementCount(type);
+            offsetBits += total;
+        }
+        if (!section.sealed)
+        {
+            return blocked(AliasLayoutReason::NotSealed);
         }
         if (!section.fixedSize)
         {
@@ -253,23 +277,23 @@ private:
         {
             return blocked(AliasLayoutReason::SubByteField);
         }
-        return AliasLayoutVerdict{/*holds=*/true, AliasLayoutReason::None, {}};
+        return holdsVerdict();
     }
 
     /// @brief Is the generated structure that same byte image?
-    AliasLayoutVerdict hostImage(const SectionKey& key, const SemanticSection& section)
+    AliasLayoutVerdict hostImage(const SemanticSection& section)
     {
-        if (const auto cached = hostImageCache_.find(key); cached != hostImageCache_.end())
+        if (const auto cached = hostImageCache_.find(&section); cached != hostImageCache_.end())
         {
             return cached->second.verdict;
         }
-        if (!visiting_.insert(key).second)
+        if (!visiting_.insert(&section).second)
         {
             return blocked(AliasLayoutReason::NestedUnresolved);
         }
         const Resolved resolved = computeHostImage(section);
-        visiting_.erase(key);
-        hostImageCache_[key] = resolved;
+        visiting_.erase(&section);
+        hostImageCache_[&section] = resolved;
         return resolved.verdict;
     }
 
@@ -308,7 +332,7 @@ private:
                 {
                     return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}};
                 }
-                if (const auto cached = hostImageCache_.find(nestedKey); cached != hostImageCache_.end())
+                if (const auto cached = hostImageCache_.find(nested); cached != hostImageCache_.end())
                 {
                     if (!cached->second.verdict.holds)
                     {
@@ -318,13 +342,13 @@ private:
                 }
                 else
                 {
-                    if (!visiting_.insert(nestedKey).second)
+                    if (!visiting_.insert(nested).second)
                     {
                         return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}};
                     }
                     const Resolved nestedResolved = computeHostImage(*nested);
-                    visiting_.erase(nestedKey);
-                    hostImageCache_[nestedKey] = nestedResolved;
+                    visiting_.erase(nested);
+                    hostImageCache_[nested] = nestedResolved;
                     if (!nestedResolved.verdict.holds)
                     {
                         return Resolved{blocked(AliasLayoutReason::NestedNotFlat, field.name), {}};
@@ -357,15 +381,18 @@ private:
         {
             return Resolved{blocked(AliasLayoutReason::HostPadding), {}};
         }
-        return Resolved{AliasLayoutVerdict{/*holds=*/true, AliasLayoutReason::None, {}},
-                        HostExtent{offsetBytes, alignBytes}};
+        return Resolved{holdsVerdict(), HostExtent{offsetBytes, alignBytes}};
     }
 
-    SemanticModule&                          module_;
-    std::map<SectionKey, Entry>              entries_;
-    std::map<SectionKey, AliasLayoutVerdict> wireFlatCache_;
-    std::map<SectionKey, Resolved>           hostImageCache_;
-    std::set<SectionKey>                     visiting_;
+    SemanticModule& module_;
+    /// @brief Name to definition. A composite field names a type, so resolution needs the name.
+    std::map<SectionKey, Entry> entries_;
+
+    /// @brief Verdicts, keyed by the section they are about. The definitions outlive the evaluator,
+    ///        so an address identifies the same thing without copying a string per lookup.
+    std::map<const SemanticSection*, AliasLayoutVerdict> wireFlatCache_;
+    std::map<const SemanticSection*, Resolved>           hostImageCache_;
+    std::set<const SemanticSection*>                     visiting_;
 };
 
 }  // namespace

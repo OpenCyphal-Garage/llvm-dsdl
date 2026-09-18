@@ -1,0 +1,6 @@
+# Both blockers at once: the field is reported, because it is the part that is hard to change, and
+# the sealing is mentioned alongside it rather than standing in for it.
+@aliasable
+uint2 health
+uint8 code
+@extent 64

@@ -346,5 +346,89 @@ bool runAliasLayoutTests()
             expect(module, "Empty", false, AliasLayoutReason::EmptyLayout, false, AliasLayoutReason::EmptyLayout) && ok;
     }
 
+    // A fixed array's run is what has to land on a byte boundary, not each element. `bool[8]` is one
+    // byte on the wire; the host stores each element in eight bits, so it is not a byte image.
+    {
+        llvmdsdl::SemanticModule module;
+        if (!analyseModule({{"Mask", "bool[8] flags\nuint8 code\n@sealed\n"}}, module))
+        {
+            return false;
+        }
+        ok = expect(module, "Mask", true, AliasLayoutReason::None, false, AliasLayoutReason::StorageWidth, "flags") &&
+             ok;
+    }
+
+    // Four bools are half a byte, so the run does not land on a boundary.
+    {
+        llvmdsdl::SemanticModule module;
+        if (!analyseModule({{"Odd", "bool[4] flags\n@sealed\n"}}, module))
+        {
+            return false;
+        }
+        ok = expect(module,
+                    "Odd",
+                    false,
+                    AliasLayoutReason::SubByteField,
+                    false,
+                    AliasLayoutReason::SubByteField,
+                    "flags") &&
+             ok;
+    }
+
+    // A field blocker outranks sealing. An unsealed type with a sub-byte field reports the field,
+    // which is the part that is hard to change; sealing is mentioned alongside it by the directive
+    // check rather than standing in for it here.
+    {
+        llvmdsdl::SemanticModule module;
+        if (!analyseModule({{"UnsealedAndNarrow", "uint2 health\nuint8 code\n@extent 64\n"}}, module))
+        {
+            return false;
+        }
+        ok = expect(module,
+                    "UnsealedAndNarrow",
+                    false,
+                    AliasLayoutReason::SubByteField,
+                    false,
+                    AliasLayoutReason::SubByteField,
+                    "health") &&
+             ok;
+    }
+
+    // A delimited type whose fields are all clean is refused for the sealing alone.
+    {
+        llvmdsdl::SemanticModule module;
+        if (!analyseModule({{"UnsealedButClean", "uint32 a\n@extent 64\n"}}, module))
+        {
+            return false;
+        }
+        ok = expect(module,
+                    "UnsealedButClean",
+                    false,
+                    AliasLayoutReason::NotSealed,
+                    false,
+                    AliasLayoutReason::NotSealed) &&
+             ok;
+    }
+
+    // A nested refusal carries the nested type's own verdict, so a diagnostic can name the cause
+    // rather than sending the author to another file to find it.
+    {
+        llvmdsdl::SemanticModule module;
+        if (!analyseModule({{"Narrow", "uint2 value\n@sealed\n"},
+                            {"Outer", "vendor.Narrow.1.0 inner\nuint8 code\n@sealed\n"}},
+                           module))
+        {
+            return false;
+        }
+        const llvmdsdl::SemanticSection* outer = sectionOf(module, "Outer");
+        if ((outer == nullptr) || (outer->wireFlat.nestedTypeName != "vendor.Narrow.1.0") ||
+            (outer->wireFlat.nestedReason != AliasLayoutReason::SubByteField) ||
+            (outer->wireFlat.nestedFieldName != "value"))
+        {
+            std::cerr << "alias layout: Outer does not carry Narrow's own verdict\n";
+            ok = false;
+        }
+    }
+
     return ok;
 }

@@ -201,6 +201,14 @@ struct AliasLayoutVerdict final
 
     /// @brief The field the reason is about, empty when the reason is about the section.
     std::string fieldName;
+
+    /// @brief For `NestedNotFlat`, the type the field names, so a refusal can point at its cause
+    ///        rather than leaving the author to open another file.
+    std::string nestedTypeName;
+
+    /// @brief That type's own reason, and the field it is about.
+    AliasLayoutReason nestedReason{AliasLayoutReason::None};
+    std::string       nestedFieldName;
 };
 
 /// @brief Semantic representation of one serialisation section.
