@@ -377,10 +377,18 @@ Confirmed by compiling a folded header with the byte-order macro flipped. A type
 host image but holds one refuses too, because its own body calls the folded one — the refusal
 follows composition, which is what it must do.
 
-Still to do in this phase: the C++, Rust and Go spellings with their capability bits (each is a
-`memcpy` behind an endianness condition, and Rust's needs `#[repr(C)]` first), the static
-assertions confirming H on the consumer's target, and the instruction-count gate — the numbers
-above were taken by hand from `llvm-objdump` and belong in a lane.
+**C++ folds too, 2026-09-18.** Its spelling calls the same two runtime helpers C does — generated
+C++ already includes the C runtime and `<cstring>` — so the body is one line in each direction and
+the byte-order guard is the same `#error`. The translator dispatches the two ops as statements
+beside the bit moves, and `BodySpelling` gains them as pure virtuals: a backend the fold never
+reaches — Rust and Go until their slices land, TypeScript and Python for good — spells them as a
+fatal error naming the fact, so a fold running where it must not is loud rather than wrong. Every
+C++ parity lane, including the pmr and autosar profiles, passes against C output that folds.
+
+Still to do in this phase: the Rust and Go spellings with their capability bits (Rust's needs
+`#[repr(C)]` first; Go's needs `unsafe`), the static assertions confirming H on the consumer's
+target, and the instruction-count gate — the numbers above were taken by hand from `llvm-objdump`
+and belong in a lane.
 
 ### Phase 4 — field accessors for W — M
 

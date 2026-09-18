@@ -1041,6 +1041,18 @@ public:
         w.close("}");
     }
 
+    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("TypeScript spelling: a host-image move is not spelled here, and the fold that "
+                                 "produces one does not run for this target");
+    }
+
+    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("TypeScript spelling: a host-image move is not spelled here, and the fold that "
+                                 "produces one does not run for this target");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("TypeScript spelling: a nested call is a statement");

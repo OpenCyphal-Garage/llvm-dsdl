@@ -887,6 +887,10 @@ private:
                 [&](mlir::dsdl::BitWriteOp write) -> void { spelling_.bitWrite(w_, write, *this); })
             .Case<mlir::dsdl::BitReadOp>(
                 [&](mlir::dsdl::BitReadOp read) -> void { spelling_.bitRead(w_, read, *this); })
+            .Case<mlir::dsdl::ImageReadOp>(
+                [&](mlir::dsdl::ImageReadOp read) -> void { spelling_.imageRead(w_, read, *this); })
+            .Case<mlir::dsdl::ImageWriteOp>(
+                [&](mlir::dsdl::ImageWriteOp write) -> void { spelling_.imageWrite(w_, write, *this); })
             .Default([&](mlir::Operation* other) -> void {
                 outcome = llvm::joinErrors(std::move(outcome),
                                            llvm::createStringError(llvm::inconvertibleErrorCode(),

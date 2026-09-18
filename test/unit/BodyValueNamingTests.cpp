@@ -271,6 +271,10 @@ public:
         return {};
     }
     void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override {}
+    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override {}
+
+    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override {}
+
     void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override {}
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {

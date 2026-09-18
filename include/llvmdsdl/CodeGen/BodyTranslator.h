@@ -295,7 +295,15 @@ public:
     [[nodiscard]] virtual std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const         = 0;
     virtual void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const             = 0;
     virtual void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const               = 0;
-    [[nodiscard]] virtual std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const     = 0;
+
+    /// @brief One move for a whole payload, where the structure is the wire image.
+    ///
+    /// Only a target whose objects are byte images of the wire is asked for this; the fold that
+    /// produces the op runs under that target's capability. A backend whose objects are not --
+    /// TypeScript's, Python's -- never receives it, and its spelling says so.
+    virtual void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const       = 0;
+    virtual void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const     = 0;
+    [[nodiscard]] virtual std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const = 0;
 
     /// @brief Declares @p name as the error code a nested call answers with.
     ///

@@ -179,10 +179,12 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
+                   const bool               hostImageFolded,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , hostImageFolded_(hostImageFolded)
     {
     }
 
@@ -196,6 +198,12 @@ public:
     bool emitDeprecationAttributes() const
     {
         return emitDeprecationAttributes_;
+    }
+
+    /// @brief Whether a host-image section's bodies were folded into one move.
+    bool hostImageFolded() const
+    {
+        return hostImageFolded_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -296,6 +304,7 @@ private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     bool               emitDeprecationAttributes_{false};
+    bool               hostImageFolded_{false};
 };
 
 SourceWriter makeCppWriter(std::ostringstream& out)
@@ -929,6 +938,20 @@ public:
         }
         w.line("dsdl_runtime_get_bits(" + names(op.getDestination()) + ", " + buffer + ", " + offset + ", " + width +
                ");");
+    }
+
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
+    {
+        // The same helper the C backend calls: a constant-length copy the compiler folds to loads
+        // and stores, zeroing what a short buffer does not supply.
+        w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", " +
+               asSize(names(op.getBufferSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+    }
+
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
+    {
+        w.line("dsdl_runtime_image_write(" + names(op.getBuffer()) + ", " + names(op.getObject()) + ", " +
+               std::to_string(op.getBytes()) + "U);");
     }
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
@@ -1603,6 +1626,17 @@ void emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr const char* WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\";");
     w.line(std::string("static constexpr bool HOST_IMAGE = ") + (metadata.hostImage.holds ? "true;" : "false;"));
     w.line("static constexpr const char* HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\";");
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (ctx.hostImageFolded() && metadata.hostImage.holds)
+    {
+        w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
+               "__ORDER_LITTLE_ENDIAN__)");
+        w.line("#  error \"" + typeName +
+               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
+               "host. Regenerate with --target-triple naming this target.\"");
+        w.line("#endif");
+    }
     if (metadata.declaresPortId)
     {
         w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
@@ -2042,7 +2076,10 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
     }
 
-    const EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    const EmitterContext ctx(semantic,
+                             options.emitDeprecationAttributes,
+                             options.hostImageFolded,
+                             options.typeNameVersioning);
     PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {
