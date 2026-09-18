@@ -278,7 +278,36 @@ public:
         // Layout verdicts read whole sections, including composites this module resolved through
         // the catalogue, so they are decided once the model is complete.
         annotateAliasLayout(out, options_.externalSemanticCatalog);
+        checkAliasableAssertions(out);
+        if (diagnostics_.hasErrors())
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), "semantic analysis failed");
+        }
         return out;
+    }
+
+    /// @brief Reports every `@aliasable` the layout does not honour, naming what blocked it.
+    void checkAliasableAssertions(const SemanticModule& module)
+    {
+        for (const SemanticDefinition& def : module.definitions)
+        {
+            checkOneAliasableAssertion(def.request, def.isService ? "request" : "");
+            if (def.response)
+            {
+                checkOneAliasableAssertion(*def.response, "response");
+            }
+        }
+    }
+
+    void checkOneAliasableAssertion(const SemanticSection& section, const llvm::StringRef sectionName)
+    {
+        if (!section.aliasableDirective || section.wireFlat.holds)
+        {
+            return;
+        }
+        const std::string scope = sectionName.empty() ? std::string{} : (" for the " + sectionName.str());
+        diagnostics_.error(*section.aliasableDirective,
+                           "@aliasable does not hold" + scope + ": " + describeAliasLayoutVerdict(section.wireFlat));
     }
 
 private:
@@ -978,6 +1007,24 @@ private:
                     }
                     section.isUnion        = true;
                     unionDirectiveLocation = d.location;
+                    continue;
+                }
+
+                // An llvm-dsdl extension: this asserts that the section's serialised form is a
+                // contiguous byte image, so a schema change that costs a performance-critical type
+                // its layout fails here rather than quietly costing the reader a decode. The
+                // verdict is decided once the whole module is resolved, so the check is there.
+                if (d.kind == DirectiveKind::Aliasable)
+                {
+                    if (d.expression)
+                    {
+                        diagnostics_.error(d.location, "@aliasable does not accept an expression");
+                    }
+                    if (section.aliasableDirective)
+                    {
+                        diagnostics_.error(d.location, "duplicated @aliasable directive");
+                    }
+                    section.aliasableDirective = d.location;
                     continue;
                 }
 

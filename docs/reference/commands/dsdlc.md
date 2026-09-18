@@ -172,3 +172,37 @@ names the struct. Compiling generated code is clean under `-Werror` or `-D warni
 own code naming a deprecated type is diagnosed.
 
 The `obj` backend never emits these attributes.
+
+## `@aliasable`
+
+`@aliasable` asserts that a section's serialised form is a contiguous byte image: fixed length,
+sealed, not a union, every field a whole number of bytes beginning on a byte boundary, and every
+composite field a type that holds the same. A definition that asserts it and does not hold it is an
+error, naming the field that blocked the layout.
+
+```dsdl
+@aliasable
+float32 x
+float32 y
+float32 z
+@sealed
+```
+
+It is a flag, like `@union` and `@sealed`, and takes no expression. It scopes to a section, so a
+service asserts for its request and its response independently. It requires `@sealed` rather than
+implying it: a directive that reads as an assertion should not change the wire format.
+
+Use it on a type whose decode cost is part of its design. Without it, a schema change that costs
+such a type its layout is silent — the code still generates, and the reader pays for a decode it
+was written not to need.
+
+Every generated type reports the same verdict whether or not it asserts it, as `WIRE_FLAT` and a
+`WIRE_FLAT_REASON` naming what blocked it. `HOST_IMAGE` answers a second question: whether the
+generated structure is that byte image on the target that compiles it. The two differ whenever a
+width the wire carries in five bytes is held in eight, or where a structure aligns a field the wire
+does not.
+
+> ⚠️ `@aliasable` is an llvm-dsdl extension. The reference implementation rejects an unknown
+> directive, so a namespace using it does not parse under pydsdl or generate under Nunavut. It is
+> kept out of the differential corpus for that reason. Proposing it upstream is the intent; until
+> then, a namespace meant to stay portable should not use it.

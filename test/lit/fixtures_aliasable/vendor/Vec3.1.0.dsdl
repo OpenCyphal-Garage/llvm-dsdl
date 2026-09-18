@@ -1,0 +1,5 @@
+# A byte-clean record: three whole-byte fields, each stored in the width the wire carries it.
+float32 x
+float32 y
+float32 z
+@sealed

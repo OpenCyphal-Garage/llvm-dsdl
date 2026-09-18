@@ -1,0 +1,3 @@
+@aliasable 7
+uint32 a
+@sealed

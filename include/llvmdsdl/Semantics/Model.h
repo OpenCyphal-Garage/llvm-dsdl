@@ -239,6 +239,9 @@ struct SemanticSection final
     /// @brief Required serialisation buffer size in bits.
     std::int64_t serializationBufferSizeBits{0};
 
+    /// @brief Where `@aliasable` was written, when the section asserts it.
+    std::optional<SourceLocation> aliasableDirective;
+
     /// @brief Whether the serialised form is a contiguous byte image. A property of the schema.
     AliasLayoutVerdict wireFlat;
 

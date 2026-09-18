@@ -72,15 +72,11 @@ Over the catalogue's 181 plan sections:
 
 These block the phases named against them.
 
-- **pydsdl divergence (blocks phase 2).** Unknown directives are a hard error in both
-  implementations (`lib/Semantics/Analyzer.cpp:954`), so a namespace using `@aliasable` will not
-  parse under the reference and cannot enter the Nunavut differential corpus. Ship it as a
-  documented llvm-dsdl extension with the corpus excluded, propose it upstream, or drop the
-  directive. Recommendation: extension now, upstream as the stated goal, recorded next to the
-  feature rather than discovered later.
-- **Rename the generated surface (blocks phase 1).** `ZOH_ALIAS_ELIGIBLE` names neither W nor H.
-  Proposed: `DSDL_WIRE_FLAT_` for W and `DSDL_HOST_IMAGE_` for H. This breaks any code reading the
-  current constant; the alpha → beta-1 boundary is the sanctioned window for that.
+- **Rename the generated surface.** ✅ Decided: `WIRE_FLAT` and `HOST_IMAGE`, with their reasons,
+  in each language's local spelling. `ZOH_ALIAS_ELIGIBLE` named neither property.
+- **pydsdl divergence.** ✅ Decided: ship as a documented llvm-dsdl extension, upstream later.
+  Stated in `docs/reference/commands/dsdlc.md`; the differential corpus is the public regulated
+  submodule, so it cannot contain the directive.
 - **Unions (affects phase 4 scope).** A union's wire is a tag plus the selected option, so it is
   not flat and is excluded here. Whether a tagged view type is worth a later phase is open.
 
@@ -157,23 +153,31 @@ compiler's answer), `AliasLayoutTests.cpp` (one case per reason, including the r
 two byte-image failures), `dsdl-verify-alias-layout-disagreement.mlir` (a plan claiming a verdict
 its steps contradict). Both integration gates were confirmed to fail when their premise is broken.
 
-### Phase 2 — `@aliasable` — M
+### Phase 2 — `@aliasable` — done 2026-09-17
 
-**Depends on** 0, 1, and the pydsdl decision.
+`@aliasable` asserts **W**, so a schema change that costs a performance-critical type its layout
+fails at the schema rather than quietly costing its reader a decode.
 
-- `DirectiveKind::Aliasable` in `include/llvmdsdl/Frontend/AST.h:301`, dispatched at
-  `lib/Frontend/Parser.cpp:600`, rejecting an expression as `@union` does.
-- The analyzer errors when W fails, pointing at the offending field: *"field `health` is 2 bits
-  wide; `@aliasable` requires every field to be a whole number of bytes"*, not *"not aliasable"*.
-- Errors when the section is not `@sealed`, and when the directive appears twice.
-- `dsdld` surfaces it as a live diagnostic on the field.
+- `DirectiveKind::Aliasable` parses as a flag, like `@union`; an expression or a repeat is an error.
+- The check runs after the verdicts are decided, so it reads one answer rather than a second
+  implementation, and reports through the analyser's diagnostics — which is why `dsdld` shows it
+  without knowing the directive exists.
+- A refusal names the field: *"field 'tail' is a variable-length array, so the fields after it
+  move"*, not *"not aliasable"*.
+- It scopes to a section, so a service asserts for each of its two payloads and a refusal says
+  which. It requires `@sealed` rather than implying it, and the `not-sealed` reason says to add it.
 
-**Files** `include/llvmdsdl/Frontend/AST.h`, `lib/Frontend/Parser.cpp`, `lib/Semantics/Analyzer.cpp`,
-`lib/Frontend/ASTPrinter.cpp`, `docs/reference/` (the extension, stated as one).
+**Decided:** ship as a documented llvm-dsdl extension, upstream later. Unknown directives are a hard
+error in both implementations, so a namespace using `@aliasable` does not parse under pydsdl or
+generate under Nunavut. The differential corpus is the public regulated submodule and cannot contain
+the directive, so the exclusion is structural rather than a filter to maintain.
+`docs/reference/commands/dsdlc.md` states the extension and says a portable namespace should not use
+it.
 
-**Acceptance** A lit negative case per failure reason, each asserting the field name and location in
-the diagnostic; a positive case that survives `-l ast`, `-l mlir` and all six backends; an LSP case;
-the differential corpus is demonstrably free of the directive.
+**Gates** `aliasable-directive.txt`: the accepted case is a record of two byte-clean records, which
+only recursion into composites makes possible; a case per refusal reason asserting the field named;
+the two malformed spellings; a service whose response alone fails; and the verdict reaching the
+generated constants.
 
 ### Phase 3 — bulk-copy bodies for H — M
 

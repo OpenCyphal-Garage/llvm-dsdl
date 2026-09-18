@@ -1,0 +1,44 @@
+# `@aliasable` asserts that a section's serialised form is a contiguous byte image. It is an
+# llvm-dsdl extension: the reference implementation rejects an unknown directive, so a namespace
+# using it does not parse there. See docs/reference/commands/dsdlc.md.
+#
+# A refusal names the field that blocked the layout. "not aliasable" would leave an author to find
+# it themselves, which is the failure this directive exists to prevent.
+
+# A record composed of byte-clean records holds it. Recursion into composites is what makes that
+# true, and without it no type holding a composite could ever assert this.
+# RUN: %dsdlc --target-language c --dry-run %S/fixtures_aliasable/vendor/Pose.1.0.dsdl -I %S/fixtures_aliasable 2>&1 | FileCheck %s --check-prefix=ACCEPTED
+# ACCEPTED-NOT: error:
+# ACCEPTED: files generated
+
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/SubByte/vendor/SubByte.1.0.dsdl -I %S/fixtures_aliasable_bad/SubByte 2>&1 | FileCheck %s --check-prefix=SUB_BYTE
+# SUB_BYTE: SubByte.1.0.dsdl:1:1: error: @aliasable does not hold: field 'health' is not a whole number of bytes wide
+
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Delimited/vendor/Delimited.1.0.dsdl -I %S/fixtures_aliasable_bad/Delimited 2>&1 | FileCheck %s --check-prefix=DELIMITED
+# DELIMITED: Delimited.1.0.dsdl:1:1: error: @aliasable does not hold: the type is delimited, so a length header precedes its payload; add @sealed
+
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Varying/vendor/Varying.1.0.dsdl -I %S/fixtures_aliasable_bad/Varying 2>&1 | FileCheck %s --check-prefix=VARYING
+# VARYING: Varying.1.0.dsdl:1:1: error: @aliasable does not hold: field 'tail' is a variable-length array, so the fields after it move
+
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Choice/vendor/Choice.1.0.dsdl -I %S/fixtures_aliasable_bad/Choice 2>&1 | FileCheck %s --check-prefix=UNION
+# UNION: Choice.1.0.dsdl:1:1: error: @aliasable does not hold: a union serialises a tag and one option, so it has no single layout
+
+# The directive is a flag, as `@union` and `@sealed` are.
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Expression/vendor/Expression.1.0.dsdl -I %S/fixtures_aliasable_bad/Expression 2>&1 | FileCheck %s --check-prefix=EXPRESSION
+# EXPRESSION: error: @aliasable does not accept an expression
+
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_bad/Duplicated/vendor/Duplicated.1.0.dsdl -I %S/fixtures_aliasable_bad/Duplicated 2>&1 | FileCheck %s --check-prefix=DUPLICATED
+# DUPLICATED: error: duplicated @aliasable directive
+
+# A service has two payloads with independent layouts, so the directive scopes to a section and a
+# refusal says which one it is about.
+# RUN: not %dsdlc --target-language c --dry-run %S/fixtures_aliasable_service/vendor/Svc.1.0.dsdl -I %S/fixtures_aliasable_service 2>&1 | FileCheck %s --check-prefix=SERVICE
+# SERVICE: error: @aliasable does not hold for the response: field 'flags' is not a whole number of bytes wide
+
+# The verdict reaches every backend, so a type that asserts it says so in each language.
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/c/fixtures_aliasable/vendor/Pose_1_0.h | FileCheck %s --check-prefix=POSE_C
+# GEN: files generated
+# POSE_C: #define fixtures_aliasable__vendor__Pose_WIRE_FLAT_ true
+# POSE_C: #define fixtures_aliasable__vendor__Pose_HOST_IMAGE_ true
