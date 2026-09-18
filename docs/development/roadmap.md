@@ -22,9 +22,9 @@
 >   documented as validation-only (no byte reordering).
 > - **Big-endian is NOT "unimplemented".** The original G5/G6/§3 "big-endian absent /
 >   needs byte-swap" claim is **overstated** — see the corrected notes below. DSDL wire is
->   always little-endian, `serialize_`/`deserialize_` are host-endianness-agnostic, and the
->   `-l obj … --target-endianness big` smoke test asserts big==little byte-parity; only the
->   zero-copy *view* fast-path is (correctly) disabled on big-endian targets.
+>   always little-endian and the field-wise `serialize_`/`deserialize_` are host-endianness-agnostic.
+>   A host-image type's folded bodies (P1, phase 3) are little-endian only: they are generated
+>   only for a little-endian target triple, and the generated code refuses a big-endian build.
 
 > **Update 2026-09-17 — G6's aliasability strand re-audited, verdict corrected.**
 > Measured against `49b8883` by generating and running code from the embedded catalogue.
@@ -151,7 +151,7 @@ library implementations rests on the lint rather than on a differential build.
 | Semantics | **7** | Solid BitLengthSet algebra; **unchecked `Rational` int64 overflow**, unbounded `repeatRange` expansion. |
 | Runtime (multi-language) | **7** | Read-path bounds-safe; **empty semantic-wrapper allowlist**; no isolated cross-language primitive tests. |
 | Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
-| Transforms | **6** | Real contract enforcement; big-endian **implemented** — wire is LE, `serialize_`/`deserialize_` host-agnostic, only the zero-copy view fast-path is disabled on BE. `dsdl-annotate-aliasability` stamps a wire-layout verdict the generated view API reads as a memory-layout one (2026-09-17; P1). |
+| Transforms | **6** | Real contract enforcement; big-endian **implemented** — wire is LE, the field-wise `serialize_`/`deserialize_` host-agnostic; a host image's folded bodies are little-endian only and refuse a big-endian build. `dsdl-verify-alias-layout` re-derives the wire-flat and host-image verdicts the analyser stamps, and `dsdl-fold-host-image-bodies` rewrites a host image's bodies to one move (2026-09-18; P1). |
 | Codegen shared layer | **6** | Shared planning; semantics still re-rendered per backend. |
 | LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; ~~DocumentStore thread-safety still open~~ **verified thread-safe (2026-07-15): every method locks `mutex_` and `lookup` returns a snapshot copy, so no reference escapes to a concurrent scheduler-worker request.** |
 | Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
@@ -491,10 +491,16 @@ library implementations rests on the lint rather than on a differential build.
   block the fast path while it is still cheap to change. Phases 2.1 (revisits), 2.2 (the lint) and 6
   (container views) are new; 3 through 5 are revised.
 
-  **One claim elsewhere in this document needs qualifying when phase 3 lands:** `serialize_` is
-  host-endianness-agnostic, and stays so for the field-wise body, but a whole-object copy on a
-  big-endian host produces big-endian bytes. Phase 3 guards on `__BYTE_ORDER__` and keeps the
-  field-wise body there.
+  ✅ **Phase 3 landed 2026-09-18.** On C, `obj`, C++, Rust and Go a host-image type's serialise
+  and deserialise are one move of the object's bytes — Quaternion's read went from 84 instructions
+  to 35 — produced by a rewrite pass over the canonical field-wise bodies, gated on the target
+  triple being little-endian, and held to a per-triple instruction-count baseline. Every host-image
+  structure asserts its size and each member's offset on the target it is compiled for; the
+  assertions found that the C++ PMR profile's memory-resource pointer made such a structure wider
+  than the wire, which is fixed by giving a host image none. This qualifies a claim elsewhere in
+  this document: `serialize_` is host-endianness-agnostic for the field-wise body, and the folded
+  body is little-endian only — the generated code refuses a big-endian build with the reason and
+  the fix, rather than falling back.
 
 ### P2 — Maturity / maintainability
 
