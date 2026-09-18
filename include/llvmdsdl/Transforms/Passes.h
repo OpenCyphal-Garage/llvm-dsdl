@@ -57,6 +57,16 @@ std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();
 /// the C path and object emission lower the same bodies rather than each producing its own.
 std::unique_ptr<mlir::Pass> createBuildDSDLPlanBodiesPass();
 
+/// @brief Creates the pass that folds a host-image section's bodies into one move.
+///
+/// `build-dsdl-plan-bodies` always emits the field-wise body, which is the contract every backend
+/// translates. Where the target's objects are byte images of the wire -- which is what a language
+/// whose structures have a layout can offer -- this replaces that body with `dsdl.image_read` or
+/// `dsdl.image_write`. A body it does not recognise is left alone, so declining costs correctness
+/// nothing.
+/// @return Newly constructed pass instance.
+std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass();
+
 /// @brief Lowers DSDL plan operations into the LLVM dialect, for emission as objects.
 std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass();
 
@@ -87,7 +97,14 @@ void registerDSDLToLLVMPasses();
 /// @param[in] pm Pass manager to extend.
 /// @param[in] optimizeLoweredSerDes Canonicalises the helpers and bodies once they are built, so every backend
 ///                                  translates the simplified functions.
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, bool optimizeLoweredSerDes);
+/// @param[in] pm Pass manager to extend.
+/// @param[in] optimizeLoweredSerDes Whether to canonicalise and CSE the bodies.
+/// @param[in] targetObjectsAreByteImages Whether this target's objects can be byte images of the
+///            wire. True for the native backends; false where a structure has no layout to speak
+///            of, as in TypeScript and Python.
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
+                                bool                 optimizeLoweredSerDes,
+                                bool                 targetObjectsAreByteImages = false);
 
 /// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.

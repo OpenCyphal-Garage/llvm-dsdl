@@ -18,6 +18,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -39,6 +40,7 @@
 #include <cassert>
 #include <cstdint>
 #include <set>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1203,6 +1205,260 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
 };
 
+/// @brief Replaces a host-image section's field-wise body with one move.
+///
+/// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
+/// are worked through, and the consumed count is stored. Only the middle is replaced, so this does
+/// not care whether the field work was scalars, a loop over a fixed array, or a call into a nested
+/// type -- all three are the same bytes once the verdict holds.
+///
+/// It declines anything it does not recognise, and a declined body is the one every backend
+/// already translates, so declining is free.
+struct FoldDSDLHostImageBodiesPass
+    : public mlir::PassWrapper<FoldDSDLHostImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-host-image-bodies";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Fold a host-image section's serdes bodies into a single move";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto module = getOperation();
+
+        // The verdict lives on the plan; the bodies are functions beside it. They are paired by the
+        // schema symbol the lowering stamps on both.
+        llvm::StringMap<std::int64_t> foldableBytes;
+        for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+        {
+            if (schema.getBody().empty())
+            {
+                continue;
+            }
+            for (mlir::dsdl::SerializationPlanOp plan :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                if (!plan.getHostImage())
+                {
+                    continue;
+                }
+                const std::int64_t bits = plan.getMaxBits();
+                if ((bits <= 0) || ((bits % 8) != 0))
+                {
+                    continue;
+                }
+                foldableBytes[sectionBodyKey(schema.getSymName(), plan.getSection())] = bits / 8;
+            }
+        }
+        if (foldableBytes.empty())
+        {
+            return;
+        }
+
+        for (const mlir::func::FuncOp body : module.getOps<mlir::func::FuncOp>())
+        {
+            const auto kind = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            const auto sym  = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+            if (!kind || !sym)
+            {
+                continue;
+            }
+            const auto section = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            const auto found   = foldableBytes.find(
+                sectionBodyKey(sym.getValue(),
+                               section ? std::optional<llvm::StringRef>(section.getValue()) : std::nullopt));
+            if (found == foldableBytes.end())
+            {
+                continue;
+            }
+            if (kind.getValue() == "deserialize")
+            {
+                (void) foldDeserialize(body, found->second);
+            }
+            else if (kind.getValue() == "serialize")
+            {
+                (void) foldSerialize(body, found->second);
+            }
+        }
+    }
+
+private:
+    static std::string sectionBodyKey(const llvm::StringRef schemaSym, const std::optional<llvm::StringRef> section)
+    {
+        return schemaSym.str() + "/" + section.value_or(llvm::StringRef{}).str();
+    }
+
+    /// @brief The region between taking the buffer and storing the consumed count.
+    ///
+    /// Returns the ops to replace, or nothing when the body does not have this shape or when one of
+    /// those ops is used by something outside the run -- which would make removing them a change in
+    /// meaning rather than in speed.
+    static std::optional<std::vector<mlir::Operation*>> fieldWorkAfter(mlir::Operation* anchorOp,
+                                                                       mlir::Operation* stopBefore,
+                                                                       mlir::Block&     block)
+    {
+        // The consumed count is computed between the field work and the store that keeps it, and it
+        // reads the available size rather than any field, so it survives the fold. Everything it is
+        // built from is excluded from the run before anything is removed.
+        llvm::SmallPtrSet<mlir::Operation*, 16> keep;
+        std::vector<mlir::Value> pending(stopBefore->getOperands().begin(), stopBefore->getOperands().end());
+        while (!pending.empty())
+        {
+            const mlir::Value value = pending.back();
+            pending.pop_back();
+            mlir::Operation* const definer = value.getDefiningOp();
+            if ((definer == nullptr) || (definer->getBlock() != &block) || !keep.insert(definer).second)
+            {
+                continue;
+            }
+            pending.insert(pending.end(), definer->getOperands().begin(), definer->getOperands().end());
+        }
+
+        std::vector<mlir::Operation*>           run;
+        llvm::SmallPtrSet<mlir::Operation*, 32> inRun;
+        bool                                    collecting = false;
+        for (mlir::Operation& op : block)
+        {
+            if (&op == anchorOp)
+            {
+                collecting = true;
+                continue;
+            }
+            if (&op == stopBefore)
+            {
+                break;
+            }
+            if (collecting && !keep.contains(&op))
+            {
+                run.push_back(&op);
+                inRun.insert(&op);
+            }
+        }
+        if (!collecting || run.empty())
+        {
+            return std::nullopt;
+        }
+        for (mlir::Operation* op : run)
+        {
+            for (const mlir::Value result : op->getResults())
+            {
+                for (const mlir::Operation* const user : result.getUsers())
+                {
+                    if (!inRun.contains(user))
+                    {
+                        return std::nullopt;
+                    }
+                }
+            }
+        }
+        return run;
+    }
+
+    static void eraseRun(std::vector<mlir::Operation*>& run)
+    {
+        // Backwards: a later op may use an earlier one's result, and erasing a value still in use
+        // is not allowed.
+        for (mlir::Operation* const op : llvm::reverse(run))
+        {
+            op->erase();
+        }
+    }
+
+    static mlir::LogicalResult foldDeserialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    {
+        // The accepted path is the `else` region of the rejection test, and the buffer is taken
+        // there once.
+        mlir::dsdl::BufferOrEmptyOp buffer;
+        body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
+        if (!buffer)
+        {
+            return mlir::failure();
+        }
+        mlir::dsdl::StoreScalarOp consumed;
+        for (mlir::Operation& op : *buffer->getBlock())
+        {
+            if (auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(op))
+            {
+                consumed = store;
+            }
+        }
+        if (!consumed)
+        {
+            return mlir::failure();
+        }
+        auto run = fieldWorkAfter(buffer, consumed.getOperation(), *buffer->getBlock());
+        if (!run)
+        {
+            return mlir::failure();
+        }
+
+        mlir::OpBuilder builder(consumed);
+        mlir::Value     size;
+        // The available byte count is what the field reads were given; it is loaded before the
+        // buffer is taken, and the consumed arithmetic still uses it.
+        for (mlir::Operation& op : *buffer->getBlock())
+        {
+            if (auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(op))
+            {
+                size = load.getResult();
+                break;
+            }
+        }
+        if (!size)
+        {
+            return mlir::failure();
+        }
+        mlir::dsdl::ImageReadOp::create(builder,
+                                        body.getLoc(),
+                                        body.getArgument(0),
+                                        buffer.getResult(),
+                                        size,
+                                        builder.getI64IntegerAttr(bytes));
+        eraseRun(*run);
+        return mlir::success();
+    }
+
+    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    {
+        mlir::dsdl::BufferOrEmptyOp buffer;
+        body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
+        if (!buffer)
+        {
+            return mlir::failure();
+        }
+        mlir::dsdl::StoreScalarOp consumed;
+        for (mlir::Operation& op : *buffer->getBlock())
+        {
+            if (auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(op))
+            {
+                consumed = store;
+            }
+        }
+        if (!consumed)
+        {
+            return mlir::failure();
+        }
+        auto run = fieldWorkAfter(buffer, consumed.getOperation(), *buffer->getBlock());
+        if (!run)
+        {
+            return mlir::failure();
+        }
+        mlir::OpBuilder builder(consumed);
+        mlir::dsdl::ImageWriteOp::create(builder,
+                                         body.getLoc(),
+                                         buffer.getResult(),
+                                         body.getArgument(0),
+                                         builder.getI64IntegerAttr(bytes));
+        eraseRun(*run);
+        return mlir::success();
+    }
+};
+
 struct VerifyDSDLAliasLayoutPass
     : public mlir::PassWrapper<VerifyDSDLAliasLayoutPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1464,6 +1720,11 @@ std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass()
     return std::make_unique<VerifyDSDLAliasLayoutPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
+{
+    return std::make_unique<FoldDSDLHostImageBodiesPass>();
+}
+
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
 {
     auto& funcPM = pm.nest<mlir::func::FuncOp>();
@@ -1471,11 +1732,19 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLoweredSerDes)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
+                                const bool           optimizeLoweredSerDes,
+                                const bool           targetObjectsAreByteImages)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
     pm.addPass(createBuildDSDLPlanBodiesPass());
+    // Its own stage, under the target's capability. Folding inside the optimise stage would make
+    // the fast path turn on a flag about simplification, which is a different question.
+    if (targetObjectsAreByteImages)
+    {
+        pm.addPass(createFoldDSDLHostImageBodiesPass());
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
@@ -1491,9 +1760,10 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const          regExec;
-    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const  regAlias;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const  reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const           regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const   regAlias;
+    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const regFold;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

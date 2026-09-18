@@ -199,6 +199,53 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
   }];
 }
 
+def DSDL_ImageReadOp : DSDL_Op<"image_read"> {
+  let summary = "Fill an object from the wire in one move, where the two are "
+                "the same bytes";
+  let description = [{
+    Valid only where the section's `host_image` verdict holds: the generated structure is then
+    byte-identical to the wire form, so the whole payload moves at once and no field is touched
+    individually.
+
+    It keeps the tolerance a deserialiser is required to have. A buffer shorter than `bytes` is a
+    valid encoding, so this moves what is there and zeroes the rest, which is what reading each
+    field with `dsdl.bit_read` would have produced -- the structure being the wire image is
+    exactly what makes those two the same answer.
+
+    No saturation is needed and none is emitted: a host-image field is stored in the width the wire
+    carries it, so every value the structure can hold is one the wire can carry. That is the
+    argument that this is complete, not merely quicker.
+
+    The bytes are the target's, so this is only correct where the host orders them as the wire
+    does. The backend that spells it says so.
+  }];
+  let arguments = (ins DSDL_PtrType:$object, DSDL_PtrType:$buffer,
+      I64:$buffer_size_bytes, DSDL_I64Attr:$bytes);
+  let assemblyFormat = [{
+    $object `,` $buffer `,` `size` $buffer_size_bytes attr-dict `:` type($object) `,` type($buffer)
+  }];
+  let hasVerifier = 1;
+}
+
+def DSDL_ImageWriteOp : DSDL_Op<"image_write"> {
+  let summary = "Write an object to the wire in one move, where the two are "
+                "the same bytes";
+  let description = [{
+    The counterpart of `dsdl.image_read`, and valid under the same verdict. Writing has no
+    tolerance to keep: a buffer too short is an error, which the plan has already rejected by the
+    time this runs.
+
+    It cannot leak what the structure does not hold, because holding no padding is part of the
+    verdict that allows it.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer, DSDL_PtrType:$object,
+      DSDL_I64Attr:$bytes);
+  let assemblyFormat = [{
+    $buffer `,` $object attr-dict `:` type($buffer) `,` type($object)
+  }];
+  let hasVerifier = 1;
+}
+
 def DSDL_BitReadOp : DSDL_Op<"bit_read"> {
   let summary = "Copy a run of bits from the wire buffer into object storage";
   let description = [{
