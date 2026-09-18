@@ -319,6 +319,60 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
     }
 };
 
+/// @brief One move for a whole payload, where the structure is the wire image.
+///
+/// The runtime helper takes the payload's size as a constant, so the host compiler folds the copy
+/// to loads and stores; the bit-granular primitives every other read goes through would keep their
+/// alignment and tail handling after inlining, and cost more than the field reads they replaced.
+struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageReadOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_image_read"),
+                                                               mlir::ValueRange{adaptor.getObject(),
+                                                                                adaptor.getBuffer(),
+                                                                                adaptor.getBufferSizeBytes(),
+                                                                                bytes});
+        return mlir::success();
+    }
+};
+
+struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageWriteOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_image_write"),
+                                                               mlir::ValueRange{adaptor.getBuffer(),
+                                                                                adaptor.getObject(),
+                                                                                bytes});
+        return mlir::success();
+    }
+};
+
 struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNullOp>
 {
     using mlir::OpConversionPattern<mlir::dsdl::IsNullOp>::OpConversionPattern;
@@ -1014,6 +1068,8 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<BitWriteLowering,
                      BitReadLowering,
+                     ImageReadLowering,
+                     ImageWriteLowering,
                      WriteBitsLowering,
                      ReadBitsLowering,
                      BufferAtLowering,
@@ -1044,6 +1100,8 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                mlir::scf::SCFDialect>();
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::BitWriteOp,
+                            mlir::dsdl::ImageReadOp,
+                            mlir::dsdl::ImageWriteOp,
                             mlir::dsdl::BitReadOp,
                             mlir::dsdl::WriteBitsOp,
                             mlir::dsdl::ReadBitsOp,

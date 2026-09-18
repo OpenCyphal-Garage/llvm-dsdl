@@ -763,6 +763,83 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
     }
 };
 
+/// @brief One move for a whole payload, where the structure is the wire image.
+///
+/// A fixed-length `llvm.memcpy` is what the backend folds to loads and stores. The bit-granular
+/// runtime primitives every other read goes through keep their alignment and tail handling after
+/// inlining, and measured against the field reads they replaced they cost more, not less.
+///
+/// The read keeps the tolerance a deserialiser owes: a buffer shorter than the payload is a valid
+/// encoding, so what is there is moved and the rest is zeroed. That is the rare path, and it is a
+/// branch so that the common path is the constant-length copy alone.
+struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageReadOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        const auto           i64 = rewriter.getI64Type();
+        const mlir::Value    bytes =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
+        const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
+                                                              loc,
+                                                              mlir::LLVM::ICmpPredicate::uge,
+                                                              adaptor.getBufferSizeBytes(),
+                                                              bytes);
+        auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
+
+        rewriter.setInsertionPointToStart(branch.thenBlock());
+        mlir::LLVM::MemcpyOp::create(rewriter,
+                                     loc,
+                                     adaptor.getObject(),
+                                     adaptor.getBuffer(),
+                                     bytes,
+                                     /*isVolatile=*/false);
+
+        rewriter.setInsertionPointToStart(branch.elseBlock());
+        const mlir::Value zeroByte =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
+        mlir::LLVM::MemsetOp::create(rewriter, loc, adaptor.getObject(), zeroByte, bytes, /*isVolatile=*/false);
+        mlir::LLVM::MemcpyOp::create(rewriter,
+                                     loc,
+                                     adaptor.getObject(),
+                                     adaptor.getBuffer(),
+                                     adaptor.getBufferSizeBytes(),
+                                     /*isVolatile=*/false);
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+/// @brief The counterpart: the buffer has been checked to hold the payload, so one fixed-length copy.
+struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageWriteOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc   = op.getLoc();
+        const mlir::Value    bytes = mlir::LLVM::ConstantOp::create(rewriter,
+                                                                    loc,
+                                                                    rewriter.getI64Type(),
+                                                                    rewriter.getI64IntegerAttr(op.getBytes()));
+        mlir::LLVM::MemcpyOp::create(rewriter,
+                                     loc,
+                                     adaptor.getBuffer(),
+                                     adaptor.getObject(),
+                                     bytes,
+                                     /*isVolatile=*/false);
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 /// @brief A nested type's own entry point, which lives in its own object.
 struct CallSerdesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CallSerdesOp>
 {
@@ -1256,6 +1333,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      ReadBitsLowering,
                      BitWriteLowering,
                      BitReadLowering,
+                     ImageReadLowering,
+                     ImageWriteLowering,
                      CallSerdesLowering,
                      CallInitializeLowering>(converter, &getContext());
         patterns.add<IndexHoldsLowering>(converter, &getContext(), sizeBits);
@@ -1272,6 +1351,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                                mlir::scf::SCFDialect>();
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::LoadMemberOp,
+                            mlir::dsdl::ImageReadOp,
+                            mlir::dsdl::ImageWriteOp,
                             mlir::dsdl::StoreMemberOp,
                             mlir::dsdl::ArrayLengthOp,
                             mlir::dsdl::SetArrayLengthOp,

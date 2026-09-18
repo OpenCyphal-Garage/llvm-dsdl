@@ -171,9 +171,11 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
+                   const bool               hostImageFolded,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , hostImageFolded_(hostImageFolded)
         , typeNameVersioning_(typeNameVersioning)
     {
     }
@@ -188,6 +190,12 @@ public:
     bool emitDeprecationAttributes() const
     {
         return emitDeprecationAttributes_;
+    }
+
+    /// @brief Whether a host-image section's bodies were folded into one move.
+    bool hostImageFolded() const
+    {
+        return hostImageFolded_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -249,6 +257,7 @@ public:
 private:
     DefinitionIndex    index_;
     bool               emitDeprecationAttributes_{false};
+    bool               hostImageFolded_{false};
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
@@ -557,6 +566,18 @@ void emitSection(SourceWriter&              w,
     const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
     const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
     emitSectionMetadata(w, typeName, metadata);
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (ctx.hostImageFolded() && metadata.hostImage.holds)
+    {
+        w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
+               "__ORDER_LITTLE_ENDIAN__)");
+        w.line("#  error \"" + typeName +
+               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
+               "host. Regenerate with --target-triple naming this target.\"");
+        w.line("#endif");
+        w.blank();
+    }
     emitSectionConstants(w, typeName, section);
     emitArrayMacros(w, typeName, section);
     emitUnionOptionTagMacros(w, typeName, section, metadata);
@@ -857,7 +878,10 @@ llvm::Error emit(const SemanticModule& semantic,
     }
 
     std::filesystem::path const outRoot(options.outDir);
-    EmitterContext const        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    EmitterContext const        ctx(semantic,
+                                    options.emitDeprecationAttributes,
+                                    options.hostImageFolded,
+                                    options.typeNameVersioning);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write

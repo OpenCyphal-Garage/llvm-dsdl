@@ -255,6 +255,55 @@ extern "C"
         dsdl_runtime_copy_bits(output, 0U, sat_bits, buf, off_bits);
     }
 
+    // ----------------------------------------------------- IMAGE -----------------------------------------------------
+
+    /// @brief Fills an object from the wire in one move, where the two are the same bytes.
+    ///
+    /// Only for a type whose generated structure is byte-identical to its wire form; the compiler
+    /// decides that per type and emits this only where it holds. It keeps the tolerance a
+    /// deserialiser owes: a buffer shorter than `object_size_bytes` is a valid encoding, so what is
+    /// there is moved and the rest is zeroed, which is what reading each field would have produced.
+    /// `object_size_bytes` is a constant at every call site, so the common path is a fixed-length
+    /// copy the compiler folds to loads and stores.
+    /// @param[out] object Destination object.
+    /// @param[in] buf Source serialised buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] object_size_bytes The payload's size, which is the object's.
+    static inline void dsdl_runtime_image_read(void* const       object,
+                                               const void* const buf,
+                                               const size_t      buf_size_bytes,
+                                               const size_t      object_size_bytes)
+    {
+        DSDL_RUNTIME_ASSERT(object != NULL);
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        if (buf_size_bytes >= object_size_bytes)
+        {
+            (void) memcpy(object, buf, object_size_bytes);
+        }
+        else
+        {
+            (void) memset(object, 0, object_size_bytes);
+            (void) memcpy(object, buf, buf_size_bytes);
+        }
+    }
+
+    /// @brief Writes an object to the wire in one move, where the two are the same bytes.
+    ///
+    /// The counterpart of `dsdl_runtime_image_read`. The buffer has already been checked to hold
+    /// the payload by the time this runs. It cannot leak what the object does not hold, because
+    /// holding no padding is part of what allowed it.
+    /// @param[out] buf Destination serialised buffer.
+    /// @param[in] object Source object.
+    /// @param[in] object_size_bytes The payload's size, which is the object's.
+    static inline void dsdl_runtime_image_write(void* const       buf,
+                                                const void* const object,
+                                                const size_t      object_size_bytes)
+    {
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        DSDL_RUNTIME_ASSERT(object != NULL);
+        (void) memcpy(buf, object, object_size_bytes);
+    }
+
     // ---------------------------------------------------- INTEGER ----------------------------------------------------
 
     /// @brief Serialises a one-bit boolean value at `off_bits`.

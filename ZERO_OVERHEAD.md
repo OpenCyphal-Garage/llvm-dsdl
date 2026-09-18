@@ -337,9 +337,50 @@ a `uint8` — is not a host image: nine bytes of wire, twelve of structure. The 
 the first gate, and an earlier report here listed that refusal as a shape gap. It was the verdict
 doing its job.
 
-Still to do in this phase: the four backend spellings, the capability wired per language in
-`dsdlc`, the static assertions, `#[repr(C)]`, the `__BYTE_ORDER__` guard, and the instruction-count
-gate.
+**The C target folds, source and object, 2026-09-18.** The capability is set for `c` and `obj`
+where the target triple — the host's when none is given — is little-endian. Measured on the
+catalogue's objects, deserialise and serialise instruction counts before and after:
+
+| Section | Read | Write |
+|---|---:|---:|
+| `uavcan.si.unit.angle.Quaternion` (16 bytes) | 84 → **35** | 22 → **16** |
+| `uavcan.primitive.scalar.Natural64` (8 bytes) | 40 → 35 | 16 → 16 |
+| `uavcan.node.Version` (2 bytes) | 33 → 35 | 18 → 16 |
+| `uavcan.node.ExecuteCommand` (not a host image; the control) | 70 → 70 | 54 → 54 |
+
+The floor of about 35 is the entry point's own work — null checks, the consumed count — which the
+fold does not touch; the field work went from a call and a mask per field to a copy the backend
+folds to loads and stores. A two-byte type is a wash, because the zero-extension branch costs what
+two byte loads did.
+
+Two more things were learned, and one decision taken.
+
+*The plan named the wrong primitive.* It said the bulk copy needs no new runtime because
+`dsdl_runtime_copy_bits` degenerates to a memmove for a byte-aligned run. It does — at run time,
+through branches, and inlined those branches stay. Measured that way, Quaternion's write went from
+22 instructions to 46 and Version's read from 33 to 49: worse than the field reads replaced. What
+folds to loads and stores is a *constant-length* `memcpy`. So the object path emits `llvm.memcpy`
+and `llvm.memset` intrinsics behind a branch on the buffer's length, and the source path calls two
+`static inline` helpers, `dsdl_runtime_image_read` and `dsdl_runtime_image_write`, that do the same
+in C. Measure before believing an argument about what a routine "degenerates to".
+
+*There are two C lowerings, and the plan knew of one.* `-l c` emits C source through an EmitC
+pipeline; `obj` lowers through hand-built LLVM IR. Every C-source-generating lane — 61 tests —
+failed the moment the fold ran, because the EmitC lowering had no pattern for the two ops and their
+operands could not be materialised. A spelling for C is two spellings.
+
+*Refuse, rather than fall back, on a big-endian build of the source.* The plan's `__BYTE_ORDER__`
+guard falling back to the field-wise body needs both bodies emitted, which the fold does not do.
+Instead a folded type's header carries a guard that fails the build with the reason and the fix
+(`--target-triple` naming the target). The object path needs none: the triple decided the fold.
+Confirmed by compiling a folded header with the byte-order macro flipped. A type that is not a
+host image but holds one refuses too, because its own body calls the folded one — the refusal
+follows composition, which is what it must do.
+
+Still to do in this phase: the C++, Rust and Go spellings with their capability bits (each is a
+`memcpy` behind an endianness condition, and Rust's needs `#[repr(C)]` first), the static
+assertions confirming H on the consumer's target, and the instruction-count gate — the numbers
+above were taken by hand from `llvm-objdump` and belong in a lane.
 
 ### Phase 4 — field accessors for W — M
 

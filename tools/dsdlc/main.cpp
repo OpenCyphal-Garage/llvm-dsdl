@@ -17,6 +17,8 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/TargetParser/Triple.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -2078,12 +2080,22 @@ int runDsdlc(int argc, char** argv)
         return llvm::Error::success();
     };
 
+    // A target whose objects are byte images of the wire can fold a host-image section's bodies
+    // into one move. That is the C target, source or object, and only where the target orders
+    // bytes as the wire does: on a big-endian host the moved bytes are not the wire's, and the
+    // swap back is per scalar, so the field-wise body stays there.
+    const bool objectTarget = (options.targetLanguage == "c") || (options.targetLanguage == "obj");
+    const bool littleEndian =
+        llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
+            .isLittleEndian();
+    const bool hostImageFolded = objectTarget && littleEndian;
+
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.
     {
         logVerbose(1, "lowering serialisation plans to bodies");
         mlir::PassManager pm(&context);
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, hostImageFolded);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
@@ -2099,6 +2111,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
+        emitOptions.hostImageFolded           = hostImageFolded;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
@@ -2123,6 +2136,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
+        emitOptions.hostImageFolded           = hostImageFolded;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;

@@ -2,5 +2,9 @@
 # `break_` in C, C++ and Rust, which is a name the second field already spells. Both are conformant
 # DSDL -- section 3.2.5 reserves only `_name_` -- so the scope has to keep them apart.
 uint8 break
+# The padding keeps this type from being a byte image in memory. A byte image's body moves the
+# payload whole and names no member; this one reads each member by name, which is what the body
+# check anchors on.
+void8
 uint8 break_
 @sealed
