@@ -962,16 +962,36 @@ public:
         w.close("}");
     }
 
-    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
     {
-        llvm::report_fatal_error("Rust spelling: a host-image move is not spelled here, and the fold that "
-                                 "produces one does not run for this target");
+        // The object is `repr(C)` and every field is an integer, a float, a fixed array of those or
+        // a nested type that is the same, so any bytes are a valid value of it: the view of it as
+        // bytes is sound to write through. A short buffer is a valid encoding, so what is there is
+        // moved and the rest zeroed, which is what reading each field would have produced.
+        const std::string bytes = std::to_string(op.getBytes()) + "usize";
+        w.open("{");
+        w.line("let _image = unsafe { core::slice::from_raw_parts_mut(" + names(op.getObject()) +
+               " as *mut Self as *mut u8, " + bytes + ") };");
+        w.line("let _avail = core::cmp::min(" + asSize(names(op.getBufferSizeBytes())) + ", " + names(op.getBuffer()) +
+               ".len());");
+        w.open("if _avail >= " + bytes + " {");
+        w.line("_image.copy_from_slice(&" + names(op.getBuffer()) + "[.." + bytes + "]);");
+        w.midway("} else {");
+        w.line("_image.fill(0u8);");
+        w.line("_image[.._avail].copy_from_slice(&" + names(op.getBuffer()) + "[.._avail]);");
+        w.close("}");
+        w.close("}");
     }
 
-    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
     {
-        llvm::report_fatal_error("Rust spelling: a host-image move is not spelled here, and the fold that "
-                                 "produces one does not run for this target");
+        // The buffer has been checked to hold the payload by the time this runs.
+        const std::string bytes = std::to_string(op.getBytes()) + "usize";
+        w.open("{");
+        w.line("let _image = unsafe { core::slice::from_raw_parts(" + names(op.getObject()) +
+               " as *const Self as *const u8, " + bytes + ") };");
+        w.line(names(op.getBuffer()) + "[.." + bytes + "].copy_from_slice(_image);");
+        w.close("}");
     }
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
@@ -1312,6 +1332,14 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                                                  definitionFullName,
                                                  metadata.majorVersion,
                                                  metadata.minorVersion));
+    // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
+    // decided under: fields in order, each at its natural alignment. Only such types get it -- the
+    // default representation may reorder a non-image type's fields to pack it, and that is worth
+    // keeping there.
+    if (metadata.hostImage.holds)
+    {
+        w.line("#[repr(C)]");
+    }
     w.line("#[derive(Clone, Debug, PartialEq)]");
     w.open("pub struct " + declaredName + " {");
 
@@ -1410,6 +1438,15 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line(std::string("pub const WIRE_FLAT: bool = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
     w.line("pub const WIRE_FLAT_REASON: &'static str = \"" + metadata.wireFlat.reason + "\";");
     w.line(std::string("pub const HOST_IMAGE: bool = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (options.hostImageFolded && metadata.hostImage.holds)
+    {
+        w.line("#[cfg(target_endian = \"big\")]");
+        w.line("compile_error!(\"" + declaredName +
+               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
+               "host. Regenerate with --target-triple naming this target.\");");
+    }
     w.line("pub const HOST_IMAGE_REASON: &'static str = \"" + metadata.hostImage.reason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
            rustMemoryModeVariantPath(options) + ";");
@@ -1516,6 +1553,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper the fold left nothing calling would be an unused private function, which the
+            // compiler refuses under warnings-as-errors.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }

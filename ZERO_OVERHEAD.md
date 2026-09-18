@@ -385,10 +385,28 @@ reaches — Rust and Go until their slices land, TypeScript and Python for good 
 fatal error naming the fact, so a fold running where it must not is loud rather than wrong. Every
 C++ parity lane, including the pmr and autosar profiles, passes against C output that folds.
 
-Still to do in this phase: the Rust and Go spellings with their capability bits (Rust's needs
-`#[repr(C)]` first; Go's needs `unsafe`), the static assertions confirming H on the consumer's
-target, and the instruction-count gate — the numbers above were taken by hand from `llvm-objdump`
-and belong in a lane.
+**Rust folds, 2026-09-18.** A host-image struct gets `#[repr(C)]` — and only such a struct: the
+default representation may reorder a non-image type's fields to pack it, and that is worth keeping
+there. `repr(C)` is the layout the verdict was decided under, fields in order at natural alignment.
+The moves view the object as bytes through `core::slice::from_raw_parts` under `unsafe`, which is
+sound because every field of a host image is an integer, a float, a fixed array of those or a
+nested host image, so any bytes are a valid value. A folded type carries
+`#[cfg(target_endian = "big")] compile_error!(…)`, proven to fire by flipping the condition in a
+copy of the crate. Every Rust lane passes, the `no_std` profiles included.
+
+Rust's compiler found the fold's one loose end. A folded body no longer calls the per-field helpers
+built beside it, and Rust refuses an unused private function under warnings-as-errors, which the
+deprecation compile gate builds with. Erasing them is not an option: the plan's steps still name
+them and the lowered contract requires a named helper to exist — the C text path checks it — so
+erasing broke every C-source lane instead. The fold marks an unreferenced helper, Rust skips a
+marked one, and C and C++ carry theirs as `static inline`, which the compiler drops. Clearing the
+steps' helper names would be the tidier IR, and it means changing a versioned contract; that is
+noted for phase 4, which rebuilds the bodies anyway.
+
+Still to do in this phase: the Go spelling and its capability bit — Go cannot see endianness at
+compile time, so the guard there is a build constraint or an init-time check, which is a decision
+to make — the static assertions confirming H on the consumer's target, and the instruction-count
+gate: the numbers above were taken by hand from `llvm-objdump` and belong in a lane.
 
 ### Phase 4 — field accessors for W — M
 

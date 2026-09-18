@@ -2081,11 +2081,11 @@ int runDsdlc(int argc, char** argv)
     };
 
     // A target whose objects are byte images of the wire can fold a host-image section's bodies
-    // into one move. That is C, source or object, and C++, and only where the target orders bytes
+    // into one move. That is C, source or object, C++ and Rust, and only where the target orders bytes
     // as the wire does: on a big-endian host the moved bytes are not the wire's, and the swap back
     // is per scalar, so the field-wise body stays there.
-    const bool objectTarget =
-        (options.targetLanguage == "c") || (options.targetLanguage == "obj") || (options.targetLanguage == "cpp");
+    const bool objectTarget = (options.targetLanguage == "c") || (options.targetLanguage == "obj") ||
+                              (options.targetLanguage == "cpp") || (options.targetLanguage == "rust");
     const bool littleEndian =
         llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
             .isLittleEndian();
@@ -2195,6 +2195,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.memoryMode                = options.rustMemoryMode;
         emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
+        emitOptions.hostImageFolded           = hostImageFolded;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;

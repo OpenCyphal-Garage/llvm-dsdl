@@ -32,6 +32,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -1283,6 +1284,21 @@ struct FoldDSDLHostImageBodiesPass
             else if (kind.getValue() == "serialize")
             {
                 (void) foldSerialize(body, found->second);
+            }
+        }
+
+        // A folded body no longer calls the per-field helpers built beside it. They stay: the
+        // plan's steps still name them, and the lowered contract requires a named helper to exist.
+        // They are marked instead, and a backend whose compiler refuses an unused private function
+        // -- Rust's, under warnings-as-errors -- skips a marked one. C and C++ carry theirs as
+        // `static inline`, which the compiler drops.
+        mlir::OpBuilder builder(module.getContext());
+        for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+        {
+            const bool isHelper = fn->hasAttr("llvmdsdl.schema_sym") && !fn->hasAttr("llvmdsdl.plan_body");
+            if (isHelper && mlir::SymbolTable::symbolKnownUseEmpty(fn, module))
+            {
+                fn->setAttr("llvmdsdl.unreferenced", builder.getUnitAttr());
             }
         }
     }
