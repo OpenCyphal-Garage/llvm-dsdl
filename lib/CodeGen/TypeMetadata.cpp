@@ -56,6 +56,7 @@ SectionMetadata sectionMetadata(const DiscoveredDefinition& info,
     const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, sectionName);
     out.wireFlat                               = wireFlatVerdict(plan);
     out.hostImage                              = hostImageVerdict(plan);
+    out.hostImageMembers                       = section.hostImageMembers;
     out.unionTagBits                           = unionTagBits(plan);
     out.isUnion                                = section.isUnion;
     out.declaresPortId                         = sectionName.empty();

@@ -1380,6 +1380,25 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.blank();
     }
 
+    // The verdict was decided under natural alignment, which `repr(C)` follows; this pins the
+    // layout on the target the crate is compiled for.
+    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("const _: () = assert!(core::mem::size_of::<" + declaredName +
+               ">() == " + std::to_string(metadata.serializationBufferSizeBytes) + "usize, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            const std::string rustMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("const _: () = assert!(core::mem::offset_of!(" + declaredName + ", " + rustMember +
+                   ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." + rustMember +
+                   ": not at the offset its serialisation assumes\");");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
+
     // Every member's default is what the initialise body stores for it.
     llvm::StringMap<const MemberDefault*> defaults;
     for (const auto& entry : init.members)

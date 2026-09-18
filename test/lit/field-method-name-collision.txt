@@ -12,7 +12,8 @@
 # a name no other field was competing for.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/mf
-# RUN: printf 'uint8 serialize\nuint8 deserialize\n@sealed\n' > %t/dsdl/mf/M.1.0.dsdl
+# The void keeps the bodies field-wise: a host image folds to one move and names no member.
+# RUN: printf 'uint8 serialize\nvoid8\nuint8 deserialize\n@sealed\n' > %t/dsdl/mf/M.1.0.dsdl
 
 # Go: fields escaped, methods intact, references consistent.
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module mf

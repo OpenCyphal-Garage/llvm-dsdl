@@ -442,6 +442,16 @@ public:
                ".go";
     }
 
+    /// @brief The file beside a folded type's own that refuses a big-endian architecture.
+    static std::string goHostImageGuardFileName(const DiscoveredDefinition& info)
+    {
+        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion) +
+               "_host_image.go";
+    }
+
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
@@ -1126,16 +1136,32 @@ public:
         w.close("}");
     }
 
-    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
     {
-        llvm::report_fatal_error("Go spelling: a host-image move is not spelled here, and the fold that "
-                                 "produces one does not run for this target");
+        // The object's bytes, viewed in place: every field of a host image is an integer, a float,
+        // a fixed array of those or a nested host image, so any bytes are a valid value of it. A
+        // short buffer is a valid encoding, so what is there is moved and the rest zeroed, which is
+        // what reading each field would have produced.
+        const std::string bytes = std::to_string(op.getBytes());
+        const std::string image = fresh("image");
+        const std::string avail = fresh("avail");
+        w.line(image + " := unsafe.Slice((*byte)(unsafe.Pointer(" + names(op.getObject()) + ")), " + bytes + ")");
+        w.line(avail + " := dsdlruntime.ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
+               names(op.getBuffer()) + "))");
+        w.open("if " + avail + " >= " + bytes + " {");
+        w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + bytes + "])");
+        w.midway("} else {");
+        w.line("clear(" + image + ")");
+        w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + avail + "])");
+        w.close("}");
     }
 
-    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
     {
-        llvm::report_fatal_error("Go spelling: a host-image move is not spelled here, and the fold that "
-                                 "produces one does not run for this target");
+        // The buffer has been checked to hold the payload by the time this runs.
+        const std::string bytes = std::to_string(op.getBytes());
+        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], unsafe.Slice((*byte)(unsafe.Pointer(" +
+               names(op.getObject()) + ")), " + bytes + "))");
     }
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
@@ -1663,6 +1689,23 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     w.close("}");
     w.blank();
 
+    // The verdict was decided under natural alignment; this pins the layout on the architecture the
+    // package is compiled for. A mismatch is an index out of bounds, or a uintptr overflow, here.
+    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("var _ = [1]struct{}{}[unsafe.Sizeof(" + typeName + "{})-" +
+               std::to_string(metadata.serializationBufferSizeBytes) + "]");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            w.line("var _ = [1]struct{}{}[unsafe.Offsetof(" + typeName + "{}." +
+                   fieldIdents.get(IdentifierRole::FieldName, member.fieldName) + ")-" +
+                   std::to_string(member.offsetBytes) + "]");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
+
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1934,9 +1977,20 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.line("package " + packageName);
     head.blank();
     const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
-    if (usesRuntime || !imports.empty())
+    const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
+    if (usesRuntime || usesUnsafe || !imports.empty())
     {
         head.open("import (");
+        // gofmt sorts the imports within a group, so the standard library's sit in a group of
+        // their own, ahead of the module's, and a blank line keeps the two apart.
+        if (usesUnsafe)
+        {
+            head.line("\"unsafe\"");
+            if (usesRuntime || !imports.empty())
+            {
+                head.blank();
+            }
+        }
         if (usesRuntime)
         {
             head.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
@@ -1969,6 +2023,39 @@ std::string renderGoMod(const Options& options)
     out << generatedCommentLine("Go backend module metadata") << "\n";
     out << "module " << options.moduleName << "\n\n";
     out << "go 1.22\n";
+    return out.str();
+}
+
+}  // namespace
+
+/// @brief A file that fails to compile on a big-endian architecture, naming the reason.
+///
+/// A folded body moves the object as the wire's bytes, which holds only where the host orders them
+/// as the wire does. Go decides the architecture when the package is built, so the refusal is a
+/// build constraint. The list is the standard library's own, from `encoding/binary`'s native
+/// order, and it is the little-endian list rather than its complement: an architecture on neither
+/// is refused, not trusted.
+namespace
+{
+
+std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterContext& ctx)
+{
+    const std::string version =
+        def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
+    const std::string ident =
+        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, ctx.goTypeName(def.info));
+    std::ostringstream out;
+    SourceWriter       w = makeGoWriter(out);
+    w.line(generatedCommentLine("Go backend"));
+    w.line("// Source: " + version);
+    w.line("//go:build !(386 || amd64 || amd64p32 || alpha || arm || arm64 || loong64 || mipsle || mips64le || "
+           "mips64p32le || nios2 || ppc64le || riscv || riscv64 || sh || wasm)");
+    w.blank();
+    w.line("package " + packageNameFromPath(EmitterContext::packagePath(def.info)));
+    w.blank();
+    w.line("// " + version + ": its serialisation moves the object as the wire's bytes, which holds only on a");
+    w.line("// little-endian target. Regenerate with --target-triple naming this target.");
+    w.line("var _ = " + ident + "_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET");
     return out.str();
 }
 
@@ -2096,6 +2183,18 @@ llvm::Error emit(const SemanticModule& semantic,
                                           requiredTypeKeys))
         {
             return err;
+        }
+        const bool folded =
+            options.hostImageFolded && (def.request.hostImage.holds || (def.response && def.response->hostImage.holds));
+        if (folded)
+        {
+            if (auto err = writeGeneratedFile(dir / EmitterContext::goHostImageGuardFileName(def.info),
+                                              renderHostImageGuard(def, ctx),
+                                              options.writePolicy,
+                                              requiredTypeKeys))
+            {
+                return err;
+            }
         }
     }
 

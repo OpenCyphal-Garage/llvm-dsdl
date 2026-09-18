@@ -378,6 +378,7 @@ public:
                 (section.empty() ? std::string{} : renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, section));
             entry.declaredName = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            entry.hostImage    = plan.getHostImage();
 
             // The struct declares its fields, then the array metadata, then the constants, into
             // one scope; the same declarations in the same order name the same identifiers.
@@ -438,7 +439,13 @@ public:
                plan.declaredName + "* const " + object + ", " + (serialize ? "" : "const ") +
                "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes" + resource + ")");
         w.open("{");
-        if (isPmrFlavor(flavor_))
+        if (isPmrFlavor(flavor_) && plan.hostImage)
+        {
+            // A host image holds no resource of its own; the one handed in reaches its nested calls.
+            w.line("::llvmdsdl::cpp::MemoryResource* const effective_memory_resource = memory_resource;");
+            w.line("(void)effective_memory_resource;");
+        }
+        else if (isPmrFlavor(flavor_))
         {
             // The plan tests its object for null before it reads it, so the resource it would be
             // read from is taken only when there is an object to take it from.
@@ -981,9 +988,12 @@ private:
 
     struct Plan final
     {
-        std::string             typeName;
-        std::string             declaredName;
-        std::int64_t            unionTagBits{0};
+        std::string  typeName;
+        std::string  declaredName;
+        std::int64_t unionTagBits{0};
+        /// @brief Whether the structure is the byte image of its wire form; under the PMR profile
+        ///        such a structure carries no memory resource.
+        bool                    hostImage{false};
         llvm::StringMap<Member> members;
     };
 
@@ -1568,7 +1578,16 @@ void emitSectionStruct(SourceWriter&                         w,
         ++emitted;
     }
 
-    if (isPmrFlavor(flavor))
+    if (isPmrFlavor(flavor) && metadata.hostImage.holds)
+    {
+        // A host image allocates nothing, so it carries no resource: the pointer would widen the
+        // structure past the image and, inside a nested image, move every field after it. The
+        // resource-taking constructor and the setter stay, so a parent treats every member alike.
+        w.line(declaredName + "() = default;");
+        w.line("explicit " + declaredName + "(::llvmdsdl::cpp::MemoryResource*) {}");
+        w.line("void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}");
+    }
+    else if (isPmrFlavor(flavor))
     {
         w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
         w.line(declaredName + "() = default;");
@@ -1681,7 +1700,8 @@ void emitSectionStruct(SourceWriter&                         w,
            "const {");
     if (isPmrFlavor(flavor))
     {
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, " +
+               (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
     }
     else
     {
@@ -1693,7 +1713,8 @@ void emitSectionStruct(SourceWriter&                         w,
            "inout_buffer_size_bytes) {");
     if (isPmrFlavor(flavor))
     {
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
+        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, " +
+               (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
     }
     else
     {
@@ -1716,6 +1737,27 @@ void emitSectionStruct(SourceWriter&                         w,
 
     w.close("};");
     w.blank();
+
+    // The verdict was decided under natural alignment; this pins the layout on the target the
+    // header is compiled for.
+    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("static_assert(std::is_standard_layout<" + declaredName + ">::value, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        w.line("static_assert(sizeof(" + declaredName +
+               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            const std::string cppMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("static_assert(offsetof(" + declaredName + ", " + cppMember +
+                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + declaredName + "." + cppMember +
+                   ": not at the offset its serialisation assumes\");");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
 
     if (section.deprecated)
     {
@@ -1888,6 +1930,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     out << "#include <cstddef>\n";
     out << "#include <cstdint>\n";
     out << "#include <cstring>\n";
+    out << "#include <type_traits>\n";
     out << "#include <utility>\n";
     if (!isAutosarFlavor(flavor))
     {

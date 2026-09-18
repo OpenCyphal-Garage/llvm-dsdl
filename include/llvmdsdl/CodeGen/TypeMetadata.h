@@ -72,6 +72,10 @@ struct SectionMetadata final
     /// @brief Whether the generated structure is that same byte image.
     AliasVerdict hostImage;
 
+    /// @brief The image's members in declaration order with the byte offset each has; empty unless
+    ///        @ref hostImage holds.
+    std::vector<HostImageMember> hostImageMembers;
+
     /// @brief True when the section is a tagged union.
     bool isUnion{false};
 

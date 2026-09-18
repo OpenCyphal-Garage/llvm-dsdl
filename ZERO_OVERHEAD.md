@@ -403,10 +403,43 @@ marked one, and C and C++ carry theirs as `static inline`, which the compiler dr
 steps' helper names would be the tidier IR, and it means changing a versioned contract; that is
 noted for phase 4, which rebuilds the bodies anyway.
 
-Still to do in this phase: the Go spelling and its capability bit — Go cannot see endianness at
-compile time, so the guard there is a build constraint or an init-time check, which is a decision
-to make — the static assertions confirming H on the consumer's target, and the instruction-count
-gate: the numbers above were taken by hand from `llvm-objdump` and belong in a lane.
+**Go folds, 2026-09-18.** The moves view the object as bytes through
+`unsafe.Slice((*byte)(unsafe.Pointer(obj)), N)`, sound for the reason Rust's are, and a short
+buffer is `clear` then `copy`. Go decides the architecture when the package is built, so the
+endianness refusal is a build constraint rather than an `#error`: a second file beside the type's,
+`<stem>_host_image.go`, under `//go:build !(386 || amd64 || …)`, whose body is a reference to an
+undefined name spelling the reason. The list is the standard library's own, from
+`encoding/binary`'s native order, and it is the little-endian list rather than its complement, so
+an architecture on neither is refused rather than trusted. Proven by cross-building the fixtures:
+`ppc64` and `s390x` fail naming the type, `386` and the host pass. A build constraint was chosen
+over a check at `init`: the other three targets refuse at compile time, and a panic at process
+start is a runtime failure with a compile-time cause. The Go generation lane counts one file per
+type, and now counts past the guards.
+
+**The static assertions land, 2026-09-18.** Every host-image structure now asserts, on the target
+it is compiled for, that its size is the wire's and that each member sits at the offset natural
+alignment gives it: `DSDL_RUNTIME_STATIC_ASSERT` in C — the header is included from C++
+translation units, where `_Static_assert` is an extension — `static_assert` with
+`std::is_standard_layout` in C++, `const _: () = assert!` over `size_of` and `offset_of!` in Rust,
+and the `[1]struct{}{}[unsafe.Sizeof(T{})-N]` idiom in Go, where a mismatch is an index out of
+bounds. The offsets come from the verdict's own walk, recorded on the section as it is decided,
+so the assertion and the verdict cannot drift apart. They are emitted for every host image, folded
+or not: the `HOST_IMAGE` constant makes the claim, and the assertion is what backs it. The empty
+type gets none; its image is zero bytes, its structure is one in three of the four languages, and
+the move copies nothing.
+
+The assertions found a defect on their first run. Under the PMR profile every C++ structure
+carried a `_memory_resource` pointer, so a host image was wider than the wire — and a host image
+holding another had the nested pointer inside it, moving every field after it. The fold copies
+from the structure's first byte, so on such a type it would have written the nested pointer's
+bytes to the wire and never the field after it. Every parity lane had passed: the catalogue has no
+nested host image, so no lane could reach the case. A host image allocates nothing, and under the
+PMR profile it now carries no resource; the resource-taking constructor and `set_memory_resource`
+stay as no-ops so a parent treats every member alike, and the free function takes the resource it
+is handed rather than reading one from the object.
+
+Still to do in this phase: the instruction-count gate. The numbers above were taken by hand from
+`llvm-objdump` and belong in a lane.
 
 ### Phase 4 — field accessors for W — M
 
@@ -464,6 +497,7 @@ and then the option at a fixed offset.
 |---|---|---|---|
 | catalogue W/H census | 1 | either count moving without the test moving with it | ✅ landed |
 | predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image | ✅ landed |
+| layout assertions in every host-image type | 3 | a structure that is not the image on the consumer's target | ✅ landed; found the PMR profile |
 | `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
 | verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |

@@ -475,6 +475,27 @@ void emitSectionTypedef(SourceWriter&                         w,
     }
     w.blank();
 
+    // The verdict was decided under natural alignment; this pins the layout on the target the
+    // header is compiled for. Through the tag, as the typedef may be deprecated, and through the
+    // runtime's macro, as the header is included from C++ translation units too.
+    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        const std::string tag = renderCTagSpelling(typeName);
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("DSDL_RUNTIME_STATIC_ASSERT(sizeof(" + tag +
+               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + typeName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            const std::string cMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("DSDL_RUNTIME_STATIC_ASSERT(offsetof(" + tag + ", " + cMember +
+                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + typeName + "." + cMember +
+                   ": not at the offset its serialisation assumes\");");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
+
     if (metadata.isUnion)
     {
         w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(metadata.unionOptions.size()) + "U");

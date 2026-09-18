@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <vector>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -168,6 +169,10 @@ private:
     {
         section.wireFlat  = wireFlat(section);
         section.hostImage = hostImage(section);
+        if (section.hostImage.holds)
+        {
+            section.hostImageMembers = hostImageCache_.at(&section).members;
+        }
     }
 
     /// @brief Is the serialised form a contiguous byte image?
@@ -299,8 +304,9 @@ private:
 
     struct Resolved final
     {
-        AliasLayoutVerdict verdict;
-        HostExtent         extent;
+        AliasLayoutVerdict           verdict;
+        HostExtent                   extent;
+        std::vector<HostImageMember> members;
     };
 
     Resolved computeHostImage(const SemanticSection& section)
@@ -309,18 +315,19 @@ private:
         const AliasLayoutVerdict flat = computeWireFlat(section);
         if (!flat.holds)
         {
-            return Resolved{flat, {}};
+            return Resolved{flat, {}, {}};
         }
 
-        std::int64_t offsetBytes = 0;
-        std::int64_t alignBytes  = 1;
+        std::int64_t                 offsetBytes = 0;
+        std::int64_t                 alignBytes  = 1;
+        std::vector<HostImageMember> members;
         for (const SemanticField& field : section.fields)
         {
             const SemanticFieldType& type = field.resolvedType;
             // The wire reserves these bytes and the structure holds no member for them.
             if (field.isPadding)
             {
-                return Resolved{blocked(AliasLayoutReason::WirePadding, field.name), {}};
+                return Resolved{blocked(AliasLayoutReason::WirePadding, field.name), {}, {}};
             }
 
             HostExtent element;
@@ -330,13 +337,13 @@ private:
                 const SemanticSection* nested    = find(nestedKey);
                 if (nested == nullptr)
                 {
-                    return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}};
+                    return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}, {}};
                 }
                 if (const auto cached = hostImageCache_.find(nested); cached != hostImageCache_.end())
                 {
                     if (!cached->second.verdict.holds)
                     {
-                        return Resolved{blocked(AliasLayoutReason::NestedNotFlat, field.name), {}};
+                        return Resolved{blocked(AliasLayoutReason::NestedNotFlat, field.name), {}, {}};
                     }
                     element = cached->second.extent;
                 }
@@ -344,14 +351,14 @@ private:
                 {
                     if (!visiting_.insert(nested).second)
                     {
-                        return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}};
+                        return Resolved{blocked(AliasLayoutReason::NestedUnresolved, field.name), {}, {}};
                     }
                     const Resolved nestedResolved = computeHostImage(*nested);
                     visiting_.erase(nested);
                     hostImageCache_[nested] = nestedResolved;
                     if (!nestedResolved.verdict.holds)
                     {
-                        return Resolved{blocked(AliasLayoutReason::NestedNotFlat, field.name), {}};
+                        return Resolved{blocked(AliasLayoutReason::NestedNotFlat, field.name), {}, {}};
                     }
                     element = nestedResolved.extent;
                 }
@@ -363,7 +370,7 @@ private:
                                                                                             : scalarStorageBits(bits);
                 if (storage != bits)
                 {
-                    return Resolved{blocked(AliasLayoutReason::StorageWidth, field.name), {}};
+                    return Resolved{blocked(AliasLayoutReason::StorageWidth, field.name), {}, {}};
                 }
                 element.sizeBytes  = static_cast<std::int64_t>(bits / 8U);
                 element.alignBytes = element.sizeBytes;
@@ -371,17 +378,18 @@ private:
 
             if ((offsetBytes % element.alignBytes) != 0)
             {
-                return Resolved{blocked(AliasLayoutReason::HostPadding, field.name), {}};
+                return Resolved{blocked(AliasLayoutReason::HostPadding, field.name), {}, {}};
             }
+            members.push_back(HostImageMember{field.name, offsetBytes, element.sizeBytes * elementCount(type)});
             offsetBytes += element.sizeBytes * elementCount(type);
             alignBytes = std::max(alignBytes, element.alignBytes);
         }
         // Trailing padding to the structure's own alignment.
         if ((offsetBytes % alignBytes) != 0)
         {
-            return Resolved{blocked(AliasLayoutReason::HostPadding), {}};
+            return Resolved{blocked(AliasLayoutReason::HostPadding), {}, {}};
         }
-        return Resolved{holdsVerdict(), HostExtent{offsetBytes, alignBytes}};
+        return Resolved{holdsVerdict(), HostExtent{offsetBytes, alignBytes}, std::move(members)};
     }
 
     SemanticModule& module_;

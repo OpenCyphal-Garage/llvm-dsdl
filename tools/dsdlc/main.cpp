@@ -2085,7 +2085,8 @@ int runDsdlc(int argc, char** argv)
     // as the wire does: on a big-endian host the moved bytes are not the wire's, and the swap back
     // is per scalar, so the field-wise body stays there.
     const bool objectTarget = (options.targetLanguage == "c") || (options.targetLanguage == "obj") ||
-                              (options.targetLanguage == "cpp") || (options.targetLanguage == "rust");
+                              (options.targetLanguage == "cpp") || (options.targetLanguage == "rust") ||
+                              (options.targetLanguage == "go");
     const bool littleEndian =
         llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
             .isLittleEndian();
@@ -2223,6 +2224,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.selectedTypeKeys   = selectedTypeKeys;
         emitOptions.supportGeneration  = options.supportGeneration;
         emitOptions.writePolicy        = writePolicy;
+        emitOptions.hostImageFolded    = hostImageFolded;
 
         if (auto err = llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {

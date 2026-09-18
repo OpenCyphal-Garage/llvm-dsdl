@@ -202,6 +202,13 @@ generated structure is that byte image on the target that compiles it. The two d
 width the wire carries in five bytes is held in eight, or where a structure aligns a field the wire
 does not.
 
+A host-image type asserts the verdict where it is compiled: the generated structure carries a
+static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,
+C++, Rust and Go — its serialise and deserialise are one move of the object's bytes when the target
+triple, the host's when none is given, is little-endian, and the generated code refuses a
+big-endian build with the reason and the fix. Under the C++ PMR profile a host image carries no
+memory resource: it allocates nothing, and the pointer would widen the structure past the image.
+
 > ⚠️ `@aliasable` is an llvm-dsdl extension. The reference implementation rejects an unknown
 > directive, so a namespace using it does not parse under pydsdl or generate under Nunavut. It is
 > kept out of the differential corpus for that reason. Proposing it upstream is the intent; until

@@ -211,6 +211,14 @@ struct AliasLayoutVerdict final
     std::string       nestedFieldName;
 };
 
+/// @brief One member of a host image: the field, where it sits and how much of the image it is.
+struct HostImageMember final
+{
+    std::string  fieldName;
+    std::int64_t offsetBytes{0};
+    std::int64_t sizeBytes{0};
+};
+
 /// @brief Semantic representation of one serialisation section.
 struct SemanticSection final
 {
@@ -259,6 +267,11 @@ struct SemanticSection final
     /// weaker one only removes padding, so a layout with none here has none anywhere. The target's
     /// own compiler confirms it.
     AliasLayoutVerdict hostImage;
+
+    /// @brief The image's members in declaration order, each at the byte offset natural alignment
+    ///        gives it; empty unless `hostImage` holds. The generated code asserts these on the
+    ///        target it is compiled for.
+    std::vector<HostImageMember> hostImageMembers;
 };
 
 /// @brief Fully resolved definition including optional service response.
