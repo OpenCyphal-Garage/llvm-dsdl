@@ -577,12 +577,12 @@ void emitSection(SourceWriter&              w,
     const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);
     w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
-           "* const obj, uint8_t* buffer, size_t* const "
+           "* obj, uint8_t* buffer, size_t* "
            "inout_buffer_size_bytes);");
     w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
-           "* const out_obj, const uint8_t* buffer, size_t* const "
+           "* out_obj, const uint8_t* buffer, size_t* "
            "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* const out_obj);");
+    w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
     w.blank();
 
     w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +

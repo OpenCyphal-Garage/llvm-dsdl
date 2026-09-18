@@ -14,8 +14,8 @@
 /// output-name collision detection (frontend discovery) fold names identically.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_SUPPORT_NAMECANONICALIZATION_H
-#define LLVMDSDL_SUPPORT_NAMECANONICALIZATION_H
+#ifndef LLVMDSDL_SUPPORT_NAME_CANONICALIZATION_H
+#define LLVMDSDL_SUPPORT_NAME_CANONICALIZATION_H
 
 #include <string>
 
@@ -32,4 +32,4 @@ namespace llvmdsdl
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_SUPPORT_NAMECANONICALIZATION_H
+#endif  // LLVMDSDL_SUPPORT_NAME_CANONICALIZATION_H

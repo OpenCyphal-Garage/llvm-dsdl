@@ -57,18 +57,18 @@
 # C_DEP: } dep__Retired__Request __attribute__((deprecated));
 # Generated code names the type through its struct tag, which carries no attribute, so the header
 # compiles clean under -Werror with nothing suppressed; only user code naming the typedef is diagnosed.
-# C_DEP: int8_t dep_Retired_1_0__request__serialize_ir_(const struct dep__Retired__Request* const obj,
-# C_DEP: static inline int8_t dep__Retired__Request__serialize_(const struct dep__Retired__Request* const obj,
+# C_DEP: int8_t dep_Retired_1_0__request__serialize_ir_(const struct dep__Retired__Request*
+# C_DEP: static inline int8_t dep__Retired__Request__serialize_(const struct dep__Retired__Request*
 # The service alias is a typedef of its own and carries the attribute itself.
 # C_DEP: typedef struct dep__Retired__Request dep__Retired __attribute__((deprecated));
-# C_DEP: static inline int8_t dep__Retired__serialize_(const struct dep__Retired__Request* const obj,
+# C_DEP: static inline int8_t dep__Retired__serialize_(const struct dep__Retired__Request*
 # C_DEP_NEG-NOT: dep.Retired.Request.1.0 is marked
 # C_DEP_NEG-NOT: #pragma GCC diagnostic
 
 # The implementation names the type the same way: the forward declaration is of the tag, and the
 # serialiser definitions take the tag.
 # C_IMPL: struct dep__Retired__Request;
-# C_IMPL: int8_t dep_Retired_1_0__request__serialize_ir_(const struct dep__Retired__Request* v1,
+# C_IMPL: int8_t dep_Retired_1_0__request__serialize_ir_(const struct dep__Retired__Request*
 # C_IMPL_NEG-NOT: #pragma GCC diagnostic
 
 # C_OK: _IS_DEPRECATED_ false
