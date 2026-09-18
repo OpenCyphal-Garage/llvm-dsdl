@@ -124,31 +124,38 @@ unchanged — 63 sections before and after — because this corrects the diagnos
 `test/lit/codegen-all-languages.txt`, `test/lit/golden/ts_python_snapshots/`,
 `test/unit/CHeaderRenderTests.cpp`.
 
-### Phase 1 — one predicate, two consumers — M
+### Phase 1 — one predicate, two consumers — done 2026-09-17
 
-W has to be decided once. The analyzer owns it, because phase 2 needs source locations and a
-transform pass has none; the MLIR attribute becomes a lowered fact and the pass becomes a verifier
-of it rather than a second implementation.
+W is decided once, in the analyser, because phase 2 needs source locations and a transform pass has
+none. The MLIR attributes carry it to every backend and the pass verifies rather than recomputes.
 
-- Compute W on the semantic model, recursing into composite fields. Record on `SemanticSection`
-  (`include/llvmdsdl/Semantics/Model.h:161`) as a verdict plus, when it fails, the field and the
-  reason.
-- Compute H alongside it: `scalarStorageBits()` (`lib/CodeGen/TypeStorage.cpp:28`) already gives the
-  host storage width, and natural alignment is the strictest mainstream model — a weaker ABI can
-  only remove padding, so a layout with none under natural alignment has none anywhere. No target
-  triple is consulted.
-- Lower both to `dsdl.serialization_plan` attributes; `AnnotateDSDLAliasabilityPass` becomes a
-  verifier that recomputes and fails on disagreement.
-- `aliasVerdict()` (`lib/CodeGen/SchemaLookup.cpp:59`) returns both.
+- `lib/Semantics/AliasLayout.cpp` decides both verdicts on the semantic model, recursing into
+  composite fields, and records each on `SemanticSection` with the field the reason is about.
+- H reads `scalarStorageBits()`, which moved to `lib/Support/ScalarStorage.cpp`: how wide a
+  generated type holds a scalar is needed below codegen. No target triple is consulted.
+- `dsdl-verify-alias-layout` re-derives from the steps what they can decide. A plan stating no
+  verdict is unverified rather than an error, so hand-written IR stays a valid `dsdl-opt` input;
+  what `dsdlc` emits always states one.
+- The generated surface is `WIRE_FLAT`/`HOST_IMAGE` and their reasons, in each language's local
+  spelling. `try_deserialize_view_` and `try_serialize_view_` are gone.
 
-**Files** `lib/Semantics/Analyzer.cpp`, `include/llvmdsdl/Semantics/Model.h`,
-`lib/Lowering/LowerToMLIR.cpp`, `include/llvmdsdl/IR/DSDLOps.td`, `lib/Transforms/Passes.cpp`,
-`lib/CodeGen/SchemaLookup.cpp`.
+**Measured** W = 107 and H = 54 of 181, matching what sized this plan.
 
-**Acceptance** W = 107 and H = 54 over the catalogue, asserted as numbers in a test so a regression
-is visible; the pass-as-verifier fails on a hand-mutated attribute; the H set equals the set whose
-generated struct is a byte image of its wire form, checked by compiling and comparing rather than by
-inspection.
+**H has no false positives.** `llvmdsdl-alias-layout-reality` deserialises a deterministic buffer
+into all 181 sections and compares each structure's bytes with the wire's: 177 agree, and the four
+it disputes are delimited types, refused on purpose because a delimited payload may be longer or
+shorter than this version's layout while the check only ever presents its own length. A refusal for
+any other reason fails the gate, as does any claim the compiler contradicts.
+
+**A reason names a field.** `not-fixed-size` no longer appears in the catalogue: a varying length is
+a consequence, and the field walk names the field it comes from. Padding moves the cursor rather
+than refusing, because padding has no name and a refusal that can name nothing is the defect this
+work exists to remove — the field it displaces is named instead.
+
+**Gates** `llvmdsdl-alias-layout-census` (the counts), `llvmdsdl-alias-layout-reality` (the
+compiler's answer), `AliasLayoutTests.cpp` (one case per reason, including the recursion and the
+two byte-image failures), `dsdl-verify-alias-layout-disagreement.mlir` (a plan claiming a verdict
+its steps contradict). Both integration gates were confirmed to fail when their premise is broken.
 
 ### Phase 2 — `@aliasable` — M
 

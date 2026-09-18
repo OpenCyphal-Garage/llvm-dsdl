@@ -196,12 +196,10 @@ private:
         for (const SemanticField& field : section.fields)
         {
             const SemanticFieldType& type = field.resolvedType;
+            // Padding carries no name, so a refusal here could name nothing. Let it move the
+            // cursor instead: the field it displaces is named below, which is the one to change.
             if (field.isPadding)
             {
-                if ((elementBits(type) % 8) != 0)
-                {
-                    return blocked(AliasLayoutReason::SubByteField, field.name);
-                }
                 offsetBits += elementBits(type) * elementCount(type);
                 continue;
             }
@@ -248,6 +246,12 @@ private:
         if (!hasPayload)
         {
             return blocked(AliasLayoutReason::EmptyLayout);
+        }
+        // Trailing padding that does not reach a byte boundary: the section's own length is not a
+        // whole number of bytes, which is about the section rather than any one field.
+        if ((offsetBits % 8) != 0)
+        {
+            return blocked(AliasLayoutReason::SubByteField);
         }
         return AliasLayoutVerdict{/*holds=*/true, AliasLayoutReason::None, {}};
     }

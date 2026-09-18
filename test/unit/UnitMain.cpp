@@ -26,6 +26,7 @@ int main()
     ok      = runTargetResolutionTests() && ok;
     ok      = runSupportGenerationTests() && ok;
     ok      = runAnalyzerTests() && ok;
+    ok      = runAliasLayoutTests() && ok;
     ok      = runRuntimeTests() && ok;
     ok      = runCHeaderRenderTests() && ok;
     ok      = runCodegenDiagnosticTextTests() && ok;

@@ -3588,6 +3588,46 @@ foreach(backend c obj cpp rust go ts python)
   )
 endforeach()
 
+# The two layout verdicts, counted and then checked against the compiler. The counts are the
+# feature's size: a predicate change moves one, and has to move this registration with it.
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-alias-layout-census
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/alias-layout-census
+        -DMODE=census
+        -DEXPECTED_SECTIONS=181
+        -DEXPECTED_WIRE_FLAT=107
+        -DEXPECTED_HOST_IMAGE=54
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasLayoutCensus.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-alias-layout-census
+    PROPERTIES
+      LABELS "integration;uavcan;alias-layout"
+  )
+
+  if(CMAKE_C_COMPILER)
+    add_test(
+      NAME llvmdsdl-alias-layout-reality
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/alias-layout-reality
+          -DMODE=reality
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasLayoutCensus.cmake
+    )
+    set_tests_properties(
+      llvmdsdl-alias-layout-reality
+      PROPERTIES
+        LABELS "integration;uavcan;alias-layout;c"
+    )
+  endif()
+endif()
+
 # Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
 # through LLVM IR has and a generator that writes C and drives a host compiler does not. All of
 # them hold, so a gate reporting the lowering absent is a regression rather than a gap.
