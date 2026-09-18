@@ -310,6 +310,22 @@ copy's instruction count; the backend-contract lane still fails a backend that d
 perturbed body; every parity, determinism and decoder-fuzz lane stays green, including implicit zero
 extension on a short buffer, which the copy path must preserve.
 
+**Progress, 2026-09-18.** The ops, the capability and the fold pass are in; nothing is wired to a
+backend yet, so no generated code has changed. Both directions fold for a scalar record; the read
+side also folds a fixed array. A nested composite's read body, and a fixed array's write body, still
+decline — safely, since a declined body is the one every backend already translates.
+
+The write fold's first attempt segfaulted `dsdl-opt`, and the cause is worth recording because a
+release build hides it. The chain's guards read the step before them: `%11 = cmpi eq %10, 0` reads
+step `%10`'s result. The attempt redirected only the *last* step's result before erasing the chain,
+so erasing `%10` left `%11` reading freed memory, and the verifier overflowed its stack walking a
+type read from garbage. `Operation::erase()` asserts the op has no uses — in a Debug build. This
+tree is RelWithDebInfo, where that assertion is compiled out, so the failure surfaced far from its
+cause. The fix is to redirect every step's result to the capacity check's, which is also the right
+answer: once the fields are gone, every code in the chain *is* that one. Two lessons: run a Debug
+`dsdl-opt` against IR surgery before trusting a release one, and treat a stack overflow inside a
+verifier as a use-after-free until proven otherwise.
+
 ### Phase 4 — field accessors for W — M
 
 **Depends on** 1. *(Was L, and a packed type. Revised 2026-09-18 — see **Decisions taken**.)*

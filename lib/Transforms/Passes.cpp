@@ -1423,17 +1423,97 @@ private:
         return mlir::success();
     }
 
-    /// @brief The write side is not folded yet.
+    /// @brief Replaces the per-field write chain with one move.
     ///
-    /// Reading is a straight run between taking the buffer and storing the consumed count, so the
-    /// fold replaces a span. Writing is a chain of `scf.if` steps threading an error code, and
-    /// collapsing it means substituting the code the chain ends on -- the capacity check's, since a
-    /// field write cannot fail once the buffer is known to hold the payload. Getting that
-    /// substitution right is the remaining work; until it is, declining leaves the body every
-    /// backend already translates.
-    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp /*body*/, std::int64_t /*bytes*/)
+    /// The chain threads an error code: each field's `scf.if` runs when the one before it
+    /// succeeded, and yields that earlier code when it did not. Every code in the chain is the
+    /// capacity check's once the fields are gone, because a field write cannot fail when the buffer
+    /// is known to hold the payload -- which is what the capacity check answered. So every step's
+    /// result is redirected to it, not only the last one's: the guard between two steps reads the
+    /// earlier step's result, and erasing that step while the guard still reads it leaves the guard
+    /// pointing at freed memory. A release build does not check for that on erase.
+    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp body, const std::int64_t bytes)
     {
-        return mlir::failure();
+        std::vector<mlir::scf::IfOp> candidates;
+        body.walk([&](mlir::scf::IfOp step) {
+            const auto roles = step->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles");
+            if (!roles || (step->getNumResults() != 1))
+            {
+                return;
+            }
+            bool writesAField = false;
+            step.walk([&](mlir::Operation* inner) {
+                if (mlir::isa<mlir::dsdl::WriteBitsOp, mlir::dsdl::BitWriteOp, mlir::dsdl::CallSerdesOp>(inner))
+                {
+                    writesAField = true;
+                }
+            });
+            if (writesAField)
+            {
+                candidates.push_back(step);
+            }
+        });
+        // The body's own accepted region threads an error the same way a field step does, and it
+        // holds every field step, so it matches too. A step that contains another is that wrapper
+        // rather than a field.
+        std::vector<mlir::scf::IfOp> fieldSteps;
+        for (const mlir::scf::IfOp step : candidates)
+        {
+            const bool wrapsAnother = std::ranges::any_of(candidates, [&](mlir::scf::IfOp other) {
+                return (other != step) && step->isProperAncestor(other);
+            });
+            if (!wrapsAnother)
+            {
+                fieldSteps.push_back(step);
+            }
+        }
+        if (fieldSteps.empty())
+        {
+            return mlir::failure();
+        }
+        const mlir::Block* const block = fieldSteps.front()->getBlock();
+        if (std::ranges::any_of(fieldSteps, [block](mlir::scf::IfOp step) { return step->getBlock() != block; }))
+        {
+            return mlir::failure();
+        }
+
+        // The first step's else-branch yields the code the capacity check produced, and it has to
+        // outlive the chain: if it is one of the steps being removed, this is not the chain's head.
+        mlir::Block* const firstElse = fieldSteps.front().elseBlock();
+        if ((firstElse == nullptr) || (firstElse->getTerminator()->getNumOperands() != 1))
+        {
+            return mlir::failure();
+        }
+        const mlir::Value capacityResult = firstElse->getTerminator()->getOperand(0);
+        if ((capacityResult.getDefiningOp() == nullptr) || std::ranges::any_of(fieldSteps, [&](mlir::scf::IfOp step) {
+                return step.getOperation() == capacityResult.getDefiningOp();
+            }))
+        {
+            return mlir::failure();
+        }
+
+        mlir::OpBuilder   builder(fieldSteps.front());
+        const mlir::Value zero =
+            mlir::arith::ConstantIntOp::create(builder, body.getLoc(), static_cast<std::int64_t>(0), 8);
+        const mlir::Value fits =
+            mlir::arith::CmpIOp::create(builder, body.getLoc(), mlir::arith::CmpIPredicate::eq, capacityResult, zero);
+        auto guard = mlir::scf::IfOp::create(builder, body.getLoc(), fits, /*withElseRegion=*/false);
+        builder.setInsertionPointToStart(guard.thenBlock());
+        mlir::dsdl::ImageWriteOp::create(builder,
+                                         body.getLoc(),
+                                         body.getArgument(1),
+                                         body.getArgument(0),
+                                         builder.getI64IntegerAttr(bytes));
+
+        for (mlir::scf::IfOp step : fieldSteps)
+        {
+            step.getResult(0).replaceAllUsesWith(capacityResult);
+        }
+        for (const mlir::scf::IfOp step : llvm::reverse(fieldSteps))
+        {
+            step->erase();
+        }
+        return mlir::success();
     }
 };
 
