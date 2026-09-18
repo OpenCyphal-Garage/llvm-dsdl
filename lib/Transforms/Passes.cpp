@@ -1423,39 +1423,17 @@ private:
         return mlir::success();
     }
 
-    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    /// @brief The write side is not folded yet.
+    ///
+    /// Reading is a straight run between taking the buffer and storing the consumed count, so the
+    /// fold replaces a span. Writing is a chain of `scf.if` steps threading an error code, and
+    /// collapsing it means substituting the code the chain ends on -- the capacity check's, since a
+    /// field write cannot fail once the buffer is known to hold the payload. Getting that
+    /// substitution right is the remaining work; until it is, declining leaves the body every
+    /// backend already translates.
+    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp /*body*/, std::int64_t /*bytes*/)
     {
-        mlir::dsdl::BufferOrEmptyOp buffer;
-        body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
-        if (!buffer)
-        {
-            return mlir::failure();
-        }
-        mlir::dsdl::StoreScalarOp consumed;
-        for (mlir::Operation& op : *buffer->getBlock())
-        {
-            if (auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(op))
-            {
-                consumed = store;
-            }
-        }
-        if (!consumed)
-        {
-            return mlir::failure();
-        }
-        auto run = fieldWorkAfter(buffer, consumed.getOperation(), *buffer->getBlock());
-        if (!run)
-        {
-            return mlir::failure();
-        }
-        mlir::OpBuilder builder(consumed);
-        mlir::dsdl::ImageWriteOp::create(builder,
-                                         body.getLoc(),
-                                         buffer.getResult(),
-                                         body.getArgument(0),
-                                         builder.getI64IntegerAttr(bytes));
-        eraseRun(*run);
-        return mlir::success();
+        return mlir::failure();
     }
 };
 
