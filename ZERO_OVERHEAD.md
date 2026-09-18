@@ -15,31 +15,38 @@ The plan uses these names throughout and the generated surface should carry them
 
 | | Property | Decided from | Target-dependent |
 |---|---|---|---|
-| **W** | wire-flat — the serialised form is a contiguous byte image with no bit-level packing | the schema | no |
-| **H** | host-image — the generated natural struct is byte-identical to that wire image | the schema plus an alignment model | yes; confirmed by the target's own compiler |
-| **V** | view-representable — a packed type can be emitted whose layout is the wire image | implied by W | no |
+| **W** | wire-flat — the serialised form is a contiguous byte run at a fixed length | the schema | no |
+| **H** | host-image — the generated structure is byte-identical to that run | the schema plus an alignment model | yes; confirmed by the target's own compiler |
 
-`H ⊂ W`, and `V ≡ W` once odd scalar widths are reachable through accessors.
+`H ⊂ W`. W is what `@aliasable` asserts and what the accessors serve; H is what the bulk copy needs.
+
+*(A third property, "a packed type can be emitted whose layout is the wire image", was dropped on
+2026-09-18: the accessors do that work without the type. See **Decisions taken**.)*
 
 Over the catalogue's 181 plan sections:
 
 | Set | Sections |
 |---|---:|
-| today's `ZOH_ALIAS_ELIGIBLE` | 63, of which **9 are wrong** on arm64 |
+| the flag this replaced | 63, of which **9 were wrong** on arm64 |
 | **H** — storage width plus natural alignment, recursive | **54** — matches the measured ground truth exactly, no false positives or negatives |
-| **W** — fixed, sealed, non-union, byte-aligned, byte-multiple, recursive; wire padding allowed | **107** |
-| — representable with direct scalar widths (8/16/32/64 int, 32/64 float) | 56 |
-| — needing an odd-width or `float16` accessor | 51 |
+| **W** — sealed, non-union, fixed, byte-aligned, byte-multiple, recursive; wire padding allowed | **107** |
+
+Phase 2.1 admits byte-multiple array totals into W, so that 107 rises; the census gate carries the
+number and moves with it.
 
 ## What ships
 
 1. **`@aliasable`** asserts **W**. `dsdlc` diagnoses at analysis time, naming the field that broke
    it.
-2. **Generated static assertions** confirm **H** on the actual target, so the author's performance
+2. **A candidate lint** says a delimited type *would* be aliasable once sealed, or names the field
+   that would still block it — while the field is cheap to change rather than at lockdown.
+3. **Generated static assertions** confirm **H** on the actual target, so the author's performance
    claim fails the consumer's build rather than degrading silently.
-3. **Bulk-copy bodies** for **H** types: serialise and deserialise collapse to one copy.
-4. **A packed wire-view type** for **W** types: field access with no decode, at any nesting depth.
-5. **`--aliasable-only`**: emit the view and neither the object type nor the serdes.
+4. **Bulk-copy bodies** for **H** types, on the native backends: serialise and deserialise collapse
+   to one copy.
+5. **Field accessors** for **W** types, in all six languages: read a field off the wire with no
+   decode, at any nesting depth.
+6. **`--aliasable-only`**: emit the accessors and neither the object type nor the serdes.
 
 ## Decisions taken
 
@@ -60,8 +67,19 @@ Over the catalogue's 181 plan sections:
   `T__deserialize_` conditionally absent for every generic consumer — the transports, the parity
   harnesses and the five decoder-fuzz lanes. `--aliasable-only` (phase 5) delivers the intent as a
   whole-invocation mode instead.
-- **`try_deserialize_view_` and `try_serialize_view_` retire** in phase 4. The first returns the
-  pointer it was given, the second copies; the view type replaces both.
+- **`try_deserialize_view_` and `try_serialize_view_` are gone**, removed in phase 1. The first
+  returned the pointer it was given and the second copied.
+- **Decode-free reads are generated functions, not a second type.** *(Revised 2026-09-18.)* An
+  accessor is one `dsdl.read_bits` at a constant offset: an op every backend already spells,
+  including TypeScript's, which reads any width at any bit offset through the runtime. So the
+  accessors are `func.func` bodies that `build-dsdl-plan-bodies` builds beside serialise and
+  deserialise, and the existing translator spells them everywhere with no new ops. A packed struct
+  would buy nothing the accessors do not and would cost a second declaration per section,
+  `-Waddress-of-packed-member`, unaligned member access on strict targets, and a split around the
+  widths it cannot hold natively.
+- **The accessors are for every language, not only the native ones.** The lab side of this workflow
+  is Python and TypeScript tooling reading frames a C node produced. A feature whose payoff stopped
+  at the native backends would invert that.
 - **A view requires the whole payload; `deserialize_` does not.** DSDL's implicit zero extension
   makes a short buffer a valid encoding, and `deserialize_` honours it. A view cannot: the missing
   bytes would have to be fabricated somewhere, and anywhere is a copy. So the view path requires
@@ -77,12 +95,15 @@ These block the phases named against them.
 - **pydsdl divergence.** ✅ Decided: ship as a documented llvm-dsdl extension, upstream later.
   Stated in `docs/reference/commands/dsdlc.md`; the differential corpus is the public regulated
   submodule, so it cannot contain the directive.
-- **Unions (affects phase 4 scope).** A union's wire is a tag plus the selected option, so it is
-  not flat and is excluded here. Whether a tagged view type is worth a later phase is open.
+- **Unions.** ✅ Decided: excluded from W, because a union's wire is a tag plus whichever option
+  was selected. A union whose options are all wire-flat and of equal length is a fixed tag plus a
+  fixed-offset option, which accessors can serve; that is phase 6, not a change to W.
 
 ## Phases
 
-Phase 0 is independent. Phases 3 and 4 both depend on 1 and are independent of each other.
+Phase 0 is independent. Phases 3 and 4 both depend on 1 and are independent of each other. 2.1 and
+2.2 were added on 2026-09-18 from the implementation review; 2.2 lands before 4 so that authors can
+design for the property rather than discover it at lockdown.
 
 ### Phase 0 — make the existing verdict legible — done 2026-09-17
 
@@ -179,80 +200,158 @@ only recursion into composites makes possible; a case per refusal reason asserti
 the two malformed spellings; a service whose response alone fails; and the verdict reaching the
 generated constants.
 
+### Phase 2.1 — revisit what landed — S
+
+*(Added 2026-09-18 from the implementation review. Nothing here undoes committed work; each item is
+an addition or a relaxation.)*
+
+- **`HOST_IMAGE` is a native-target property, and TypeScript and Python print it.** It is
+  meaningless where an object has no byte image. Drop it from those two backends; `WIRE_FLAT` stays,
+  because the accessors make it mean something there.
+- **The verifier re-derives `wire_flat` only.** For `host_image` it checks the implication and stops,
+  so a mis-stamped H is caught only by the reality lane, which runs one ABI in one language. The
+  storage widths are a Support call and natural alignment is a few lines, so H is as re-derivable
+  from the steps as W is.
+- **Sealing hides every other blocker.** `not-sealed` is answered before the field walk, so an
+  unsealed type with a `uint2` field learns about the `uint2` only after sealing: two round trips
+  where one would do. Walk the fields first and mention sealing alongside the field blocker.
+- **A nested refusal should chain.** *"field 'position' has a type whose own layout is not a flat
+  byte image"* sends the author to another file. The nested verdict is cached and carries its own
+  field and reason, so a `note:` naming them costs one line of the check.
+- **`bool[N]` with `N % 8 == 0` is wire-flat**, and so is any fixed array whose total is a whole
+  number of bytes: the wire carries it as a contiguous byte run, and an accessor for element `i` is
+  a `read_bits` at `offset + i × width`. W refuses it today because the walk tests the *element*
+  width rather than the field's total. Test the total. H keeps refusing it, because whether a
+  backend stores a bool array packed is not uniform across backends — which it does already, since
+  a 1-bit element's storage width is 8. Status and capability masks are common in vendor schemas.
+  This is a relaxation, so no schema that is accepted today stops being accepted.
+- **A stale comment** at `lib/Transforms/Passes.cpp:1331` still says `LLVMDSDL_TARGET_ENDIANNESS_BIG`
+  gates the view helpers. The helpers are gone and nothing gates on endianness.
+- **Minor:** `SectionKey` is a tuple holding a `std::string`, copied per lookup.
+
+### Phase 2.2 — the aliasable-candidate lint — S
+
+*(Added 2026-09-18. Lands before phase 4 so that authors can design for the property.)*
+
+An author learns whether a type can be aliasable at the moment they seal it, which is the worst
+moment to learn it: a `uint2` health code, a `uint56` timestamp or a `void4` is chosen early and
+discovered late. The predicate already knows the answer earlier — "wire-flat except that it is not
+sealed" is the same walk with the sealing test skipped.
+
+- A `dsdld` lint rule (`include/llvmdsdl/LSP/Lint.h:129` has the framework) and a `dsdlc` warning:
+  *this delimited type would be aliasable once sealed*, and its inverse, *this delimited type would
+  be aliasable except for field `health`* — reported while the field is still cheap to change.
+- This is what makes the feature teach the property during development rather than enforce it at
+  lockdown, which is the difference between helping production and helping the path to it.
+
+**Acceptance** A lint case per shape, including a delimited type that would qualify and one that
+would not, each naming the field.
+
 ### Phase 3 — bulk-copy bodies for H — M
 
-**Depends on** 1.
+**Depends on** 1. Native backends only.
 
-- In `lib/Transforms/BuildDSDLPlanBodies.cpp`, an H section's serialise and deserialise bodies
-  become one bulk copy. It goes in the plan bodies, not an emitter, so all six backends inherit it.
-  `dsdl_runtime_copy_bits` already degenerates to `memmove` for a byte-aligned byte-multiple run
-  (`runtime/dsdl_runtime.h:154`), so C needs no new runtime; whether to add a `dsdl.bytes_copy` op or
-  reuse `dsdl.bit_write` with a `8 × N` width is an implementation choice inside this phase.
+**The plan's first idea does not work, and the review caught it.** Reusing `dsdl.bit_write` with an
+`8 × N` width is spellable in C, where it lowers to `dsdl_runtime_copy_bits` and becomes a `memmove`.
+In Rust, Go and TypeScript that op is a per-bit loop over a *bool container*
+(`Rust.cpp:943`, `Go.cpp:1101`, `Ts.cpp:1020`): it means "move a run of bools", and its source cannot
+be an object. So the bulk copy needs its own op.
+
+- **`dsdl.image_copy`**, with a spelling per backend: `memcpy` in C and C++,
+  `core::slice::from_raw_parts` under `unsafe` in Rust, `unsafe.Slice` in Go. Rust's is sound only
+  with `#[repr(C)]` and the H verdict, which makes the `repr(C)` item a prerequisite rather than a
+  nicety. TypeScript and Python cannot spell it, and do not need to: their objects have no byte
+  image, and phase 4's accessors are their fast path.
+- **A target capability, not a backend branch.** `build-dsdl-plan-bodies` always emits the canonical
+  field-wise body; a rewrite pass replaces an H section's bodies with `image_copy` when the pipeline
+  was told the target's objects are byte images. The driver sets one boolean per language. That
+  keeps one pipeline and keeps bodies-as-IR, which is the rule this feature must not bend.
+- **The fold is its own stage.** `addLowerDSDLBodiesPipeline` runs the optimise stage only when
+  `optimizeLoweredSerDes` is set (`Passes.cpp:1362`). Putting the fold there would make the fast path
+  conditional on an unrelated flag, so it runs under the capability instead.
+- **A `__BYTE_ORDER__` guard.** A whole-object copy on a big-endian host produces big-endian bytes,
+  and turning those into the wire's little-endian form is a swap *per scalar*, which needs the
+  layout — a transport cannot do it to an opaque buffer. So `image_copy` is correct where the host
+  is little-endian, and the generated header says so and falls back to the field-wise body
+  elsewhere. This qualifies the roadmap's claim that `serialize_` is host-endianness-agnostic: it
+  stays true of the field-wise body, which is what a big-endian host keeps.
+- **No saturation, and the reason is the argument that the copy is complete rather than merely
+  fast:** an H field's storage width equals its wire width, so every value the structure can hold is
+  representable on the wire. Nothing needs clamping. For the same reason the copy cannot leak
+  padding, because "no padding" is the H condition.
 - Generated headers carry `_Static_assert(sizeof(T) == WIRE)` and an `offsetof` per field as the ABI
-  backstop. It should never fire.
-- Rust needs `#[repr(C)]` on the struct before it has a layout to assert. C++ adds
-  `static_assert(std::is_standard_layout_v<T>)`.
-- The copy cannot leak padding on the serialise side, because "no padding" is the H condition.
+  backstop. It should never fire. C++ adds `static_assert(std::is_standard_layout_v<T>)`.
 
-**Files** `lib/Transforms/BuildDSDLPlanBodies.cpp`, `lib/CodeGen/emitter/{C,Cpp,Rust,Go}.cpp`,
-`include/llvmdsdl/IR/DSDLOps.td`.
+**Files** `lib/Transforms/BuildDSDLPlanBodies.cpp`, `lib/Transforms/Passes.cpp`,
+`include/llvmdsdl/IR/DSDLOps.td`, `lib/CodeGen/emitter/{C,Cpp,Rust,Go}.cpp`.
 
 **Acceptance** `llvmdsdl-serdes-instruction-comparison` shows an H type's `deserialize_` at a bulk
 copy's instruction count; the backend-contract lane still fails a backend that does not follow a
-perturbed body; every existing parity, determinism and decoder-fuzz lane stays green, including
-implicit zero extension on a short buffer, which the copy path must preserve.
+perturbed body; every parity, determinism and decoder-fuzz lane stays green, including implicit zero
+extension on a short buffer, which the copy path must preserve.
 
-### Phase 4 — packed wire-view type for W — L
+### Phase 4 — field accessors for W — M
 
-**Depends on** 1. Splits in two; 4a is the useful half.
+**Depends on** 1. *(Was L, and a packed type. Revised 2026-09-18 — see **Decisions taken**.)*
 
-**4a — direct widths (56 sections).** Per W section emit a second type whose layout is the wire
-image: packed to alignment 1, wire padding as reserved members, nested composites as nested view
-types, fixed arrays as arrays of those. Reads go through per-field accessors that copy from
-`buffer + offset` into a local of the right width — one load each, defined in every language, and no
-cast.
+Per W section, `build-dsdl-plan-bodies` builds an accessor beside the serialise and deserialise
+bodies: one `dsdl.read_bits` at a constant offset, which the existing translator spells in every
+language with no new ops and no per-backend logic beyond the function's name.
 
-The cast is what this avoids, and the reason is worth keeping in the code: `(const T*)buffer` is not
-portably expressible. The buffer is a `uint8_t*` of unknown alignment, so the cast is undefined and
-faults on strict-alignment targets; and no object of type `T` exists in those bytes, which needs
-`std::start_lifetime_as` (C++23) in C++ and violates strict aliasing in C.
+- Nested composites return a `dsdl.buffer_at` slice, so `Vec3.x(Pose.position(buffer))` composes.
+- Fixed arrays take an index, checked by `dsdl.index_holds`.
+- Setters are `dsdl.write_bits` the same way.
+- No width split: `read_bits` already reads a `uint56` and the float16 helper already widens, so the
+  odd widths cost nothing extra.
+- No endianness condition: `read_bits` reads little-endian bytes into host integers on every host,
+  which makes this the path that holds where phase 3's does not.
+- New generated names register in the reserved list at `lib/Support/NamingPolicy.cpp:357`.
 
-**4b — odd widths and `float16` (the remaining 51).** A `uint56` member becomes seven bytes with an
-accessor that widens; `float16` becomes two bytes with a converting accessor.
-
-`try_deserialize_view_` and `try_serialize_view_` are removed in 4a. New generated names register in
-the reserved list in `lib/Support/NamingPolicy.cpp:357`.
-
-**Files** `lib/CodeGen/emitter/*.cpp`, `lib/Support/NamingPolicy.cpp`,
-`lib/CodeGen/{TypeMetadata,SchemaLookup}.cpp`, `docs/reference/codegen/`.
-
-**Acceptance** For every W section, the view type's size equals the wire size and each accessor
-returns what `deserialize_` puts in the corresponding field, checked across C, C++, Rust and Go on
-the real corpus; an accessor costs one load in the instruction lane; the removed functions are gone
-from every backend's output.
+**Acceptance** Every accessor returns what `deserialize_` puts in the corresponding field, across all
+six languages, on the catalogue and on the `@aliasable` fixtures; an accessor costs one load in the
+instruction lane.
 
 ### Phase 5 — `--aliasable-only` — S
 
 **Depends on** 4.
 
-Emit the view type and its accessors, and neither the object type nor the serdes. The mode requires
-every targeted section to be `@aliasable` and fails naming the first that is not. This is the
-line-count and dead-path reduction, delivered as a build mode rather than as a per-type hole in the
-API.
+Emit the accessors and neither the object type nor the serdes — a filter on which functions are
+emitted, once phase 4 has made the accessors functions. The mode requires every targeted section to
+be `@aliasable` and fails naming the first that is not.
 
 **Acceptance** The mode's output compiles standalone in each language; a targeted non-`@aliasable`
 type fails with a diagnostic naming it; `--list-outputs` reports the reduced set.
 
+### Phase 6 — container views — later
+
+*(Added 2026-09-18.)*
+
+The production shape is a delimited container that keeps evolving around records that no longer do:
+a system that has locked its hot inner records but still wants to change the message around them
+writes exactly that. Phase 4 serves it as far as reading goes — decode the container, take the inner
+record's bytes through `buffer_at`, read them with the inner type's accessors.
+
+What is missing is the container's own structure *holding a view* of an aliasable field rather than a
+decoded copy, so the container's deserialise skips the leaf entirely. That is what makes composition
+zero-copy rather than the leaves alone, and it is the phase that makes the feature worth having on
+the shape users will actually build.
+
+Equal-length unions belong here too: a union whose options are all wire-flat and of the same length
+has a flat wire form of a tag plus one option, and an accessor set can serve it by reading the tag
+and then the option at a fixed offset.
+
 ## Gates this adds
 
-| Gate | Phase | What fails it |
-|---|---|---|
-| catalogue W/H census | 1 | either count moving without the test moving with it |
-| predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image |
-| `@aliasable` diagnostics | 2 | a failure reason without a field name and location |
-| bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count |
-| zero-extension preservation | 3 | the copy path rejecting a short buffer |
-| view accessor equivalence | 4 | an accessor disagreeing with `deserialize_` |
+| Gate | Phase | What fails it | State |
+|---|---|---|---|
+| catalogue W/H census | 1 | either count moving without the test moving with it | ✅ landed |
+| predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image | ✅ landed |
+| `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
+| verifier re-derives H | 2.1 | a `host_image` the steps contradict | to build |
+| candidate lint | 2.2 | a delimited type that would qualify, reported without its field | to build |
+| bulk-copy instruction count | 3 | an H `deserialize_` above a bulk copy's count | to build |
+| zero-extension preservation | 3 | the copy path rejecting a short buffer | to build |
+| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |
 
 ## Risks
 
@@ -265,16 +364,26 @@ type fails with a diagnostic naming it; `--list-outputs` reports the reduced set
   composition: a 7-byte composite followed by a `float32` is 11 bytes of wire and 12 of struct. H
   therefore shrinks as schemas nest, and phase 3 alone would be a feature that degrades with use.
   Phase 4 is what makes the work compose.
-- **Phase 4 is the largest change to the generated API so far.** It lands before the alpha → beta-1
+- **The bulk copy is a little-endian-host path.** A whole-object copy on a big-endian host produces
+  big-endian bytes, and the swap back is per scalar, so it needs the layout and a transport cannot
+  do it to an opaque buffer. Phase 3 guards on `__BYTE_ORDER__` and falls back to the field-wise
+  body; phase 4's accessors have no such condition. A type that asserts `@aliasable` has frozen its
+  layout — that is the intent, and a version bump is how it changes.
+- **Phase 4 adds a function per field to the generated API.** It lands before the alpha → beta-1
   boundary or it waits for it.
 
 ## Reproducing the measurements
 
+The census and the comparison against the compiler are the two `alias-layout` tests, which is where
+the numbers in this document come from:
+
 ```bash
-dsdlc -l c -O out +uavcan && grep -rh '_ZOH_ALIAS_REASON_ "' out | sed 's/.*REASON_ //' | sort | uniq -c
+ctest --test-dir <build> -L alias-layout -V
 ```
 
-The census, the H-versus-reality comparison and the W/V split were computed from `dsdlc -l mlir
-+uavcan` and from compiling every eligible type's struct against its
-`_SERIALIZATION_BUFFER_SIZE_BYTES_`. Phase 1 turns both into tests, at which point this section
-becomes the tests' description rather than a manual procedure.
+Both print their counts, and the reality lane names every section whose claim the compiler disputes.
+To read the reasons directly instead:
+
+```bash
+dsdlc -l c -O out +uavcan && grep -rh '_WIRE_FLAT_REASON_ "' out | sed 's/.*REASON_ //' | sort | uniq -c
+```

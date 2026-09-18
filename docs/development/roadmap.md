@@ -468,17 +468,33 @@ library implementations rests on the lint rather than on a differential build.
   74 of the 118 ineligible verdicts, and the `composite-field` and `union-type` branches are
   unreachable.
 
-  The plan separates the three properties the one flag was covering — **W** (the wire is flat,
-  decidable from the schema), **H** (the natural struct is that byte image, an ABI fact) and the
-  packed view type that makes W usable — and sizes them over the catalogue: today's flag accepts 63,
-  H is 54, W is 107. It adds an `@aliasable` directive asserting W so a performance-critical type
-  fails at the schema rather than degrading silently, with generated static assertions covering H on
-  the consumer's own target. Five phases, `@aliasable` at phase 2.
+  The plan separates the two properties the one flag was covering — **W** (the wire is a contiguous
+  byte run, decidable from the schema) and **H** (the generated structure is that run, an ABI fact)
+  — and sizes them over the catalogue: the old flag accepted 63, H is 54, W is 107. It adds an
+  `@aliasable` directive asserting W so a performance-critical type fails at the schema rather than
+  degrading silently, with generated static assertions covering H on the consumer's own target.
 
-  **Decide before phase 2:** `@aliasable` makes llvm-dsdl's accepted language a superset of the
-  reference implementation's — unknown directives are a hard error in both — so those types cannot
-  enter the Nunavut differential corpus. Ship as a documented extension, propose upstream, or drop
-  the directive.
+  ✅ **Phases 0 through 2 landed 2026-09-17.** The verdicts are decided once in the analyser, carried
+  as plan attributes, and re-derived by `dsdl-verify-alias-layout` rather than computed twice. H is
+  checked against what the compiler lays out by `llvmdsdl-alias-layout-reality`, which found no false
+  claims over the catalogue. `@aliasable` ships as a documented llvm-dsdl extension, upstream later
+  (`docs/reference/commands/dsdlc.md`); the differential corpus is the public regulated submodule and
+  cannot contain the directive.
+
+  **Reshaped 2026-09-18 by an implementation review**, which changed two of the remaining phases
+  before they were built. The bulk copy cannot reuse `dsdl.bit_write`: in Rust, Go and TypeScript
+  that op is a per-bit loop over a bool container, so it needs its own op and a per-target capability
+  bit. And the decode-free read surface becomes generated accessor *bodies* rather than a second
+  packed type — one `dsdl.read_bits` at a constant offset, which every backend already spells, so it
+  reaches TypeScript and Python too, sidesteps the alignment and object-lifetime problems, and drops
+  the width split. The review also added a candidate lint, so an author learns that a field will
+  block the fast path while it is still cheap to change. Phases 2.1 (revisits), 2.2 (the lint) and 6
+  (container views) are new; 3 through 5 are revised.
+
+  **One claim elsewhere in this document needs qualifying when phase 3 lands:** `serialize_` is
+  host-endianness-agnostic, and stays so for the field-wise body, but a whole-object copy on a
+  big-endian host produces big-endian bytes. Phase 3 guards on `__BYTE_ORDER__` and keeps the
+  field-wise body there.
 
 ### P2 — Maturity / maintainability
 
