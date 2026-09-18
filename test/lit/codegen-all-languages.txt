@@ -82,10 +82,12 @@
 # C_SUMMARY: Run summary:
 # C_SUMMARY: command: c
 # C_SUMMARY: files generated:
-# C_TYPE: #define fixtures__vendor__Widget_ZOH_ALIAS_ELIGIBLE_ true
-# C_TYPE: #define fixtures__vendor__Widget_ZOH_ALIAS_REASON_ "eligible"
-# C_TYPE: static inline int8_t fixtures__vendor__Widget__try_deserialize_view_
-# C_TYPE: static inline int8_t fixtures__vendor__Widget__try_serialize_view_
+# The two verdicts are independent, and Widget is where they differ: `uint8 foo` then `uint16 bar`
+# is three contiguous bytes on the wire, and four in a structure that aligns `bar` to two.
+# C_TYPE: #define fixtures__vendor__Widget_WIRE_FLAT_ true
+# C_TYPE: #define fixtures__vendor__Widget_WIRE_FLAT_REASON_ "flat"
+# C_TYPE: #define fixtures__vendor__Widget_HOST_IMAGE_ false
+# C_TYPE: #define fixtures__vendor__Widget_HOST_IMAGE_REASON_ "host-padding"
 
 # CPP_SUMMARY: Run summary:
 # CPP_SUMMARY: command: cpp
@@ -93,10 +95,8 @@
 # CPP_SUMMARY: files generated:
 
 # CPP_STD: #include <vector>
-# CPP_STD: static constexpr bool ZOH_ALIAS_ELIGIBLE = true;
-# CPP_STD: static constexpr const char* ZOH_ALIAS_REASON = "eligible";
-# CPP_STD: _try_deserialize_view_
-# CPP_STD: _try_serialize_view_
+# CPP_STD: static constexpr bool WIRE_FLAT = true;
+# CPP_STD: static constexpr bool HOST_IMAGE = false;
 # CPP_PMR: #include <memory_resource>
 # CPP_AUTOSAR_SUMMARY: Run summary:
 # CPP_AUTOSAR_SUMMARY: command: cpp
@@ -123,9 +123,8 @@
 # RUST_STD_TYPE: self.c.set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new(Self::__LLVMDSDL_MEMORY_MODE, Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::__LLVMDSDL_POOL_CLASS_C));
 # RUST_STD_TYPE: crate::dsdl_runtime::PassthroughPoolProvider::default()
 # RUST_STD_TYPE: self.c.reserve_with_pool(_count
-# RUST_STD_VIEW: pub const ZOH_ALIAS_ELIGIBLE: bool = true;
-# RUST_STD_VIEW: pub fn try_deserialize_view<'a>(buffer: &'a [u8]) -> core::result::Result<(&'a [u8], usize), i8>
-# RUST_STD_VIEW: pub fn try_serialize_view(view_bytes: &[u8], buffer: &mut [u8]) -> core::result::Result<usize, i8>
+# RUST_STD_VIEW: pub const WIRE_FLAT: bool = true;
+# RUST_STD_VIEW: pub const HOST_IMAGE: bool = false;
 
 # RUST_FAST_SUMMARY: Run summary:
 # RUST_FAST_SUMMARY: command: rust
@@ -140,8 +139,8 @@
 # GO_SUMMARY: command: go
 # GO_SUMMARY: files generated:
 # GO_MODULE: module demo/generated/smoke
-# GO_TYPE: const WIDGET_ZOH_ALIAS_ELIGIBLE = true
-# GO_TYPE: const WIDGET_ZOH_ALIAS_REASON = "eligible"
+# GO_TYPE: const WIDGET_WIRE_FLAT = true
+# GO_TYPE: const WIDGET_HOST_IMAGE = false
 
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts
@@ -153,8 +152,8 @@
 # TS_HELPERS: function mlir_
 # TS_HELPERS: mlir_
 # Widget is a message, so it carries one verdict, not a request/response pair.
-# TS_TYPE: export const DSDL_ZOH_ALIAS_ELIGIBLE = true;
-# TS_TYPE: export const DSDL_ZOH_ALIAS_REASON = "eligible";
+# TS_TYPE: export const DSDL_WIRE_FLAT = true;
+# TS_TYPE: export const DSDL_HOST_IMAGE = false;
 
 # TS_FAST_SUMMARY: Run summary:
 # TS_FAST_SUMMARY: command: ts
@@ -195,5 +194,5 @@
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: def serialize(self) -> bytes:
 # PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)
-# PY_TYPE: DSDL_ZOH_ALIAS_ELIGIBLE = True
-# PY_TYPE: DSDL_ZOH_ALIAS_REASON = "eligible"
+# PY_TYPE: DSDL_WIRE_FLAT = True
+# PY_TYPE: DSDL_HOST_IMAGE = False

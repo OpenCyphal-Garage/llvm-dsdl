@@ -1367,12 +1367,6 @@ void emitFunctionPrototypes(SourceWriter&      w,
     w.line("inline std::int8_t " + typeName + "_deserialize_(" + declaredName +
            "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
            (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
-    w.line("inline std::int8_t " + typeName +
-           "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
-           "const std::uint8_t** out_view_bytes);");
-    w.line("inline std::int8_t " + typeName +
-           "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
-           "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     w.blank();
 }
 
@@ -1605,8 +1599,10 @@ void emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
     w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
            std::to_string(metadata.serializationBufferSizeBytes) + "U;");
-    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (metadata.alias.eligible ? "true;" : "false;"));
-    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\";");
+    w.line(std::string("static constexpr bool WIRE_FLAT = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line("static constexpr const char* WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\";");
+    w.line(std::string("static constexpr bool HOST_IMAGE = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    w.line("static constexpr const char* HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\";");
     if (metadata.declaresPortId)
     {
         w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
@@ -1671,16 +1667,6 @@ void emitSectionStruct(SourceWriter&                         w,
     }
     w.close("}");
 
-    w.open("LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
-           "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
-    w.line("return " + typeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-    w.close("}");
-    w.open("LLVMDSDL_NODISCARD static inline std::int8_t try_serialize_view(const std::uint8_t* view_bytes, "
-           "std::size_t view_size_bytes, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
-    w.line("return " + typeName +
-           "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-
     if (isPmrFlavor(flavor))
     {
         w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
@@ -1703,67 +1689,6 @@ void emitSectionStruct(SourceWriter&                         w,
                ";");
         w.blank();
     }
-}
-
-void emitViewFunctions(SourceWriter& w, const std::string& typeName, const std::string& declaredName)
-{
-    w.line("inline std::int8_t " + typeName +
-           "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-           "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
-    w.open("{");
-    w.open("if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("*out_view_bytes = nullptr;");
-    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if (*inout_buffer_size_bytes < required) {");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#else");
-    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
-    w.line("*out_view_bytes = buffer;");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
-    w.line("inline std::int8_t " + typeName +
-           "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-           "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-    w.open("{");
-    w.open("if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if (view_size_bytes != required) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.open("if (*inout_buffer_size_bytes < required) {");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#else");
-    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
-    w.line("std::memcpy(buffer, view_bytes, required);");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
 }
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1828,7 +1753,6 @@ llvm::Error emitSection(SourceWriter&                         w,
     {
         return err;
     }
-    emitViewFunctions(w, typeName, declaredName);
     return llvm::Error::success();
 }
 
@@ -2045,22 +1969,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
         w.close("}");
         w.blank();
-
-        w.line("inline std::int8_t " + baseTypeName +
-               "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-               "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
-        w.open("{");
-        w.line("return " + requestType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-        w.close("}");
-        w.blank();
-
-        w.line("inline std::int8_t " + baseTypeName +
-               "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-               "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-        w.open("{");
-        w.line("return " + requestType +
-               "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-        w.close("}");
     }
     else
     {

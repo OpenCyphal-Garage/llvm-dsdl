@@ -39,14 +39,13 @@ std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
 
-/// @brief Creates the pass that annotates serialisation plans with conservative
-///        zero-overhead aliasability facts.
-/// @details This is a conservative *annotator*, not a proof: it stamps
-///          `zoh_alias_eligible`/`zoh_alias_reason` metadata on eligible plans and
-///          does not alter the emitted serialisation path. Registered under the
-///          `dsdl-annotate-aliasability` pipeline name.
+/// @brief Creates the pass that checks a plan's layout verdicts against the steps it carries.
+/// @details `wire_flat` and `host_image` are decided during semantic analysis, where the fields
+///          still carry their source locations. This pass re-derives from the steps what they can
+///          decide and reports a disagreement, so the lowered IR cannot drift from the schema it
+///          came from. Registered under the `dsdl-verify-alias-layout` pipeline name.
 /// @return Newly constructed pass instance.
-std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass();
+std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass();
 
 /// @brief Creates the pass that converts lowered DSDL IR to EmitC-oriented IR.
 /// @return Newly constructed pass instance.
@@ -81,7 +80,7 @@ void registerEmitDSDLRuntimePass();
 /// @brief Registers the LLVM lowering with the pass registry.
 void registerDSDLToLLVMPasses();
 
-/// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-annotate-aliasability`
+/// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a
 ///        deserialise function of dialect operations. A backend is a translation of that output
 ///        (DESIGN.md, *Backend Contract*). Registered with `dsdl-opt` as `lower-dsdl-bodies`.

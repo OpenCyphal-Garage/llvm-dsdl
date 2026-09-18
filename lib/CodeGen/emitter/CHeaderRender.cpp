@@ -35,8 +35,10 @@ std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, c
         "#define " + typeName + "_EXTENT_BYTES_ " + std::to_string(metadata.extentBytes) + "UL",
         "#define " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " +
             std::to_string(metadata.serializationBufferSizeBytes) + "UL",
-        "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + (metadata.alias.eligible ? "true" : "false"),
-        "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + metadata.alias.reason + "\"",
+        "#define " + typeName + "_WIRE_FLAT_ " + (metadata.wireFlat.holds ? "true" : "false"),
+        "#define " + typeName + "_WIRE_FLAT_REASON_ \"" + metadata.wireFlat.reason + "\"",
+        "#define " + typeName + "_HOST_IMAGE_ " + (metadata.hostImage.holds ? "true" : "false"),
+        "#define " + typeName + "_HOST_IMAGE_REASON_ \"" + metadata.hostImage.reason + "\"",
         "#define " + typeName + "_IS_DEPRECATED_ " + (metadata.deprecated ? "true" : "false"),
     };
     if (metadata.declaresPortId)
@@ -96,19 +98,6 @@ std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseT
             "* const out_obj, const uint8_t* buffer, size_t* const inout_buffer_size_bytes)",
         "{",
         "  return " + requestTypeName + "__deserialize_(out_obj, buffer, inout_buffer_size_bytes);",
-        "}",
-        "static inline int8_t " + baseTypeName +
-            "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-            "const uint8_t** const out_view_bytes)",
-        "{",
-        "  return " + requestTypeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);",
-        "}",
-        "static inline int8_t " + baseTypeName +
-            "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-            "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)",
-        "{",
-        "  return " + requestTypeName +
-            "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);",
         "}",
         "static inline int8_t " + baseTypeName + "__initialize_(" + objectType + "* const out_obj)",
         "{",

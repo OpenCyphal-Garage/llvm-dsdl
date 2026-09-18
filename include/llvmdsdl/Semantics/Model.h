@@ -157,6 +157,52 @@ struct SemanticConstant final
     Value value;
 };
 
+/// @brief Why a section's layout is not flat, or not a byte image of its own wire form.
+///
+/// A reason names the property that blocked the layout, so a section's reason changes only when
+/// that property does. `None` is the verdict holding.
+enum class AliasLayoutReason : std::uint8_t
+{
+    None,
+    /// The section is delimited, so its payload is preceded by a length header.
+    NotSealed,
+    /// The serialised length varies with the value.
+    NotFixedSize,
+    /// The section's steps are its options, not a sequence of fields.
+    UnionType,
+    /// The section holds no payload field.
+    EmptyLayout,
+    /// A variable-length array; widening its element cannot make the length invariant.
+    VariableArray,
+    /// A field whose width is not a whole number of bytes.
+    SubByteField,
+    /// A field that does not begin on a byte boundary.
+    UnalignedField,
+    /// A composite field whose own layout is not flat.
+    NestedNotFlat,
+    /// A composite field whose definition was not resolved.
+    NestedUnresolved,
+    /// Wire padding: a void field that the generated structure does not hold.
+    WirePadding,
+    /// The host stores the field wider than the wire carries it, such as a `uint56` in 64 bits.
+    StorageWidth,
+    /// The host would insert alignment padding between fields, or after the last one.
+    HostPadding,
+};
+
+/// @brief One layout verdict for a section, and the field that decided it.
+struct AliasLayoutVerdict final
+{
+    /// @brief True when the property holds for this section.
+    bool holds{false};
+
+    /// @brief Why it does not hold. `None` when it holds.
+    AliasLayoutReason reason{AliasLayoutReason::None};
+
+    /// @brief The field the reason is about, empty when the reason is about the section.
+    std::string fieldName;
+};
+
 /// @brief Semantic representation of one serialisation section.
 struct SemanticSection final
 {
@@ -192,6 +238,16 @@ struct SemanticSection final
 
     /// @brief Required serialisation buffer size in bits.
     std::int64_t serializationBufferSizeBits{0};
+
+    /// @brief Whether the serialised form is a contiguous byte image. A property of the schema.
+    AliasLayoutVerdict wireFlat;
+
+    /// @brief Whether the generated structure is that byte image. Holds only where `wireFlat` does.
+    ///
+    /// Decided under natural alignment, which is the strictest model a mainstream ABI uses: a
+    /// weaker one only removes padding, so a layout with none here has none anywhere. The target's
+    /// own compiler confirms it.
+    AliasLayoutVerdict hostImage;
 };
 
 /// @brief Fully resolved definition including optional service response.

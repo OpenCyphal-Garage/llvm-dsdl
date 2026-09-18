@@ -14,8 +14,10 @@ DSDL_IS_DEPRECATED = False
 DSDL_VERSION_MAJOR = 1
 DSDL_VERSION_MINOR = 0
 DSDL_HAS_FIXED_PORT_ID = False
-DSDL_ZOH_ALIAS_ELIGIBLE = False
-DSDL_ZOH_ALIAS_REASON = "composite-field"
+DSDL_WIRE_FLAT = False
+DSDL_WIRE_FLAT_REASON = "nested-not-flat"
+DSDL_HOST_IMAGE = False
+DSDL_HOST_IMAGE_REASON = "nested-not-flat"
 
 def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: int) -> int:
     v0 = 96 > p0

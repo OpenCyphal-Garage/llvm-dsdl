@@ -1200,140 +1200,128 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
 };
 
-struct AnnotateDSDLAliasabilityPass
-    : public mlir::PassWrapper<AnnotateDSDLAliasabilityPass, mlir::OperationPass<mlir::ModuleOp>>
+struct VerifyDSDLAliasLayoutPass
+    : public mlir::PassWrapper<VerifyDSDLAliasLayoutPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
     {
-        return "dsdl-annotate-aliasability";
+        return "dsdl-verify-alias-layout";
     }
     llvm::StringRef getDescription() const final
     {
-        // Conservative annotator: stamps aliasability metadata only. It does not
-        // prove anything about emitted-code overhead and does not switch the
-        // serialiser onto a zero-copy path.
-        return "Annotate serialisation plans with conservative zero-overhead aliasability facts";
+        return "Check each plan's layout verdicts against the steps it carries";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
-        auto            module = getOperation();
-        mlir::OpBuilder builder(module.getContext());
-
+        auto module = getOperation();
         for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
             if (op.getBody().empty())
             {
                 continue;
             }
-            for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            for (const mlir::dsdl::SerializationPlanOp child :
+                 op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                const bool fixedSize = child.getFixedSize();
-                const bool sealed    = child.getSealed();
-
-                std::string  reason;
-                bool         hasPayloadFields = false;
-                std::int64_t offsetBits       = 0;
-
-                // A union's steps are its options, not a sequence of fields, so walking them
-                // would measure offsets no encoding ever produces. Answer for the plan first.
-                if (child.getIsUnion())
+                if (mlir::failed(verifyPlan(child)))
                 {
-                    reason = "union-type";
+                    signalPassFailure();
+                    return;
                 }
-
-                if (reason.empty() && !child.getBody().empty())
-                {
-                    for (mlir::Operation& stepOp : child.getBody().front())
-                    {
-                        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(stepOp))
-                        {
-                            const std::int64_t alignBits = align.getBits();
-                            if (alignBits > 1)
-                            {
-                                const auto rem = offsetBits % alignBits;
-                                if (rem != 0)
-                                {
-                                    offsetBits += (alignBits - rem);
-                                }
-                            }
-                            continue;
-                        }
-                        auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
-                        if (!step)
-                        {
-                            continue;
-                        }
-                        const std::int64_t bitLength = step.getBitLength();
-                        if (step.isPadding())
-                        {
-                            offsetBits += bitLength;
-                            continue;
-                        }
-
-                        hasPayloadFields = true;
-                        if ((offsetBits % 8) != 0)
-                        {
-                            reason = "unaligned-field";
-                            break;
-                        }
-                        // A composite carries its width in `min_bits`/`max_bits`, and `bit_length`
-                        // is zero, so this answers before the width tests read that zero.
-                        if (step.isComposite())
-                        {
-                            reason = "composite-field";
-                            break;
-                        }
-                        // Before the width tests: a `bool[<=n]` is refused for its length, which
-                        // widening the element cannot fix.
-                        if (step.isVariableArray())
-                        {
-                            reason = "variable-array";
-                            break;
-                        }
-                        if (bitLength <= 0)
-                        {
-                            reason = "invalid-bit-length";
-                            break;
-                        }
-                        if ((bitLength % 8) != 0)
-                        {
-                            reason = "sub-byte-field";
-                            break;
-                        }
-                        if (step.getScalarCategory() == "float" && bitLength != 16 && bitLength != 32 &&
-                            bitLength != 64)
-                        {
-                            reason = "unsupported-float-width";
-                            break;
-                        }
-                        // `bit_length` is one element's width; a fixed array's count is its
-                        // capacity. Only fixed arrays reach here -- variable ones broke out above.
-                        const std::int64_t elementCount =
-                            step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
-                        offsetBits += bitLength * elementCount;
-                    }
-                }
-
-                if (reason.empty() && !fixedSize)
-                {
-                    reason = "not-fixed-size";
-                }
-                if (reason.empty() && !sealed)
-                {
-                    reason = "not-sealed";
-                }
-                if (reason.empty() && !hasPayloadFields)
-                {
-                    reason = "empty-layout";
-                }
-
-                const bool eligible = reason.empty();
-                child.setZohAliasEligible(eligible);
-                child.setZohAliasReasonAttr(eligible ? mlir::StringAttr{} : builder.getStringAttr(reason));
             }
         }
+    }
+
+private:
+    /// @brief Re-derives from the steps what the analysis recorded, and reports a disagreement.
+    ///
+    /// The steps say less than the schema did -- a composite's own verdict is not among them -- so
+    /// this checks what they can decide: a plan whose steps are not a flat byte run cannot be
+    /// `wire_flat`, and `host_image` never holds where `wire_flat` does not.
+    static mlir::LogicalResult verifyPlan(mlir::dsdl::SerializationPlanOp plan)
+    {
+        const bool wireFlat  = plan.getWireFlat();
+        const bool hostImage = plan.getHostImage();
+
+        if (wireFlat && plan.getWireFlatReason())
+        {
+            return plan.emitError("wire_flat holds and carries a reason");
+        }
+        if (hostImage && plan.getHostImageReason())
+        {
+            return plan.emitError("host_image holds and carries a reason");
+        }
+        // Lowering states exactly one of the pair, so neither means the plan states no verdict --
+        // hand-written IR, which `dsdl-opt` takes. There is then nothing to disagree with.
+        if (!wireFlat && !plan.getWireFlatReason())
+        {
+            return mlir::success();
+        }
+        if (hostImage && !wireFlat)
+        {
+            return plan.emitError("host_image holds where wire_flat does not");
+        }
+        if (!wireFlat)
+        {
+            return mlir::success();
+        }
+
+        if (!plan.getSealed())
+        {
+            return plan.emitError("wire_flat holds for a delimited plan");
+        }
+        if (!plan.getFixedSize())
+        {
+            return plan.emitError("wire_flat holds for a plan whose length varies");
+        }
+        if (plan.getIsUnion())
+        {
+            return plan.emitError("wire_flat holds for a union plan");
+        }
+        if (plan.getBody().empty())
+        {
+            return plan.emitError("wire_flat holds for a plan with no steps");
+        }
+
+        std::int64_t offsetBits = 0;
+        bool         hasPayload = false;
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step)
+            {
+                continue;
+            }
+            // A composite step carries its width here; a scalar carries it in `bit_length`.
+            const std::int64_t bits = step.isComposite() ? step.getMinBits() : step.getBitLength();
+            if (step.isPadding())
+            {
+                offsetBits += bits;
+                continue;
+            }
+            hasPayload = true;
+            if ((offsetBits % 8) != 0)
+            {
+                return step.emitError("wire_flat holds but this field does not begin on a byte boundary");
+            }
+            if (step.isVariableArray())
+            {
+                return step.emitError("wire_flat holds but this field is a variable-length array");
+            }
+            if (bits <= 0 || (bits % 8) != 0)
+            {
+                return step.emitError("wire_flat holds but this field is not a whole number of bytes");
+            }
+            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            offsetBits += bits * count;
+        }
+        if (!hasPayload)
+        {
+            return plan.emitError("wire_flat holds for a plan with no payload field");
+        }
+        return mlir::success();
     }
 };
 
@@ -1353,9 +1341,9 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
     return std::make_unique<LowerDSDLExecPass>();
 }
 
-std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass()
+std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass()
 {
-    return std::make_unique<AnnotateDSDLAliasabilityPass>();
+    return std::make_unique<VerifyDSDLAliasLayoutPass>();
 }
 
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
@@ -1368,7 +1356,7 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLoweredSerDes)
 {
     pm.addPass(createLowerDSDLExecPass());
-    pm.addPass(createDSDLAnnotateAliasabilityPass());
+    pm.addPass(createDSDLVerifyAliasLayoutPass());
     pm.addPass(createBuildDSDLPlanBodiesPass());
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
@@ -1385,9 +1373,9 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
-    static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const          regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const  regAlias;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

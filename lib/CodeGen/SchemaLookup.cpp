@@ -14,6 +14,7 @@
 
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 
+#include <optional>
 #include <cstdint>
 #include <string>
 
@@ -56,25 +57,44 @@ mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, const l
     return {};
 }
 
-AliasVerdict aliasVerdict(mlir::dsdl::SerializationPlanOp plan)
+namespace
+{
+
+AliasVerdict readVerdict(const bool holds, const std::optional<llvm::StringRef> reason)
 {
     AliasVerdict verdict;
-    if (!plan)
+    verdict.holds = holds;
+    if (holds)
     {
+        verdict.reason = "flat";
         return verdict;
     }
-    verdict.eligible = plan.getZohAliasEligible();
-    if (verdict.eligible)
+    const std::string text = reason.value_or(llvm::StringRef{}).str();
+    if (!text.empty())
     {
-        verdict.reason = "eligible";
-        return verdict;
-    }
-    const std::string reason = plan.getZohAliasReason().value_or(llvm::StringRef{}).str();
-    if (!reason.empty())
-    {
-        verdict.reason = reason;
+        verdict.reason = text;
     }
     return verdict;
+}
+
+}  // namespace
+
+AliasVerdict wireFlatVerdict(mlir::dsdl::SerializationPlanOp plan)
+{
+    if (!plan)
+    {
+        return {};
+    }
+    return readVerdict(plan.getWireFlat(), plan.getWireFlatReason());
+}
+
+AliasVerdict hostImageVerdict(mlir::dsdl::SerializationPlanOp plan)
+{
+    if (!plan)
+    {
+        return {};
+    }
+    return readVerdict(plan.getHostImage(), plan.getHostImageReason());
 }
 
 std::uint32_t unionTagBits(mlir::dsdl::SerializationPlanOp plan)

@@ -1567,9 +1567,10 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
     w.line("const " + typeConstPrefix +
            "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + typeConstPrefix +
-           "_ZOH_ALIAS_ELIGIBLE = " + std::string(metadata.alias.eligible ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\"");
+    w.line("const " + typeConstPrefix + "_WIRE_FLAT = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\"");
+    w.line("const " + typeConstPrefix + "_HOST_IMAGE = " + std::string(metadata.hostImage.holds ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\"");
 
     if (metadata.declaresPortId)
     {

@@ -331,13 +331,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // A union option's `<OPTION>_OPTION_TAG` is not here because it is not a fixed name: it is
     // derived from an option's own DSDL name, and `makeSectionConstantScope` declares it into the
     // scope alongside the array metadata, which is derived the same way.
-    static constexpr std::array<llvm::StringRef, 10> kMetadata = {"FULL_NAME",
+    static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",
                                                                   "IS_DEPRECATED",
                                                                   "EXTENT_BYTES",
                                                                   "SERIALIZATION_BUFFER_SIZE_BYTES",
-                                                                  "ZOH_ALIAS_ELIGIBLE",
-                                                                  "ZOH_ALIAS_REASON",
+                                                                  "WIRE_FLAT",
+                                                                  "WIRE_FLAT_REASON",
+                                                                  "HOST_IMAGE",
+                                                                  "HOST_IMAGE_REASON",
                                                                   "UNION_OPTION_COUNT",
                                                                   "HAS_FIXED_PORT_ID",
                                                                   "FIXED_PORT_ID"};
@@ -347,15 +349,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                                     "IS_DEPRECATED",
                                                                     "EXTENT_BYTES",
                                                                     "SERIALIZATION_BUFFER_SIZE_BYTES",
-                                                                    "ZOH_ALIAS_ELIGIBLE",
-                                                                    "ZOH_ALIAS_REASON",
+                                                                    "WIRE_FLAT",
+                                                                    "WIRE_FLAT_REASON",
+                                                                    "HOST_IMAGE",
+                                                                    "HOST_IMAGE_REASON",
                                                                     "UNION_OPTION_COUNT",
                                                                     "HAS_FIXED_PORT_ID",
                                                                     "FIXED_PORT_ID",
                                                                     "serialize",
                                                                     "deserialize",
-                                                                    "try_serialize_view",
-                                                                    "try_deserialize_view",
                                                                     "set_memory_resource",
                                                                     "_memory_resource",
                                                                     "to_c",
@@ -377,13 +379,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // macro token -- preserve case, escape, upper-case, no strop -- which passes a source name's own
     // trailing underscore straight through, and DSDL reserves only names that both start and end
     // with one. `full_name_` is a conformant DSDL constant that reaches `FULL_NAME_`.
-    static constexpr std::array<llvm::StringRef, 10> kCMacros = {"FULL_NAME_",
+    static constexpr std::array<llvm::StringRef, 12> kCMacros = {"FULL_NAME_",
                                                                  "FULL_NAME_AND_VERSION_",
                                                                  "IS_DEPRECATED_",
                                                                  "EXTENT_BYTES_",
                                                                  "SERIALIZATION_BUFFER_SIZE_BYTES_",
-                                                                 "ZOH_ALIAS_ELIGIBLE_",
-                                                                 "ZOH_ALIAS_REASON_",
+                                                                 "WIRE_FLAT_",
+                                                                 "WIRE_FLAT_REASON_",
+                                                                 "HOST_IMAGE_",
+                                                                 "HOST_IMAGE_REASON_",
                                                                  "UNION_OPTION_COUNT_",
                                                                  "HAS_FIXED_PORT_ID_",
                                                                  "FIXED_PORT_ID_"};

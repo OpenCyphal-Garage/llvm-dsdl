@@ -106,7 +106,12 @@ def DSDL_SerializationPlanOp
       OptionalAttr<StrAttr>:$lowered_union_tag_validate_helper,
       OptionalAttr<StrAttr>:$lowered_ser_union_tag_helper,
       OptionalAttr<StrAttr>:$lowered_deser_union_tag_helper,
-      UnitAttr:$zoh_alias_eligible, OptionalAttr<StrAttr>:$zoh_alias_reason);
+      // Two layout verdicts, decided once during analysis and carried here for
+      // every backend. `wire_flat` says the serialised form is a contiguous
+      // byte image; `host_image` says the generated structure is that same
+      // image. The reason names the property that blocked it.
+      UnitAttr:$wire_flat, OptionalAttr<StrAttr>:$wire_flat_reason,
+      UnitAttr:$host_image, OptionalAttr<StrAttr>:$host_image_reason);
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
   let hasVerifier = 1;

@@ -13,6 +13,7 @@ add_library(llvmdsdlSupport
   Diagnostics.cpp
   NameCanonicalization.cpp
   NamingPolicy.cpp
+  ScalarStorage.cpp
   Rational.cpp
   ReservedIdentifiers.cpp
   SourceLocation.cpp

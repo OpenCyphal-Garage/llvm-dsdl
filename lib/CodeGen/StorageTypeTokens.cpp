@@ -17,7 +17,7 @@
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 
-#include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Support/ScalarStorage.h"
 #include <cstdint>
 #include <string>
 

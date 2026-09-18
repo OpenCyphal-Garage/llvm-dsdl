@@ -26,7 +26,7 @@ dialect. Consuming lowered facts is not translating lowered operations.
 
 ## The pipeline is one
 
-`lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-annotate-aliasability` and
+`lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-verify-alias-layout` and
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
 receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after

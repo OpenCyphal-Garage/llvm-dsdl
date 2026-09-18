@@ -36,14 +36,18 @@ mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& d
 /// "response" for a service; null when the schema holds none.
 mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, llvm::StringRef section);
 
-/// @brief The zero-overhead alias verdict `dsdl-annotate-aliasability` stamps on a plan.
+/// @brief One of the layout verdicts a plan carries, as the generated constants state it.
 struct AliasVerdict final
 {
-    bool        eligible{false};
-    std::string reason{"not-proven"};
+    bool        holds{false};
+    std::string reason{"unknown"};
 };
 
-AliasVerdict aliasVerdict(mlir::dsdl::SerializationPlanOp plan);
+/// @brief Whether the plan's serialised form is a contiguous byte image.
+AliasVerdict wireFlatVerdict(mlir::dsdl::SerializationPlanOp plan);
+
+/// @brief Whether the generated structure is that same byte image.
+AliasVerdict hostImageVerdict(mlir::dsdl::SerializationPlanOp plan);
 
 /// @brief The width of the tag a union's plan writes, in bits.
 std::uint32_t unionTagBits(mlir::dsdl::SerializationPlanOp plan);

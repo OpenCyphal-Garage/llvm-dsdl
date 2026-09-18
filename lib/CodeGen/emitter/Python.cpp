@@ -1658,18 +1658,23 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // Aliasability is a property of a payload, so a service answers for each of its two and a
     // message answers once, under the name of the thing the verdict is about.
-    const auto emitZohVerdict = [&w](const std::string& prefix, const AliasVerdict& verdict) {
-        w.line(prefix + "ZOH_ALIAS_ELIGIBLE = " + std::string(verdict.eligible ? "True" : "False"));
-        w.line(prefix + "ZOH_ALIAS_REASON = \"" + verdict.reason + "\"");
+    const auto emitLayoutVerdicts = [&w, schema](const std::string& prefix, const llvm::StringRef section) {
+        const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
+        const AliasVerdict                    flat = wireFlatVerdict(plan);
+        const AliasVerdict                    host = hostImageVerdict(plan);
+        w.line(prefix + "WIRE_FLAT = " + std::string(flat.holds ? "True" : "False"));
+        w.line(prefix + "WIRE_FLAT_REASON = \"" + flat.reason + "\"");
+        w.line(prefix + "HOST_IMAGE = " + std::string(host.holds ? "True" : "False"));
+        w.line(prefix + "HOST_IMAGE_REASON = \"" + host.reason + "\"");
     };
     if (def.isService)
     {
-        emitZohVerdict("DSDL_REQUEST_", aliasVerdict(sectionPlan(schema, "request")));
-        emitZohVerdict("DSDL_RESPONSE_", aliasVerdict(sectionPlan(schema, "response")));
+        emitLayoutVerdicts("DSDL_REQUEST_", "request");
+        emitLayoutVerdicts("DSDL_RESPONSE_", "response");
     }
     else
     {
-        emitZohVerdict("DSDL_", aliasVerdict(sectionPlan(schema, "")));
+        emitLayoutVerdicts("DSDL_", "");
     }
     w.blank();
 

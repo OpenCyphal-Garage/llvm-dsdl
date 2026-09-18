@@ -16,6 +16,8 @@
 
 #include "llvmdsdl/Semantics/Analyzer.h"
 
+#include "llvmdsdl/Semantics/AliasLayout.h"
+
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
@@ -273,6 +275,9 @@ public:
                 out.definitions.push_back(*r);
             }
         }
+        // Layout verdicts read whole sections, including composites this module resolved through
+        // the catalogue, so they are decided once the model is complete.
+        annotateAliasLayout(out, options_.externalSemanticCatalog);
         return out;
     }
 

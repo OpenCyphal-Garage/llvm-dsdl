@@ -607,66 +607,6 @@ void emitSection(SourceWriter&              w,
     w.close("}");
     w.blank();
 
-    w.line("static inline int8_t " + typeName +
-           "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-           "const uint8_t** const out_view_bytes)");
-    w.open("{");
-    w.open("if ((buffer == NULL) || (inout_buffer_size_bytes == NULL) || (out_view_bytes == NULL)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("*out_view_bytes = NULL;");
-    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    w.open("if (*inout_buffer_size_bytes < _required) {");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("(void)buffer;");
-    w.line("(void)_required;");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    w.line("*out_view_bytes = buffer;");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.midway("#else");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
-    w.line("static inline int8_t " + typeName +
-           "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-           "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    w.open("{");
-    w.open("if ((view_bytes == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    w.open("if (view_size_bytes != _required) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.open("if (*inout_buffer_size_bytes < _required) {");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("(void)buffer;");
-    w.line("(void)view_bytes;");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    w.line("(void)memcpy(buffer, view_bytes, _required);");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.midway("#else");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
     emitUnionOptionWrappers(w, typeName, section, metadata);
 }
 

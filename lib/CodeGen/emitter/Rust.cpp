@@ -1395,8 +1395,10 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("pub const EXTENT_BYTES: usize = " + std::to_string(metadata.extentBytes) + ";");
     w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
            std::to_string(metadata.serializationBufferSizeBytes) + ";");
-    w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (metadata.alias.eligible ? "true;" : "false;"));
-    w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + metadata.alias.reason + "\";");
+    w.line(std::string("pub const WIRE_FLAT: bool = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line("pub const WIRE_FLAT_REASON: &'static str = \"" + metadata.wireFlat.reason + "\";");
+    w.line(std::string("pub const HOST_IMAGE: bool = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    w.line("pub const HOST_IMAGE_REASON: &'static str = \"" + metadata.hostImage.reason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
            rustMemoryModeVariantPath(options) + ";");
     w.line("pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
@@ -1458,34 +1460,6 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("Ok(consumed) => (0, consumed),");
     w.line("Err(rc) => (rc, buffer.len()),");
     w.close("}");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn try_deserialize_view<'a>(buffer: &'a [u8]) -> core::result::Result<(&'a [u8], usize), i8> {");
-    w.open("if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.line("let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if buffer.len() < required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
-    w.close("}");
-    w.line("Ok((&buffer[..required], required))");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn try_serialize_view(view_bytes: &[u8], buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
-    w.open("if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.line("let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if view_bytes.len() != required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.open("if buffer.len() < required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
-    w.close("}");
-    w.line("buffer[..required].copy_from_slice(&view_bytes[..required]);");
-    w.line("Ok(required)");
     w.close("}");
     w.blank();
 

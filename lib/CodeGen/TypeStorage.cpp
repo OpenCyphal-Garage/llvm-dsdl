@@ -16,6 +16,8 @@
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 
+#include "llvmdsdl/Support/ScalarStorage.h"
+
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include <cstdint>
@@ -24,23 +26,6 @@
 
 namespace llvmdsdl
 {
-
-std::uint32_t scalarStorageBits(const std::uint32_t bitLength)
-{
-    if (bitLength <= 8)
-    {
-        return 8;
-    }
-    if (bitLength <= 16)
-    {
-        return 16;
-    }
-    if (bitLength <= 32)
-    {
-        return 32;
-    }
-    return 64;
-}
 
 const char* scalarWidthSuffix(const std::uint32_t bitLength)
 {
