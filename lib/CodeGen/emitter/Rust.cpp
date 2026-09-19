@@ -1238,9 +1238,12 @@ public:
         const std::string destination = names(op.getDestination());
         const std::string source      = names(op.getSource());
         const std::string width       = std::to_string(op.getBytes()) + "usize";
+        // A view is a slice of a buffer, which may be the buffer being written, so the bytes move
+        // with `copy`: `copy_from_slice` is defined only for slices that do not overlap. The zero
+        // fill follows the move, and covers only what the move did not reach.
         w.line("{ let _n = core::cmp::min(core::cmp::min(" + asSize(names(op.getSourceSizeBytes())) + ", " + source +
-               ".len()), " + width + "); " + destination + "[.._n].copy_from_slice(&" + source + "[.._n]); " +
-               destination + "[_n.." + width + "].fill(0u8); }");
+               ".len()), " + width + "); if _n > 0usize { unsafe { core::ptr::copy(" + source + ".as_ptr(), " +
+               destination + ".as_mut_ptr(), _n) }; } " + destination + "[_n.." + width + "].fill(0u8); }");
     }
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
