@@ -470,6 +470,13 @@ private:
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
 {
+    // An accessors-only file names no nested type: there is no object type to hold one and a
+    // composite getter answers the field's bytes, so nothing here reaches that type's package. Go
+    // refuses an import nothing uses, so the file would not build.
+    if (ctx.accessorsOnly())
+    {
+        return {};
+    }
     // A view holds a field's bytes and names no type, so its package is not imported for it.
     const auto deps = collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 

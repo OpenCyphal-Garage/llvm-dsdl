@@ -139,3 +139,10 @@
 # RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/ResponseOnly --outdir %t/respond 2>&1 | FileCheck %s --check-prefix=RESPONSE_ONLY
 # RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Inner.1.0 is not @aliasable, and no @aliasable type nests it
 # RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Svc.1.0's response is not @aliasable, and no @aliasable type nests it
+
+# A nested type in another namespace is a package import in Go, and Go refuses an import nothing
+# uses. An accessors-only file names no nested type, so it imports none.
+# RUN: %dsdlc --target-language go --aliasable-only %S/fixtures_aliasable_xns --outdir %t/goxns 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/goxns/fixtures_aliasable_xns/outer/holder_1_0.go | FileCheck %s --check-prefix=GO_XNS
+# GO_XNS-NOT: fixtures_aliasable_xns/inner
+# GO_XNS: func HolderGetV(buffer []byte)
