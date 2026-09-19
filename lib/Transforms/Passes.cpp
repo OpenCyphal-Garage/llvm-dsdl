@@ -1783,7 +1783,11 @@ private:
             }
             // The wire carries a fixed array as a contiguous run, so the run is what has to land on
             // a byte boundary, not each element: `bool[8]` is one byte and `bool[4]` is not.
-            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            //
+            // A composite step states the whole field in `min_bits`, its elements included, where a
+            // scalar states one element in `bit_length`. Only the scalar's is multiplied.
+            const std::int64_t count =
+                (step.isArray() && !step.isComposite()) ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
             const std::int64_t total = bits * count;
             if (bits <= 0 || (total % 8) != 0)
             {
@@ -1800,6 +1804,13 @@ private:
         if ((offsetBits % 8) != 0)
         {
             return plan.emitError("wire_flat holds but the payload is not a whole number of bytes");
+        }
+        // The steps are the payload, so they add up to the length the plan states. What reads the
+        // plan takes that length at its word -- the fold moves it -- so a plan stating more than
+        // its steps hold moves bytes the object does not have.
+        if (offsetBits != plan.getMinBits())
+        {
+            return plan.emitError("wire_flat holds but the steps do not add up to the plan's length");
         }
         if (!hostImage)
         {
@@ -1904,6 +1915,14 @@ private:
                 if (nested == messagePlans.end())
                 {
                     return {mlir::success(), unknown};
+                }
+                // A union's steps are its options, one of which the wire carries, so walking them
+                // as a run of fields answers the wrong extent -- and a union is not an image in
+                // any case.
+                mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
+                if (nestedPlan.getIsUnion())
+                {
+                    return {step.emitError("host_image holds but this field's type is a union"), unknown};
                 }
                 const auto resolved = verifyHostImage(nested->second, messagePlans, depth + 1);
                 if (mlir::failed(resolved.first))
