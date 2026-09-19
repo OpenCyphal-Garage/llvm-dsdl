@@ -6,6 +6,8 @@ import (
 	"os"
 
 	angle "uavcan_dsdl_generated/uavcan/si/unit/angle"
+	sample "uavcan_dsdl_generated/uavcan/si/sample/temperature"
+	uavtime "uavcan_dsdl_generated/uavcan/time"
 	file "uavcan_dsdl_generated/uavcan/file"
 	node "uavcan_dsdl_generated/uavcan/node"
 	scalar "uavcan_dsdl_generated/uavcan/primitive/scalar"
@@ -148,6 +150,25 @@ func main() {
 			rc, _ := o.Deserialize(b)
 			return o.Wxyz[i], rc == 0
 		}))
+	// A nested composite, through the buffer its getter answers: the nested type's own getter on it
+	// agrees with deserialise on the full buffer and on one cut inside the nested field.
+	{
+		wire := make([]byte, 11)
+		fill(wire)
+		var obj sample.Scalar
+		rc, _ := obj.Deserialize(wire)
+		same := rc == 0 && uavtime.SynchronizedTimestampGetMicrosecond(sample.ScalarGetTimestamp(wire)) == obj.Timestamp.Microsecond
+		var short sample.Scalar
+		rc, _ = short.Deserialize(wire[:3])
+		stamp := sample.ScalarGetTimestamp(wire[:3])
+		same = same && rc == 0 && len(stamp) == 3 && uavtime.SynchronizedTimestampGetMicrosecond(stamp) == short.Timestamp.Microsecond
+		same = same && checkField(11, sample.ScalarGetKelvin, sample.ScalarSetKelvin, func(b []byte) (float32, bool) {
+			var o sample.Scalar
+			rc, _ := o.Deserialize(b)
+			return o.Kelvin, rc == 0
+		}, false)
+		report("uavcan.si.sample.temperature.Scalar", same)
+	}
 	if failures != 0 {
 		os.Exit(1)
 	}

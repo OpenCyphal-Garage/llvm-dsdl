@@ -462,20 +462,30 @@ public:
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
     ///        a slice and speaking the member's own storage type. The plan holds the size, an index
-    ///        and the value in a `u64`: the size is the slice's own length, read as an expression
-    ///        rather than bound, since a slice read needs no size beside it; an index and a value
-    ///        are rebound at entry.
+    ///        and the value in a `u64`: the size is the slice's own length, bound under a name the
+    ///        compiler does not expect to be read, since a slice read needs no size beside it; an
+    ///        index and a value are rebound at entry.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Member&     member  = accessorMember(fn);
-        const std::string storage = scalarType(member.io);
-        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer = mlir::isa<mlir::IntegerType>(held);
-        const std::string index   = indexed ? ", index: usize" : "";
-        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        const Member&     member    = accessorMember(fn);
+        const std::string storage   = scalarType(member.io);
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", index: usize" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
-        if (getter)
+        if (composite)
+        {
+            // The nested type's buffer, as a slice: its length is what the plan stores through the
+            // size pointer, which a slice carries itself, so the store lands in a local nothing
+            // reads, named so the compiler expects that.
+            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.line("let mut _out_size: usize = 0;");
+        }
+        else if (getter)
         {
             if (storage == "bool")
             {
@@ -492,13 +502,18 @@ public:
             w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8]" + index + ", value: " + storage +
                    ") -> core::result::Result<(), i8> {");
         }
-        std::vector<std::string> parameters{"buffer", "(buffer.len() as u64)"};
+        w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
+        std::vector<std::string> parameters{"buffer", "_buffer_size_bytes"};
         if (indexed)
         {
             w.line("let index = index as u64;");
             parameters.emplace_back("index");
         }
-        if (!getter)
+        if (composite)
+        {
+            parameters.emplace_back("_out_size");
+        }
+        else if (!getter)
         {
             if (integer)
             {

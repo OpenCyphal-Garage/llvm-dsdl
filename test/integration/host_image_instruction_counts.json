@@ -4,7 +4,10 @@
     "why_this_unit": "A static count of a function's instructions is a property of the emitted code: exact, host-independent, and readable without a simulator, so it gates where the cachegrind lanes skip. The fold's worth was first measured this way, by hand.",
     "keys": "counts[llvm-<major>][<triple>][<symbol>]. The count moves when the compiler moves, so the LLVM major is part of the key; a key with no entry skips and prints the values to paste. Re-baseline in the commit that changes the lowering.",
     "control": "Padded is not a host image and does not fold; its counts pin the field-wise body beside the folded ones.",
-    "triples": ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"],
+    "triples": [
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-gnu"
+    ],
     "symbols": [
       "vendor_Flat_1_0__deserialize_ir_",
       "vendor_Flat_1_0__serialize_ir_",
@@ -13,11 +16,17 @@
       "vendor_Nested_1_0__deserialize_ir_",
       "vendor_Nested_1_0__serialize_ir_",
       "vendor_Padded_1_0__deserialize_ir_",
-      "vendor_Padded_1_0__serialize_ir_"
+      "vendor_Padded_1_0__serialize_ir_",
+      "vendor_Flat_1_0__get_a_ir_",
+      "vendor_Flat_1_0__set_a_ir_",
+      "vendor_Padded_1_0__get_b_ir_",
+      "vendor_Arr_1_0__get_head_ir_",
+      "vendor_Nested_1_0__get_inner_ir_"
     ],
     "measured": {
       "llvm-22": "LLVM 22.1.8, 2026-09-18"
-    }
+    },
+    "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A getter is the runtime's read primitive with its clamps, not yet one load; see ZERO_OVERHEAD.md."
   },
   "counts": {
     "llvm-22": {
@@ -29,7 +38,12 @@
         "vendor_Nested_1_0__deserialize_ir_": 38,
         "vendor_Nested_1_0__serialize_ir_": 19,
         "vendor_Padded_1_0__deserialize_ir_": 56,
-        "vendor_Padded_1_0__serialize_ir_": 29
+        "vendor_Padded_1_0__serialize_ir_": 29,
+        "vendor_Flat_1_0__get_a_ir_": 17,
+        "vendor_Flat_1_0__set_a_ir_": 18,
+        "vendor_Padded_1_0__get_b_ir_": 25,
+        "vendor_Arr_1_0__get_head_ir_": 15,
+        "vendor_Nested_1_0__get_inner_ir_": 6
       },
       "x86_64-unknown-linux-gnu": {
         "vendor_Flat_1_0__deserialize_ir_": 41,
@@ -39,7 +53,12 @@
         "vendor_Nested_1_0__deserialize_ir_": 44,
         "vendor_Nested_1_0__serialize_ir_": 23,
         "vendor_Padded_1_0__deserialize_ir_": 61,
-        "vendor_Padded_1_0__serialize_ir_": 22
+        "vendor_Padded_1_0__serialize_ir_": 22,
+        "vendor_Flat_1_0__get_a_ir_": 17,
+        "vendor_Flat_1_0__set_a_ir_": 22,
+        "vendor_Padded_1_0__get_b_ir_": 21,
+        "vendor_Arr_1_0__get_head_ir_": 17,
+        "vendor_Nested_1_0__get_inner_ir_": 6
       }
     }
   }

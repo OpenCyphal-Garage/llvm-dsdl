@@ -37,7 +37,6 @@
 # SET:       dsdl.write_bits %[[BUF]][%[[OFF]]], %[[NORMALISED]], size %[[SIZE]] {width = 16 : i64}
 
 # The offsets follow the steps: after a four-byte fixed array, and after an eight-byte nested record.
-# The nested record itself gets no accessor yet.
 # OFFSETS-LABEL: @fixtures_host_image_vendor_Arr_1_0__get_tail_ir_(
 # OFFSETS:       arith.constant 32 : i64
 # OFFSETS-LABEL: @fixtures_host_image_vendor_Nested_1_0__get_code_ir_(
@@ -60,6 +59,16 @@
 # ELEMENT-SAME:  %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: i64, %[[INDEX:.*]]: i64, %{{.*}}: i64) -> i8
 # ELEMENT:       arith.cmpi ult, %[[INDEX]], %{{.*}}
 # ELEMENT:       dsdl.write_bits
+
+# A nested composite's getter answers the buffer from the field's byte offset and, through the size
+# pointer, what remains, clamped so a short buffer yields an empty one. It has no setter.
+# RUN: FileCheck %s --check-prefix=COMPOSITE < %t/bodies.mlir
+# COMPOSITE-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__get_inner_ir_(
+# COMPOSITE-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
+# COMPOSITE-DAG:   dsdl.store_scalar %[[OUT]]
+# COMPOSITE-DAG:   %[[SUB:.*]] = dsdl.buffer_at %{{.*}}[%{{.*}}]
+# COMPOSITE:       return %[[SUB]]
+# COMPOSITE-NOT:   @fixtures_host_image_vendor_Nested_1_0__set_inner_ir_
 
 # NOT_FLAT-NOT: __get_
 # NOT_FLAT-NOT: __set_

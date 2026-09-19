@@ -660,8 +660,7 @@ void emitSection(SourceWriter&              w,
         for (const auto& field : section.fields)
         {
             const ArrayKind kind = field.resolvedType.arrayKind;
-            if (field.isPadding || ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed)) ||
-                (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite))
+            if (field.isPadding || ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed)))
             {
                 continue;
             }
@@ -669,15 +668,41 @@ void emitSection(SourceWriter&              w,
             const std::string irIndex   = indexed ? ", int64_t index" : "";
             const std::string cIndex    = indexed ? ", const size_t index" : "";
             const std::string passIndex = indexed ? ", (int64_t) index" : "";
-            const bool        isFloat   = field.resolvedType.scalarCategory == SemanticScalarCategory::Float;
-            const bool        isBool    = field.resolvedType.scalarCategory == SemanticScalarCategory::Bool;
-            std::string       irType    = "int64_t";
+            const std::string cMember   = fieldScope.get(IdentifierRole::FieldName, field.name);
+            const std::string size      = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
+            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            {
+                // A nested composite's getter answers the buffer from the field's offset and, through
+                // the pointer, what remains of this one, for the nested type's own accessors.
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                const std::string irGet = irStem + "__get_" + field.name + "_ir_";
+                w.line("const uint8_t* " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex +
+                       ", size_t* out_size);");
+                w.blank();
+                w.line("static inline const uint8_t* " + typeName + "__get_" + cMember +
+                       "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex +
+                       ", size_t* const out_size)");
+                w.open("{");
+                w.line("size_t               sub_size = 0;");
+                w.line("const uint8_t* const sub      = " + irGet + "(buffer, " + size + passIndex + ", &sub_size);");
+                w.line("if (out_size != NULL)");
+                w.open("{");
+                w.line("*out_size = sub_size;");
+                w.close("}");
+                w.line("return sub;");
+                w.close("}");
+                w.blank();
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                continue;
+            }
+            const bool  isFloat = field.resolvedType.scalarCategory == SemanticScalarCategory::Float;
+            const bool  isBool  = field.resolvedType.scalarCategory == SemanticScalarCategory::Bool;
+            std::string irType  = "int64_t";
             if (isFloat)
             {
                 irType = (field.resolvedType.bitLength <= 32) ? "float" : "double";
             }
-            const std::string cType   = cTypeFromFieldType(field.resolvedType, ctx);
-            const std::string cMember = fieldScope.get(IdentifierRole::FieldName, field.name);
+            const std::string cType = cTypeFromFieldType(field.resolvedType, ctx);
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
             const std::string irGet = irStem + "__get_" + field.name + "_ir_";
             const std::string irSet = irStem + "__set_" + field.name + "_ir_";
@@ -688,7 +713,6 @@ void emitSection(SourceWriter&              w,
             w.line("static inline " + cType + " " + typeName + "__get_" + cMember +
                    "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ")");
             w.open("{");
-            const std::string size = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
             if (isBool)
             {
                 w.line("return " + irGet + "(buffer, " + size + passIndex + ") != 0;");

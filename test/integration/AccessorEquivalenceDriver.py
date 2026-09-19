@@ -82,4 +82,14 @@ ok = report("uavcan.primitive.scalar.Real64", check_field(load("uavcan.primitive
 ok = report("uavcan.si.unit.temperature.Scalar", check_field(load("uavcan.si.unit.temperature.scalar_1_0", "Scalar"), 4, "kelvin", False)) and ok
 ok = report("uavcan.file.Error", check_field(load("uavcan.file.error_1_0", "Error"), 2, "value", True)) and ok
 ok = report("uavcan.si.unit.angle.Quaternion", check_element(load("uavcan.si.unit.angle.quaternion_1_0", "Quaternion"), 16, "wxyz", 4)) and ok
+# A nested composite, through the buffer its getter answers: the nested type's own getter on it
+# agrees with deserialise on the full buffer and on one cut inside the nested field.
+sample = load("uavcan.si.sample.temperature.scalar_1_0", "Scalar")
+stamp_type = load("uavcan.time.synchronized_timestamp_1_0", "SynchronizedTimestamp")
+wire = fill(11)
+same = stamp_type.get_microsecond(sample.get_timestamp(memoryview(wire))) == sample.deserialize(bytes(wire)).timestamp.microsecond
+stamp = sample.get_timestamp(memoryview(wire)[:3])
+same = same and len(stamp) == 3 and stamp_type.get_microsecond(stamp) == sample.deserialize(bytes(wire[:3])).timestamp.microsecond
+same = same and check_field(sample, 11, "kelvin", False)
+ok = report("uavcan.si.sample.temperature.Scalar", same) and ok
 sys.exit(0 if ok else 1)

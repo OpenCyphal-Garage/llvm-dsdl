@@ -566,16 +566,25 @@ public:
     ///        an element accessor its index, and a getter casts at its return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed    a       = accessed(fn);
-        const std::string storage = scalarType(a.member->io);
-        const std::string name    = getter ? a.member->getterName : a.member->setterName;
-        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer = mlir::isa<mlir::IntegerType>(held);
-        const std::string index   = indexed ? ", const std::size_t element_index" : "";
-        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_               = (getter && integer) ? storage : std::string{};
-        if (getter)
+        const Accessed    a         = accessed(fn);
+        const std::string storage   = scalarType(a.member->io);
+        const std::string name      = getter ? a.member->getterName : a.member->setterName;
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", const std::size_t element_index" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_                 = (getter && integer) ? storage : std::string{};
+        if (composite)
+        {
+            // The nested type's buffer and, through the pointer, what remains of this one.
+            w.line("static const std::uint8_t* " + name +
+                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index +
+                   ", std::size_t* const out_size)");
+        }
+        else if (getter)
         {
             w.line("static " + storage + " " + name +
                    "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index + ")");
@@ -592,7 +601,11 @@ public:
             w.line("const std::uint64_t index = static_cast<std::uint64_t>(element_index);");
             parameters.emplace_back("index");
         }
-        if (!getter)
+        if (composite)
+        {
+            parameters.emplace_back("out_size");
+        }
+        else if (!getter)
         {
             if (integer)
             {

@@ -42,6 +42,7 @@
 # RUST:      pub fn get_b(buffer: &[u8]) -> u16 {
 # RUST:      as u16
 # RUST:      pub fn set_b(buffer: &mut [u8], value: u16) -> core::result::Result<(), i8> {
+# RUST-NEXT: let _buffer_size_bytes: u64 = buffer.len() as u64;
 # RUST-NEXT: let value = value as u64;
 
 # GO:      func PaddedGetB(buffer []byte) uint16 {

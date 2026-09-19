@@ -748,16 +748,27 @@ public:
     ///        it; an index and a value are bound at entry.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed    a       = accessed(fn);
-        const std::string storage = scalarType(a.member->io);
-        const std::string name    = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
-        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer = mlir::isa<mlir::IntegerType>(held);
-        const std::string index   = indexed ? ", elementIndex int" : "";
-        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        const Accessed    a         = accessed(fn);
+        const std::string storage   = scalarType(a.member->io);
+        const std::string name      = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", elementIndex int" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
-        if (getter)
+        if (composite)
+        {
+            // The nested type's buffer, as a slice: its length is what the plan stores through the
+            // size pointer, which a slice carries itself, so the store lands in a local the
+            // function must be seen to use.
+            w.open("func " + name + "(buffer []byte" + index + ") []byte {");
+            w.line("var outSize int");
+            w.line("_ = outSize");
+        }
+        else if (getter)
         {
             if (storage == "bool")
             {
@@ -780,7 +791,11 @@ public:
             w.line("index := uint64(elementIndex)");
             parameters.emplace_back("index");
         }
-        if (!getter)
+        if (composite)
+        {
+            parameters.emplace_back("outSize");
+        }
+        else if (!getter)
         {
             if (storage == "bool")
             {

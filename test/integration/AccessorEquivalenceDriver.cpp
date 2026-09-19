@@ -10,6 +10,7 @@
 #include "uavcan/si/unit/temperature/Scalar_1_0.hpp"
 #include "uavcan/file/Error_1_0.hpp"
 #include "uavcan/si/unit/angle/Quaternion_1_0.hpp"
+#include "uavcan/si/sample/temperature/Scalar_1_0.hpp"
 
 // An accessor against the body it stands in for: a getter answers what deserialise puts in the
 // field, on a full buffer and on a short one, and a setter writes what deserialise reads back.
@@ -132,5 +133,25 @@ int main()
     using uavcan::si::unit::angle::Quaternion;
     report("uavcan.si.unit.angle.Quaternion",
            checkElement<Quaternion, float, 16, 4>(&Quaternion::get_wxyz, &Quaternion::set_wxyz, &Quaternion::wxyz));
+    // A nested composite, through the buffer its getter answers: the nested type's own getter on it
+    // agrees with deserialise on the full buffer and on one cut inside the nested field.
+    {
+        using uavcan::si::sample::temperature::Scalar;
+        using uavcan::time::SynchronizedTimestamp;
+        std::uint8_t wire[11];
+        fill(wire, sizeof wire);
+        Scalar              obj{};
+        std::size_t         size  = sizeof wire;
+        std::size_t         sub   = 0;
+        bool                ok    = obj.deserialize(wire, &size) == 0;
+        const std::uint8_t* stamp = Scalar::get_timestamp(wire, sizeof wire, &sub);
+        ok    = ok && SynchronizedTimestamp::get_microsecond(stamp, sub) == obj.timestamp.microsecond;
+        size  = 3;
+        ok    = ok && obj.deserialize(wire, &size) == 0;
+        stamp = Scalar::get_timestamp(wire, 3, &sub);
+        ok    = ok && sub == 3 && SynchronizedTimestamp::get_microsecond(stamp, sub) == obj.timestamp.microsecond;
+        report("uavcan.si.sample.temperature.Scalar",
+               ok && checkField<Scalar, float, 11>(&Scalar::get_kelvin, &Scalar::set_kelvin, &Scalar::kelvin, false));
+    }
     return failures == 0 ? 0 : 1;
 }

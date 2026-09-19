@@ -205,7 +205,10 @@ does not.
 A wire-flat type's scalar fields, and the elements of its fixed arrays of scalars, have
 accessors beside the serialisation functions: a getter that reads one field off a serialised
 buffer, and a setter that writes one into it, each at the field's fixed offset and in the member's
-own type. An element accessor takes the element's index after the buffer. A getter answers what
+own type. An element accessor takes the element's index after the buffer. A nested composite
+field has a getter alone, answering the buffer from the field's offset — with what remains through
+a size pointer in C and C++, as a slice elsewhere — for the nested type's own accessors to read.
+A getter answers what
 `deserialize_` puts in the field, on a short buffer too, where both zero-extend, and reads an
 index at or past the array's capacity as zero; a setter answers the runtime's error code, refusing
 such an index and a buffer too short for the field. C spells them `<type>__get_<field>_` and

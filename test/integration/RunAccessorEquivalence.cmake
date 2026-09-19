@@ -10,7 +10,8 @@
 # A wire-flat section's getter answers what `deserialize_` puts in the field, and its setter writes
 # what `deserialize_` reads back: that is the whole claim, and it is checked here on seven regulated
 # types across unsigned, signed and 64-bit integers, float16 widening, float32 and float64, and
-# an eighth's fixed array, element by element and one past the end. Each
+# an eighth's fixed array, element by element and one past the end, and a ninth's nested composite,
+# reached through the buffer its getter answers. Each
 # driver fills a buffer with pseudo-random bytes, so floats meet every pattern including the NaNs,
 # and compares values as bits; it repeats on a half-length buffer, where both sides zero-extend, and
 # refuses a setter an empty buffer.
@@ -66,6 +67,7 @@ set(equivalence_types
   "uavcan.si.unit.temperature.Scalar"
   "uavcan.file.Error"
   "uavcan.si.unit.angle.Quaternion"
+  "uavcan.si.sample.temperature.Scalar"
 )
 function(_equivalence_run label)
   execute_process(

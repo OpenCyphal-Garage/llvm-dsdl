@@ -556,7 +556,29 @@ field; a setter refuses it as an invalid argument, as it refuses a null buffer. 
 `si.unit.angle.Quaternion`'s `float32[4]`, checked element by element and one past the end, in
 every language. A bool array is the same path at a width of one bit.
 
-Still to do: nested composites, and the instruction-count row.
+**Nested composites, 2026-09-18.** A nested field's getter answers the buffer from the field's
+byte offset — `Nested::get_inner(&buf)` is a slice, and in C and C++ a pointer with what remains
+through a size pointer — so the nested type's own accessors compose on it:
+`Flat::get_b(Nested::get_inner(&buf))`. The offset is clamped to the size, so a short buffer yields
+an empty one and every nested read zero-extends as `deserialize_` does. There is no setter: a
+nested field is set through its own fields' setters on the buffer the getter answers. The one
+lowering change was in the C text path, which had never lowered a function that returns a DSDL
+pointer; the object path already did. The lane gained `si.sample.temperature.Scalar`, a
+`SynchronizedTimestamp` followed by a `float32`, read through the composite getter on the full
+buffer and on one cut inside the nested field.
+
+**The instruction-count row, 2026-09-18.** The accessors are baselined in
+`llvmdsdl-host-image-instruction-counts` beside the bodies, on both pinned triples: a scalar
+getter, its setter, an element getter and a composite getter. The numbers say what the plan's
+acceptance asked and did not get: on AArch64 a getter is 17 instructions, the composite getter 6,
+and the element getter 15. A getter is not one load. It is the runtime's read primitive — a call,
+with the clamps of a read that may straddle the buffer's end — followed by the field's
+normalising helper, because `dsdl.read_bits` lowers the same way whatever its offset and width.
+The one-load form is a fast path in the lowering for a read at a constant byte-aligned offset of
+a standard width on a little-endian target: a bounds check and a plain load, the primitive kept
+for the short-buffer case. It belongs in the lowering, where every body with a byte-aligned field
+inherits it, and it needs the target's endianness there as the fold needed it. That is the next
+step, and the baseline is what will show it landing.
 
 ### Phase 5 — `--aliasable-only` — S
 
@@ -600,7 +622,7 @@ and then the option at a fixed offset.
 | fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
 | bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
 | zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
-| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed for scalars and fixed arrays |
+| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
 
 ## Risks
 

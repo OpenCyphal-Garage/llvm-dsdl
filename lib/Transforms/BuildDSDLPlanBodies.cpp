@@ -2256,6 +2256,92 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
     return mlir::success();
 }
 
+/// @brief Builds the getter of one nested composite field of a wire-flat section, or of one
+///        element of a fixed array of them.
+///
+/// A nested type's accessors read from the start of the buffer they are given, so its getter
+/// answers the buffer from the field's byte offset and, through the size pointer, what remains:
+/// `Vec3::get_x(Pose::get_position(buffer))` composes. The offset is clamped to the size, so a
+/// short buffer yields an empty one and every nested read zero-extends, as `deserialize_` does;
+/// an element at or past the capacity yields the same. There is no setter: a nested field is set
+/// through its own fields' setters on the buffer the getter answers.
+mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                           builder,
+                                           mlir::ModuleOp                             module,
+                                           mlir::Location                             loc,
+                                           llvm::StringRef                            fnStem,
+                                           mlir::dsdl::SchemaOp                       schema,
+                                           llvm::StringRef                            section,
+                                           const PlanStep&                            step,
+                                           const std::int64_t                         bitOffset,
+                                           mlir::SmallVectorImpl<mlir::func::FuncOp>& built)
+{
+    mlir::OpBuilder::InsertionGuard const outer(builder);
+    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+
+    auto*      ctx     = builder.getContext();
+    auto       readTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::ByteType::get(ctx), true);
+    auto       sizeTy  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::SizeType::get(ctx));
+    auto       i64Ty   = builder.getIntegerType(64);
+    const bool indexed = stepIsArray(step);
+    if (!step.compositeFixedBits)
+    {
+        return mlir::failure();
+    }
+    const std::int64_t nestedBytes = *step.compositeFixedBits / 8;
+
+    mlir::SmallVector<mlir::Type, 4> arguments{readTy, i64Ty};
+    if (indexed)
+    {
+        arguments.push_back(i64Ty);
+    }
+    arguments.push_back(sizeTy);
+    auto fn = mlir::func::FuncOp::create(builder,
+                                         loc,
+                                         (fnStem + "__get_" + step.name + "_ir_").str(),
+                                         builder.getFunctionType(arguments, mlir::TypeRange{readTy}));
+    tagAccessor(fn, schema, section, "get", step);
+    mlir::Block* entry = fn.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    const mlir::Value buffer   = entry->getArgument(0);
+    const mlir::Value size     = entry->getArgument(1);
+    const mlir::Value outSize  = entry->getArgument(indexed ? 3 : 2);
+    const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, readTy, buffer);
+
+    mlir::Value offset = constantI64(builder, loc, bitOffset / 8);
+    mlir::Value within = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ule, offset, size);
+    if (indexed)
+    {
+        const mlir::Value index   = entry->getArgument(2);
+        const mlir::Value inRange = mlir::arith::CmpIOp::create(builder,
+                                                                loc,
+                                                                mlir::arith::CmpIPredicate::ult,
+                                                                index,
+                                                                constantI64(builder, loc, step.arrayCapacity));
+        offset = mlir::arith::AddIOp::create(builder,
+                                             loc,
+                                             offset,
+                                             mlir::arith::MulIOp::create(builder,
+                                                                         loc,
+                                                                         index,
+                                                                         constantI64(builder, loc, nestedBytes)));
+        within = mlir::arith::AndIOp::create(builder,
+                                             loc,
+                                             inRange,
+                                             mlir::arith::CmpIOp::create(builder,
+                                                                         loc,
+                                                                         mlir::arith::CmpIPredicate::ule,
+                                                                         offset,
+                                                                         size));
+    }
+    const mlir::Value at        = mlir::arith::SelectOp::create(builder, loc, within, offset, size);
+    const mlir::Value remaining = mlir::arith::SubIOp::create(builder, loc, size, at);
+    mlir::dsdl::StoreScalarOp::create(builder, loc, outSize, remaining);
+    const mlir::Value sub = mlir::dsdl::BufferAtOp::create(builder, loc, readTy, readable, at);
+    mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{sub});
+    built.push_back(fn);
+    return mlir::success();
+}
+
 struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
@@ -2389,7 +2475,8 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
 
         // A wire-flat section's fields sit at offsets the schema fixes, so each scalar among them,
         // and each element of a fixed array of scalars, gets a getter and a setter beside the
-        // bodies: one read or one write at that offset.
+        // bodies: one read or one write at that offset. A nested composite gets a getter that
+        // answers the buffer from its offset, for the nested type's own accessors.
         if (plan.getWireFlat() && !isUnion)
         {
             const auto fields = fixedFieldOffsets(steps);
@@ -2401,6 +2488,18 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             {
                 if (stepIsComposite(*field.step))
                 {
+                    if (mlir::failed(buildCompositeAccessor(builder,
+                                                            module,
+                                                            plan.getLoc(),
+                                                            fnStem,
+                                                            schema,
+                                                            section,
+                                                            *field.step,
+                                                            field.bitOffset,
+                                                            built)))
+                    {
+                        return plan.emitOpError("accessor body could not be built for '" + field.step->name + "'");
+                    }
                     continue;
                 }
                 if (mlir::failed(buildFieldAccessors(builder,

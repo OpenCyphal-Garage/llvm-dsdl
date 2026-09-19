@@ -58,6 +58,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/Pass.h>
@@ -1092,6 +1093,9 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      CallSerdesLowering,
                      CallInitializeLowering>(converter, &getContext(), spelling);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
+        // An accessor answers a buffer, so a return and a call carry DSDL types as well as a signature.
+        mlir::populateReturnOpTypeConversionPattern(patterns, converter);
+        mlir::populateCallOpTypeConversionPattern(patterns, converter);
 
         mlir::ConversionTarget target(getContext());
         target.addLegalDialect<mlir::emitc::EmitCDialect,
@@ -1126,6 +1130,11 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::StoreScalarOp>();
         target.addDynamicallyLegalOp<mlir::func::FuncOp>(
             [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
+        target.addDynamicallyLegalOp<mlir::func::ReturnOp>(
+            [&converter](mlir::func::ReturnOp op) { return converter.isLegal(op.getOperandTypes()); });
+        target.addDynamicallyLegalOp<mlir::func::CallOp>([&converter](mlir::func::CallOp op) {
+            return converter.isLegal(op.getOperandTypes()) && converter.isLegal(op.getResultTypes());
+        });
 
         if (mlir::failed(mlir::applyPartialConversion(module, target, std::move(patterns))))
         {

@@ -9,6 +9,7 @@
 #include "uavcan/si/unit/temperature/Scalar_1_0.h"
 #include "uavcan/file/Error_1_0.h"
 #include "uavcan/si/unit/angle/Quaternion_1_0.h"
+#include "uavcan/si/sample/temperature/Scalar_1_0.h"
 
 /* An accessor against the body it stands in for: a getter answers what deserialise puts in the
  * field, on a full buffer and on a short one, and a setter writes what deserialise reads back. The
@@ -128,5 +129,29 @@ int main(void)
         CHECK_ELEMENT(uavcan__si__unit__angle__Quaternion, 16, wxyz, i, 4, float);
     }
     REPORT("uavcan.si.unit.angle.Quaternion");
+    /* A nested composite, through the buffer its getter answers: the nested type's own getter on it
+     * agrees with deserialise on the full buffer and on one cut inside the nested field. */
+    {
+        uint8_t                                 wire[11];
+        uavcan__si__sample__temperature__Scalar obj;
+        size_t                                  size = sizeof wire;
+        size_t                                  sub  = 0;
+        int                                     ok   = 1;
+        fill(wire, sizeof wire);
+        ok                   = ok && (uavcan__si__sample__temperature__Scalar__deserialize_(&obj, wire, &size) == 0);
+        const uint8_t* stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, sizeof wire, &sub);
+        ok    = ok && (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == obj.timestamp.microsecond);
+        size  = 3;
+        ok    = ok && (uavcan__si__sample__temperature__Scalar__deserialize_(&obj, wire, &size) == 0);
+        stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, 3, &sub);
+        ok    = ok && (sub == 3) &&
+                (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == obj.timestamp.microsecond);
+        if (!ok)
+        {
+            ++type_failures;
+        }
+        CHECK_FIELD(uavcan__si__sample__temperature__Scalar, 11, kelvin, float, 0);
+    }
+    REPORT("uavcan.si.sample.temperature.Scalar");
     return failures == 0 ? 0 : 1;
 }

@@ -7,7 +7,9 @@ use uavcan_dsdl_generated::uavcan::primitive::scalar::integer16_1_0::uavcan_prim
 use uavcan_dsdl_generated::uavcan::primitive::scalar::natural64_1_0::uavcan_primitive_scalar_Natural64;
 use uavcan_dsdl_generated::uavcan::primitive::scalar::real16_1_0::uavcan_primitive_scalar_Real16;
 use uavcan_dsdl_generated::uavcan::primitive::scalar::real64_1_0::uavcan_primitive_scalar_Real64;
+use uavcan_dsdl_generated::uavcan::si::sample::temperature::scalar_1_0::uavcan_si_sample_temperature_Scalar;
 use uavcan_dsdl_generated::uavcan::si::unit::angle::quaternion_1_0::uavcan_si_unit_angle_Quaternion;
+use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::uavcan_time_SynchronizedTimestamp;
 use uavcan_dsdl_generated::uavcan::si::unit::temperature::scalar_1_0::uavcan_si_unit_temperature_Scalar;
 
 static mut RNG: u32 = 0x9E37_79B9;
@@ -143,5 +145,20 @@ fn main() {
         "uavcan.si.unit.angle.Quaternion",
         check_element!(uavcan_si_unit_angle_Quaternion, wxyz, uavcan_si_unit_angle_Quaternion::get_wxyz, uavcan_si_unit_angle_Quaternion::set_wxyz, 16, 4),
     );
+    // A nested composite, through the buffer its getter answers: the nested type's own getter on it
+    // agrees with deserialise on the full buffer and on one cut inside the nested field.
+    {
+        let mut wire = vec![0u8; 11];
+        fill(&mut wire);
+        let (obj, _) = uavcan_si_sample_temperature_Scalar::from_bytes(&wire).unwrap();
+        let stamp = uavcan_si_sample_temperature_Scalar::get_timestamp(&wire);
+        let mut same = uavcan_time_SynchronizedTimestamp::get_microsecond(stamp) == obj.timestamp.microsecond;
+        let (short, _) = uavcan_si_sample_temperature_Scalar::from_bytes(&wire[..3]).unwrap();
+        let stamp = uavcan_si_sample_temperature_Scalar::get_timestamp(&wire[..3]);
+        same &= stamp.len() == 3
+            && uavcan_time_SynchronizedTimestamp::get_microsecond(stamp) == short.timestamp.microsecond;
+        same &= check_field!(uavcan_si_sample_temperature_Scalar, kelvin, uavcan_si_sample_temperature_Scalar::get_kelvin, uavcan_si_sample_temperature_Scalar::set_kelvin, 11, false);
+        ok &= report("uavcan.si.sample.temperature.Scalar", same);
+    }
     std::process::exit(if ok { 0 } else { 1 });
 }

@@ -807,12 +807,20 @@ public:
         {
             storage = "float";
         }
-        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
-        const std::string index   = indexed ? ", index: int" : "";
-        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_               = (getter && storage == "bool") ? "bool" : std::string{};
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const std::string index     = indexed ? ", index: int" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_                 = (getter && storage == "bool") ? "bool" : std::string{};
         line(w, "@staticmethod");
-        if (getter)
+        if (composite)
+        {
+            // The nested type's buffer, as a slice; the remaining size the plan stores lands in a
+            // local beside it.
+            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> memoryview:");
+            line(w, "out_size = 0");
+        }
+        else if (getter)
         {
             open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> " + storage + ":");
         }
@@ -826,7 +834,11 @@ public:
         {
             parameters.emplace_back("index");
         }
-        if (!getter)
+        if (composite)
+        {
+            parameters.emplace_back("out_size");
+        }
+        else if (!getter)
         {
             if (storage != "float")
             {

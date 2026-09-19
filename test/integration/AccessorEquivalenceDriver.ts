@@ -9,6 +9,8 @@ import { makeReal64, deserializeReal64From, getReal64Value, setReal64Value } fro
 import { makeScalar, deserializeScalarFrom, getScalarKelvin, setScalarKelvin } from "./uavcan/si/unit/temperature/scalar_1_0";
 import { makeError, deserializeErrorFrom, getErrorValue, setErrorValue } from "./uavcan/file/error_1_0";
 import { makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz } from "./uavcan/si/unit/angle/quaternion_1_0";
+import { makeScalar as makeSample, deserializeScalarFrom as deserializeSampleFrom, getScalarTimestamp, getScalarKelvin as getSampleKelvin, setScalarKelvin as setSampleKelvin } from "./uavcan/si/sample/temperature/scalar_1_0";
+import { getSynchronizedTimestampMicrosecond } from "./uavcan/time/synchronized_timestamp_1_0";
 
 let rng = 0x9e3779b9;
 function fill(buffer: Uint8Array): void {
@@ -99,4 +101,17 @@ report("uavcan.file.Error",
   checkField(2, makeError, deserializeErrorFrom, getErrorValue, setErrorValue, (o) => o.value, true));
 report("uavcan.si.unit.angle.Quaternion",
   checkElement(16, 4, makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz, (o, i) => o.wxyz[i], 0));
+// A nested composite, through the buffer its getter answers: the nested type's own getter on it
+// agrees with deserialise on the full buffer and on one cut inside the nested field.
+{
+  const wire = new Uint8Array(11);
+  fill(wire);
+  const obj = makeSample();
+  let same = deserializeSampleFrom(obj, wire) >= 0 && getSynchronizedTimestampMicrosecond(getScalarTimestamp(wire)) === obj.timestamp.microsecond;
+  const short = makeSample();
+  const stamp = getScalarTimestamp(wire.subarray(0, 3));
+  same = same && deserializeSampleFrom(short, wire.subarray(0, 3)) >= 0 && stamp.length === 3 && getSynchronizedTimestampMicrosecond(stamp) === short.timestamp.microsecond;
+  same = same && checkField(11, makeSample, deserializeSampleFrom, getSampleKelvin, setSampleKelvin, (o) => o.kelvin, false);
+  report("uavcan.si.sample.temperature.Scalar", same);
+}
 if (failures !== 0) { throw new Error(`${failures} type(s) differ`); }

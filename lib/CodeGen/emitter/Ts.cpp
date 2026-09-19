@@ -686,18 +686,27 @@ public:
     ///        entry and a getter's answer is converted at the return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed    a       = accessed(fn);
-        const Storage     storage = storageOf(*a.member);
-        const std::string tsType  = elementTsType(*a.member);
-        std::string       member  = a.member->tsName;
-        member[0]                 = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
-        const std::string name    = std::string(getter ? "get" : "set") + a.plan->typeName + member;
-        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
-        const std::string index   = indexed ? ", elementIndex: number" : "";
-        const bool        rebind  = (storage == Storage::Number) || (storage == Storage::Boolean);
-        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        const Accessed    a         = accessed(fn);
+        const Storage     storage   = storageOf(*a.member);
+        const std::string tsType    = elementTsType(*a.member);
+        std::string       member    = a.member->tsName;
+        member[0]                   = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
+        const std::string name      = std::string(getter ? "get" : "set") + a.plan->typeName + member;
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const std::string index     = indexed ? ", elementIndex: number" : "";
+        const bool        rebind    = (storage == Storage::Number) || (storage == Storage::Boolean);
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
-        if (getter)
+        if (composite)
+        {
+            // The nested type's buffer, as a subarray, whose length the plan's store of the
+            // remaining size lands in a local beside it.
+            w.open("export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array {");
+            w.line("let outSize = 0;");
+            w.line("void outSize;");
+        }
+        else if (getter)
         {
             if (storage == Storage::Number)
             {
@@ -720,7 +729,11 @@ public:
             w.line("const index: bigint = BigInt(elementIndex);");
             parameters.emplace_back("index");
         }
-        if (!getter)
+        if (composite)
+        {
+            parameters.emplace_back("outSize");
+        }
+        else if (!getter)
         {
             if (storage == Storage::Number)
             {
