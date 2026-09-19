@@ -860,9 +860,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         }
         w.blank();
 
-        for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
+        // The wrappers call the request's serialisation, which an accessors-only run does not emit.
+        if (!ctx.accessorsOnly())
         {
-            w.line(line);
+            for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
+            {
+                w.line(line);
+            }
         }
     }
     else

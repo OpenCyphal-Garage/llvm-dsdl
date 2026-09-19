@@ -116,3 +116,20 @@
 # The directive's own check stands.
 # RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/SubByte --outdir %t/subbyte 2>&1 | FileCheck %s --check-prefix=SUB_BYTE
 # SUB_BYTE: error: @aliasable does not hold: field 'health' is not a whole number of bytes wide
+
+# A service is reached through an alias of its request, whose wrappers call the request's
+# serialisation. The mode emits no serialisation, so the wrappers go with it or the output names
+# functions that were never emitted.
+# RUN: %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/csvc 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/cppsvc 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_HAS
+# C_SVC_HAS: fixtures_aliasable_service_flat__vendor__Probe__Request__get_code_
+# RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_NONE
+# C_SVC_NONE-NOT: __serialize_
+# C_SVC_NONE-NOT: __deserialize_
+# C_SVC_NONE-NOT: __initialize_
+# RUN: cat %t/cppsvc/std/fixtures_aliasable_service_flat/vendor/Probe_1_0.hpp | FileCheck %s --check-prefix=CPP_SVC_HAS
+# CPP_SVC_HAS: get_code
+# RUN: cat %t/cppsvc/std/fixtures_aliasable_service_flat/vendor/Probe_1_0.hpp | FileCheck %s --check-prefix=CPP_SVC_NONE
+# CPP_SVC_NONE-NOT: _serialize_
+# CPP_SVC_NONE-NOT: _deserialize_

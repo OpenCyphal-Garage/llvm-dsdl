@@ -1,0 +1,9 @@
+# Both payloads assert, so --aliasable-only accepts the service. A service is reached through an
+# alias of its request, and the alias carries wrappers that call the request's serialisation.
+@aliasable
+uint32 code
+@sealed
+---
+@aliasable
+uint16 status
+@sealed

@@ -2255,25 +2255,29 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         }
         w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
-               "* const obj, std::uint8_t* const buffer, std::size_t* const "
-               "inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
-        w.open("{");
-        w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
-        w.close("}");
-        w.blank();
+        // The wrappers call the request's serialisation, which an accessors-only run does not emit.
+        if (!ctx.accessorsOnly())
+        {
+            w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
+                   "* const obj, std::uint8_t* const buffer, std::size_t* const "
+                   "inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+            w.open("{");
+            w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.close("}");
+            w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
-               "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
-               "inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
-        w.open("{");
-        w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
-        w.close("}");
-        w.blank();
+            w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
+                   "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
+                   "inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+            w.open("{");
+            w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.close("}");
+            w.blank();
+        }
     }
     else
     {
