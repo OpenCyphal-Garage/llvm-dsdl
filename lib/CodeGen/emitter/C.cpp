@@ -1018,7 +1018,8 @@ llvm::Error emit(const SemanticModule& semantic,
                     std::to_string(op.getMinor())] = op.getOperation();
     }
 
-    unsigned objectSizeBits = 64U;
+    unsigned objectSizeBits     = 64U;
+    bool     objectLittleEndian = false;
     if (options.artifact == Artifact::Object)
     {
         auto width = targetSizeBits(options.targetTriple);
@@ -1027,6 +1028,9 @@ llvm::Error emit(const SemanticModule& semantic,
             return width.takeError();
         }
         objectSizeBits = *width;
+        objectLittleEndian =
+            llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
+                .isLittleEndian();
     }
 
     for (const auto& def : semantic.definitions)
@@ -1066,7 +1070,7 @@ llvm::Error emit(const SemanticModule& semantic,
         mlir::PassManager pm(perDefModule.getContext());
         if (options.artifact == Artifact::Object)
         {
-            pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));
+            pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits, objectLittleEndian));
             pm.addPass(createEmitDSDLRuntimePass());
             if (mlir::failed(pm.run(perDefModule)))
             {

@@ -70,13 +70,16 @@ std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass();
 /// @brief Lowers DSDL plan operations into the LLVM dialect, for emission as objects.
 std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass();
 
-/// @brief The same conversion, told what the target spells `size_t` at.
+/// @brief The same conversion, told what the target spells `size_t` at and how it orders bytes.
 ///
-/// A module carrying its own data layout answers this for itself; a per-definition module built
-/// by a backend does not, and the width has to come from the target the backend is emitting for.
+/// A module carrying its own data layout answers the width for itself; a per-definition module
+/// built by a backend does not, and both facts have to come from the target the backend is
+/// emitting for. On a little-endian target a byte-aligned scalar of a register's width is one
+/// load or one store within the buffer, which is the wire's own encoding there.
 /// @param[in] sizeBits Width of the target's `size_t`, in bits.
+/// @param[in] littleEndian Whether the target orders bytes as the wire does.
 /// @return The pass.
-std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(unsigned sizeBits);
+std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(unsigned sizeBits, bool littleEndian);
 
 /// @brief Defines the serialisation primitives a lowered plan calls.
 ///

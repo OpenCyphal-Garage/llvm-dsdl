@@ -457,7 +457,7 @@ last acceptance item: the C/Go parity lane's directed truncated inputs on `node.
 C/Rust and C++/C lanes now have the same on `scalar.Real32` and `scalar.Integer8`, checking that the
 bytes past the input come back as zero. Phase 3 is complete.
 
-### Phase 4 — field accessors for W — M
+### Phase 4 — field accessors for W — done 2026-09-18
 
 **Depends on** 1. *(Was L, and a packed type. Revised 2026-09-18 — see **Decisions taken**.)*
 
@@ -577,8 +577,20 @@ normalising helper, because `dsdl.read_bits` lowers the same way whatever its of
 The one-load form is a fast path in the lowering for a read at a constant byte-aligned offset of
 a standard width on a little-endian target: a bounds check and a plain load, the primitive kept
 for the short-buffer case. It belongs in the lowering, where every body with a byte-aligned field
-inherits it, and it needs the target's endianness there as the fold needed it. That is the next
-step, and the baseline is what will show it landing.
+inherits it, and it needs the target's endianness there as the fold needed it.
+
+**The fast path, 2026-09-18.** `convert-dsdl-to-llvm` takes the target's endianness beside its
+`size_t` width, and on a little-endian target lowers a `read_bits` or `write_bits` at a constant
+byte-aligned offset of a register's width to a bounds check and one unaligned load or store, the
+primitive kept for a buffer short of the field. The object target sets it from the triple, as the
+fold is. `Padded.get_b`'s hot path is now `cmp; b.lo; ldurh; ret`; the whole function is 16
+instructions on AArch64, down from 25, the rest being the null-buffer substitution and the short
+case, which the compiler inlined from the primitive. The bodies inherited it as the plan said:
+`Padded`'s field-wise deserialise fell from 56 to 39 on AArch64 and from 61 to 44 on x86-64. A
+getter of a folded type moved the other way by two instructions, the short case having become
+inline; a whole-function count includes its cold path, which is the honest unit the lane has.
+The C text path keeps calling the `static inline` primitive, which the C compiler inlines on its
+own; that path's counts are the cachegrind comparison's to keep. Phase 4 is complete.
 
 ### Phase 5 — `--aliasable-only` — S
 
@@ -623,6 +635,7 @@ and then the option at a fixed offset.
 | bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
 | zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
+| accessor instruction count | 4 | an accessor's count moving without its baseline | ✅ landed, on both pinned triples |
 
 ## Risks
 

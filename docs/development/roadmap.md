@@ -502,6 +502,17 @@ library implementations rests on the lint rather than on a differential build.
   body is little-endian only — the generated code refuses a big-endian build with the reason and
   the fix, rather than falling back.
 
+  ✅ **Phase 4 landed 2026-09-18.** Every wire-flat type has field accessors in all six
+  languages, built as bodies beside the three the plan already had: a getter that reads one field
+  off a serialised buffer at its fixed offset, in the member's own type, and a setter that writes
+  one; an element accessor takes an index, and a nested composite's getter answers the buffer from
+  its offset so the nested type's own accessors compose on it. A getter answers what `deserialize_`
+  puts in the field on every buffer, short ones included, which a six-language lane holds it to
+  on nine regulated types. The object lowering now takes the target's endianness and lowers a
+  byte-aligned scalar of a register's width to a bounds check and one load or store, which the
+  field-wise bodies inherit as well: `Padded`'s deserialise fell from 56 instructions to 39 on
+  AArch64.
+
 ### P2 — Maturity / maintainability
 
 - [x] Reduce per-backend control-flow duplication — directly strengthens G1. ✅ **Done (2026-09-11):** every backend's serialise and deserialise bodies are translations of the `build-dsdl-plan-bodies` IR through one translator (`lib/CodeGen/BodyTranslator.cpp`); a spelling per language carries surface idiom only, and `ctest -L backend-contract` fails a backend whose output does not follow a perturbed body. See `docs/development/backend-translation.md`. This was the G1 end-state.

@@ -1,0 +1,27 @@
+# A scalar at a constant byte-aligned offset, of a width the target has a register for, is one
+# load or one store on a little-endian target: the wire is little-endian, so a plain access is its
+# own encoding there. The buffer's size is checked first, and short of the field the runtime's
+# primitive answers as it always has, zero-extending what is there. Without the target's word the
+# lowering keeps the primitive everywhere.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_host_image > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies,convert-dsdl-to-llvm{little-endian=true})' %t/plans.mlir | FileCheck %s --check-prefix=FAST
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies,convert-dsdl-to-llvm)' %t/plans.mlir | FileCheck %s --check-prefix=PRIMITIVE
+
+# FAST-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# FAST:       llvm.icmp "uge" %{{.*}}, %{{.*}} : i64
+# FAST:       llvm.getelementptr %{{.*}}[1] : (!llvm.ptr) -> !llvm.ptr, i8
+# FAST:       llvm.load %{{.*}} {alignment = 1 : i64} : !llvm.ptr -> i16
+# FAST:       llvm.zext %{{.*}} : i16 to i64
+# FAST:       llvm.call @dsdl_runtime_get_u16
+# FAST-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__set_b_ir_(
+# FAST:       llvm.trunc %{{.*}} : i64 to i16
+# FAST:       llvm.store %{{.*}}, %{{.*}} {alignment = 1 : i64} : i16, !llvm.ptr
+# FAST:       llvm.call @dsdl_runtime_set_uxx
+
+# PRIMITIVE-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# PRIMITIVE-NOT:   llvm.load
+# PRIMITIVE:       llvm.call @dsdl_runtime_get_u16
+# PRIMITIVE-NOT:   llvm.load
+# PRIMITIVE:       return

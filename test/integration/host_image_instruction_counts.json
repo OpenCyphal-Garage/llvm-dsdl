@@ -24,7 +24,7 @@
       "vendor_Nested_1_0__get_inner_ir_"
     ],
     "measured": {
-      "llvm-22": "LLVM 22.1.8, 2026-09-18"
+      "llvm-22": "LLVM 22.1.8, 2026-09-18, aligned load/store fast path"
     },
     "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A getter is the runtime's read primitive with its clamps, not yet one load; see ZERO_OVERHEAD.md."
   },
@@ -37,11 +37,11 @@
         "vendor_Arr_1_0__serialize_ir_": 19,
         "vendor_Nested_1_0__deserialize_ir_": 38,
         "vendor_Nested_1_0__serialize_ir_": 19,
-        "vendor_Padded_1_0__deserialize_ir_": 56,
-        "vendor_Padded_1_0__serialize_ir_": 29,
-        "vendor_Flat_1_0__get_a_ir_": 17,
-        "vendor_Flat_1_0__set_a_ir_": 18,
-        "vendor_Padded_1_0__get_b_ir_": 25,
+        "vendor_Padded_1_0__deserialize_ir_": 39,
+        "vendor_Padded_1_0__serialize_ir_": 33,
+        "vendor_Flat_1_0__get_a_ir_": 19,
+        "vendor_Flat_1_0__set_a_ir_": 20,
+        "vendor_Padded_1_0__get_b_ir_": 16,
         "vendor_Arr_1_0__get_head_ir_": 15,
         "vendor_Nested_1_0__get_inner_ir_": 6
       },
@@ -52,11 +52,11 @@
         "vendor_Arr_1_0__serialize_ir_": 23,
         "vendor_Nested_1_0__deserialize_ir_": 44,
         "vendor_Nested_1_0__serialize_ir_": 23,
-        "vendor_Padded_1_0__deserialize_ir_": 61,
+        "vendor_Padded_1_0__deserialize_ir_": 44,
         "vendor_Padded_1_0__serialize_ir_": 22,
-        "vendor_Flat_1_0__get_a_ir_": 17,
-        "vendor_Flat_1_0__set_a_ir_": 22,
-        "vendor_Padded_1_0__get_b_ir_": 21,
+        "vendor_Flat_1_0__get_a_ir_": 20,
+        "vendor_Flat_1_0__set_a_ir_": 20,
+        "vendor_Padded_1_0__get_b_ir_": 16,
         "vendor_Arr_1_0__get_head_ir_": 17,
         "vendor_Nested_1_0__get_inner_ir_": 6
       }

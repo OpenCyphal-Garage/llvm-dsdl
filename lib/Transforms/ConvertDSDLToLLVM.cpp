@@ -36,6 +36,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/ValueRange.h>
@@ -650,69 +651,231 @@ std::string runtimePrimitiveName(const bool write, mlir::Type valueType, const s
     return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holderWidthFor(width));
 }
 
+/// @brief A scalar access the target can make as one load or store: at a constant byte-aligned
+///        offset, of a width the target has a register for, on a target that orders bytes as the
+///        wire does. The wire is little-endian, so a plain access is the wire's own encoding there
+///        and nowhere else.
+struct AlignedAccess final
+{
+    std::int64_t byteOffset;
+    std::int64_t bytes;
+    /// @brief The type loaded or stored: an integer of the field's width, or the float itself.
+    mlir::Type narrow;
+};
+
+std::optional<AlignedAccess> alignedAccess(const bool         littleEndian,
+                                           const mlir::Value  bitOffset,
+                                           const std::int64_t width,
+                                           const mlir::Type   valueType)
+{
+    llvm::APInt offset;
+    if (!littleEndian || !mlir::matchPattern(bitOffset, mlir::m_ConstantInt(&offset)) || offset.isNegative() ||
+        ((offset.getSExtValue() % 8) != 0))
+    {
+        return std::nullopt;
+    }
+    if ((width != 8) && (width != 16) && (width != 32) && (width != 64))
+    {
+        return std::nullopt;
+    }
+    mlir::Type narrow;
+    if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(valueType))
+    {
+        if (std::cmp_less(integer.getWidth(), width))
+        {
+            return std::nullopt;
+        }
+        narrow = mlir::IntegerType::get(valueType.getContext(), static_cast<unsigned>(width));
+    }
+    else if ((valueType.isF32() && (width == 32)) || (valueType.isF64() && (width == 64)))
+    {
+        narrow = valueType;
+    }
+    else
+    {
+        return std::nullopt;
+    }
+    return AlignedAccess{offset.getSExtValue() / 8, width / 8, narrow};
+}
+
+/// @brief Whether @p size, the buffer's size in bytes, holds an access of @p bytes at @p offset.
+mlir::Value accessFits(mlir::ConversionPatternRewriter& rewriter,
+                       const mlir::Location             loc,
+                       const mlir::Value                size,
+                       const AlignedAccess&             access)
+{
+    const mlir::Value need =
+        mlir::LLVM::ConstantOp::create(rewriter,
+                                       loc,
+                                       size.getType(),
+                                       rewriter.getIntegerAttr(size.getType(), access.byteOffset + access.bytes));
+    return mlir::LLVM::ICmpOp::create(rewriter, loc, mlir::LLVM::ICmpPredicate::uge, size, need);
+}
+
+/// @brief The address @p access begins at within @p buffer.
+mlir::Value accessAddress(mlir::ConversionPatternRewriter& rewriter,
+                          const mlir::Location             loc,
+                          const mlir::Value                buffer,
+                          const AlignedAccess&             access)
+{
+    auto ptrTy = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+    return mlir::LLVM::GEPOp::create(rewriter,
+                                     loc,
+                                     ptrTy,
+                                     rewriter.getI8Type(),
+                                     buffer,
+                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(access.byteOffset)});
+}
+
 struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>::OpConversionPattern;
+    WriteBitsLowering(const mlir::TypeConverter& converter, mlir::MLIRContext* context, const bool littleEndian)
+        : mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>(converter, context)
+        , littleEndian_(littleEndian)
+    {
+    }
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::WriteBitsOp          op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc    = op.getLoc();
-        auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee = runtimePrimitiveName(true,
-                                                           op.getValue().getType(),
-                                                           static_cast<std::int64_t>(op.getWidth()),
-                                                           op.getIsSigned());
+        const mlir::Location loc       = op.getLoc();
+        auto                 module    = op->getParentOfType<mlir::ModuleOp>();
+        const std::string    callee    = runtimePrimitiveName(true,
+                                                              op.getValue().getType(),
+                                                              static_cast<std::int64_t>(op.getWidth()),
+                                                              op.getIsSigned());
+        const auto           primitive = [&]() -> mlir::Value {
+            mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
+                                                        adaptor.getBufferSizeBytes(),
+                                                        adaptor.getBitOffset(),
+                                                        adaptor.getValue()};
+            if ((callee == "dsdl_runtime_set_uxx") || (callee == "dsdl_runtime_set_ixx"))
+            {
+                arguments.push_back(
+                    mlir::LLVM::ConstantOp::create(rewriter,
+                                                   loc,
+                                                   rewriter.getI8Type(),
+                                                   rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            }
+            return callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
+        };
 
-        mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
-                                                    adaptor.getBufferSizeBytes(),
-                                                    adaptor.getBitOffset(),
-                                                    adaptor.getValue()};
-        if ((callee == "dsdl_runtime_set_uxx") || (callee == "dsdl_runtime_set_ixx"))
+        const auto access = alignedAccess(littleEndian_,
+                                          op.getBitOffset(),
+                                          static_cast<std::int64_t>(op.getWidth()),
+                                          op.getValue().getType());
+        if (!access)
         {
-            arguments.push_back(
-                mlir::LLVM::ConstantOp::create(rewriter,
-                                               loc,
-                                               rewriter.getI8Type(),
-                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            rewriter.replaceOp(op, primitive());
+            return mlir::success();
         }
-        auto result = callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
-        rewriter.replaceOp(op, result);
+        // Within the buffer, one store of the field's bytes; short of it, the primitive answers
+        // as it always has.
+        const mlir::Value fits = accessFits(rewriter, loc, adaptor.getBufferSizeBytes(), *access);
+        auto branch = mlir::scf::IfOp::create(rewriter, loc, mlir::TypeRange{rewriter.getI8Type()}, fits, true);
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.thenBlock());
+            mlir::Value narrowed = adaptor.getValue();
+            if (mlir::isa<mlir::IntegerType>(access->narrow) && (narrowed.getType() != access->narrow))
+            {
+                narrowed = mlir::LLVM::TruncOp::create(rewriter, loc, access->narrow, narrowed);
+            }
+            mlir::LLVM::StoreOp::create(rewriter,
+                                        loc,
+                                        narrowed,
+                                        accessAddress(rewriter, loc, adaptor.getBuffer(), *access),
+                                        /*alignment=*/1);
+            mlir::scf::YieldOp::create(rewriter,
+                                       loc,
+                                       mlir::ValueRange{mlir::LLVM::ConstantOp::create(rewriter,
+                                                                                       loc,
+                                                                                       rewriter.getI8Type(),
+                                                                                       rewriter.getI8IntegerAttr(0))});
+        }
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.elseBlock());
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{primitive()});
+        }
+        rewriter.replaceOp(op, branch.getResult(0));
         return mlir::success();
     }
+
+private:
+    bool littleEndian_;
 };
 
 struct ReadBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>::OpConversionPattern;
+    ReadBitsLowering(const mlir::TypeConverter& converter, mlir::MLIRContext* context, const bool littleEndian)
+        : mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>(converter, context)
+        , littleEndian_(littleEndian)
+    {
+    }
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::ReadBitsOp           op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc    = op.getLoc();
-        auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee = runtimePrimitiveName(false,
-                                                           op.getValue().getType(),
-                                                           static_cast<std::int64_t>(op.getWidth()),
-                                                           op.getIsSigned());
+        const mlir::Location loc       = op.getLoc();
+        auto                 module    = op->getParentOfType<mlir::ModuleOp>();
+        const mlir::Type     valueType = op.getValue().getType();
+        const std::string    callee =
+            runtimePrimitiveName(false, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
+        const auto primitive = [&]() -> mlir::Value {
+            mlir::SmallVector<mlir::Value, 4> arguments{adaptor.getBuffer(),
+                                                        adaptor.getBufferSizeBytes(),
+                                                        adaptor.getBitOffset()};
+            if ((callee.contains("_get_u")) || (callee.contains("_get_i")))
+            {
+                arguments.push_back(
+                    mlir::LLVM::ConstantOp::create(rewriter,
+                                                   loc,
+                                                   rewriter.getI8Type(),
+                                                   rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            }
+            return callRuntime(rewriter, loc, module, callee, valueType, arguments, op.getIsSigned());
+        };
 
-        mlir::SmallVector<mlir::Value, 4> arguments{adaptor.getBuffer(),
-                                                    adaptor.getBufferSizeBytes(),
-                                                    adaptor.getBitOffset()};
-        if ((callee.contains("_get_u")) || (callee.contains("_get_i")))
+        const auto access =
+            alignedAccess(littleEndian_, op.getBitOffset(), static_cast<std::int64_t>(op.getWidth()), valueType);
+        if (!access)
         {
-            arguments.push_back(
-                mlir::LLVM::ConstantOp::create(rewriter,
-                                               loc,
-                                               rewriter.getI8Type(),
-                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            rewriter.replaceOp(op, primitive());
+            return mlir::success();
         }
-        auto result = callRuntime(rewriter, loc, module, callee, op.getValue().getType(), arguments, op.getIsSigned());
-        rewriter.replaceOp(op, result);
+        // Within the buffer, one load of the field's bytes, widened as the wire's value is; short
+        // of it, the primitive answers as it always has, zero-extending what is there.
+        const mlir::Value fits   = accessFits(rewriter, loc, adaptor.getBufferSizeBytes(), *access);
+        auto              branch = mlir::scf::IfOp::create(rewriter, loc, mlir::TypeRange{valueType}, fits, true);
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.thenBlock());
+            mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter,
+                                                            loc,
+                                                            access->narrow,
+                                                            accessAddress(rewriter, loc, adaptor.getBuffer(), *access),
+                                                            /*alignment=*/1);
+            if (loaded.getType() != valueType)
+            {
+                loaded = op.getIsSigned() ? mlir::LLVM::SExtOp::create(rewriter, loc, valueType, loaded).getResult()
+                                          : mlir::LLVM::ZExtOp::create(rewriter, loc, valueType, loaded).getResult();
+            }
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{loaded});
+        }
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.elseBlock());
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{primitive()});
+        }
+        rewriter.replaceOp(op, branch.getResult(0));
         return mlir::success();
     }
+
+private:
+    bool littleEndian_;
 };
 
 struct BitWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitWriteOp>
@@ -1295,6 +1458,14 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                                           llvm::cl::desc("Width of the target's size_t in bits"),
                                           llvm::cl::init(64)};
 
+    /// Whether the target orders bytes as the wire does. A byte-aligned scalar of a register's
+    /// width is then one load or one store within the buffer; elsewhere every access is the
+    /// runtime's primitive.
+    Pass::Option<bool> littleEndianOption{*this,
+                                          "little-endian",
+                                          llvm::cl::desc("Whether the target is little-endian, as the wire is"),
+                                          llvm::cl::init(false)};
+
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
@@ -1329,14 +1500,15 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      BufferAtLowering,
                      LocalLowering,
                      BufferOrEmptyLowering,
-                     WriteBitsLowering,
-                     ReadBitsLowering,
                      BitWriteLowering,
                      BitReadLowering,
                      ImageReadLowering,
                      ImageWriteLowering,
                      CallSerdesLowering,
                      CallInitializeLowering>(converter, &getContext());
+        patterns.add<WriteBitsLowering, ReadBitsLowering>(converter,
+                                                          &getContext(),
+                                                          static_cast<bool>(littleEndianOption));
         patterns.add<IndexHoldsLowering>(converter, &getContext(), sizeBits);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
         // A signature is not only its arguments. A body that answers with a pointer would
@@ -1407,10 +1579,11 @@ std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass()
     return std::make_unique<ConvertDSDLToLLVMPass>();
 }
 
-std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(const unsigned sizeBits)
+std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(const unsigned sizeBits, const bool littleEndian)
 {
-    auto pass            = std::make_unique<ConvertDSDLToLLVMPass>();
-    pass->sizeBitsOption = sizeBits;
+    auto pass                = std::make_unique<ConvertDSDLToLLVMPass>();
+    pass->sizeBitsOption     = sizeBits;
+    pass->littleEndianOption = littleEndian;
     return pass;
 }
 
