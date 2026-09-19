@@ -142,10 +142,14 @@ foreach(type_name IN LISTS type_names)
   set(probe_includes "${probe_includes}#include \"${record_${type_name}_header}\"\n")
   # One string per section: a `set()` taking several arguments would join them as a list, and the
   # separator it joins with is the one C ends its statements with.
+  #
+  # The wire buffer is sized from the section rather than shared across them: the catalogue's
+  # largest serialises to 9262 bytes, and a buffer that holds fewer is written past.
   string(CONCAT probe_body "${probe_body}"
       "  {\n"
       "    ${type_name} object;\n"
       "    memset(&object, 0, sizeof object);\n"
+      "    static uint8_t wire[${type_name}_SERIALIZATION_BUFFER_SIZE_BYTES_];\n"
       "    const size_t wire_bytes = ${type_name}_SERIALIZATION_BUFFER_SIZE_BYTES_;\n"
       "    for (size_t i = 0; i < wire_bytes; ++i) { wire[i] = next_byte(); }\n"
       "    size_t consumed = wire_bytes;\n"
@@ -159,7 +163,6 @@ file(WRITE "${OUT_DIR}/layout_probe.c"
   "/* Written by RunAliasLayoutCensus.cmake. */\n"
   "#include <stdio.h>\n#include <stdint.h>\n#include <string.h>\n"
   "${probe_includes}"
-  "static uint8_t wire[4096];\n"
   "static uint32_t state = 2463534242u;\n"
   "static uint8_t next_byte(void)\n"
   "{\n"
