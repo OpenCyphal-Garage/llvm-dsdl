@@ -1795,6 +1795,12 @@ private:
         {
             return plan.emitError("wire_flat holds for a plan with no payload field");
         }
+        // Each field was held to starting on a byte boundary, which says nothing about what follows
+        // the last one: trailing padding can leave the payload part of a byte.
+        if ((offsetBits % 8) != 0)
+        {
+            return plan.emitError("wire_flat holds but the payload is not a whole number of bytes");
+        }
         if (!hostImage)
         {
             return mlir::success();
