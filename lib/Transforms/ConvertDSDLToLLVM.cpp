@@ -999,8 +999,7 @@ struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::Im
                                       /*isVolatile=*/false);
         const mlir::Value zeroByte =
             mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
-        const mlir::Value rest =
-            mlir::LLVM::SubOp::create(rewriter, loc, bytes, adaptor.getBufferSizeBytes());
+        const mlir::Value rest = mlir::LLVM::SubOp::create(rewriter, loc, bytes, adaptor.getBufferSizeBytes());
         const mlir::Value from =
             mlir::LLVM::GEPOp::create(rewriter,
                                       loc,
