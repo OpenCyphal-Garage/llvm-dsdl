@@ -18,7 +18,7 @@ namespace llvmdsdl::uavcan_embedded_mlir
 {
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = 189U;
 inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
-    "a4b9c3e26a168a0ad6469603025a1d988878fda6c41eb3ed97fc6bd6888c0c43";
+    "ad03b9d5c80f87dfb0e8c9c56d1d71c7427363778aae339962059fa64c02c3f1";
 inline constexpr const char kEmbeddedUavcanMlirText[] = R"LLVMDSDL_UAVCAN(
 module {
   dsdl.schema @uavcan_diagnostic_Record_1_1 attributes {c_type_name = "uavcan__diagnostic__Record", doc = "Generic human-readable text message for logging and displaying purposes.\0AGenerally, it should be published at the lowest priority level.", extent_bits = 2400 : i64, fixed_port_id = 8184 : i64, full_name = "uavcan.diagnostic.Record", header_path = "uavcan/diagnostic/Record_1_1.h", major = 1 : i32, minor = 1 : i32} {
@@ -334,7 +334,7 @@ module {
       dsdl.align {bits = 1 : i32}
       dsdl.io {alignment_bits = 1 : i64, array_capacity = 508 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 16 : i64, bit_length = 8 : i64, c_name = "payload", cast_mode = "saturated", doc = "Effective payload. This data will be forwarded from the remote host verbatim.\0AUDP packets that contain more than 508 bytes of payload may be dropped by some types of\0Acommunication equipment. Refer to RFC 791 and 2460 for an in-depth review.\0ADatagrams that exceed the capacity of this field should be discarded by the modem node.", kind = "field", max_bits = 4080 : i64, min_bits = 16 : i64, name = "payload", scalar_category = "unsigned", type_name = "saturated uint8[<=508]", union_option_index = 0 : i64, union_tag_bits = 0 : i64}
     }
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__deserialize_", c_serialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__serialize_", c_type_name = "uavcan__internet__udp__HandleIncomingPacket__Response", extent_bits = 504 : i64, fixed_size, host_image_reason = "not-sealed", max_bits = 0 : i64, min_bits = 0 : i64, section = "response", wire_flat_reason = "not-sealed"} {
+    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__deserialize_", c_serialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__serialize_", c_type_name = "uavcan__internet__udp__HandleIncomingPacket__Response", extent_bits = 504 : i64, fixed_size, host_image_reason = "empty-layout", max_bits = 0 : i64, min_bits = 0 : i64, section = "response", wire_flat_reason = "empty-layout"} {
       dsdl.align {bits = 1 : i32}
     }
   }
@@ -347,7 +347,7 @@ module {
       dsdl.align {bits = 1 : i32}
       dsdl.io {alignment_bits = 1 : i64, array_capacity = 309 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 16 : i64, bit_length = 8 : i64, c_name = "payload", cast_mode = "saturated", doc = "Effective payload. This data will be forwarded from the remote host verbatim.\0AUDP packets that contain more than 508 bytes of payload may be dropped by some types of\0Acommunication equipment. Refer to RFC 791 and 2460 for an in-depth review.\0ACyphal further limits the maximum packet size to reduce the memory and traffic burden on the nodes.\0ADatagrams that exceed the capacity of this field should be discarded by the modem node.", kind = "field", max_bits = 2488 : i64, min_bits = 16 : i64, name = "payload", scalar_category = "unsigned", type_name = "saturated uint8[<=309]", union_option_index = 0 : i64, union_tag_bits = 0 : i64}
     }
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__deserialize_", c_serialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__serialize_", c_type_name = "uavcan__internet__udp__HandleIncomingPacket__Response", extent_bits = 504 : i64, fixed_size, host_image_reason = "not-sealed", max_bits = 0 : i64, min_bits = 0 : i64, section = "response", wire_flat_reason = "not-sealed"} {
+    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__deserialize_", c_serialize_symbol = "uavcan__internet__udp__HandleIncomingPacket__Response__serialize_", c_type_name = "uavcan__internet__udp__HandleIncomingPacket__Response", extent_bits = 504 : i64, fixed_size, host_image_reason = "empty-layout", max_bits = 0 : i64, min_bits = 0 : i64, section = "response", wire_flat_reason = "empty-layout"} {
       dsdl.align {bits = 1 : i32}
     }
   }
@@ -2072,7 +2072,7 @@ module {
     }
   }
   dsdl.schema @uavcan_time_GetSynchronizationMasterInfo_0_1 attributes {c_type_name = "uavcan__time__GetSynchronizationMasterInfo", doc = "Every node that acts as a time synchronization master, or is capable of acting as such,\0Ashould support this service.\0AIts objective is to provide information about which time system is currently used in the network.\0A\0AOnce a time system is chosen, it cannot be changed as long as at least one node on the network is running.\0AIn other words, the time system cannot be changed while the network is operating.\0AAn implication of this is that if there are redundant time synchronization masters, they all shall\0Ause the same time system always.", extent_bits = 384 : i64, fixed_port_id = 510 : i64, full_name = "uavcan.time.GetSynchronizationMasterInfo", header_path = "uavcan/time/GetSynchronizationMasterInfo_0_1.h", major = 0 : i32, minor = 1 : i32, service} {
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__time__GetSynchronizationMasterInfo__Request__deserialize_", c_serialize_symbol = "uavcan__time__GetSynchronizationMasterInfo__Request__serialize_", c_type_name = "uavcan__time__GetSynchronizationMasterInfo__Request", extent_bits = 384 : i64, fixed_size, host_image_reason = "not-sealed", max_bits = 0 : i64, min_bits = 0 : i64, section = "request", wire_flat_reason = "not-sealed"} {
+    dsdl.serialization_plan attributes {c_deserialize_symbol = "uavcan__time__GetSynchronizationMasterInfo__Request__deserialize_", c_serialize_symbol = "uavcan__time__GetSynchronizationMasterInfo__Request__serialize_", c_type_name = "uavcan__time__GetSynchronizationMasterInfo__Request", extent_bits = 384 : i64, fixed_size, host_image_reason = "empty-layout", max_bits = 0 : i64, min_bits = 0 : i64, section = "request", wire_flat_reason = "empty-layout"} {
       dsdl.align {bits = 1 : i32}
     }
     dsdl.field {c_name = "error_variance", doc = "[second^2]\0AError variance, in second^2, of the time value reported by this master.\0AThis value is allowed to change freely while the master is running.\0AFor example, if the master's own clock is synchronized with a GNSS, the error variance is expected to increase\0Aas signal reception deteriorates. If the signal is lost, this value is expected to grow steadily, the rate of\0Agrowth would be dependent on the quality of the time keeping hardware available locally (bad hardware yields\0Afaster growth). Once the signal is regained, this value would drop back to nominal.", name = "error_variance", section = "response", type_name = "saturated float32"}

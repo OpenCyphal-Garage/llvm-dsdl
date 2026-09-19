@@ -301,14 +301,9 @@ private:
             }
             offsetBits += total;
         }
-        if (!section.sealed)
-        {
-            return blocked(AliasLayoutReason::NotSealed);
-        }
-        if (!section.fixedSize)
-        {
-            return blocked(AliasLayoutReason::NotFixedSize);
-        }
+        // Before sealing, as a field blocker is: sealing does not give a section fields, nor round
+        // its length up to a byte, so answering `not-sealed` here would tell an author that sealing
+        // is the fix when it is not. The candidate lint says exactly that, and stays quiet on these.
         if (!hasPayload)
         {
             return blocked(AliasLayoutReason::EmptyLayout);
@@ -318,6 +313,14 @@ private:
         if ((offsetBits % 8) != 0)
         {
             return blocked(AliasLayoutReason::SubByteField);
+        }
+        if (!section.sealed)
+        {
+            return blocked(AliasLayoutReason::NotSealed);
+        }
+        if (!section.fixedSize)
+        {
+            return blocked(AliasLayoutReason::NotFixedSize);
         }
         return holdsVerdict();
     }
@@ -509,13 +512,17 @@ std::string describeAliasLayoutVerdict(const AliasLayoutVerdict& verdict)
     case AliasLayoutReason::VariableArray:
         return field + "is a variable-length array, so the fields after it move";
     case AliasLayoutReason::SubByteField:
-        return field + "is not a whole number of bytes wide";
+        // Without a field it is the section's own length, which trailing padding left part way
+        // through a byte.
+        return verdict.fieldName.empty() ? std::string{"the payload is not a whole number of bytes wide"}
+                                         : (field + "is not a whole number of bytes wide");
     case AliasLayoutReason::UnalignedField:
         return field + "does not begin on a byte boundary";
     case AliasLayoutReason::NestedNotFlat:
         return field + "has a type whose own layout is not a flat byte image";
     case AliasLayoutReason::NestedUnresolved:
-        return field + "has a type that could not be resolved";
+        return verdict.fieldName.empty() ? std::string{"a nested type could not be resolved"}
+                                         : (field + "has a type that could not be resolved");
     case AliasLayoutReason::WirePadding:
         return field + "is padding, which the wire reserves and the generated type does not hold";
     case AliasLayoutReason::StorageWidth:
