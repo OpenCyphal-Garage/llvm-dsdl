@@ -1019,39 +1019,42 @@ struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::Co
         const auto           i64 = rewriter.getI64Type();
         const mlir::Value    bytes =
             mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
-        const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
-                                                              loc,
-                                                              mlir::LLVM::ICmpPredicate::uge,
-                                                              adaptor.getSourceSizeBytes(),
-                                                              bytes);
-        auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
+        // A view points into the buffer its holder was deserialised from, which may be the buffer
+        // being written, so the two ranges may overlap: the bytes present move first, and with
+        // memmove, and only then is the remainder zeroed. Zeroing first would wipe the source.
+        const mlir::Value shorter = mlir::LLVM::ICmpOp::create(rewriter,
+                                                               loc,
+                                                               mlir::LLVM::ICmpPredicate::ult,
+                                                               adaptor.getSourceSizeBytes(),
+                                                               bytes);
+        const mlir::Value present =
+            mlir::LLVM::SelectOp::create(rewriter, loc, shorter, adaptor.getSourceSizeBytes(), bytes);
+        const mlir::Value zero = mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(0));
+        const mlir::Value some =
+            mlir::LLVM::ICmpOp::create(rewriter, loc, mlir::LLVM::ICmpPredicate::ugt, present, zero);
 
-        rewriter.setInsertionPointToStart(branch.thenBlock());
-        mlir::LLVM::MemcpyOp::create(rewriter,
-                                     loc,
-                                     adaptor.getDestination(),
-                                     adaptor.getSource(),
-                                     bytes,
-                                     /*isVolatile=*/false);
+        auto move = mlir::scf::IfOp::create(rewriter, loc, some, /*withElseRegion=*/false);
+        rewriter.setInsertionPointToStart(move.thenBlock());
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getDestination(),
+                                      adaptor.getSource(),
+                                      present,
+                                      /*isVolatile=*/false);
 
-        rewriter.setInsertionPointToStart(branch.elseBlock());
+        rewriter.setInsertionPointAfter(move);
+        auto fill = mlir::scf::IfOp::create(rewriter, loc, shorter, /*withElseRegion=*/false);
+        rewriter.setInsertionPointToStart(fill.thenBlock());
         const mlir::Value zeroByte =
             mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
-        mlir::LLVM::MemsetOp::create(rewriter, loc, adaptor.getDestination(), zeroByte, bytes, /*isVolatile=*/false);
-        const mlir::Value zero    = mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(0));
-        const mlir::Value some    = mlir::LLVM::ICmpOp::create(rewriter,
-                                                               loc,
-                                                               mlir::LLVM::ICmpPredicate::ugt,
-                                                               adaptor.getSourceSizeBytes(),
-                                                               zero);
-        auto              partial = mlir::scf::IfOp::create(rewriter, loc, some, /*withElseRegion=*/false);
-        rewriter.setInsertionPointToStart(partial.thenBlock());
-        mlir::LLVM::MemcpyOp::create(rewriter,
-                                     loc,
-                                     adaptor.getDestination(),
-                                     adaptor.getSource(),
-                                     adaptor.getSourceSizeBytes(),
-                                     /*isVolatile=*/false);
+        const mlir::Value rest = mlir::LLVM::SubOp::create(rewriter, loc, bytes, present);
+        const mlir::Value from = mlir::LLVM::GEPOp::create(rewriter,
+                                                           loc,
+                                                           mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                                           rewriter.getI8Type(),
+                                                           adaptor.getDestination(),
+                                                           llvm::ArrayRef<mlir::LLVM::GEPArg>{present});
+        mlir::LLVM::MemsetOp::create(rewriter, loc, from, zeroByte, rest, /*isVolatile=*/false);
 
         rewriter.eraseOp(op);
         return mlir::success();

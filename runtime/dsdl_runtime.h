@@ -288,23 +288,24 @@ extern "C"
     /// @param[in] source The bytes to copy; unread when `source_size_bytes` is zero.
     /// @param[in] source_size_bytes How many bytes `source` holds.
     /// @param[in] bytes How many bytes to write.
+    ///
+    /// A view points into the buffer its holder was deserialised from, and that may be the buffer
+    /// being serialised into, so the two ranges may overlap: the bytes present are moved before the
+    /// remainder is zeroed, and they are moved with `memmove`.
     static inline void dsdl_runtime_copy_bytes(void* const       buf,
                                                const void* const source,
                                                const size_t      source_size_bytes,
                                                const size_t      bytes)
     {
         DSDL_RUNTIME_ASSERT(buf != NULL);
-        if (source_size_bytes >= bytes)
+        const size_t present = (source_size_bytes < bytes) ? source_size_bytes : bytes;
+        if (present > 0U)
         {
-            (void) memcpy(buf, source, bytes);
+            (void) memmove(buf, source, present);
         }
-        else
+        if (present < bytes)
         {
-            (void) memset(buf, 0, bytes);
-            if (source_size_bytes > 0U)
-            {
-                (void) memcpy(buf, source, source_size_bytes);
-            }
+            (void) memset(((uint8_t*) buf) + present, 0, bytes - present);
         }
     }
 
