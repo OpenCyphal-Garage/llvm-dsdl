@@ -7,16 +7,22 @@
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language c %S/fixtures_host_image --outdir %t/c > /dev/null
 # RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.h | FileCheck %s --check-prefix=C
+# RUN: cat %t/c/fixtures_host_image/vendor/Arr_1_0.h | FileCheck %s --check-prefix=C_ELEMENT
 # RUN: %dsdlc --target-language cpp --cpp-profile std %S/fixtures_host_image --outdir %t/cpp > /dev/null
 # RUN: cat %t/cpp/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=CPP
+# RUN: cat %t/cpp/fixtures_host_image/vendor/Arr_1_0.hpp | FileCheck %s --check-prefix=CPP_ELEMENT
 # RUN: %dsdlc --target-language rust %S/fixtures_host_image --rust-crate-name accessors --outdir %t/rust > /dev/null
 # RUN: cat %t/rust/src/fixtures_host_image/vendor/padded_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUN: cat %t/rust/src/fixtures_host_image/vendor/arr_1_0.rs | FileCheck %s --check-prefix=RUST_ELEMENT
 # RUN: %dsdlc --target-language go %S/fixtures_host_image --outdir %t/go > /dev/null
 # RUN: cat %t/go/fixtures_host_image/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO
+# RUN: cat %t/go/fixtures_host_image/vendor/arr_1_0.go | FileCheck %s --check-prefix=GO_ELEMENT
 # RUN: %dsdlc --target-language ts %S/fixtures_host_image --outdir %t/ts > /dev/null
 # RUN: cat %t/ts/fixtures_host_image/vendor/padded_1_0.ts | FileCheck %s --check-prefix=TS
+# RUN: cat %t/ts/fixtures_host_image/vendor/arr_1_0.ts | FileCheck %s --check-prefix=TS_ELEMENT
 # RUN: %dsdlc --target-language python %S/fixtures_host_image --outdir %t/py > /dev/null
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/padded_1_0.py | FileCheck %s --check-prefix=PY
+# RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/arr_1_0.py | FileCheck %s --check-prefix=PY_ELEMENT
 
 # C:      int64_t fixtures_host_image_vendor_Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes);
 # C:      static inline uint16_t fixtures_host_image__vendor__Padded__get_b_(const uint8_t* const buffer, const size_t buffer_size_bytes)
@@ -57,3 +63,17 @@
 # PY:      @staticmethod
 # PY-NEXT: def set_b(buffer: memoryview, value: int) -> int:
 # PY-NEXT: value = int(value)
+
+# An element of a fixed array takes an index after the buffer.
+# C_ELEMENT:    static inline uint8_t fixtures_host_image__vendor__Arr__get_head_(const uint8_t* const buffer, const size_t buffer_size_bytes, const size_t index)
+# C_ELEMENT:    static inline int8_t fixtures_host_image__vendor__Arr__set_head_(uint8_t* const buffer, const size_t buffer_size_bytes, const size_t index, const uint8_t value)
+# CPP_ELEMENT:  static std::uint8_t get_head(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::size_t element_index)
+# CPP_ELEMENT:  static std::int8_t set_head(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::size_t element_index, const std::uint8_t member_value)
+# RUST_ELEMENT: pub fn get_head(buffer: &[u8], index: usize) -> u8 {
+# RUST_ELEMENT: pub fn set_head(buffer: &mut [u8], index: usize, value: u8) -> core::result::Result<(), i8> {
+# GO_ELEMENT:   func ArrGetHead(buffer []byte, elementIndex int) uint8 {
+# GO_ELEMENT:   func ArrSetHead(buffer []byte, elementIndex int, memberValue uint8) int8 {
+# TS_ELEMENT:   export function getArrHead(buffer: Uint8Array, elementIndex: number): number {
+# TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): number {
+# PY_ELEMENT:   def get_head(buffer: memoryview, index: int) -> int:
+# PY_ELEMENT:   def set_head(buffer: memoryview, index: int, value: int) -> int:

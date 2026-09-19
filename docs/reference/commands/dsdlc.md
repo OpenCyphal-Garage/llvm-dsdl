@@ -202,11 +202,13 @@ generated structure is that byte image on the target that compiles it. The two d
 width the wire carries in five bytes is held in eight, or where a structure aligns a field the wire
 does not.
 
-A wire-flat type's scalar fields have accessors beside the serialisation functions: a getter
-that reads one field off a serialised buffer, and a setter that writes one into it, each at the
-field's fixed offset and in the member's own type. A getter answers what `deserialize_` puts in
-the field, on a short buffer too, where both zero-extend; a setter answers the runtime's error
-code and refuses a buffer too short for the field. C spells them `<type>__get_<field>_` and
+A wire-flat type's scalar fields, and the elements of its fixed arrays of scalars, have
+accessors beside the serialisation functions: a getter that reads one field off a serialised
+buffer, and a setter that writes one into it, each at the field's fixed offset and in the member's
+own type. An element accessor takes the element's index after the buffer. A getter answers what
+`deserialize_` puts in the field, on a short buffer too, where both zero-extend, and reads an
+index at or past the array's capacity as zero; a setter answers the runtime's error code, refusing
+such an index and a buffer too short for the field. C spells them `<type>__get_<field>_` and
 `<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
 functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
 `get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and

@@ -8,6 +8,7 @@ import { makeReal16, deserializeReal16From, getReal16Value, setReal16Value } fro
 import { makeReal64, deserializeReal64From, getReal64Value, setReal64Value } from "./uavcan/primitive/scalar/real64_1_0";
 import { makeScalar, deserializeScalarFrom, getScalarKelvin, setScalarKelvin } from "./uavcan/si/unit/temperature/scalar_1_0";
 import { makeError, deserializeErrorFrom, getErrorValue, setErrorValue } from "./uavcan/file/error_1_0";
+import { makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz } from "./uavcan/si/unit/angle/quaternion_1_0";
 
 let rng = 0x9e3779b9;
 function fill(buffer: Uint8Array): void {
@@ -46,6 +47,35 @@ function checkField<T, V>(
   return ok;
 }
 
+// An element of a fixed array, through the index the accessor takes; one past the capacity reads
+// as zero and cannot be set.
+function checkElement<T, V>(
+  size: number,
+  capacity: number,
+  make: () => T,
+  deser: (o: T, b: Uint8Array) => number,
+  get: (b: Uint8Array, i: number) => V,
+  set: (b: Uint8Array, i: number, v: V) => number,
+  element: (o: T, i: number) => V,
+  zero: V,
+): boolean {
+  let ok = true;
+  for (let i = 0; i < capacity; i++) {
+    const wire = new Uint8Array(size);
+    fill(wire);
+    const obj = make();
+    ok = ok && deser(obj, wire) >= 0 && Object.is(get(wire, i), element(obj, i));
+    ok = ok && Object.is(get(wire, capacity), zero);
+    const out = new Uint8Array(size);
+    const v = get(wire, i);
+    ok = ok && set(out, i, v) === 0;
+    const back = make();
+    ok = ok && deser(back, out) >= 0 && Object.is(get(out, i), element(back, i));
+    ok = ok && set(out, capacity, v) !== 0;
+  }
+  return ok;
+}
+
 let failures = 0;
 function report(name: string, same: boolean): void {
   console.log(`${name.padEnd(40)} ${same ? "same" : "DIFFER"}`);
@@ -67,4 +97,6 @@ report("uavcan.si.unit.temperature.Scalar",
   checkField(4, makeScalar, deserializeScalarFrom, getScalarKelvin, setScalarKelvin, (o) => o.kelvin, false));
 report("uavcan.file.Error",
   checkField(2, makeError, deserializeErrorFrom, getErrorValue, setErrorValue, (o) => o.value, true));
+report("uavcan.si.unit.angle.Quaternion",
+  checkElement(16, 4, makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz, (o, i) => o.wxyz[i], 0));
 if (failures !== 0) { throw new Error(`${failures} type(s) differ`); }

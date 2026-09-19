@@ -461,19 +461,22 @@ public:
     }
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
-    ///        a slice and speaking the member's own storage type. The plan holds the size and the
-    ///        value in a `u64`: the size is the slice's own length, read as an expression rather
-    ///        than bound, since a slice read needs no size beside it; the value is rebound.
+    ///        a slice and speaking the member's own storage type. The plan holds the size, an index
+    ///        and the value in a `u64`: the size is the slice's own length, read as an expression
+    ///        rather than bound, since a slice read needs no size beside it; an index and a value
+    ///        are rebound at entry.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Member&     member  = accessorMember(fn);
         const std::string storage = scalarType(member.io);
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(2).getType();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        const std::string index   = indexed ? ", index: usize" : "";
         accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
         if (getter)
         {
-            returnCast_.clear();
             if (storage == "bool")
             {
                 returnCast_ = " != 0";
@@ -482,16 +485,28 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]) -> " + storage + " {");
-            return {"buffer", "(buffer.len() as u64)"};
+            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
         }
-        w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8], value: " + storage +
-               ") -> core::result::Result<(), i8> {");
-        if (integer)
+        else
         {
-            w.line("let value = value as u64;");
+            w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8]" + index + ", value: " + storage +
+                   ") -> core::result::Result<(), i8> {");
         }
-        return {"buffer", "(buffer.len() as u64)", "value"};
+        std::vector<std::string> parameters{"buffer", "(buffer.len() as u64)"};
+        if (indexed)
+        {
+            w.line("let index = index as u64;");
+            parameters.emplace_back("index");
+        }
+        if (!getter)
+        {
+            if (integer)
+            {
+                w.line("let value = value as u64;");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     /// @brief The member an accessor reaches, through the plan its schema and section name.

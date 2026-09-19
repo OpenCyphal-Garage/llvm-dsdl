@@ -8,6 +8,7 @@
 #include "uavcan/primitive/scalar/Real64_1_0.h"
 #include "uavcan/si/unit/temperature/Scalar_1_0.h"
 #include "uavcan/file/Error_1_0.h"
+#include "uavcan/si/unit/angle/Quaternion_1_0.h"
 
 /* An accessor against the body it stands in for: a getter answers what deserialise puts in the
  * field, on a full buffer and on a short one, and a setter writes what deserialise reads back. The
@@ -62,6 +63,40 @@ static int failures = 0;
         }                                                                   \
     } while (0)
 
+/* An element of a fixed array, through the index the accessor takes; one past the capacity reads as
+ * zero and cannot be set. */
+#define CHECK_ELEMENT(T, SIZE, FIELD, INDEX, CAPACITY, CTYPE)            \
+    do                                                                   \
+    {                                                                    \
+        uint8_t wire[SIZE];                                              \
+        uint8_t out[SIZE];                                               \
+        T       obj;                                                     \
+        CTYPE   got;                                                     \
+        CTYPE   v;                                                       \
+        CTYPE   zero;                                                    \
+        size_t  size = SIZE;                                             \
+        int     ok   = 1;                                                \
+        fill(wire, SIZE);                                                \
+        memset(&zero, 0, sizeof zero);                                   \
+        ok  = ok && (T##__deserialize_(&obj, wire, &size) == 0);         \
+        got = T##__get_##FIELD##_(wire, SIZE, INDEX);                    \
+        ok  = ok && (memcmp(&got, &obj.FIELD[INDEX], sizeof got) == 0);  \
+        got = T##__get_##FIELD##_(wire, SIZE, CAPACITY);                 \
+        ok  = ok && (memcmp(&got, &zero, sizeof got) == 0);              \
+        memset(out, 0, SIZE);                                            \
+        v    = T##__get_##FIELD##_(wire, SIZE, INDEX);                   \
+        ok   = ok && (T##__set_##FIELD##_(out, SIZE, INDEX, v) == 0);    \
+        size = SIZE;                                                     \
+        ok   = ok && (T##__deserialize_(&obj, out, &size) == 0);         \
+        got  = T##__get_##FIELD##_(out, SIZE, INDEX);                    \
+        ok   = ok && (memcmp(&got, &obj.FIELD[INDEX], sizeof got) == 0); \
+        ok   = ok && (T##__set_##FIELD##_(out, SIZE, CAPACITY, v) != 0); \
+        if (!ok)                                                         \
+        {                                                                \
+            ++type_failures;                                             \
+        }                                                                \
+    } while (0)
+
 #define REPORT(NAME)                                                        \
     do                                                                      \
     {                                                                       \
@@ -88,5 +123,10 @@ int main(void)
     REPORT("uavcan.si.unit.temperature.Scalar");
     CHECK_FIELD(uavcan__file__Error, 2, value, uint16_t, 1);
     REPORT("uavcan.file.Error");
+    for (size_t i = 0; i < 4; ++i)
+    {
+        CHECK_ELEMENT(uavcan__si__unit__angle__Quaternion, 16, wxyz, i, 4, float);
+    }
+    REPORT("uavcan.si.unit.angle.Quaternion");
     return failures == 0 ? 0 : 1;
 }

@@ -743,16 +743,18 @@ public:
 
     /// @brief Opens a getter or a setter: a package-level function named after the type and the
     ///        member, taking the buffer as a slice and speaking the member's own type. The plan
-    ///        holds the size and an integer in a `uint64`: the size is the slice's own length, an
-    ///        expression rather than a local, since a slice read needs no size beside it; the
-    ///        value is bound at entry.
+    ///        holds the size, an index and an integer in a `uint64`: the size is the slice's own
+    ///        length, an expression rather than a local, since a slice read needs no size beside
+    ///        it; an index and a value are bound at entry.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed    a       = accessed(fn);
         const std::string storage = scalarType(a.member->io);
         const std::string name    = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(2).getType();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        const std::string index   = indexed ? ", elementIndex int" : "";
         accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         if (getter)
@@ -765,19 +767,32 @@ public:
             {
                 returnCast_ = storage;
             }
-            w.open("func " + name + "(buffer []byte) " + storage + " {");
-            return {"buffer", "uint64(len(buffer))"};
+            w.open("func " + name + "(buffer []byte" + index + ") " + storage + " {");
         }
-        w.open("func " + name + "(buffer []byte, " + (integer ? "memberValue " : "value ") + storage + ") int8 {");
-        if (storage == "bool")
+        else
         {
-            w.line("value := dsdlruntime.BoolToUint64(memberValue)");
+            w.open("func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
+                   ") int8 {");
         }
-        else if (integer)
+        std::vector<std::string> parameters{"buffer", "uint64(len(buffer))"};
+        if (indexed)
         {
-            w.line("value := uint64(memberValue)");
+            w.line("index := uint64(elementIndex)");
+            parameters.emplace_back("index");
         }
-        return {"buffer", "uint64(len(buffer))", "value"};
+        if (!getter)
+        {
+            if (storage == "bool")
+            {
+                w.line("value := dsdlruntime.BoolToUint64(memberValue)");
+            }
+            else if (integer)
+            {
+                w.line("value := uint64(memberValue)");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override

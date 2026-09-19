@@ -649,23 +649,29 @@ void emitSection(SourceWriter&              w,
     w.close("}");
     w.blank();
 
-    // A wire-flat section's scalar fields have a getter and a setter beside the bodies: one read
-    // or one write at the field's offset, through the helpers the bodies normalise with. The
-    // lowered entry points take the size as an int64_t and hold an integer in one; the wrappers
-    // speak the member's own type, and a getter reads a null buffer as an empty one.
+    // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
+    // getter and a setter beside the bodies: one read or one write at the field's offset, through
+    // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
+    // as an int64_t and hold an integer in one; the wrappers speak the member's own type, and a
+    // getter reads a null buffer as an empty one.
     if (metadata.wireFlat.holds && !section.isUnion)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
         for (const auto& field : section.fields)
         {
-            if (field.isPadding || (field.resolvedType.arrayKind != ArrayKind::None) ||
+            const ArrayKind kind = field.resolvedType.arrayKind;
+            if (field.isPadding || ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed)) ||
                 (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite))
             {
                 continue;
             }
-            const bool  isFloat = field.resolvedType.scalarCategory == SemanticScalarCategory::Float;
-            const bool  isBool  = field.resolvedType.scalarCategory == SemanticScalarCategory::Bool;
-            std::string irType  = "int64_t";
+            const bool        indexed   = kind == ArrayKind::Fixed;
+            const std::string irIndex   = indexed ? ", int64_t index" : "";
+            const std::string cIndex    = indexed ? ", const size_t index" : "";
+            const std::string passIndex = indexed ? ", (int64_t) index" : "";
+            const bool        isFloat   = field.resolvedType.scalarCategory == SemanticScalarCategory::Float;
+            const bool        isBool    = field.resolvedType.scalarCategory == SemanticScalarCategory::Bool;
+            std::string       irType    = "int64_t";
             if (isFloat)
             {
                 irType = (field.resolvedType.bitLength <= 32) ? "float" : "double";
@@ -675,27 +681,28 @@ void emitSection(SourceWriter&              w,
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
             const std::string irGet = irStem + "__get_" + field.name + "_ir_";
             const std::string irSet = irStem + "__set_" + field.name + "_ir_";
-            w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes);");
-            w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes, " + irType + " value);");
+            w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ");");
+            w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ", " + irType +
+                   " value);");
             w.blank();
             w.line("static inline " + cType + " " + typeName + "__get_" + cMember +
-                   "_(const uint8_t* const buffer, const size_t buffer_size_bytes)");
+                   "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ")");
             w.open("{");
             const std::string size = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
             if (isBool)
             {
-                w.line("return " + irGet + "(buffer, " + size + ") != 0;");
+                w.line("return " + irGet + "(buffer, " + size + passIndex + ") != 0;");
             }
             else
             {
-                w.line("return (" + cType + ") " + irGet + "(buffer, " + size + ");");
+                w.line("return (" + cType + ") " + irGet + "(buffer, " + size + passIndex + ");");
             }
             w.close("}");
             w.blank();
             w.line("static inline int8_t " + typeName + "__set_" + cMember +
-                   "_(uint8_t* const buffer, const size_t buffer_size_bytes, const " + cType + " value)");
+                   "_(uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ", const " + cType + " value)");
             w.open("{");
-            w.line("return " + irSet + "(buffer, (int64_t) buffer_size_bytes, (" + irType + ") " +
+            w.line("return " + irSet + "(buffer, (int64_t) buffer_size_bytes" + passIndex + ", (" + irType + ") " +
                    (isBool ? std::string("(value ? 1 : 0)") : std::string("value")) + ");");
             w.close("}");
             w.blank();

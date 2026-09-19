@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 
+	angle "uavcan_dsdl_generated/uavcan/si/unit/angle"
 	file "uavcan_dsdl_generated/uavcan/file"
 	node "uavcan_dsdl_generated/uavcan/node"
 	scalar "uavcan_dsdl_generated/uavcan/primitive/scalar"
@@ -59,6 +60,26 @@ func checkField[V any](size int, get func([]byte) V, set func([]byte, V) int8, f
 	ok = ok && rc && bitsOf(get(out)) == bitsOf(back)
 	ok = ok && (!exact || bitsOf(v) == bitsOf(back))
 	ok = ok && set(out[:0], v) != 0
+	return ok
+}
+
+// An element of a fixed array, through the index the accessor takes; one past the capacity reads
+// as zero and cannot be set.
+func checkElement[V any](size int, capacity int, get func([]byte, int) V, set func([]byte, int, V) int8, element func([]byte, int) (V, bool)) bool {
+	ok := true
+	for i := 0; i < capacity; i++ {
+		wire := make([]byte, size)
+		fill(wire)
+		full, rc := element(wire, i)
+		ok = ok && rc && bitsOf(get(wire, i)) == bitsOf(full)
+		ok = ok && bitsOf(get(wire, capacity)) == 0
+		out := make([]byte, size)
+		v := get(wire, i)
+		ok = ok && set(out, i, v) == 0
+		back, rc := element(out, i)
+		ok = ok && rc && bitsOf(get(out, i)) == bitsOf(back)
+		ok = ok && set(out, capacity, v) != 0
+	}
 	return ok
 }
 
@@ -121,6 +142,12 @@ func main() {
 			rc, _ := o.Deserialize(b)
 			return o.Value, rc == 0
 		}, true))
+	report("uavcan.si.unit.angle.Quaternion",
+		checkElement(16, 4, angle.QuaternionGetWxyz, angle.QuaternionSetWxyz, func(b []byte, i int) (float32, bool) {
+			var o angle.Quaternion
+			rc, _ := o.Deserialize(b)
+			return o.Wxyz[i], rc == 0
+		}))
 	if failures != 0 {
 		os.Exit(1)
 	}

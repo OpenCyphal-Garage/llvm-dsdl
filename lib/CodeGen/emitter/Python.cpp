@@ -791,7 +791,8 @@ public:
     }
 
     /// @brief Opens a getter or a setter: a static method of the class, speaking the member's
-    ///        own type. The plan holds an integer as an `int`, which a `bool` value is rebound to.
+    ///        own type. The plan holds an integer as an `int`, which a `bool` value is rebound to;
+    ///        an index is an `int` already.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed        a        = accessed(fn);
@@ -806,20 +807,34 @@ public:
         {
             storage = "float";
         }
-        accessor_   = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_ = (getter && storage == "bool") ? "bool" : std::string{};
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", index: int" : "";
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_               = (getter && storage == "bool") ? "bool" : std::string{};
         line(w, "@staticmethod");
         if (getter)
         {
-            open(w, "def " + a.member->getterName + "(buffer: memoryview) -> " + storage + ":");
-            return {"buffer", "len(buffer)"};
+            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> " + storage + ":");
         }
-        open(w, "def " + a.member->setterName + "(buffer: memoryview, value: " + storage + ") -> int:");
-        if (storage != "float")
+        else
         {
-            line(w, "value = int(value)");
+            open(w,
+                 "def " + a.member->setterName + "(buffer: memoryview" + index + ", value: " + storage + ") -> int:");
         }
-        return {"buffer", "len(buffer)", "value"};
+        std::vector<std::string> parameters{"buffer", "len(buffer)"};
+        if (indexed)
+        {
+            parameters.emplace_back("index");
+        }
+        if (!getter)
+        {
+            if (storage != "float")
+            {
+                line(w, "value = int(value)");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override

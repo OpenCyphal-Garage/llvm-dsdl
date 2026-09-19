@@ -49,6 +49,24 @@ def check_field(cls, size, field, exact):
     return ok
 
 
+def check_element(cls, size, field, capacity):
+    """An element of a fixed array, through the index the accessor takes; one past the capacity
+    reads as zero and cannot be set."""
+    get = getattr(cls, f"get_{field}")
+    set_ = getattr(cls, f"set_{field}")
+    ok = True
+    for i in range(capacity):
+        wire = fill(size)
+        ok = ok and bits(get(memoryview(wire), i)) == bits(getattr(cls.deserialize(bytes(wire)), field)[i])
+        ok = ok and get(memoryview(wire), capacity) == 0
+        out = bytearray(size)
+        v = get(memoryview(wire), i)
+        ok = ok and set_(memoryview(out), i, v) == 0
+        ok = ok and bits(get(memoryview(out), i)) == bits(getattr(cls.deserialize(bytes(out)), field)[i])
+        ok = ok and set_(memoryview(out), capacity, v) != 0
+    return ok
+
+
 def report(name, same):
     print(f"{name:<40} {'same' if same else 'DIFFER'}")
     return same
@@ -63,4 +81,5 @@ ok = report("uavcan.primitive.scalar.Real16", check_field(load("uavcan.primitive
 ok = report("uavcan.primitive.scalar.Real64", check_field(load("uavcan.primitive.scalar.real64_1_0", "Real64"), 8, "value", False)) and ok
 ok = report("uavcan.si.unit.temperature.Scalar", check_field(load("uavcan.si.unit.temperature.scalar_1_0", "Scalar"), 4, "kelvin", False)) and ok
 ok = report("uavcan.file.Error", check_field(load("uavcan.file.error_1_0", "Error"), 2, "value", True)) and ok
+ok = report("uavcan.si.unit.angle.Quaternion", check_element(load("uavcan.si.unit.angle.quaternion_1_0", "Quaternion"), 16, "wxyz", 4)) and ok
 sys.exit(0 if ok else 1)

@@ -547,7 +547,16 @@ bits: the getter against `deserialize_`'s field on the full buffer and on a half
 where both zero-extend; the setter's bytes read back through `deserialize_` and the getter, and
 exactly for an integer; and a setter refused an empty buffer. Six legs, forty-two verdicts.
 
-Still to do: fixed arrays and nested composites, and the instruction-count row.
+**Fixed arrays, 2026-09-18.** An element accessor takes an index after the buffer — `get_head(buf,
+i)`, `Arr::get_head(buf, size, i)`, `ArrGetHead(buf, i)` — and the body is the scalar's with the
+offset computed: base plus index times width, checked against the capacity. The decision taken
+for an index at or past the capacity: a getter reads it as zero, as it reads bytes past the
+buffer, since it has no error channel and a defined answer is safer in C than a read past the
+field; a setter refuses it as an invalid argument, as it refuses a null buffer. The lane gained
+`si.unit.angle.Quaternion`'s `float32[4]`, checked element by element and one past the end, in
+every language. A bool array is the same path at a width of one bit.
+
+Still to do: nested composites, and the instruction-count row.
 
 ### Phase 5 — `--aliasable-only` — S
 
@@ -591,7 +600,7 @@ and then the option at a fixed offset.
 | fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
 | bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
 | zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
-| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed for scalar fields |
+| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed for scalars and fixed arrays |
 
 ## Risks
 

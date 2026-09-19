@@ -682,8 +682,8 @@ public:
     /// @brief Opens a getter or a setter: an exported function named after the type and the
     ///        member, as the bodies are, speaking the member's own type. The plan holds an
     ///        integer in a `bigint`: the size is the buffer's own length as one, an expression
-    ///        rather than a local, and a `number` or a `boolean` member is rebound at entry and
-    ///        converted at the return.
+    ///        rather than a local; an index, and a `number` or a `boolean` member, are rebound at
+    ///        entry and a getter's answer is converted at the return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed    a       = accessed(fn);
@@ -692,6 +692,9 @@ public:
         std::string       member  = a.member->tsName;
         member[0]                 = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
         const std::string name    = std::string(getter ? "get" : "set") + a.plan->typeName + member;
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", elementIndex: number" : "";
+        const bool        rebind  = (storage == Storage::Number) || (storage == Storage::Boolean);
         accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         if (getter)
@@ -704,21 +707,32 @@ public:
             {
                 returnCast_ = "boolean";
             }
-            w.open("export function " + name + "(buffer: Uint8Array): " + tsType + " {");
-            return {"buffer", "BigInt(buffer.length)"};
+            w.open("export function " + name + "(buffer: Uint8Array" + index + "): " + tsType + " {");
         }
-        const bool rebind = (storage == Storage::Number) || (storage == Storage::Boolean);
-        w.open("export function " + name + "(buffer: Uint8Array, " + (rebind ? "memberValue: " : "value: ") + tsType +
-               "): number {");
-        if (storage == Storage::Number)
+        else
         {
-            w.line("const value: bigint = BigInt(memberValue);");
+            w.open("export function " + name + "(buffer: Uint8Array" + index + ", " +
+                   (rebind ? "memberValue: " : "value: ") + tsType + "): number {");
         }
-        else if (storage == Storage::Boolean)
+        std::vector<std::string> parameters{"buffer", "BigInt(buffer.length)"};
+        if (indexed)
         {
-            w.line("const value: bigint = memberValue ? 1n : 0n;");
+            w.line("const index: bigint = BigInt(elementIndex);");
+            parameters.emplace_back("index");
         }
-        return {"buffer", "BigInt(buffer.length)", "value"};
+        if (!getter)
+        {
+            if (storage == Storage::Number)
+            {
+                w.line("const value: bigint = BigInt(memberValue);");
+            }
+            else if (storage == Storage::Boolean)
+            {
+                w.line("const value: bigint = memberValue ? 1n : 0n;");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override

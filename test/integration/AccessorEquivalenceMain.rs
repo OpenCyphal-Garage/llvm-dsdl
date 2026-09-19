@@ -7,6 +7,7 @@ use uavcan_dsdl_generated::uavcan::primitive::scalar::integer16_1_0::uavcan_prim
 use uavcan_dsdl_generated::uavcan::primitive::scalar::natural64_1_0::uavcan_primitive_scalar_Natural64;
 use uavcan_dsdl_generated::uavcan::primitive::scalar::real16_1_0::uavcan_primitive_scalar_Real16;
 use uavcan_dsdl_generated::uavcan::primitive::scalar::real64_1_0::uavcan_primitive_scalar_Real64;
+use uavcan_dsdl_generated::uavcan::si::unit::angle::quaternion_1_0::uavcan_si_unit_angle_Quaternion;
 use uavcan_dsdl_generated::uavcan::si::unit::temperature::scalar_1_0::uavcan_si_unit_temperature_Scalar;
 
 static mut RNG: u32 = 0x9E37_79B9;
@@ -80,6 +81,28 @@ macro_rules! check_field {
     }};
 }
 
+// An element of a fixed array, through the index the accessor takes; one past the capacity reads
+// as zero and cannot be set.
+macro_rules! check_element {
+    ($t:ty, $field:ident, $get:expr, $set:expr, $size:expr, $capacity:expr) => {{
+        let mut ok = true;
+        for i in 0..$capacity {
+            let mut wire = vec![0u8; $size];
+            fill(&mut wire);
+            let (obj, _) = <$t>::from_bytes(&wire).unwrap();
+            ok &= $get(&wire, i).bits() == obj.$field[i].bits();
+            ok &= $get(&wire, $capacity).bits() == 0;
+            let mut out = vec![0u8; $size];
+            let v = $get(&wire, i);
+            ok &= $set(&mut out, i, v).is_ok();
+            let (back, _) = <$t>::from_bytes(&out).unwrap();
+            ok &= $get(&out, i).bits() == back.$field[i].bits();
+            ok &= $set(&mut out, $capacity, v).is_err();
+        }
+        ok
+    }};
+}
+
 fn report(name: &str, same: bool) -> bool {
     println!("{:<40} {}", name, if same { "same" } else { "DIFFER" });
     same
@@ -115,6 +138,10 @@ fn main() {
     ok &= report(
         "uavcan.file.Error",
         check_field!(uavcan_file_Error, value, uavcan_file_Error::get_value, uavcan_file_Error::set_value, 2, true),
+    );
+    ok &= report(
+        "uavcan.si.unit.angle.Quaternion",
+        check_element!(uavcan_si_unit_angle_Quaternion, wxyz, uavcan_si_unit_angle_Quaternion::get_wxyz, uavcan_si_unit_angle_Quaternion::set_wxyz, 16, 4),
     );
     std::process::exit(if ok { 0 } else { 1 });
 }

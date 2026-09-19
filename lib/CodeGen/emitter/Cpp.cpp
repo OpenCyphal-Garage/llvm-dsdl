@@ -562,33 +562,45 @@ public:
 
     /// @brief Opens a getter or a setter: a static member defined inside the struct, since it
     ///        reads the wire and not an object, speaking the member's own type. The plan holds an
-    ///        integer in a `std::uint64_t`, so a setter rebinds its value at entry and a getter
-    ///        casts at its return.
+    ///        integer, and an index, in a `std::uint64_t`, so a setter rebinds its value at entry,
+    ///        an element accessor its index, and a getter casts at its return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed    a       = accessed(fn);
         const std::string storage = scalarType(a.member->io);
         const std::string name    = getter ? a.member->getterName : a.member->setterName;
-        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(2).getType();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        const std::string index   = indexed ? ", const std::size_t element_index" : "";
         accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_               = (getter && integer) ? storage : std::string{};
         if (getter)
         {
             w.line("static " + storage + " " + name +
-                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)");
-            w.open("{");
-            return {"buffer", "buffer_size_bytes"};
+                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index + ")");
         }
-        w.line("static std::int8_t " + name +
-               "(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const " + storage +
-               (integer ? " member_value)" : " value)"));
-        w.open("{");
-        if (integer)
+        else
         {
-            w.line("const std::uint64_t value = static_cast<std::uint64_t>(member_value);");
+            w.line("static std::int8_t " + name + "(std::uint8_t* const buffer, const std::size_t buffer_size_bytes" +
+                   index + ", const " + storage + (integer ? " member_value)" : " value)"));
         }
-        return {"buffer", "buffer_size_bytes", "value"};
+        w.open("{");
+        std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
+        if (indexed)
+        {
+            w.line("const std::uint64_t index = static_cast<std::uint64_t>(element_index);");
+            parameters.emplace_back("index");
+        }
+        if (!getter)
+        {
+            if (integer)
+            {
+                w.line("const std::uint64_t value = static_cast<std::uint64_t>(member_value);");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override

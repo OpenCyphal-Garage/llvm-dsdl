@@ -37,11 +37,29 @@
 # SET:       dsdl.write_bits %[[BUF]][%[[OFF]]], %[[NORMALISED]], size %[[SIZE]] {width = 16 : i64}
 
 # The offsets follow the steps: after a four-byte fixed array, and after an eight-byte nested record.
-# The array and the nested record themselves get no accessor yet.
+# The nested record itself gets no accessor yet.
 # OFFSETS-LABEL: @fixtures_host_image_vendor_Arr_1_0__get_tail_ir_(
 # OFFSETS:       arith.constant 32 : i64
 # OFFSETS-LABEL: @fixtures_host_image_vendor_Nested_1_0__get_code_ir_(
 # OFFSETS:       arith.constant 64 : i64
+
+# An element of a fixed array takes an index. At or past the capacity it reads as zero, as bytes
+# past the buffer do: the read stays within the field, and the answer is selected after it, since a
+# slice read carries no size to clamp.
+# RUN: FileCheck %s --check-prefix=ELEMENT < %t/bodies.mlir
+# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__get_head_ir_(
+# ELEMENT-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[INDEX:.*]]: i64) -> i64
+# ELEMENT:       %[[IN:.*]] = arith.cmpi ult, %[[INDEX]], %{{.*}}
+# ELEMENT:       %[[OFF:.*]] = arith.muli %[[INDEX]], %{{.*}}
+# ELEMENT:       %[[AT:.*]] = arith.select %[[IN]], %[[OFF]], %{{.*}}
+# ELEMENT:       dsdl.read_bits %{{.*}}[%[[AT]]], size %[[SIZE]] {width = 8 : i64}
+# ELEMENT:       %[[VALUE:.*]] = call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Arr_1_0__0__deser(
+# ELEMENT:       %[[ANSWER:.*]] = arith.select %[[IN]], %[[VALUE]], %{{.*}}
+# ELEMENT:       return %[[ANSWER]]
+# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__set_head_ir_(
+# ELEMENT-SAME:  %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: i64, %[[INDEX:.*]]: i64, %{{.*}}: i64) -> i8
+# ELEMENT:       arith.cmpi ult, %[[INDEX]], %{{.*}}
+# ELEMENT:       dsdl.write_bits
 
 # NOT_FLAT-NOT: __get_
 # NOT_FLAT-NOT: __set_
