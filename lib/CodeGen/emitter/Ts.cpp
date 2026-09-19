@@ -112,10 +112,19 @@ void emitAttachedDocTs(SourceWriter& w, const AttachedDoc& doc)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
+    EmitterContext(const SemanticModule&    semantic,
+                   const TypeNameVersioning typeNameVersioning,
+                   const bool               accessorsOnly)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
+        , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     /// @brief Whether generated type names carry the definition's version.
@@ -216,6 +225,7 @@ private:
 
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+    bool               accessorsOnly_{false};
 };
 
 std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1751,39 +1761,46 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    // The object type and its factory, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        auto init = readInitializer(bodies.initialize);
+        if (!init)
+        {
+            return init.takeError();
+        }
+        emitSectionType(w,
+                        typeName,
+                        section,
+                        typeDoc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
+        w.blank();
+        emitMakeFunction(w, typeName, section, *init, ctx);
+        w.blank();
     }
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
-    {
-        return init.takeError();
-    }
-    emitSectionType(w,
-                    typeName,
-                    section,
-                    typeDoc,
-                    ctx,
-                    def.info.fullName,
-                    def.info.majorVersion,
-                    def.info.minorVersion);
-    w.blank();
-    emitMakeFunction(w, typeName, section, *init, ctx);
-    w.blank();
     emitUnionOptionTags(w, typeName, section, metadata);
     emitSectionConstants(w, typeName, section);
     w.blank();
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+    if (!ctx.accessorsOnly())
     {
-        return err;
-    }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-    {
-        return err;
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
@@ -1794,8 +1811,11 @@ llvm::Error emitSection(SourceWriter&             w,
             return err;
         }
     }
-    w.blank();
-    emitEntryPoints(w, typeName, section);
+    if (!ctx.accessorsOnly())
+    {
+        w.blank();
+        emitEntryPoints(w, typeName, section);
+    }
     return llvm::Error::success();
 }
 
@@ -1938,6 +1958,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -1974,13 +1999,24 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
                          respType);
 
+    std::ostringstream head;
+    {
+        SourceWriter hw = makeTsWriter(head);
+        hw.line(generatedCommentLine("TypeScript backend"));
+        hw.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
+                std::to_string(def.info.minorVersion));
+    }
+    const auto         runtimePath   = relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
+    const std::string  runtimeImport = "import * as dsdlRuntime from \"" + runtimePath + "\";\n";
     std::ostringstream out;
     SourceWriter       w = makeTsWriter(out);
-    w.line(generatedCommentLine("TypeScript backend"));
-    w.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-           std::to_string(def.info.minorVersion));
-    const auto runtimePath = relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
-    w.line("import * as dsdlRuntime from \"" + runtimePath + "\";");
+    // The runtime import is written when the body refers to it. An accessors-only file whose
+    // accessors all answer a sub-buffer refers to nothing in it.
+    const auto assemble = [&]() {
+        const std::string body        = out.str();
+        const bool        usesRuntime = !ctx.accessorsOnly() || body.contains("dsdlRuntime.");
+        return head.str() + (usesRuntime ? runtimeImport : std::string{}) + body;
+    };
     w.blank();
 
     // `Original as Local`, collapsing to plain `Original` when nothing had to be renamed -- so a
@@ -1999,14 +2035,18 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return rendered;
     };
 
-    for (const auto& [modulePath, names] : bodyImportsByModule)
+    // An accessors-only file names no other type: a composite's getter answers its bytes.
+    if (!ctx.accessorsOnly())
     {
-        w.line("import { " + renderImportList(names) + " } from \"" + modulePath + "\";");
-    }
+        for (const auto& [modulePath, names] : bodyImportsByModule)
+        {
+            w.line("import { " + renderImportList(names) + " } from \"" + modulePath + "\";");
+        }
 
-    for (const auto& [modulePath, names] : importsByModule)
-    {
-        w.line("import type { " + renderImportList(names) + " } from \"" + modulePath + "\";");
+        for (const auto& [modulePath, names] : importsByModule)
+        {
+            w.line("import type { " + renderImportList(names) + " } from \"" + modulePath + "\";");
+        }
     }
     w.line("export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
     w.line("export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
@@ -2061,7 +2101,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        return out.str();
+        return assemble();
     }
 
     if (auto err = emitSection(w,
@@ -2098,7 +2138,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     w.line("export type " + baseType + " = " + reqType + ";");
-    return out.str();
+    return assemble();
 }
 
 std::string renderPackageJson(const Options& options)
@@ -2515,7 +2555,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
 
     std::vector<const SemanticDefinition*> ordered;
     ordered.reserve(semantic.definitions.size());

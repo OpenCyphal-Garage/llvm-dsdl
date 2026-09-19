@@ -177,11 +177,19 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    std::vector<std::string> packageComponents,
-                   const TypeNameVersioning typeNameVersioning)
+                   const TypeNameVersioning typeNameVersioning,
+                   const bool               accessorsOnly)
         : packageComponents_(std::move(packageComponents))
         , index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
+        , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -294,6 +302,7 @@ private:
     std::vector<std::string> packageComponents_;
     DefinitionIndex          index_;
     TypeNameVersioning       typeNameVersioning_{TypeNameVersioning::Unversioned};
+    bool                     accessorsOnly_{false};
 };
 
 std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1681,6 +1690,19 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
+    // An accessors-only run has no bodies: a bare class carries the accessors as static methods.
+    if (ctx.accessorsOnly())
+    {
+        emitAttachedDocPy(w,
+                          docWithDeprecationNotice(typeDoc,
+                                                   section.deprecated,
+                                                   def.info.fullName,
+                                                   def.info.majorVersion,
+                                                   def.info.minorVersion));
+        w.open("class " + typeName + ":");
+    }
+    else
+    {
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1710,6 +1732,7 @@ llvm::Error emitSection(SourceWriter&             w,
     if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
+    }
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
@@ -1777,7 +1800,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     w.line("from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime, error_message");
-    for (const auto& [modulePath, names] : importsByModule)
+    // An accessors-only file names no other type: a composite's getter answers its bytes.
+    for (const auto& [modulePath, names] : ctx.accessorsOnly() ? decltype(importsByModule){} : importsByModule)
     {
         std::string importNames;
         for (const auto& name : names)
@@ -1852,6 +1876,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -2102,7 +2131,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     }
 
     const auto           packageComponents = splitPackageName(options.packageName);
-    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning, options.accessorsOnly);
 
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);

@@ -1416,18 +1416,23 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const SectionBodies&                  bodies,
                             PlanBodyLookups&                      lookups)
 {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    // An accessors-only run has no bodies: a unit struct carries the constants and the accessors.
+    InitializerShape init;
+    if (!options.accessorsOnly)
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        auto initRead = readInitializer(bodies.initialize);
+        if (!initRead)
+        {
+            return initRead.takeError();
+        }
+        init = std::move(*initRead);
     }
-    auto initRead = readInitializer(bodies.initialize);
-    if (!initRead)
-    {
-        return initRead.takeError();
-    }
-    const InitializerShape&  init       = *initRead;
     const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
@@ -1453,6 +1458,22 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                                                  definitionFullName,
                                                  metadata.majorVersion,
                                                  metadata.minorVersion));
+    std::size_t fieldCount = 0;
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            ++fieldCount;
+        }
+    }
+    if (options.accessorsOnly)
+    {
+        w.line("#[derive(Clone, Debug, PartialEq)]");
+        w.line("pub struct " + declaredName + ";");
+        w.blank();
+    }
+    else
+    {
     // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
     // decided under: fields in order, each at its natural alignment. Only such types get it -- the
     // default representation may reorder a non-image type's fields to pack it, and that is worth
@@ -1464,14 +1485,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("#[derive(Clone, Debug, PartialEq)]");
     w.open("pub struct " + declaredName + " {");
 
-    std::size_t fieldCount = 0;
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
         {
             continue;
         }
-        ++fieldCount;
         emitAttachedDocRust(w, field.doc);
         w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
                rustFieldType(field.resolvedType, ctx) + ",");
@@ -1491,6 +1510,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.close("}");
     w.blank();
 
+    }
     if (section.deprecated)
     {
         if (options.emitDeprecationAttributes)
@@ -1503,7 +1523,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
 
     // The verdict was decided under natural alignment, which `repr(C)` follows; this pins the
     // layout on the target the crate is compiled for.
-    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    if (!options.accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("const _: () = assert!(core::mem::size_of::<" + declaredName +
@@ -1520,6 +1540,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.blank();
     }
 
+    if (!options.accessorsOnly)
+    {
     // Every member's default is what the initialise body stores for it.
     llvm::StringMap<const MemberDefault*> defaults;
     for (const auto& entry : init.members)
@@ -1567,6 +1589,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.close("}");
     w.blank();
 
+    }
     w.open("impl " + declaredName + " {");
     w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
     w.line(std::string("pub const IS_DEPRECATED: bool = ") + (metadata.deprecated ? "true;" : "false;"));
@@ -1580,7 +1603,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line(std::string("pub const HOST_IMAGE: bool = ") + (metadata.hostImage.holds ? "true;" : "false;"));
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
-    if (options.hostImageFolded && metadata.hostImage.holds)
+    if (options.hostImageFolded && metadata.hostImage.holds && !options.accessorsOnly)
     {
         w.line("#[cfg(target_endian = \"big\")]");
         w.line("compile_error!(\"" + declaredName +
@@ -1634,6 +1657,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
     w.blank();
 
+    if (!options.accessorsOnly)
+    {
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
         return err;
@@ -1668,6 +1693,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("Ok((out, used))");
     w.close("}");
 
+    }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
@@ -1746,7 +1772,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("#![allow(non_upper_case_globals)]");
     out << "\n";
 
-    const auto deps = collectDefinitionCompositeDependencies(def);
+    // An accessors-only file names no other type: a composite's getter answers its bytes.
+    const auto deps = options.accessorsOnly ? std::vector<SemanticTypeRef>{}
+                                            : collectDefinitionCompositeDependencies(def);
 
     const auto selfKey = definitionTypeKey(def.info);
 

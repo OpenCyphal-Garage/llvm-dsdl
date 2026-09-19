@@ -592,16 +592,44 @@ inline; a whole-function count includes its cold path, which is the honest unit 
 The C text path keeps calling the `static inline` primitive, which the C compiler inlines on its
 own; that path's counts are the cachegrind comparison's to keep. Phase 4 is complete.
 
-### Phase 5 — `--aliasable-only` — S
+### Phase 5 — `--aliasable-only` — done 2026-09-18
 
 **Depends on** 4.
 
 Emit the accessors and neither the object type nor the serdes — a filter on which functions are
 emitted, once phase 4 has made the accessors functions. The mode requires every targeted section to
-be `@aliasable` and fails naming the first that is not.
+be `@aliasable` and fails naming each that is not.
 
 **Acceptance** The mode's output compiles standalone in each language; a targeted non-`@aliasable`
 type fails with a diagnostic naming it; `--list-outputs` reports the reduced set.
+
+**Decisions taken, 2026-09-18.**
+
+- *A nested type needs no directive.* An `@aliasable` type's composite getter answers the nested
+  record's bytes for the nested type's accessors to read, so the nested type is in the run by the
+  outer type's assertion, and it is wire-flat by the directive's own definition. A type that is
+  neither asserted nor nested is refused; every such type is named in one run, and a type that is
+  not wire-flat is named with the field that blocked it.
+- *A filter in the pipeline, not in the emitters.* `dsdl-keep-accessors` erases the serialise,
+  deserialise and initialise bodies once they are built and marks the helpers nothing calls; the
+  module carries `llvmdsdl.accessors_only`, on which the EmitC lowering accepts a schema with no
+  bodies. Each emitter then leaves out the object type, the initialiser, the layout assertions and
+  the endianness guard, and keeps the constants: `FULL_NAME`, `EXTENT_BYTES`,
+  `SERIALIZATION_BUFFER_SIZE_BYTES` and the verdicts are about the wire, which is what the mode is
+  for.
+- *A file names no other type.* Rust, TypeScript and Python drop their type imports, since a
+  composite's getter answers bytes; C and C++ keep the nested header's include, which is how a
+  reader reaches the nested type's accessors. A TypeScript file whose accessors all answer bytes
+  refers to nothing in the runtime and imports nothing, which `noUnusedLocals` would otherwise
+  refuse.
+
+**Progress, 2026-09-18.** Landed on all seven targets. `llvmdsdl-aliasable-only` compiles a probe
+per language against the generated output and nothing else — under `-Werror`, `-D warnings`,
+`go vet` and `noUnusedLocals` — and reads a known buffer through the outer type's composite getter
+and the inner type's field getter, a setter round trip and a short read. The unreferenced-helper
+marking the fold introduced for Rust now reaches every translating backend, so an accessors-only
+file carries the scalar helpers its accessors call and nothing else. The file set keeps its names,
+less Go's `_host_image.go`, which the lit test holds `--list-outputs` to.
 
 ### Phase 6 — container views — later
 
@@ -636,6 +664,7 @@ and then the option at a fixed offset.
 | zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
 | accessor instruction count | 4 | an accessor's count moving without its baseline | ✅ landed, on both pinned triples |
+| accessors-only standalone build | 5 | the mode's output failing to compile alone on any target, or a targeted type without the directive going through | ✅ landed: seven targets, a probe each |
 
 ## Risks
 

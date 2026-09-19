@@ -172,10 +172,12 @@ public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
                    const bool               hostImageFolded,
+                   const bool               accessorsOnly,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
         , hostImageFolded_(hostImageFolded)
+        , accessorsOnly_(accessorsOnly)
         , typeNameVersioning_(typeNameVersioning)
     {
     }
@@ -196,6 +198,12 @@ public:
     bool hostImageFolded() const
     {
         return hostImageFolded_;
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -258,6 +266,7 @@ private:
     DefinitionIndex    index_;
     bool               emitDeprecationAttributes_{false};
     bool               hostImageFolded_{false};
+    bool               accessorsOnly_{false};
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
@@ -589,7 +598,7 @@ void emitSection(SourceWriter&              w,
     emitSectionMetadata(w, typeName, metadata);
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
-    if (ctx.hostImageFolded() && metadata.hostImage.holds)
+    if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
     {
         w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
                "__ORDER_LITTLE_ENDIAN__)");
@@ -600,6 +609,10 @@ void emitSection(SourceWriter&              w,
         w.blank();
     }
     emitSectionConstants(w, typeName, section);
+    const auto irStem = sectionIRFunctionStem(def, sectionName);
+    // The object type and its serialisation, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
     emitArrayMacros(w, typeName, section);
     emitUnionOptionTagMacros(w, typeName, section, metadata);
     emitAttachedDocC(w,
@@ -616,7 +629,6 @@ void emitSection(SourceWriter&              w,
                        section.deprecated && ctx.emitDeprecationAttributes(),
                        plan);
 
-    const auto irStem     = sectionIRFunctionStem(def, sectionName);
     const auto objectType = renderCTagSpelling(typeName);
     w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
            "* obj, uint8_t* buffer, size_t* "
@@ -649,6 +661,7 @@ void emitSection(SourceWriter&              w,
     w.close("}");
     w.blank();
 
+    }
     // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
     // getter and a setter beside the bodies: one read or one write at the field's offset, through
     // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
@@ -734,7 +747,10 @@ void emitSection(SourceWriter&              w,
         }
     }
 
-    emitUnionOptionWrappers(w, typeName, section, metadata);
+    if (!ctx.accessorsOnly())
+    {
+        emitUnionOptionWrappers(w, typeName, section, metadata);
+    }
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -987,6 +1003,8 @@ llvm::Error emit(const SemanticModule& semantic,
     EmitterContext const        ctx(semantic,
                                     options.emitDeprecationAttributes,
                                     options.hostImageFolded,
+
+                                    options.accessorsOnly,
                                     options.typeNameVersioning);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 

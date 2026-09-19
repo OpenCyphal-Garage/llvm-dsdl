@@ -67,6 +67,11 @@ std::unique_ptr<mlir::Pass> createBuildDSDLPlanBodiesPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass();
 
+/// @brief Drops every plan's serialise, deserialise and initialise body, keeping the field
+///        accessors: what `--aliasable-only` emits. Registered as `dsdl-keep-accessors`.
+/// @return Newly constructed pass instance.
+std::unique_ptr<mlir::Pass> createKeepDSDLAccessorsPass();
+
 /// @brief Lowers DSDL plan operations into the LLVM dialect, for emission as objects.
 std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass();
 
@@ -105,9 +110,12 @@ void registerDSDLToLLVMPasses();
 /// @param[in] targetObjectsAreByteImages Whether this target's objects can be byte images of the
 ///            wire. True for the native backends; false where a structure has no layout to speak
 ///            of, as in TypeScript and Python.
+/// @param[in] accessorsOnly Whether to drop the bodies once they are built and keep the field
+///                          accessors alone, which is what `--aliasable-only` emits.
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
                                 bool                 optimizeLoweredSerDes,
-                                bool                 targetObjectsAreByteImages = false);
+                                bool                 targetObjectsAreByteImages = false,
+                                bool                 accessorsOnly              = false);
 
 /// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.

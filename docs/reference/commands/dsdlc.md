@@ -217,6 +217,11 @@ functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, Ty
 `get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and
 `set_<field>`.
 
+`--aliasable-only` emits the accessors and neither the object type nor the serialisation. Every
+targeted type must carry `@aliasable` or be nested by a type that does; each that is neither fails
+the run, named. The files keep their names; Go's endianness guard, which belongs to the folded
+bodies, is not among them.
+
 A host-image type asserts the verdict where it is compiled: the generated structure carries a
 static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,
 C++, Rust and Go — its serialise and deserialise are one move of the object's bytes when the target

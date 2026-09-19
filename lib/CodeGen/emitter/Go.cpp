@@ -379,10 +379,19 @@ void emitAlignedStructMembers(SourceWriter& w, const std::vector<GoStructMember>
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
+    EmitterContext(const SemanticModule&    semantic,
+                   const TypeNameVersioning typeNameVersioning,
+                   const bool               accessorsOnly)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
+        , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     /// @brief Whether generated type names carry the definition's version.
@@ -455,6 +464,7 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+    bool               accessorsOnly_{false};
 };
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
@@ -1792,6 +1802,10 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     }
     w.blank();
 
+    const NamingScope fieldIdents = makeExportedFieldIdents(section);
+    // The object type, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
     emitAttachedDocGo(w,
                       docWithDeprecationNotice(typeDoc,
                                                section.deprecated,
@@ -1799,7 +1813,6 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                                                metadata.majorVersion,
                                                metadata.minorVersion));
     w.open("type " + typeName + " struct {");
-    const NamingScope fieldIdents = makeExportedFieldIdents(section);
 
     // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
     // one: the members are collected first so each run's width is known before any of
@@ -1828,10 +1841,11 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     emitAlignedStructMembers(w, members);
     w.close("}");
     w.blank();
+    }
 
     // The verdict was decided under natural alignment; this pins the layout on the architecture the
     // package is compiled for. A mismatch is an index out of bounds, or a uintptr overflow, here.
-    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    if (!ctx.accessorsOnly() && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("var _ = [1]struct{}{}[unsafe.Sizeof(" + typeName + "{})-" +
@@ -1846,6 +1860,9 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         w.blank();
     }
 
+    // The initialiser and the serdes, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1965,6 +1982,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     {
         return err;
     }
+    }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
@@ -1998,6 +2016,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -2110,7 +2133,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             }
             w.blank();
         }
-        w.line("type " + baseType + " = " + reqType);
+        if (!ctx.accessorsOnly())
+        {
+            w.line("type " + baseType + " = " + reqType);
+        }
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
         w.blank();
@@ -2312,7 +2338,7 @@ llvm::Error emit(const SemanticModule& semantic,
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
 
     PlanBodyLookups lookups(module);
     for (const auto& def : semantic.definitions)
@@ -2341,8 +2367,8 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             return err;
         }
-        const bool folded =
-            options.hostImageFolded && (def.request.hostImage.holds || (def.response && def.response->hostImage.holds));
+        const bool folded = options.hostImageFolded && !options.accessorsOnly &&
+                            (def.request.hostImage.holds || (def.response && def.response->hostImage.holds));
         if (folded)
         {
             if (auto err = writeGeneratedFile(dir / EmitterContext::goHostImageGuardFileName(def.info),

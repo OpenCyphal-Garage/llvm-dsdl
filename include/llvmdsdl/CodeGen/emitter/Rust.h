@@ -120,6 +120,10 @@ struct Options final
     /// a big-endian build rather than yield the wrong bytes.
     bool hostImageFolded{false};
 
+    /// @brief Emits the field accessors and neither the object type nor the serdes: what
+    ///        `--aliasable-only` asks for, over a module whose bodies were dropped.
+    bool accessorsOnly{false};
+
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 

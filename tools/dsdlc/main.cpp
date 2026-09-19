@@ -102,6 +102,7 @@ struct CliOptions final
     bool noOverwrite{false};
     bool allowUnregulatedFixedPortId{false};
     bool warnAliasableCandidates{false};
+    bool aliasableOnly{false};
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
 
@@ -274,6 +275,10 @@ void printHelp()
                  << "      each one that a single narrow or misaligned field still stands in the way\n"
                  << "      of. Off by default: it answers a question about a type's future rather\n"
                  << "      than about the code being generated.\n"
+                 << "  --aliasable-only\n"
+                 << "      Emit each type's field accessors and neither its object type nor its\n"
+                 << "      serialisation. Every targeted type must be @aliasable, or nested by one\n"
+                 << "      that is; each that is neither fails the run, named.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -696,6 +701,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--warn-aliasable-candidates")
         {
             options.warnAliasableCandidates = true;
+            continue;
+        }
+        if (arg == "--aliasable-only")
+        {
+            options.aliasableOnly = true;
             continue;
         }
         if (arg == "--generate-support")
@@ -1354,6 +1364,94 @@ void emitScsvLists(const std::vector<std::string>& inputs,
 /// sealed, which is when it is most expensive to change. Quiet where the blocker is a design
 /// decision -- a variable-length array, a union, an empty type -- or belongs to a nested type's own
 /// file.
+/// @brief Holds every definition of an accessors-only run to the mode's promise.
+///
+/// A type the run emits must be wire-flat, and must carry `@aliasable` or be nested by a type that
+/// does: a nested type of an aliasable one is wire-flat by the directive's own definition, and the
+/// composite getter of the outer type needs the inner type's accessors. A type that is neither is
+/// named, with what it is not.
+void checkAliasableOnly(const llvmdsdl::SemanticModule& semantic, llvmdsdl::DiagnosticEngine& diagnostics)
+{
+    const auto keyOf = [](const std::string& fullName, const std::uint32_t major, const std::uint32_t minor) {
+        return fullName + "." + std::to_string(major) + "." + std::to_string(minor);
+    };
+    // The types an aliasable section nests, transitively: those are spoken for.
+    std::unordered_set<std::string>                                      nested;
+    std::vector<const llvmdsdl::SemanticDefinition*>                     pending;
+    std::unordered_map<std::string, const llvmdsdl::SemanticDefinition*> byName;
+    for (const llvmdsdl::SemanticDefinition& definition : semantic.definitions)
+    {
+        byName[keyOf(definition.info.fullName, definition.info.majorVersion, definition.info.minorVersion)] =
+            &definition;
+        const bool aliasable = definition.request.aliasableDirective.has_value() ||
+                               (definition.response && definition.response->aliasableDirective.has_value());
+        if (aliasable)
+        {
+            pending.push_back(&definition);
+        }
+    }
+    const auto visit = [&](const llvmdsdl::SemanticSection& section) {
+        for (const llvmdsdl::SemanticField& field : section.fields)
+        {
+            if (!field.resolvedType.compositeType)
+            {
+                continue;
+            }
+            const auto&       ref = *field.resolvedType.compositeType;
+            const std::string key = keyOf(ref.fullName, ref.majorVersion, ref.minorVersion);
+            if (nested.insert(key).second)
+            {
+                if (const auto found = byName.find(key); found != byName.end())
+                {
+                    pending.push_back(found->second);
+                }
+            }
+        }
+    };
+    while (!pending.empty())
+    {
+        const llvmdsdl::SemanticDefinition* definition = pending.back();
+        pending.pop_back();
+        visit(definition->request);
+        if (definition->response)
+        {
+            visit(*definition->response);
+        }
+    }
+
+    const auto check = [&](const llvmdsdl::SemanticSection& section,
+                           const std::string&               name,
+                           const llvmdsdl::SourceLocation&  where,
+                           const std::string&               sectionName) {
+        const std::string subject = name + (sectionName.empty() ? "" : ("'s " + sectionName));
+        if (!section.wireFlat.holds)
+        {
+            diagnostics.error(where,
+                              "--aliasable-only: " + subject +
+                                  " is not aliasable: " + llvmdsdl::describeAliasLayoutVerdict(section.wireFlat));
+            return;
+        }
+        if (!section.aliasableDirective && !nested.contains(name))
+        {
+            diagnostics.error(where,
+                              "--aliasable-only: " + subject +
+                                  " is not @aliasable, and no @aliasable type nests it; add the directive or leave "
+                                  "the type out of the run");
+        }
+    };
+    for (const llvmdsdl::SemanticDefinition& definition : semantic.definitions)
+    {
+        const std::string name =
+            keyOf(definition.info.fullName, definition.info.majorVersion, definition.info.minorVersion);
+        const llvmdsdl::SourceLocation where{definition.info.filePath, 1, 1};
+        check(definition.request, name, where, definition.isService ? "request" : "");
+        if (definition.response)
+        {
+            check(*definition.response, name, where, "response");
+        }
+    }
+}
+
 void reportAliasableCandidates(const llvmdsdl::SemanticModule& semantic, llvmdsdl::DiagnosticEngine& diagnostics)
 {
     const auto report = [&diagnostics](const llvmdsdl::SemanticDefinition& definition,
@@ -1707,6 +1805,13 @@ int runDsdlc(int argc, char** argv)
     const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
     const auto inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
+
+    // The accessors-only mode is a promise about every type it emits: aliasable, or nested by one
+    // that says so. A type that is neither is named here, before anything is generated.
+    if (options.aliasableOnly)
+    {
+        checkAliasableOnly(closureSemantic, diagnostics);
+    }
 
     auto finish =
         [&](llvm::StringRef outputRoot, std::vector<std::string> generatedOutputs, const bool forceFailure = false) {
@@ -2097,7 +2202,7 @@ int runDsdlc(int argc, char** argv)
     {
         logVerbose(1, "lowering serialisation plans to bodies");
         mlir::PassManager pm(&context);
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, hostImageFolded);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, hostImageFolded, options.aliasableOnly);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
@@ -2114,6 +2219,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
+        emitOptions.accessorsOnly             = options.aliasableOnly;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
@@ -2139,6 +2245,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
+        emitOptions.accessorsOnly             = options.aliasableOnly;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
@@ -2167,6 +2274,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.profile                   = options.cppProfile;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
+        emitOptions.accessorsOnly             = options.aliasableOnly;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
@@ -2197,6 +2305,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.inlineThresholdBytes      = options.rustInlineThresholdBytes;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
+        emitOptions.accessorsOnly             = options.aliasableOnly;
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
@@ -2225,6 +2334,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.supportGeneration  = options.supportGeneration;
         emitOptions.writePolicy        = writePolicy;
         emitOptions.hostImageFolded    = hostImageFolded;
+        emitOptions.accessorsOnly      = options.aliasableOnly;
 
         if (auto err = llvmdsdl::emitter::go::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
@@ -2248,6 +2358,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.accessorsOnly         = options.aliasableOnly;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 
@@ -2273,6 +2384,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.accessorsOnly         = options.aliasableOnly;
         emitOptions.supportGeneration     = options.supportGeneration;
         emitOptions.writePolicy           = writePolicy;
 

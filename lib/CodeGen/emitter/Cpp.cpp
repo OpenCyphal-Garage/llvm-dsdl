@@ -180,11 +180,13 @@ public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
                    const bool               hostImageFolded,
+                   const bool               accessorsOnly,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
         , hostImageFolded_(hostImageFolded)
+        , accessorsOnly_(accessorsOnly)
     {
     }
 
@@ -204,6 +206,12 @@ public:
     bool hostImageFolded() const
     {
         return hostImageFolded_;
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -305,6 +313,7 @@ private:
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     bool               emitDeprecationAttributes_{false};
     bool               hostImageFolded_{false};
+    bool               accessorsOnly_{false};
 };
 
 SourceWriter makeCppWriter(std::ostringstream& out)
@@ -1599,7 +1608,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               const mlir::dsdl::SerializationPlanOp plan,
                               const CppSpelling&                    spelling,
                               llvm::ArrayRef<mlir::func::FuncOp>    accessors,
-                              PlanBodyLookups&                      lookups)
+                              PlanBodyLookups&                      lookups,
+                              const bool                            accessorsOnly)
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     // Every member's default is what the initialise body stores for it. A field the body does not
@@ -1621,6 +1631,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     emitAttachedDocCpp(w, typeDoc);
     w.open("struct " + declaredName + " {");
 
+    if (!accessorsOnly)
+    {
     std::size_t              emitted = 0;
     std::vector<std::string> variableArrayMembers;
     std::vector<std::string> compositeScalarMembers;
@@ -1762,6 +1774,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     {
         w.line("std::uint8_t _dummy_{0U};");
     }
+    }
 
     w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
     w.line("static constexpr bool IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false") + ";");
@@ -1776,7 +1789,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr const char* HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\";");
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
-    if (ctx.hostImageFolded() && metadata.hostImage.holds)
+    if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
     {
         w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
                "__ORDER_LITTLE_ENDIAN__)");
@@ -1822,6 +1835,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                valueToCppExpr(c.type, c.value) + ";");
     }
 
+    if (!accessorsOnly)
+    {
     emitArrayMetadata(w, section);
 
     w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
@@ -1864,6 +1879,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         w.close("}");
     }
 
+    }
     // A wire-flat section's field accessors, defined here as static members: each is one read
     // or one write at the field's offset, and reads the wire rather than an object.
     for (const mlir::func::FuncOp accessor : accessors)
@@ -1879,7 +1895,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
     // The verdict was decided under natural alignment; this pins the layout on the target the
     // header is compiled for.
-    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    if (!accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("static_assert(std::is_standard_layout<" + declaredName + ">::value, \"" + declaredName +
@@ -1931,23 +1947,30 @@ llvm::Error emitSection(SourceWriter&                         w,
                         PlanBodyLookups&                      lookups)
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
-    emitFunctionPrototypes(w, typeName, declaredName, flavor);
-    if (!bodies.initialize)
+    // An accessors-only run has no bodies to declare or read: the struct holds the constants and
+    // the accessors, and nothing else.
+    InitializerShape init;
+    if (!ctx.accessorsOnly())
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no initialise body for %s in the lowered module",
-                                       metadata.fullName.c_str());
-    }
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
-    {
-        return init.takeError();
+        emitFunctionPrototypes(w, typeName, declaredName, flavor);
+        if (!bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no initialise body for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        auto read = readInitializer(bodies.initialize);
+        if (!read)
+        {
+            return read.takeError();
+        }
+        init = std::move(*read);
     }
     if (auto err = emitSectionStruct(w,
                                      typeName,
                                      declaredName,
                                      metadata,
-                                     *init,
+                                     init,
                                      section,
                                      ctx,
                                      flavor,
@@ -1959,9 +1982,14 @@ llvm::Error emitSection(SourceWriter&                         w,
                                      plan,
                                      spelling,
                                      bodies.accessors,
-                                     lookups))
+                                     lookups,
+                                     ctx.accessorsOnly()))
     {
         return err;
+    }
+    if (ctx.accessorsOnly())
+    {
+        return llvm::Error::success();
     }
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
@@ -2023,6 +2051,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -2274,6 +2307,8 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
     const EmitterContext ctx(semantic,
                              options.emitDeprecationAttributes,
                              options.hostImageFolded,
+
+                             options.accessorsOnly,
                              options.typeNameVersioning);
     PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)

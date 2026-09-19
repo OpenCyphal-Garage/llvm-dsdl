@@ -881,6 +881,33 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # An accessors-only run's output compiles standalone in every language and on the object target,
+  # and reads a buffer through the outer type's composite getter and the inner type's field getter.
+  add_test(
+    NAME llvmdsdl-aliasable-only
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/aliasable-only-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasableOnly.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-aliasable-only
+    PROPERTIES
+      LABELS "integration;alias-layout;c;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend

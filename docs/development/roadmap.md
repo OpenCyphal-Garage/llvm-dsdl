@@ -513,6 +513,12 @@ library implementations rests on the lint rather than on a differential build.
   field-wise bodies inherit as well: `Padded`'s deserialise fell from 56 instructions to 39 on
   AArch64.
 
+  ✅ **Phase 5 landed 2026-09-18.** `--aliasable-only` emits the accessors and neither the object
+  type nor the serialisation. It holds every targeted type to `@aliasable`, or to being nested by a
+  type that carries it, and names each that is neither. A lane compiles the output standalone on all
+  seven targets and reads a buffer through the outer type's composite getter and the inner type's
+  field getter. Phase 6, container views, is what remains of the plan.
+
 ### P2 — Maturity / maintainability
 
 - [x] Reduce per-backend control-flow duplication — directly strengthens G1. ✅ **Done (2026-09-11):** every backend's serialise and deserialise bodies are translations of the `build-dsdl-plan-bodies` IR through one translator (`lib/CodeGen/BodyTranslator.cpp`); a spelling per language carries surface idiom only, and `ctest -L backend-contract` fails a backend whose output does not follow a perturbed body. See `docs/development/backend-translation.md`. This was the G1 end-state.

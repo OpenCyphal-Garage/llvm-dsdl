@@ -1206,6 +1206,66 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
 };
 
+/// @brief Marks every helper no function of the module calls with `llvmdsdl.unreferenced`.
+///
+/// A helper stays in the module whatever calls it: the plan's steps name it, and the lowered
+/// contract requires a named helper to exist. The translating backends leave a marked one out, as a
+/// compiler that refuses an unused private function would; the C lowering keeps it, for the contract.
+void markUnreferencedHelpers(mlir::ModuleOp module)
+{
+    mlir::OpBuilder builder(module.getContext());
+    for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+    {
+        const bool isHelper = fn->hasAttr("llvmdsdl.schema_sym") && !fn->hasAttr("llvmdsdl.plan_body");
+        if (isHelper && mlir::SymbolTable::symbolKnownUseEmpty(fn, module))
+        {
+            fn->setAttr("llvmdsdl.unreferenced", builder.getUnitAttr());
+        }
+    }
+}
+
+/// @brief Keeps the field accessors and drops the three bodies of every plan.
+///
+/// `--aliasable-only` emits the accessors and neither the object type nor the serdes. The
+/// serialise, deserialise and initialise bodies are erased here, once, so that every backend
+/// translates a module that holds only what the mode emits and the object target defines only
+/// that; the helpers those bodies alone called are marked, as the fold marks them. The module is
+/// stamped `llvmdsdl.accessors_only` so a later pass that expects the bodies knows why they are
+/// absent.
+struct KeepDSDLAccessorsPass : public mlir::PassWrapper<KeepDSDLAccessorsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-keep-accessors";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Drop every plan's serialise, deserialise and initialise body, keeping the field accessors";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto                            module = getOperation();
+        std::vector<mlir::func::FuncOp> bodies;
+        for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+        {
+            const auto kind = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (kind && ((kind.getValue() == "serialize") || (kind.getValue() == "deserialize") ||
+                         (kind.getValue() == "initialize")))
+            {
+                bodies.push_back(fn);
+            }
+        }
+        for (const mlir::func::FuncOp fn : bodies)
+        {
+            fn->erase();
+        }
+        markUnreferencedHelpers(module);
+        module->setAttr("llvmdsdl.accessors_only", mlir::UnitAttr::get(module.getContext()));
+    }
+};
+
 /// @brief Replaces a host-image section's field-wise body with one move.
 ///
 /// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
@@ -1292,15 +1352,7 @@ struct FoldDSDLHostImageBodiesPass
         // They are marked instead, and a backend whose compiler refuses an unused private function
         // -- Rust's, under warnings-as-errors -- skips a marked one. C and C++ carry theirs as
         // `static inline`, which the compiler drops.
-        mlir::OpBuilder builder(module.getContext());
-        for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
-        {
-            const bool isHelper = fn->hasAttr("llvmdsdl.schema_sym") && !fn->hasAttr("llvmdsdl.plan_body");
-            if (isHelper && mlir::SymbolTable::symbolKnownUseEmpty(fn, module))
-            {
-                fn->setAttr("llvmdsdl.unreferenced", builder.getUnitAttr());
-            }
-        }
+        markUnreferencedHelpers(module);
     }
 
 private:
@@ -1851,6 +1903,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createKeepDSDLAccessorsPass()
+{
+    return std::make_unique<KeepDSDLAccessorsPass>();
+}
+
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
 {
     auto& funcPM = pm.nest<mlir::func::FuncOp>();
@@ -1860,7 +1917,8 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
 
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
                                 const bool           optimizeLoweredSerDes,
-                                const bool           targetObjectsAreByteImages)
+                                const bool           targetObjectsAreByteImages,
+                                const bool           accessorsOnly)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
@@ -1870,6 +1928,11 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     if (targetObjectsAreByteImages)
     {
         pm.addPass(createFoldDSDLHostImageBodiesPass());
+    }
+    // After the fold, which the accessors take no part in: the bodies go, the accessors stay.
+    if (accessorsOnly)
+    {
+        pm.addPass(createKeepDSDLAccessorsPass());
     }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
@@ -1890,6 +1953,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<LowerDSDLExecPass> const           regExec;
     static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const   regAlias;
     static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const regFold;
+    static mlir::PassRegistration<KeepDSDLAccessorsPass> const       regKeep;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

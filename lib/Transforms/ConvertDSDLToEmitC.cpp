@@ -1398,11 +1398,12 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     includedHeaders.insert(headerPath);
                 }
 
-                // The bodies are operations by the time this pass runs, or they are absent.
+                // The bodies are operations by the time this pass runs, or they are absent -- by
+                // design in an accessors-only module, by mistake anywhere else.
                 for (const char* direction : {"serialize", "deserialize"})
                 {
                     const std::string body = fnStem + "__" + direction + "_ir_";
-                    if (!module.lookupSymbol<mlir::func::FuncOp>(body))
+                    if (!module.lookupSymbol<mlir::func::FuncOp>(body) && !module->hasAttr("llvmdsdl.accessors_only"))
                     {
                         child.emitOpError(std::string("no ") + direction +
                                           " body was built for this plan; run build-dsdl-plan-bodies before "
