@@ -48,7 +48,8 @@ std::string dependencyKey(const SemanticTypeRef& ref)
 }  // namespace
 
 std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&      section,
-                                                          const DiscoveredDefinition& owner)
+                                                          const DiscoveredDefinition& owner,
+                                                          const bool                  referencedOnly)
 {
     const auto ownerKey = dependencyKey(owner.fullName, owner.majorVersion, owner.minorVersion);
 
@@ -56,7 +57,7 @@ std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&
     std::vector<SemanticTypeRef> out;
     for (const auto& field : section.fields)
     {
-        if (field.isPadding || !field.resolvedType.compositeType)
+        if (field.isPadding || !field.resolvedType.compositeType || (referencedOnly && field.heldAsView))
         {
             continue;
         }

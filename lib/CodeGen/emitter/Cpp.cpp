@@ -1050,6 +1050,37 @@ public:
                std::to_string(op.getBytes()) + "U);");
     }
 
+    // A view member is the runtime's pointer and count.
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names) + ".bytes";
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "static_cast<std::uint64_t>(" + memberAccess(op.getObject(), op.getMember(), names) + ".size_bytes)";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
+        w.line(access + ".bytes = " + names(op.getBytes()) + ";");
+        w.line(access + ".size_bytes = " + asSize(names(op.getSizeBytes())) + ";");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
+        w.line(access + ".bytes = nullptr;");
+        w.line(access + ".size_bytes = 0U;");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) + ", " +
+               asSize(names(op.getSourceSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The callee is the nested type's own body, and the type is the schema that body belongs to.
@@ -1591,6 +1622,7 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
     case MemberDefault::Kind::FixedCompositeArray:
     case MemberDefault::Kind::BoolArray:
     case MemberDefault::Kind::Composite:
+    case MemberDefault::Kind::View:
         return "{}";
     }
     return "{}";
@@ -1646,8 +1678,11 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             continue;
         }
 
-        const auto member   = fieldScope.get(IdentifierRole::FieldName, field.name);
-        const auto baseType = cppTypeFromFieldType(field.resolvedType, ctx);
+        const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+        // A view holds the field's bytes and their count, from the buffer the object was
+        // deserialised from; it allocates nothing and takes no memory resource.
+        const auto baseType =
+            field.heldAsView ? std::string{"dsdl_runtime_view_t"} : cppTypeFromFieldType(field.resolvedType, ctx);
         emitAttachedDocCpp(w, field.doc);
 
         const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
@@ -1655,7 +1690,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             w.line(baseType + " " + member + init_ + ";");
-            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
+                !field.heldAsView)
             {
                 compositeScalarMembers.push_back(member);
             }

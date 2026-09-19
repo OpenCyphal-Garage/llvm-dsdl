@@ -519,13 +519,14 @@ library implementations rests on the lint rather than on a differential build.
   seven targets and reads a buffer through the outer type's composite getter and the inner type's
   field getter.
 
-  🔧 **Phase 6.1 landed 2026-09-19.** `--aliasable-views` holds a composite field of an
-  `@aliasable` type as a view of the buffer the holder was deserialised from, on C and the object
-  target: the holder's deserialise skips the record and its serialise copies the view, a short
-  buffer leaves a short view read as zeros, and the record's accessors read the view in place. A
-  lane holds both targets to that contract and the instruction lane baselines the holder beside
-  the callee the view removes. The other five backends refuse the mode until 6.2; equal-length
-  union accessors, 6.3, wait for a namespace that needs them, since the catalogue has none.
+  ✅ **Phase 6 landed 2026-09-19.** `--aliasable-views` holds a composite field of an `@aliasable`
+  type as a view of the buffer the holder was deserialised from, in every language: the holder's
+  deserialise skips the record and its serialise copies the view, a short buffer leaves a short
+  view read as zeros, and the record's accessors read the view in place. C and C++ hold the
+  runtime's pointer and size, Rust a borrowed slice that gives the holder a lifetime, Go, TypeScript
+  and Python their own slices. A lane holds all seven targets to that contract and the instruction
+  lane baselines the holder beside the callee the view removes. Equal-length union accessors wait
+  for a namespace that needs them, since the catalogue has none.
 
 ### P2 — Maturity / maintainability
 

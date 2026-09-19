@@ -32,13 +32,19 @@ std::string renderDefinitionDependencyKey(const SemanticTypeRef& ref);
 
 /// @brief Collects deterministic, deduplicated composite dependencies in one section.
 /// @param[in] section Section to analyse.
+/// @param[in] referencedOnly Leave out the types of fields held as a view, which the generated
+///            type does not name.
 /// @return Composite type references sorted by stable key.
-std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticSection& section);
+std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticSection& section,
+                                                                 bool                   referencedOnly = false);
 
 /// @brief Collects deterministic, deduplicated composite dependencies in one definition.
 /// @param[in] def Definition to analyse.
+/// @param[in] referencedOnly Leave out the types of fields held as a view, which the generated
+///            type does not name.
 /// @return Composite type references sorted by stable key.
-std::vector<SemanticTypeRef> collectDefinitionCompositeDependencies(const SemanticDefinition& def);
+std::vector<SemanticTypeRef> collectDefinitionCompositeDependencies(const SemanticDefinition& def,
+                                                                    bool                      referencedOnly = false);
 
 }  // namespace llvmdsdl
 

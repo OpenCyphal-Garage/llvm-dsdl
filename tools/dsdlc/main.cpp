@@ -285,7 +285,7 @@ void printHelp()
                  << "      it was deserialised from, in place of a decoded copy: the field's bytes\n"
                  << "      and their count, for the nested type's accessors to read. The holder's\n"
                  << "      deserialise skips the field and its serialise copies the view. Fields of\n"
-                 << "      a union and arrays are decoded as usual. C and the object target.\n"
+                 << "      a union and arrays are decoded as usual.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -1717,20 +1717,10 @@ int runDsdlc(int argc, char** argv)
         logVerbose(1, "embedded targets selected " + std::to_string(builtinExplicitKeys.size()) + " type(s)");
     }
 
-    // A view is a member of the object type, which an accessors-only run does not emit; and it is
-    // spelled by the backends that hold one.
+    // A view is a member of the object type, which an accessors-only run does not emit.
     if (options.aliasableViews && options.aliasableOnly)
     {
         diagnostics.error({"<cli>", 1, 1}, "--aliasable-views: --aliasable-only emits no object type to hold a view");
-        printDiagnostics(diagnostics);
-        return 1;
-    }
-    if (options.aliasableViews && (options.targetLanguage != "c") && (options.targetLanguage != "obj") &&
-        (options.targetLanguage != "mlir"))
-    {
-        diagnostics.error({"<cli>", 1, 1},
-                          "--aliasable-views: the " + options.targetLanguage +
-                              " backend does not hold views; C and the object target do");
         printDiagnostics(diagnostics);
         return 1;
     }

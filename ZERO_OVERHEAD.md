@@ -631,7 +631,7 @@ marking the fold introduced for Rust now reaches every translating backend, so a
 file carries the scalar helpers its accessors call and nothing else. The file set keeps its names,
 less Go's `_host_image.go`, which the lit test holds `--list-outputs` to.
 
-### Phase 6 — container views — in progress 2026-09-19
+### Phase 6 — container views — done 2026-09-19, union accessors deferred
 
 *(Added 2026-09-18; designed 2026-09-19.)*
 
@@ -701,8 +701,19 @@ a union's option, and in a plan that claims to be a host image. `llvmdsdl-contai
 the C and object targets to the contract on a delimited holder of a Pose and a Vec3: the view
 points into the buffer, the Pose's accessors read it through the view, serialising reproduces the
 wire, a buffer ending inside the Pose leaves a short view read as zeros and serialised zero-filled,
-and an initialised holder serialises an empty view as zeros. The other five backends refuse the
-mode until 6.2.
+and an initialised holder serialises an empty view as zeros.
+
+**Progress, 2026-09-19: 6.2 landed.** The translator carries the four view operations to the five
+spellings through five hooks, and each holds the view in its own slice: C++ in the runtime's
+`dsdl_runtime_view_t`, as C does; Rust in a `&'a [u8]`, which puts a lifetime on the holder, on
+its impls, on its deserialise and on every type that holds one, decided by a walk of what each
+type holds; Go in a `[]byte`; TypeScript in a `Uint8Array`; Python in a `memoryview`. The
+initialiser renderer reads `dsdl.clear_view` as a member holding nothing, which each language
+renders as its empty slice. A file names no type it holds only as a view, so the dependency
+collectors leave such a type out of the imports Rust, Go, TypeScript and Python write, while the
+manifests and the C and C++ includes keep it. `llvmdsdl-container-views` now runs the probe on all
+seven targets, Rust under `-D warnings`, Go under `go vet` and TypeScript under `noUnusedLocals`;
+the Python probe also writes through the buffer and reads the change through the view.
 
 What the instruction lane shows needs saying carefully. A static count is per function, and the
 plain path's nested decode is a call, so the holder's own count is the same with the view as
@@ -735,7 +746,7 @@ decode, which the instruction lane shows; the output compiles standalone in each
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
 | accessor instruction count | 4 | an accessor's count moving without its baseline | ✅ landed, on both pinned triples |
 | accessors-only standalone build | 5 | the mode's output failing to compile alone on any target, or a targeted type without the directive going through | ✅ landed: seven targets, a probe each |
-| container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled | ✅ landed on C and the object target; the other five wait for 6.2 |
+| container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled | ✅ landed on all seven targets |
 | view holder instruction count | 6 | the holder's count, or the removed callee's, moving without its baseline | ✅ landed, both pinned triples |
 
 ## Risks

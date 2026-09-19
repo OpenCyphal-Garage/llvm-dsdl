@@ -419,7 +419,8 @@ void emitStructSectionType(SourceWriter&          w,
         }
         emitAttachedDocTs(w, field.doc);
         const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
-        w.line(fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
+        w.line(fieldName + ": " + (field.heldAsView ? std::string{"Uint8Array"} : tsFieldType(field.resolvedType, ctx)) +
+               ";");
     }
     w.close("}");
 }
@@ -1159,6 +1160,43 @@ public:
                                  "produces one does not run for this target");
     }
 
+    // A view member is a subarray of the buffer.
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "BigInt(" + memberAccess(op.getObject(), op.getMember(), names) + ".length)";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + ".subarray(0, Math.min(" +
+               asNumber(op.getSizeBytes(), names) + ", " + bytes + ".length));");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = new Uint8Array(0);");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes());
+        const std::string copied      = fresh("copied");
+        w.line("const " + copied + " = Math.min(" + asNumber(op.getSourceSizeBytes(), names) + ", " + source +
+               ".length, " + width + ");");
+        w.line(destination + ".set(" + source + ".subarray(0, " + copied + "), 0);");
+        w.line(destination + ".fill(0, " + copied + ", " + width + ");");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("TypeScript spelling: a nested call is a statement");
@@ -1692,6 +1730,8 @@ std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& e
         return "Array.from({ length: " + std::to_string(entry.count) + " }, () => " + nested() + ")";
     case MemberDefault::Kind::Composite:
         return nested();
+    case MemberDefault::Kind::View:
+        return "new Uint8Array(0)";
     }
     return "undefined";
 }
@@ -1846,7 +1886,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         std::map<std::string, std::vector<const DiscoveredDefinition*>> byShortName;
         const auto collectReferenced = [&](const SemanticSection& section) {
-            for (const auto& ref : collectCompositeDependencies(section, def.info))
+            for (const auto& ref : collectCompositeDependencies(section, def.info, /*referencedOnly=*/true))
             {
                 if (const auto* referenced = ctx.find(ref))
                 {
@@ -1897,7 +1937,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     std::map<std::string, std::set<std::pair<std::string, std::string>>> importsByModule;
     std::map<std::string, std::set<std::pair<std::string, std::string>>> bodyImportsByModule;
     const auto addSectionImports = [&](const SemanticSection& section) {
-        const auto dependencies = collectCompositeDependencies(section, def.info);
+        const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
         const auto imports      = projectCompositeImports(
             dependencies,
             [&](const SemanticTypeRef& ref) { return relativeImportPath(ownerPath, ctx.relativeFilePath(ref)); },

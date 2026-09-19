@@ -417,6 +417,10 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Reached{Role{ValueRole::Length, read.getMember()}}; })
         .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::CallInitializeOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
+        .Case<mlir::dsdl::LoadViewOp>([&](auto view) {
+            return Reached{
+                Role{result.getResultNumber() == 0 ? ValueRole::Buffer : ValueRole::Size, view.getMember()}};
+        })
         .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
@@ -832,6 +836,10 @@ private:
             .Case<mlir::dsdl::LoadMemberOp>([&](mlir::dsdl::LoadMemberOp read) -> void {
                 define(read.getResult(), spelling_.loadMember(read, *this), true);
             })
+            .Case<mlir::dsdl::LoadViewOp>([&](mlir::dsdl::LoadViewOp view) -> void {
+                define(view.getBytes(), spelling_.viewBytes(view, *this), true);
+                define(view.getSizeBytes(), spelling_.viewSize(view, *this), true);
+            })
             .Case<mlir::dsdl::LoadElementOp>([&](mlir::dsdl::LoadElementOp read) -> void {
                 define(read.getResult(), spelling_.loadElement(read, *this), true);
             })
@@ -877,6 +885,12 @@ private:
                 [&](mlir::dsdl::StoreScalarOp write) -> void { spelling_.storeScalar(w_, write, *this); })
             .Case<mlir::dsdl::StoreMemberOp>(
                 [&](mlir::dsdl::StoreMemberOp write) -> void { spelling_.storeMember(w_, write, *this); })
+            .Case<mlir::dsdl::StoreViewOp>(
+                [&](mlir::dsdl::StoreViewOp store) -> void { spelling_.storeView(w_, store, *this); })
+            .Case<mlir::dsdl::ClearViewOp>(
+                [&](mlir::dsdl::ClearViewOp clear) -> void { spelling_.clearView(w_, clear, *this); })
+            .Case<mlir::dsdl::CopyBytesOp>(
+                [&](mlir::dsdl::CopyBytesOp copy) -> void { spelling_.copyBytes(w_, copy, *this); })
             .Case<mlir::dsdl::StoreElementOp>(
                 [&](mlir::dsdl::StoreElementOp write) -> void { spelling_.storeElement(w_, write, *this); })
             .Case<mlir::dsdl::SetArrayLengthOp>(

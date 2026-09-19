@@ -64,6 +64,8 @@ const char* kindName(const Kind kind)
         return "bool-array";
     case Kind::Composite:
         return "composite";
+    case Kind::View:
+        return "view";
     }
     return "?";
 }

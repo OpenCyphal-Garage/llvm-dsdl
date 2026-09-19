@@ -908,9 +908,9 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
   )
 endif()
 
-if(CMAKE_C_COMPILER)
-  # A container holding a view of an @aliasable record, on C and the object target: the view points
-  # into the buffer, the record's accessors read it, and serialising reproduces the wire.
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # A container holding a view of an @aliasable record, in every language: the view points into
+  # the buffer, the record's accessors read it, and serialising reproduces the wire.
   add_test(
     NAME llvmdsdl-container-views
     COMMAND
@@ -919,13 +919,19 @@ if(CMAKE_C_COMPILER)
         -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/container-views-out
         -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunContainerViews.cmake
   )
 
   set_tests_properties(
     llvmdsdl-container-views
     PROPERTIES
-      LABELS "integration;alias-layout;c;object;release-blocking"
+      LABELS "integration;alias-layout;c;object;cpp;rust;go;ts;python;release-blocking"
   )
 endif()
 

@@ -54,6 +54,8 @@ struct MemberDefault final
         BoolArray,
         /// @brief A composite member initialised through @ref callee.
         Composite,
+        /// @brief A member held as a view of the buffer, holding no bytes.
+        View,
     };
 
     Kind kind{Kind::Scalar};

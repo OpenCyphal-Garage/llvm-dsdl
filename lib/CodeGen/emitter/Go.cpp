@@ -469,7 +469,8 @@ private:
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
 {
-    const auto deps = collectDefinitionCompositeDependencies(def);
+    // A view holds a field's bytes and names no type, so its package is not imported for it.
+    const auto deps = collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const std::string                  currentPath = EmitterContext::packagePath(def.info);
     std::map<std::string, std::string> out;
@@ -1270,6 +1271,45 @@ public:
                names(op.getObject()) + ")), " + bytes + "))");
     }
 
+    // A view member is a slice of the buffer.
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + memberAccess(op.getObject(), op.getMember(), names) + "))";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:dsdlruntime.ChooseMin(" +
+               asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = nil");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes());
+        const std::string copied      = fresh("copied");
+        const std::string index       = fresh("i");
+        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:dsdlruntime.ChooseMin(" +
+               asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
+        w.open("for " + index + " := " + copied + "; " + index + " < " + width + "; " + index + "++ {");
+        w.line(destination + "[" + index + "] = 0");
+        w.close("}");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("Go spelling: a nested call is a statement");
@@ -1704,6 +1744,7 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
             break;
         case MemberDefault::Kind::VariableArrayEmpty:
         case MemberDefault::Kind::BoolArray:
+        case MemberDefault::Kind::View:
             break;
         case MemberDefault::Kind::Composite:
         case MemberDefault::Kind::FixedCompositeArray: {
@@ -1825,7 +1866,9 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             continue;
         }
         members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
-                                         goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
+                                         field.heldAsView
+                                             ? std::string{"[]byte"}
+                                             : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
                                          field.doc});
     }
     if (section.isUnion)
@@ -1961,6 +2004,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                 }
                 case MemberDefault::Kind::VariableArrayEmpty:
                 case MemberDefault::Kind::BoolArray:
+                case MemberDefault::Kind::View:
                     break;
                 }
             }

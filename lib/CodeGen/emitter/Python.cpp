@@ -385,6 +385,8 @@ std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault
         return "field(default_factory=list)";
     case MemberDefault::Kind::Composite:
         return "field(default_factory=lambda: " + pyElementDefaultExpr(type, ctx) + ")";
+    case MemberDefault::Kind::View:
+        return "field(default_factory=lambda: memoryview(b\"\"))";
     }
     return pyElementDefaultExpr(type, ctx);
 }
@@ -512,8 +514,8 @@ void emitStructSectionType(SourceWriter&           w,
             llvm::report_fatal_error(llvm::Twine("Python: the initialise body of ") + typeName + " does not set '" +
                                      field.name + "'");
         }
-        w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
-               pyDefaultFromBody(field.resolvedType, *entry, ctx));
+        w.line(fieldName + ": " + (field.heldAsView ? std::string{"memoryview"} : pyFieldType(field.resolvedType, ctx)) +
+               " = " + pyDefaultFromBody(field.resolvedType, *entry, ctx));
     }
     if (emittedField)
     {
@@ -1258,6 +1260,42 @@ public:
                                  "produces one does not run for this target");
     }
 
+    // A view member is a slice of the buffer's memoryview.
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "len(" + memberAccess(op.getObject(), op.getMember(), names) + ")";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        line(w,
+             memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:min(" +
+                 names(op.getSizeBytes()) + ", len(" + bytes + "))]");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        line(w, memberAccess(op.getObject(), op.getMember(), names) + " = memoryview(b\"\")");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes());
+        line(w, "_n = min(" + names(op.getSourceSizeBytes()) + ", len(" + source + "), " + width + ")");
+        line(w, destination + "[:_n] = " + source + "[:_n]");
+        line(w, destination + "[_n:" + width + "] = bytes(" + width + " - _n)");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("Python spelling: a nested call is a statement");
@@ -1783,7 +1821,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     std::map<std::string, std::set<std::string>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
-        const auto dependencies = collectCompositeDependencies(section, def.info);
+        const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
         const auto imports      = projectCompositeImports(
             dependencies,
             [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },

@@ -76,8 +76,42 @@
 # C_PLAIN:     struct fixtures_aliasable__vendor__Pose pose;
 # C_PLAIN-NOT: dsdl_runtime_view_t
 
-# The mode is spelled by C and the object target, and a view is a member of the object type.
-# RUN: not %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=RUST
-# RUST: error: --aliasable-views: the rust backend does not hold views; C and the object target do
+# The other languages hold the view in their own slice, and name the Pose nowhere: no import of it.
+# RUN: %dsdlc --target-language cpp --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/cpp/std/fixtures_views/vendor/Frame_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP:     dsdl_runtime_view_t pose{};
+# CPP:     dsdl_runtime_copy_bytes(
+# CPP:     ->pose.bytes =
+# Rust borrows the buffer: the holder, its impls and its deserialise carry the lifetime.
+# RUN: %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/rust/src/fixtures_views/vendor/frame_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
+# RUST:     pub struct fixtures_views_vendor_Frame<'a> {
+# RUST:     pub pose: &'a [u8],
+# RUST:     impl<'a> Default for fixtures_views_vendor_Frame<'a> {
+# RUST:     pose: &[],
+# RUST:     impl<'a> fixtures_views_vendor_Frame<'a> {
+# RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, i8> {
+# RUST:     self.pose = { let _len = core::cmp::min(
+# RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
+# RUN: %dsdlc --target-language go --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/go/fixtures_views/vendor/frame_1_0.go | FileCheck %s --check-prefix=GO
+# GO:      Pose {{ *}}[]byte
+# GO:      obj.Pose = buf[:dsdlruntime.ChooseMin(
+# RUN: %dsdlc --target-language ts --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/ts/fixtures_views/vendor/frame_1_0.ts | FileCheck %s --check-prefix=TS
+# TS-NOT:  pose_1_0
+# TS:      pose: Uint8Array;
+# TS:      pose: new Uint8Array(0),
+# TS:      obj.pose = buf.subarray(0, Math.min(
+# TS-NOT:  pose_1_0
+# RUN: %dsdlc --target-language python --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/python/dsdl_gen/fixtures_views/vendor/frame_1_0.py | FileCheck %s --check-prefix=PY
+# PY-NOT:  pose_1_0 import
+# PY:      pose: memoryview = field(default_factory=lambda: memoryview(b""))
+# PY:      self.pose = buf[:min(
+# PY-NOT:  pose_1_0 import
+
+# A view is a member of the object type, which an accessors-only run does not emit.
 # RUN: not %dsdlc --target-language c --aliasable-views --aliasable-only %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/both 2>&1 | FileCheck %s --check-prefix=BOTH
 # BOTH: error: --aliasable-views: --aliasable-only emits no object type to hold a view

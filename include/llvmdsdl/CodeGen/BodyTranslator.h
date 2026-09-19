@@ -305,6 +305,18 @@ public:
     virtual void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const     = 0;
     [[nodiscard]] virtual std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const = 0;
 
+    /// @brief A member held as a view of the buffer: the bytes it holds and how many.
+    ///
+    /// `dsdl.load_view` answers both, and a spelling reads each off the member. The store takes
+    /// the buffer address and the count the plan bounded; the clear leaves no bytes.
+    [[nodiscard]] virtual std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const = 0;
+    [[nodiscard]] virtual std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const  = 0;
+    virtual void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const    = 0;
+    virtual void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const    = 0;
+
+    /// @brief `dsdl.copy_bytes`: a view's bytes to the buffer, zero-filled to the op's width.
+    virtual void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const = 0;
+
     /// @brief Declares @p name as the error code a nested call answers with.
     ///
     /// A language whose call answers two values spells this as a statement; the others declare

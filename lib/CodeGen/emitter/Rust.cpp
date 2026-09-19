@@ -224,6 +224,8 @@ private:
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
+std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
+
 std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
     switch (type.scalarCategory)
@@ -243,11 +245,56 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType);
+            return ctx.rustDeclaredTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
         }
         return "u8";
     }
     return "u8";
+}
+
+/// @brief Whether @p section holds a view, directly or through a type it holds.
+///
+/// A view borrows the buffer, so the struct carries a lifetime, and so does every struct that
+/// holds one. DSDL forbids a type reaching itself, so the walk ends.
+bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx, std::set<const SemanticSection*>& visiting)
+{
+    if (!visiting.insert(&section).second)
+    {
+        return false;
+    }
+    bool holds = false;
+    for (const auto& field : section.fields)
+    {
+        if (field.heldAsView)
+        {
+            holds = true;
+            break;
+        }
+        if (field.resolvedType.compositeType)
+        {
+            const auto* nested = ctx.find(*field.resolvedType.compositeType);
+            if ((nested != nullptr) && sectionHoldsView(nested->request, ctx, visiting))
+            {
+                holds = true;
+                break;
+            }
+        }
+    }
+    visiting.erase(&section);
+    return holds;
+}
+
+bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx)
+{
+    std::set<const SemanticSection*> visiting;
+    return sectionHoldsView(section, ctx, visiting);
+}
+
+/// @brief The lifetime a type carries when it holds a view: `<'a>`, or nothing.
+std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx)
+{
+    const auto* nested = ctx.find(ref);
+    return ((nested != nullptr) && sectionHoldsView(nested->request, ctx)) ? "<'a>" : "";
 }
 
 std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -331,6 +378,8 @@ std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefau
         return scalarDefaultExpr(type, ctx);
     case MemberDefault::Kind::VariableArrayEmpty:
         return "crate::dsdl_runtime::DsdlVec::new()";
+    case MemberDefault::Kind::View:
+        return "&[]";
     }
     return scalarDefaultExpr(type, ctx);
 }
@@ -386,7 +435,7 @@ class RustSpelling final : public BodySpelling
     struct Member;
 
 public:
-    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
+    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const std::set<std::string>& lifetimeSections)
         : symbols_(module)
     {
         if (schema.getBody().empty())
@@ -397,6 +446,7 @@ public:
         {
             Plan entry;
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            entry.lifetime     = lifetimeSections.contains(plan.getSection().value_or(llvm::StringRef{}).str());
             NamingScope                   scope(CodegenNamingLanguage::Rust);
             std::vector<mlir::dsdl::IOOp> fields;
             std::vector<std::string>      variableArrays;
@@ -453,8 +503,11 @@ public:
             return openAccessor(w, fn, *direction == "get");
         }
         const bool serialize = *direction == "serialize";
-        w.open(serialize ? "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"
-                         : "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
+        // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
+        const bool lifetime = planOf(fn.getArgument(0)).lifetime;
+        w.open(serialize ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
+                         : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
+                               "[u8]) -> core::result::Result<usize, i8> {");
         // The size a plan is handed by pointer, read at entry and written back at the end.
         w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
         return {"self", "buffer", "inout_buffer_size_bytes"};
@@ -1103,6 +1156,42 @@ public:
         w.close("}");
     }
 
+    // A view member is a slice of the buffer. Its bytes are the member itself, a `Copy` slice; a
+    // store bounds the slice the plan addressed by the count it bounded.
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return memberAccess(op.getObject(), op.getMember(), names) + ".len() as u64";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = { let _len = core::cmp::min(" +
+               asSize(names(op.getSizeBytes())) + ", " + bytes + ".len()); &" + bytes + "[.._len] };");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = &[];");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes()) + "usize";
+        w.line("{ let _n = core::cmp::min(core::cmp::min(" + asSize(names(op.getSourceSizeBytes())) + ", " + source +
+               ".len()), " + width + "); " + destination + "[.._n].copy_from_slice(&" + source + "[.._n]); " +
+               destination + "[_n.." + width + "].fill(0u8); }");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The nested value serialises itself into the slice from the buffer's offset, bounded by
@@ -1130,6 +1219,8 @@ private:
         std::int64_t                 unionTagBits{0};
         llvm::StringMap<Member>      members;
         llvm::StringMap<std::string> poolClass;
+        /// @brief Whether the type holds a view and so carries a lifetime.
+        bool lifetime{false};
     };
 
     /// @brief The plan the object a pointer names belongs to.
@@ -1452,6 +1543,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
 
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
+    // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
+    // entry points that read a buffer take it for that lifetime.
+    const bool        holdsView = sectionHoldsView(section, ctx);
+    const std::string generics  = holdsView ? "<'a>" : "";
+    const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
+    const std::string borrowed  = holdsView ? "&'a [u8]" : "&[u8]";
     emitAttachedDocRust(w,
                         docWithDeprecationNotice(typeDoc,
                                                  section.deprecated,
@@ -1483,7 +1580,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.line("#[repr(C)]");
     }
     w.line("#[derive(Clone, Debug, PartialEq)]");
-    w.open("pub struct " + declaredName + " {");
+    w.open("pub struct " + declaredName + generics + " {");
 
     for (const auto& field : section.fields)
     {
@@ -1493,7 +1590,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         emitAttachedDocRust(w, field.doc);
         w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-               rustFieldType(field.resolvedType, ctx) + ",");
+               (field.heldAsView ? std::string{"&'a [u8]"} : rustFieldType(field.resolvedType, ctx)) + ",");
     }
 
     if (section.isUnion)
@@ -1517,7 +1614,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             w.line(rustDeprecatedAttribute(definitionFullName, metadata.majorVersion, metadata.minorVersion));
         }
-        w.line("pub type " + typeName + " = " + declaredName + ";");
+        w.line("pub type " + typeName + generics + " = " + declaredName + generics + ";");
         w.blank();
     }
 
@@ -1548,7 +1645,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         defaults[entry.member] = &entry;
     }
-    w.open("impl Default for " + declaredName + " {");
+    w.open(implHead + "Default for " + declaredName + generics + " {");
     w.open("fn default() -> Self {");
     w.open("Self {");
     for (const auto& field : section.fields)
@@ -1590,7 +1687,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.blank();
 
     }
-    w.open("impl " + declaredName + " {");
+    w.open(implHead + declaredName + generics + " {");
     w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
     w.line(std::string("pub const IS_DEPRECATED: bool = ") + (metadata.deprecated ? "true;" : "false;"));
     w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + metadata.fullName + "." +
@@ -1669,7 +1766,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         return err;
     }
     w.blank();
-    w.open("pub fn deserialize_with_consumed(&mut self, buffer: &[u8]) -> (i8, usize) {");
+    w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
     w.open("match self.deserialize(buffer) {");
     w.line("Ok(consumed) => (0, consumed),");
     w.line("Err(rc) => (rc, buffer.len()),");
@@ -1687,7 +1784,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.close("}");
     w.blank();
 
-    w.open("pub fn from_bytes(buffer: &[u8]) -> core::result::Result<(Self, usize), i8> {");
+    w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
     w.line("let mut out = Self::default();");
     w.line("let used = out.deserialize(buffer)?;");
     w.line("Ok((out, used))");
@@ -1721,7 +1818,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    const RustSpelling                   spelling(module, schema);
+    std::set<std::string> lifetimeSections;
+    if (sectionHoldsView(def.request, ctx))
+    {
+        lifetimeSections.insert(def.isService ? "request" : "");
+    }
+    if (def.response && sectionHoldsView(*def.response, ctx))
+    {
+        lifetimeSections.insert("response");
+    }
+    const RustSpelling                   spelling(module, schema, lifetimeSections);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -1773,8 +1879,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     out << "\n";
 
     // An accessors-only file names no other type: a composite's getter answers its bytes.
+    // A composite's getter answers its bytes, and a view holds them: neither names the type.
     const auto deps = options.accessorsOnly ? std::vector<SemanticTypeRef>{}
-                                            : collectDefinitionCompositeDependencies(def);
+                                            : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const auto selfKey = definitionTypeKey(def.info);
 
