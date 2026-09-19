@@ -1665,151 +1665,154 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
     if (!accessorsOnly)
     {
-    std::size_t              emitted = 0;
-    std::vector<std::string> variableArrayMembers;
-    std::vector<std::string> compositeScalarMembers;
-    std::vector<std::string> compositeFixedArrayMembers;
-    std::vector<std::string> compositeVariableArrayMembers;
+        std::size_t              emitted = 0;
+        std::vector<std::string> variableArrayMembers;
+        std::vector<std::string> compositeScalarMembers;
+        std::vector<std::string> compositeFixedArrayMembers;
+        std::vector<std::string> compositeVariableArrayMembers;
 
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
+        for (const auto& field : section.fields)
         {
-            continue;
-        }
-
-        const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
-        // A view holds the field's bytes and their count, from the buffer the object was
-        // deserialised from; it allocates nothing and takes no memory resource.
-        const auto baseType =
-            field.heldAsView ? std::string{"dsdl_runtime_view_t"} : cppTypeFromFieldType(field.resolvedType, ctx);
-        emitAttachedDocCpp(w, field.doc);
-
-        const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
-        if (field.resolvedType.arrayKind == ArrayKind::None)
-        {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            w.line(baseType + " " + member + init_ + ";");
-            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
-                !field.heldAsView)
+            if (field.isPadding)
             {
-                compositeScalarMembers.push_back(member);
+                continue;
             }
-            ++emitted;
-            continue;
-        }
 
-        if (field.resolvedType.arrayKind == ArrayKind::Fixed)
-        {
-            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+            const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+            // A view holds the field's bytes and their count, from the buffer the object was
+            // deserialised from; it allocates nothing and takes no memory resource.
+            const auto baseType =
+                field.heldAsView ? std::string{"dsdl_runtime_view_t"} : cppTypeFromFieldType(field.resolvedType, ctx);
+            emitAttachedDocCpp(w, field.doc);
+
+            const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
+            if (field.resolvedType.arrayKind == ArrayKind::None)
             {
-                w.line("std::array<std::uint8_t, (" + std::to_string(field.resolvedType.arrayCapacity) +
-                       "U + 7U) / 8U> " + member + "{};");
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                w.line(baseType + " " + member + init_ + ";");
+                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
+                    !field.heldAsView)
+                {
+                    compositeScalarMembers.push_back(member);
+                }
+                ++emitted;
+                continue;
+            }
+
+            if (field.resolvedType.arrayKind == ArrayKind::Fixed)
+            {
+                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                {
+                    w.line("std::array<std::uint8_t, (" + std::to_string(field.resolvedType.arrayCapacity) +
+                           "U + 7U) / 8U> " + member + "{};");
+                }
+                else
+                {
+                    // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                    w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
+                           member + init_ + ";");
+                    // NOLINTEND(performance-inefficient-string-concatenation)
+                }
+                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+                {
+                    compositeFixedArrayMembers.push_back(member);
+                }
+                ++emitted;
+                continue;
+            }
+
+            if (isPmrFlavor(flavor))
+            {
+                w.line(
+                    "std::pmr::vector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    "> " + member + "{};");
+                variableArrayMembers.push_back(member);
+                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+                {
+                    compositeVariableArrayMembers.push_back(member);
+                }
+            }
+            else if (isAutosarFlavor(flavor))
+            {
+                w.line(
+                    "::llvmdsdl::cpp::autosar::BoundedVector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
             }
             else
             {
-                // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
-                       member + init_ + ";");
-                // NOLINTEND(performance-inefficient-string-concatenation)
-            }
-            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
-            {
-                compositeFixedArrayMembers.push_back(member);
+                w.line(
+                    "std::vector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    "> " + member + "{};");
             }
             ++emitted;
-            continue;
         }
 
-        if (isPmrFlavor(flavor))
+        if (section.isUnion)
         {
-            w.line("std::pmr::vector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   "> " + member + "{};");
-            variableArrayMembers.push_back(member);
-            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+            // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+            w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
+            ++emitted;
+        }
+
+        if (isPmrFlavor(flavor) && metadata.hostImage.holds)
+        {
+            // A host image allocates nothing, so it carries no resource: the pointer would widen the
+            // structure past the image and, inside a nested image, move every field after it. The
+            // resource-taking constructor and the setter stay, so a parent treats every member alike.
+            w.line(declaredName + "() = default;");
+            w.line("explicit " + declaredName + "(::llvmdsdl::cpp::MemoryResource*) {}");
+            w.line("void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}");
+        }
+        else if (isPmrFlavor(flavor))
+        {
+            w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
+            w.line(declaredName + "() = default;");
+            w.line("explicit " + declaredName +
+                   "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
+            w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
+            w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
+                   "::llvmdsdl::cpp::default_memory_resource();");
+            for (const auto& member : variableArrayMembers)
             {
-                compositeVariableArrayMembers.push_back(member);
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                w.line(member + " = decltype(" + member + ")(_memory_resource);");
             }
-        }
-        else if (isAutosarFlavor(flavor))
-        {
-            w.line("::llvmdsdl::cpp::autosar::BoundedVector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
-        }
-        else
-        {
-            w.line("std::vector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   "> " + member + "{};");
-        }
-        ++emitted;
-    }
-
-    if (section.isUnion)
-    {
-        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
-        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
-        ++emitted;
-    }
-
-    if (isPmrFlavor(flavor) && metadata.hostImage.holds)
-    {
-        // A host image allocates nothing, so it carries no resource: the pointer would widen the
-        // structure past the image and, inside a nested image, move every field after it. The
-        // resource-taking constructor and the setter stay, so a parent treats every member alike.
-        w.line(declaredName + "() = default;");
-        w.line("explicit " + declaredName + "(::llvmdsdl::cpp::MemoryResource*) {}");
-        w.line("void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}");
-    }
-    else if (isPmrFlavor(flavor))
-    {
-        w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
-        w.line(declaredName + "() = default;");
-        w.line("explicit " + declaredName +
-               "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
-        w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
-        w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
-               "::llvmdsdl::cpp::default_memory_resource();");
-        for (const auto& member : variableArrayMembers)
-        {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            w.line(member + " = decltype(" + member + ")(_memory_resource);");
-        }
-        for (const auto& member : compositeScalarMembers)
-        {
-            w.line(member + ".set_memory_resource(_memory_resource);");
-        }
-        for (const auto& member : compositeFixedArrayMembers)
-        {
-            const auto i =
-                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
-            // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
-            w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
-            // NOLINTEND(performance-inefficient-string-concatenation)
+            for (const auto& member : compositeScalarMembers)
+            {
+                w.line(member + ".set_memory_resource(_memory_resource);");
+            }
+            for (const auto& member : compositeFixedArrayMembers)
+            {
+                const auto i =
+                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                w.close("}");
+            }
+            for (const auto& member : compositeVariableArrayMembers)
+            {
+                const auto i =
+                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                w.close("}");
+            }
             w.close("}");
+            ++emitted;
         }
-        for (const auto& member : compositeVariableArrayMembers)
-        {
-            const auto i =
-                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
-            // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
-            w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
-            // NOLINTEND(performance-inefficient-string-concatenation)
-            w.close("}");
-        }
-        w.close("}");
-        ++emitted;
-    }
 
-    if (emitted == 0)
-    {
-        w.line("std::uint8_t _dummy_{0U};");
-    }
+        if (emitted == 0)
+        {
+            w.line("std::uint8_t _dummy_{0U};");
+        }
     }
 
     w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
@@ -1873,48 +1876,47 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
     if (!accessorsOnly)
     {
-    emitArrayMetadata(w, section);
+        emitArrayMetadata(w, section);
 
-    w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
-           "inout_buffer_size_bytes) "
-           "const {");
-    if (isPmrFlavor(flavor))
-    {
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, " +
-               (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
-    }
-    else
-    {
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
-    }
-    w.close("}");
-
-    w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
-           "inout_buffer_size_bytes) {");
-    if (isPmrFlavor(flavor))
-    {
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, " +
-               (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
-    }
-    else
-    {
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
-    }
-    w.close("}");
-
-    if (isPmrFlavor(flavor))
-    {
         w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
-               "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+               "inout_buffer_size_bytes) "
+               "const {");
+        if (isPmrFlavor(flavor))
+        {
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, " +
+                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+        }
+        else
+        {
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
+        }
         w.close("}");
 
         w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
-               "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+               "inout_buffer_size_bytes) {");
+        if (isPmrFlavor(flavor))
+        {
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, " +
+                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+        }
+        else
+        {
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
+        }
         w.close("}");
-    }
 
+        if (isPmrFlavor(flavor))
+        {
+            w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
+                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.close("}");
+
+            w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
+                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.close("}");
+        }
     }
     // A wire-flat section's field accessors, defined here as static members: each is one read
     // or one write at the field's offset, and reads the wire rather than an object.
@@ -2147,30 +2149,43 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         out << "#define " << thisVersion << "\n\n";
     }
 
-    out << "#include <array>\n";
-    out << "#include <cstddef>\n";
-    out << "#include <cstdint>\n";
-    out << "#include <cstring>\n";
-    out << "#include <type_traits>\n";
-    out << "#include <utility>\n";
-    if (!isAutosarFlavor(flavor))
+    // An accessors-only header holds constants and accessors: sizes, integers and the runtime.
+    if (ctx.accessorsOnly())
     {
-        out << "#include <vector>\n";
+        out << "#include <cstddef>\n";
+        out << "#include <cstdint>\n";
+        out << "#include \"dsdl_runtime.hpp\"\n";
+        w.blank();
     }
-    if (isPmrFlavor(flavor))
+    else
     {
-        out << "#include <memory_resource>\n";
-    }
-    out << "#include \"dsdl_runtime.hpp\"\n";
-
-    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
-    {
-        if (const auto* dep = ctx.find(depRef))
+        out << "#include <array>\n";
+        out << "#include <cstddef>\n";
+        out << "#include <cstdint>\n";
+        out << "#include <cstring>\n";
+        out << "#include <type_traits>\n";
+        out << "#include <utility>\n";
+        if (!isAutosarFlavor(flavor))
         {
-            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            out << "#include <vector>\n";
         }
+        if (isPmrFlavor(flavor))
+        {
+            out << "#include <memory_resource>\n";
+        }
+        out << "#include \"dsdl_runtime.hpp\"\n";
+
+        // A nested type's header is included where this header names the type; a field held as a
+        // view names none.
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+        {
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
+        }
+        w.blank();
     }
-    w.blank();
 
     emitNamespaceOpen(w, def.info.namespaceComponents);
 

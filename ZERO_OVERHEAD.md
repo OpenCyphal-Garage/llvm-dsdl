@@ -617,11 +617,12 @@ type fails with a diagnostic naming it; `--list-outputs` reports the reduced set
   the endianness guard, and keeps the constants: `FULL_NAME`, `EXTENT_BYTES`,
   `SERIALIZATION_BUFFER_SIZE_BYTES` and the verdicts are about the wire, which is what the mode is
   for.
-- *A file names no other type.* Rust, TypeScript and Python drop their type imports, since a
-  composite's getter answers bytes; C and C++ keep the nested header's include, which is how a
-  reader reaches the nested type's accessors. A TypeScript file whose accessors all answer bytes
-  refers to nothing in the runtime and imports nothing, which `noUnusedLocals` would otherwise
-  refuse.
+- *A file names no other type, and includes none.* A composite's getter answers bytes, so every
+  language drops its import or include of the nested type; a reader that wants the nested type's
+  accessors includes that type itself. An include a file does not use is a lint diagnostic in the
+  consumer's build, and the generated code owes its consumers none. A TypeScript file whose
+  accessors all answer bytes refers to nothing in the runtime and imports nothing, which
+  `noUnusedLocals` would otherwise refuse. *(Corrected 2026-09-19: C and C++ had kept the include.)*
 
 **Progress, 2026-09-18.** Landed on all seven targets. `llvmdsdl-aliasable-only` compiles a probe
 per language against the generated output and nothing else — under `-Werror`, `-D warnings`,
@@ -710,8 +711,9 @@ its impls, on its deserialise and on every type that holds one, decided by a wal
 type holds; Go in a `[]byte`; TypeScript in a `Uint8Array`; Python in a `memoryview`. The
 initialiser renderer reads `dsdl.clear_view` as a member holding nothing, which each language
 renders as its empty slice. A file names no type it holds only as a view, so the dependency
-collectors leave such a type out of the imports Rust, Go, TypeScript and Python write, while the
-manifests and the C and C++ includes keep it. `llvmdsdl-container-views` now runs the probe on all
+collectors leave such a type out of the imports and includes every language writes, while the
+manifests keep it; the C header's `<string.h>` went with them, used by no generated header in any
+mode. `llvmdsdl-container-views` now runs the probe on all
 seven targets, Rust under `-D warnings`, Go under `go vet` and TypeScript under `noUnusedLocals`;
 the Python probe also writes through the buffer and reads the change through the view.
 

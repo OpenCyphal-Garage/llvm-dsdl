@@ -21,14 +21,22 @@
 # C_VEC3-NOT: typedef struct
 # C_VEC3-NOT: serialize_
 
-# The nested header is included: it is how a reader reaches the nested type's accessors.
+# The header names no nested type, so it includes none; a reader includes what it uses.
 # RUN: cat %t/c/fixtures_aliasable/vendor/Pose_1_0.h | FileCheck %s --check-prefix=C_POSE
-# C_POSE: #include "fixtures_aliasable/vendor/Vec3_1_0.h"
+# C_POSE-NOT: #include "fixtures_aliasable/vendor/Vec3_1_0.h"
+# C_POSE-NOT: #include <string.h>
 # C_POSE-NOT: typedef struct
 # C_POSE: static inline const uint8_t* fixtures_aliasable__vendor__Pose__get_position_(const uint8_t* const buffer, const size_t buffer_size_bytes, size_t* const out_size)
 # C_POSE-NOT: typedef struct
 
-# C++: the struct holds the constants and the accessors, and no member.
+# C++: the struct holds the constants and the accessors, and no member; the header includes what
+# those use and nothing else.
+# RUN: cat %t/cpp/std/fixtures_aliasable/vendor/Pose_1_0.hpp | FileCheck %s --check-prefix=CPP_POSE
+# CPP_POSE-NOT: #include <array>
+# CPP_POSE-NOT: #include <vector>
+# CPP_POSE-NOT: #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
+# CPP_POSE: #include "dsdl_runtime.hpp"
+# CPP_POSE-NOT: #include
 # RUN: cat %t/cpp/std/fixtures_aliasable/vendor/Vec3_1_0.hpp | FileCheck %s --check-prefix=CPP_VEC3
 # CPP_VEC3-NOT: deserialize
 # CPP_VEC3: struct Vec3 {

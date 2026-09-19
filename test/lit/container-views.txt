@@ -38,11 +38,15 @@
 # BODY:       dsdl.call_initialize @fixtures_aliasable_vendor_Vec3_1_0__initialize_ir_({{.*}}member = "velocity"
 # BODY-NOT:   Pose_1_0__initialize_ir_
 
-# C holds the view in the runtime's type, and its bodies neither call nor declare the nested Pose.
+# C holds the view in the runtime's type, includes the Vec3 it decodes and not the Pose it does
+# not name, and its bodies neither call nor declare the nested Pose.
 # RUN: %dsdlc --target-language c --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
 # GEN-NOT: error:
 # GEN: files generated
 # RUN: cat %t/c/fixtures_views/vendor/Frame_1_0.h | FileCheck %s --check-prefix=C_FRAME
+# C_FRAME-NOT:  #include "fixtures_aliasable/vendor/Pose_1_0.h"
+# C_FRAME:      #include "fixtures_aliasable/vendor/Vec3_1_0.h"
+# C_FRAME-NOT:  #include "fixtures_aliasable/vendor/Pose_1_0.h"
 # C_FRAME:      typedef struct fixtures_views__vendor__Frame {
 # C_FRAME-NEXT:   uint32_t sequence;
 # C_FRAME-NEXT:   /* Held as a view: the bytes of the fixtures_aliasable__vendor__Pose this field carries, and their count. */
@@ -79,6 +83,9 @@
 # The other languages hold the view in their own slice, and name the Pose nowhere: no import of it.
 # RUN: %dsdlc --target-language cpp --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp/std/fixtures_views/vendor/Frame_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP-NOT: #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
+# CPP:     #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
+# CPP-NOT: #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
 # CPP:     dsdl_runtime_view_t pose{};
 # CPP:     dsdl_runtime_copy_bytes(
 # CPP:     ->pose.bytes =

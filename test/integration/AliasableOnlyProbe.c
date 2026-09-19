@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "fixtures_aliasable/vendor/Pose_1_0.h"
+#include "fixtures_aliasable/vendor/Vec3_1_0.h"
 
 #include <stdio.h>
 #include <string.h>

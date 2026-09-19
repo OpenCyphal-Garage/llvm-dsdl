@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
+#include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
 
 #include <cstdio>
 #include <cstring>

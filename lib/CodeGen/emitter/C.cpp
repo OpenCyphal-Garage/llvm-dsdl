@@ -625,54 +625,53 @@ void emitSection(SourceWriter&              w,
     // The object type and its serialisation, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
-    emitArrayMacros(w, typeName, section);
-    emitUnionOptionTagMacros(w, typeName, section, metadata);
-    emitAttachedDocC(w,
-                     docWithDeprecationNotice(typeDoc,
-                                              section.deprecated,
-                                              def.info.fullName,
-                                              def.info.majorVersion,
-                                              def.info.minorVersion));
-    emitSectionTypedef(w,
-                       typeName,
-                       section,
-                       metadata,
-                       ctx,
-                       section.deprecated && ctx.emitDeprecationAttributes(),
-                       plan);
+        emitArrayMacros(w, typeName, section);
+        emitUnionOptionTagMacros(w, typeName, section, metadata);
+        emitAttachedDocC(w,
+                         docWithDeprecationNotice(typeDoc,
+                                                  section.deprecated,
+                                                  def.info.fullName,
+                                                  def.info.majorVersion,
+                                                  def.info.minorVersion));
+        emitSectionTypedef(w,
+                           typeName,
+                           section,
+                           metadata,
+                           ctx,
+                           section.deprecated && ctx.emitDeprecationAttributes(),
+                           plan);
 
-    const auto objectType = renderCTagSpelling(typeName);
-    w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
-           "* obj, uint8_t* buffer, size_t* "
-           "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
-           "* out_obj, const uint8_t* buffer, size_t* "
-           "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
-    w.blank();
+        const auto objectType = renderCTagSpelling(typeName);
+        w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
+               "* obj, uint8_t* buffer, size_t* "
+               "inout_buffer_size_bytes);");
+        w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
+               "* out_obj, const uint8_t* buffer, size_t* "
+               "inout_buffer_size_bytes);");
+        w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
-           "* const obj, uint8_t* const buffer, size_t* const "
-           "inout_buffer_size_bytes)");
-    w.open("{");
-    w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-    w.blank();
+        w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
+               "* const obj, uint8_t* const buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
-           "* const out_obj, const uint8_t* buffer, size_t* const "
-           "inout_buffer_size_bytes)");
-    w.open("{");
-    w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-    w.blank();
+        w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
+               "* const out_obj, const uint8_t* buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
-    w.open("{");
-    w.line("return " + irStem + "__initialize_ir_(out_obj);");
-    w.close("}");
-    w.blank();
-
+        w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
+        w.open("{");
+        w.line("return " + irStem + "__initialize_ir_(out_obj);");
+        w.close("}");
+        w.blank();
     }
     // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
     // getter and a setter beside the bodies: one read or one write at the field's offset, through
@@ -809,14 +808,18 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     out << "#include <stddef.h>\n";
     out << "#include <stdint.h>\n";
     out << "#include <stdbool.h>\n";
-    out << "#include <string.h>\n";
     out << "#include \"dsdl_runtime.h\"\n";
 
-    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
+    // A nested type's header is included where this header names the type. A field held as a
+    // view names none, and an accessors-only header names none: its composite getters answer bytes.
+    if (!ctx.accessorsOnly())
     {
-        if (const auto* dep = ctx.find(depRef))
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
         {
-            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
         }
     }
     w.blank();
