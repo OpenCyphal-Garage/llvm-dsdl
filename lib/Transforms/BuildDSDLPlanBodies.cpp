@@ -2289,14 +2289,11 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
                                                                 mlir::arith::CmpIPredicate::ult,
                                                                 index,
                                                                 constantI64(builder, loc, step.arrayCapacity));
-        const mlir::Value offset =
-            mlir::arith::AddIOp::create(builder,
-                                        loc,
-                                        constantI64(builder, loc, bitOffset),
-                                        mlir::arith::MulIOp::create(builder,
-                                                                    loc,
-                                                                    index,
-                                                                    constantI64(builder, loc, step.bitLength)));
+        // Built one at a time, for the reason the setter's guard is.
+        const mlir::Value base   = constantI64(builder, loc, bitOffset);
+        const mlir::Value width  = constantI64(builder, loc, step.bitLength);
+        const mlir::Value scaled = mlir::arith::MulIOp::create(builder, loc, index, width);
+        const mlir::Value offset = mlir::arith::AddIOp::create(builder, loc, base, scaled);
         return {offset, inRange};
     };
 
@@ -2360,12 +2357,13 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
             mlir::arith::AddIOp::create(builder, loc, offset, constantI64(builder, loc, step.bitLength));
         const mlir::Value fits =
             mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::uge, capacityBits, need);
-        mlir::Value code =
-            mlir::arith::SelectOp::create(builder,
-                                          loc,
-                                          fits,
-                                          constantI8(builder, loc, 0),
-                                          constantI8(builder, loc, -kRuntimeErrorSerializationBufferTooSmall));
+        // Each constant is built before the select that reads it. Built as two arguments of one
+        // call they would be built in whichever order the compiler chose, and the operations
+        // reach the body in the order they are built, so the emitted body would follow the
+        // compiler that built dsdlc.
+        const mlir::Value ok       = constantI8(builder, loc, 0);
+        const mlir::Value tooSmall = constantI8(builder, loc, -kRuntimeErrorSerializationBufferTooSmall);
+        mlir::Value       code     = mlir::arith::SelectOp::create(builder, loc, fits, ok, tooSmall);
         if (inRange)
         {
             code = mlir::arith::SelectOp::create(builder,
