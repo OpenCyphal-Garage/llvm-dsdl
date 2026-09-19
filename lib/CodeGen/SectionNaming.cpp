@@ -150,7 +150,17 @@ std::vector<std::string> reachableModuleMetadata(const CodegenNamingLanguage lan
         if (name.starts_with(typeConstantPrefix) && (name.size() > typeConstantPrefix.size()) &&
             (name[typeConstantPrefix.size()] == '_'))
         {
-            out.push_back(name.substr(typeConstantPrefix.size() + 1).str());
+            const llvm::StringRef remainder = name.substr(typeConstantPrefix.size() + 1);
+            // A name the module writes for one payload of a service is reached through that
+            // payload's own prefix, which carries the qualifier: `DSDL_REQUEST` reaches
+            // `DSDL_REQUEST_WIRE_FLAT` as `WIRE_FLAT`. Reaching the same name from the bare type
+            // name would reserve `REQUEST_WIRE_FLAT` on a message, whose module writes no such
+            // name, and rename a constant that collides with nothing.
+            if (remainder.starts_with("REQUEST_") || remainder.starts_with("RESPONSE_"))
+            {
+                continue;
+            }
+            out.push_back(remainder.str());
         }
     }
     return out;

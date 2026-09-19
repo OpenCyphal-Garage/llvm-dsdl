@@ -1,0 +1,15 @@
+# A module writes names of its own, and a type whose constant prefix is the module's own prefix can
+# reach them: a constant of that name is escaped past the module's. Only the names the module
+# actually writes are reserved -- a message's module writes no REQUEST_ or RESPONSE_ name, so a
+# constant of that name collides with nothing and keeps its spelling.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language python %S/fixtures_module_metadata --outdir %t/py > /dev/null
+# RUN: cat %t/py/*/fixtures_module_metadata/ns/dsdl_1_0.py | FileCheck %s --check-prefix=MESSAGE
+
+# The module's own, then the type's two constants: WIRE_FLAT moved, REQUEST_WIRE_FLAT did not.
+# MESSAGE-DAG: DSDL_WIRE_FLAT =
+# MESSAGE-DAG: DSDL_WIRE_FLAT_2 =
+# MESSAGE-DAG: DSDL_REQUEST_WIRE_FLAT =
+# RUN: cat %t/py/*/fixtures_module_metadata/ns/dsdl_1_0.py | FileCheck %s --check-prefix=MESSAGE_NONE
+# MESSAGE_NONE-NOT: DSDL_REQUEST_WIRE_FLAT_2
