@@ -76,6 +76,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -438,6 +439,17 @@ public:
                            io,
                            scope.declare(IdentifierRole::FunctionName, accessorSource("get", name)),
                            scope.declare(IdentifierRole::FunctionName, accessorSource("set", name))};
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] =
+                    Member{"_tag_",
+                           tagSteps_.back().get(),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", "_tag_")),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", "_tag_"))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1457,6 +1469,8 @@ private:
     CppFlavor             flavor_;
     TypeNameVersioning    versioning_;
     llvm::StringMap<Plan> plans_;
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
     /// @brief The plan and the member an accessor reaches, through its schema and section name.
     struct Accessed final

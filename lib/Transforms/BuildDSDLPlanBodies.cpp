@@ -2134,6 +2134,79 @@ std::optional<std::vector<FixedField>> fixedFieldOffsets(const std::vector<PlanS
     return out;
 }
 
+/// @brief Whether a union's wire form is a tag and one option at a fixed offset: sealed, of one
+///        length, every option whole bytes wide and, for a composite, wire-flat itself.
+///
+/// Such a union has no single layout, so it is not wire-flat; but its tag sits at a fixed offset,
+/// and every option after the tag, so an accessor set can read the tag and then the option. The
+/// tag's width is a whole number of bytes by the wire format.
+bool unionIsFlat(mlir::dsdl::SerializationPlanOp plan)
+{
+    if (!plan.getIsUnion() || !plan.getSealed() || !plan.getFixedSize() || plan.getBody().empty())
+    {
+        return false;
+    }
+    auto module = plan->getParentOfType<mlir::ModuleOp>();
+    bool any    = false;
+    for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
+    {
+        if (io.isPadding() || io.isVariableArray())
+        {
+            return false;
+        }
+        any = true;
+        if (io.isComposite())
+        {
+            auto schema = module ? module.lookupSymbol<mlir::dsdl::SchemaOp>(renderDefinitionSymbolBase(
+                                       io.getCompositeFullName().value_or(llvm::StringRef{}),
+                                       static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                       static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))))
+                                 : mlir::dsdl::SchemaOp{};
+            if (!schema || schema.getBody().empty())
+            {
+                return false;
+            }
+            bool flat = false;
+            for (mlir::dsdl::SerializationPlanOp nested :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                if (!nested.getSection())
+                {
+                    flat = nested.getWireFlat();
+                }
+            }
+            if (!flat)
+            {
+                return false;
+            }
+            continue;
+        }
+        const std::int64_t count = io.isArray() ? io.getArrayCapacity() : 1;
+        if ((io.getBitLength() <= 0) || (((io.getBitLength() * count) % 8) != 0))
+        {
+            return false;
+        }
+    }
+    return any && ((plan.getUnionTagBits().value_or(0) % 8) == 0);
+}
+
+/// @brief The union's tag as a step: unsigned, of the tag's width, normalised through the plan's
+///        own tag helpers, which mask to that width.
+PlanStep unionTagAsStep(mlir::dsdl::SerializationPlanOp plan)
+{
+    PlanStep tag;
+    tag.kind               = PlanStepKind::Field;
+    tag.name               = "_tag_";
+    tag.scalarCategory     = "unsigned";
+    tag.castMode           = "saturated";
+    tag.arrayKind          = "none";
+    tag.bitLength          = plan.getUnionTagBits().value_or(0);
+    tag.alignmentBits      = 8;
+    tag.serUnsignedHelper  = plan.getLoweredSerUnionTagHelper().value_or(llvm::StringRef{}).str();
+    tag.deserUnsignedHelper = plan.getLoweredDeserUnionTagHelper().value_or(llvm::StringRef{}).str();
+    return tag;
+}
+
 /// @brief Stamps what a translator needs to find an accessor and place it: the schema, the
 ///        section, which of the two it is, and the member it reaches.
 void tagAccessor(mlir::func::FuncOp    fn,
@@ -2576,6 +2649,47 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                                                      built)))
                 {
                     return plan.emitOpError("accessor bodies could not be built for '" + field.step->name + "'");
+                }
+            }
+        }
+        // A union whose options are all flat and of one length has its tag at offset nought and
+        // every option at the offset after it, so the tag gets a getter and a setter as a field
+        // would, and each option its accessors at that one offset. A setter writes the option's
+        // value and not the tag: selecting is the tag setter's, with the option's tag constant.
+        else if (isUnion && unionIsFlat(plan))
+        {
+            const PlanStep     tag        = unionTagAsStep(plan);
+            const std::int64_t afterTag   = tag.bitLength;
+            if (mlir::failed(
+                    buildFieldAccessors(builder, module, plan.getLoc(), fnStem, schema, section, tag, 0, built)))
+            {
+                return plan.emitOpError("accessor bodies could not be built for the union's tag");
+            }
+            for (const PlanStep* option : unionOptionsOf(steps))
+            {
+                const bool ok =
+                    stepIsComposite(*option)
+                        ? mlir::succeeded(buildCompositeAccessor(builder,
+                                                                 module,
+                                                                 plan.getLoc(),
+                                                                 fnStem,
+                                                                 schema,
+                                                                 section,
+                                                                 *option,
+                                                                 afterTag,
+                                                                 built))
+                        : mlir::succeeded(buildFieldAccessors(builder,
+                                                              module,
+                                                              plan.getLoc(),
+                                                              fnStem,
+                                                              schema,
+                                                              section,
+                                                              *option,
+                                                              afterTag,
+                                                              built));
+                if (!ok)
+                {
+                    return plan.emitOpError("accessor bodies could not be built for '" + option->name + "'");
                 }
             }
         }

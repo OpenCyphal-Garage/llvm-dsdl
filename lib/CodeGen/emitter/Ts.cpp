@@ -75,6 +75,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <cmath>
 #include <functional>
 #include <iomanip>
@@ -419,8 +420,8 @@ void emitStructSectionType(SourceWriter&          w,
         }
         emitAttachedDocTs(w, field.doc);
         const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
-        w.line(fieldName + ": " + (field.heldAsView ? std::string{"Uint8Array"} : tsFieldType(field.resolvedType, ctx)) +
-               ";");
+        w.line(fieldName + ": " +
+               (field.heldAsView ? std::string{"Uint8Array"} : tsFieldType(field.resolvedType, ctx)) + ";");
     }
     w.close("}");
 }
@@ -550,6 +551,13 @@ public:
             for (mlir::dsdl::IOOp io : fields)
             {
                 entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"_tag", tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1597,6 +1605,8 @@ private:
     mlir::SymbolTable     symbols_;
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
     /// @brief The plan and the member an accessor reaches, through its schema and section name.
     struct Accessed final
@@ -2052,19 +2062,34 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     SourceWriter       w = makeTsWriter(out);
     // The runtime import is written when the body refers to it. An accessors-only file whose
     // accessors all answer a sub-buffer refers to nothing in it.
-    const auto assemble = [&]() {
-        const std::string body        = out.str();
-        const bool        usesRuntime = !ctx.accessorsOnly() || body.contains("dsdlRuntime.");
-        return head.str() + (usesRuntime ? runtimeImport : std::string{}) + body;
-    };
-    w.blank();
-
     // `Original as Local`, collapsing to plain `Original` when nothing had to be renamed -- so a
-    // file that references no clashing names looks exactly as it did before aliasing existed.
-    const auto renderImportList = [](const std::set<std::pair<std::string, std::string>>& names) {
+    // file that references no clashing names looks exactly as it did before aliasing existed. A
+    // name the body does not use is left out: a union's factory makes the selected option alone,
+    // so it calls no other option's factory, and an import nothing uses is a lint diagnostic.
+    const auto usesIdentifier = [](const std::string& text, const std::string& name) {
+        const auto identifierChar = [](const char c) {
+            return (std::isalnum(static_cast<unsigned char>(c)) != 0) || (c == '_') || (c == '$');
+        };
+        for (std::size_t at = text.find(name); at != std::string::npos; at = text.find(name, at + 1))
+        {
+            const bool startsWord = (at == 0) || !identifierChar(text[at - 1]);
+            const bool endsWord   = (at + name.size() >= text.size()) || !identifierChar(text[at + name.size()]);
+            if (startsWord && endsWord)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto renderImportList = [&](const std::set<std::pair<std::string, std::string>>& names,
+                                      const std::string&                                   body) {
         std::string rendered;
         for (const auto& [original, local] : names)
         {
+            if (!usesIdentifier(body, local))
+            {
+                continue;
+            }
             if (!rendered.empty())
             {
                 rendered += ", ";
@@ -2074,20 +2099,35 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         return rendered;
     };
-
-    // An accessors-only file names no other type: a composite's getter answers its bytes.
-    if (!ctx.accessorsOnly())
-    {
-        for (const auto& [modulePath, names] : bodyImportsByModule)
+    const auto assemble = [&]() {
+        const std::string body        = out.str();
+        const bool        usesRuntime = !ctx.accessorsOnly() || body.contains("dsdlRuntime.");
+        std::string       imports;
+        // An accessors-only file names no other type: a composite's getter answers its bytes.
+        if (!ctx.accessorsOnly())
         {
-            w.line("import { " + renderImportList(names) + " } from \"" + modulePath + "\";");
+            for (const auto& [modulePath, names] : bodyImportsByModule)
+            {
+                if (const std::string list = renderImportList(names, body); !list.empty())
+                {
+                    imports.append("import { ").append(list).append(" } from \"").append(modulePath).append("\";\n");
+                }
+            }
+            for (const auto& [modulePath, names] : importsByModule)
+            {
+                if (const std::string list = renderImportList(names, body); !list.empty())
+                {
+                    imports.append("import type { ")
+                        .append(list)
+                        .append(" } from \"")
+                        .append(modulePath)
+                        .append("\";\n");
+                }
+            }
         }
+        return head.str() + (usesRuntime ? runtimeImport : std::string{}) + "\n" + imports + body;
+    };
 
-        for (const auto& [modulePath, names] : importsByModule)
-        {
-            w.line("import type { " + renderImportList(names) + " } from \"" + modulePath + "\";");
-        }
-    }
     w.line("export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
     w.line("export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
     w.line("export const DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "true" : "false") + ";");

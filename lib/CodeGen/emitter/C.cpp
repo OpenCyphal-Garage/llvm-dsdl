@@ -678,13 +678,42 @@ void emitSection(SourceWriter&              w,
     // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
     // as an int64_t and hold an integer in one; the wrappers speak the member's own type, and a
     // getter reads a null buffer as an empty one.
-    if (metadata.wireFlat.holds && !section.isUnion)
+    // A union whose options are all flat and of one length has them too, at the offset after its
+    // tag, and the tag as a member named `_tag_`; the pass that builds the bodies decides which
+    // unions those are, and the tag's getter is the sign that it did.
+    auto       schemaModule = schema ? schema->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp{};
+    const bool unionFlat =
+        section.isUnion && schemaModule &&
+        (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
+    if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+        struct Subject final
+        {
+            std::string       name;
+            std::string       cMember;
+            SemanticFieldType type;
+        };
+        std::vector<Subject> subjects;
+        if (unionFlat)
+        {
+            SemanticFieldType tag;
+            tag.scalarCategory = SemanticScalarCategory::UnsignedInt;
+            tag.bitLength      = metadata.unionTagBits;
+            subjects.push_back(Subject{"_tag_", "_tag_", tag});
+        }
         for (const auto& field : section.fields)
         {
-            const ArrayKind kind = field.resolvedType.arrayKind;
-            if (field.isPadding || ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed)))
+            if (!field.isPadding)
+            {
+                subjects.push_back(
+                    Subject{field.name, fieldScope.get(IdentifierRole::FieldName, field.name), field.resolvedType});
+            }
+        }
+        for (const auto& [name, cMember, type] : subjects)
+        {
+            const ArrayKind kind = type.arrayKind;
+            if ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed))
             {
                 continue;
             }
@@ -692,14 +721,13 @@ void emitSection(SourceWriter&              w,
             const std::string irIndex   = indexed ? ", int64_t index" : "";
             const std::string cIndex    = indexed ? ", const size_t index" : "";
             const std::string passIndex = indexed ? ", (int64_t) index" : "";
-            const std::string cMember   = fieldScope.get(IdentifierRole::FieldName, field.name);
             const std::string size      = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
-            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            if (type.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // A nested composite's getter answers the buffer from the field's offset and, through
                 // the pointer, what remains of this one, for the nested type's own accessors.
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                const std::string irGet = irStem + "__get_" + field.name + "_ir_";
+                const std::string irGet = irStem + "__get_" + name + "_ir_";
                 w.line("const uint8_t* " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex +
                        ", size_t* out_size);");
                 w.blank();
@@ -719,17 +747,17 @@ void emitSection(SourceWriter&              w,
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 continue;
             }
-            const bool  isFloat = field.resolvedType.scalarCategory == SemanticScalarCategory::Float;
-            const bool  isBool  = field.resolvedType.scalarCategory == SemanticScalarCategory::Bool;
+            const bool  isFloat = type.scalarCategory == SemanticScalarCategory::Float;
+            const bool  isBool  = type.scalarCategory == SemanticScalarCategory::Bool;
             std::string irType  = "int64_t";
             if (isFloat)
             {
-                irType = (field.resolvedType.bitLength <= 32) ? "float" : "double";
+                irType = (type.bitLength <= 32) ? "float" : "double";
             }
-            const std::string cType = cTypeFromFieldType(field.resolvedType, ctx);
+            const std::string cType = cTypeFromFieldType(type, ctx);
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            const std::string irGet = irStem + "__get_" + field.name + "_ir_";
-            const std::string irSet = irStem + "__set_" + field.name + "_ir_";
+            const std::string irGet = irStem + "__get_" + name + "_ir_";
+            const std::string irSet = irStem + "__set_" + name + "_ir_";
             w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ");");
             w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ", " + irType +
                    " value);");

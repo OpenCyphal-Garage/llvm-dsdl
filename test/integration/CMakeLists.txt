@@ -935,6 +935,33 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # The accessors of an equal-length union, in every language: the tag and the selected option read
+  # what the decode holds, and the tag setter selects an option for it.
+  add_test(
+    NAME llvmdsdl-union-accessors
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/union-accessors-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUnionAccessors.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-union-accessors
+    PROPERTIES
+      LABELS "integration;alias-layout;c;object;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend

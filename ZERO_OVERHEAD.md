@@ -632,7 +632,7 @@ marking the fold introduced for Rust now reaches every translating backend, so a
 file carries the scalar helpers its accessors call and nothing else. The file set keeps its names,
 less Go's `_host_image.go`, which the lit test holds `--list-outputs` to.
 
-### Phase 6 — container views — done 2026-09-19, union accessors deferred
+### Phase 6 — container views — done 2026-09-19
 
 *(Added 2026-09-18; designed 2026-09-19.)*
 
@@ -685,11 +685,21 @@ and then the option at a fixed offset.
   member and the body cannot disagree, and `dsdl-verify-alias-layout` refuses a view step whose
   nested plan is not asserted, sealed and fixed.
 - *Equal-length unions are not in the catalogue.* Its two fixed equal-length unions,
-  `ArbitrationID` and `port.ID`, hold sub-byte options, so accessors for such a union would
-  serve no regulated type. They wait for a namespace that needs them, as 6.3.
+  `ArbitrationID` and `port.ID`, hold sub-byte options, so accessors for such a union serve no
+  regulated type; they are 6.3, built on the fixture that has one.
+- *A union's accessors are a wire-flat section's, at one offset.* *(6.3, 2026-09-19.)* The pass
+  that builds the bodies decides which unions qualify — sealed, of one length, every option whole
+  bytes wide and a composite option wire-flat — and builds each option's accessors at the offset
+  after the tag through the builders phase 4 has. The tag is reached as a member named `_tag_`,
+  which no DSDL field can be called: a getter and a setter in the tag's width, normalised through
+  the plan's own tag helpers. Every spelling names it after its own tag member, through the naming
+  seams it already has, so an option named `tag` collides with nothing. An option's setter writes
+  the value and not the tag: one write per accessor, as phase 4 decided, and selecting is the tag
+  setter's with the option's tag constant. No verdict was added: the accessors are functions, and
+  a backend follows the functions the pass built, as the contract says.
 
 **Sub-phases.** 6.1 the mode, the ops, the C and object spellings and the lane on C; 6.2 the
-other five languages; 6.3 union accessors, later.
+other five languages; 6.3 union accessors.
 
 **Progress, 2026-09-19: 6.1 landed.** `--aliasable-views` reaches the analyser, which marks each
 scalar composite field of an asserted type as held by view and refuses the holder's host-image
@@ -719,6 +729,17 @@ called, so a header of two scalars includes three headers and a folded type's im
 includes no nested header at all. `llvmdsdl-container-views` now runs the probe on all
 seven targets, Rust under `-D warnings`, Go under `go vet` and TypeScript under `noUnusedLocals`;
 the Python probe also writes through the buffer and reads the change through the view.
+
+**Progress, 2026-09-19: 6.3 landed.** A union's tag is a detached `dsdl.io` step the spellings hold
+beside the plan's, so their accessor paths read its shape as they read a field's. The tag step
+carries the plan's own tag helpers, which mask to the tag's width. `llvmdsdl-union-accessors`
+holds all seven targets to the decode on a four-option union of a word, a float, a byte array and
+a wire-flat record: the tag and the selected option read what the decode holds, a composite option
+answers its bytes, a short buffer reads the tag and zeros, and the tag setter with an option setter
+selects an option the decode then sees. The lit test pins the tag at offset nought and every
+option after it, and that a ragged, a sub-byte and a delimited union get none. The probe also
+found that a union's TypeScript file imported every option's factory while its own factory made
+the selected option alone; a file now imports what its text uses.
 
 What the instruction lane shows needs saying carefully. A static count is per function, and the
 plain path's nested decode is a call, so the holder's own count is the same with the view as
@@ -753,6 +774,7 @@ decode, which the instruction lane shows; the output compiles standalone in each
 | accessors-only standalone build | 5 | the mode's output failing to compile alone on any target, or a targeted type without the directive going through | ✅ landed: seven targets, a probe each |
 | container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled | ✅ landed on all seven targets |
 | view holder instruction count | 6 | the holder's count, or the removed callee's, moving without its baseline | ✅ landed, both pinned triples |
+| union accessors against the decode | 6.3 | a tag or option read disagreeing with the decode, or a union that does not qualify getting accessors | ✅ landed on all seven targets |
 
 ## Risks
 

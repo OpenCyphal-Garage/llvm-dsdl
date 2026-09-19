@@ -217,6 +217,12 @@ functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, Ty
 `get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and
 `set_<field>`.
 
+A union whose options are all flat and of one length, sealed, has its tag at a fixed offset and
+every option at the offset after it, so it has the same accessors: the tag as a member named
+`_tag_`, with a getter and a setter in the tag's own width, and each option's accessors at that
+one offset. An option's setter writes the value and not the tag; the tag's setter selects, with the
+option's tag constant. Such a union is not wire-flat and cannot assert `@aliasable`.
+
 `--aliasable-only` emits the accessors and neither the object type nor the serialisation. Every
 targeted type must carry `@aliasable` or be nested by a type that does; each that is neither fails
 the run, named. The files keep their names; Go's endianness guard, which belongs to the folded

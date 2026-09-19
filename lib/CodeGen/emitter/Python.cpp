@@ -75,6 +75,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <cmath>
 #include <functional>
 #include <iomanip>
@@ -514,8 +515,9 @@ void emitStructSectionType(SourceWriter&           w,
             llvm::report_fatal_error(llvm::Twine("Python: the initialise body of ") + typeName + " does not set '" +
                                      field.name + "'");
         }
-        w.line(fieldName + ": " + (field.heldAsView ? std::string{"memoryview"} : pyFieldType(field.resolvedType, ctx)) +
-               " = " + pyDefaultFromBody(field.resolvedType, *entry, ctx));
+        w.line(fieldName + ": " +
+               (field.heldAsView ? std::string{"memoryview"} : pyFieldType(field.resolvedType, ctx)) + " = " +
+               pyDefaultFromBody(field.resolvedType, *entry, ctx));
     }
     if (emittedField)
     {
@@ -646,6 +648,16 @@ public:
                                                      scope.declare(IdentifierRole::FunctionName, "get_" + name),
                                                      scope.declare(IdentifierRole::FunctionName, "set_" + name)};
                 entry.order.push_back(name);
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"_tag",
+                                                tagSteps_.back().get(),
+                                                scope.declare(IdentifierRole::FunctionName, "get__tag_"),
+                                                scope.declare(IdentifierRole::FunctionName, "set__tag_")};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1275,8 +1287,8 @@ public:
     {
         const std::string bytes = names(op.getBytes());
         line(w,
-             memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:min(" +
-                 names(op.getSizeBytes()) + ", len(" + bytes + "))]");
+             memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:min(" + names(op.getSizeBytes()) +
+                 ", len(" + bytes + "))]");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1658,6 +1670,8 @@ private:
 
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
     /// @brief The plan and the member an accessor reaches, through its schema and section name.
     struct Accessed final
@@ -1741,36 +1755,36 @@ llvm::Error emitSection(SourceWriter&             w,
     }
     else
     {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       def.info.fullName.c_str());
-    }
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
-    {
-        return init.takeError();
-    }
-    emitSectionType(w,
-                    *init,
-                    typeName,
-                    section,
-                    typeDoc,
-                    ctx,
-                    def.info.fullName,
-                    def.info.majorVersion,
-                    def.info.minorVersion);
-    w.blank();
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
-    {
-        return err;
-    }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-    {
-        return err;
-    }
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           def.info.fullName.c_str());
+        }
+        auto init = readInitializer(bodies.initialize);
+        if (!init)
+        {
+            return init.takeError();
+        }
+        emitSectionType(w,
+                        *init,
+                        typeName,
+                        section,
+                        typeDoc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
+        w.blank();
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)

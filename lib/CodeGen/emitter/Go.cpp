@@ -78,6 +78,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
@@ -607,6 +608,13 @@ public:
             for (mlir::dsdl::IOOp io : fields)
             {
                 entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"Tag", tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1614,6 +1622,8 @@ private:
     }
 
     llvm::StringMap<Plan> plans_;
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
     /// @brief The plan and the member an accessor reaches, through its schema and section name.
     struct Accessed final
@@ -1847,43 +1857,44 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     // The object type, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
-    emitAttachedDocGo(w,
-                      docWithDeprecationNotice(typeDoc,
-                                               section.deprecated,
-                                               definitionFullName,
-                                               metadata.majorVersion,
-                                               metadata.minorVersion));
-    w.open("type " + typeName + " struct {");
+        emitAttachedDocGo(w,
+                          docWithDeprecationNotice(typeDoc,
+                                                   section.deprecated,
+                                                   definitionFullName,
+                                                   metadata.majorVersion,
+                                                   metadata.minorVersion));
+        w.open("type " + typeName + " struct {");
 
-    // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
-    // one: the members are collected first so each run's width is known before any of
-    // it is written.
-    std::vector<GoStructMember> members;
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
+        // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
+        // one: the members are collected first so each run's width is known before any of
+        // it is written.
+        std::vector<GoStructMember> members;
+        for (const auto& field : section.fields)
         {
-            continue;
+            if (field.isPadding)
+            {
+                continue;
+            }
+            members.push_back(
+                GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+                               field.heldAsView
+                                   ? std::string{"[]byte"}
+                                   : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
+                               field.doc});
         }
-        members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
-                                         field.heldAsView
-                                             ? std::string{"[]byte"}
-                                             : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
-                                         field.doc});
-    }
-    if (section.isUnion)
-    {
-        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
-        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
-    }
-    if (section.fields.empty())
-    {
-        members.push_back(GoStructMember{"_", "uint8", {}});
-    }
-    emitAlignedStructMembers(w, members);
-    w.close("}");
-    w.blank();
+        if (section.isUnion)
+        {
+            // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+            // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+            members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
+        }
+        if (section.fields.empty())
+        {
+            members.push_back(GoStructMember{"_", "uint8", {}});
+        }
+        emitAlignedStructMembers(w, members);
+        w.close("}");
+        w.blank();
     }
 
     // The verdict was decided under natural alignment; this pins the layout on the architecture the
@@ -1906,126 +1917,127 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     // The initialiser and the serdes, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
-    }
-    // Go's zero value is the language's, and it is the rendering of the initialise body wherever
-    // every store in that body, and in every nested body it calls, is its type's zero -- which is
-    // decidable from the bodies, so nothing is emitted on that decision rather than on an
-    // assumption. A body that stores anything else has no zero value to lean on and gets a
-    // constructor that sets what the body sets, member by member and element by element.
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
-    {
-        return init.takeError();
-    }
-    const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
-        auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
-        if (!body)
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "the initialise body of %s calls %s, which the lowered module does not hold",
-                                           metadata.fullName.c_str(),
-                                           callee.c_str());
+                                           "no plan bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
         }
-        auto nested = readInitializer(body);
-        if (!nested)
+        // Go's zero value is the language's, and it is the rendering of the initialise body wherever
+        // every store in that body, and in every nested body it calls, is its type's zero -- which is
+        // decidable from the bodies, so nothing is emitted on that decision rather than on an
+        // assumption. A body that stores anything else has no zero value to lean on and gets a
+        // constructor that sets what the body sets, member by member and element by element.
+        auto init = readInitializer(bodies.initialize);
+        if (!init)
         {
-            return nested.takeError();
+            return init.takeError();
         }
-        return goInitializerIsZero(*nested, module);
-    };
-    auto allZero = goInitializerIsZero(*init, module);
-    if (!allZero)
-    {
-        return allZero.takeError();
-    }
-    if (!*allZero)
-    {
-        w.open("func New" + typeName + "() " + typeName + " {");
-        w.line("var obj " + typeName);
-        for (const auto& field : section.fields)
-        {
-            if (field.isPadding)
+        const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
+            auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
+            if (!body)
             {
-                continue;
+                return llvm::
+                    createStringError(llvm::inconvertibleErrorCode(),
+                                      "the initialise body of %s calls %s, which the lowered module does not hold",
+                                      metadata.fullName.c_str(),
+                                      callee.c_str());
             }
-            for (const auto& entry : init->members)
+            auto nested = readInitializer(body);
+            if (!nested)
             {
-                if (entry.member != field.name)
+                return nested.takeError();
+            }
+            return goInitializerIsZero(*nested, module);
+        };
+        auto allZero = goInitializerIsZero(*init, module);
+        if (!allZero)
+        {
+            return allZero.takeError();
+        }
+        if (!*allZero)
+        {
+            w.open("func New" + typeName + "() " + typeName + " {");
+            w.line("var obj " + typeName);
+            for (const auto& field : section.fields)
+            {
+                if (field.isPadding)
                 {
                     continue;
                 }
-                const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
-                const auto stored = goStoredLiteral(entry.value, field.resolvedType);
-                switch (entry.kind)
+                for (const auto& entry : init->members)
                 {
-                case MemberDefault::Kind::Scalar:
-                    if (!goStoredValueIsZero(entry.value))
+                    if (entry.member != field.name)
                     {
-                        w.line(goAssignment(member, " = ", stored));
+                        continue;
                     }
-                    break;
-                case MemberDefault::Kind::FixedScalarArray:
-                    if (!goStoredValueIsZero(entry.value))
+                    const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
+                    const auto stored = goStoredLiteral(entry.value, field.resolvedType);
+                    switch (entry.kind)
                     {
-                        w.open("for i := range " + member + " {");
-                        w.line(goAssignment(member, "[i] = ", stored));
-                        w.close("}");
-                    }
-                    break;
-                case MemberDefault::Kind::Composite:
-                case MemberDefault::Kind::FixedCompositeArray: {
-                    auto zero = nestedIsZero(entry.callee);
-                    if (!zero)
-                    {
-                        return zero.takeError();
-                    }
-                    if (*zero)
-                    {
+                    case MemberDefault::Kind::Scalar:
+                        if (!goStoredValueIsZero(entry.value))
+                        {
+                            w.line(goAssignment(member, " = ", stored));
+                        }
+                        break;
+                    case MemberDefault::Kind::FixedScalarArray:
+                        if (!goStoredValueIsZero(entry.value))
+                        {
+                            w.open("for i := range " + member + " {");
+                            w.line(goAssignment(member, "[i] = ", stored));
+                            w.close("}");
+                        }
+                        break;
+                    case MemberDefault::Kind::Composite:
+                    case MemberDefault::Kind::FixedCompositeArray: {
+                        auto zero = nestedIsZero(entry.callee);
+                        if (!zero)
+                        {
+                            return zero.takeError();
+                        }
+                        if (*zero)
+                        {
+                            break;
+                        }
+                        const auto made = goConstructorOf(
+                            goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                        if (entry.kind == MemberDefault::Kind::Composite)
+                        {
+                            w.line(goAssignment(member, " = ", made));
+                        }
+                        else
+                        {
+                            w.open("for i := range " + member + " {");
+                            w.line(goAssignment(member, "[i] = ", made));
+                            w.close("}");
+                        }
                         break;
                     }
-                    const auto made =
-                        goConstructorOf(goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
-                    if (entry.kind == MemberDefault::Kind::Composite)
-                    {
-                        w.line(goAssignment(member, " = ", made));
+                    case MemberDefault::Kind::VariableArrayEmpty:
+                    case MemberDefault::Kind::BoolArray:
+                    case MemberDefault::Kind::View:
+                        break;
                     }
-                    else
-                    {
-                        w.open("for i := range " + member + " {");
-                        w.line(goAssignment(member, "[i] = ", made));
-                        w.close("}");
-                    }
-                    break;
-                }
-                case MemberDefault::Kind::VariableArrayEmpty:
-                case MemberDefault::Kind::BoolArray:
-                case MemberDefault::Kind::View:
-                    break;
                 }
             }
+            if (init->isUnion && init->unionTag != 0)
+            {
+                w.line("obj.Tag = " + std::to_string(init->unionTag));
+            }
+            w.line("return obj");
+            w.close("}");
+            w.blank();
         }
-        if (init->isUnion && init->unionTag != 0)
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
         {
-            w.line("obj.Tag = " + std::to_string(init->unionTag));
+            return err;
         }
-        w.line("return obj");
-        w.close("}");
         w.blank();
-    }
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
-    {
-        return err;
-    }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-    {
-        return err;
-    }
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)

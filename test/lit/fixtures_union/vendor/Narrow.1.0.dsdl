@@ -1,0 +1,5 @@
+# Options of one length that is not a whole number of bytes.
+@union
+uint12 a
+uint12 b
+@sealed

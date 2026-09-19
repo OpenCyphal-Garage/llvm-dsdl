@@ -1,0 +1,5 @@
+# Options of two lengths: the union's own length varies, so no option has a fixed end.
+@union
+uint32 wide
+uint16 narrow
+@sealed

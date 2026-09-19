@@ -21,6 +21,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
 
@@ -35,6 +36,14 @@ mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& d
 /// @brief The serialisation plan of a section of @p schema: "" for a message, "request" or
 /// "response" for a service; null when the schema holds none.
 mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, llvm::StringRef section);
+
+/// @brief A union's tag as a step named `_tag_`: an unsigned field of the tag's width, which the
+///        wire holds ahead of the option and the plan does not list among its steps.
+///
+/// The accessors of an equal-length union reach the tag as they reach a member, and a spelling
+/// reads a member's shape off its step. The step is detached, belonging to no plan, and lives as
+/// long as the reference; no DSDL field can be named `_tag_`, so it collides with none.
+mlir::OwningOpRef<mlir::dsdl::IOOp> unionTagStep(mlir::MLIRContext* context, std::int64_t tagBits);
 
 /// @brief One of the layout verdicts a plan carries, as the generated constants state it.
 struct AliasVerdict final

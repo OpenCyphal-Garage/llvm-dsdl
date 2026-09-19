@@ -70,6 +70,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include <limits>
 #include "mlir/IR/BuiltinOps.h"
@@ -256,7 +257,9 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
 ///
 /// A view borrows the buffer, so the struct carries a lifetime, and so does every struct that
 /// holds one. DSDL forbids a type reaching itself, so the walk ends.
-bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx, std::set<const SemanticSection*>& visiting)
+bool sectionHoldsView(const SemanticSection&            section,
+                      const EmitterContext&             ctx,
+                      std::set<const SemanticSection*>& visiting)
 {
     if (!visiting.insert(&section).second)
     {
@@ -474,6 +477,13 @@ public:
             {
                 entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
             }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"_tag_", tagSteps_.back().get()};
+            }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
     }
@@ -505,9 +515,10 @@ public:
         const bool serialize = *direction == "serialize";
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
         const bool lifetime = planOf(fn.getArgument(0)).lifetime;
-        w.open(serialize ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
-                         : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
-                               "[u8]) -> core::result::Result<usize, i8> {");
+        w.open(serialize
+                   ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
+                   : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
+                         "[u8]) -> core::result::Result<usize, i8> {");
         // The size a plan is handed by pointer, read at entry and written back at the end.
         w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
         return {"self", "buffer", "inout_buffer_size_bytes"};
@@ -1434,8 +1445,10 @@ private:
 
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
-    mutable std::size_t   counter_{0};
-    mutable bool          inBody_{false};
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
+    mutable std::size_t                              counter_{0};
+    mutable bool                                     inBody_{false};
 
     /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
     enum class Accessor : std::uint8_t
@@ -1571,42 +1584,41 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
     else
     {
-    // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
-    // decided under: fields in order, each at its natural alignment. Only such types get it -- the
-    // default representation may reorder a non-image type's fields to pack it, and that is worth
-    // keeping there.
-    if (metadata.hostImage.holds)
-    {
-        w.line("#[repr(C)]");
-    }
-    w.line("#[derive(Clone, Debug, PartialEq)]");
-    w.open("pub struct " + declaredName + generics + " {");
-
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
+        // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
+        // decided under: fields in order, each at its natural alignment. Only such types get it -- the
+        // default representation may reorder a non-image type's fields to pack it, and that is worth
+        // keeping there.
+        if (metadata.hostImage.holds)
         {
-            continue;
+            w.line("#[repr(C)]");
         }
-        emitAttachedDocRust(w, field.doc);
-        w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-               (field.heldAsView ? std::string{"&'a [u8]"} : rustFieldType(field.resolvedType, ctx)) + ",");
-    }
+        w.line("#[derive(Clone, Debug, PartialEq)]");
+        w.open("pub struct " + declaredName + generics + " {");
 
-    if (section.isUnion)
-    {
-        // The tag storage must match the wire tag width (8 bits for <=256 options,
-        // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-        w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
-    }
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            emitAttachedDocRust(w, field.doc);
+            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+                   (field.heldAsView ? std::string{"&'a [u8]"} : rustFieldType(field.resolvedType, ctx)) + ",");
+        }
 
-    if (fieldCount == 0 && !section.isUnion)
-    {
-        w.line("pub _dummy_: u8,");
-    }
-    w.close("}");
-    w.blank();
+        if (section.isUnion)
+        {
+            // The tag storage must match the wire tag width (8 bits for <=256 options,
+            // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
+            w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
+        }
 
+        if (fieldCount == 0 && !section.isUnion)
+        {
+            w.line("pub _dummy_: u8,");
+        }
+        w.close("}");
+        w.blank();
     }
     if (section.deprecated)
     {
@@ -1639,53 +1651,52 @@ llvm::Error emitSectionType(SourceWriter&                         w,
 
     if (!options.accessorsOnly)
     {
-    // Every member's default is what the initialise body stores for it.
-    llvm::StringMap<const MemberDefault*> defaults;
-    for (const auto& entry : init.members)
-    {
-        defaults[entry.member] = &entry;
-    }
-    w.open(implHead + "Default for " + declaredName + generics + " {");
-    w.open("fn default() -> Self {");
-    w.open("Self {");
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
+        // Every member's default is what the initialise body stores for it.
+        llvm::StringMap<const MemberDefault*> defaults;
+        for (const auto& entry : init.members)
         {
-            continue;
+            defaults[entry.member] = &entry;
         }
-        const auto found = defaults.find(field.name);
-        if (found == defaults.end())
+        w.open(implHead + "Default for " + declaredName + generics + " {");
+        w.open("fn default() -> Self {");
+        w.open("Self {");
+        for (const auto& field : section.fields)
         {
-            llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
-                                     field.name + "'");
+            if (field.isPadding)
+            {
+                continue;
+            }
+            const auto found = defaults.find(field.name);
+            if (found == defaults.end())
+            {
+                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
+                                         field.name + "'");
+            }
+            if (isVariableArray(field.resolvedType.arrayKind))
+            {
+                w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
+                       ": crate::dsdl_runtime::DsdlVec::with_contract("
+                       "crate::dsdl_runtime::VarArrayMemoryContract::new("
+                       "Self::__LLVMDSDL_MEMORY_MODE, "
+                       "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
+                       poolClassConstExprByField.at(field.name) + ")),");
+                continue;
+            }
+            w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+                   rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
         }
-        if (isVariableArray(field.resolvedType.arrayKind))
+        if (section.isUnion)
         {
-            w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
-                   ": crate::dsdl_runtime::DsdlVec::with_contract("
-                   "crate::dsdl_runtime::VarArrayMemoryContract::new("
-                   "Self::__LLVMDSDL_MEMORY_MODE, "
-                   "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                   poolClassConstExprByField.at(field.name) + ")),");
-            continue;
+            w.line("_tag_: " + std::to_string(init.unionTag) + ",");
         }
-        w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-               rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
-    }
-    if (section.isUnion)
-    {
-        w.line("_tag_: " + std::to_string(init.unionTag) + ",");
-    }
-    if (fieldCount == 0 && !section.isUnion)
-    {
-        w.line("_dummy_: 0,");
-    }
-    w.close("}");
-    w.close("}");
-    w.close("}");
-    w.blank();
-
+        if (fieldCount == 0 && !section.isUnion)
+        {
+            w.line("_dummy_: 0,");
+        }
+        w.close("}");
+        w.close("}");
+        w.close("}");
+        w.blank();
     }
     w.open(implHead + declaredName + generics + " {");
     w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
@@ -1756,40 +1767,39 @@ llvm::Error emitSectionType(SourceWriter&                         w,
 
     if (!options.accessorsOnly)
     {
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
-    {
-        return err;
-    }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-    {
-        return err;
-    }
-    w.blank();
-    w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
-    w.open("match self.deserialize(buffer) {");
-    w.line("Ok(consumed) => (0, consumed),");
-    w.line("Err(rc) => (rc, buffer.len()),");
-    w.close("}");
-    w.close("}");
-    w.blank();
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
+        w.open("match self.deserialize(buffer) {");
+        w.line("Ok(consumed) => (0, consumed),");
+        w.line("Err(rc) => (rc, buffer.len()),");
+        w.close("}");
+        w.close("}");
+        w.blank();
 
-    w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
-    w.line("let mut buffer = "
-           "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
-    w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
-    w.line("let used = self.serialize(&mut buffer)?;");
-    w.line("buffer.truncate(used);");
-    w.line("Ok(buffer)");
-    w.close("}");
-    w.blank();
+        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
+        w.line("let mut buffer = "
+               "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
+        w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
+        w.line("let used = self.serialize(&mut buffer)?;");
+        w.line("buffer.truncate(used);");
+        w.line("Ok(buffer)");
+        w.close("}");
+        w.blank();
 
-    w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
-    w.line("let mut out = Self::default();");
-    w.line("let used = out.deserialize(buffer)?;");
-    w.line("Ok((out, used))");
-    w.close("}");
-
+        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
+        w.line("let mut out = Self::default();");
+        w.line("let used = out.deserialize(buffer)?;");
+        w.line("Ok((out, used))");
+        w.close("}");
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
