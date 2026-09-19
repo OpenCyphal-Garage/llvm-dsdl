@@ -1781,6 +1781,23 @@ private:
             {
                 return step.emitError("wire_flat holds but this field is a variable-length array");
             }
+            // W recurses: a flat run of bytes holds a composite only where that type's own form is
+            // one. The width the step states says nothing about it -- a union states a width too.
+            // A type this module does not carry is left to the analysis, which had the whole model.
+            if (step.isComposite())
+            {
+                const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(""),
+                                                                   step.getCompositeMajor().value_or(0),
+                                                                   step.getCompositeMinor().value_or(0)));
+                if (nested != messagePlans.end())
+                {
+                    mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
+                    if (!nestedPlan.getWireFlat())
+                    {
+                        return step.emitError("wire_flat holds but this field's type is not itself wire-flat");
+                    }
+                }
+            }
             // The wire carries a fixed array as a contiguous run, so the run is what has to land on
             // a byte boundary, not each element: `bool[8]` is one byte and `bool[4]` is not.
             //
@@ -1915,14 +1932,6 @@ private:
                 if (nested == messagePlans.end())
                 {
                     return {mlir::success(), unknown};
-                }
-                // A union's steps are its options, one of which the wire carries, so walking them
-                // as a run of fields answers the wrong extent -- and a union is not an image in
-                // any case.
-                mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
-                if (nestedPlan.getIsUnion())
-                {
-                    return {step.emitError("host_image holds but this field's type is a union"), unknown};
                 }
                 const auto resolved = verifyHostImage(nested->second, messagePlans, depth + 1);
                 if (mlir::failed(resolved.first))
