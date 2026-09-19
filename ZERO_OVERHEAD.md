@@ -507,8 +507,38 @@ spells them as associated functions, `Type::get_b(&buffer)` and `Type::set_b(&mu
 which the deprecation gate forced ahead of the other languages: the accessors call the per-field
 helpers a folded body had left unreferenced, so the helpers stay emitted and something must call
 them. Both were checked by hand against `deserialize_`, on full and on short buffers, before the
-lane exists. Still to do: fixed arrays and nested composites, the C++, Go, TypeScript and Python
-spellings, the reserved-name registration, the six-language equivalence lane, and the
+lane exists.
+
+**All six languages spell them, 2026-09-18.** C++ gets a static member defined inside the
+struct, `Padded::get_b(buffer, size)`, since an accessor reads the wire and not an object; Go a
+package-level function named after the type, `PaddedGetB(buffer)`; TypeScript an exported function
+in the bodies' own style, `getPaddedB(buffer)`; Python a static method, `Padded.get_b(buffer)`.
+Each speaks the member's own type — a `number` where TypeScript holds the plan's integer in a
+`bigint`, a `bool` where the plan holds a bit in an integer — with the conversion at the boundary
+and nowhere else. Where a language puts a struct's members and its functions in one scope, C++
+and Python, the accessor's name is claimed through the struct's own naming scope after every
+field, so a field named `get_b` and the getter of `b` cannot collide; that is the reserved-name
+registration the plan asked for, done where the names are made rather than in a static list.
+
+The naming corpus refused the first C++ shape. It compiles under `-Wreserved-identifier`, and a
+free function named `Type_get_<field>_` puts a double underscore into the identifier whenever the
+field starts or ends with one — `break_`, `_memory_resource` — which C++ reserves. Collapsing the
+run, as the helper bindings do, would merge `break` with `break_`. So the free function went, the
+accessor is defined where it is named, and a field that already starts with an underscore joins
+its `get` without one; `foo` and `_foo` then meet at `get_foo`, and the struct's scope keeps them
+apart. The other languages join plainly: none reserves the form, and Rust has no scope to
+uniquify in.
+
+Python found the setter's gap. Its runtime raises on a write past the buffer rather than answering
+a code — the serialise body never reaches one, because its capacity check refuses the buffer
+first — so a setter that relied on `dsdl.write_bits` for its error raised where C returned a
+code. The setter now checks the buffer holds the field before it writes, as the body checks it
+holds the whole, and answers `SERIALIZATION_BUFFER_TOO_SMALL` the way the body would. One check
+in the IR, and six languages agree on a short buffer. A probe per language — full buffer, short
+buffer, setter round trip, null or empty buffer, and the nested record's trailing field — was run
+by hand against each language's `deserialize`; the lane that holds them there is next.
+
+Still to do: fixed arrays and nested composites, the six-language equivalence lane, and the
 instruction-count row.
 
 ### Phase 5 — `--aliasable-only` — S

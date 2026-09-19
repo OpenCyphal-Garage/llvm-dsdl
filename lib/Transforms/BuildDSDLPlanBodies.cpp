@@ -63,8 +63,9 @@ namespace llvmdsdl
 namespace
 {
 
-constexpr std::int64_t kRuntimeErrorInvalidArgument = 2;
-constexpr std::int64_t kDelimiterHeaderBits         = 32;
+constexpr std::int64_t kRuntimeErrorInvalidArgument             = 2;
+constexpr std::int64_t kRuntimeErrorSerializationBufferTooSmall = 3;
+constexpr std::int64_t kDelimiterHeaderBits                     = 32;
 
 /// @brief What a step carries forward: how far into the wire it got, and what went wrong.
 ///
@@ -2096,8 +2097,9 @@ void tagAccessor(mlir::func::FuncOp    fn,
 /// and answers the value alone: a read cannot fail, and a short buffer zero-extends, so the answer
 /// is what `deserialize_` puts in the field. The buffer is readable for the size given, which a
 /// slice is by construction and a C wrapper makes so for a null pointer. A setter is one write of
-/// the serialise-normalised value, answering the runtime's error code as the serialise body does,
-/// and a null buffer is refused as it is there.
+/// the serialise-normalised value, answering the runtime's error code as the serialise body does:
+/// a null buffer is refused as it is there, and a buffer too short for the field is refused before
+/// the write, as the body's capacity check refuses one too short for the whole.
 mlir::LogicalResult buildScalarAccessors(mlir::OpBuilder&                           builder,
                                          mlir::ModuleOp                             module,
                                          mlir::Location                             loc,
@@ -2155,22 +2157,37 @@ mlir::LogicalResult buildScalarAccessors(mlir::OpBuilder&                       
         tagAccessor(fn, schema, section, "set", step);
         mlir::Block* entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
-        const mlir::Value buffer = entry->getArgument(0);
-        const mlir::Value size   = entry->getArgument(1);
-        const mlir::Value value  = entry->getArgument(2);
-        const mlir::Value null   = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), buffer);
-        auto              guard  = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, null, true);
+        const mlir::Value buffer       = entry->getArgument(0);
+        const mlir::Value size         = entry->getArgument(1);
+        const mlir::Value value        = entry->getArgument(2);
+        const mlir::Value null         = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), buffer);
+        const mlir::Value capacityBits = mlir::arith::MulIOp::create(builder, loc, size, constantI64(builder, loc, 8));
+        const mlir::Value fits = mlir::arith::CmpIOp::create(builder,
+                                                             loc,
+                                                             mlir::arith::CmpIPredicate::uge,
+                                                             capacityBits,
+                                                             constantI64(builder, loc, bitOffset + step.bitLength));
+        const mlir::Value ifShort =
+            mlir::arith::SelectOp::create(builder,
+                                          loc,
+                                          fits,
+                                          constantI8(builder, loc, 0),
+                                          constantI8(builder, loc, -kRuntimeErrorSerializationBufferTooSmall));
+        const mlir::Value code = mlir::arith::SelectOp::create(builder,
+                                                               loc,
+                                                               null,
+                                                               constantI8(builder, loc, -kRuntimeErrorInvalidArgument),
+                                                               ifShort);
+        auto guard = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, isHealthy(builder, loc, code), true);
         stampResultRoles(guard, {RoleError});
         {
             mlir::OpBuilder::InsertionGuard const g(builder);
-            builder.setInsertionPointToStart(guard.thenBlock());
-            mlir::scf::YieldOp::create(builder,
-                                       loc,
-                                       mlir::ValueRange{constantI8(builder, loc, -kRuntimeErrorInvalidArgument)});
+            builder.setInsertionPointToStart(guard.elseBlock());
+            mlir::scf::YieldOp::create(builder, loc, mlir::ValueRange{code});
         }
         {
             mlir::OpBuilder::InsertionGuard const g(builder);
-            builder.setInsertionPointToStart(guard.elseBlock());
+            builder.setInsertionPointToStart(guard.thenBlock());
             const mlir::Value normalised = normaliseScalar(builder, loc, step, value, true);
             auto              write      = mlir::dsdl::WriteBitsOp::create(builder,
                                                                            loc,

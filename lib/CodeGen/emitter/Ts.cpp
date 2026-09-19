@@ -573,6 +573,11 @@ public:
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
         deserialize_         = direction.has_value() && *direction == "deserialize";
+        accessor_            = Accessor::None;
+        if (direction && (*direction == "get" || *direction == "set"))
+        {
+            return openAccessor(w, fn, *direction == "get");
+        }
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -674,8 +679,72 @@ public:
         w.line("void " + expr.str() + ";");
     }
 
+    /// @brief Opens a getter or a setter: an exported function named after the type and the
+    ///        member, as the bodies are, speaking the member's own type. The plan holds an
+    ///        integer in a `bigint`: the size is the buffer's own length as one, an expression
+    ///        rather than a local, and a `number` or a `boolean` member is rebound at entry and
+    ///        converted at the return.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed    a       = accessed(fn);
+        const Storage     storage = storageOf(*a.member);
+        const std::string tsType  = elementTsType(*a.member);
+        std::string       member  = a.member->tsName;
+        member[0]                 = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
+        const std::string name    = std::string(getter ? "get" : "set") + a.plan->typeName + member;
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (getter)
+        {
+            if (storage == Storage::Number)
+            {
+                returnCast_ = "Number";
+            }
+            else if (storage == Storage::Boolean)
+            {
+                returnCast_ = "boolean";
+            }
+            w.open("export function " + name + "(buffer: Uint8Array): " + tsType + " {");
+            return {"buffer", "BigInt(buffer.length)"};
+        }
+        const bool rebind = (storage == Storage::Number) || (storage == Storage::Boolean);
+        w.open("export function " + name + "(buffer: Uint8Array, " + (rebind ? "memberValue: " : "value: ") + tsType +
+               "): number {");
+        if (storage == Storage::Number)
+        {
+            w.line("const value: bigint = BigInt(memberValue);");
+        }
+        else if (storage == Storage::Boolean)
+        {
+            w.line("const value: bigint = memberValue ? 1n : 0n;");
+        }
+        return {"buffer", "BigInt(buffer.length)", "value"};
+    }
+
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code alone.
+        if (accessor_ == Accessor::Getter)
+        {
+            if (returnCast_ == "Number")
+            {
+                w.line("return Number(" + expr.str() + ");");
+            }
+            else if (returnCast_ == "boolean")
+            {
+                w.line("return " + expr.str() + " !== 0n;");
+            }
+            else
+            {
+                w.line("return " + expr.str() + ";");
+            }
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            w.line("return " + expr.str() + ";");
+            return;
+        }
         // A body answers the runtime's error code; its TypeScript signature answers the size
         // used on success and the code, which is negative, on failure.
         if (inBody_)
@@ -1453,9 +1522,51 @@ private:
     mlir::SymbolTable     symbols_;
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
-    mutable bool          inBody_{false};
-    mutable bool          deserialize_{false};
-    mutable unsigned      fresh_{0};
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("TypeScript spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("TypeScript spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("TypeScript spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable bool        inBody_{false};
+    mutable bool        deserialize_{false};
+    mutable unsigned    fresh_{0};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1646,6 +1757,15 @@ llvm::Error emitSection(SourceWriter&             w,
     if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
+    }
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    {
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     w.blank();
     emitEntryPoints(w, typeName, section);

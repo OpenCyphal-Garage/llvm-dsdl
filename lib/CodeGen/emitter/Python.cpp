@@ -629,8 +629,12 @@ public:
             }
             for (mlir::dsdl::IOOp io : fields)
             {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
-                entry.order.push_back(io.getName().str());
+                const std::string name      = io.getName().str();
+                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()),
+                                                     io,
+                                                     scope.declare(IdentifierRole::FunctionName, "get_" + name),
+                                                     scope.declare(IdentifierRole::FunctionName, "set_" + name)};
+                entry.order.push_back(name);
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -654,6 +658,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
+        accessor_            = Accessor::None;
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -667,6 +672,10 @@ public:
                  "def " + functionName(fn.getSymName()) + "(" + list + ") -> " + typeName(fn.getResultTypes().front()) +
                      ":");
             return parameters;
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
         }
         open(w,
              "def " + (*direction == "serialize" ? serializeInto() : deserializeFrom()) +
@@ -781,8 +790,51 @@ public:
         line(w, expr.str());
     }
 
+    /// @brief Opens a getter or a setter: a static method of the class, speaking the member's
+    ///        own type. The plan holds an integer as an `int`, which a `bool` value is rebound to.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed        a        = accessed(fn);
+        mlir::dsdl::IOOp      io       = a.member->io;
+        const llvm::StringRef category = io.getScalarCategory();
+        std::string           storage  = "int";
+        if (category == "bool")
+        {
+            storage = "bool";
+        }
+        else if (category == "float")
+        {
+            storage = "float";
+        }
+        accessor_   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_ = (getter && storage == "bool") ? "bool" : std::string{};
+        line(w, "@staticmethod");
+        if (getter)
+        {
+            open(w, "def " + a.member->getterName + "(buffer: memoryview) -> " + storage + ":");
+            return {"buffer", "len(buffer)"};
+        }
+        open(w, "def " + a.member->setterName + "(buffer: memoryview, value: " + storage + ") -> int:");
+        if (storage != "float")
+        {
+            line(w, "value = int(value)");
+        }
+        return {"buffer", "len(buffer)", "value"};
+    }
+
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code alone.
+        if (accessor_ == Accessor::Getter)
+        {
+            line(w, returnCast_.empty() ? "return " + expr.str() : "return bool(" + expr.str() + ")");
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            line(w, "return " + expr.str());
+            return;
+        }
         // A body answers the runtime's error code; its Python signature answers the size used
         // on success and the code, which is negative, on failure.
         if (inBody_)
@@ -1219,6 +1271,10 @@ private:
     {
         std::string      pyName;
         mlir::dsdl::IOOp io;
+        /// @brief The accessors' names, claimed in the class's scope after every field so that no
+        ///        field shares a name with one.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
@@ -1528,9 +1584,51 @@ private:
 
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
-    mutable bool          inBody_{false};
-    mutable bool          blockEmpty_{false};
-    mutable unsigned      fresh_{0};
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("Python spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Python spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("Python spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable bool        inBody_{false};
+    mutable bool        blockEmpty_{false};
+    mutable unsigned    fresh_{0};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1585,6 +1683,15 @@ llvm::Error emitSection(SourceWriter&             w,
     if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
+    }
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    {
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     w.dedent();
     if (metadata.isUnion)

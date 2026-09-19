@@ -68,6 +68,7 @@
 # GO_NESTED-NOT:  dsdlruntime.Get
 # GO_NESTED:      unsafe.Slice((*byte)(unsafe.Pointer(obj)), 12)
 # GO_NESTED-NOT:  dsdlruntime.Get
+# GO_NESTED:      func NestedGetCode(buffer []byte)
 
 # GO_GUARD:      //go:build !(386 || amd64 ||
 # GO_GUARD:      package vendor

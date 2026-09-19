@@ -340,6 +340,14 @@ bool isAutosarFlavor(const CppFlavor flavor)
 /// `i64` is spelled unsigned, which is what the wire arithmetic and the runtime primitives take;
 /// the few signed comparisons cast for the comparison alone. `i8` is spelled signed, as the
 /// runtime's error codes are.
+/// @brief The source name of a field's accessor: the kind and the field, joined by an underscore
+///        unless the field already starts with one, since a doubled underscore is reserved. Two
+///        fields can meet here, `foo` and `_foo`; the struct's scope keeps their accessors apart.
+std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
+{
+    return kind.str() + (field.starts_with("_") ? "" : "_") + field.str();
+}
+
 class CppSpelling final : public BodySpelling
 {
 public:
@@ -415,7 +423,12 @@ public:
             }
             for (mlir::dsdl::IOOp io : fields)
             {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+                const std::string name = io.getName().str();
+                entry.members[io.getName()] =
+                    Member{scope.get(IdentifierRole::FieldName, io.getName()),
+                           io,
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", name)),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", name))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -426,9 +439,14 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
+        accessor_            = Accessor::None;
         if (!direction)
         {
             return openHelper(w, fn);
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
         }
         const Plan&       plan      = planOf(fn.getArgument(0));
         const bool        serialize = *direction == "serialize";
@@ -533,7 +551,44 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type.
+        if ((accessor_ == Accessor::Getter) && !returnCast_.empty())
+        {
+            w.line("return static_cast<" + returnCast_ + ">(" + expr.str() + ");");
+            return;
+        }
         w.line("return " + expr.str() + ";");
+    }
+
+    /// @brief Opens a getter or a setter: a static member defined inside the struct, since it
+    ///        reads the wire and not an object, speaking the member's own type. The plan holds an
+    ///        integer in a `std::uint64_t`, so a setter rebinds its value at entry and a getter
+    ///        casts at its return.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed    a       = accessed(fn);
+        const std::string storage = scalarType(a.member->io);
+        const std::string name    = getter ? a.member->getterName : a.member->setterName;
+        const mlir::Type  held    = getter ? fn.getResultTypes().front() : fn.getArgument(2).getType();
+        const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_               = (getter && integer) ? storage : std::string{};
+        if (getter)
+        {
+            w.line("static " + storage + " " + name +
+                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)");
+            w.open("{");
+            return {"buffer", "buffer_size_bytes"};
+        }
+        w.line("static std::int8_t " + name +
+               "(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const " + storage +
+               (integer ? " member_value)" : " value)"));
+        w.open("{");
+        if (integer)
+        {
+            w.line("const std::uint64_t value = static_cast<std::uint64_t>(member_value);");
+        }
+        return {"buffer", "buffer_size_bytes", "value"};
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -984,6 +1039,10 @@ private:
     {
         std::string      cppName;
         mlir::dsdl::IOOp io;
+        /// @brief The accessors' names, claimed in the struct's scope after every field so that no
+        ///        field shares a name with one.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
@@ -1333,7 +1392,49 @@ private:
     CppFlavor             flavor_;
     TypeNameVersioning    versioning_;
     llvm::StringMap<Plan> plans_;
-    mutable std::size_t   counter_{0};
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable std::size_t counter_{0};
 };
 
 std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1461,16 +1562,19 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
     return "{}";
 }
 
-void emitSectionStruct(SourceWriter&                         w,
-                       const std::string&                    typeName,
-                       const std::string&                    declaredName,
-                       const SectionMetadata&                metadata,
-                       const InitializerShape&               init,
-                       const SemanticSection&                section,
-                       const EmitterContext&                 ctx,
-                       const CppFlavor                       flavor,
-                       const AttachedDoc&                    typeDoc,
-                       const mlir::dsdl::SerializationPlanOp plan)
+llvm::Error emitSectionStruct(SourceWriter&                         w,
+                              const std::string&                    typeName,
+                              const std::string&                    declaredName,
+                              const SectionMetadata&                metadata,
+                              const InitializerShape&               init,
+                              const SemanticSection&                section,
+                              const EmitterContext&                 ctx,
+                              const CppFlavor                       flavor,
+                              const AttachedDoc&                    typeDoc,
+                              const mlir::dsdl::SerializationPlanOp plan,
+                              const CppSpelling&                    spelling,
+                              llvm::ArrayRef<mlir::func::FuncOp>    accessors,
+                              PlanBodyLookups&                      lookups)
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     // Every member's default is what the initialise body stores for it. A field the body does not
@@ -1735,6 +1839,16 @@ void emitSectionStruct(SourceWriter&                         w,
         w.close("}");
     }
 
+    // A wire-flat section's field accessors, defined here as static members: each is one read
+    // or one write at the field's offset, and reads the wire rather than an object.
+    for (const mlir::func::FuncOp accessor : accessors)
+    {
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
+    }
+
     w.close("};");
     w.blank();
 
@@ -1765,6 +1879,7 @@ void emitSectionStruct(SourceWriter&                         w,
                ";");
         w.blank();
     }
+    return llvm::Error::success();
 }
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1803,20 +1918,26 @@ llvm::Error emitSection(SourceWriter&                         w,
     {
         return init.takeError();
     }
-    emitSectionStruct(w,
-                      typeName,
-                      declaredName,
-                      metadata,
-                      *init,
-                      section,
-                      ctx,
-                      flavor,
-                      docWithDeprecationNotice(typeDoc,
-                                               section.deprecated,
-                                               def.info.fullName,
-                                               def.info.majorVersion,
-                                               def.info.minorVersion),
-                      plan);
+    if (auto err = emitSectionStruct(w,
+                                     typeName,
+                                     declaredName,
+                                     metadata,
+                                     *init,
+                                     section,
+                                     ctx,
+                                     flavor,
+                                     docWithDeprecationNotice(typeDoc,
+                                                              section.deprecated,
+                                                              def.info.fullName,
+                                                              def.info.majorVersion,
+                                                              def.info.minorVersion),
+                                     plan,
+                                     spelling,
+                                     bodies.accessors,
+                                     lookups))
+    {
+        return err;
+    }
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),

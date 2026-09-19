@@ -30,6 +30,8 @@
 # SET-SAME:  llvmdsdl.member = "b", llvmdsdl.plan_body = "set"
 # SET:       %[[OFF:.*]] = arith.constant 8 : i64
 # SET:       dsdl.is_null %[[BUF]]
+# SET:       %[[CAP:.*]] = arith.muli %[[SIZE]], %{{.*}}
+# SET:       arith.cmpi uge, %[[CAP]], %{{.*}}
 # SET:       scf.if
 # SET:       %[[NORMALISED:.*]] = func.call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__ser(%[[VALUE]])
 # SET:       dsdl.write_bits %[[BUF]][%[[OFF]]], %[[NORMALISED]], size %[[SIZE]] {width = 16 : i64}
