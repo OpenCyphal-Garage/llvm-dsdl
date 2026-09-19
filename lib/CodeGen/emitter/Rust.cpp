@@ -2032,8 +2032,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // The alias names the request, so it carries the request's lifetime when the request holds a
     // view.
     const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
-    w.line("pub type " + baseType + baseGenerics + " = " +
-           renderDeclaredTypeName(reqType, def.request.deprecated) + baseGenerics + ";");
+    w.line("pub type " + baseType + baseGenerics + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) +
+           baseGenerics + ";");
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
     const auto baseConstPrefix =
