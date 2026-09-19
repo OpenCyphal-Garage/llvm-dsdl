@@ -1723,8 +1723,10 @@ private:
             return mlir::failure();
         }
         // Lowering states exactly one of the pair, so neither means the plan states no verdict --
-        // hand-written IR, which `dsdl-opt` takes. There is then nothing to disagree with.
-        if (!wireFlat && !plan.getWireFlatReason())
+        // hand-written IR, which `dsdl-opt` takes. There is then nothing to disagree with. A plan
+        // claiming `host_image` has stated a verdict whatever it says about the wire, and H cannot
+        // hold where W does not, so it is held to that below rather than passing as unstamped.
+        if (!wireFlat && !plan.getWireFlatReason() && !hostImage)
         {
             return mlir::success();
         }
@@ -1875,6 +1877,13 @@ private:
             {
                 return {step.emitError("host_image holds but this step is wire padding the structure does not hold"),
                         unknown};
+            }
+            // The structure holds a pointer and a size where the wire holds the record. Asked of
+            // this plan's own steps by `verifyViews`; asked here so it is asked of a nested plan
+            // too, whose extent this walk is re-deriving for the claim above it.
+            if (step.getHeldAsView())
+            {
+                return {step.emitError("host_image holds but this field is held as a view"), unknown};
             }
 
             std::int64_t elementSize  = 0;
