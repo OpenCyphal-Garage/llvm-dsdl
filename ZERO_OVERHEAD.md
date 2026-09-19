@@ -8,9 +8,9 @@ about host memory, wrong for 9 of the 63 sections it accepts. This plan replaces
 Every number here was measured by generating and running code from the embedded `uavcan`
 catalogue; the reproduction steps are at the end.
 
-## Three properties, named
+## Two properties, named
 
-One word covered three different things, which is how the verdict and its consumer drifted apart.
+One word covered more than one property, which is how the verdict and its consumer drifted apart.
 The plan uses these names throughout and the generated surface should carry them too.
 
 | | Property | Decided from | Target-dependent |
@@ -140,9 +140,10 @@ unchanged — 63 sections before and after — because this corrects the diagnos
   under their own names.
 
 **Landed in** `lib/Transforms/Passes.cpp`, `lib/CodeGen/emitter/{Ts,Python,Cpp,Go,CHeaderRender}.cpp`,
-`test/lit/dsdl-annotate-aliasability.mlir` (one schema per reachable verdict),
 `test/lit/codegen-all-languages.txt`, `test/lit/golden/ts_python_snapshots/`,
-`test/unit/CHeaderRenderTests.cpp`.
+`test/unit/CHeaderRenderTests.cpp`. The schema per reachable verdict moved to
+`test/unit/AliasLayoutTests.cpp` and `test/lit/dsdl-verify-alias-layout.mlir` in phase 1, which
+decides the verdicts in the analyser and leaves the pass verifying them.
 
 ### Phase 1 — one predicate, two consumers — done 2026-09-17
 
