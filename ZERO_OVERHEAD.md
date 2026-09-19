@@ -220,7 +220,9 @@ relaxation.)*
   `not-sealed`, so the field surfaced on a second round trip after sealing — and the field is the
   part that is hard to change. The `@aliasable` check names the field and mentions sealing alongside
   it. Over the catalogue this moved 23 sections off `not-sealed` and onto the field that also blocks
-  them: 30 → 7.
+  them: 30 → 7. *(7 → 5 on 2026-09-19: an empty section, and one whose trailing padding leaves its
+  length part way through a byte, are answered the same way. Sealing gives a section neither fields
+  nor a whole number of bytes, so naming sealing there promised a fix that is not one.)*
 - **A nested refusal chains.** The verdict carries the nested type's name, reason and field, so the
   check emits *"vendor.Narrow.1.0: field 'value' is not a whole number of bytes wide"* as a note
   rather than sending the author to another file.
@@ -281,13 +283,16 @@ In Rust, Go and TypeScript that op is a per-bit loop over a *bool container*
 (`Rust.cpp:943`, `Go.cpp:1101`, `Ts.cpp:1020`): it means "move a run of bools", and its source cannot
 be an object. So the bulk copy needs its own op.
 
-- **`dsdl.image_copy`**, with a spelling per backend: `memcpy` in C and C++,
-  `core::slice::from_raw_parts` under `unsafe` in Rust, `unsafe.Slice` in Go. Rust's is sound only
+- **`dsdl.image_read` and `dsdl.image_write`** — one op per direction, as the read has a short
+  buffer to answer for and the write does not — with a spelling per backend: the runtime's two
+  `static inline` helpers in C and C++, which move the bytes with `memmove` because the object and
+  the buffer may be the same storage; `core::slice::from_raw_parts` under `unsafe` in Rust,
+  `unsafe.Slice` in Go. Rust's is sound only
   with `#[repr(C)]` and the H verdict, which makes the `repr(C)` item a prerequisite rather than a
   nicety. TypeScript and Python cannot spell it, and do not need to: their objects have no byte
   image, and phase 4's accessors are their fast path.
 - **A target capability, not a backend branch.** `build-dsdl-plan-bodies` always emits the canonical
-  field-wise body; a rewrite pass replaces an H section's bodies with `image_copy` when the pipeline
+  field-wise body; a rewrite pass replaces an H section's bodies with the two moves when the pipeline
   was told the target's objects are byte images. The driver sets one boolean per language. That
   keeps one pipeline and keeps bodies-as-IR, which is the rule this feature must not bend.
 - **The fold is its own stage.** `addLowerDSDLBodiesPipeline` runs the optimise stage only when
@@ -295,7 +300,7 @@ be an object. So the bulk copy needs its own op.
   conditional on an unrelated flag, so it runs under the capability instead.
 - **A `__BYTE_ORDER__` guard.** A whole-object copy on a big-endian host produces big-endian bytes,
   and turning those into the wire's little-endian form is a swap *per scalar*, which needs the
-  layout — a transport cannot do it to an opaque buffer. So `image_copy` is correct where the host
+  layout — a transport cannot do it to an opaque buffer. So the move is correct where the host
   is little-endian, and the generated header says so and falls back to the field-wise body
   elsewhere. This qualifies the roadmap's claim that `serialize_` is host-endianness-agnostic: it
   stays true of the field-wise body, which is what a big-endian host keeps.
