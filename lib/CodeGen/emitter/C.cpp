@@ -777,9 +777,11 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 {
     const mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     std::ostringstream         out;
-    SourceWriter               w            = makeCWriter(out);
-    const auto                 guard        = headerGuard(def.info);
-    const auto                 baseTypeName = ctx.cTypeName(def);
+    // The declarations are rendered first, so that the includes can be read off them.
+    std::ostringstream body;
+    SourceWriter       w            = makeCWriter(body);
+    const auto         guard        = headerGuard(def.info);
+    const auto         baseTypeName = ctx.cTypeName(def);
 
     out << generatedCommentLine("C backend") << "\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -804,25 +806,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         out << "#define " << anyVersion << "\n";
         out << "#define " << thisVersion << "\n\n";
     }
-
-    out << "#include <stddef.h>\n";
-    out << "#include <stdint.h>\n";
-    out << "#include <stdbool.h>\n";
-    out << "#include \"dsdl_runtime.h\"\n";
-
-    // A nested type's header is included where this header names the type. A field held as a
-    // view names none, and an accessors-only header names none: its composite getters answer bytes.
-    if (!ctx.accessorsOnly())
-    {
-        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-        {
-            if (const auto* dep = ctx.find(depRef))
-            {
-                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-            }
-        }
-    }
-    w.blank();
 
     if (def.isService)
     {
@@ -863,6 +846,29 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         emitSection(w, ctx, def, baseTypeName, "", def.request, def.doc, schema);
     }
 
+    // Each header is included where the declarations take something from it. A nested type's
+    // header is included where this header names the type: a field held as a view names none,
+    // and an accessors-only header names none, since its composite getters answer bytes.
+    const std::string                         declarations = body.str();
+    static const std::vector<IncludeProvider> standardHeaders{
+        {"<stdbool.h>", {"bool", "true", "false"}},
+        {"<stddef.h>", {"size_t", "offsetof("}},
+        {"<stdint.h>", {"int8_t", "int16_t", "int32_t", "int64_t"}},
+        {"<string.h>", {"memcpy(", "memset(", "memcmp(", "memmove("}},
+        {"\"dsdl_runtime.h\"", {"dsdl_runtime_", "DSDL_RUNTIME_"}},
+    };
+    out << includeLinesFor(declarations, standardHeaders);
+    if (!ctx.accessorsOnly())
+    {
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+        {
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
+        }
+    }
+    out << "\n" << declarations;
     out << "#endif /* " << guard << " */\n";
     return out.str();
 }
@@ -1091,6 +1097,23 @@ llvm::Error emit(const SemanticModule& semantic,
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
         stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
+        // The nested types whose entry points this definition's bodies may call, each as the C name
+        // the bodies call it by and the header that declares it, for the implementation file to
+        // include where a body does call. A field held as a view is decoded by no call.
+        {
+            llvm::SmallVector<mlir::Attribute, 8> nestedHeaders;
+            for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+            {
+                if (const auto* dep = ctx.find(depRef))
+                {
+                    nestedHeaders.push_back(
+                        mlir::StringAttr::get(perDefModule.getContext(),
+                                              ctx.cTypeName(*dep) + "=" + EmitterContext::relativeHeaderPath(*dep)));
+                }
+            }
+            perDefModule->setAttr("llvmdsdl.c_nested_headers",
+                                  mlir::ArrayAttr::get(perDefModule.getContext(), nestedHeaders));
+        }
         if (options.artifact == Artifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);

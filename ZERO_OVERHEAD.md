@@ -712,8 +712,11 @@ type holds; Go in a `[]byte`; TypeScript in a `Uint8Array`; Python in a `memoryv
 initialiser renderer reads `dsdl.clear_view` as a member holding nothing, which each language
 renders as its empty slice. A file names no type it holds only as a view, so the dependency
 collectors leave such a type out of the imports and includes every language writes, while the
-manifests keep it; the C header's `<string.h>` went with them, used by no generated header in any
-mode. `llvmdsdl-container-views` now runs the probe on all
+manifests keep it. The C and C++ files then had their include lists read off their own text: a
+standard header is included where a type of its is spelled, the runtime where a primitive or a
+runtime type is named, a nested type's header where the type is named or its entry points are
+called, so a header of two scalars includes three headers and a folded type's implementation
+includes no nested header at all. `llvmdsdl-container-views` now runs the probe on all
 seven targets, Rust under `-D warnings`, Go under `go vet` and TypeScript under `noUnusedLocals`;
 the Python probe also writes through the buffer and reads the change through the view.
 

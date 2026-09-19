@@ -9,6 +9,8 @@
 # RUN: test -f %t/cpp/pmr/fixtures/vendor/Widget_1_0.hpp
 # RUN: cat %t/cpp/std/fixtures/vendor/Widget_1_0.hpp | FileCheck %s --check-prefix=CPP_STD
 # RUN: cat %t/cpp/pmr/fixtures/vendor/Widget_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
+# RUN: cat %t/cpp/std/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_STD_ARRAYS
+# RUN: cat %t/cpp/pmr/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR_ARRAYS
 # RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile autosar --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=CPP_AUTOSAR_SUMMARY
 # RUN: test -f %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp
 # RUN: cat %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR
@@ -94,10 +96,16 @@
 # CPP_SUMMARY: output root:
 # CPP_SUMMARY: files generated:
 
-# CPP_STD: #include <vector>
+# A header includes what its declarations take from each header: a type with no array names no
+# container, and a type with one names its profile's.
+# CPP_STD-NOT: #include <vector>
 # CPP_STD: static constexpr bool WIRE_FLAT = true;
 # CPP_STD: static constexpr bool HOST_IMAGE = false;
-# CPP_PMR: #include <memory_resource>
+# CPP_STD_ARRAYS: #include <vector>
+# CPP_PMR-NOT: #include <memory_resource>
+# CPP_PMR: static constexpr bool WIRE_FLAT = true;
+# CPP_PMR_ARRAYS: #include <memory_resource>
+# CPP_PMR_ARRAYS: #include <vector>
 # CPP_AUTOSAR_SUMMARY: Run summary:
 # CPP_AUTOSAR_SUMMARY: command: cpp
 # CPP_AUTOSAR_SUMMARY: files generated:

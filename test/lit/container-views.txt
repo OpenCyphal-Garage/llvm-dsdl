@@ -52,7 +52,12 @@
 # C_FRAME-NEXT:   /* Held as a view: the bytes of the fixtures_aliasable__vendor__Pose this field carries, and their count. */
 # C_FRAME-NEXT:   dsdl_runtime_view_t pose;
 # C_FRAME-NEXT:   struct fixtures_aliasable__vendor__Vec3 velocity;
+# The implementation includes the header of each type whose entry points it calls, and no other.
 # RUN: cat %t/c/fixtures_views/vendor/Frame_1_0.c | FileCheck %s --check-prefix=C_BODY
+# C_BODY-NOT: Pose_1_0.h
+# C_BODY:     #include "fixtures_aliasable/vendor/Vec3_1_0.h"
+# C_BODY-NEXT: #include "fixtures_views/vendor/Frame_1_0.h"
+# C_BODY-NOT: Pose_1_0.h
 # C_BODY-NOT: Pose__serialize_(
 # C_BODY-NOT: Pose__deserialize_(
 # C_BODY:     dsdl_runtime_copy_bytes(

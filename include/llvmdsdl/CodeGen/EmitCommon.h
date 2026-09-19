@@ -254,6 +254,20 @@ llvm::Error pruneStaleOutputs(const std::filesystem::path&    manifestPath,
 /// @return Rendered depfile text with trailing newline.
 std::string renderMakeDepfile(const std::string& target, const std::vector<std::string>& deps);
 
+/// @brief One header, and the tokens whose presence in generated text means the file takes
+///        something from it.
+struct IncludeProvider final
+{
+    llvm::StringRef              header;
+    std::vector<llvm::StringRef> tokens;
+};
+
+/// @brief The `#include` lines for the providers @p text takes something from, in the order given.
+///
+/// An include a generated file does not use is a lint diagnostic in the consumer's build, so a
+/// file's includes are read off its text rather than fixed per emitter.
+std::string includeLinesFor(llvm::StringRef text, const std::vector<IncludeProvider>& providers);
+
 /// @brief Writes `<outputPath>.d` make depfile for one generated output path.
 ///
 /// @details

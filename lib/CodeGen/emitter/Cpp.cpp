@@ -2122,7 +2122,9 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     }
 
     std::ostringstream out;
-    SourceWriter       w            = makeCppWriter(out);
+    // The declarations are rendered first, so that the includes can be read off them.
+    std::ostringstream body;
+    SourceWriter       w            = makeCppWriter(body);
     const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cppTypeName(def);
 
@@ -2147,44 +2149,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         out << "#endif\n";
         out << "#define " << anyVersion << "\n";
         out << "#define " << thisVersion << "\n\n";
-    }
-
-    // An accessors-only header holds constants and accessors: sizes, integers and the runtime.
-    if (ctx.accessorsOnly())
-    {
-        out << "#include <cstddef>\n";
-        out << "#include <cstdint>\n";
-        out << "#include \"dsdl_runtime.hpp\"\n";
-        w.blank();
-    }
-    else
-    {
-        out << "#include <array>\n";
-        out << "#include <cstddef>\n";
-        out << "#include <cstdint>\n";
-        out << "#include <cstring>\n";
-        out << "#include <type_traits>\n";
-        out << "#include <utility>\n";
-        if (!isAutosarFlavor(flavor))
-        {
-            out << "#include <vector>\n";
-        }
-        if (isPmrFlavor(flavor))
-        {
-            out << "#include <memory_resource>\n";
-        }
-        out << "#include \"dsdl_runtime.hpp\"\n";
-
-        // A nested type's header is included where this header names the type; a field held as a
-        // view names none.
-        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-        {
-            if (const auto* dep = ctx.find(depRef))
-            {
-                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-            }
-        }
-        w.blank();
     }
 
     emitNamespaceOpen(w, def.info.namespaceComponents);
@@ -2303,6 +2267,36 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     }
 
     emitNamespaceClose(w, def.info.namespaceComponents);
+
+    // Each header is included where the declarations take something from it. A nested type's
+    // header is included where this header names the type: a field held as a view names none,
+    // and an accessors-only header names none, since its composite getters answer bytes.
+    const std::string                         declarations = body.str();
+    static const std::vector<IncludeProvider> standardHeaders{
+        {"<algorithm>", {"std::min(", "std::max(", "std::copy(", "std::fill(", "std::equal("}},
+        {"<array>", {"std::array<"}},
+        {"<cstddef>", {"std::size_t", "std::ptrdiff_t", "offsetof("}},
+        {"<cstdint>", {"std::int", "std::uint"}},
+        {"<cstring>", {"std::memcpy(", "std::memset(", "std::memcmp(", "std::memmove("}},
+        {"<limits>", {"std::numeric_limits<"}},
+        {"<memory_resource>", {"std::pmr::"}},
+        {"<type_traits>", {"std::is_standard_layout<", "std::is_same<", "std::is_trivially"}},
+        {"<utility>", {"std::move(", "std::forward(", "std::swap(", "std::pair<", "std::exchange("}},
+        {"<vector>", {"std::vector<", "std::pmr::vector<"}},
+        {"\"dsdl_runtime.hpp\"", {"dsdl_runtime_", "::llvmdsdl::cpp::", "DSDL_RUNTIME_", "LLVMDSDL_"}},
+    };
+    out << includeLinesFor(declarations, standardHeaders);
+    if (!ctx.accessorsOnly())
+    {
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+        {
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
+        }
+    }
+    out << "\n" << declarations;
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
 }
