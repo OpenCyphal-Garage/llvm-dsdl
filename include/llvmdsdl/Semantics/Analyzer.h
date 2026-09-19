@@ -35,6 +35,10 @@ struct AnalyzeOptions final
     ///
     /// Local definitions remain authoritative when keys collide.
     const SemanticModule* externalSemanticCatalog{nullptr};
+
+    /// @brief Hold each composite field of an `@aliasable` type as a view of the buffer rather
+    ///        than a decoded copy: what `--aliasable-views` asks for.
+    bool aliasableViews{false};
 };
 
 /// @brief Converts parsed AST into the resolved semantic model.

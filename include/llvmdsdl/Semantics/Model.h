@@ -139,6 +139,13 @@ struct SemanticField final
 
     /// @brief Union tag width in bits.
     std::uint32_t unionTagBits{0};
+
+    /// @brief Whether the generated structure holds this field as a view of the buffer it was
+    ///        deserialised from, rather than as a decoded copy.
+    ///
+    /// Set under `--aliasable-views` for a composite field whose type asserts `@aliasable`. The
+    /// container's deserialise then skips the field and its serialise copies the view's bytes.
+    bool heldAsView{false};
 };
 
 /// @brief Resolved constant declaration.
@@ -188,6 +195,8 @@ enum class AliasLayoutReason : std::uint8_t
     StorageWidth,
     /// The host would insert alignment padding between fields, or after the last one.
     HostPadding,
+    /// A field held as a view: the structure holds a pointer where the wire holds the record.
+    ViewMember,
 };
 
 /// @brief One layout verdict for a section, and the field that decided it.

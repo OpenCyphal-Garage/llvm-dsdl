@@ -357,6 +357,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             };
             addVerdict("wire_flat", "wire_flat_reason", section.wireFlat);
             addVerdict("host_image", "host_image_reason", section.hostImage);
+            if (section.aliasableDirective)
+            {
+                planState.addAttribute("aliasable", builder.getUnitAttr());
+            }
             planState.addRegion();
             auto* plan       = builder.create(planState);
             auto& planRegion = plan->getRegion(0);
@@ -414,6 +418,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));
+                    if (field.heldAsView)
+                    {
+                        ioState.addAttribute("held_as_view", builder.getUnitAttr());
+                    }
                 }
                 ioState.addAttribute("min_bits", builder.getI64IntegerAttr(field.resolvedType.bitLengthSet.min()));
                 ioState.addAttribute("max_bits", builder.getI64IntegerAttr(field.resolvedType.bitLengthSet.max()));

@@ -141,6 +141,8 @@ struct PlanStep final
     /// Absent when the nested layout varies, and when the nested type's plan is not in the
     /// module the step was read from.
     std::optional<std::int64_t> compositeFixedBits;
+    /// @brief Whether the member holds a view of the buffer in place of a decoded copy.
+    bool heldAsView{false};
 };
 
 /// @brief Reads the steps of @p plan, in order.

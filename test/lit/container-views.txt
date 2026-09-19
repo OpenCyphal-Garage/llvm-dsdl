@@ -1,0 +1,83 @@
+# `--aliasable-views` holds each composite field of an `@aliasable` type as a view of the buffer
+# the holder was deserialised from: the field's bytes and their count, in place of a decoded copy.
+# The holder's deserialise skips the field and its serialise copies the view. A field whose type
+# is wire-flat and does not assert it is decoded as before.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable > %t/plans.mlir
+# RUN: FileCheck %s --check-prefix=PLAN < %t/plans.mlir
+
+# The asserting plan carries the assertion; the step is marked where the nested type asserts.
+# PLAN: dsdl.schema @fixtures_aliasable_vendor_Pose_1_0
+# PLAN: dsdl.serialization_plan attributes {{{.*}}aliasable{{.*}}wire_flat}
+# PLAN: dsdl.schema @fixtures_views_vendor_Frame_1_0
+# PLAN: composite_sealed = true, held_as_view, kind = "field"{{.*}}name = "pose"
+# PLAN: composite_sealed = true, kind = "field"{{.*}}name = "velocity"
+# A sealed holder stays wire-flat, and is not a host image: a view is a pointer where the wire has
+# the record.
+# PLAN: dsdl.schema @fixtures_views_vendor_Sealed_1_0
+# PLAN: dsdl.serialization_plan attributes {{{.*}}host_image_reason = "view-member"{{.*}}sealed, wire_flat}
+
+# The bodies hold the view and copy from it; the nested entry points are called for the copy alone.
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/plans.mlir > %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=BODY < %t/bodies.mlir
+# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__serialize_ir_(
+# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY:       %[[BYTES:.*]], %[[SIZE:.*]] = dsdl.load_view %{{.*}} "pose"
+# BODY:       dsdl.copy_bytes %{{.*}}, %[[BYTES]], size %[[SIZE]] {bytes = 24 : i64}
+# BODY:       dsdl.call_serdes @fixtures_aliasable_vendor_Vec3_1_0__serialize_ir_({{.*}}member = "velocity"
+# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__deserialize_ir_(
+# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY:       dsdl.store_view %{{.*}} "pose" = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Frame.1.0">>, <const !dsdl.byte>
+# BODY:       dsdl.call_serdes @fixtures_aliasable_vendor_Vec3_1_0__deserialize_ir_({{.*}}member = "velocity"
+# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__initialize_ir_(
+# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY:       dsdl.clear_view %{{.*}} "pose"
+# BODY:       dsdl.call_initialize @fixtures_aliasable_vendor_Vec3_1_0__initialize_ir_({{.*}}member = "velocity"
+# BODY-NOT:   Pose_1_0__initialize_ir_
+
+# C holds the view in the runtime's type, and its bodies neither call nor declare the nested Pose.
+# RUN: %dsdlc --target-language c --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
+# GEN-NOT: error:
+# GEN: files generated
+# RUN: cat %t/c/fixtures_views/vendor/Frame_1_0.h | FileCheck %s --check-prefix=C_FRAME
+# C_FRAME:      typedef struct fixtures_views__vendor__Frame {
+# C_FRAME-NEXT:   uint32_t sequence;
+# C_FRAME-NEXT:   /* Held as a view: the bytes of the fixtures_aliasable__vendor__Pose this field carries, and their count. */
+# C_FRAME-NEXT:   dsdl_runtime_view_t pose;
+# C_FRAME-NEXT:   struct fixtures_aliasable__vendor__Vec3 velocity;
+# RUN: cat %t/c/fixtures_views/vendor/Frame_1_0.c | FileCheck %s --check-prefix=C_BODY
+# C_BODY-NOT: Pose__serialize_(
+# C_BODY-NOT: Pose__deserialize_(
+# C_BODY:     dsdl_runtime_copy_bytes(
+# C_BODY:     ->pose.bytes =
+# C_BODY:     ->pose.size_bytes =
+# C_BODY-NOT: Pose__serialize_(
+# C_BODY-NOT: Pose__deserialize_(
+
+# A sealed holder keeps its accessors and gains no layout assertion or endianness guard.
+# RUN: cat %t/c/fixtures_views/vendor/Sealed_1_0.h | FileCheck %s --check-prefix=C_SEALED
+# C_SEALED:      #define fixtures_views__vendor__Sealed_WIRE_FLAT_ true
+# C_SEALED:      #define fixtures_views__vendor__Sealed_HOST_IMAGE_ false
+# C_SEALED-NEXT: #define fixtures_views__vendor__Sealed_HOST_IMAGE_REASON_ "view-member"
+# C_SEALED-NOT:  DSDL_RUNTIME_STATIC_ASSERT
+# C_SEALED-NOT:  __BYTE_ORDER__
+# C_SEALED:      dsdl_runtime_view_t pose;
+# C_SEALED:      static inline const uint8_t* fixtures_views__vendor__Sealed__get_pose_(
+# C_SEALED-NOT:  DSDL_RUNTIME_STATIC_ASSERT
+# C_SEALED-NOT:  __BYTE_ORDER__
+
+# Without the mode the field is a decoded copy.
+# RUN: %dsdlc --target-language c %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/plain 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/plain/fixtures_views/vendor/Frame_1_0.h | FileCheck %s --check-prefix=C_PLAIN
+# C_PLAIN-NOT: dsdl_runtime_view_t
+# C_PLAIN:     struct fixtures_aliasable__vendor__Pose pose;
+# C_PLAIN-NOT: dsdl_runtime_view_t
+
+# The mode is spelled by C and the object target, and a view is a member of the object type.
+# RUN: not %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=RUST
+# RUST: error: --aliasable-views: the rust backend does not hold views; C and the object target do
+# RUN: not %dsdlc --target-language c --aliasable-views --aliasable-only %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/both 2>&1 | FileCheck %s --check-prefix=BOTH
+# BOTH: error: --aliasable-views: --aliasable-only emits no object type to hold a view

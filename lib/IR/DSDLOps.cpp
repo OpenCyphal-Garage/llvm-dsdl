@@ -561,6 +561,10 @@ LogicalResult IOOp::verify()
     {
         return emitOpError("invalid alignment_bits metadata");
     }
+    if (getHeldAsView() && (!isComposite() || isArray()))
+    {
+        return emitOpError("held_as_view on a step that is not a scalar composite");
+    }
     if (getUnionOptionIndex() < 0)
     {
         return emitOpError("invalid union_option_index metadata");

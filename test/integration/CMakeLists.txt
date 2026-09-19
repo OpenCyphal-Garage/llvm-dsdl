@@ -908,6 +908,27 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
   )
 endif()
 
+if(CMAKE_C_COMPILER)
+  # A container holding a view of an @aliasable record, on C and the object target: the view points
+  # into the buffer, the record's accessors read it, and serialising reproduces the wire.
+  add_test(
+    NAME llvmdsdl-container-views
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/container-views-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunContainerViews.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-container-views
+    PROPERTIES
+      LABELS "integration;alias-layout;c;object;release-blocking"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend
@@ -3892,6 +3913,8 @@ if(LLVMDSDL_LLVM_OBJDUMP)
         -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_host_image/vendor
         -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/test/integration/host_image_instruction_counts.json
         -DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR}
+        -DVIEW_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_views
+        -DVIEW_INCLUDE=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_aliasable
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunHostImageInstructionCounts.cmake
   )
   set_tests_properties(

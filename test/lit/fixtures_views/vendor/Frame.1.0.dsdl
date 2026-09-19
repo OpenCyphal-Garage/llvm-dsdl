@@ -1,0 +1,8 @@
+# A container that keeps evolving around a record that does not. Under --aliasable-views the
+# Pose, which asserts @aliasable, is held as a view of the buffer; the Vec3, which is wire-flat
+# and does not assert it, is decoded as usual.
+uint32 sequence
+fixtures_aliasable.vendor.Pose.1.0 pose
+fixtures_aliasable.vendor.Vec3.1.0 velocity
+uint8 status
+@extent 64 * 8

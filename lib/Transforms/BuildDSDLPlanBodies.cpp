@@ -169,6 +169,10 @@ std::optional<std::string> unsupportedFieldReason(const PlanStep& step)
         {
             return field + " carries no delimiter-header validation helper; run lower-dsdl-exec first";
         }
+        if (step.heldAsView && !step.compositeFixedBits)
+        {
+            return field + " is held as a view of a composite whose plan has no single width";
+        }
         return std::nullopt;
     }
     if (step.scalarCategory == "bool")
@@ -1124,6 +1128,55 @@ PlanCursor buildNested(mlir::OpBuilder& b,
                                 : buildDelimitedNested(b, loc, step, target, buffer, capacityBytes, inner, writing);
 }
 
+/// @brief Holds, or writes out, the member's view of the field's bytes, in place of the nested call.
+///
+/// Reading takes the buffer from the field's offset with what remains of it, bounded by the
+/// field's width: a short buffer leaves a short view, which the nested type's accessors
+/// zero-extend. Writing copies the view's bytes to the field's offset and zero-fills to the
+/// width, so an empty view is the nested type's default. Either way the cursor advances by the
+/// width, which the step has because an asserted type has one size.
+PlanCursor buildViewStep(mlir::OpBuilder& b,
+                         mlir::Location   loc,
+                         const PlanStep&  step,
+                         mlir::Value      object,
+                         mlir::Value      buffer,
+                         mlir::Value      capacityBytes,
+                         PlanCursor       inner,
+                         const bool       writing)
+{
+    auto*              ctx        = b.getContext();
+    const std::int64_t widthBytes = *step.compositeFixedBits / 8;
+    const auto         member     = b.getStringAttr(step.name);
+
+    const BufferPosition position = bufferPosition(b, loc, capacityBytes, inner.bitOffset, writing);
+    const mlir::Value    at =
+        mlir::dsdl::BufferAtOp::create(b, loc, wirePointerType(ctx, writing), buffer, position.byteOffset);
+    if (writing)
+    {
+        auto view = mlir::dsdl::LoadViewOp::create(b,
+                                                   loc,
+                                                   wirePointerType(ctx, /*writing=*/false),
+                                                   b.getIntegerType(64),
+                                                   object,
+                                                   member);
+        mlir::dsdl::CopyBytesOp::create(b,
+                                        loc,
+                                        at,
+                                        view.getBytes(),
+                                        view.getSizeBytes(),
+                                        b.getI64IntegerAttr(widthBytes));
+    }
+    else
+    {
+        const mlir::Value width = constantI64(b, loc, widthBytes);
+        const mlir::Value short_ =
+            mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, position.remaining, width);
+        const mlir::Value held = mlir::arith::SelectOp::create(b, loc, short_, position.remaining, width);
+        mlir::dsdl::StoreViewOp::create(b, loc, object, member, at, held);
+    }
+    return advancedBy(b, loc, inner, inner.error, *step.compositeFixedBits);
+}
+
 /// @brief Encodes or decodes one nested composite member.
 PlanCursor buildCompositeStep(mlir::OpBuilder& b,
                               mlir::Location   loc,
@@ -1135,6 +1188,10 @@ PlanCursor buildCompositeStep(mlir::OpBuilder& b,
                               const bool       writing)
 {
     return guarded(b, loc, cursor, [&](PlanCursor inner) {
+        if (step.heldAsView)
+        {
+            return buildViewStep(b, loc, step, object, buffer, capacityBytes, inner, writing);
+        }
         const mlir::Value target = mlir::dsdl::MemberAddrOp::create(b,
                                                                     loc,
                                                                     nestedPointerType(b.getContext(), step, writing),
@@ -1936,6 +1993,12 @@ mlir::Value buildInitializeStep(mlir::OpBuilder& b,
     }
     if (stepIsComposite(step))
     {
+        // A view's default is no bytes.
+        if (step.heldAsView)
+        {
+            mlir::dsdl::ClearViewOp::create(b, loc, object, name);
+            return error;
+        }
         const mlir::Value target =
             mlir::dsdl::MemberAddrOp::create(b, loc, nestedPointerType(ctx, step, false), object, name);
         auto call = mlir::dsdl::CallInitializeOp::create(b, loc, i8Ty, nestedInitializeCallee(b, step), name, target);

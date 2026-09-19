@@ -111,7 +111,9 @@ def DSDL_SerializationPlanOp
       // byte image; `host_image` says the generated structure is that same
       // image. The reason names the property that blocked it.
       UnitAttr:$wire_flat, OptionalAttr<StrAttr>:$wire_flat_reason,
-      UnitAttr:$host_image, OptionalAttr<StrAttr>:$host_image_reason);
+      UnitAttr:$host_image, OptionalAttr<StrAttr>:$host_image_reason,
+      // The section asserts `@aliasable`; `wire_flat` then holds, as analysis has checked.
+      UnitAttr:$aliasable);
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
   let hasVerifier = 1;
@@ -161,7 +163,10 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
       OptionalAttr<StrAttr>:$lowered_ser_array_length_prefix_helper,
       OptionalAttr<StrAttr>:$lowered_deser_array_length_prefix_helper,
       OptionalAttr<StrAttr>:$lowered_array_length_validate_helper,
-      OptionalAttr<StrAttr>:$lowered_delimiter_validate_helper);
+      OptionalAttr<StrAttr>:$lowered_delimiter_validate_helper,
+      // The member holds a view of the buffer: the field's bytes and their count, in place of
+      // a decoded copy. On a scalar composite step whose type asserts `@aliasable`.
+      UnitAttr:$held_as_view);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
   let extraClassDeclaration = [{
@@ -516,6 +521,54 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
   let assemblyFormat = [{
     $callee `(` $object `,` $buffer `,` $size `)` attr-dict `:`
     type($object) `,` type($buffer) `,` type($size)
+  }];
+}
+
+def DSDL_StoreViewOp : DSDL_Op<"store_view"> {
+  let summary = "Hold a run of the wire buffer in a member, as a view";
+  let description = [{
+    A member held as a view (`held_as_view` on its step) takes the bytes of its field from the
+    buffer the container was handed, and the count of them that are there, in place of a decoded
+    copy. The container's deserialise builds this where it would call the nested type; the nested
+    type's own accessors read the member.
+  }];
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member,
+      DSDL_PtrType:$bytes, I64:$size_bytes);
+  let assemblyFormat = [{
+    $object $member `=` $bytes `,` $size_bytes attr-dict `:` type($object) `,` type($bytes)
+  }];
+}
+
+def DSDL_ClearViewOp : DSDL_Op<"clear_view"> {
+  let summary = "Hold nothing in a view member";
+  let description = [{
+    What the initialise body stores in a member held as a view: no bytes. Serialising an empty
+    view writes the field's width of zeros, which is the nested type's default.
+  }];
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
+  let assemblyFormat = "$object $member attr-dict `:` type($object)";
+}
+
+def DSDL_LoadViewOp : DSDL_Op<"load_view"> {
+  let summary = "The bytes a view member holds, and how many";
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
+  let results = (outs DSDL_PtrType:$bytes, I64:$size_bytes);
+  let assemblyFormat = "$object $member attr-dict `:` type($object) `->` type($bytes)";
+}
+
+def DSDL_CopyBytesOp : DSDL_Op<"copy_bytes"> {
+  let summary = "Copy a run of bytes into the wire buffer, zero-filled to a width";
+  let description = [{
+    Writes `bytes` bytes at `destination`: what `source` holds, up to `source_size_bytes`, and
+    zeros for the rest. A container's serialise moves a view member with this, so a short or an
+    empty view serialises as the nested type would with the missing bytes zero. The plan has
+    checked that the buffer holds the layout by the time this runs.
+  }];
+  let arguments = (ins DSDL_PtrType:$destination, DSDL_PtrType:$source,
+      I64:$source_size_bytes, DSDL_I64Attr:$bytes);
+  let assemblyFormat = [{
+    $destination `,` $source `,` `size` $source_size_bytes attr-dict `:`
+    type($destination) `,` type($source)
   }];
 }
 

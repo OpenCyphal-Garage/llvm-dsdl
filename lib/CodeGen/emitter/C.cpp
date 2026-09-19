@@ -48,6 +48,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -412,6 +413,17 @@ void emitSectionTypedef(SourceWriter&                         w,
 
         const auto cMember  = fieldScope.get(IdentifierRole::FieldName, field.name);
         const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
+
+        if (std::ranges::find(metadata.viewMembers, field.name) != metadata.viewMembers.end())
+        {
+            emitAttachedDocC(w, field.doc);
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            w.line("/* Held as a view: the bytes of the " + ctx.cTypeName(*field.resolvedType.compositeType) +
+                   " this field carries, and their count. */");
+            w.line("dsdl_runtime_view_t " + cMember + ";");
+            ++emitted;
+            continue;
+        }
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {

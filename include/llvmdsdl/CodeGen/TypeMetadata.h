@@ -76,6 +76,10 @@ struct SectionMetadata final
     ///        @ref hostImage holds.
     std::vector<HostImageMember> hostImageMembers;
 
+    /// @brief The fields held as a view of the buffer, in declaration order: what `--aliasable-views`
+    ///        asked for, read from the plan's steps so the type and its bodies agree.
+    std::vector<std::string> viewMembers;
+
     /// @brief True when the section is a tagged union.
     bool isUnion{false};
 

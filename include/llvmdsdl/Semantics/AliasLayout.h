@@ -25,7 +25,9 @@ namespace llvmdsdl
 /// @brief Records `wireFlat` and `hostImage` on every section of `module`.
 /// @param[in,out] module Module whose sections receive the verdicts.
 /// @param[in] externalCatalog Catalogue consulted for composites the module does not define.
-void annotateAliasLayout(SemanticModule& module, const SemanticModule* externalCatalog = nullptr);
+void annotateAliasLayout(SemanticModule&       module,
+                         const SemanticModule* externalCatalog = nullptr,
+                         bool                  aliasableViews  = false);
 
 /// @brief The wire-format token for a reason, as the generated constants spell it.
 llvm::StringRef aliasLayoutReasonToken(AliasLayoutReason reason);

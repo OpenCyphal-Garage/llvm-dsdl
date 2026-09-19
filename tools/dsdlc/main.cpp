@@ -103,6 +103,7 @@ struct CliOptions final
     bool allowUnregulatedFixedPortId{false};
     bool warnAliasableCandidates{false};
     bool aliasableOnly{false};
+    bool aliasableViews{false};
     bool omitDependencies{false};
     bool noEmbeddedUavcan{false};
 
@@ -279,6 +280,12 @@ void printHelp()
                  << "      Emit each type's field accessors and neither its object type nor its\n"
                  << "      serialisation. Every targeted type must be @aliasable, or nested by one\n"
                  << "      that is; each that is neither fails the run, named.\n"
+                 << "  --aliasable-views\n"
+                 << "      Hold each composite field of an @aliasable type as a view of the buffer\n"
+                 << "      it was deserialised from, in place of a decoded copy: the field's bytes\n"
+                 << "      and their count, for the nested type's accessors to read. The holder's\n"
+                 << "      deserialise skips the field and its serialise copies the view. Fields of\n"
+                 << "      a union and arrays are decoded as usual. C and the object target.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -706,6 +713,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--aliasable-only")
         {
             options.aliasableOnly = true;
+            continue;
+        }
+        if (arg == "--aliasable-views")
+        {
+            options.aliasableViews = true;
             continue;
         }
         if (arg == "--generate-support")
@@ -1705,9 +1717,28 @@ int runDsdlc(int argc, char** argv)
         logVerbose(1, "embedded targets selected " + std::to_string(builtinExplicitKeys.size()) + " type(s)");
     }
 
+    // A view is a member of the object type, which an accessors-only run does not emit; and it is
+    // spelled by the backends that hold one.
+    if (options.aliasableViews && options.aliasableOnly)
+    {
+        diagnostics.error({"<cli>", 1, 1}, "--aliasable-views: --aliasable-only emits no object type to hold a view");
+        printDiagnostics(diagnostics);
+        return 1;
+    }
+    if (options.aliasableViews && (options.targetLanguage != "c") && (options.targetLanguage != "obj") &&
+        (options.targetLanguage != "mlir"))
+    {
+        diagnostics.error({"<cli>", 1, 1},
+                          "--aliasable-views: the " + options.targetLanguage +
+                              " backend does not hold views; C and the object target do");
+        printDiagnostics(diagnostics);
+        return 1;
+    }
+
     logVerbose(1, "running semantic analysis");
     llvmdsdl::AnalyzeOptions analyzeOptions;
     analyzeOptions.allowUnregulatedFixedPortId = options.allowUnregulatedFixedPortId;
+    analyzeOptions.aliasableViews              = options.aliasableViews;
     if (embeddedCatalog)
     {
         analyzeOptions.externalSemanticCatalog = &embeddedCatalog->semantic;

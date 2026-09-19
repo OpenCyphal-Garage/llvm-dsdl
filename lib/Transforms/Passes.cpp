@@ -1714,6 +1714,14 @@ private:
         {
             return plan.emitError("host_image holds and carries a reason");
         }
+        if (plan.getAliasable() && !wireFlat)
+        {
+            return plan.emitError("aliasable is asserted where wire_flat does not hold");
+        }
+        if (mlir::failed(verifyViews(plan, messagePlans)))
+        {
+            return mlir::failure();
+        }
         // Lowering states exactly one of the pair, so neither means the plan states no verdict --
         // hand-written IR, which `dsdl-opt` takes. There is then nothing to disagree with.
         if (!wireFlat && !plan.getWireFlatReason())
@@ -1790,6 +1798,50 @@ private:
             return mlir::success();
         }
         return verifyHostImage(plan, messagePlans).first;
+    }
+
+    /// @brief Holds each view step to what a view needs: a scalar composite of an asserted type,
+    ///        in a plan whose structure is then not the wire's image.
+    static mlir::LogicalResult verifyViews(mlir::dsdl::SerializationPlanOp                         plan,
+                                           const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans)
+    {
+        if (plan.getBody().empty())
+        {
+            return mlir::success();
+        }
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step || !step.getHeldAsView())
+            {
+                continue;
+            }
+            if (plan.getIsUnion())
+            {
+                return step.emitError("held_as_view on an option of a union");
+            }
+            if (plan.getHostImage())
+            {
+                return step.emitError("host_image holds for a plan that holds a view");
+            }
+            if (!step.getCompositeSealed().value_or(true))
+            {
+                return step.emitError("held_as_view on a delimited composite");
+            }
+            const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(llvm::StringRef{}),
+                                                               step.getCompositeMajor().value_or(0),
+                                                               step.getCompositeMinor().value_or(0)));
+            if (nested == messagePlans.end())
+            {
+                return step.emitError("held_as_view on a composite whose plan is not in the module");
+            }
+            mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
+            if (!nestedPlan.getAliasable())
+            {
+                return step.emitError("held_as_view on a composite whose type does not assert aliasable");
+            }
+        }
+        return mlir::success();
     }
 
     /// @brief Re-derives a plan's host extent, reporting a step the `host_image` claim contradicts.

@@ -517,7 +517,15 @@ library implementations rests on the lint rather than on a differential build.
   type nor the serialisation. It holds every targeted type to `@aliasable`, or to being nested by a
   type that carries it, and names each that is neither. A lane compiles the output standalone on all
   seven targets and reads a buffer through the outer type's composite getter and the inner type's
-  field getter. Phase 6, container views, is what remains of the plan.
+  field getter.
+
+  🔧 **Phase 6.1 landed 2026-09-19.** `--aliasable-views` holds a composite field of an
+  `@aliasable` type as a view of the buffer the holder was deserialised from, on C and the object
+  target: the holder's deserialise skips the record and its serialise copies the view, a short
+  buffer leaves a short view read as zeros, and the record's accessors read the view in place. A
+  lane holds both targets to that contract and the instruction lane baselines the holder beside
+  the callee the view removes. The other five backends refuse the mode until 6.2; equal-length
+  union accessors, 6.3, wait for a namespace that needs them, since the catalogue has none.
 
 ### P2 — Maturity / maintainability
 

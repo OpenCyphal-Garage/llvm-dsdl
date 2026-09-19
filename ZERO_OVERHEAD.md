@@ -631,9 +631,9 @@ marking the fold introduced for Rust now reaches every translating backend, so a
 file carries the scalar helpers its accessors call and nothing else. The file set keeps its names,
 less Go's `_host_image.go`, which the lit test holds `--list-outputs` to.
 
-### Phase 6 — container views — later
+### Phase 6 — container views — in progress 2026-09-19
 
-*(Added 2026-09-18.)*
+*(Added 2026-09-18; designed 2026-09-19.)*
 
 The production shape is a delimited container that keeps evolving around records that no longer do:
 a system that has locked its hot inner records but still wants to change the message around them
@@ -648,6 +648,76 @@ the shape users will actually build.
 Equal-length unions belong here too: a union whose options are all wire-flat and of the same length
 has a flat wire form of a tag plus one option, and an accessor set can serve it by reading the tag
 and then the option at a fixed offset.
+
+**Decisions taken, 2026-09-19.**
+
+- *A whole-invocation mode, `--aliasable-views`.* A view member ties the object to the buffer it
+  was read from, which is a different contract from the owning object every consumer builds
+  against today; so it is not the default, and it is not switched by a directive in another
+  file. Under the mode a composite field whose type carries `@aliasable` is held as a view, and
+  a field whose type is merely wire-flat is decoded as before: the directive is the author's
+  statement that the type is meant to be read in place, the mode is the consumer's, and a view
+  needs both. Arrays of `@aliasable` types stay decoded in this phase. The catalogue holds
+  fifteen scalar members of a wire-flat type inside thirteen non-flat containers, no fixed
+  arrays of one and three variable arrays.
+- *A view is the field's bytes, as the composite getter answers them.* Phase 4's `get_<field>`
+  on a wire-flat container answers the buffer from the field's offset with what remains, and a
+  view member holds that same pair. C and C++ hold the runtime's `dsdl_runtime_view_t`, a
+  pointer and a size; Rust a `&'a [u8]`, which puts a lifetime on the container and on every
+  type that holds one; Go a `[]byte`; TypeScript a `Uint8Array`; Python a `memoryview`. The
+  nested type's own accessors read it, so no view carries methods and no language grows a second
+  API.
+- *A short view is not an error.* A buffer that ends inside the field is a valid encoding, and
+  the accessors zero-extend a short view on read, so the container's deserialise holds what is
+  there and advances by the field's fixed width as it does now. Serialising a view writes its
+  bytes and zero-fills to the field's width, so an empty view, which is what the initialiser
+  leaves, serialises as the nested type's default. This narrows the decision that a view
+  requires the whole payload to the whole-object view it was taken about: a field view has a
+  reader that zero-extends, and a whole-object view had none.
+- *Decided at lowering, carried on the step.* `lower-dsdl` stamps `aliasable` on a plan whose
+  section asserts it and, under the mode, `held_as_view` on a composite step whose nested type
+  does. `build-dsdl-plan-bodies` builds such a step as a view: on deserialise the member takes
+  the buffer from the field's offset and what remains, bounded by the field's width
+  (`dsdl.store_view`); on serialise the member's bytes are copied to the field's offset and
+  zero-filled to its width (`dsdl.load_view`, `dsdl.copy_bytes`). No nested entry point is
+  called in either direction. `SectionMetadata` reads the same attribute for the struct, so the
+  member and the body cannot disagree, and `dsdl-verify-alias-layout` refuses a view step whose
+  nested plan is not asserted, sealed and fixed.
+- *Equal-length unions are not in the catalogue.* Its two fixed equal-length unions,
+  `ArbitrationID` and `port.ID`, hold sub-byte options, so accessors for such a union would
+  serve no regulated type. They wait for a namespace that needs them, as 6.3.
+
+**Sub-phases.** 6.1 the mode, the ops, the C and object spellings and the lane on C; 6.2 the
+other five languages; 6.3 union accessors, later.
+
+**Progress, 2026-09-19: 6.1 landed.** `--aliasable-views` reaches the analyser, which marks each
+scalar composite field of an asserted type as held by view and refuses the holder's host-image
+verdict on it; the lowering stamps `aliasable` on an asserting plan and `held_as_view` on the
+step; `build-dsdl-plan-bodies` builds the step as `dsdl.store_view` on deserialise, `dsdl.load_view`
+and `dsdl.copy_bytes` on serialise and `dsdl.clear_view` on initialise; both C lowerings spell the
+four, C over a `dsdl_runtime_view_t` member and the object target over a pointer-and-size struct;
+`dsdl-verify-alias-layout` refuses a view of a type that does not assert, of a delimited type, on
+a union's option, and in a plan that claims to be a host image. `llvmdsdl-container-views` holds
+the C and object targets to the contract on a delimited holder of a Pose and a Vec3: the view
+points into the buffer, the Pose's accessors read it through the view, serialising reproduces the
+wire, a buffer ending inside the Pose leaves a short view read as zeros and serialised zero-filled,
+and an initialised holder serialises an empty view as zeros. The other five backends refuse the
+mode until 6.2.
+
+What the instruction lane shows needs saying carefully. A static count is per function, and the
+plain path's nested decode is a call, so the holder's own count is the same with the view as
+without: `Frame`'s deserialise is 75 instructions either way on AArch64 and 88 against 86 on
+x86-64. What the view removes is the call's target, `Pose`'s deserialise at 54 and 62, which the
+plain path runs on every decode and the view path never does; the lane baselines it beside the
+holder under `plain:` so the difference is on the page. The holder's serialise grows, 49 to 61 and
+58 to 73, since a bounded copy with a zero-fill branch is longer than a call; the callee it drops
+is 19 and 23. For a record that is a host image, as `Pose` is, the view saves its one folded copy
+and the call; for a record that is wire-flat and not a host image, it saves the field-wise decode.
+
+**Acceptance** A container deserialised under the mode reads every view field, through the
+nested type's accessors, to the values the plain decode gives, on a full buffer and a short one;
+serialising it back reproduces the plain serialise's bytes; its deserialise skips the nested
+decode, which the instruction lane shows; the output compiles standalone in each language.
 
 ## Gates this adds
 
@@ -665,6 +735,8 @@ and then the option at a fixed offset.
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
 | accessor instruction count | 4 | an accessor's count moving without its baseline | ✅ landed, on both pinned triples |
 | accessors-only standalone build | 5 | the mode's output failing to compile alone on any target, or a targeted type without the directive going through | ✅ landed: seven targets, a probe each |
+| container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled | ✅ landed on C and the object target; the other five wait for 6.2 |
+| view holder instruction count | 6 | the holder's count, or the removed callee's, moving without its baseline | ✅ landed, both pinned triples |
 
 ## Risks
 

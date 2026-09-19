@@ -86,6 +86,8 @@ struct CMember final
     std::string  category;
     std::int64_t bitLength{0};
     std::string  compositeCTypeName;
+    /// @brief The member is a `dsdl_runtime_view_t`: the field's bytes and their count.
+    bool heldAsView{false};
 };
 
 struct CPlan final
@@ -170,6 +172,7 @@ CSpelling gatherCSpelling(mlir::ModuleOp module)
                     member.category           = io.getScalarCategory().str();
                     member.bitLength          = io.getBitLength();
                     member.compositeCTypeName = io.getCompositeCTypeName().value_or(llvm::StringRef{}).str();
+                    member.heldAsView         = io.getHeldAsView();
                     if (io.getCompositeFullName())
                     {
                         spelling.tags[planIdentity(*io.getCompositeFullName(),
@@ -890,6 +893,126 @@ mlir::Value addressOf(mlir::ConversionPatternRewriter& rewriter,
     return mlir::emitc::ApplyOp::create(rewriter, loc, pointerType, "&", lvalue);
 }
 
+/// @brief The two lvalues of a view member: its bytes and their count.
+struct ViewSlots final
+{
+    mlir::Value bytes;
+    mlir::Value size;
+};
+
+ViewSlots viewSlots(mlir::ConversionPatternRewriter& rewriter,
+                    mlir::Location                   loc,
+                    mlir::Value                      object,
+                    const CMember&                   member,
+                    mlir::Type                       bytesType,
+                    mlir::Type                       sizeType)
+{
+    return ViewSlots{walkMemberPath(rewriter, loc, object, rewriter.getStrArrayAttr({member.cName, "bytes"}), bytesType),
+                     walkMemberPath(rewriter, loc, object, rewriter.getStrArrayAttr({member.cName, "size_bytes"}), sizeType)};
+}
+
+struct StoreViewLowering final : public SpeltPattern<mlir::dsdl::StoreViewOp>
+{
+    using SpeltPattern<mlir::dsdl::StoreViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        const ViewSlots slots = viewSlots(rewriter,
+                                          op.getLoc(),
+                                          adaptor.getObject(),
+                                          *member,
+                                          adaptor.getBytes().getType(),
+                                          adaptor.getSizeBytes().getType());
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, adaptor.getBytes());
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.size, adaptor.getSizeBytes());
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+struct ClearViewLowering final : public SpeltPattern<mlir::dsdl::ClearViewOp>
+{
+    using SpeltPattern<mlir::dsdl::ClearViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ClearViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        auto*      ctx       = rewriter.getContext();
+        const auto bytesType = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, "const uint8_t"));
+        const auto sizeType  = mlir::emitc::OpaqueType::get(ctx, "size_t");
+        const ViewSlots slots = viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType);
+        const mlir::Value none =
+            mlir::emitc::ConstantOp::create(rewriter, op.getLoc(), bytesType, mlir::emitc::OpaqueAttr::get(ctx, "NULL"));
+        const mlir::Value zero =
+            mlir::emitc::ConstantOp::create(rewriter, op.getLoc(), sizeType, mlir::emitc::OpaqueAttr::get(ctx, "0U"));
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, none);
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.size, zero);
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+struct LoadViewLowering final : public SpeltPattern<mlir::dsdl::LoadViewOp>
+{
+    using SpeltPattern<mlir::dsdl::LoadViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadViewOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        const mlir::Type bytesType = getTypeConverter()->convertType(op.getBytes().getType());
+        const mlir::Type sizeType  = op.getSizeBytes().getType();
+        const ViewSlots  slots = viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType);
+        const mlir::Value bytes = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), bytesType, slots.bytes);
+        const mlir::Value size  = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), sizeType, slots.size);
+        rewriter.replaceOp(op, {bytes, size});
+        return mlir::success();
+    }
+};
+
+struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CopyBytesOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_copy_bytes"),
+                                                               mlir::ValueRange{adaptor.getDestination(),
+                                                                                adaptor.getSource(),
+                                                                                adaptor.getSourceSizeBytes(),
+                                                                                bytes});
+        return mlir::success();
+    }
+};
+
 struct MemberAddrLowering final : public SpeltPattern<mlir::dsdl::MemberAddrOp>
 {
     using SpeltPattern<mlir::dsdl::MemberAddrOp>::SpeltPattern;
@@ -1079,9 +1202,13 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      IndexHoldsLowering,
                      BufferOrEmptyLowering,
                      LoadScalarLowering,
-                     StoreScalarLowering>(converter, &getContext());
+                     StoreScalarLowering,
+                     CopyBytesLowering>(converter, &getContext());
         patterns.add<LoadMemberLowering,
                      StoreMemberLowering,
+                     StoreViewLowering,
+                     ClearViewLowering,
+                     LoadViewLowering,
                      LoadElementLowering,
                      StoreElementLowering,
                      MemberAddrLowering,
@@ -1127,7 +1254,11 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::IndexHoldsOp,
                             mlir::dsdl::BufferOrEmptyOp,
                             mlir::dsdl::LoadScalarOp,
-                            mlir::dsdl::StoreScalarOp>();
+                            mlir::dsdl::StoreScalarOp,
+                            mlir::dsdl::StoreViewOp,
+                            mlir::dsdl::ClearViewOp,
+                            mlir::dsdl::LoadViewOp,
+                            mlir::dsdl::CopyBytesOp>();
         target.addDynamicallyLegalOp<mlir::func::FuncOp>(
             [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
         target.addDynamicallyLegalOp<mlir::func::ReturnOp>(

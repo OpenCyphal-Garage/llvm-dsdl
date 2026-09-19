@@ -222,6 +222,16 @@ targeted type must carry `@aliasable` or be nested by a type that does; each tha
 the run, named. The files keep their names; Go's endianness guard, which belongs to the folded
 bodies, is not among them.
 
+`--aliasable-views` holds each composite field of an `@aliasable` type as a view of the buffer the
+holder was deserialised from, in place of a decoded copy: the field's bytes and their count, for the
+nested type's accessors to read. The holder's deserialise skips the field and its serialise copies
+the view. A buffer that ends inside the field leaves a short view, which the accessors read as
+zeros past its end and which serialises zero-filled; an initialised object holds an empty view,
+which serialises as the nested type's default. A holder of a view is not a host image. A field of a
+union, an array, and a field whose type is wire-flat without asserting it are decoded as usual. C
+holds a view as `dsdl_runtime_view_t`, a pointer and a size; the object target the same. The other
+backends refuse the mode.
+
 A host-image type asserts the verdict where it is compiled: the generated structure carries a
 static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,
 C++, Rust and Go — its serialise and deserialise are one move of the object's bytes when the target

@@ -54,11 +54,51 @@ foreach(t RANGE ${triple_last})
     message(FATAL_ERROR "object generation for ${triple} produced no objects under ${obj_dir}")
   endif()
 
+  # The view fixture, generated twice: held as views, and as the decoded copies the plain run makes.
+  # A symbol prefixed `views:` or `plain:` is counted in the matching objects; the rest in the
+  # host-image objects above.
+  set(objects_views "")
+  set(objects_plain "")
+  if(DEFINED VIEW_ROOT AND NOT "${VIEW_ROOT}" STREQUAL "")
+    foreach(scope views plain)
+      set(scope_dir "${obj_dir}-${scope}")
+      set(scope_args "")
+      if(scope STREQUAL "views")
+        set(scope_args --aliasable-views)
+      endif()
+      execute_process(
+        COMMAND "${DSDLC}" --target-language obj --target-triple "${triple}" ${scope_args} "${VIEW_ROOT}"
+          -I "${VIEW_INCLUDE}" --outdir "${scope_dir}"
+        RESULT_VARIABLE gen_result
+        OUTPUT_VARIABLE gen_stdout
+        ERROR_VARIABLE gen_stderr
+      )
+      if(NOT gen_result EQUAL 0)
+        message(STATUS "dsdlc stdout:\n${gen_stdout}")
+        message(STATUS "dsdlc stderr:\n${gen_stderr}")
+        message(FATAL_ERROR "${scope} object generation for ${triple} failed")
+      endif()
+      file(GLOB_RECURSE objects_${scope} "${scope_dir}/*.o")
+      if("${objects_${scope}}" STREQUAL "")
+        message(FATAL_ERROR "${scope} object generation for ${triple} produced no objects under ${scope_dir}")
+      endif()
+    endforeach()
+  endif()
+
   string(APPEND paste "      \"${triple}\": {\n")
   foreach(s RANGE ${symbol_last})
     string(JSON symbol GET "${baseline_json}" meta symbols ${s})
+    set(scoped_objects "${objects}")
+    set(bare "${symbol}")
+    if(symbol MATCHES "^(views|plain):(.+)$")
+      set(scoped_objects "${objects_${CMAKE_MATCH_1}}")
+      set(bare "${CMAKE_MATCH_2}")
+      if("${scoped_objects}" STREQUAL "")
+        message(FATAL_ERROR "${symbol} is baselined but no VIEW_ROOT was given to generate it from")
+      endif()
+    endif()
     execute_process(
-      COMMAND "${LLVM_OBJDUMP}" -d --no-show-raw-insn "--disassemble-symbols=${symbol}" ${objects}
+      COMMAND "${LLVM_OBJDUMP}" -d --no-show-raw-insn "--disassemble-symbols=${bare}" ${scoped_objects}
       RESULT_VARIABLE dis_result
       OUTPUT_VARIABLE dis_stdout
       ERROR_VARIABLE dis_stderr

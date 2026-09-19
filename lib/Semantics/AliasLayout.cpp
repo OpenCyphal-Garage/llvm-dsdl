@@ -97,8 +97,9 @@ bool isVariableLength(const ArrayKind kind)
 class Evaluator final
 {
 public:
-    Evaluator(SemanticModule& module, const SemanticModule* externalCatalog)
+    Evaluator(SemanticModule& module, const SemanticModule* externalCatalog, const bool aliasableViews)
         : module_(module)
+        , aliasableViews_(aliasableViews)
     {
         // A local definition wins a key collision, matching how composites resolve during analysis.
         if (externalCatalog != nullptr)
@@ -116,6 +117,20 @@ public:
 
     void run()
     {
+        // A view changes the holder's host-image verdict, and a holder is reached through its
+        // own holders as well as directly, so every section's views are marked before any
+        // verdict is decided.
+        if (aliasableViews_)
+        {
+            for (SemanticDefinition& def : module_.definitions)
+            {
+                markViews(def.request);
+                if (def.response)
+                {
+                    markViews(*def.response);
+                }
+            }
+        }
         for (SemanticDefinition& def : module_.definitions)
         {
             annotate(def.request);
@@ -163,6 +178,29 @@ private:
             return def.response ? &*def.response : nullptr;
         }
         return &def.request;
+    }
+
+    /// @brief Marks each composite field whose type asserts `@aliasable` as held by view.
+    ///
+    /// A scalar field of a structure: a union's option is chosen by a tag and an array's
+    /// elements are a run, and neither is held this way.
+    void markViews(SemanticSection& section)
+    {
+        if (section.isUnion)
+        {
+            return;
+        }
+        for (SemanticField& field : section.fields)
+        {
+            const SemanticFieldType& type = field.resolvedType;
+            if (field.isPadding || (type.scalarCategory != SemanticScalarCategory::Composite) || !type.compositeType ||
+                (type.arrayKind != ArrayKind::None))
+            {
+                continue;
+            }
+            const SemanticSection* nested = find(keyOf(*type.compositeType, /*response=*/false));
+            field.heldAsView              = (nested != nullptr) && nested->aliasableDirective.has_value();
+        }
     }
 
     void annotate(SemanticSection& section)
@@ -329,6 +367,11 @@ private:
             {
                 return Resolved{blocked(AliasLayoutReason::WirePadding, field.name), {}, {}};
             }
+            // The structure holds a pointer where the wire holds the record.
+            if (field.heldAsView)
+            {
+                return Resolved{blocked(AliasLayoutReason::ViewMember, field.name), {}, {}};
+            }
 
             HostExtent element;
             if (type.scalarCategory == SemanticScalarCategory::Composite)
@@ -393,6 +436,8 @@ private:
     }
 
     SemanticModule& module_;
+    /// @brief Whether a composite field of an `@aliasable` type is held as a view.
+    bool aliasableViews_{false};
     /// @brief Name to definition. A composite field names a type, so resolution needs the name.
     std::map<SectionKey, Entry> entries_;
 
@@ -405,9 +450,11 @@ private:
 
 }  // namespace
 
-void annotateAliasLayout(SemanticModule& module, const SemanticModule* const externalCatalog)
+void annotateAliasLayout(SemanticModule&             module,
+                         const SemanticModule* const externalCatalog,
+                         const bool                  aliasableViews)
 {
-    Evaluator evaluator(module, externalCatalog);
+    Evaluator evaluator(module, externalCatalog, aliasableViews);
     evaluator.run();
 }
 
@@ -441,6 +488,8 @@ llvm::StringRef aliasLayoutReasonToken(const AliasLayoutReason reason)
         return "storage-width";
     case AliasLayoutReason::HostPadding:
         return "host-padding";
+    case AliasLayoutReason::ViewMember:
+        return "view-member";
     }
     return "flat";
 }
@@ -477,6 +526,8 @@ std::string describeAliasLayoutVerdict(const AliasLayoutVerdict& verdict)
     case AliasLayoutReason::HostPadding:
         return verdict.fieldName.empty() ? std::string{"the generated type would carry padding after its last field"}
                                          : (field + "would follow alignment padding in the generated type");
+    case AliasLayoutReason::ViewMember:
+        return field + "is held as a view of the buffer";
     }
     return "the layout is a flat byte image";
 }

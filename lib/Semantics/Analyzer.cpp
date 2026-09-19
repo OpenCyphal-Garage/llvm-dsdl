@@ -277,7 +277,7 @@ public:
         }
         // Layout verdicts read whole sections, including composites this module resolved through
         // the catalogue, so they are decided once the model is complete.
-        annotateAliasLayout(out, options_.externalSemanticCatalog);
+        annotateAliasLayout(out, options_.externalSemanticCatalog, options_.aliasableViews);
         checkAliasableAssertions(out);
         if (diagnostics_.hasErrors())
         {

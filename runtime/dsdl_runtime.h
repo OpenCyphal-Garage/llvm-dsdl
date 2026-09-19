@@ -257,6 +257,44 @@ extern "C"
 
     // ----------------------------------------------------- IMAGE -----------------------------------------------------
 
+    /// @brief A run of a serialised buffer that an object holds in place of a decoded record.
+    ///
+    /// The bytes are the field's, from the buffer the holder was deserialised from, and the count
+    /// is how many of them that buffer held: a short buffer leaves a short view, which the record's
+    /// accessors zero-extend. An empty view holds no bytes and serialises as the record's width of
+    /// zeros.
+    typedef struct
+    {
+        const uint8_t* bytes;
+        size_t         size_bytes;
+    } dsdl_runtime_view_t;
+
+    /// @brief Writes `bytes` bytes at `buf`: what `source` holds, up to `source_size_bytes`, and
+    ///        zeros for the rest.
+    /// @param[out] buf Destination.
+    /// @param[in] source The bytes to copy; unread when `source_size_bytes` is zero.
+    /// @param[in] source_size_bytes How many bytes `source` holds.
+    /// @param[in] bytes How many bytes to write.
+    static inline void dsdl_runtime_copy_bytes(void* const       buf,
+                                               const void* const source,
+                                               const size_t      source_size_bytes,
+                                               const size_t      bytes)
+    {
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        if (source_size_bytes >= bytes)
+        {
+            (void) memcpy(buf, source, bytes);
+        }
+        else
+        {
+            (void) memset(buf, 0, bytes);
+            if (source_size_bytes > 0U)
+            {
+                (void) memcpy(buf, source, source_size_bytes);
+            }
+        }
+    }
+
     /// @brief Fills an object from the wire in one move, where the two are the same bytes.
     ///
     /// Only for a type whose generated structure is byte-identical to its wire form; the compiler
