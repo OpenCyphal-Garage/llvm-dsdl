@@ -853,6 +853,34 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
+  # A wire-flat section's field accessors in every language against the bodies they stand in for:
+  # a getter answers what deserialise puts in the field, a setter writes what deserialise reads.
+  add_test(
+    NAME llvmdsdl-accessor-equivalence
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/accessor-equivalence-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAccessorEquivalence.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-accessor-equivalence
+    PROPERTIES
+      LABELS "integration;differential;alias-layout;c;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend

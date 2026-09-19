@@ -538,8 +538,16 @@ in the IR, and six languages agree on a short buffer. A probe per language — f
 buffer, setter round trip, null or empty buffer, and the nested record's trailing field — was run
 by hand against each language's `deserialize`; the lane that holds them there is next.
 
-Still to do: fixed arrays and nested composites, the six-language equivalence lane, and the
-instruction-count row.
+**The equivalence lane, 2026-09-18.** `llvmdsdl-accessor-equivalence` holds every language to
+the claim on seven regulated types — `node.Version`, `scalar.Integer16`, `scalar.Natural64`,
+`scalar.Real16`, `scalar.Real64`, `temperature.Scalar`, `file.Error`: unsigned, signed and
+64-bit integers, float16 widening, float32 and float64. Each driver fills a buffer with
+pseudo-random bytes, so floats meet every pattern including the NaNs, and compares values as
+bits: the getter against `deserialize_`'s field on the full buffer and on a half-length one,
+where both zero-extend; the setter's bytes read back through `deserialize_` and the getter, and
+exactly for an integer; and a setter refused an empty buffer. Six legs, forty-two verdicts.
+
+Still to do: fixed arrays and nested composites, and the instruction-count row.
 
 ### Phase 5 — `--aliasable-only` — S
 
@@ -583,7 +591,7 @@ and then the option at a fixed offset.
 | fold leaves no field work | 3 | field work surviving beside the move, or a non-host-image body folded | ✅ landed |
 | bulk-copy instruction count | 3 | an entry point's instruction count moving without its baseline | ✅ landed |
 | zero-extension preservation | 3 | a folded body's short-buffer read differing from the field-wise one's | ✅ landed: c-go parity's truncated `Version`, `Natural8`, `Integer64`; c-rust and cpp-c parity's truncated-image `Real32`, `Integer8` |
-| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | to build |
+| accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed for scalar fields |
 
 ## Risks
 

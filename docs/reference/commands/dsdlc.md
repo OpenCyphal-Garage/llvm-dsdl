@@ -202,6 +202,16 @@ generated structure is that byte image on the target that compiles it. The two d
 width the wire carries in five bytes is held in eight, or where a structure aligns a field the wire
 does not.
 
+A wire-flat type's scalar fields have accessors beside the serialisation functions: a getter
+that reads one field off a serialised buffer, and a setter that writes one into it, each at the
+field's fixed offset and in the member's own type. A getter answers what `deserialize_` puts in
+the field, on a short buffer too, where both zero-extend; a setter answers the runtime's error
+code and refuses a buffer too short for the field. C spells them `<type>__get_<field>_` and
+`<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
+functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
+`get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and
+`set_<field>`.
+
 A host-image type asserts the verdict where it is compiled: the generated structure carries a
 static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,
 C++, Rust and Go — its serialise and deserialise are one move of the object's bytes when the target
