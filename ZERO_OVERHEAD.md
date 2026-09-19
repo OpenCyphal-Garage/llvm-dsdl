@@ -741,7 +741,7 @@ decode, which the instruction lane shows; the output compiles standalone in each
 |---|---|---|---|
 | catalogue W/H census | 1 | either count moving without the test moving with it | ✅ landed |
 | predicate-vs-reality | 1 | an H section whose compiled struct is not a byte image | ✅ landed |
-| layout assertions in every host-image type | 3 | a structure that is not the image on the consumer's target | ✅ landed; found the PMR profile |
+| layout assertions in every host-image type | 3 | a structure that is not the image on the consumer's target | ✅ landed; found the PMR profile, and on 2026-09-19 the compiled-in catalogue, whose model was parsed and not analysed, so its 108 host-image headers carried none |
 | `@aliasable` diagnostics | 2 | a failure reason without a field name and location | ✅ landed |
 | verifier re-derives H | 2.1 | a `host_image` the steps contradict | ✅ landed |
 | candidate lint | 2.2 | a delimited type that would qualify, reported without its field | ✅ landed |

@@ -1,0 +1,4 @@
+# Holds a catalogue type that is a host image, so that the catalogue's own header is generated
+# as a dependency and can be held to the layout assertions it owes.
+uavcan.si.unit.angle.Quaternion.1.0 orientation
+@sealed
