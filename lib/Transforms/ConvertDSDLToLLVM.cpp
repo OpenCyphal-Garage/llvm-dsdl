@@ -591,15 +591,15 @@ Layouts buildLayouts(mlir::ModuleOp module, const unsigned sizeBits)
                     {
                         continue;  // Padding reserves wire bits and holds no member.
                     }
-                    const std::string nested  = io.getCompositeFullName()
-                                                    ? planIdentity(*io.getCompositeFullName(),
+                    const std::string nested = io.getCompositeFullName()
+                                                   ? planIdentity(*io.getCompositeFullName(),
                                                                   io.getCompositeMajor().value_or(0),
                                                                   io.getCompositeMinor().value_or(0),
-                                                                   {})
-                                                    : std::string{};
-                    auto              storage = io.getHeldAsView()
-                                                    ? viewStorage(ctx, sizeBits, io.getArrayKind(), io.getArrayCapacity())
-                                                    : fieldStorage(ctx,
+                                                                  {})
+                                                   : std::string{};
+                    auto storage = io.getHeldAsView()
+                                       ? viewStorage(ctx, sizeBits, io.getArrayKind(), io.getArrayCapacity())
+                                       : fieldStorage(ctx,
                                                       io.getScalarCategory(),
                                                       io.getBitLength(),
                                                       io.getArrayKind(),
@@ -766,9 +766,9 @@ struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::Wr
         const mlir::Location loc       = op.getLoc();
         auto                 module    = op->getParentOfType<mlir::ModuleOp>();
         const std::string    callee    = runtimePrimitiveName(true,
-                                                        op.getValue().getType(),
-                                                        static_cast<std::int64_t>(op.getWidth()),
-                                                        op.getIsSigned());
+                                                              op.getValue().getType(),
+                                                              static_cast<std::int64_t>(op.getWidth()),
+                                                              op.getIsSigned());
         const auto           primitive = [&]() -> mlir::Value {
             mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
                                                         adaptor.getBufferSizeBytes(),
@@ -972,10 +972,10 @@ struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::Im
         const mlir::Value    bytes =
             mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
         const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
-                                                             loc,
-                                                             mlir::LLVM::ICmpPredicate::uge,
-                                                             adaptor.getBufferSizeBytes(),
-                                                             bytes);
+                                                              loc,
+                                                              mlir::LLVM::ICmpPredicate::uge,
+                                                              adaptor.getBufferSizeBytes(),
+                                                              bytes);
         auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
 
         rewriter.setInsertionPointToStart(branch.thenBlock());
@@ -1020,10 +1020,10 @@ struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::Co
         const mlir::Value    bytes =
             mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
         const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
-                                                             loc,
-                                                             mlir::LLVM::ICmpPredicate::uge,
-                                                             adaptor.getSourceSizeBytes(),
-                                                             bytes);
+                                                              loc,
+                                                              mlir::LLVM::ICmpPredicate::uge,
+                                                              adaptor.getSourceSizeBytes(),
+                                                              bytes);
         auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
 
         rewriter.setInsertionPointToStart(branch.thenBlock());
@@ -1040,10 +1040,10 @@ struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::Co
         mlir::LLVM::MemsetOp::create(rewriter, loc, adaptor.getDestination(), zeroByte, bytes, /*isVolatile=*/false);
         const mlir::Value zero    = mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(0));
         const mlir::Value some    = mlir::LLVM::ICmpOp::create(rewriter,
-                                                            loc,
-                                                            mlir::LLVM::ICmpPredicate::ugt,
-                                                            adaptor.getSourceSizeBytes(),
-                                                            zero);
+                                                               loc,
+                                                               mlir::LLVM::ICmpPredicate::ugt,
+                                                               adaptor.getSourceSizeBytes(),
+                                                               zero);
         auto              partial = mlir::scf::IfOp::create(rewriter, loc, some, /*withElseRegion=*/false);
         rewriter.setInsertionPointToStart(partial.thenBlock());
         mlir::LLVM::MemcpyOp::create(rewriter,
@@ -1069,9 +1069,9 @@ struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::I
     {
         const mlir::Location loc   = op.getLoc();
         const mlir::Value    bytes = mlir::LLVM::ConstantOp::create(rewriter,
-                                                                 loc,
-                                                                 rewriter.getI64Type(),
-                                                                 rewriter.getI64IntegerAttr(op.getBytes()));
+                                                                    loc,
+                                                                    rewriter.getI64Type(),
+                                                                    rewriter.getI64IntegerAttr(op.getBytes()));
         mlir::LLVM::MemcpyOp::create(rewriter,
                                      loc,
                                      adaptor.getBuffer(),
@@ -1529,9 +1529,9 @@ struct LoadViewLowering final : public MemberAccess<mlir::dsdl::LoadViewOp>
         }
         const mlir::Location loc   = op.getLoc();
         const mlir::Value    bytes = mlir::LLVM::LoadOp::create(rewriter,
-                                                             loc,
-                                                             mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
-                                                             view->bytesAt);
+                                                                loc,
+                                                                mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                                                view->bytesAt);
         const mlir::Value    size  = mlir::LLVM::LoadOp::create(rewriter, loc, view->sizeType, view->sizeAt);
         rewriter.replaceOp(op, {bytes, fit(rewriter, loc, size, op.getSizeBytes().getType(), false)});
         return mlir::success();

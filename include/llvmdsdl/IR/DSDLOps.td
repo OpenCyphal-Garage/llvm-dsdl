@@ -112,7 +112,8 @@ def DSDL_SerializationPlanOp
       // image. The reason names the property that blocked it.
       UnitAttr:$wire_flat, OptionalAttr<StrAttr>:$wire_flat_reason,
       UnitAttr:$host_image, OptionalAttr<StrAttr>:$host_image_reason,
-      // The section asserts `@aliasable`; `wire_flat` then holds, as analysis has checked.
+      // The section asserts `@aliasable`; `wire_flat` then holds, as analysis
+      // has checked.
       UnitAttr:$aliasable);
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
@@ -164,8 +165,9 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
       OptionalAttr<StrAttr>:$lowered_deser_array_length_prefix_helper,
       OptionalAttr<StrAttr>:$lowered_array_length_validate_helper,
       OptionalAttr<StrAttr>:$lowered_delimiter_validate_helper,
-      // The member holds a view of the buffer: the field's bytes and their count, in place of
-      // a decoded copy. On a scalar composite step whose type asserts `@aliasable`.
+      // The member holds a view of the buffer: the field's bytes and their
+      // count, in place of a decoded copy. On a scalar composite step whose
+      // type asserts `@aliasable`.
       UnitAttr:$held_as_view);
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
@@ -533,8 +535,8 @@ def DSDL_StoreViewOp : DSDL_Op<"store_view"> {
     type's own accessors read the member. With `index`, the member is an array of views and the
     store is to one element of it.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, Optional<I64>:$index,
-      DSDL_PtrType:$bytes, I64:$size_bytes);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member,
+      Optional<I64>:$index, DSDL_PtrType:$bytes, I64:$size_bytes);
   let assemblyFormat = [{
     $object $member (`[` $index^ `]`)? `=` $bytes `,` $size_bytes attr-dict `:`
     type($object) `,` type($bytes)
@@ -557,7 +559,8 @@ def DSDL_LoadViewOp : DSDL_Op<"load_view"> {
   let description = [{
     With `index`, the member is an array of views and the load is of one element of it.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, Optional<I64>:$index);
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member,
+      Optional<I64>:$index);
   let results = (outs DSDL_PtrType:$bytes, I64:$size_bytes);
   let assemblyFormat = [{
     $object $member (`[` $index^ `]`)? attr-dict `:` type($object) `->` type($bytes)
@@ -565,7 +568,8 @@ def DSDL_LoadViewOp : DSDL_Op<"load_view"> {
 }
 
 def DSDL_CopyBytesOp : DSDL_Op<"copy_bytes"> {
-  let summary = "Copy a run of bytes into the wire buffer, zero-filled to a width";
+  let summary =
+      "Copy a run of bytes into the wire buffer, zero-filled to a width";
   let description = [{
     Writes `bytes` bytes at `destination`: what `source` holds, up to `source_size_bytes`, and
     zeros for the rest. A container's serialise moves a view member with this, so a short or an

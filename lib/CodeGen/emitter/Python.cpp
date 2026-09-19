@@ -1860,7 +1860,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     std::map<std::string, std::set<std::string>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
         const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
-        const auto imports = projectCompositeImports(
+        const auto imports      = projectCompositeImports(
             dependencies,
             [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },
             [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
@@ -1925,9 +1925,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     // The spelling names a nested type as this file does.
     const PythonSpelling                 spelling(schema,
-                                  [&ctx](const llvm::StringRef fullName,
-                                         const std::uint32_t   major,
-                                         const std::uint32_t   minor) {
+                                                  [&ctx](const llvm::StringRef fullName,
+                                                         const std::uint32_t   major,
+                                                         const std::uint32_t   minor) {
                                       SemanticTypeRef ref;
                                       ref.fullName = fullName.str();
                                       llvm::SmallVector<llvm::StringRef> components;
@@ -1944,7 +1944,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                       ref.majorVersion = major;
                                       ref.minorVersion = minor;
                                       return ctx.typeName(ref);
-                                  });
+                                                  });
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))

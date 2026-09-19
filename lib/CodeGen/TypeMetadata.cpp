@@ -61,7 +61,7 @@ SectionMetadata sectionMetadata(const DiscoveredDefinition& info,
     out.isUnion                                = section.isUnion;
     out.declaresPortId                         = sectionName.empty();
     out.fixedPortId                            = out.declaresPortId ? info.fixedPortId : std::nullopt;
-    mlir::dsdl::SerializationPlanOp steps = plan;
+    mlir::dsdl::SerializationPlanOp steps      = plan;
     if (steps && !steps.getBody().empty())
     {
         for (mlir::dsdl::IOOp io : steps.getBody().front().getOps<mlir::dsdl::IOOp>())

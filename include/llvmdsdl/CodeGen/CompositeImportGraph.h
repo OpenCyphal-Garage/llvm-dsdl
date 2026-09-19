@@ -42,7 +42,7 @@ struct CompositeImportSpec final
 /// @return Deterministically ordered composite type references.
 std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&      section,
                                                           const DiscoveredDefinition& owner,
-                                                          bool referencedOnly = false);
+                                                          bool                        referencedOnly = false);
 
 /// @brief Projects collected dependencies into deterministic import entries.
 /// @param[in] dependencies Composite dependencies from

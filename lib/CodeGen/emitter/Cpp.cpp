@@ -970,7 +970,7 @@ public:
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
         const std::string value     = names(op.getValue());
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                   asSize(names(op.getBitOffset())) + ", ";
+                                      asSize(names(op.getBitOffset())) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_set_f" + std::to_string(width) + "(" + prefix + value + ")";
@@ -991,7 +991,7 @@ public:
         const mlir::Type  valueType = op.getValue().getType();
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                   asSize(names(op.getBitOffset()));
+                                      asSize(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_get_f" + std::to_string(width) + "(" + prefix + ")";

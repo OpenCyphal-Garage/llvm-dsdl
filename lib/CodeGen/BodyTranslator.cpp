@@ -418,8 +418,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::CallInitializeOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::LoadViewOp>([&](auto view) {
-            return Reached{
-                Role{result.getResultNumber() == 0 ? ValueRole::Buffer : ValueRole::Size, view.getMember()}};
+            return Reached{Role{result.getResultNumber() == 0 ? ValueRole::Buffer : ValueRole::Size, view.getMember()}};
         })
         .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })

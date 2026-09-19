@@ -282,10 +282,10 @@ private:
                 {
                     AliasLayoutVerdict verdict = blocked(AliasLayoutReason::NestedNotFlat, field.name);
                     verdict.nestedTypeName     = type.compositeType->fullName + "." +
-                                             std::to_string(type.compositeType->majorVersion) + "." +
-                                             std::to_string(type.compositeType->minorVersion);
-                    verdict.nestedReason    = nestedVerdict.reason;
-                    verdict.nestedFieldName = nestedVerdict.fieldName;
+                                                 std::to_string(type.compositeType->majorVersion) + "." +
+                                                 std::to_string(type.compositeType->minorVersion);
+                    verdict.nestedReason       = nestedVerdict.reason;
+                    verdict.nestedFieldName    = nestedVerdict.fieldName;
                     return verdict;
                 }
                 offsetBits += nested->maxBitLength * elementCount(type);

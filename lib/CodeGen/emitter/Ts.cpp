@@ -2006,7 +2006,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     // The spelling names a nested type as this file does: through the alias table just installed.
-    TsSpelling                           spelling(module,
+    TsSpelling spelling(module,
                         schema,
                         [&ctx](const llvm::StringRef fullName, const std::uint32_t major, const std::uint32_t minor) {
                             SemanticTypeRef ref;

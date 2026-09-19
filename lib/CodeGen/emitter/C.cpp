@@ -680,7 +680,7 @@ void emitSection(SourceWriter&              w,
     // unions those are, and the tag's getter is the sign that it did.
     auto       schemaModule = schema ? schema->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp{};
     const bool unionFlat    = section.isUnion && schemaModule &&
-                           (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
+                              (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
     if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
@@ -1046,11 +1046,11 @@ llvm::Error emit(const SemanticModule& semantic,
 
     std::filesystem::path const outRoot(options.outDir);
     EmitterContext const        ctx(semantic,
-                             options.emitDeprecationAttributes,
-                             options.hostImageFolded,
+                                    options.emitDeprecationAttributes,
+                                    options.hostImageFolded,
 
-                             options.accessorsOnly,
-                             options.typeNameVersioning);
+                                    options.accessorsOnly,
+                                    options.typeNameVersioning);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
