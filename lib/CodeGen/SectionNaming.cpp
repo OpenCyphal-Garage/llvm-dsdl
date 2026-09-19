@@ -107,7 +107,7 @@ void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, 
 /// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
 llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage language)
 {
-    static constexpr std::array<llvm::StringRef, 19> kNames = {"LLVMDSDL_GENERATOR_VERSION",
+    static constexpr std::array<llvm::StringRef, 13> kNames = {"LLVMDSDL_GENERATOR_VERSION",
                                                                "DSDL_FULL_NAME",
                                                                "DSDL_IS_DEPRECATED",
                                                                "DSDL_VERSION_MAJOR",
@@ -116,16 +116,10 @@ llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage 
                                                                "DSDL_FIXED_PORT_ID",
                                                                "DSDL_WIRE_FLAT",
                                                                "DSDL_WIRE_FLAT_REASON",
-                                                               "DSDL_HOST_IMAGE",
-                                                               "DSDL_HOST_IMAGE_REASON",
                                                                "DSDL_REQUEST_WIRE_FLAT",
                                                                "DSDL_REQUEST_WIRE_FLAT_REASON",
-                                                               "DSDL_REQUEST_HOST_IMAGE",
-                                                               "DSDL_REQUEST_HOST_IMAGE_REASON",
                                                                "DSDL_RESPONSE_WIRE_FLAT",
-                                                               "DSDL_RESPONSE_WIRE_FLAT_REASON",
-                                                               "DSDL_RESPONSE_HOST_IMAGE",
-                                                               "DSDL_RESPONSE_HOST_IMAGE_REASON"};
+                                                               "DSDL_RESPONSE_WIRE_FLAT_REASON"};
     static constexpr std::array<llvm::StringRef, 0>  kNone  = {};
     const bool                                       moduleScoped =
         (language == CodegenNamingLanguage::Python) || (language == CodegenNamingLanguage::TypeScript);
