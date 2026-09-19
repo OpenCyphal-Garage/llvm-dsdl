@@ -530,20 +530,23 @@ def DSDL_StoreViewOp : DSDL_Op<"store_view"> {
     A member held as a view (`held_as_view` on its step) takes the bytes of its field from the
     buffer the container was handed, and the count of them that are there, in place of a decoded
     copy. The container's deserialise builds this where it would call the nested type; the nested
-    type's own accessors read the member.
+    type's own accessors read the member. With `index`, the member is an array of views and the
+    store is to one element of it.
   }];
-  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member,
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, Optional<I64>:$index,
       DSDL_PtrType:$bytes, I64:$size_bytes);
   let assemblyFormat = [{
-    $object $member `=` $bytes `,` $size_bytes attr-dict `:` type($object) `,` type($bytes)
+    $object $member (`[` $index^ `]`)? `=` $bytes `,` $size_bytes attr-dict `:`
+    type($object) `,` type($bytes)
   }];
 }
 
 def DSDL_ClearViewOp : DSDL_Op<"clear_view"> {
   let summary = "Hold nothing in a view member";
   let description = [{
-    What the initialise body stores in a member held as a view: no bytes. Serialising an empty
-    view writes the field's width of zeros, which is the nested type's default.
+    What the initialise body stores in a member held as a view: no bytes, in every element where
+    the member is a fixed array of views. Serialising an empty view writes the field's width of
+    zeros, which is the nested type's default.
   }];
   let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
   let assemblyFormat = "$object $member attr-dict `:` type($object)";
@@ -551,9 +554,14 @@ def DSDL_ClearViewOp : DSDL_Op<"clear_view"> {
 
 def DSDL_LoadViewOp : DSDL_Op<"load_view"> {
   let summary = "The bytes a view member holds, and how many";
-  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member);
+  let description = [{
+    With `index`, the member is an array of views and the load is of one element of it.
+  }];
+  let arguments = (ins DSDL_PtrType:$object, StrAttr:$member, Optional<I64>:$index);
   let results = (outs DSDL_PtrType:$bytes, I64:$size_bytes);
-  let assemblyFormat = "$object $member attr-dict `:` type($object) `->` type($bytes)";
+  let assemblyFormat = [{
+    $object $member (`[` $index^ `]`)? attr-dict `:` type($object) `->` type($bytes)
+  }];
 }
 
 def DSDL_CopyBytesOp : DSDL_Op<"copy_bytes"> {

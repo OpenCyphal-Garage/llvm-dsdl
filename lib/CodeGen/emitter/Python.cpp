@@ -387,7 +387,10 @@ std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault
     case MemberDefault::Kind::Composite:
         return "field(default_factory=lambda: " + pyElementDefaultExpr(type, ctx) + ")";
     case MemberDefault::Kind::View:
-        return "field(default_factory=lambda: memoryview(b\"\"))";
+        return (type.arrayKind == ArrayKind::Fixed)
+                   ? "field(default_factory=lambda: [memoryview(b\"\") for _ in range(" +
+                         std::to_string(type.arrayCapacity) + ")])"
+                   : "field(default_factory=lambda: memoryview(b\"\"))";
     }
     return pyElementDefaultExpr(type, ctx);
 }
@@ -516,8 +519,10 @@ void emitStructSectionType(SourceWriter&           w,
                                      field.name + "'");
         }
         w.line(fieldName + ": " +
-               (field.heldAsView ? std::string{"memoryview"} : pyFieldType(field.resolvedType, ctx)) + " = " +
-               pyDefaultFromBody(field.resolvedType, *entry, ctx));
+               (field.heldAsView
+                    ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "memoryview" : "list[memoryview]"}
+                    : pyFieldType(field.resolvedType, ctx)) +
+               " = " + pyDefaultFromBody(field.resolvedType, *entry, ctx));
     }
     if (emittedField)
     {
@@ -1272,28 +1277,43 @@ public:
                                  "produces one does not run for this target");
     }
 
-    // A view member is a slice of the buffer's memoryview.
+    // A view member is a slice of the buffer's memoryview, or one element of a list of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names);
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "len(" + memberAccess(op.getObject(), op.getMember(), names) + ")";
+        return "len(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ")";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
         line(w,
-             memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:min(" + names(op.getSizeBytes()) +
-                 ", len(" + bytes + "))]");
+             viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes + "[:min(" +
+                 names(op.getSizeBytes()) + ", len(" + bytes + "))]");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        line(w, memberAccess(op.getObject(), op.getMember(), names) + " = memoryview(b\"\")");
+        // A fixed array of views is every element empty; a variable-length one is sized by the plan.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        line(w,
+             memberAccess(op.getObject(), op.getMember(), names) + " = " +
+                 ((io.getArrayKind() == "fixed")
+                      ? "[memoryview(b\"\") for _ in range(" + std::to_string(io.getArrayCapacity()) + ")]"
+                      : "memoryview(b\"\")"));
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
@@ -1472,6 +1492,10 @@ private:
     /// @brief The default value of one element of @p member, or of the member when it is no array.
     std::string elementDefault(const Member& member) const
     {
+        if (mlir::dsdl::IOOp{member.io}.getHeldAsView())
+        {
+            return "memoryview(b\"\")";
+        }
         switch (storageOf(member))
         {
         case Storage::Boolean:
@@ -1836,7 +1860,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     std::map<std::string, std::set<std::string>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
         const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
-        const auto imports      = projectCompositeImports(
+        const auto imports = projectCompositeImports(
             dependencies,
             [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },
             [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
@@ -1901,9 +1925,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     // The spelling names a nested type as this file does.
     const PythonSpelling                 spelling(schema,
-                                                  [&ctx](const llvm::StringRef fullName,
-                                                         const std::uint32_t   major,
-                                                         const std::uint32_t   minor) {
+                                  [&ctx](const llvm::StringRef fullName,
+                                         const std::uint32_t   major,
+                                         const std::uint32_t   minor) {
                                       SemanticTypeRef ref;
                                       ref.fullName = fullName.str();
                                       llvm::SmallVector<llvm::StringRef> components;
@@ -1920,7 +1944,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                       ref.majorVersion = major;
                                       ref.minorVersion = minor;
                                       return ctx.typeName(ref);
-                                                  });
+                                  });
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))

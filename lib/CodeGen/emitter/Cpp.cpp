@@ -943,7 +943,7 @@ public:
                "::llvmdsdl::cpp::default_memory_resource());");
         w.line(temporary + ".resize(" + count + ");");
         w.line(access + " = std::move(" + temporary + ");");
-        if (io.isComposite())
+        if (io.isComposite() && !io.getHeldAsView())
         {
             const std::string index = fresh("i");
             w.open("for (std::size_t " + index + " = 0U; " + index + " < " + access + ".size(); ++" + index + ") {");
@@ -970,7 +970,7 @@ public:
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
         const std::string value     = names(op.getValue());
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                      asSize(names(op.getBitOffset())) + ", ";
+                                   asSize(names(op.getBitOffset())) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_set_f" + std::to_string(width) + "(" + prefix + value + ")";
@@ -991,7 +991,7 @@ public:
         const mlir::Type  valueType = op.getValue().getType();
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                      asSize(names(op.getBitOffset()));
+                                   asSize(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_get_f" + std::to_string(width) + "(" + prefix + ")";
@@ -1062,29 +1062,38 @@ public:
                std::to_string(op.getBytes()) + "U);");
     }
 
-    // A view member is the runtime's pointer and count.
+    // A view member is the runtime's pointer and count, or one element of an array of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names) + ".bytes";
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".bytes";
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "static_cast<std::uint64_t>(" + memberAccess(op.getObject(), op.getMember(), names) + ".size_bytes)";
+        return "static_cast<std::uint64_t>(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) +
+               ".size_bytes)";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
-        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
+        const std::string access = viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
         w.line(access + ".bytes = " + names(op.getBytes()) + ";");
         w.line(access + ".size_bytes = " + asSize(names(op.getSizeBytes())) + ";");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        const std::string access = memberAccess(op.getObject(), op.getMember(), names);
-        w.line(access + ".bytes = nullptr;");
-        w.line(access + ".size_bytes = 0U;");
+        // Value-initialised: a null pointer and a count of nought, in every element of an array.
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = {};");
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
@@ -1256,6 +1265,10 @@ private:
 
     std::string containerElementType(mlir::dsdl::IOOp io) const
     {
+        if (io.getHeldAsView())
+        {
+            return "dsdl_runtime_view_t";
+        }
         return io.isComposite() ? nestedTypeName(io) : scalarType(io);
     }
 
@@ -1727,7 +1740,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                            member + init_ + ";");
                     // NOLINTEND(performance-inefficient-string-concatenation)
                 }
-                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
+                    !field.heldAsView)
                 {
                     compositeFixedArrayMembers.push_back(member);
                 }
@@ -1742,7 +1756,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                     std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
                     "> " + member + "{};");
                 variableArrayMembers.push_back(member);
-                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
                 {
                     compositeVariableArrayMembers.push_back(member);
                 }

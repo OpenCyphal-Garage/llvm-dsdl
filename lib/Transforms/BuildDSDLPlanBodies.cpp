@@ -736,7 +736,7 @@ PlanCursor buildArrayWrite(mlir::OpBuilder& b,
                 // An scf.for runs to its bound, so an element after a failure writes nothing.
                 const mlir::Value carried = errorGuarded(b, loc, loop.getRegionIterArg(0), [&]() {
                     const mlir::Type valueType = stepValueType(b, step);
-                    mlir::Value element = mlir::dsdl::LoadElementOp::create(b,
+                    mlir::Value      element   = mlir::dsdl::LoadElementOp::create(b,
                                                                             loc,
                                                                             valueType,
                                                                             object,
@@ -799,13 +799,13 @@ PlanCursor buildZeroBitsTo(mlir::OpBuilder& b,
         const mlir::Value zeroBit  = mlir::arith::ConstantOp::create(b, loc, b.getBoolAttr(false));
         const mlir::Value incoming = after->getArgument(1);
         const PlanCursor  written  = emitWrite(b,
-                                               loc,
-                                               buffer,
-                                               capacityBytes,
-                                               PlanCursor{after->getArgument(0), incoming, std::nullopt, std::nullopt},
-                                               zeroBit,
-                                               1,
-                                               false);
+                                             loc,
+                                             buffer,
+                                             capacityBytes,
+                                             PlanCursor{after->getArgument(0), incoming, std::nullopt, std::nullopt},
+                                             zeroBit,
+                                             1,
+                                             false);
         // Every value a loop carries has to be read in its body. The condition already
         // guarantees this one is clear, so the select always takes the write's own result --
         // but binding it and dropping it leaves a declaration the emitted C never uses.
@@ -1134,7 +1134,8 @@ PlanCursor buildNested(mlir::OpBuilder& b,
 /// field's width: a short buffer leaves a short view, which the nested type's accessors
 /// zero-extend. Writing copies the view's bytes to the field's offset and zero-fills to the
 /// width, so an empty view is the nested type's default. Either way the cursor advances by the
-/// width, which the step has because an asserted type has one size.
+/// width, which the step has because an asserted type has one size. With @p index the member is
+/// an array of views and this is one element of it, at the element's offset.
 PlanCursor buildViewStep(mlir::OpBuilder& b,
                          mlir::Location   loc,
                          const PlanStep&  step,
@@ -1142,7 +1143,8 @@ PlanCursor buildViewStep(mlir::OpBuilder& b,
                          mlir::Value      buffer,
                          mlir::Value      capacityBytes,
                          PlanCursor       inner,
-                         const bool       writing)
+                         const bool       writing,
+                         mlir::Value      index)
 {
     auto*              ctx        = b.getContext();
     const std::int64_t widthBytes = *step.compositeFixedBits / 8;
@@ -1158,7 +1160,8 @@ PlanCursor buildViewStep(mlir::OpBuilder& b,
                                                    wirePointerType(ctx, /*writing=*/false),
                                                    b.getIntegerType(64),
                                                    object,
-                                                   member);
+                                                   member,
+                                                   index);
         mlir::dsdl::CopyBytesOp::create(b,
                                         loc,
                                         at,
@@ -1172,7 +1175,7 @@ PlanCursor buildViewStep(mlir::OpBuilder& b,
         const mlir::Value short_ =
             mlir::arith::CmpIOp::create(b, loc, mlir::arith::CmpIPredicate::ult, position.remaining, width);
         const mlir::Value held = mlir::arith::SelectOp::create(b, loc, short_, position.remaining, width);
-        mlir::dsdl::StoreViewOp::create(b, loc, object, member, at, held);
+        mlir::dsdl::StoreViewOp::create(b, loc, object, member, index, at, held);
     }
     return advancedBy(b, loc, inner, inner.error, *step.compositeFixedBits);
 }
@@ -1190,7 +1193,7 @@ PlanCursor buildCompositeStep(mlir::OpBuilder& b,
     return guarded(b, loc, cursor, [&](PlanCursor inner) {
         if (step.heldAsView)
         {
-            return buildViewStep(b, loc, step, object, buffer, capacityBytes, inner, writing);
+            return buildViewStep(b, loc, step, object, buffer, capacityBytes, inner, writing, {});
         }
         const mlir::Value target = mlir::dsdl::MemberAddrOp::create(b,
                                                                     loc,
@@ -1364,6 +1367,11 @@ PlanCursor buildCompositeElementLoop(mlir::OpBuilder& b,
                                                                         constantI64(b, loc, elementBits)));
             const mlir::Value carried = errorGuarded(b, loc, loop.getRegionIterArg(0), [&]() {
                 const PlanCursor inner{at, loop.getRegionIterArg(0), std::nullopt, std::nullopt};
+                // An element held as a view is the buffer at the element's offset, not a decode.
+                if (step.heldAsView)
+                {
+                    return buildViewStep(b, loc, step, object, buffer, capacityBytes, inner, writing, index).error;
+                }
                 return buildNested(b, loc, step, elementAddress(index), buffer, capacityBytes, inner, writing).error;
             });
             mlir::scf::YieldOp::create(b, loc, mlir::ValueRange{carried});
@@ -1463,11 +1471,11 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
             // is written: a tag naming no option selects nothing, and the plan stops there.
             const mlir::Value rawTag   = mlir::dsdl::UnionTagOp::create(builder, loc, i64Ty, object);
             const mlir::Value tagValue = applyHelper(builder, loc, unionTagHelper, rawTag);
-            cursor.error = foldError(builder,
+            cursor.error               = foldError(builder,
                                      loc,
                                      cursor.error,
                                      callErrorHelper(builder, loc, unionTagValidateSymbol, mlir::ValueRange{tagValue}));
-            cursor       = guarded(builder, loc, cursor, [&](PlanCursor inner) {
+            cursor                     = guarded(builder, loc, cursor, [&](PlanCursor inner) {
                 return emitWrite(builder, loc, buffer, capacityBytes, inner, tagValue, unionTagBits, false);
             });
 
@@ -1562,7 +1570,7 @@ PlanCursor buildScalarRead(mlir::OpBuilder& b,
 {
     const mlir::Value bitOffset = cursor.bitOffset;
     const mlir::Type  valueType = stepValueType(b, step);
-    mlir::Value raw = mlir::dsdl::ReadBitsOp::create(b,
+    mlir::Value       raw       = mlir::dsdl::ReadBitsOp::create(b,
                                                      loc,
                                                      valueType,
                                                      buffer,
@@ -1570,7 +1578,7 @@ PlanCursor buildScalarRead(mlir::OpBuilder& b,
                                                      bitOffset,
                                                      b.getI64IntegerAttr(step.bitLength),
                                                      (step.scalarCategory == "signed") ? b.getUnitAttr() : nullptr);
-    raw             = normaliseScalar(b, loc, step, raw, false);
+    raw                         = normaliseScalar(b, loc, step, raw, false);
     markSigned(mlir::dsdl::StoreMemberOp::create(b, loc, object, b.getStringAttr(step.name), raw), step);
     return advancedBy(b, loc, cursor, cursor.error, step.bitLength);
 }
@@ -1660,13 +1668,13 @@ PlanCursor buildArrayRead(mlir::OpBuilder& b,
         }
 
         mlir::Value wireLength       = mlir::dsdl::ReadBitsOp::create(b,
-                                                                      loc,
-                                                                      i64Ty,
-                                                                      buffer,
-                                                                      capacityBytes,
-                                                                      bitOffset,
-                                                                      b.getI64IntegerAttr(step.arrayLengthPrefixBits),
-                                                                      nullptr);
+                                                                loc,
+                                                                i64Ty,
+                                                                buffer,
+                                                                capacityBytes,
+                                                                bitOffset,
+                                                                b.getI64IntegerAttr(step.arrayLengthPrefixBits),
+                                                                nullptr);
         wireLength                   = applyHelper(b, loc, step.deserArrayLengthPrefixHelper, wireLength);
         const PlanCursor afterPrefix = advancedBy(b, loc, outer, outer.error, step.arrayLengthPrefixBits);
 
@@ -1772,19 +1780,19 @@ mlir::LogicalResult buildTypedDeserializeBody(mlir::OpBuilder&             build
         if (isUnion)
         {
             const mlir::Value rawTag   = mlir::dsdl::ReadBitsOp::create(builder,
-                                                                        loc,
-                                                                        i64Ty,
-                                                                        readable,
-                                                                        capacityBytes,
-                                                                        cursor.bitOffset,
-                                                                        builder.getI64IntegerAttr(unionTagBits),
-                                                                        nullptr);
+                                                                      loc,
+                                                                      i64Ty,
+                                                                      readable,
+                                                                      capacityBytes,
+                                                                      cursor.bitOffset,
+                                                                      builder.getI64IntegerAttr(unionTagBits),
+                                                                      nullptr);
             const mlir::Value tagValue = applyHelper(builder, loc, unionTagHelper, rawTag);
-            cursor.error = foldError(builder,
+            cursor.error               = foldError(builder,
                                      loc,
                                      cursor.error,
                                      callErrorHelper(builder, loc, unionTagValidateSymbol, mlir::ValueRange{tagValue}));
-            cursor       = guarded(builder, loc, cursor, [&](PlanCursor inner) {
+            cursor                     = guarded(builder, loc, cursor, [&](PlanCursor inner) {
                 mlir::dsdl::SetUnionTagOp::create(builder, loc, object, tagValue);
                 return advancedBy(builder, loc, inner, inner.error, unionTagBits);
             });
@@ -1932,13 +1940,13 @@ mlir::Value buildInitializeStep(mlir::OpBuilder& b,
             auto              bytePtr  = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::ByteType::get(ctx), false);
             auto              emptyPtr = bytePtr;
             const mlir::Value packed   = mlir::dsdl::ElementAddrOp::create(b,
-                                                                           loc,
-                                                                           bytePtr,
-                                                                           object,
-                                                                           name,
-                                                                           constantI64(b, loc, 0),
-                                                                           b.getStringAttr("bool"),
-                                                                           b.getI64IntegerAttr(8));
+                                                                         loc,
+                                                                         bytePtr,
+                                                                         object,
+                                                                         name,
+                                                                         constantI64(b, loc, 0),
+                                                                         b.getStringAttr("bool"),
+                                                                         b.getI64IntegerAttr(8));
             const mlir::Value nothing  = mlir::dsdl::LocalOp::create(b, loc, emptyPtr, constantI8(b, loc, 0));
             mlir::dsdl::BitReadOp::create(b,
                                           loc,
@@ -1951,6 +1959,12 @@ mlir::Value buildInitializeStep(mlir::OpBuilder& b,
         }
         if (stepIsComposite(step))
         {
+            // A fixed array of views defaults to no bytes in every element, in one clear.
+            if (step.heldAsView)
+            {
+                mlir::dsdl::ClearViewOp::create(b, loc, object, name);
+                return error;
+            }
             auto loop = countedLoop(b, loc, count, mlir::ValueRange{error});
             stampResultRoles(loop, {RoleError});
             {
@@ -2157,11 +2171,12 @@ bool unionIsFlat(mlir::dsdl::SerializationPlanOp plan)
         any = true;
         if (io.isComposite())
         {
-            auto schema = module ? module.lookupSymbol<mlir::dsdl::SchemaOp>(renderDefinitionSymbolBase(
-                                       io.getCompositeFullName().value_or(llvm::StringRef{}),
-                                       static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                       static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))))
-                                 : mlir::dsdl::SchemaOp{};
+            auto schema =
+                module ? module.lookupSymbol<mlir::dsdl::SchemaOp>(
+                             renderDefinitionSymbolBase(io.getCompositeFullName().value_or(llvm::StringRef{}),
+                                                        static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                                        static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))))
+                       : mlir::dsdl::SchemaOp{};
             if (!schema || schema.getBody().empty())
             {
                 return false;
@@ -2195,14 +2210,14 @@ bool unionIsFlat(mlir::dsdl::SerializationPlanOp plan)
 PlanStep unionTagAsStep(mlir::dsdl::SerializationPlanOp plan)
 {
     PlanStep tag;
-    tag.kind               = PlanStepKind::Field;
-    tag.name               = "_tag_";
-    tag.scalarCategory     = "unsigned";
-    tag.castMode           = "saturated";
-    tag.arrayKind          = "none";
-    tag.bitLength          = plan.getUnionTagBits().value_or(0);
-    tag.alignmentBits      = 8;
-    tag.serUnsignedHelper  = plan.getLoweredSerUnionTagHelper().value_or(llvm::StringRef{}).str();
+    tag.kind                = PlanStepKind::Field;
+    tag.name                = "_tag_";
+    tag.scalarCategory      = "unsigned";
+    tag.castMode            = "saturated";
+    tag.arrayKind           = "none";
+    tag.bitLength           = plan.getUnionTagBits().value_or(0);
+    tag.alignmentBits       = 8;
+    tag.serUnsignedHelper   = plan.getLoweredSerUnionTagHelper().value_or(llvm::StringRef{}).str();
     tag.deserUnsignedHelper = plan.getLoweredDeserUnionTagHelper().value_or(llvm::StringRef{}).str();
     return tag;
 }
@@ -2360,10 +2375,10 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
                                                  constantI8(builder, loc, -kRuntimeErrorInvalidArgument));
         }
         code       = mlir::arith::SelectOp::create(builder,
-                                                   loc,
-                                                   null,
-                                                   constantI8(builder, loc, -kRuntimeErrorInvalidArgument),
-                                                   code);
+                                             loc,
+                                             null,
+                                             constantI8(builder, loc, -kRuntimeErrorInvalidArgument),
+                                             code);
         auto guard = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, isHealthy(builder, loc, code), true);
         stampResultRoles(guard, {RoleError});
         {
@@ -2376,14 +2391,14 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
             builder.setInsertionPointToStart(guard.thenBlock());
             const mlir::Value normalised = normaliseScalar(builder, loc, step, value, true);
             auto              write      = mlir::dsdl::WriteBitsOp::create(builder,
-                                                                           loc,
-                                                                           i8Ty,
-                                                                           buffer,
-                                                                           size,
-                                                                           offset,
-                                                                           normalised,
-                                                                           widthAttr,
-                                                                           signedAttr);
+                                                         loc,
+                                                         i8Ty,
+                                                         buffer,
+                                                         size,
+                                                         offset,
+                                                         normalised,
+                                                         widthAttr,
+                                                         signedAttr);
             mlir::scf::YieldOp::create(builder, loc, mlir::ValueRange{write.getError()});
         }
         mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{guard.getResult(0)});
@@ -2453,14 +2468,14 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
                                                                 mlir::arith::CmpIPredicate::ult,
                                                                 index,
                                                                 constantI64(builder, loc, step.arrayCapacity));
-        offset = mlir::arith::AddIOp::create(builder,
+        offset                    = mlir::arith::AddIOp::create(builder,
                                              loc,
                                              offset,
                                              mlir::arith::MulIOp::create(builder,
                                                                          loc,
                                                                          index,
                                                                          constantI64(builder, loc, nestedBytes)));
-        within = mlir::arith::AndIOp::create(builder,
+        within                    = mlir::arith::AndIOp::create(builder,
                                              loc,
                                              inRange,
                                              mlir::arith::CmpIOp::create(builder,
@@ -2658,8 +2673,8 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         // value and not the tag: selecting is the tag setter's, with the option's tag constant.
         else if (isUnion && unionIsFlat(plan))
         {
-            const PlanStep     tag        = unionTagAsStep(plan);
-            const std::int64_t afterTag   = tag.bitLength;
+            const PlanStep     tag      = unionTagAsStep(plan);
+            const std::int64_t afterTag = tag.bitLength;
             if (mlir::failed(
                     buildFieldAccessors(builder, module, plan.getLoc(), fnStem, schema, section, tag, 0, built)))
             {
@@ -2667,26 +2682,24 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             }
             for (const PlanStep* option : unionOptionsOf(steps))
             {
-                const bool ok =
-                    stepIsComposite(*option)
-                        ? mlir::succeeded(buildCompositeAccessor(builder,
-                                                                 module,
-                                                                 plan.getLoc(),
-                                                                 fnStem,
-                                                                 schema,
-                                                                 section,
-                                                                 *option,
-                                                                 afterTag,
-                                                                 built))
-                        : mlir::succeeded(buildFieldAccessors(builder,
-                                                              module,
-                                                              plan.getLoc(),
-                                                              fnStem,
-                                                              schema,
-                                                              section,
-                                                              *option,
-                                                              afterTag,
-                                                              built));
+                const bool ok = stepIsComposite(*option) ? mlir::succeeded(buildCompositeAccessor(builder,
+                                                                                                  module,
+                                                                                                  plan.getLoc(),
+                                                                                                  fnStem,
+                                                                                                  schema,
+                                                                                                  section,
+                                                                                                  *option,
+                                                                                                  afterTag,
+                                                                                                  built))
+                                                         : mlir::succeeded(buildFieldAccessors(builder,
+                                                                                               module,
+                                                                                               plan.getLoc(),
+                                                                                               fnStem,
+                                                                                               schema,
+                                                                                               section,
+                                                                                               *option,
+                                                                                               afterTag,
+                                                                                               built));
                 if (!ok)
                 {
                     return plan.emitOpError("accessor bodies could not be built for '" + option->name + "'");

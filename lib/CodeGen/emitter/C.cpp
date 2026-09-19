@@ -411,23 +411,22 @@ void emitSectionTypedef(SourceWriter&                         w,
             continue;
         }
 
-        const auto cMember  = fieldScope.get(IdentifierRole::FieldName, field.name);
-        const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
+        const auto cMember    = fieldScope.get(IdentifierRole::FieldName, field.name);
+        const bool viewMember = std::ranges::find(metadata.viewMembers, field.name) != metadata.viewMembers.end();
+        const auto baseType =
+            viewMember ? std::string{"dsdl_runtime_view_t"} : cTypeFromFieldType(field.resolvedType, ctx);
 
-        if (std::ranges::find(metadata.viewMembers, field.name) != metadata.viewMembers.end())
+        emitAttachedDocC(w, field.doc);
+        if (viewMember)
         {
-            emitAttachedDocC(w, field.doc);
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             w.line("/* Held as a view: the bytes of the " + ctx.cTypeName(*field.resolvedType.compositeType) +
-                   " this field carries, and their count. */");
-            w.line("dsdl_runtime_view_t " + cMember + ";");
-            ++emitted;
-            continue;
+                   " this field carries, and their count" +
+                   ((field.resolvedType.arrayKind == ArrayKind::None) ? "" : ", per element") + ". */");
         }
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
-            emitAttachedDocC(w, field.doc);
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             w.line(baseType + " " + cMember + ";");
             ++emitted;
@@ -436,7 +435,6 @@ void emitSectionTypedef(SourceWriter&                         w,
 
         if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
-            emitAttachedDocC(w, field.doc);
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
                 w.line("uint8_t " + cMember + "[(" + std::to_string(field.resolvedType.arrayCapacity) +
@@ -452,7 +450,6 @@ void emitSectionTypedef(SourceWriter&                         w,
             continue;
         }
 
-        emitAttachedDocC(w, field.doc);
         w.open("struct {");
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
@@ -682,9 +679,8 @@ void emitSection(SourceWriter&              w,
     // tag, and the tag as a member named `_tag_`; the pass that builds the bodies decides which
     // unions those are, and the tag's getter is the sign that it did.
     auto       schemaModule = schema ? schema->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp{};
-    const bool unionFlat =
-        section.isUnion && schemaModule &&
-        (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
+    const bool unionFlat    = section.isUnion && schemaModule &&
+                           (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
     if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
     {
         const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
@@ -1050,11 +1046,11 @@ llvm::Error emit(const SemanticModule& semantic,
 
     std::filesystem::path const outRoot(options.outDir);
     EmitterContext const        ctx(semantic,
-                                    options.emitDeprecationAttributes,
-                                    options.hostImageFolded,
+                             options.emitDeprecationAttributes,
+                             options.hostImageFolded,
 
-                                    options.accessorsOnly,
-                                    options.typeNameVersioning);
+                             options.accessorsOnly,
+                             options.typeNameVersioning);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write

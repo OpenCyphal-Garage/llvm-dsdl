@@ -1,7 +1,8 @@
 # `--aliasable-views` holds each composite field of an `@aliasable` type as a view of the buffer
 # the holder was deserialised from: the field's bytes and their count, in place of a decoded copy.
 # The holder's deserialise skips the field and its serialise copies the view. A field whose type
-# is wire-flat and does not assert it is decoded as before.
+# is wire-flat and does not assert it is decoded as before. An array of the type is one view per
+# element: a fixed array's held in place, a variable-length one's beside its count.
 
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language mlir --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable > %t/plans.mlir
@@ -17,6 +18,10 @@
 # the record.
 # PLAN: dsdl.schema @fixtures_views_vendor_Sealed_1_0
 # PLAN: dsdl.serialization_plan attributes {{{.*}}host_image_reason = "view-member"{{.*}}sealed, wire_flat}
+# Each element of an array of the type is a view.
+# PLAN: dsdl.schema @fixtures_views_vendor_Track_1_0
+# PLAN: array_capacity = 2 : i64, array_kind = "fixed"{{.*}}held_as_view{{.*}}name = "pair"
+# PLAN: array_capacity = 3 : i64, array_kind = "variable_inclusive"{{.*}}held_as_view{{.*}}name = "trail"
 
 # The bodies hold the view and copy from it; the nested entry points are called for the copy alone.
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/plans.mlir > %t/bodies.mlir
@@ -36,6 +41,27 @@
 # BODY-NOT:   Pose_1_0__initialize_ir_
 # BODY:       dsdl.clear_view %{{.*}} "pose"
 # BODY:       dsdl.call_initialize @fixtures_aliasable_vendor_Vec3_1_0__initialize_ir_({{.*}}member = "velocity"
+# BODY-NOT:   Pose_1_0__initialize_ir_
+# An array's element loop stores and loads the element the index names; the trail keeps its length
+# machinery; initialise clears the pair whole and empties the trail.
+# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__serialize_ir_(
+# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY:       %[[PAIR:.*]], %[[PAIR_SIZE:.*]] = dsdl.load_view %{{.*}} "pair"[%{{.*}}]
+# BODY:       dsdl.copy_bytes %{{.*}}, %[[PAIR]], size %[[PAIR_SIZE]] {bytes = 24 : i64}
+# BODY:       dsdl.array_length %{{.*}} "trail"
+# BODY:       %[[TRAIL:.*]], %[[TRAIL_SIZE:.*]] = dsdl.load_view %{{.*}} "trail"[%{{.*}}]
+# BODY:       dsdl.copy_bytes %{{.*}}, %[[TRAIL]], size %[[TRAIL_SIZE]] {bytes = 24 : i64}
+# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__deserialize_ir_(
+# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY:       dsdl.store_view %{{.*}} "pair"[%{{.*}}] = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Track.1.0">>, <const !dsdl.byte>
+# BODY:       dsdl.set_array_length %{{.*}} "trail"
+# BODY:       dsdl.store_view %{{.*}} "trail"[%{{.*}}] = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Track.1.0">>, <const !dsdl.byte>
+# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__initialize_ir_(
+# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY:       dsdl.clear_view %{{.*}} "pair"
+# BODY-NEXT:  dsdl.set_array_length %{{.*}} "trail", %c0_i64
 # BODY-NOT:   Pose_1_0__initialize_ir_
 
 # C holds the view in the runtime's type, includes the Vec3 it decodes and not the Pose it does
@@ -65,6 +91,26 @@
 # C_BODY:     ->pose.size_bytes =
 # C_BODY-NOT: Pose__serialize_(
 # C_BODY-NOT: Pose__deserialize_(
+# An array of views is an array of the runtime's type, in C's shape for the array kind.
+# RUN: cat %t/c/fixtures_views/vendor/Track_1_0.h | FileCheck %s --check-prefix=C_TRACK
+# C_TRACK-NOT:  #include "fixtures_aliasable/vendor/Pose_1_0.h"
+# C_TRACK:      typedef struct fixtures_views__vendor__Track {
+# C_TRACK-NEXT:   uint8_t kind;
+# C_TRACK-NEXT:   /* Held as a view: the bytes of the fixtures_aliasable__vendor__Pose this field carries, and their count, per element. */
+# C_TRACK-NEXT:   dsdl_runtime_view_t pair[2U];
+# C_TRACK-NEXT:   /* Held as a view: the bytes of the fixtures_aliasable__vendor__Pose this field carries, and their count, per element. */
+# C_TRACK-NEXT:   struct {
+# C_TRACK-NEXT:     dsdl_runtime_view_t elements[3U];
+# C_TRACK-NEXT:     size_t count;
+# C_TRACK-NEXT:   } trail;
+# C_TRACK-NOT:  #include "fixtures_aliasable/vendor/Pose_1_0.h"
+# RUN: cat %t/c/fixtures_views/vendor/Track_1_0.c | FileCheck %s --check-prefix=C_TRACK_BODY
+# C_TRACK_BODY-NOT: Pose_1_0.h
+# C_TRACK_BODY:     dsdl_runtime_copy_bytes(
+# C_TRACK_BODY:     ].bytes =
+# C_TRACK_BODY:     ].size_bytes =
+# C_TRACK_BODY:     dsdl_runtime_clear_views(
+# C_TRACK_BODY-NOT: Pose_1_0.h
 
 # A sealed holder keeps its accessors and gains no layout assertion or endianness guard.
 # RUN: cat %t/c/fixtures_views/vendor/Sealed_1_0.h | FileCheck %s --check-prefix=C_SEALED
@@ -94,6 +140,20 @@
 # CPP:     dsdl_runtime_view_t pose{};
 # CPP:     dsdl_runtime_copy_bytes(
 # CPP:     ->pose.bytes =
+# RUN: cat %t/cpp/std/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_TRACK
+# CPP_TRACK-NOT: Pose_1_0.hpp
+# CPP_TRACK:     std::array<dsdl_runtime_view_t, 2U> pair{};
+# CPP_TRACK:     std::vector<dsdl_runtime_view_t> trail{};
+# CPP_TRACK:     ->pair[static_cast<std::size_t>({{.*}})].bytes =
+# CPP_TRACK:     ->trail[static_cast<std::size_t>({{.*}})].bytes =
+# CPP_TRACK-NOT: Pose_1_0.hpp
+# RUN: cat %t/cpp/pmr/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR_TRACK
+# CPP_PMR_TRACK:     std::array<dsdl_runtime_view_t, 2U> pair{};
+# CPP_PMR_TRACK:     std::pmr::vector<dsdl_runtime_view_t> trail{};
+# CPP_PMR_TRACK:     trail = decltype(trail)(_memory_resource);
+# CPP_PMR_TRACK-NOT: set_memory_resource(_memory_resource);
+# CPP_PMR_TRACK:     std::pmr::vector<dsdl_runtime_view_t> _sized0_(
+# CPP_PMR_TRACK-NOT: set_memory_resource(effective_memory_resource);
 # Rust borrows the buffer: the holder, its impls and its deserialise carry the lifetime.
 # RUN: %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_views/vendor/frame_1_0.rs | FileCheck %s --check-prefix=RUST
@@ -106,10 +166,23 @@
 # RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, i8> {
 # RUST:     self.pose = { let _len = core::cmp::min(
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
+# RUN: cat %t/rust/src/fixtures_views/vendor/track_1_0.rs | FileCheck %s --check-prefix=RUST_TRACK
+# RUST_TRACK-NOT: pose_1_0
+# RUST_TRACK:     pub pair: [&'a [u8]; 2],
+# RUST_TRACK:     pub trail: crate::dsdl_runtime::DsdlVec<&'a [u8]>,
+# RUST_TRACK:     pair: [&[]; 2],
+# RUST_TRACK:     self.pair[{{.*}} as usize] = { let _len = core::cmp::min(
+# RUST_TRACK:     self.trail[{{.*}} as usize] = { let _len = core::cmp::min(
+# RUST_TRACK-NOT: pose_1_0
 # RUN: %dsdlc --target-language go --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixtures_views/vendor/frame_1_0.go | FileCheck %s --check-prefix=GO
 # GO:      Pose {{ *}}[]byte
 # GO:      obj.Pose = buf[:dsdlruntime.ChooseMin(
+# RUN: cat %t/go/fixtures_views/vendor/track_1_0.go | FileCheck %s --check-prefix=GO_TRACK
+# GO_TRACK:      Pair {{ *}}[2][]byte
+# GO_TRACK:      Trail {{ *}}[][]byte
+# GO_TRACK:      obj.Pair[int({{.*}})] = buf[:dsdlruntime.ChooseMin(
+# GO_TRACK:      obj.Trail[int({{.*}})] = buf2[:dsdlruntime.ChooseMin(
 # RUN: %dsdlc --target-language ts --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/ts/fixtures_views/vendor/frame_1_0.ts | FileCheck %s --check-prefix=TS
 # TS-NOT:  pose_1_0
@@ -117,12 +190,27 @@
 # TS:      pose: new Uint8Array(0),
 # TS:      obj.pose = buf.subarray(0, Math.min(
 # TS-NOT:  pose_1_0
+# RUN: cat %t/ts/fixtures_views/vendor/track_1_0.ts | FileCheck %s --check-prefix=TS_TRACK
+# TS_TRACK-NOT:  pose_1_0
+# TS_TRACK:      pair: Uint8Array[];
+# TS_TRACK-NEXT: trail: Uint8Array[];
+# TS_TRACK:      pair: Array.from({ length: 2 }, () => new Uint8Array(0)),
+# TS_TRACK-NEXT: trail: [],
+# TS_TRACK:      obj.trail = new Array<Uint8Array>(
+# TS_TRACK-NOT:  pose_1_0
 # RUN: %dsdlc --target-language python --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/python/dsdl_gen/fixtures_views/vendor/frame_1_0.py | FileCheck %s --check-prefix=PY
 # PY-NOT:  pose_1_0 import
 # PY:      pose: memoryview = field(default_factory=lambda: memoryview(b""))
 # PY:      self.pose = buf[:min(
 # PY-NOT:  pose_1_0 import
+# RUN: cat %t/python/dsdl_gen/fixtures_views/vendor/track_1_0.py | FileCheck %s --check-prefix=PY_TRACK
+# PY_TRACK-NOT:  pose_1_0 import
+# PY_TRACK:      pair: list[memoryview] = field(default_factory=lambda: [memoryview(b"") for _ in range(2)])
+# PY_TRACK-NEXT: trail: list[memoryview] = field(default_factory=list)
+# PY_TRACK:      self.pair[{{.*}}] = buf[:min(
+# PY_TRACK:      self.trail = [memoryview(b"") for _ in range(count)]
+# PY_TRACK-NOT:  pose_1_0 import
 
 # A view is a member of the object type, which an accessors-only run does not emit.
 # RUN: not %dsdlc --target-language c --aliasable-views --aliasable-only %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/both 2>&1 | FileCheck %s --check-prefix=BOTH

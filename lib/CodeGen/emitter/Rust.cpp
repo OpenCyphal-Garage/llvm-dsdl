@@ -314,6 +314,26 @@ std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& c
     return "crate::dsdl_runtime::DsdlVec<" + base + ">";
 }
 
+/// @brief The type a member is held as: a view of the buffer, one per element of an array, where
+///        the field is held so; otherwise the field's own.
+std::string rustMemberType(const SemanticField& field, const EmitterContext& ctx)
+{
+    const SemanticFieldType& type = field.resolvedType;
+    if (!field.heldAsView)
+    {
+        return rustFieldType(type, ctx);
+    }
+    if (type.arrayKind == ArrayKind::None)
+    {
+        return "&'a [u8]";
+    }
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        return "[&'a [u8]; " + std::to_string(type.arrayCapacity) + "]";
+    }
+    return "crate::dsdl_runtime::DsdlVec<&'a [u8]>";
+}
+
 std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
 {
     switch (type.scalarCategory)
@@ -382,7 +402,7 @@ std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefau
     case MemberDefault::Kind::VariableArrayEmpty:
         return "crate::dsdl_runtime::DsdlVec::new()";
     case MemberDefault::Kind::View:
-        return "&[]";
+        return (type.arrayKind == ArrayKind::Fixed) ? "[&[]; " + std::to_string(type.arrayCapacity) + "]" : "&[]";
     }
     return scalarDefaultExpr(type, ctx);
 }
@@ -1167,28 +1187,41 @@ public:
         w.close("}");
     }
 
-    // A view member is a slice of the buffer. Its bytes are the member itself, a `Copy` slice; a
-    // store bounds the slice the plan addressed by the count it bounded.
+    // A view member is a slice of the buffer, or one element of an array of them. Its bytes are
+    // the member itself, a `Copy` slice; a store bounds the slice the plan addressed by the count
+    // it bounded.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names);
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names) + ".len() as u64";
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".len() as u64";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = { let _len = core::cmp::min(" +
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = { let _len = core::cmp::min(" +
                asSize(names(op.getSizeBytes())) + ", " + bytes + ".len()); &" + bytes + "[.._len] };");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = &[];");
+        // A fixed array of views is every element empty; a variable-length one is sized by the plan.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               ((io.getArrayKind() == "fixed") ? "[&[]; " + std::to_string(io.getArrayCapacity()) + "]" : "&[]") + ";");
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
@@ -1212,7 +1245,7 @@ public:
         const std::string buffer    = names(op.getBuffer());
         const std::string size      = names(op.getSize());
         const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
-                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+                                  (serialize ? "&mut " : "&") + buffer + "[.._len] }";
         const std::string used = isRead(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
         return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
                used + " Err(_code) => _code }";
@@ -1602,8 +1635,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                 continue;
             }
             emitAttachedDocRust(w, field.doc);
-            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-                   (field.heldAsView ? std::string{"&'a [u8]"} : rustFieldType(field.resolvedType, ctx)) + ",");
+            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + rustMemberType(field, ctx) +
+                   ",");
         }
 
         if (section.isUnion)

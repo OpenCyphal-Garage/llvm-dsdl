@@ -524,7 +524,9 @@ library implementations rests on the lint rather than on a differential build.
   deserialise skips the record and its serialise copies the view, a short buffer leaves a short
   view read as zeros, and the record's accessors read the view in place. C and C++ hold the
   runtime's pointer and size, Rust a borrowed slice that gives the holder a lifetime, Go, TypeScript
-  and Python their own slices. A lane holds all seven targets to that contract and the instruction
+  and Python their own slices; an array of the type is a view per element. A lane holds all seven
+  targets to that contract, on a scalar member and on the elements of a fixed and of a
+  variable-length array, and the instruction
   lane baselines the holder beside the callee the view removes. A union whose options are all flat
   and of one length has the same accessors, its tag reached as a member named `_tag_`; the
   catalogue has no such union, so a fixture holds all seven targets to it.

@@ -551,6 +551,20 @@ std::string goBaseFieldType(const SemanticFieldType&                  type,
     return "uint8";
 }
 
+/// @brief The type a member held as a view is: a slice of the buffer, or an array of them.
+std::string goViewType(const SemanticFieldType& type)
+{
+    if (type.arrayKind == ArrayKind::None)
+    {
+        return "[]byte";
+    }
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        return "[" + std::to_string(type.arrayCapacity) + "][]byte";
+    }
+    return "[][]byte";
+}
+
 std::string goFieldType(const SemanticFieldType&                  type,
                         const EmitterContext&                     ctx,
                         const std::string&                        currentPackagePath,
@@ -1279,27 +1293,39 @@ public:
                names(op.getObject()) + ")), " + bytes + "))");
     }
 
-    // A view member is a slice of the buffer.
+    // A view member is a slice of the buffer, or one element of an array of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names);
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "uint64(len(" + memberAccess(op.getObject(), op.getMember(), names) + "))";
+        return "uint64(len(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + "))";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + "[:dsdlruntime.ChooseMin(" +
-               asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
+               "[:dsdlruntime.ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = nil");
+        // A fixed array of views is its zero value, every element nil; a slice is nil.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               ((io.getArrayKind() == "fixed") ? "[" + std::to_string(io.getArrayCapacity()) + "][]byte{}" : "nil"));
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
@@ -1878,7 +1904,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             members.push_back(
                 GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
                                field.heldAsView
-                                   ? std::string{"[]byte"}
+                                   ? goViewType(field.resolvedType)
                                    : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
                                field.doc});
         }

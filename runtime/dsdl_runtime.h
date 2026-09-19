@@ -269,6 +269,19 @@ extern "C"
         size_t         size_bytes;
     } dsdl_runtime_view_t;
 
+    /// @brief Clears `count` views: each then holds no bytes.
+    /// @param[out] views The first of the views.
+    /// @param[in] count How many of them.
+    static inline void dsdl_runtime_clear_views(dsdl_runtime_view_t* const views, const size_t count)
+    {
+        DSDL_RUNTIME_ASSERT(views != NULL);
+        for (size_t i = 0U; i < count; ++i)
+        {
+            views[i].bytes      = NULL;
+            views[i].size_bytes = 0U;
+        }
+    }
+
     /// @brief Writes `bytes` bytes at `buf`: what `source` holds, up to `source_size_bytes`, and
     ///        zeros for the rest.
     /// @param[out] buf Destination.

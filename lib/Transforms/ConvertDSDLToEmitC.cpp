@@ -87,8 +87,10 @@ struct CMember final
     std::string  category;
     std::int64_t bitLength{0};
     std::string  compositeCTypeName;
-    /// @brief The member is a `dsdl_runtime_view_t`: the field's bytes and their count.
-    bool heldAsView{false};
+    /// @brief The member is a `dsdl_runtime_view_t`, or an array of them: the field's bytes and
+    ///        their count, per element.
+    bool         heldAsView{false};
+    std::int64_t arrayCapacity{0};
 };
 
 struct CPlan final
@@ -174,6 +176,7 @@ CSpelling gatherCSpelling(mlir::ModuleOp module)
                     member.bitLength          = io.getBitLength();
                     member.compositeCTypeName = io.getCompositeCTypeName().value_or(llvm::StringRef{}).str();
                     member.heldAsView         = io.getHeldAsView();
+                    member.arrayCapacity      = io.getArrayCapacity();
                     if (io.getCompositeFullName())
                     {
                         spelling.tags[planIdentity(*io.getCompositeFullName(),
@@ -387,7 +390,7 @@ struct IsNullLowering final : public mlir::OpConversionPattern<mlir::dsdl::IsNul
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
         const mlir::Type pointerType = adaptor.getPointer().getType();
-        auto null = mlir::emitc::ConstantOp::create(rewriter,
+        auto             null        = mlir::emitc::ConstantOp::create(rewriter,
                                                     op.getLoc(),
                                                     pointerType,
                                                     mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "NULL"));
@@ -408,9 +411,9 @@ mlir::Value scalarSlot(mlir::ConversionPatternRewriter& rewriter, mlir::Location
 {
     auto indexType = mlir::emitc::OpaqueType::get(rewriter.getContext(), "size_t");
     auto zero      = mlir::emitc::ConstantOp::create(rewriter,
-                                                     loc,
-                                                     indexType,
-                                                     mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "0"));
+                                                loc,
+                                                indexType,
+                                                mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "0"));
     return mlir::emitc::SubscriptOp::create(rewriter,
                                             loc,
                                             mlir::cast<mlir::TypedValue<mlir::emitc::PointerType>>(pointer),
@@ -452,11 +455,11 @@ struct BufferOrEmptyLowering final : public mlir::OpConversionPattern<mlir::dsdl
     {
         const mlir::Location loc         = op.getLoc();
         const mlir::Type     pointerType = adaptor.getBuffer().getType();
-        auto null   = mlir::emitc::ConstantOp::create(rewriter,
-                                                      loc,
-                                                      pointerType,
-                                                      mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "NULL"));
-        auto isNull = mlir::emitc::CmpOp::create(rewriter,
+        auto                 null        = mlir::emitc::ConstantOp::create(rewriter,
+                                                    loc,
+                                                    pointerType,
+                                                    mlir::emitc::OpaqueAttr::get(rewriter.getContext(), "NULL"));
+        auto                 isNull      = mlir::emitc::CmpOp::create(rewriter,
                                                  loc,
                                                  rewriter.getI1Type(),
                                                  mlir::emitc::CmpPredicate::eq,
@@ -553,9 +556,9 @@ mlir::Value pointerSlot(mlir::ConversionPatternRewriter& rewriter, mlir::Locatio
 {
     auto slotType = mlir::emitc::LValueType::get(pointer.getType());
     auto slot     = mlir::emitc::VariableOp::create(rewriter,
-                                                    loc,
-                                                    slotType,
-                                                    mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
+                                                loc,
+                                                slotType,
+                                                mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
     mlir::emitc::AssignOp::create(rewriter, loc, slot, pointer);
     return slot;
 }
@@ -832,14 +835,14 @@ struct LoadElementLowering final : public SpeltPattern<mlir::dsdl::LoadElementOp
         }
         const mlir::Location loc    = op.getLoc();
         const mlir::Value    slot   = elementSlot(rewriter,
-                                                  loc,
-                                                  adaptor.getObject(),
-                                                  elementPath(rewriter, *member),
-                                                  adaptor.getIndex(),
-                                                  elementCType(*member,
-                                                               CSpelling::isConst(op.getObject()),
-                                                               op.getStorageCategory(),
-                                                               op.getStorageBits()));
+                                             loc,
+                                             adaptor.getObject(),
+                                             elementPath(rewriter, *member),
+                                             adaptor.getIndex(),
+                                             elementCType(*member,
+                                                          CSpelling::isConst(op.getObject()),
+                                                          op.getStorageCategory(),
+                                                          op.getStorageBits()));
         const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
         mlir::Value          loaded = mlir::emitc::LoadOp::create(rewriter, loc, stored, slot);
         if (stored != op.getValue().getType())
@@ -866,14 +869,14 @@ struct StoreElementLowering final : public SpeltPattern<mlir::dsdl::StoreElement
         }
         const mlir::Location loc    = op.getLoc();
         const mlir::Value    slot   = elementSlot(rewriter,
-                                                  loc,
-                                                  adaptor.getObject(),
-                                                  elementPath(rewriter, *member),
-                                                  adaptor.getIndex(),
-                                                  elementCType(*member,
-                                                               CSpelling::isConst(op.getObject()),
-                                                               op.getStorageCategory(),
-                                                               op.getStorageBits()));
+                                             loc,
+                                             adaptor.getObject(),
+                                             elementPath(rewriter, *member),
+                                             adaptor.getIndex(),
+                                             elementCType(*member,
+                                                          CSpelling::isConst(op.getObject()),
+                                                          op.getStorageCategory(),
+                                                          op.getStorageBits()));
         const mlir::Type     stored = mlir::cast<mlir::emitc::LValueType>(slot.getType()).getValueType();
         mlir::Value          value  = adaptor.getValue();
         if (stored != value.getType())
@@ -901,23 +904,42 @@ struct ViewSlots final
     mlir::Value size;
 };
 
+/// @brief The two lvalues of a view member, or of one element of an array of views when @p index
+///        names one.
 ViewSlots viewSlots(mlir::ConversionPatternRewriter& rewriter,
                     mlir::Location                   loc,
                     mlir::Value                      object,
                     const CMember&                   member,
                     mlir::Type                       bytesType,
-                    mlir::Type                       sizeType)
+                    mlir::Type                       sizeType,
+                    mlir::Value                      index,
+                    const bool                       constObject)
 {
-    return ViewSlots{walkMemberPath(rewriter,
-                                    loc,
-                                    object,
-                                    rewriter.getStrArrayAttr({member.cName, "bytes"}),
-                                    bytesType),
-                     walkMemberPath(rewriter,
-                                    loc,
-                                    object,
-                                    rewriter.getStrArrayAttr({member.cName, "size_bytes"}),
-                                    sizeType)};
+    if (!index)
+    {
+        return ViewSlots{walkMemberPath(rewriter,
+                                        loc,
+                                        object,
+                                        rewriter.getStrArrayAttr({member.cName, "bytes"}),
+                                        bytesType),
+                         walkMemberPath(rewriter,
+                                        loc,
+                                        object,
+                                        rewriter.getStrArrayAttr({member.cName, "size_bytes"}),
+                                        sizeType)};
+    }
+    const std::string elementType = std::string(constObject ? "const " : "") + "dsdl_runtime_view_t";
+    const mlir::Value element = elementSlot(rewriter, loc, object, elementPath(rewriter, member), index, elementType);
+    return ViewSlots{mlir::emitc::MemberOp::create(rewriter,
+                                                   loc,
+                                                   mlir::emitc::LValueType::get(bytesType),
+                                                   rewriter.getStringAttr("bytes"),
+                                                   element),
+                     mlir::emitc::MemberOp::create(rewriter,
+                                                   loc,
+                                                   mlir::emitc::LValueType::get(sizeType),
+                                                   rewriter.getStringAttr("size_bytes"),
+                                                   element)};
 }
 
 struct StoreViewLowering final : public SpeltPattern<mlir::dsdl::StoreViewOp>
@@ -938,7 +960,9 @@ struct StoreViewLowering final : public SpeltPattern<mlir::dsdl::StoreViewOp>
                                           adaptor.getObject(),
                                           *member,
                                           adaptor.getBytes().getType(),
-                                          adaptor.getSizeBytes().getType());
+                                          adaptor.getSizeBytes().getType(),
+                                          adaptor.getIndex(),
+                                          CSpelling::isConst(op.getObject()));
         mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, adaptor.getBytes());
         mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.size, adaptor.getSizeBytes());
         rewriter.eraseOp(op);
@@ -959,14 +983,51 @@ struct ClearViewLowering final : public SpeltPattern<mlir::dsdl::ClearViewOp>
         {
             return mlir::failure();
         }
-        auto*             ctx       = rewriter.getContext();
-        const auto        bytesType = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, "const uint8_t"));
-        const auto        sizeType  = mlir::emitc::OpaqueType::get(ctx, "size_t");
-        const ViewSlots   slots = viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType);
-        const mlir::Value none  = mlir::emitc::ConstantOp::create(rewriter,
-                                                                  op.getLoc(),
-                                                                  bytesType,
-                                                                  mlir::emitc::OpaqueAttr::get(ctx, "NULL"));
+        auto*      ctx       = rewriter.getContext();
+        const auto bytesType = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, "const uint8_t"));
+        const auto sizeType  = mlir::emitc::OpaqueType::get(ctx, "size_t");
+        if (member->arrayKind == "fixed")
+        {
+            // Every element of a fixed array of views, through the runtime's clear, from the
+            // first element's address.
+            const mlir::Value first =
+                elementSlot(rewriter,
+                            op.getLoc(),
+                            adaptor.getObject(),
+                            elementPath(rewriter, *member),
+                            mlir::emitc::ConstantOp::create(rewriter,
+                                                            op.getLoc(),
+                                                            sizeType,
+                                                            mlir::emitc::OpaqueAttr::get(ctx, "0")),
+                            "dsdl_runtime_view_t");
+            const mlir::Value count =
+                mlir::emitc::ConstantOp::create(rewriter,
+                                                op.getLoc(),
+                                                sizeType,
+                                                mlir::emitc::OpaqueAttr::get(ctx,
+                                                                             std::to_string(member->arrayCapacity) +
+                                                                                 "U"));
+            mlir::emitc::CallOpaqueOp::
+                create(rewriter,
+                       op.getLoc(),
+                       mlir::TypeRange{},
+                       rewriter.getStringAttr("dsdl_runtime_clear_views"),
+                       mlir::ValueRange{addressOf(rewriter,
+                                                  op.getLoc(),
+                                                  first,
+                                                  mlir::emitc::PointerType::get(
+                                                      mlir::emitc::OpaqueType::get(ctx, "dsdl_runtime_view_t"))),
+                                        count},
+                       mlir::ArrayAttr{});
+            rewriter.eraseOp(op);
+            return mlir::success();
+        }
+        const ViewSlots slots =
+            viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType, {}, false);
+        const mlir::Value none = mlir::emitc::ConstantOp::create(rewriter,
+                                                                 op.getLoc(),
+                                                                 bytesType,
+                                                                 mlir::emitc::OpaqueAttr::get(ctx, "NULL"));
         const mlir::Value zero =
             mlir::emitc::ConstantOp::create(rewriter, op.getLoc(), sizeType, mlir::emitc::OpaqueAttr::get(ctx, "0U"));
         mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, none);
@@ -991,9 +1052,16 @@ struct LoadViewLowering final : public SpeltPattern<mlir::dsdl::LoadViewOp>
         }
         const mlir::Type  bytesType = getTypeConverter()->convertType(op.getBytes().getType());
         const mlir::Type  sizeType  = op.getSizeBytes().getType();
-        const ViewSlots   slots = viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType);
-        const mlir::Value bytes = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), bytesType, slots.bytes);
-        const mlir::Value size  = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), sizeType, slots.size);
+        const ViewSlots   slots     = viewSlots(rewriter,
+                                          op.getLoc(),
+                                          adaptor.getObject(),
+                                          *member,
+                                          bytesType,
+                                          sizeType,
+                                          adaptor.getIndex(),
+                                          CSpelling::isConst(op.getObject()));
+        const mlir::Value bytes     = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), bytesType, slots.bytes);
+        const mlir::Value size      = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), sizeType, slots.size);
         rewriter.replaceOp(op, {bytes, size});
         return mlir::success();
     }
@@ -1114,9 +1182,9 @@ struct LocalLowering final : public mlir::OpConversionPattern<mlir::dsdl::LocalO
         const mlir::Type stored = pointerType.getPointee();
 
         auto        slot = mlir::emitc::VariableOp::create(rewriter,
-                                                           loc,
-                                                           mlir::emitc::LValueType::get(stored),
-                                                           mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
+                                                    loc,
+                                                    mlir::emitc::LValueType::get(stored),
+                                                    mlir::emitc::OpaqueAttr::get(rewriter.getContext(), ""));
         mlir::Value init = adaptor.getInit();
         if (init.getType() != stored)
         {

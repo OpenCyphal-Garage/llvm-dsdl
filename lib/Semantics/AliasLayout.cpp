@@ -182,8 +182,8 @@ private:
 
     /// @brief Marks each composite field whose type asserts `@aliasable` as held by view.
     ///
-    /// A scalar field of a structure: a union's option is chosen by a tag and an array's
-    /// elements are a run, and neither is held this way.
+    /// A field of a structure, scalar or an array, whose elements are then each a view. A union's
+    /// option is chosen by a tag and is not held this way.
     void markViews(SemanticSection& section)
     {
         if (section.isUnion)
@@ -193,8 +193,7 @@ private:
         for (SemanticField& field : section.fields)
         {
             const SemanticFieldType& type = field.resolvedType;
-            if (field.isPadding || (type.scalarCategory != SemanticScalarCategory::Composite) || !type.compositeType ||
-                (type.arrayKind != ArrayKind::None))
+            if (field.isPadding || (type.scalarCategory != SemanticScalarCategory::Composite) || !type.compositeType)
             {
                 continue;
             }
@@ -283,10 +282,10 @@ private:
                 {
                     AliasLayoutVerdict verdict = blocked(AliasLayoutReason::NestedNotFlat, field.name);
                     verdict.nestedTypeName     = type.compositeType->fullName + "." +
-                                                 std::to_string(type.compositeType->majorVersion) + "." +
-                                                 std::to_string(type.compositeType->minorVersion);
-                    verdict.nestedReason       = nestedVerdict.reason;
-                    verdict.nestedFieldName    = nestedVerdict.fieldName;
+                                             std::to_string(type.compositeType->majorVersion) + "." +
+                                             std::to_string(type.compositeType->minorVersion);
+                    verdict.nestedReason    = nestedVerdict.reason;
+                    verdict.nestedFieldName = nestedVerdict.fieldName;
                     return verdict;
                 }
                 offsetBits += nested->maxBitLength * elementCount(type);
@@ -450,9 +449,7 @@ private:
 
 }  // namespace
 
-void annotateAliasLayout(SemanticModule&             module,
-                         const SemanticModule* const externalCatalog,
-                         const bool                  aliasableViews)
+void annotateAliasLayout(SemanticModule& module, const SemanticModule* const externalCatalog, const bool aliasableViews)
 {
     Evaluator evaluator(module, externalCatalog, aliasableViews);
     evaluator.run();

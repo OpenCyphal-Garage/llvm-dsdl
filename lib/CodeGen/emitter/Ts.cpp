@@ -421,7 +421,10 @@ void emitStructSectionType(SourceWriter&          w,
         emitAttachedDocTs(w, field.doc);
         const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
         w.line(fieldName + ": " +
-               (field.heldAsView ? std::string{"Uint8Array"} : tsFieldType(field.resolvedType, ctx)) + ";");
+               (field.heldAsView
+                    ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "Uint8Array" : "Uint8Array[]"}
+                    : tsFieldType(field.resolvedType, ctx)) +
+               ";");
     }
     w.close("}");
 }
@@ -1168,27 +1171,43 @@ public:
                                  "produces one does not run for this target");
     }
 
-    // A view member is a subarray of the buffer.
+    // A view member is a subarray of the buffer, or one element of an array of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, asNumber(index, names), names)
+                     : memberAccess(object, member, names);
+    }
+
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names);
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "BigInt(" + memberAccess(op.getObject(), op.getMember(), names) + ".length)";
+        return "BigInt(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".length)";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " + bytes + ".subarray(0, Math.min(" +
-               asNumber(op.getSizeBytes(), names) + ", " + bytes + ".length));");
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
+               ".subarray(0, Math.min(" + asNumber(op.getSizeBytes(), names) + ", " + bytes + ".length));");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = new Uint8Array(0);");
+        // A fixed array of views is every element empty; a variable-length one is sized by the plan.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               ((io.getArrayKind() == "fixed")
+                    ? "Array.from({ length: " + std::to_string(io.getArrayCapacity()) + " }, () => new Uint8Array(0))"
+                    : "new Uint8Array(0)") +
+               ";");
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
@@ -1396,6 +1415,10 @@ private:
     /// @brief The TypeScript type of one element of @p member, or of the member when it is no array.
     std::string elementTsType(const Member& member) const
     {
+        if (mlir::dsdl::IOOp{member.io}.getHeldAsView())
+        {
+            return "Uint8Array";
+        }
         switch (storageOf(member))
         {
         case Storage::Boolean:
@@ -1741,7 +1764,9 @@ std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& e
     case MemberDefault::Kind::Composite:
         return nested();
     case MemberDefault::Kind::View:
-        return "new Uint8Array(0)";
+        return (type.arrayKind == ArrayKind::Fixed)
+                   ? "Array.from({ length: " + std::to_string(type.arrayCapacity) + " }, () => new Uint8Array(0))"
+                   : "new Uint8Array(0)";
     }
     return "undefined";
 }
@@ -1981,7 +2006,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     // The spelling names a nested type as this file does: through the alias table just installed.
-    TsSpelling spelling(module,
+    TsSpelling                           spelling(module,
                         schema,
                         [&ctx](const llvm::StringRef fullName, const std::uint32_t major, const std::uint32_t minor) {
                             SemanticTypeRef ref;

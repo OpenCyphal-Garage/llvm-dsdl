@@ -46,7 +46,7 @@ A body spells nothing the way C does:
 | `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |
 | `dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_`, carrying the member and the direction | `vendor__Inner__serialize_` |
 | `dsdl.call_initialize @vendor_Inner_1_0__initialize_ir_`, carrying the member | `vendor__Inner__initialize_` |
-| `dsdl.store_view`, `dsdl.clear_view`, `dsdl.load_view`, carrying the member held as a view | `.bytes` and `.size_bytes` of the member's `dsdl_runtime_view_t` |
+| `dsdl.store_view`, `dsdl.clear_view`, `dsdl.load_view`, carrying the member held as a view and, in an array of views, the element's index | `.bytes` and `.size_bytes` of the member's `dsdl_runtime_view_t`, or of the element's; `dsdl_runtime_clear_views` over a fixed array |
 | `dsdl.copy_bytes`, carrying the field's width | `dsdl_runtime_copy_bytes` |
 
 `convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema

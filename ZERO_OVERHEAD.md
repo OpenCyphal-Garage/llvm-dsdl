@@ -658,9 +658,10 @@ and then the option at a fixed offset.
   file. Under the mode a composite field whose type carries `@aliasable` is held as a view, and
   a field whose type is merely wire-flat is decoded as before: the directive is the author's
   statement that the type is meant to be read in place, the mode is the consumer's, and a view
-  needs both. Arrays of `@aliasable` types stay decoded in this phase. The catalogue holds
-  fifteen scalar members of a wire-flat type inside thirteen non-flat containers, no fixed
-  arrays of one and three variable arrays.
+  needs both. An array of an `@aliasable` type is one view per element, a fixed array's held in
+  place and a variable-length one's beside its count. The catalogue holds fifteen scalar members
+  of a wire-flat type inside thirteen non-flat containers, no fixed arrays of one and three
+  variable arrays.
 - *A view is the field's bytes, as the composite getter answers them.* Phase 4's `get_<field>`
   on a wire-flat container answers the buffer from the field's offset with what remains, and a
   view member holds that same pair. C and C++ hold the runtime's `dsdl_runtime_view_t`, a
@@ -699,7 +700,7 @@ and then the option at a fixed offset.
   a backend follows the functions the pass built, as the contract says.
 
 **Sub-phases.** 6.1 the mode, the ops, the C and object spellings and the lane on C; 6.2 the
-other five languages; 6.3 union accessors.
+other five languages; 6.3 union accessors; 6.4 arrays of views.
 
 **Progress, 2026-09-19: 6.1 landed.** `--aliasable-views` reaches the analyser, which marks each
 scalar composite field of an asserted type as held by view and refuses the holder's host-image
@@ -741,6 +742,23 @@ option after it, and that a ragged, a sub-byte and a delimited union get none. T
 found that a union's TypeScript file imported every option's factory while its own factory made
 the selected option alone; a file now imports what its text uses.
 
+**Progress, 2026-09-19: 6.4 landed.** An array of an asserted type is held as a view per element.
+The analyser marks the array's field as the scalar's; `dsdl.store_view` and `dsdl.load_view` take
+an optional element index, and the element loop builds each element as the view step builds a
+scalar, at the index the loop holds. A fixed array is cleared whole by one `dsdl.clear_view`, and
+a variable-length array keeps its length machinery, so an initialised holder empties it and a
+decode sizes it before storing into it. C holds a fixed array of `dsdl_runtime_view_t` in place and
+a variable-length one as its elements beside their count, cleared through
+`dsdl_runtime_clear_views`; the object target holds an array of the pointer-and-size struct and
+clears it with one memset of the array's size; C++ a `std::array` or the profile's vector of the
+runtime type, which takes no memory resource; Rust `[&'a [u8]; N]` or `DsdlVec<&'a [u8]>`; Go
+`[N][]byte` or `[][]byte`; TypeScript `Uint8Array[]`; Python `list[memoryview]`. The lane's
+`Track` holder, a fixed pair of `Pose` and a bounded trail of them around a byte on each side,
+holds all seven targets to the contract on every element: each points into the buffer at its own
+offset, the `Pose` accessors read an element, serialising reproduces the wire, a buffer ending
+inside the pair's second element leaves that element short and the trail empty, and an initialised
+holder serialises every element and the trail as zeros.
+
 What the instruction lane shows needs saying carefully. A static count is per function, and the
 plain path's nested decode is a call, so the holder's own count is the same with the view as
 without: `Frame`'s deserialise is 75 instructions either way on AArch64 and 88 against 86 on
@@ -772,7 +790,7 @@ decode, which the instruction lane shows; the output compiles standalone in each
 | accessor equivalence | 4 | an accessor disagreeing with `deserialize_`, in any of the six | ✅ landed: scalars, fixed arrays, nested composites |
 | accessor instruction count | 4 | an accessor's count moving without its baseline | ✅ landed, on both pinned triples |
 | accessors-only standalone build | 5 | the mode's output failing to compile alone on any target, or a targeted type without the directive going through | ✅ landed: seven targets, a probe each |
-| container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled | ✅ landed on all seven targets |
+| container view contract | 6 | a view not pointing into the buffer, a read through it disagreeing with the decode, a serialise not reproducing the wire, or a short or empty view mishandled, of a scalar member or of any element of a fixed or variable-length array | ✅ landed on all seven targets |
 | view holder instruction count | 6 | the holder's count, or the removed callee's, moving without its baseline | ✅ landed, both pinned triples |
 | union accessors against the decode | 6.3 | a tag or option read disagreeing with the decode, or a union that does not qualify getting accessors | ✅ landed on all seven targets |
 
