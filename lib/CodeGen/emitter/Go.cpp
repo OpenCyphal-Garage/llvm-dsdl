@@ -1284,11 +1284,14 @@ public:
         w.line(image + " := unsafe.Slice((*byte)(unsafe.Pointer(" + names(op.getObject()) + ")), " + bytes + ")");
         w.line(avail + " := dsdlruntime.ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
                names(op.getBuffer()) + "))");
+        // The object and the buffer may be the same storage, so the bytes present are copied before
+        // what follows them is cleared: clearing first would clear the source. `copy` is defined
+        // for overlapping slices, so the copy itself needs nothing else.
         w.open("if " + avail + " >= " + bytes + " {");
         w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + bytes + "])");
         w.midway("} else {");
-        w.line("clear(" + image + ")");
         w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + avail + "])");
+        w.line("clear(" + image + "[" + avail + ":])");
         w.close("}");
     }
 

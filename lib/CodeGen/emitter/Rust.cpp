@@ -1167,11 +1167,16 @@ public:
                " as *mut Self as *mut u8, " + bytes + ") };");
         w.line("let _avail = core::cmp::min(" + asSize(names(op.getBufferSizeBytes())) + ", " + names(op.getBuffer()) +
                ".len());");
-        w.open("if _avail >= " + bytes + " {");
-        w.line("_image.copy_from_slice(&" + names(op.getBuffer()) + "[.." + bytes + "]);");
-        w.midway("} else {");
-        w.line("_image.fill(0u8);");
-        w.line("_image[.._avail].copy_from_slice(&" + names(op.getBuffer()) + "[.._avail]);");
+        // The object and the buffer may be the same storage, so the bytes present move before what
+        // follows them is zeroed -- zeroing first would zero the source -- and they move with
+        // `copy`, which is `memmove`: `copy_from_slice` is defined only for slices that do not
+        // overlap.
+        w.line("let _take = core::cmp::min(_avail, " + bytes + ");");
+        w.open("if _take > 0usize {");
+        w.line("unsafe { core::ptr::copy(" + names(op.getBuffer()) + ".as_ptr(), _image.as_mut_ptr(), _take) };");
+        w.close("}");
+        w.open("if _take < " + bytes + " {");
+        w.line("_image[_take..].fill(0u8);");
         w.close("}");
         w.close("}");
     }
@@ -1183,7 +1188,9 @@ public:
         w.open("{");
         w.line("let _image = unsafe { core::slice::from_raw_parts(" + names(op.getObject()) +
                " as *const Self as *const u8, " + bytes + ") };");
-        w.line(names(op.getBuffer()) + "[.." + bytes + "].copy_from_slice(_image);");
+        // A move for the reason its counterpart takes one: the two may be the same storage.
+        w.line("unsafe { core::ptr::copy(_image.as_ptr(), " + names(op.getBuffer()) + ".as_mut_ptr(), " + bytes +
+               ") };");
         w.close("}");
     }
 
