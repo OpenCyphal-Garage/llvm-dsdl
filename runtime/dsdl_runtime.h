@@ -328,14 +328,18 @@ extern "C"
     {
         DSDL_RUNTIME_ASSERT(object != NULL);
         DSDL_RUNTIME_ASSERT(buf != NULL);
+        // The object and the buffer may be the same storage: a host image is the wire's bytes, so
+        // decoding in place over them is what the property invites. The bytes present move first,
+        // and with `memmove`, because zeroing first would zero the source; the field-wise body
+        // this replaces keeps them, and a fold that did not would be a change in behaviour.
         if (buf_size_bytes >= object_size_bytes)
         {
-            (void) memcpy(object, buf, object_size_bytes);
+            (void) memmove(object, buf, object_size_bytes);
         }
         else
         {
-            (void) memset(object, 0, object_size_bytes);
-            (void) memcpy(object, buf, buf_size_bytes);
+            (void) memmove(object, buf, buf_size_bytes);
+            (void) memset(((uint8_t*) object) + buf_size_bytes, 0, object_size_bytes - buf_size_bytes);
         }
     }
 
@@ -353,7 +357,8 @@ extern "C"
     {
         DSDL_RUNTIME_ASSERT(buf != NULL);
         DSDL_RUNTIME_ASSERT(object != NULL);
-        (void) memcpy(buf, object, object_size_bytes);
+        // `memmove` for the reason its counterpart takes one: the two may be the same storage.
+        (void) memmove(buf, object, object_size_bytes);
     }
 
     // ---------------------------------------------------- INTEGER ----------------------------------------------------

@@ -357,6 +357,14 @@ fold does not touch; the field work went from a call and a mask per field to a c
 folds to loads and stores. A two-byte type is a wash, because the zero-extension branch costs what
 two byte loads did.
 
+*(The floor rose to about 38 on 2026-09-19. The object and the buffer may be the same storage —
+a host image is the wire's bytes, so decoding in place over them is what the property invites —
+and the move that reads it takes the bytes present before zeroing what follows, where it used to
+zero the whole object and read the source after. Zeroing first zeroes the source: an in-place
+short decode lost the bytes it had. The field-wise body this replaces keeps them, so the two
+answered differently, which a fold may not do. The short path's zero-fill now takes a computed
+offset and length rather than the whole object, which is what the three instructions buy.)*
+
 Two more things were learned, and one decision taken.
 
 *The plan named the wrong primitive.* It said the bulk copy needs no new runtime because

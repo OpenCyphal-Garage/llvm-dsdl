@@ -971,6 +971,10 @@ struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::Im
         const auto           i64 = rewriter.getI64Type();
         const mlir::Value    bytes =
             mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
+        // The object and the buffer may be the same storage: a host image is the wire's bytes, so
+        // decoding in place over them is what the property invites. The bytes present move first,
+        // and with a move rather than a copy; zeroing first would zero the source, and the
+        // field-wise body this replaces keeps those bytes.
         const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
                                                               loc,
                                                               mlir::LLVM::ICmpPredicate::uge,
@@ -979,23 +983,32 @@ struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::Im
         auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
 
         rewriter.setInsertionPointToStart(branch.thenBlock());
-        mlir::LLVM::MemcpyOp::create(rewriter,
-                                     loc,
-                                     adaptor.getObject(),
-                                     adaptor.getBuffer(),
-                                     bytes,
-                                     /*isVolatile=*/false);
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getObject(),
+                                      adaptor.getBuffer(),
+                                      bytes,
+                                      /*isVolatile=*/false);
 
         rewriter.setInsertionPointToStart(branch.elseBlock());
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getObject(),
+                                      adaptor.getBuffer(),
+                                      adaptor.getBufferSizeBytes(),
+                                      /*isVolatile=*/false);
         const mlir::Value zeroByte =
             mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
-        mlir::LLVM::MemsetOp::create(rewriter, loc, adaptor.getObject(), zeroByte, bytes, /*isVolatile=*/false);
-        mlir::LLVM::MemcpyOp::create(rewriter,
-                                     loc,
-                                     adaptor.getObject(),
-                                     adaptor.getBuffer(),
-                                     adaptor.getBufferSizeBytes(),
-                                     /*isVolatile=*/false);
+        const mlir::Value rest =
+            mlir::LLVM::SubOp::create(rewriter, loc, bytes, adaptor.getBufferSizeBytes());
+        const mlir::Value from =
+            mlir::LLVM::GEPOp::create(rewriter,
+                                      loc,
+                                      mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                      rewriter.getI8Type(),
+                                      adaptor.getObject(),
+                                      llvm::ArrayRef<mlir::LLVM::GEPArg>{adaptor.getBufferSizeBytes()});
+        mlir::LLVM::MemsetOp::create(rewriter, loc, from, zeroByte, rest, /*isVolatile=*/false);
 
         rewriter.eraseOp(op);
         return mlir::success();
@@ -1075,12 +1088,14 @@ struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::I
                                                                     loc,
                                                                     rewriter.getI64Type(),
                                                                     rewriter.getI64IntegerAttr(op.getBytes()));
-        mlir::LLVM::MemcpyOp::create(rewriter,
-                                     loc,
-                                     adaptor.getBuffer(),
-                                     adaptor.getObject(),
-                                     bytes,
-                                     /*isVolatile=*/false);
+        // A move rather than a copy, for the reason its counterpart takes one: the object and the
+        // buffer may be the same storage.
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getBuffer(),
+                                      adaptor.getObject(),
+                                      bytes,
+                                      /*isVolatile=*/false);
         rewriter.eraseOp(op);
         return mlir::success();
     }
