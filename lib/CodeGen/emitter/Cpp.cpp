@@ -24,6 +24,8 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
+
+#include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -1858,12 +1860,11 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     // them as the wire does. This source is compiled for a target the generator did not see.
     if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
     {
-        w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
-               "__ORDER_LITTLE_ENDIAN__)");
-        w.line("#  error \"" + typeName +
-               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
-               "host. Regenerate with --target-triple naming this target.\"");
-        w.line("#endif");
+        // The same guard C carries, rendered once: generated C++ already includes the C runtime.
+        for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(typeName))
+        {
+            w.line(line);
+        }
     }
     if (metadata.declaresPortId)
     {

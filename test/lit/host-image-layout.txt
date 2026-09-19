@@ -11,6 +11,7 @@
 # RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_NESTED
 # RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.h | FileCheck %s --check-prefix=C_PADDED
 # RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.c | FileCheck %s --check-prefix=C_FOLDED
+# RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_GUARD
 # RUN: %dsdlc --target-language c --target-triple powerpc64-unknown-linux-gnu %S/fixtures_host_image --outdir %t/c-be > /dev/null
 # RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.c | FileCheck %s --check-prefix=C_BIG_ENDIAN_BODY
 # RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_BIG_ENDIAN_HEADER
@@ -33,6 +34,16 @@
 # C_PADDED-NOT: DSDL_RUNTIME_STATIC_ASSERT
 
 # C_FOLDED: dsdl_runtime_image_read(
+
+# The guard refuses a host it cannot place as well as one it places as big-endian: a compiler
+# stating no byte order says nothing about the target. MSVC states none and every target it
+# compiles for orders bytes as the wire does, so it is named rather than refused.
+# C_GUARD:      #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+# C_GUARD-NEXT: #  if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+# C_GUARD-NEXT: #    error
+# C_GUARD-NEXT: #  endif
+# C_GUARD-NEXT: #elif !(defined(_MSC_VER) && (defined(_M_IX86)
+# C_GUARD-NEXT: #  error
 
 # The fold is gated on the target triple being little-endian: for a big-endian one the bodies stay
 # field-wise, there is no guard to emit, and the layout assertions still hold.

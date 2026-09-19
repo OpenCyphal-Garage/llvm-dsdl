@@ -609,12 +609,10 @@ void emitSection(SourceWriter&              w,
     // them as the wire does. This source is compiled for a target the generator did not see.
     if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
     {
-        w.line("#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ != "
-               "__ORDER_LITTLE_ENDIAN__)");
-        w.line("#  error \"" + typeName +
-               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
-               "host. Regenerate with --target-triple naming this target.\"");
-        w.line("#endif");
+        for (const auto& line : renderLittleEndianGuardLines(typeName))
+        {
+            w.line(line);
+        }
         w.blank();
     }
     emitSectionConstants(w, typeName, section);

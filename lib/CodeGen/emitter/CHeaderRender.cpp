@@ -71,6 +71,23 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&    
     return lines;
 }
 
+std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeName)
+{
+    const std::string moves = typeName + ": its serialisation moves the object as the wire's bytes, which holds ";
+    return {
+        "#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)",
+        "#  if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__",
+        "#    error \"" + moves + "only on a little-endian host. Regenerate with --target-triple naming this target.\"",
+        "#  endif",
+        "#elif !(defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM) || "
+        "defined(_M_ARM64) || defined(_M_ARM64EC)))",
+        "#  error \"" + moves +
+            "only on a little-endian host, and this compiler states no byte order. Regenerate with --target-triple "
+            "naming this target.\"",
+        "#endif",
+    };
+}
+
 std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
                                                        const std::string& requestTypeName,
                                                        const bool         deprecatedAttribute)
