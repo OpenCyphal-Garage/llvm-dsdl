@@ -1245,7 +1245,7 @@ public:
         const std::string buffer    = names(op.getBuffer());
         const std::string size      = names(op.getSize());
         const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
-                                  (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
         const std::string used = isRead(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
         return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
                used + " Err(_code) => _code }";
@@ -2029,7 +2029,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
     }
-    w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
+    // The alias names the request, so it carries the request's lifetime when the request holds a
+    // view.
+    const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+    w.line("pub type " + baseType + baseGenerics + " = " +
+           renderDeclaredTypeName(reqType, def.request.deprecated) + baseGenerics + ";");
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
     const auto baseConstPrefix =
