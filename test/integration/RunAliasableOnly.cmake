@@ -8,10 +8,15 @@
 # An accessors-only run's output, compiled standalone in every language and read.
 #
 # `--aliasable-only` emits each type's field accessors and neither its object type nor its
-# serialisation. This lane generates the `@aliasable` fixture in that mode for every target, builds
+# serialisation. This lane generates the `@aliasable` fixtures in that mode for every target, builds
 # a probe against the output and nothing else -- under warnings-as-errors, `go vet` and
 # `noUnusedLocals` -- and reads a known buffer through the outer type's composite getter and the
 # inner type's field getter, a setter round trip and a short read.
+#
+# The probe reads one type; the mode's promise is about every file a run writes. So each leg also
+# compiles what the probe does not reach: C, the object target and C++ include every header they
+# wrote, TypeScript type-checks every file, and Python imports every module. Rust and Go build the
+# whole crate and module as they are.
 #
 # Every language whose toolchain was given runs; C, the object target and C++ always do.
 #
@@ -28,7 +33,15 @@ foreach(tool "${DSDLC}" "${C_COMPILER}" "${CXX_COMPILER}")
   endif()
 endforeach()
 
-set(fixture_root "${SOURCE_ROOT}/test/lit/fixtures_aliasable")
+# Three roots, because the mode's promise is about every file a run writes and one root reaches
+# too little of it. `fixtures_aliasable` is a message nesting a message in its own namespace, which
+# the probes read; `fixtures_aliasable_service_flat` is a service, reached through an alias whose
+# wrappers call the serialisation this mode omits; `fixtures_aliasable_xns` nests across
+# namespaces, which is what makes Go write an import.
+set(fixture_roots
+  "${SOURCE_ROOT}/test/lit/fixtures_aliasable"
+  "${SOURCE_ROOT}/test/lit/fixtures_aliasable_service_flat"
+  "${SOURCE_ROOT}/test/lit/fixtures_aliasable_xns")
 set(probe_dir "${SOURCE_ROOT}/test/integration")
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
@@ -40,7 +53,7 @@ set(legs "")
 # Generates the fixture for one target in accessors-only mode. ARGN holds the target's own options.
 function(_aliasable_only_generate language out_dir)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} --aliasable-only "${fixture_root}" --outdir "${out_dir}" ${ARGN}
+    COMMAND "${DSDLC}" --target-language ${language} --aliasable-only ${fixture_roots} --outdir "${out_dir}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
     ERROR_VARIABLE gen_stderr
@@ -72,6 +85,25 @@ function(_aliasable_only_run label)
   endif()
 endfunction()
 
+# Writes a translation unit including every generated header under @p root.
+#
+# A probe reads one type, so it reaches one type's header. What the mode promises is that every
+# file a run writes compiles, and a header nothing includes is a header nothing checks: that is how
+# a service's alias kept wrappers calling the serialisation this mode leaves out.
+function(_aliasable_only_sweep out_file root extension)
+  file(GLOB_RECURSE headers "${root}/*.${extension}")
+  list(SORT headers)
+  if(headers STREQUAL "")
+    message(FATAL_ERROR "no .${extension} under ${root} to sweep")
+  endif()
+  set(lines "")
+  foreach(header IN LISTS headers)
+    file(RELATIVE_PATH relative "${root}" "${header}")
+    string(APPEND lines "#include \"${relative}\"\n")
+  endforeach()
+  file(WRITE "${out_file}" "/* Written by RunAliasableOnly.cmake: every header this run wrote. */\n${lines}")
+endfunction()
+
 # Compiles one C or C++ probe. ARGN holds the compiler's arguments after the flags.
 function(_aliasable_only_compile label compiler)
   execute_process(
@@ -93,6 +125,10 @@ _aliasable_only_compile("C" "${C_COMPILER}"
   -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -I "${c_out}"
   "${probe_dir}/AliasableOnlyProbe.c" ${c_sources} -o "${OUT_DIR}/probe_c")
 _aliasable_only_run("C" "${OUT_DIR}/probe_c")
+_aliasable_only_sweep("${OUT_DIR}/sweep_c.c" "${c_out}" "h")
+_aliasable_only_compile("C headers" "${C_COMPILER}"
+  -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -I "${c_out}"
+  -c "${OUT_DIR}/sweep_c.c" -o "${OUT_DIR}/sweep_c.o")
 list(APPEND legs "C")
 
 # ------------------------------------------------------------------ object ----
@@ -106,6 +142,10 @@ _aliasable_only_compile("object" "${C_COMPILER}"
   -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -I "${obj_out}"
   "${probe_dir}/AliasableOnlyProbe.c" ${obj_objects} -o "${OUT_DIR}/probe_obj")
 _aliasable_only_run("object" "${OUT_DIR}/probe_obj")
+_aliasable_only_sweep("${OUT_DIR}/sweep_obj.c" "${obj_out}" "h")
+_aliasable_only_compile("object headers" "${C_COMPILER}"
+  -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -I "${obj_out}"
+  -c "${OUT_DIR}/sweep_obj.c" -o "${OUT_DIR}/sweep_obj.o")
 list(APPEND legs "object")
 
 # --------------------------------------------------------------------- C++ ----
@@ -116,6 +156,10 @@ foreach(profile std pmr)
     -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
     "${probe_dir}/AliasableOnlyProbe.cpp" -o "${OUT_DIR}/probe_cpp_${profile}")
   _aliasable_only_run("C++ ${profile}" "${OUT_DIR}/probe_cpp_${profile}")
+  _aliasable_only_sweep("${OUT_DIR}/sweep_cpp_${profile}.cpp" "${cpp_out}/${profile}" "hpp")
+  _aliasable_only_compile("C++ ${profile} headers" "${CXX_COMPILER}"
+    -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
+    -c "${OUT_DIR}/sweep_cpp_${profile}.cpp" -o "${OUT_DIR}/sweep_cpp_${profile}.o")
 endforeach()
 list(APPEND legs "C++")
 
@@ -172,7 +216,7 @@ if(DEFINED TSC_EXECUTABLE AND EXISTS "${TSC_EXECUTABLE}"
     "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"CommonJS\",\n"
     "    \"moduleResolution\": \"Node\",\n    \"strict\": true,\n    \"noUnusedLocals\": true,\n"
     "    \"skipLibCheck\": true,\n    \"types\": [],\n    \"outDir\": \"./js\"\n  },\n"
-    "  \"include\": [\"./probe.ts\"]\n}\n")
+    "  \"include\": [\"./**/*.ts\"]\n}\n")
   execute_process(
     COMMAND "${TSC_EXECUTABLE}" -p "${ts_out}/tsconfig.json" --pretty false
     WORKING_DIRECTORY "${ts_out}"
@@ -197,6 +241,19 @@ if(DEFINED PYTHON_EXECUTABLE AND EXISTS "${PYTHON_EXECUTABLE}")
   _aliasable_only_generate(python "${py_out}" --py-package "${PY_PACKAGE}")
   _aliasable_only_run("Python"
     "${PYTHON_EXECUTABLE}" "${probe_dir}/AliasableOnlyProbe.py" "${py_out}" "${PY_PACKAGE}")
+  # Every generated module is imported, for the reason the C and C++ header sweeps exist: the probe
+  # reaches one type, and a module nothing imports is a module nothing runs.
+  execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" -c
+      "import importlib, pkgutil, sys; sys.path.insert(0, sys.argv[1]); root = importlib.import_module(sys.argv[2]); [importlib.import_module(found.name) for found in pkgutil.walk_packages(root.__path__, root.__name__ + '.')]"
+      "${py_out}" "${PY_PACKAGE}"
+    RESULT_VARIABLE py_sweep_result
+    OUTPUT_VARIABLE py_sweep_stdout
+    ERROR_VARIABLE py_sweep_stderr
+  )
+  if(NOT py_sweep_result EQUAL 0)
+    message(FATAL_ERROR "Python: importing every generated module failed:\n${py_sweep_stdout}\n${py_sweep_stderr}")
+  endif()
   list(APPEND legs "Python")
 else()
   message(STATUS "Python: python3 not given; leg skipped")
