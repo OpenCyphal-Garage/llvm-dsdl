@@ -2320,7 +2320,10 @@ std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterCon
     w.blank();
     w.line("// " + version + ": its serialisation moves the object as the wire's bytes, which holds only on a");
     w.line("// little-endian target. Regenerate with --target-triple naming this target.");
-    w.line("var _ = " + ident + "_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET");
+    // A field of the empty struct rather than a package-scope name: the type has no fields and no
+    // declaration can give it one, whereas a package-scope name is one a definition's own constant
+    // can spell, which would leave this file compiling and the refusal gone.
+    w.line("var _ = struct{}{}." + ident + "_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET");
     return out.str();
 }
 

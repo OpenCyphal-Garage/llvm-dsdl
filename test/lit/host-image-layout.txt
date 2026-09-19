@@ -72,6 +72,9 @@
 
 # GO_GUARD:      //go:build !(386 || amd64 ||
 # GO_GUARD:      package vendor
-# GO_GUARD:      var _ = NESTED_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET
+# The name is a field of the empty struct, which has none and can be given none. A package-scope
+# name would be one a definition's own constant can spell, which would leave the file compiling on
+# a big-endian target and the refusal gone.
+# GO_GUARD:      var _ = struct{}{}.NESTED_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET
 
 # GO_PADDED-NOT: unsafe.
