@@ -80,11 +80,14 @@ number and moves with it.
 - **The accessors are for every language, not only the native ones.** The lab side of this workflow
   is Python and TypeScript tooling reading frames a C node produced. A feature whose payoff stopped
   at the native backends would invert that.
-- **A view requires the whole payload; `deserialize_` does not.** DSDL's implicit zero extension
-  makes a short buffer a valid encoding, and `deserialize_` honours it. A view cannot: the missing
-  bytes would have to be fabricated somewhere, and anywhere is a copy. So the view path requires
-  the full payload and says so, `deserialize_` keeps the spec's tolerance, and a caller that needs
-  the tolerance uses `deserialize_`. Phase 4's accessors inherit this.
+- **A whole-object view requires the whole payload; `deserialize_` does not.** *(Narrowed
+  2026-09-19; it was written of any view. See phase 6.)* DSDL's implicit zero extension makes a
+  short buffer a valid encoding, and `deserialize_` honours it. A view of the whole object cannot:
+  the missing bytes would have to be fabricated somewhere, and anywhere is a copy. So that path
+  requires the full payload and says so, `deserialize_` keeps the spec's tolerance, and a caller
+  that needs the tolerance uses `deserialize_`. A field view is the case this does not cover: the
+  nested type's accessors read one, and they zero-extend, so a container holds what the buffer has
+  and serialises it zero-filled to the field's width.
 
 ## Decisions needed
 
