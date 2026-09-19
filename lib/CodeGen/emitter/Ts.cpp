@@ -2242,7 +2242,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.blank();
     }
 
-    w.line("export type " + baseType + " = " + reqType + ";");
+    // The alias names the request's object type, which an accessors-only run does not emit.
+    if (!ctx.accessorsOnly())
+    {
+        w.line("export type " + baseType + " = " + reqType + ";");
+    }
     return assemble();
 }
 
