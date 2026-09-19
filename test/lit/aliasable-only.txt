@@ -133,3 +133,9 @@
 # RUN: cat %t/cppsvc/std/fixtures_aliasable_service_flat/vendor/Probe_1_0.hpp | FileCheck %s --check-prefix=CPP_SVC_NONE
 # CPP_SVC_NONE-NOT: _serialize_
 # CPP_SVC_NONE-NOT: _deserialize_
+
+# A service's payloads assert independently, so a type named only by the section that does not
+# assert is spoken for by nothing, and is named alongside that section rather than after it.
+# RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/ResponseOnly --outdir %t/respond 2>&1 | FileCheck %s --check-prefix=RESPONSE_ONLY
+# RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Inner.1.0 is not @aliasable, and no @aliasable type nests it
+# RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Svc.1.0's response is not @aliasable, and no @aliasable type nests it

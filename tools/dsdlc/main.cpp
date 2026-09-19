@@ -1390,19 +1390,24 @@ void checkAliasableOnly(const llvmdsdl::SemanticModule& semantic, llvmdsdl::Diag
     const auto keyOf = [](const std::string& fullName, const std::uint32_t major, const std::uint32_t minor) {
         return fullName + "." + std::to_string(major) + "." + std::to_string(minor);
     };
-    // The types an aliasable section nests, transitively: those are spoken for.
+    // The types an aliasable section nests, transitively: those are spoken for. A service's two
+    // payloads assert independently, so the walk starts from the sections that assert rather than
+    // from the definitions holding one: a type named only by the section that does not assert is
+    // spoken for by nothing.
     std::unordered_set<std::string>                                      nested;
-    std::vector<const llvmdsdl::SemanticDefinition*>                     pending;
+    std::vector<const llvmdsdl::SemanticSection*>                        pending;
     std::unordered_map<std::string, const llvmdsdl::SemanticDefinition*> byName;
     for (const llvmdsdl::SemanticDefinition& definition : semantic.definitions)
     {
         byName[keyOf(definition.info.fullName, definition.info.majorVersion, definition.info.minorVersion)] =
             &definition;
-        const bool aliasable = definition.request.aliasableDirective.has_value() ||
-                               (definition.response && definition.response->aliasableDirective.has_value());
-        if (aliasable)
+        if (definition.request.aliasableDirective)
         {
-            pending.push_back(&definition);
+            pending.push_back(&definition.request);
+        }
+        if (definition.response && definition.response->aliasableDirective)
+        {
+            pending.push_back(&*definition.response);
         }
     }
     const auto visit = [&](const llvmdsdl::SemanticSection& section) {
@@ -1416,22 +1421,19 @@ void checkAliasableOnly(const llvmdsdl::SemanticModule& semantic, llvmdsdl::Diag
             const std::string key = keyOf(ref.fullName, ref.majorVersion, ref.minorVersion);
             if (nested.insert(key).second)
             {
+                // A field's type is a message, whose request section is the whole of it.
                 if (const auto found = byName.find(key); found != byName.end())
                 {
-                    pending.push_back(found->second);
+                    pending.push_back(&found->second->request);
                 }
             }
         }
     };
     while (!pending.empty())
     {
-        const llvmdsdl::SemanticDefinition* definition = pending.back();
+        const llvmdsdl::SemanticSection* section = pending.back();
         pending.pop_back();
-        visit(definition->request);
-        if (definition->response)
-        {
-            visit(*definition->response);
-        }
+        visit(*section);
     }
 
     const auto check = [&](const llvmdsdl::SemanticSection& section,
