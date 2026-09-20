@@ -12,7 +12,6 @@ add_library(llvmdsdlTransforms
   Passes.cpp
   PlanSteps.cpp
   BuildDSDLPlanBodies.cpp
-  ConvertDSDLToEmitC.cpp
   ConvertDSDLToLLVM.cpp
   EmitDSDLRuntime.cpp
 )
@@ -24,7 +23,6 @@ target_link_libraries(llvmdsdlTransforms
   MLIRIR
   MLIRPass
   MLIRTransforms
-  MLIREmitCDialect
   MLIRLLVMDialect
   MLIRLLVMCommonConversion
   MLIRFuncTransforms

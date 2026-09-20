@@ -113,8 +113,8 @@ coincidence of identical source text, and C, C++ and the object backend could ea
 differently whether a type name carries its version.
 
 Only in the C backend does a scope cross a layer. Its struct declaration reads the scope
-directly; its serialiser bodies are emitted from MLIR by `convert-dsdl-to-emitc`, which reads member
-names from the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
+directly; its serialiser bodies are spelt from MLIR by `CSpelling`, which reads member names from
+the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
 the C emitter stamps the scoped name over it on its own clone of the schema before the conversion
 runs -- so the declaration and the references cannot disagree, and hand-driven `dsdl-opt` runs still
 have a name to work with.

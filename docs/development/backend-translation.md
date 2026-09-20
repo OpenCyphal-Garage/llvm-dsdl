@@ -15,8 +15,7 @@ width and the alias flag. It holds no operations. The serialise and deserialise 
 Rust and Go came from `SerDesStatementPlan` and `NativeEmitterTraversal`; those of TypeScript and
 Python from `RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that
 walked the semantic module and decided the control flow themselves. C and obj translated the
-output of `build-dsdl-plan-bodies`: through EmitC for C source and through the LLVM dialect for
-objects.
+output of `build-dsdl-plan-bodies`: through the LLVM dialect for objects.
 
 The gates measure exactly this. Perturb a `dsdl.io` operation's width with the semantic module
 held constant and a planned body does not change; perturb the semantic module's cast mode with
@@ -49,8 +48,8 @@ A body spells nothing the way C does:
 | `dsdl.store_view`, `dsdl.clear_view`, `dsdl.load_view`, carrying the member held as a view and, in an array of views, the element's index | `.bytes` and `.size_bytes` of the member's `dsdl_runtime_view_t`, or of the element's; `dsdl_runtime_clear_views` over a fixed array |
 | `dsdl.copy_bytes`, carrying the field's width | `dsdl_runtime_copy_bytes` |
 
-`convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema
-when they run. `test/lit/lower-dsdl-bodies-neutral.txt` holds that a module after
+`CSpelling` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema when they
+run. `test/lit/lower-dsdl-bodies-neutral.txt` holds that a module after
 `lower-dsdl-bodies` carries none of it, and the gate fixture has a variable array, a union and a
 nested composite, with a row for each.
 

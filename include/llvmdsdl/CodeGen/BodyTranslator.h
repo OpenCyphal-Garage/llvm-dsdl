@@ -336,10 +336,10 @@ public:
 
     /// @brief Declares @p name as the error code a nested initialiser answers with.
     ///
-    /// No spelling translates an initialise body as a function. The five languages with a body
-    /// translator render initialisation declaratively, from the same body, and C reaches it through
-    /// EmitC; so the default refuses, with a reason, rather than leaving a body it was handed
-    /// mis-spelt. A spelling that does translate one imperatively overrides this.
+    /// The languages that render initialisation declaratively, from the same body, translate no
+    /// initialise body as a function, so the default refuses with a reason rather than leaving a
+    /// body it was handed mis-spelt. A spelling that does translate one imperatively, as C's
+    /// does, overrides this.
     virtual void declareCallInitialize(SourceWriter&                w,
                                        llvm::StringRef              name,
                                        mlir::dsdl::CallInitializeOp op,

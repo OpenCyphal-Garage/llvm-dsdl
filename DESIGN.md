@@ -34,9 +34,8 @@ flowchart LR
   H --> I["dsdl-verify-alias-layout"]
   I --> P["build-dsdl-plan-bodies\n(serialise/deserialise functions\nof dialect operations)"]
   P --> K{"Translation"}
-  K --> J["C: convert-dsdl-to-emitc\n+ EmitC translation"]
   K --> N["obj: convert-dsdl-to-llvm\n+ LLVM code generation"]
-  K --> O["C++, Rust, Go, TS and Python:\ntranslateFunction + a spelling per language"]
+  K --> O["C, C++, Rust, Go, TS and Python:\ntranslateFunction + a spelling per language"]
   E --> L["Declarations, module layout,\nmanifests, runtime support"]
   J --> M["Generated sources and objects"]
   N --> M
@@ -117,7 +116,6 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 - `build-dsdl-plan-bodies`
 - optional `optimize-dsdl-lowered-serdes` pipeline: the canonicaliser and common-subexpression elimination over the helpers and bodies
 - `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of
-- `convert-dsdl-to-emitc`
 - `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 
 Key files:
@@ -127,7 +125,6 @@ Key files:
 - [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp)
 - [`include/llvmdsdl/Transforms/PlanSteps.h`](include/llvmdsdl/Transforms/PlanSteps.h)
 - [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp)
-- [`lib/Transforms/ConvertDSDLToEmitC.cpp`](lib/Transforms/ConvertDSDLToEmitC.cpp)
 - [`lib/Transforms/ConvertDSDLToLLVM.cpp`](lib/Transforms/ConvertDSDLToLLVM.cpp)
 
 The lowered contract attributes are an explicit handshake between producers and consumers. Backends validate contract version/producer and helper availability before rendering code. This is a major reliability property of the design.
@@ -176,7 +173,7 @@ One defect is one change covering every backend: the lane the defect fails is wr
 
 ### 5.1 C backend (`emitter::c::emit`)
 
-The C backend translates plan bodies through EmitC. For each selected definition, it takes the schema and the functions the pipeline built for it, runs the conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
+The C backend spells plan bodies through `translateFunction` and a `CSpelling`, as the other source backends do. For each selected definition it takes the schema and the functions the pipeline built for it, and spells each as C. The resulting `.c` translation units are paired with generated headers and the C runtime.
 
 Key file:
 
@@ -186,9 +183,8 @@ Current path:
 
 1. Validate lowered contract coverage.
 2. Clone the definition's schema, and the functions `lower-dsdl-bodies` built for it, into a working module.
-3. Run `convert-dsdl-to-emitc`, canonicalisation/CSE and the EmitC conversions.
-4. Emit body using `mlir::emitc::translateToCpp(...)`.
-5. Emit matching `.h` API and `dsdl_runtime.h`.
+3. Spell each function through `translateFunction` and a `CSpelling`.
+4. Emit matching `.h` API and `dsdl_runtime.h`.
 
 ### 5.2 C++ backend (`emitter::cpp::emit`)
 

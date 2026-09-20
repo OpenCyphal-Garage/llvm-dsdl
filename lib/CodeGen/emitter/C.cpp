@@ -29,9 +29,6 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
-#include <mlir/Conversion/ArithToEmitC/ArithToEmitCPass.h>
-#include <mlir/Conversion/FuncToEmitC/FuncToEmitCPass.h>
-#include <mlir/Conversion/SCFToEmitC/SCFToEmitC.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -52,8 +49,14 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <set>
+#include <utility>
+#include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
-#include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
@@ -62,7 +65,6 @@
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
@@ -90,7 +92,6 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
-#include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -1038,7 +1039,6 @@ llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std
     return llvm::Error::success();
 }
 
-
 /// @brief What the C header named a member of one plan.
 struct CBodyMember final
 {
@@ -1069,6 +1069,14 @@ public:
     CSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
         : module_(module)
     {
+        if (const auto nested = module->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.c_nested_headers"))
+        {
+            for (const mlir::Attribute entry : nested)
+            {
+                const auto [cTypeName, headerPath] = mlir::cast<mlir::StringAttr>(entry).getValue().split('=');
+                headers_[cTypeName]                = headerPath.str();
+            }
+        }
         // A body points at nested objects as well as its own, so every plan the module carries
         // contributes the tag its header declares.
         for (mlir::dsdl::SchemaOp other : module.getOps<mlir::dsdl::SchemaOp>())
@@ -1168,7 +1176,12 @@ public:
                     continue;
                 }
                 names.push_back(parameter + "_");
-                w.line("const " + spelt + " " + names.back() + " = (" + spelt + ") " + parameter + ";");
+                std::string conversion = "const " + spelt;
+                conversion += " " + names.back();
+                conversion += " = (" + spelt;
+                conversion += ") " + parameter;
+                conversion += ";";
+                w.line(conversion);
             }
             return names;
         }
@@ -1187,12 +1200,19 @@ public:
         return {object, "buffer", "inout_buffer_size_bytes"};
     }
 
+    /// @brief The header that declares the type @p object points at.
+    [[nodiscard]] std::string headerOf(const mlir::Value object) const
+    {
+        const auto found = headers_.find(entryPointTag(object));
+        return (found == headers_.end()) ? std::string{} : found->second;
+    }
+
     /// @brief The declaration of @p fn, so a body may call one defined after it.
     [[nodiscard]] std::string declarationOf(mlir::func::FuncOp fn) const
     {
-        const auto        direction = planBodyDirection(fn);
-        const std::string name      = fn.getSymName().str();
-        std::string       rendered;
+        const auto               direction = planBodyDirection(fn);
+        const std::string        name      = fn.getSymName().str();
+        std::string              rendered;
         std::vector<std::string> parameters;
         if (!direction)
         {
@@ -1207,7 +1227,7 @@ public:
         }
         else
         {
-            parameters.push_back((*direction == "serialize") ? "obj" : "out_obj");
+            parameters.emplace_back((*direction == "serialize") ? "obj" : "out_obj");
             if (*direction != "initialize")
             {
                 parameters.emplace_back("buffer");
@@ -1360,7 +1380,7 @@ public:
         {
             const bool  single = mlir::cast<mlir::FloatType>(floating.getType()).getWidth() <= 32;
             std::string text   = std::to_string(floating.getValueAsDouble());
-            if (text.find('.') == std::string::npos)
+            if (!text.contains('.'))
             {
                 text += ".0";
             }
@@ -1484,10 +1504,10 @@ public:
         w.line("*" + names(op.getPointer()) + " = " + names(op.getValue()) + ";");
     }
 
-    [[nodiscard]] std::string local(SourceWriter&             w,
-                                    mlir::dsdl::LocalOp       op,
-                                    const llvm::StringRef     name,
-                                    const ValueNames&         names) const override
+    [[nodiscard]] std::string local(SourceWriter&         w,
+                                    mlir::dsdl::LocalOp   op,
+                                    const llvm::StringRef name,
+                                    const ValueNames&     names) const override
     {
         const std::string storage =
             pointeeName(mlir::cast<mlir::dsdl::PtrType>(op.getAddress().getType()).getPointee());
@@ -1512,8 +1532,8 @@ public:
 
     void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
     {
-        w.line(elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
-               names(op.getValue()) + ";");
+        w.line(elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " + names(op.getValue()) +
+               ";");
     }
 
     [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
@@ -1549,9 +1569,10 @@ public:
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
     {
         const mlir::Type  valueType = op.getValue().getType();
-        const std::string primitive = runtimePrimitive(true, valueType, op.getWidth(), op.getIsSigned());
-        std::string       arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) +
-                                ", (size_t) " + names(op.getBitOffset()) + ", " + names(op.getValue());
+        const std::string primitive =
+            runtimePrimitive(true, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
+        std::string arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) + ", (size_t) " +
+                                names(op.getBitOffset()) + ", " + names(op.getValue());
         if (!mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1))
         {
             arguments += ", (uint8_t) " + std::to_string(op.getWidth());
@@ -1562,9 +1583,10 @@ public:
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
     {
         const mlir::Type  valueType = op.getValue().getType();
-        const std::string primitive = runtimePrimitive(false, valueType, op.getWidth(), op.getIsSigned());
-        std::string       arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) +
-                                ", (size_t) " + names(op.getBitOffset());
+        const std::string primitive =
+            runtimePrimitive(false, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
+        std::string arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) + ", (size_t) " +
+                                names(op.getBitOffset());
         if (!mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1))
         {
             arguments += ", (uint8_t) " + std::to_string(op.getWidth());
@@ -1643,13 +1665,12 @@ public:
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        const std::string path = memberPath(op.getObject(), op.getMember(), names);
+        const std::string        path   = memberPath(op.getObject(), op.getMember(), names);
         const CBodyMember* const member = memberOf(op.getObject(), op.getMember());
         if ((member != nullptr) && (member->arrayKind != "none"))
         {
             w.line("dsdl_runtime_clear_views(" + elementBase(op.getObject(), op.getMember(), names) + ", " +
-                   ((member->arrayKind == "fixed") ? std::to_string(member->arrayCapacity) + "U"
-                                                   : (path + ".count")) +
+                   ((member->arrayKind == "fixed") ? std::to_string(member->arrayCapacity) + "U" : (path + ".count")) +
                    ");");
             return;
         }
@@ -1658,8 +1679,8 @@ public:
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) +
-               ", (size_t) " + names(op.getSourceSizeBytes()) + ", " + std::to_string(op.getBytes()) + "U);");
+        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) + ", (size_t) " +
+               names(op.getSourceSizeBytes()) + ", " + std::to_string(op.getBytes()) + "U);");
     }
 
 private:
@@ -1746,7 +1767,7 @@ private:
                                           const ValueNames&     names) const
     {
         const CBodyMember* const found = memberOf(object, member);
-        const std::string        path  = memberPath(object, member, names);
+        std::string              path  = memberPath(object, member, names);
         if ((found == nullptr) || (found->arrayKind == "fixed"))
         {
             return path;
@@ -1769,14 +1790,20 @@ private:
                              : memberPath(op.getObject(), op.getMember(), names);
     }
 
+    /// @brief The C type name of whatever @p object points at.
+    [[nodiscard]] std::string entryPointTag(const mlir::Value object) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? tags_.find(identity.getIdentity()) : tags_.end();
+        return (found == tags_.end()) ? std::string{} : found->second;
+    }
+
     /// @brief The entry point a nested type's header publishes for @p direction.
     [[nodiscard]] std::string entryPoint(const mlir::Value object, const llvm::StringRef direction) const
     {
-        const auto pointer  = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
-        const auto identity = pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee())
-                                      : mlir::dsdl::ObjectType{};
-        const auto found    = identity ? tags_.find(identity.getIdentity()) : tags_.end();
-        return ((found == tags_.end()) ? std::string{} : found->second) + "__" + direction.str() + "_";
+        return entryPointTag(object) + "__" + direction.str() + "_";
     }
 
     /// @brief The runtime primitive that carries a field of this width and value type.
@@ -1806,7 +1833,7 @@ private:
     }
 
     /// @brief The value a variable holds before an arm assigns it.
-    [[nodiscard]] std::string zeroOf(const mlir::Type type) const
+    [[nodiscard]] static std::string zeroOf(const mlir::Type type)
     {
         if (mlir::isa<mlir::dsdl::PtrType>(type))
         {
@@ -1848,15 +1875,17 @@ private:
         return integer && (integer.getWidth() > 1) && (integer.getWidth() < 64);
     }
 
-    [[nodiscard]] std::string asSigned(const llvm::StringRef value, const mlir::Type type) const
+    [[nodiscard]] static std::string asSigned(const llvm::StringRef value, const mlir::Type type)
     {
-        return isSignedSpelt(type) ? value.str() : ("(int" + std::to_string(mlir::cast<mlir::IntegerType>(type).getWidth()) + "_t) " + value.str());
+        return isSignedSpelt(type)
+                   ? value.str()
+                   : ("(int" + std::to_string(mlir::cast<mlir::IntegerType>(type).getWidth()) + "_t) " + value.str());
     }
 
     [[nodiscard]] static bool isSignedComparison(const Comparison comparison)
     {
-        return (comparison == Comparison::LtS) || (comparison == Comparison::LeS) ||
-               (comparison == Comparison::GtS) || (comparison == Comparison::GeS);
+        return (comparison == Comparison::LtS) || (comparison == Comparison::LeS) || (comparison == Comparison::GtS) ||
+               (comparison == Comparison::GeS);
     }
 
     [[nodiscard]] static llvm::StringRef operatorToken(const BinaryOperator op)
@@ -1991,9 +2020,10 @@ private:
         return "void";
     }
 
-    mlir::ModuleOp                module_;
-    llvm::StringMap<CBodyPlan>    plans_;
-    llvm::StringMap<std::string>  tags_;
+    mlir::ModuleOp               module_;
+    llvm::StringMap<CBodyPlan>   plans_;
+    llvm::StringMap<std::string> tags_;
+    llvm::StringMap<std::string> headers_;
 };
 
 }  // namespace
@@ -2149,14 +2179,35 @@ llvm::Error emit(const SemanticModule& semantic,
         std::ostringstream emittedOut;
         SourceWriter       w = makeCWriter(emittedOut);
         {
-            const CSpelling  spelling(perDefModule, schema);
-            PlanBodyLookups  lookups(perDefModule);
-            const std::vector<mlir::func::FuncOp> functions =
-                schemaFunctions(perDefModule, schema.getSymName());
+            const CSpelling                       spelling(perDefModule, schema);
+            PlanBodyLookups                       lookups(perDefModule);
+            const std::vector<mlir::func::FuncOp> functions = schemaFunctions(perDefModule, schema.getSymName());
+            // A nested type's entry point is declared by its own header, and only the types a
+            // body calls are included: an unused include is lint the consumer has to answer for.
+            std::set<std::string> nestedHeaders;
+            for (const mlir::func::FuncOp fn : functions)
+            {
+                fn->walk([&](mlir::Operation* op) {
+                    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(op))
+                    {
+                        nestedHeaders.insert(spelling.headerOf(call.getObject()));
+                    }
+                    else if (auto init = mlir::dyn_cast<mlir::dsdl::CallInitializeOp>(op))
+                    {
+                        nestedHeaders.insert(spelling.headerOf(init.getObject()));
+                    }
+                });
+            }
+            nestedHeaders.erase(std::string{});
+            nestedHeaders.erase(schema.getHeaderPath().value_or(llvm::StringRef{}).str());
             w.line("#include <stdbool.h>");
             w.line("#include <stddef.h>");
             w.line("#include <stdint.h>");
             w.line("#include \"dsdl_runtime.h\"");
+            for (const std::string& header : nestedHeaders)
+            {
+                w.line("#include \"" + header + "\"");
+            }
             w.line("#include \"" + schema.getHeaderPath().value_or(llvm::StringRef{}).str() + "\"");
             w.blank();
             // Declared before any of them is defined: a body calls a helper, and a helper the

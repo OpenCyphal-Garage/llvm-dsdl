@@ -2072,7 +2072,6 @@ void registerDSDLPasses()
                             "Lower serialisation plans to serialise and deserialise functions of dialect operations",
                             [](mlir::OpPassManager& pm) { addLowerDSDLBodiesPipeline(pm, false); });
     registerBuildDSDLPlanBodiesPass();
-    registerDSDLConvertPasses();
     registerEmitDSDLRuntimePass();
     registerDSDLToLLVMPasses();
 }
