@@ -18,21 +18,42 @@ wire in an eight-byte structure, because a `uint56` is held in a `uint64_t`;
 
 ## What the generated code reports
 
-Every type reports `WIRE_FLAT` and a `WIRE_FLAT_REASON` naming what blocked it, whether or not the
-type asserts the property. C, C++, Rust and Go report `HOST_IMAGE` and `HOST_IMAGE_REASON` beside
-them. A TypeScript or Python object has no byte image, so those two report the wire verdict alone;
-the accessors are what W buys them.
+Every type reports `WIRE_FLAT` and `WIRE_FLAT_REASON`. Both are reported whether or not the type
+asserts the property: the verdict is a fact about the schema, and `@aliasable` decides only whether
+failing it stops the build. The reason is `"flat"` where the property holds, and the category that
+blocked it where it does not:
 
-A reason names the field it is about — `field 'tail' is a variable-length array, so the fields after
-it move` — and a nested refusal carries the nested type's own name, reason and field, so an author
-is not sent to another file to find out why.
+```c
+#define q__ns__Plain_WIRE_FLAT_ true
+#define q__ns__Plain_WIRE_FLAT_REASON_ "flat"
+#define q__ns__Narrow_WIRE_FLAT_ false
+#define q__ns__Narrow_WIRE_FLAT_REASON_ "sub-byte-field"
+```
+
+C, C++, Rust and Go report `HOST_IMAGE` and `HOST_IMAGE_REASON` beside them. A TypeScript or Python
+object has no byte image, so those two report the wire verdict alone; the accessors are what W buys
+them.
+
+The generated reason is a category, because it is a constant a consumer reads. The field is named
+where an author is the reader — `dsdlc` refusing a type that asserts the property and does not hold
+it:
+
+```
+Bad.1.0.dsdl:2:1: error: @aliasable does not hold: field 'health' is not a whole number of bytes wide
+```
+
+A refusal that comes from a nested type carries that type's own name, reason and field, so an
+author is not sent to another file to find out why.
 
 ## What each property buys
 
 **H — the bodies become one move.** A host-image type's `serialize_` and `deserialize_` collapse to
-a single move of the object's bytes on C, the object target, C++, Rust and Go. Over the embedded
-catalogue this took `uavcan.si.unit.angle.Quaternion`'s read from 84 instructions to 35. A type that
-is not a host image keeps the field-wise body.
+a single move of the object's bytes on C, the object target, C++, Rust and Go, in place of the call
+and the mask a field-wise body spends per field. Emitted for `aarch64-unknown-linux-gnu`,
+`uavcan.si.unit.angle.Quaternion` — sixteen bytes of `float32[4]` — reads in 38 instructions and
+writes in 16. Most of the read is the entry point's own work, the null checks and the consumed
+count, which the move does not touch; that is why an eight-byte record costs the same 38. A type
+that is not a host image keeps the field-wise body.
 
 **W — the fields are readable without a decode.** A wire-flat type's scalar fields, and the elements
 of its fixed arrays, have a getter and a setter beside the serialisation functions in all six
@@ -87,9 +108,12 @@ image is the wire's bytes, so an object and a wire buffer may share storage. The
 bytes rather than copying them; `runtime/dsdl_runtime.h` states the contract and its one limit.
 
 **Composition is what makes W worth asserting.** DSDL aligns a composite field to a byte boundary
-but reserves no padding beyond it, so byte-clean does not imply host-clean under nesting: a 7-byte
-composite followed by a `float32` is 11 bytes of wire and 12 of structure. H therefore shrinks as
-schemas nest, and the accessors, which need only W, are what keeps the property useful there.
+and reserves no padding beyond it, so byte-clean does not imply host-clean under nesting. A record
+of three `uint8` is three bytes of wire and three of structure, and H holds for it; put that record
+before a `float32` and the wire is seven bytes while the structure is eight, because the host
+aligns the float to four. The holder reports `WIRE_FLAT` true and `HOST_IMAGE` false with the
+reason `host-padding`. H therefore shrinks as schemas nest, and the accessors, which need only W,
+are what keeps the property useful there.
 
 ## The gates
 
