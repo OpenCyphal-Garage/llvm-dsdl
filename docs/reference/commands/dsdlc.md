@@ -197,10 +197,12 @@ such a type its layout is silent — the code still generates, and the reader pa
 was written not to need.
 
 Every generated type reports the same verdict whether or not it asserts it, as `WIRE_FLAT` and a
-`WIRE_FLAT_REASON` naming what blocked it. `HOST_IMAGE` answers a second question: whether the
-generated structure is that byte image on the target that compiles it. The two differ whenever a
-width the wire carries in five bytes is held in eight, or where a structure aligns a field the wire
-does not.
+`WIRE_FLAT_REASON` naming what blocked it. C, C++, Rust and Go carry `HOST_IMAGE` beside it, which
+answers a second question: whether the generated structure is that byte image on the target that
+compiles it. The two differ whenever a width the wire carries in five bytes is held in eight, or
+where a structure aligns a field the wire does not. A TypeScript or Python object has no byte image
+to compare, so those two report the wire verdict alone; the accessors are what the property buys
+them.
 
 A wire-flat type's scalar fields, and the elements of its fixed arrays of scalars, have
 accessors beside the serialisation functions: a getter that reads one field off a serialised

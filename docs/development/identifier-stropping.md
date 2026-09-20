@@ -217,7 +217,10 @@ else in that scope answers to them already.
 Most are emitted for every type: the nine per-type metadata constants (`FULL_NAME`,
 `FULL_NAME_AND_VERSION`, `IS_DEPRECATED`, `EXTENT_BYTES`, `SERIALIZATION_BUFFER_SIZE_BYTES`,
 `WIRE_FLAT`, `WIRE_FLAT_REASON`, `HOST_IMAGE`, `HOST_IMAGE_REASON`) and the generated method names in
-Go, C++ and Python.
+Go, C++ and Python. `HOST_IMAGE` and its reason are written by C, C++, Rust and Go alone — a
+TypeScript or Python object has no byte image to report one about — and are claimed in all six for
+the reason the conditional names below are: a constant's spelling should not depend on which
+language it was generated for.
 TypeScript's `constructor` and `prototype` are the other kind, claimed by the language runtime rather
 than by anything we write.
 
