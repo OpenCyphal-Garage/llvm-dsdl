@@ -32,7 +32,7 @@
     "measured": {
       "llvm-22": "LLVM 22.1.8, 2026-09-18, aligned load/store fast path"
     },
-    "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A getter is the runtime's read primitive with its clamps, not yet one load; see ZERO_OVERHEAD.md.",
+    "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A whole-function count includes the cold path: a getter's hot path is a bounds check and one load on a little-endian target, and the primitive it keeps for a buffer short of the field is the rest of the count.",
     "views": "A container holding a view of an @aliasable record, under --aliasable-views (`views:`) and as a decoded copy (`plain:`). A static count is per function, and the plain path's nested decode is a call, so the holder's own count does not show what the view removes: that is the callee, baselined beside it under `plain:`."
   },
   "counts": {

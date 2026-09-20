@@ -47,6 +47,7 @@ nav:
           - AI Operation: reference/lsp/ai-operation.md
           - AI Data Flow: reference/lsp/ai-data-flow.md
       - Guarantees:
+          - Layout: reference/guarantees/layout.md
           - Cross-Language Parity: reference/guarantees/parity-matrix.md
           - Malformed Input: reference/guarantees/malformed-input.md
           - Determinism: reference/guarantees/determinism.md
