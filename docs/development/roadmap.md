@@ -64,7 +64,7 @@ Claim audit tally across the review: **28 holds · 32 partial · 5 overstated ·
 | G3 | Contract boundaries / drift detection | **Overstated** — presence/identity guard, not drift detection | C |
 | G4 | Backend parity / convergence = 100 | **Overstated → addressed (2026-07-03)** — parity/malformed/determinism now behavioural (executed pass/fail); convergence relabeled as a lint | C−→B |
 | G5 | Malformed safety + determinism + release-blocking gates | **Partial → improved (2026-07-03)** — real read-path safety; gates now behavioural; big-endian present (not "absent") | C |
-| G6 | Zero-overhead proof / verifier-first / fallback-free | **Overstated; re-audited 2026-09-17** — verifier-first closed; aliasability asserts a memory-layout property it never checks (wrong for 9 of 63 eligible catalogue types); fallback-free still a lint | C− |
+| G6 | Zero-overhead proof / verifier-first / fallback-free | **Partial** — verifier-first closed (2026-07-12); aliasability closed (2026-09-20): the wire and host-memory properties are decided separately, and the host one is confirmed by the consumer's own compiler; fallback-free still a lint | B− |
 | G7 | DSDL v1.0 spec conformance | **Partial** — grammar strong; primitive widths unenforced; parity narrow | C+ |
 | G8 | Reproducible/deterministic builds | **Partial → holds (2026-08-20)** — per-backend determinism lanes; hashed-iteration lint; catalogue integrity gated | B−→B+ |
 
@@ -96,23 +96,15 @@ The generated C **read path is bounds-safe**: it inherits the Nunavut/libcanard 
 
 Weak where it matters most — ~~**(a)** there is **no ASan/UBSan/MSan anywhere**~~ and ~~**(b)** only the *Python* runtime … is fuzzed~~ **(both addressed 2026-07-03: the `ci-asan` preset + `sanitizers` CI lane run ASan/UBSan over the generated C/C++/Go decoders and a coverage-guided libFuzzer lane over the native C deserialisers on the real corpus — see P0)**; **(c)** ~~the "release-blocking malformed gate" is the name-presence metric above~~ **(fixed 2026-07-03: the malformed/parity/determinism gates now consume executed ctest pass/fail — behavioural, not name-presence)**; **(d)** the release `copy_bits` path uses `assert()` guards that vanish under `NDEBUG`. For an avionics-adjacent decoder of untrusted bytes, this is the single most important gap.
 
-### G6 — Zero-overhead proof / verifier-first / fallback-free → **Overstated**
-The three strands have moved apart. Re-audited 2026-09-17 against `49b8883`; the aliasability
-finding below is measured, not read.
+### G6 — Zero-overhead proof / verifier-first / fallback-free → **Partial**
+Two of the three strands are closed; the third is scored by searching generated text.
 
-- **Aliasability — the flag names a guarantee it does not hold.** `dsdl-annotate-aliasability`
-  (renamed 2026-07-03 from `dsdl-prove-zero-overhead`; `lib/Transforms/Passes.cpp:1203`) decides a
-  property of the **wire layout**: fixed, sealed, byte-aligned, byte-multiple, no variable arrays,
-  no composites. It stamps `zoh_alias_eligible`, which reaches the generated code as
-  `ZOH_ALIAS_ELIGIBLE` in all six languages and, in C, C++ and Rust, gates
-  `try_deserialize_view_` / `try_serialize_view_`. Those functions are only useful if the **host
-  struct** is a byte image of that wire layout, and nothing checks that: it is an ABI property of
-  the user's compiler, which `dsdlc` cannot observe when it emits a header. Measured over the
-  embedded catalogue, **9 of the 63 eligible types have a struct that is not a byte image of their
-  own wire form** on arm64 — `uavcan.time.SynchronizedTimestamp` is 8 bytes of struct against 7 of
-  wire (`uint56` in a `uint64_t`), `uavcan.primitive.scalar.Real16` is 4 against 2 (`float16` in a
-  `float`), `uavcan.metatransport.udp.Endpoint` is 24 against 32 (wire padding the struct omits).
-  The Rust struct carries no `repr`, so its field order is unspecified by the language. See P1.
+- **Aliasability** ✅ **closed (2026-09-20)**: the flag decided a property of the wire and gated an
+  API that needed a property of host memory, and was wrong for 9 of the 63 sections it accepted on
+  arm64. The two are now decided separately — `@aliasable` asserts the wire property at analysis
+  time, and the host property is confirmed on the consumer's own target by generated static
+  assertions, so `dsdlc` models no ABI. See the P1 entry and
+  [Layout Guarantees](../reference/guarantees/layout.md).
 - **"verifier-first"** ✅ **closed (2026-07-12)**: `lowerToMLIR` calls `mlir::verify()` on its own
   output under a scoped diagnostic handler (`lib/Lowering/LowerToMLIR.cpp:447`), so every backend
   consumes verified IR. See the P2 entry.
@@ -457,79 +449,33 @@ library implementations rests on the lint rather than on a differential build.
   `<outdir>/.obj_stage_cpp` — the staging tree — rather than the published output. Fixing the test
   to use the published tree is the part that keeps it fixed.
 
-- [ ] **Complete aliasability.** *(Found 2026-09-17; G6. Plan:
-  [ZERO_OVERHEAD.md](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/ZERO_OVERHEAD.md).)*
-  `dsdl-annotate-aliasability` decides whether the **wire** form of a type is a flat byte image.
-  `try_deserialize_view_` is useful only if the **host struct** is that same byte image. The two are
-  different properties and nothing connects them, so the flag is wrong for 9 of its 63 eligible
-  sections on arm64 — `uint56` and `uint40` stored in a `uint64_t`, `float16` in a `float`, and wire
-  padding the struct omits. The pass also misdiagnoses: a composite carries `bit_length = 0` and the
-  `bitLength <= 0` test precedes `isComposite()`, so nested composites report `invalid-bit-length` —
-  74 of the 118 ineligible verdicts, and the `composite-field` and `union-type` branches are
-  unreachable.
+- [x] **Complete aliasability.** *(Found 2026-09-17; G6. Closed 2026-09-20 by #33.)*
+  `dsdl-annotate-aliasability` decided a property of the **wire** and stamped it onto an API that
+  needed a property of **host memory**. Nothing connected the two, so the flag was wrong for 9 of
+  the 63 sections it accepted on arm64, and the API it gated returned the pointer it was given.
 
-  The plan separates the two properties the one flag was covering — **W** (the wire is a contiguous
-  byte run, decidable from the schema) and **H** (the generated structure is that run, an ABI fact)
-  — and sizes them over the catalogue: the old flag accepted 63, H is 54, W is 107. It adds an
-  `@aliasable` directive asserting W so a performance-critical type fails at the schema rather than
-  degrading silently, with generated static assertions covering H on the consumer's own target.
+  The two properties are now decided separately and named: **W**, wire-flat, decidable from the
+  schema and asserted by `@aliasable`; and **H**, host-image, an ABI fact confirmed by the
+  consumer's own compiler through generated static assertions. A host-image type's bodies collapse
+  to one move on the native backends, and a wire-flat type's fields are readable off a buffer with
+  no decode in all six languages. [Layout Guarantees](../reference/guarantees/layout.md) states what
+  the properties mean and what they rest on; [dsdlc](../reference/commands/dsdlc.md) carries the
+  directive and the two modes.
 
-  ✅ **Phases 0 through 2 landed 2026-09-17.** The verdicts are decided once in the analyser, carried
-  as plan attributes, and re-derived by `dsdl-verify-alias-layout` rather than computed twice. H is
-  checked against what the compiler lays out by `llvmdsdl-alias-layout-reality`, which found no false
-  claims over the catalogue. `@aliasable` ships as a documented llvm-dsdl extension, upstream later
-  (`docs/reference/commands/dsdlc.md`); the differential corpus is the public regulated submodule and
-  cannot contain the directive.
+  Three constraints on the result are worth carrying forward:
 
-  **Reshaped 2026-09-18 by an implementation review**, which changed two of the remaining phases
-  before they were built. The bulk copy cannot reuse `dsdl.bit_write`: in Rust, Go and TypeScript
-  that op is a per-bit loop over a bool container, so it needs its own op and a per-target capability
-  bit. And the decode-free read surface becomes generated accessor *bodies* rather than a second
-  packed type — one `dsdl.read_bits` at a constant offset, which every backend already spells, so it
-  reaches TypeScript and Python too, sidesteps the alignment and object-lifetime problems, and drops
-  the width split. The review also added a candidate lint, so an author learns that a field will
-  block the fast path while it is still cheap to change. Phases 2.1 (revisits), 2.2 (the lint) and 6
-  (container views) are new; 3 through 5 are revised.
+  - **The census is corpus-specific.** W holds for 107 of the catalogue's 181 sections and H for 54.
+    The regulated namespace was designed for CAN 2.0 wire economy, so those counts are a pessimistic
+    sample and serve as regression anchors rather than as a measure of the properties.
+  - **H shrinks as schemas nest.** DSDL aligns a composite to a byte boundary and reserves no
+    padding beyond it, so a 7-byte composite followed by a `float32` is 11 bytes of wire and 12 of
+    structure. The accessors, which need only W, are what keeps the work useful under composition.
+  - **The moved bodies are a little-endian path.** A folded type's header refuses a build it cannot
+    place as little-endian, and refuses one whose compiler states no byte order; `--target-triple`
+    naming a big-endian target emits the field-wise body instead.
 
-  ✅ **Phase 3 landed 2026-09-18.** On C, `obj`, C++, Rust and Go a host-image type's serialise
-  and deserialise are one move of the object's bytes — Quaternion's read went from 84 instructions
-  to 35 — produced by a rewrite pass over the canonical field-wise bodies, gated on the target
-  triple being little-endian, and held to a per-triple instruction-count baseline. Every host-image
-  structure asserts its size and each member's offset on the target it is compiled for; the
-  assertions found that the C++ PMR profile's memory-resource pointer made such a structure wider
-  than the wire, which is fixed by giving a host image none. This qualifies a claim elsewhere in
-  this document: `serialize_` is host-endianness-agnostic for the field-wise body, and the folded
-  body is little-endian only — the generated code refuses a big-endian build with the reason and
-  the fix, rather than falling back.
-
-  ✅ **Phase 4 landed 2026-09-18.** Every wire-flat type has field accessors in all six
-  languages, built as bodies beside the three the plan already had: a getter that reads one field
-  off a serialised buffer at its fixed offset, in the member's own type, and a setter that writes
-  one; an element accessor takes an index, and a nested composite's getter answers the buffer from
-  its offset so the nested type's own accessors compose on it. A getter answers what `deserialize_`
-  puts in the field on every buffer, short ones included, which a six-language lane holds it to
-  on nine regulated types. The object lowering now takes the target's endianness and lowers a
-  byte-aligned scalar of a register's width to a bounds check and one load or store, which the
-  field-wise bodies inherit as well: `Padded`'s deserialise fell from 56 instructions to 39 on
-  AArch64.
-
-  ✅ **Phase 5 landed 2026-09-18.** `--aliasable-only` emits the accessors and neither the object
-  type nor the serialisation. It holds every targeted type to `@aliasable`, or to being nested by a
-  type that carries it, and names each that is neither. A lane compiles the output standalone on all
-  seven targets and reads a buffer through the outer type's composite getter and the inner type's
-  field getter.
-
-  ✅ **Phase 6 landed 2026-09-19.** `--aliasable-views` holds a composite field of an `@aliasable`
-  type as a view of the buffer the holder was deserialised from, in every language: the holder's
-  deserialise skips the record and its serialise copies the view, a short buffer leaves a short
-  view read as zeros, and the record's accessors read the view in place. C and C++ hold the
-  runtime's pointer and size, Rust a borrowed slice that gives the holder a lifetime, Go, TypeScript
-  and Python their own slices; an array of the type is a view per element. A lane holds all seven
-  targets to that contract, on a scalar member and on the elements of a fixed and of a
-  variable-length array, and the instruction
-  lane baselines the holder beside the callee the view removes. A union whose options are all flat
-  and of one length has the same accessors, its tag reached as a member named `_tag_`; the
-  catalogue has no such union, so a fixture holds all seven targets to it.
+  The accessors add a function per field to the generated API, which lands before the alpha →
+  beta-1 boundary or waits for it.
 
 ### P2 — Maturity / maintainability
 
