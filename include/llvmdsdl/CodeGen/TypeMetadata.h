@@ -10,10 +10,14 @@
 /// @file
 /// The facts a backend declares beside a section's generated type.
 ///
-/// Every backend emits the same set: the type's identity, how much of a buffer it needs, whether it
-/// is deprecated, its two layout verdicts, its fixed port-ID, and for a union its options. Each one
-/// spells them in its own syntax, and each one used to derive them itself. This is where they are
-/// derived, once, so that the six spellings are six renderings of one answer.
+/// Every backend is handed the same set: the type's identity, how much of a buffer it needs, whether
+/// it is deprecated, its two layout verdicts, its fixed port-ID, and for a union its options. Each
+/// one spells them in its own syntax, and each one used to derive them itself. This is where they
+/// are derived, once, so that the six spellings are six renderings of one answer.
+///
+/// What a backend does with one is its own: C, C++, Rust and Go write the host-image verdict, and
+/// TypeScript and Python write the wire verdict alone, because an object there has no byte image
+/// for the second to be about.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_TYPE_METADATA_H
