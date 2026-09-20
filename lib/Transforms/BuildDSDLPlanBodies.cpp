@@ -226,12 +226,13 @@ std::optional<std::string> unsupportedFieldReason(const PlanStep& step)
 std::optional<std::string> unsupportedPlanReason(const std::vector<PlanStep>& steps,
                                                  const bool                   isUnion,
                                                  const std::int64_t           unionTagBits,
+                                                 const bool                   constrainsCapacity,
                                                  llvm::StringRef              capacityCheckSymbol,
                                                  llvm::StringRef              unionTagValidateSymbol,
                                                  llvm::StringRef              unionTagSerializeHelper,
                                                  llvm::StringRef              unionTagDeserializeHelper)
 {
-    if (capacityCheckSymbol.empty())
+    if (constrainsCapacity && capacityCheckSymbol.empty())
     {
         return "plan carries no capacity-check helper; run lower-dsdl-exec first";
     }
@@ -1413,7 +1414,8 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
                                             llvm::StringRef              unionTagValidateSymbol,
                                             llvm::StringRef              unionTagHelper)
 {
-    if (capacityCheckSymbol.empty() || !module.lookupSymbol<mlir::func::FuncOp>(capacityCheckSymbol))
+    // A plan that needs no bits names no capacity-check helper, and the body calls none.
+    if (!capacityCheckSymbol.empty() && !module.lookupSymbol<mlir::func::FuncOp>(capacityCheckSymbol))
     {
         return mlir::failure();
     }
@@ -1461,7 +1463,9 @@ mlir::LogicalResult buildTypedSerializeBody(mlir::OpBuilder&             builder
         const mlir::Value capacityBits =
             mlir::arith::MulIOp::create(builder, loc, capacityBytes, constantI64(builder, loc, 8));
         const mlir::Value capacityError =
-            callErrorHelper(builder, loc, capacityCheckSymbol, mlir::ValueRange{capacityBits});
+            capacityCheckSymbol.empty()
+                ? constantI8(builder, loc, 0)
+                : callErrorHelper(builder, loc, capacityCheckSymbol, mlir::ValueRange{capacityBits});
 
         PlanCursor cursor{constantI64(builder, loc, 0), capacityError, 0, 0};
 
@@ -2556,6 +2560,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         if (const auto reason = unsupportedPlanReason(steps,
                                                       isUnion,
                                                       unionTagBits,
+                                                      nonNegative(plan.getMaxBits()) > 0,
                                                       capacityCheckSymbol,
                                                       unionTagValidateSymbol,
                                                       unionTagSerializeHelper,

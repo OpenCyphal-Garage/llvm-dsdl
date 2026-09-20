@@ -1155,6 +1155,7 @@ public:
             }
             w.line(accessorTypeName(fn.getFunctionType().getResult(0)) + " " + name + "(" + rendered + ")");
             w.open("{");
+            markUnused(w, fn, parameters);
             // The header declares the offsets signed. The plan counts in unsigned, so each is
             // taken once into the type the body operates in rather than converted at every use.
             std::vector<std::string> names;
@@ -1176,11 +1177,13 @@ public:
         {
             w.line("int8_t " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object + ")");
             w.open("{");
+            markUnused(w, fn, {object});
             return {object};
         }
         w.line("int8_t " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object + ", " +
                typeName(fn.getArgument(1).getType()) + " buffer, size_t* inout_buffer_size_bytes)");
         w.open("{");
+        markUnused(w, fn, {object, "buffer", "inout_buffer_size_bytes"});
         return {object, "buffer", "inout_buffer_size_bytes"};
     }
 
@@ -1924,7 +1927,23 @@ private:
         w.line(typeName(fn.getFunctionType().getResult(0)) + " " + fn.getSymName().str() + "(" +
                (rendered.empty() ? "void" : rendered) + ")");
         w.open("{");
+        markUnused(w, fn, parameters);
         return parameters;
+    }
+
+    /// @brief Marks a parameter the body never reads.
+    ///
+    /// A plan states what its helper is handed whether or not this one answers from it, and the
+    /// signature is the plan's; a target that treats an unread parameter as a defect is told.
+    static void markUnused(SourceWriter& w, mlir::func::FuncOp fn, const std::vector<std::string>& parameters)
+    {
+        for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
+        {
+            if (argument.use_empty())
+            {
+                w.line("(void) " + parameter + ";");
+            }
+        }
     }
 
     /// @brief The C spelling of a value type.
