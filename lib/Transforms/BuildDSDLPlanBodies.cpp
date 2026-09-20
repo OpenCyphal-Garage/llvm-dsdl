@@ -2461,7 +2461,13 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, readTy, buffer);
 
     mlir::Value offset = constantI64(builder, loc, bitOffset / 8);
-    mlir::Value within = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ule, offset, size);
+    // A field the buffer starts with is within whatever buffer there is. Comparing its offset
+    // against the size would answer the same for every size, and a target that reads its own
+    // generated code is told so by a compiler that can see it.
+    mlir::Value within =
+        ((bitOffset / 8) == 0)
+            ? mlir::arith::ConstantIntOp::create(builder, loc, 1, 1).getResult()
+            : mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ule, offset, size).getResult();
     if (indexed)
     {
         const mlir::Value index   = entry->getArgument(2);
