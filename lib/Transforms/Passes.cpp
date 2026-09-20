@@ -1822,6 +1822,13 @@ private:
         {
             return plan.emitError("wire_flat holds but the payload is not a whole number of bytes");
         }
+        // A fixed length is one number, so a plan stating a range states no length the steps can
+        // add up to -- and what reads the plan is free to take either bound. The fold takes the
+        // upper one, so a plan whose bounds differ moves bytes its object does not have.
+        if (plan.getMinBits() != plan.getMaxBits())
+        {
+            return plan.emitError("wire_flat holds but the plan's declared length is a range");
+        }
         // The steps are the payload, so they add up to the length the plan states. What reads the
         // plan takes that length at its word -- the fold moves it -- so a plan stating more than
         // its steps hold moves bytes the object does not have.
