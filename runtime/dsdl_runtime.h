@@ -15,6 +15,19 @@
 /// header-only and aligned with OpenCyphal/Nunavut runtime semantics so that
 /// generated code remains portable across integration environments.
 ///
+/// @section aliasing Overlapping the object and the buffer
+///
+/// A generated entry point may be given an object and a wire buffer that share storage. A host
+/// image is the wire's bytes, so an object may be decoded in place over the buffer it came from; a
+/// view is a pointer into the buffer its holder was deserialised from, so serialising that holder
+/// into the same buffer writes a field over itself. `dsdl_runtime_image_read`,
+/// `dsdl_runtime_image_write` and `dsdl_runtime_copy_bytes` move their bytes rather than copy them,
+/// and zero-fill only what the move did not reach.
+///
+/// `dsdl_runtime_copy_bits` moves its bytes where both offsets are byte-aligned, and overlapping it
+/// where they are not is undefined. Every field of a type reporting `WIRE_FLAT` begins on a byte
+/// boundary and is a whole number of bytes wide, so a copy for one of its fields is byte-aligned.
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVMDSDL_RUNTIME_DSDL_RUNTIME_H
@@ -357,7 +370,7 @@ extern "C"
     {
         DSDL_RUNTIME_ASSERT(buf != NULL);
         DSDL_RUNTIME_ASSERT(object != NULL);
-        // `memmove` for the reason its counterpart takes one: the two may be the same storage.
+        // The object and the buffer may be the same storage, so the bytes move rather than copy.
         (void) memmove(buf, object, object_size_bytes);
     }
 

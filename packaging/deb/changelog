@@ -1,3 +1,25 @@
+llvm-dsdl (0.3.0) unstable; urgency=medium
+
+  * State what the runtime permits a caller to overlap
+  * Bumping the working version to 0.3.0
+  * Adding anaphor rules to AGENTS.md
+  * Split aliasability into wire-flat and host-image, and build what each...
+  * Stop qualifying declared parameters const (#32)
+  * Build an initialise body and spell it in every language (#31)
+  * Name a union's options and a definition's port-ID (#30)
+  * Fold fixed layouts in the plan bodies, and measure the serdes against...
+  * Name a plan body's values from the operations that define them (#27)
+  * Validate array lengths in the plan bodies and guard every backend (#26)
+  * Make every backend a translation of the plan bodies (#25)
+  * Remove the deprecation pragmas from generated C, C++ and Rust (#24)
+  * Docs/cli options from help (#23)
+  * Lower DSDL directly to object code (#22)
+  * Take the generated source out of string literals (#21)
+  * Feature/cleanup pass (#20)
+  * Feature/stropping and versioning (#19)
+
+ -- Scott Dixon <scottd.thirtytwo@gmail.com>  Sun, 20 Sep 2026 10:32:16 -0700
+
 llvm-dsdl (0.2.3) unstable; urgency=medium
 
   * Bump github/codeql-action from 3 to 4 in the actions group

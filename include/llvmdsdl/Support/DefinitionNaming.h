@@ -11,8 +11,7 @@
 /// Names composed from a definition's identity rather than from a single DSDL name.
 ///
 /// `NamingPolicy.h` answers how one name is spelled in one language. This answers the names built
-/// from a definition's *parts* -- its full name, its short name, its version -- which is a different
-/// question and, until this file existed, one that every caller answered for itself.
+/// from a definition's *parts*.
 ///
 /// The signatures take parts rather than a `DiscoveredDefinition` on purpose: `llvmdsdlFrontend`
 /// links only `llvmdsdlSupport`, so anything phrased in terms of the frontend's own types would be
