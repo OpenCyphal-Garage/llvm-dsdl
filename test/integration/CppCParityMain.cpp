@@ -231,6 +231,81 @@ std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@V1_0@* ou
 std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@V1_0@* obj,
                                  std::uint8_t*                              buffer,
                                  std::size_t*                               inoutSize);
+std::int8_t cReal32Deserialize(uavcan__primitive__scalar__Real32@CV1_0@* outObj,
+                               const std::uint8_t*                  buffer,
+                               std::size_t*                         inoutSize);
+std::int8_t cReal32Serialize(const uavcan__primitive__scalar__Real32@CV1_0@* obj,
+                             std::uint8_t*                              buffer,
+                             std::size_t*                               inoutSize);
+std::int8_t cppReal32Deserialize(uavcan::primitive::scalar::Real32@V1_0@* outObj,
+                                 const std::uint8_t*                  buffer,
+                                 std::size_t*                         inoutSize);
+std::int8_t cppReal32Serialize(const uavcan::primitive::scalar::Real32@V1_0@* obj,
+                               std::uint8_t*                              buffer,
+                               std::size_t*                               inoutSize);
+
+// A host image's bodies are one move of the object's bytes, and a short buffer must still
+// zero-extend: what is there is moved and the rest is zero, as reading each field would have
+// given. Both sides fold; the input is a prefix of the type's image.
+template <typename CObject, typename CppObject, typename CDeserialize, typename CppDeserialize, typename CSerialize, typename CppSerialize>
+int truncatedImageRoundtrip(const char*         label,
+                            const std::uint8_t* input,
+                            const std::size_t   inputSize,
+                            const std::size_t   imageSize,
+                            CDeserialize        cDeserialize,
+                            CppDeserialize      cppDeserialize,
+                            CSerialize          cSerialize,
+                            CppSerialize        cppSerialize)
+{
+    CObject     cObj{};
+    CppObject   cppObj{};
+    std::size_t       cConsumed   = inputSize;
+    std::size_t       cppConsumed = inputSize;
+    const std::int8_t cDesRc      = cDeserialize(&cObj, input, &cConsumed);
+    const std::int8_t cppDesRc    = cppDeserialize(&cppObj, input, &cppConsumed);
+    if ((cDesRc != 0) || (cppDesRc != 0) || (cConsumed != cppConsumed))
+    {
+        std::fprintf(stderr,
+                     "Directed mismatch (%s truncated-image deserialize): C(rc=%d,consumed=%zu) C++(rc=%d,consumed=%zu)\n",
+                     label,
+                     static_cast<int>(cDesRc),
+                     cConsumed,
+                     static_cast<int>(cppDesRc),
+                     cppConsumed);
+        return 1;
+    }
+    std::uint8_t      cOut[64]{};
+    std::uint8_t      cppOut[64]{};
+    std::size_t       cSize        = imageSize;
+    std::size_t       cppSize      = imageSize;
+    const std::int8_t cSerRc       = cSerialize(&cObj, cOut, &cSize);
+    const std::int8_t cppSerRc     = cppSerialize(&cppObj, cppOut, &cppSize);
+    const bool        byteMismatch = (cSize == cppSize) && (std::memcmp(cOut, cppOut, cSize) != 0);
+    if ((cSerRc != 0) || (cppSerRc != 0) || (cSize != imageSize) || (cppSize != imageSize) || byteMismatch)
+    {
+        std::fprintf(stderr,
+                     "Directed mismatch (%s truncated-image serialize): C(rc=%d,size=%zu) C++(rc=%d,size=%zu)\n",
+                     label,
+                     static_cast<int>(cSerRc),
+                     cSize,
+                     static_cast<int>(cppSerRc),
+                     cppSize);
+        dumpBytes("input", input, inputSize);
+        dumpBytes("c", cOut, cSize);
+        dumpBytes("cpp", cppOut, cppSize);
+        return 1;
+    }
+    for (std::size_t i = inputSize; i < cSize; ++i)
+    {
+        if (cOut[i] != 0U)
+        {
+            std::fprintf(stderr, "%s did not zero-extend past the input\n", label);
+            dumpBytes("c", cOut, cSize);
+            return 1;
+        }
+    }
+    return 0;
+}
 
 int runDirectedErrorCases()
 {
@@ -327,6 +402,39 @@ int runDirectedErrorCases()
             return 1;
         }
         std::printf("INFO cpp-c directed marker execute_request_truncated_payload_roundtrip\n");
+    }
+
+    {
+        const std::uint8_t input[3] = {0x00U, 0x00U, 0x80U};
+        if (truncatedImageRoundtrip<uavcan__primitive__scalar__Real32@CV1_0@, uavcan::primitive::scalar::Real32@V1_0@>(
+                "Real32",
+                input,
+                sizeof(input),
+                uavcan::primitive::scalar::Real32@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                cReal32Deserialize,
+                cppReal32Deserialize,
+                cReal32Serialize,
+                cppReal32Serialize) != 0)
+        {
+            return 1;
+        }
+        std::printf("INFO cpp-c directed marker real32_truncated_image_roundtrip\n");
+    }
+
+    {
+        if (truncatedImageRoundtrip<uavcan__primitive__scalar__Integer8@CV1_0@, uavcan::primitive::scalar::Integer8@V1_0@>(
+                "Integer8",
+                nullptr,
+                0U,
+                uavcan::primitive::scalar::Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                cInteger8Deserialize,
+                cppInteger8Deserialize,
+                cInteger8Serialize,
+                cppInteger8Serialize) != 0)
+        {
+            return 1;
+        }
+        std::printf("INFO cpp-c directed marker integer8_empty_image_roundtrip\n");
     }
 
     {
@@ -1038,6 +1146,30 @@ std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8@V1_0@* co
 std::int8_t cppInteger8Serialize(const uavcan::primitive::scalar::Integer8@V1_0@* const obj,
                                  std::uint8_t* const                              buffer,
                                  std::size_t* const                               inoutSize)
+{
+    return obj->serialize(buffer, inoutSize);
+}
+std::int8_t cReal32Deserialize(uavcan__primitive__scalar__Real32@CV1_0@* const outObj,
+                               const std::uint8_t* const                  buffer,
+                               std::size_t* const                         inoutSize)
+{
+    return uavcan__primitive__scalar__Real32@CV1_0@__deserialize_(outObj, buffer, inoutSize);
+}
+std::int8_t cReal32Serialize(const uavcan__primitive__scalar__Real32@CV1_0@* const obj,
+                             std::uint8_t* const                              buffer,
+                             std::size_t* const                               inoutSize)
+{
+    return uavcan__primitive__scalar__Real32@CV1_0@__serialize_(obj, buffer, inoutSize);
+}
+std::int8_t cppReal32Deserialize(uavcan::primitive::scalar::Real32@V1_0@* const outObj,
+                                 const std::uint8_t* const                  buffer,
+                                 std::size_t* const                         inoutSize)
+{
+    return outObj->deserialize(buffer, inoutSize);
+}
+std::int8_t cppReal32Serialize(const uavcan::primitive::scalar::Real32@V1_0@* const obj,
+                               std::uint8_t* const                              buffer,
+                               std::size_t* const                               inoutSize)
 {
     return obj->serialize(buffer, inoutSize);
 }

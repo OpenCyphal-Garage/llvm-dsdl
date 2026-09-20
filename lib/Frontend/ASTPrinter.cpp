@@ -108,6 +108,8 @@ std::string directiveToString(DirectiveKind kind)
         return "assert";
     case DirectiveKind::Print:
         return "print";
+    case DirectiveKind::Aliasable:
+        return "aliasable";
     case DirectiveKind::Unknown:
         return "unknown";
     }

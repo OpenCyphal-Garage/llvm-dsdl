@@ -26,7 +26,7 @@ dialect. Consuming lowered facts is not translating lowered operations.
 
 ## The pipeline is one
 
-`lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-annotate-aliasability` and
+`lower-dsdl-bodies` is `lower-dsdl-exec`, `dsdl-verify-alias-layout` and
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
 receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
@@ -46,6 +46,8 @@ A body spells nothing the way C does:
 | `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |
 | `dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_`, carrying the member and the direction | `vendor__Inner__serialize_` |
 | `dsdl.call_initialize @vendor_Inner_1_0__initialize_ir_`, carrying the member | `vendor__Inner__initialize_` |
+| `dsdl.store_view`, `dsdl.clear_view`, `dsdl.load_view`, carrying the member held as a view and, in an array of views, the element's index | `.bytes` and `.size_bytes` of the member's `dsdl_runtime_view_t`, or of the element's; `dsdl_runtime_clear_views` over a fixed array |
+| `dsdl.copy_bytes`, carrying the field's width | `dsdl_runtime_copy_bytes` |
 
 `convert-dsdl-to-emitc` and `convert-dsdl-to-llvm` take the C spelling from the stamped schema
 when they run. `test/lit/lower-dsdl-bodies-neutral.txt` holds that a module after
@@ -99,6 +101,7 @@ declares a deserialiser's member address because that is where the storage is cr
 | `dsdl.local`, and the `dsdl.load_scalar` that reads it back | `frequency_size`, `frequencySize` |
 | `dsdl.array_length %obj "name"` | `name_count`, `nameCount` |
 | `dsdl.buffer_at`, named by the nested call it addresses for | `frequency_buf`, `frequencyBuf` |
+| `dsdl.load_view %obj "pose"`, its bytes and their count | `pose_buf` and `pose_size`, `poseBuf` and `poseSize` |
 | `dsdl.is_null`, `dsdl.union_tag`, `dsdl.buffer_or_empty` | `is_null`, `tag`, `buf` |
 | `dsdl.index_holds`, in an array length's validation helper | `index_holds`, `indexHolds` |
 | a helper call, by the marker lowering left on the helper | `err`, `value`, `count`, `tag` |

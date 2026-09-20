@@ -483,6 +483,100 @@ fn run_directed_error_cases() -> Result<(), String> {
         println!("INFO c/rust directed marker execute_request_truncated_payload_roundtrip");
     }
 
+    // A host image's bodies are one move of the object's bytes, and a short buffer must still
+    // zero-extend: what is there is moved and the rest is zero, as reading each field would have
+    // given. Real32 and Integer8 fold on both sides; each input is a prefix of the type's image.
+    macro_rules! truncated_image_roundtrip {
+        ($label:literal, $marker:literal, $ty:ty, $c_roundtrip:ident, $input:expr) => {{
+            let input: &[u8] = &$input;
+            let mut c_result = CCaseResult::default();
+            let mut c_output = [0xA5u8; MAX_IO_BUFFER];
+            let c_status = unsafe {
+                $c_roundtrip(
+                    input.as_ptr(),
+                    input.len(),
+                    c_output.as_mut_ptr(),
+                    <$ty>::SERIALIZATION_BUFFER_SIZE_BYTES,
+                    &mut c_result,
+                )
+            };
+            if c_status != 0 {
+                return Err(format!(
+                    "C harness call failed for {} truncated-image roundtrip: status={c_status}",
+                    $label
+                ));
+            }
+            if c_result.deserialize_rc != 0 {
+                return Err(format!(
+                    "C {} truncated-image deserialize unexpectedly failed rc={}",
+                    $label, c_result.deserialize_rc
+                ));
+            }
+
+            let mut rust_obj = <$ty>::default();
+            let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(input);
+            if rust_rc != 0 {
+                return Err(format!(
+                    "Rust {} truncated-image deserialize unexpectedly failed rc={rust_rc}",
+                    $label
+                ));
+            }
+            if rust_consumed != c_result.deserialize_consumed {
+                return Err(format!(
+                    "Directed mismatch ({} truncated-image consumed): C(consumed={}) Rust(consumed={})",
+                    $label, c_result.deserialize_consumed, rust_consumed
+                ));
+            }
+
+            let mut rust_output = vec![0xA5u8; <$ty>::SERIALIZATION_BUFFER_SIZE_BYTES];
+            let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
+                Ok(size) => size,
+                Err(rc) => {
+                    return Err(format!(
+                        "Rust {} truncated-image serialize unexpectedly failed rc={rc}",
+                        $label
+                    ));
+                }
+            };
+            if c_result.serialize_rc != 0 || rust_ser_size != c_result.serialize_size {
+                return Err(format!(
+                    "Directed mismatch ({} truncated-image serialize size/rc): C(rc={},size={}) Rust(size={})",
+                    $label, c_result.serialize_rc, c_result.serialize_size, rust_ser_size
+                ));
+            }
+            if rust_output[..rust_ser_size] != c_output[..c_result.serialize_size] {
+                return Err(format!(
+                    "Directed mismatch ({} truncated-image serialize bytes): C=[{}] Rust=[{}]",
+                    $label,
+                    format_bytes(&c_output[..c_result.serialize_size]),
+                    format_bytes(&rust_output[..rust_ser_size])
+                ));
+            }
+            if c_output[input.len()..c_result.serialize_size].iter().any(|b| *b != 0) {
+                return Err(format!(
+                    "{} did not zero-extend past the input: [{}]",
+                    $label,
+                    format_bytes(&c_output[..c_result.serialize_size])
+                ));
+            }
+            println!("INFO c/rust directed marker {}", $marker);
+        }};
+    }
+    truncated_image_roundtrip!(
+        "Real32",
+        "real32_truncated_image_roundtrip",
+        uavcan_primitive_scalar_Real32@V1_0@,
+        c_real32_roundtrip,
+        [0x00u8, 0x00u8, 0x80u8]
+    );
+    truncated_image_roundtrip!(
+        "Integer8",
+        "integer8_empty_image_roundtrip",
+        uavcan_primitive_scalar_Integer8@V1_0@,
+        c_integer8_roundtrip,
+        []
+    );
+
     {
         // Service response mixed-path: declared count exceeds payload bytes but remains representable.
         // Deserialisation should succeed via truncation/zero-extension and reserialise deterministically.

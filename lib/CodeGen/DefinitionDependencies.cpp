@@ -30,12 +30,13 @@ std::string renderDefinitionDependencyKey(const SemanticTypeRef& ref)
     return ref.fullName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
 }
 
-std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticSection& section)
+std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticSection& section,
+                                                                 const bool             referencedOnly)
 {
     std::map<std::string, SemanticTypeRef> byKey;
     for (const auto& field : section.fields)
     {
-        if (!field.resolvedType.compositeType)
+        if (!field.resolvedType.compositeType || (referencedOnly && field.heldAsView))
         {
             continue;
         }
@@ -52,11 +53,12 @@ std::vector<SemanticTypeRef> collectSectionCompositeDependencies(const SemanticS
     return out;
 }
 
-std::vector<SemanticTypeRef> collectDefinitionCompositeDependencies(const SemanticDefinition& def)
+std::vector<SemanticTypeRef> collectDefinitionCompositeDependencies(const SemanticDefinition& def,
+                                                                    const bool                referencedOnly)
 {
     std::map<std::string, SemanticTypeRef> byKey;
     const auto                             addSection = [&](const SemanticSection& section) {
-        for (const auto& ref : collectSectionCompositeDependencies(section))
+        for (const auto& ref : collectSectionCompositeDependencies(section, referencedOnly))
         {
             byKey.emplace(renderDefinitionDependencyKey(ref), ref);
         }

@@ -109,6 +109,7 @@ PlanStep stepFor(mlir::dsdl::IOOp io)
     step.compositeSealed              = io.getCompositeSealed().value_or(true);
     step.compositeExtentBits          = nonNegative(io.getCompositeExtentBits().value_or(0));
     step.compositeFixedBits           = nestedFixedBits(io);
+    step.heldAsView                   = io.getHeldAsView();
     return step;
 }
 

@@ -439,13 +439,13 @@
 
 # A DSDL constant can carry the trailing `_` that C spells its generated macros with, so the
 # separation those macros rely on is a name to be missed rather than a reason to miss nothing. The
-# `#elif` on ZOH_ALIAS_ELIGIBLE_ in try_deserialize_view_ is why this one is not only cosmetic.
+# unescaped constant would redefine the macro beside it, so the type would report its value.
 # C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_ "fixtures_naming.naming.TrailingUnderscores"
-# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE_ true
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_WIRE_FLAT_ true
 # C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME__ (1)
 # C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_FULL_NAME_AND_VERSION__ (2)
-# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_ELIGIBLE__ (6)
-# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_ZOH_ALIAS_REASON__ (7)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_WIRE_FLAT__ (6)
+# C_TRAILING: #define fixtures_naming__naming__TrailingUnderscores_HOST_IMAGE_REASON__ (7)
 # C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT__ (9)
 # C_TRAILING_UNION: #define fixtures_naming__naming__TrailingUnion_UNION_OPTION_COUNT_ 2U
 

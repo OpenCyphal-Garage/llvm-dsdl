@@ -212,6 +212,11 @@ llvm::Expected<InitializerShape> readInitializer(mlir::func::FuncOp body)
                 {MemberDefault::Kind::Composite, call.getMember().str(), mlir::TypedAttr{}, 0, call.getCallee().str()});
             return mlir::WalkResult::advance();
         }
+        if (auto clear = mlir::dyn_cast<mlir::dsdl::ClearViewOp>(op))
+        {
+            shape.members.push_back({MemberDefault::Kind::View, clear.getMember().str(), mlir::TypedAttr{}, 0, {}});
+            return mlir::WalkResult::advance();
+        }
         // The scaffolding of the body: its null check, its constants, the addresses it takes, and
         // the error it threads. None of these sets a member.
         if (mlir::isa<mlir::func::FuncOp,

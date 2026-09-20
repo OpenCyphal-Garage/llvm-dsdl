@@ -36,6 +36,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/ValueRange.h>
@@ -505,6 +506,28 @@ mlir::Type fieldStorage(mlir::MLIRContext*                 ctx,
     return mlir::LLVM::LLVMStructType::getLiteral(ctx, {storage, mlir::IntegerType::get(ctx, sizeBits)});
 }
 
+/// @brief The storage of a member held as a view: the runtime's pointer and count, or an array of
+///        them, with a count beside the array where its length varies.
+mlir::Type viewStorage(mlir::MLIRContext*    ctx,
+                       const unsigned        sizeBits,
+                       const llvm::StringRef arrayKind,
+                       const std::int64_t    capacity)
+{
+    const mlir::Type view = mlir::LLVM::LLVMStructType::getLiteral(ctx,
+                                                                   {mlir::LLVM::LLVMPointerType::get(ctx),
+                                                                    mlir::IntegerType::get(ctx, sizeBits)});
+    if (arrayKind == "none")
+    {
+        return view;
+    }
+    auto storage = mlir::LLVM::LLVMArrayType::get(view, static_cast<unsigned>(capacity));
+    if (arrayKind == "fixed")
+    {
+        return storage;
+    }
+    return mlir::LLVM::LLVMStructType::getLiteral(ctx, {storage, mlir::IntegerType::get(ctx, sizeBits)});
+}
+
 /// @brief Where the members of one plan's struct sit.
 struct PlanLayout final
 {
@@ -568,20 +591,22 @@ Layouts buildLayouts(mlir::ModuleOp module, const unsigned sizeBits)
                     {
                         continue;  // Padding reserves wire bits and holds no member.
                     }
-                    const std::string nested  = io.getCompositeFullName()
-                                                    ? planIdentity(*io.getCompositeFullName(),
-                                                                   io.getCompositeMajor().value_or(0),
-                                                                   io.getCompositeMinor().value_or(0),
-                                                                   {})
-                                                    : std::string{};
-                    auto              storage = fieldStorage(ctx,
-                                                             io.getScalarCategory(),
-                                                             io.getBitLength(),
-                                                             io.getArrayKind(),
-                                                             io.getArrayCapacity(),
-                                                             nested,
-                                                             composites,
-                                                             sizeBits);
+                    const std::string nested = io.getCompositeFullName()
+                                                   ? planIdentity(*io.getCompositeFullName(),
+                                                                  io.getCompositeMajor().value_or(0),
+                                                                  io.getCompositeMinor().value_or(0),
+                                                                  {})
+                                                   : std::string{};
+                    auto storage = io.getHeldAsView()
+                                       ? viewStorage(ctx, sizeBits, io.getArrayKind(), io.getArrayCapacity())
+                                       : fieldStorage(ctx,
+                                                      io.getScalarCategory(),
+                                                      io.getBitLength(),
+                                                      io.getArrayKind(),
+                                                      io.getArrayCapacity(),
+                                                      nested,
+                                                      composites,
+                                                      sizeBits);
                     if (!storage)
                     {
                         describable = false;
@@ -650,69 +675,231 @@ std::string runtimePrimitiveName(const bool write, mlir::Type valueType, const s
     return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holderWidthFor(width));
 }
 
+/// @brief A scalar access the target can make as one load or store: at a constant byte-aligned
+///        offset, of a width the target has a register for, on a target that orders bytes as the
+///        wire does. The wire is little-endian, so a plain access is the wire's own encoding there
+///        and nowhere else.
+struct AlignedAccess final
+{
+    std::int64_t byteOffset;
+    std::int64_t bytes;
+    /// @brief The type loaded or stored: an integer of the field's width, or the float itself.
+    mlir::Type narrow;
+};
+
+std::optional<AlignedAccess> alignedAccess(const bool         littleEndian,
+                                           const mlir::Value  bitOffset,
+                                           const std::int64_t width,
+                                           const mlir::Type   valueType)
+{
+    llvm::APInt offset;
+    if (!littleEndian || !mlir::matchPattern(bitOffset, mlir::m_ConstantInt(&offset)) || offset.isNegative() ||
+        ((offset.getSExtValue() % 8) != 0))
+    {
+        return std::nullopt;
+    }
+    if ((width != 8) && (width != 16) && (width != 32) && (width != 64))
+    {
+        return std::nullopt;
+    }
+    mlir::Type narrow;
+    if (const auto integer = mlir::dyn_cast<mlir::IntegerType>(valueType))
+    {
+        if (std::cmp_less(integer.getWidth(), width))
+        {
+            return std::nullopt;
+        }
+        narrow = mlir::IntegerType::get(valueType.getContext(), static_cast<unsigned>(width));
+    }
+    else if ((valueType.isF32() && (width == 32)) || (valueType.isF64() && (width == 64)))
+    {
+        narrow = valueType;
+    }
+    else
+    {
+        return std::nullopt;
+    }
+    return AlignedAccess{offset.getSExtValue() / 8, width / 8, narrow};
+}
+
+/// @brief Whether @p size, the buffer's size in bytes, holds an access of @p bytes at @p offset.
+mlir::Value accessFits(mlir::ConversionPatternRewriter& rewriter,
+                       const mlir::Location             loc,
+                       const mlir::Value                size,
+                       const AlignedAccess&             access)
+{
+    const mlir::Value need =
+        mlir::LLVM::ConstantOp::create(rewriter,
+                                       loc,
+                                       size.getType(),
+                                       rewriter.getIntegerAttr(size.getType(), access.byteOffset + access.bytes));
+    return mlir::LLVM::ICmpOp::create(rewriter, loc, mlir::LLVM::ICmpPredicate::uge, size, need);
+}
+
+/// @brief The address @p access begins at within @p buffer.
+mlir::Value accessAddress(mlir::ConversionPatternRewriter& rewriter,
+                          const mlir::Location             loc,
+                          const mlir::Value                buffer,
+                          const AlignedAccess&             access)
+{
+    auto ptrTy = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+    return mlir::LLVM::GEPOp::create(rewriter,
+                                     loc,
+                                     ptrTy,
+                                     rewriter.getI8Type(),
+                                     buffer,
+                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(access.byteOffset)});
+}
+
 struct WriteBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>::OpConversionPattern;
+    WriteBitsLowering(const mlir::TypeConverter& converter, mlir::MLIRContext* context, const bool littleEndian)
+        : mlir::OpConversionPattern<mlir::dsdl::WriteBitsOp>(converter, context)
+        , littleEndian_(littleEndian)
+    {
+    }
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::WriteBitsOp          op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc    = op.getLoc();
-        auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee = runtimePrimitiveName(true,
-                                                           op.getValue().getType(),
-                                                           static_cast<std::int64_t>(op.getWidth()),
-                                                           op.getIsSigned());
+        const mlir::Location loc       = op.getLoc();
+        auto                 module    = op->getParentOfType<mlir::ModuleOp>();
+        const std::string    callee    = runtimePrimitiveName(true,
+                                                              op.getValue().getType(),
+                                                              static_cast<std::int64_t>(op.getWidth()),
+                                                              op.getIsSigned());
+        const auto           primitive = [&]() -> mlir::Value {
+            mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
+                                                        adaptor.getBufferSizeBytes(),
+                                                        adaptor.getBitOffset(),
+                                                        adaptor.getValue()};
+            if ((callee == "dsdl_runtime_set_uxx") || (callee == "dsdl_runtime_set_ixx"))
+            {
+                arguments.push_back(
+                    mlir::LLVM::ConstantOp::create(rewriter,
+                                                   loc,
+                                                   rewriter.getI8Type(),
+                                                   rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            }
+            return callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
+        };
 
-        mlir::SmallVector<mlir::Value, 5> arguments{adaptor.getBuffer(),
-                                                    adaptor.getBufferSizeBytes(),
-                                                    adaptor.getBitOffset(),
-                                                    adaptor.getValue()};
-        if ((callee == "dsdl_runtime_set_uxx") || (callee == "dsdl_runtime_set_ixx"))
+        const auto access = alignedAccess(littleEndian_,
+                                          op.getBitOffset(),
+                                          static_cast<std::int64_t>(op.getWidth()),
+                                          op.getValue().getType());
+        if (!access)
         {
-            arguments.push_back(
-                mlir::LLVM::ConstantOp::create(rewriter,
-                                               loc,
-                                               rewriter.getI8Type(),
-                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            rewriter.replaceOp(op, primitive());
+            return mlir::success();
         }
-        auto result = callRuntime(rewriter, loc, module, callee, rewriter.getI8Type(), arguments, op.getIsSigned());
-        rewriter.replaceOp(op, result);
+        // Within the buffer, one store of the field's bytes; short of it, the primitive answers
+        // as it always has.
+        const mlir::Value fits = accessFits(rewriter, loc, adaptor.getBufferSizeBytes(), *access);
+        auto branch = mlir::scf::IfOp::create(rewriter, loc, mlir::TypeRange{rewriter.getI8Type()}, fits, true);
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.thenBlock());
+            mlir::Value narrowed = adaptor.getValue();
+            if (mlir::isa<mlir::IntegerType>(access->narrow) && (narrowed.getType() != access->narrow))
+            {
+                narrowed = mlir::LLVM::TruncOp::create(rewriter, loc, access->narrow, narrowed);
+            }
+            mlir::LLVM::StoreOp::create(rewriter,
+                                        loc,
+                                        narrowed,
+                                        accessAddress(rewriter, loc, adaptor.getBuffer(), *access),
+                                        /*alignment=*/1);
+            mlir::scf::YieldOp::create(rewriter,
+                                       loc,
+                                       mlir::ValueRange{mlir::LLVM::ConstantOp::create(rewriter,
+                                                                                       loc,
+                                                                                       rewriter.getI8Type(),
+                                                                                       rewriter.getI8IntegerAttr(0))});
+        }
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.elseBlock());
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{primitive()});
+        }
+        rewriter.replaceOp(op, branch.getResult(0));
         return mlir::success();
     }
+
+private:
+    bool littleEndian_;
 };
 
 struct ReadBitsLowering final : public mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>
 {
-    using mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>::OpConversionPattern;
+    ReadBitsLowering(const mlir::TypeConverter& converter, mlir::MLIRContext* context, const bool littleEndian)
+        : mlir::OpConversionPattern<mlir::dsdl::ReadBitsOp>(converter, context)
+        , littleEndian_(littleEndian)
+    {
+    }
 
     mlir::LogicalResult matchAndRewrite(mlir::dsdl::ReadBitsOp           op,
                                         OpAdaptor                        adaptor,
                                         mlir::ConversionPatternRewriter& rewriter) const override
     {
-        const mlir::Location loc    = op.getLoc();
-        auto                 module = op->getParentOfType<mlir::ModuleOp>();
-        const std::string    callee = runtimePrimitiveName(false,
-                                                           op.getValue().getType(),
-                                                           static_cast<std::int64_t>(op.getWidth()),
-                                                           op.getIsSigned());
+        const mlir::Location loc       = op.getLoc();
+        auto                 module    = op->getParentOfType<mlir::ModuleOp>();
+        const mlir::Type     valueType = op.getValue().getType();
+        const std::string    callee =
+            runtimePrimitiveName(false, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
+        const auto primitive = [&]() -> mlir::Value {
+            mlir::SmallVector<mlir::Value, 4> arguments{adaptor.getBuffer(),
+                                                        adaptor.getBufferSizeBytes(),
+                                                        adaptor.getBitOffset()};
+            if ((callee.contains("_get_u")) || (callee.contains("_get_i")))
+            {
+                arguments.push_back(
+                    mlir::LLVM::ConstantOp::create(rewriter,
+                                                   loc,
+                                                   rewriter.getI8Type(),
+                                                   rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            }
+            return callRuntime(rewriter, loc, module, callee, valueType, arguments, op.getIsSigned());
+        };
 
-        mlir::SmallVector<mlir::Value, 4> arguments{adaptor.getBuffer(),
-                                                    adaptor.getBufferSizeBytes(),
-                                                    adaptor.getBitOffset()};
-        if ((callee.contains("_get_u")) || (callee.contains("_get_i")))
+        const auto access =
+            alignedAccess(littleEndian_, op.getBitOffset(), static_cast<std::int64_t>(op.getWidth()), valueType);
+        if (!access)
         {
-            arguments.push_back(
-                mlir::LLVM::ConstantOp::create(rewriter,
-                                               loc,
-                                               rewriter.getI8Type(),
-                                               rewriter.getI8IntegerAttr(static_cast<std::int8_t>(op.getWidth()))));
+            rewriter.replaceOp(op, primitive());
+            return mlir::success();
         }
-        auto result = callRuntime(rewriter, loc, module, callee, op.getValue().getType(), arguments, op.getIsSigned());
-        rewriter.replaceOp(op, result);
+        // Within the buffer, one load of the field's bytes, widened as the wire's value is; short
+        // of it, the primitive answers as it always has, zero-extending what is there.
+        const mlir::Value fits   = accessFits(rewriter, loc, adaptor.getBufferSizeBytes(), *access);
+        auto              branch = mlir::scf::IfOp::create(rewriter, loc, mlir::TypeRange{valueType}, fits, true);
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.thenBlock());
+            mlir::Value loaded = mlir::LLVM::LoadOp::create(rewriter,
+                                                            loc,
+                                                            access->narrow,
+                                                            accessAddress(rewriter, loc, adaptor.getBuffer(), *access),
+                                                            /*alignment=*/1);
+            if (loaded.getType() != valueType)
+            {
+                loaded = op.getIsSigned() ? mlir::LLVM::SExtOp::create(rewriter, loc, valueType, loaded).getResult()
+                                          : mlir::LLVM::ZExtOp::create(rewriter, loc, valueType, loaded).getResult();
+            }
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{loaded});
+        }
+        {
+            mlir::OpBuilder::InsertionGuard const guard(rewriter);
+            rewriter.setInsertionPointToStart(branch.elseBlock());
+            mlir::scf::YieldOp::create(rewriter, loc, mlir::ValueRange{primitive()});
+        }
+        rewriter.replaceOp(op, branch.getResult(0));
         return mlir::success();
     }
+
+private:
+    bool littleEndian_;
 };
 
 struct BitWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitWriteOp>
@@ -758,6 +945,156 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
                                             adaptor.getBufferSizeBytes(),
                                             adaptor.getBitOffset(),
                                             adaptor.getWidth()});
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+/// @brief One move for a whole payload, where the structure is the wire image.
+///
+/// A fixed-length `llvm.memcpy` is what the backend folds to loads and stores. The bit-granular
+/// runtime primitives every other read goes through keep their alignment and tail handling after
+/// inlining, and measured against the field reads they replaced they cost more, not less.
+///
+/// The read keeps the tolerance a deserialiser owes: a buffer shorter than the payload is a valid
+/// encoding, so what is there is moved and the rest is zeroed. That is the rare path, and it is a
+/// branch so that the common path is the constant-length copy alone.
+struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageReadOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        const auto           i64 = rewriter.getI64Type();
+        const mlir::Value    bytes =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
+        // The object and the buffer may be the same storage: a host image is the wire's bytes, so
+        // decoding in place over them is what the property invites. The bytes present move first,
+        // and with a move rather than a copy; zeroing first would zero the source, and the
+        // field-wise body this replaces keeps those bytes.
+        const mlir::Value whole  = mlir::LLVM::ICmpOp::create(rewriter,
+                                                              loc,
+                                                              mlir::LLVM::ICmpPredicate::uge,
+                                                              adaptor.getBufferSizeBytes(),
+                                                              bytes);
+        auto              branch = mlir::scf::IfOp::create(rewriter, loc, whole, /*withElseRegion=*/true);
+
+        rewriter.setInsertionPointToStart(branch.thenBlock());
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getObject(),
+                                      adaptor.getBuffer(),
+                                      bytes,
+                                      /*isVolatile=*/false);
+
+        rewriter.setInsertionPointToStart(branch.elseBlock());
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getObject(),
+                                      adaptor.getBuffer(),
+                                      adaptor.getBufferSizeBytes(),
+                                      /*isVolatile=*/false);
+        const mlir::Value zeroByte =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
+        const mlir::Value rest = mlir::LLVM::SubOp::create(rewriter, loc, bytes, adaptor.getBufferSizeBytes());
+        const mlir::Value from =
+            mlir::LLVM::GEPOp::create(rewriter,
+                                      loc,
+                                      mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                      rewriter.getI8Type(),
+                                      adaptor.getObject(),
+                                      llvm::ArrayRef<mlir::LLVM::GEPArg>{adaptor.getBufferSizeBytes()});
+        mlir::LLVM::MemsetOp::create(rewriter, loc, from, zeroByte, rest, /*isVolatile=*/false);
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+/// @brief A view's bytes to the wire, zero-filled to the field's width.
+///
+/// The shape of `dsdl.image_read`: the whole view is the common path and one fixed-length copy;
+/// a short view zeroes the width and copies what it holds. An empty view holds no pointer to
+/// copy from, so the short path copies only when there is something to copy.
+struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CopyBytesOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc = op.getLoc();
+        const auto           i64 = rewriter.getI64Type();
+        const mlir::Value    bytes =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(op.getBytes()));
+        // A view points into the buffer its holder was deserialised from, which may be the buffer
+        // being written, so the two ranges may overlap: the bytes present move first, and with
+        // memmove, and only then is the remainder zeroed. Zeroing first would wipe the source.
+        const mlir::Value shorter = mlir::LLVM::ICmpOp::create(rewriter,
+                                                               loc,
+                                                               mlir::LLVM::ICmpPredicate::ult,
+                                                               adaptor.getSourceSizeBytes(),
+                                                               bytes);
+        const mlir::Value present =
+            mlir::LLVM::SelectOp::create(rewriter, loc, shorter, adaptor.getSourceSizeBytes(), bytes);
+        const mlir::Value zero = mlir::LLVM::ConstantOp::create(rewriter, loc, i64, rewriter.getI64IntegerAttr(0));
+        const mlir::Value some =
+            mlir::LLVM::ICmpOp::create(rewriter, loc, mlir::LLVM::ICmpPredicate::ugt, present, zero);
+
+        auto move = mlir::scf::IfOp::create(rewriter, loc, some, /*withElseRegion=*/false);
+        rewriter.setInsertionPointToStart(move.thenBlock());
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getDestination(),
+                                      adaptor.getSource(),
+                                      present,
+                                      /*isVolatile=*/false);
+
+        rewriter.setInsertionPointAfter(move);
+        auto fill = mlir::scf::IfOp::create(rewriter, loc, shorter, /*withElseRegion=*/false);
+        rewriter.setInsertionPointToStart(fill.thenBlock());
+        const mlir::Value zeroByte =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
+        const mlir::Value rest = mlir::LLVM::SubOp::create(rewriter, loc, bytes, present);
+        const mlir::Value from = mlir::LLVM::GEPOp::create(rewriter,
+                                                           loc,
+                                                           mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                                           rewriter.getI8Type(),
+                                                           adaptor.getDestination(),
+                                                           llvm::ArrayRef<mlir::LLVM::GEPArg>{present});
+        mlir::LLVM::MemsetOp::create(rewriter, loc, from, zeroByte, rest, /*isVolatile=*/false);
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+/// @brief The counterpart: the buffer has been checked to hold the payload, so one fixed-length copy.
+struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageWriteOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc   = op.getLoc();
+        const mlir::Value    bytes = mlir::LLVM::ConstantOp::create(rewriter,
+                                                                    loc,
+                                                                    rewriter.getI64Type(),
+                                                                    rewriter.getI64IntegerAttr(op.getBytes()));
+        // A move rather than a copy, for the reason its counterpart takes one: the object and the
+        // buffer may be the same storage.
+        mlir::LLVM::MemmoveOp::create(rewriter,
+                                      loc,
+                                      adaptor.getBuffer(),
+                                      adaptor.getObject(),
+                                      bytes,
+                                      /*isVolatile=*/false);
         rewriter.eraseOp(op);
         return mlir::success();
     }
@@ -1062,6 +1399,162 @@ struct StoreMemberLowering final : public MemberAccess<mlir::dsdl::StoreMemberOp
     }
 };
 
+/// @brief The addresses of a view's bytes and of their count, and the count's type: the member's,
+///        or those of the element @p index names when the member is an array of views.
+struct ViewAddresses final
+{
+    mlir::Value bytesAt;
+    mlir::Value sizeAt;
+    mlir::Type  sizeType;
+};
+
+template <typename OpT>
+std::optional<ViewAddresses> viewAddresses(const MemberAccess<OpT>&         pattern,
+                                           OpT                              op,
+                                           mlir::Value                      object,
+                                           mlir::Value                      index,
+                                           mlir::ConversionPatternRewriter& rewriter)
+{
+    const bool element = static_cast<bool>(index);
+    const auto where   = pattern.positions(op, op.getMember(), element, false);
+    if (!where)
+    {
+        return std::nullopt;
+    }
+    auto held = mlir::dyn_cast_or_null<mlir::LLVM::LLVMStructType>(pattern.memberType(op, *where, element));
+    if (!held || (held.getBody().size() != 2) || !mlir::isa<mlir::LLVM::LLVMPointerType>(held.getBody()[0]))
+    {
+        return std::nullopt;
+    }
+    auto pointerType = mlir::dyn_cast<mlir::dsdl::PtrType>(op.getObject().getType());
+    if (!pointerType)
+    {
+        return std::nullopt;
+    }
+    const mlir::Type owner = structBehind(pointerType.getPointee(), pattern.layouts.structs);
+    if (!owner)
+    {
+        return std::nullopt;
+    }
+    const auto at = [&](const std::int32_t field) {
+        mlir::SmallVector<mlir::LLVM::GEPArg, 6> path{0};
+        for (const std::int64_t position : *where)
+        {
+            path.push_back(static_cast<std::int32_t>(position));
+        }
+        if (index)
+        {
+            path.push_back(mlir::LLVM::GEPArg{index});
+        }
+        path.push_back(field);
+        return mlir::LLVM::GEPOp::create(rewriter,
+                                         op.getLoc(),
+                                         mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                         owner,
+                                         object,
+                                         path);
+    };
+    return ViewAddresses{at(0), at(1), held.getBody()[1]};
+}
+
+struct StoreViewLowering final : public MemberAccess<mlir::dsdl::StoreViewOp>
+{
+    using MemberAccess<mlir::dsdl::StoreViewOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto view = viewAddresses(*this, op, adaptor.getObject(), adaptor.getIndex(), rewriter);
+        if (!view)
+        {
+            return mlir::failure();
+        }
+        const mlir::Location loc = op.getLoc();
+        mlir::LLVM::StoreOp::create(rewriter, loc, adaptor.getBytes(), view->bytesAt);
+        mlir::LLVM::StoreOp::create(rewriter,
+                                    loc,
+                                    fit(rewriter, loc, adaptor.getSizeBytes(), view->sizeType, false),
+                                    view->sizeAt);
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+/// @brief Clears a view member, or every element of a fixed array of them.
+///
+/// The array is zeroed as bytes: a null pointer is all zero bits, as is a count of nought. The
+/// byte count is the array's size, taken with the address arithmetic LLVM does on the type, so
+/// the pointer's width and the padding after it are the target's.
+struct ClearViewLowering final : public MemberAccess<mlir::dsdl::ClearViewOp>
+{
+    using MemberAccess<mlir::dsdl::ClearViewOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ClearViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Location loc   = op.getLoc();
+        const auto           where = positions(op, op.getMember(), false, false);
+        if (!where)
+        {
+            return mlir::failure();
+        }
+        if (auto array = mlir::dyn_cast_or_null<mlir::LLVM::LLVMArrayType>(memberType(op, *where, false)))
+        {
+            const mlir::Value at = address(op, adaptor.getObject(), rewriter, *where);
+            if (!at)
+            {
+                return mlir::failure();
+            }
+            auto              ptrTy = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+            const mlir::Value none  = mlir::LLVM::ZeroOp::create(rewriter, loc, ptrTy);
+            const mlir::Value end =
+                mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, array, none, mlir::ArrayRef<mlir::LLVM::GEPArg>{1});
+            const mlir::Value bytes = mlir::LLVM::PtrToIntOp::create(rewriter, loc, rewriter.getI64Type(), end);
+            const mlir::Value zeroByte =
+                mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getI8Type(), rewriter.getI8IntegerAttr(0));
+            mlir::LLVM::MemsetOp::create(rewriter, loc, at, zeroByte, bytes, /*isVolatile=*/false);
+            rewriter.eraseOp(op);
+            return mlir::success();
+        }
+        const auto view = viewAddresses(*this, op, adaptor.getObject(), {}, rewriter);
+        if (!view)
+        {
+            return mlir::failure();
+        }
+        const mlir::Value none =
+            mlir::LLVM::ZeroOp::create(rewriter, loc, mlir::LLVM::LLVMPointerType::get(rewriter.getContext()));
+        const mlir::Value zero =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, view->sizeType, rewriter.getIntegerAttr(view->sizeType, 0));
+        mlir::LLVM::StoreOp::create(rewriter, loc, none, view->bytesAt);
+        mlir::LLVM::StoreOp::create(rewriter, loc, zero, view->sizeAt);
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+struct LoadViewLowering final : public MemberAccess<mlir::dsdl::LoadViewOp>
+{
+    using MemberAccess<mlir::dsdl::LoadViewOp>::MemberAccess;
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadViewOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const auto view = viewAddresses(*this, op, adaptor.getObject(), adaptor.getIndex(), rewriter);
+        if (!view)
+        {
+            return mlir::failure();
+        }
+        const mlir::Location loc   = op.getLoc();
+        const mlir::Value    bytes = mlir::LLVM::LoadOp::create(rewriter,
+                                                                loc,
+                                                                mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+                                                                view->bytesAt);
+        const mlir::Value    size  = mlir::LLVM::LoadOp::create(rewriter, loc, view->sizeType, view->sizeAt);
+        rewriter.replaceOp(op, {bytes, fit(rewriter, loc, size, op.getSizeBytes().getType(), false)});
+        return mlir::success();
+    }
+};
+
 struct ArrayLengthLowering final : public MemberAccess<mlir::dsdl::ArrayLengthOp>
 {
     using MemberAccess<mlir::dsdl::ArrayLengthOp>::MemberAccess;
@@ -1218,6 +1711,14 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                                           llvm::cl::desc("Width of the target's size_t in bits"),
                                           llvm::cl::init(64)};
 
+    /// Whether the target orders bytes as the wire does. A byte-aligned scalar of a register's
+    /// width is then one load or one store within the buffer; elsewhere every access is the
+    /// runtime's primitive.
+    Pass::Option<bool> littleEndianOption{*this,
+                                          "little-endian",
+                                          llvm::cl::desc("Whether the target is little-endian, as the wire is"),
+                                          llvm::cl::init(false)};
+
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
@@ -1238,6 +1739,9 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<LoadMemberLowering,
                      StoreMemberLowering,
+                     StoreViewLowering,
+                     ClearViewLowering,
+                     LoadViewLowering,
                      ArrayLengthLowering,
                      SetArrayLengthLowering,
                      UnionTagLowering,
@@ -1252,12 +1756,16 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                      BufferAtLowering,
                      LocalLowering,
                      BufferOrEmptyLowering,
-                     WriteBitsLowering,
-                     ReadBitsLowering,
                      BitWriteLowering,
                      BitReadLowering,
+                     ImageReadLowering,
+                     ImageWriteLowering,
+                     CopyBytesLowering,
                      CallSerdesLowering,
                      CallInitializeLowering>(converter, &getContext());
+        patterns.add<WriteBitsLowering, ReadBitsLowering>(converter,
+                                                          &getContext(),
+                                                          static_cast<bool>(littleEndianOption));
         patterns.add<IndexHoldsLowering>(converter, &getContext(), sizeBits);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
         // A signature is not only its arguments. A body that answers with a pointer would
@@ -1272,6 +1780,8 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                                mlir::scf::SCFDialect>();
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::LoadMemberOp,
+                            mlir::dsdl::ImageReadOp,
+                            mlir::dsdl::ImageWriteOp,
                             mlir::dsdl::StoreMemberOp,
                             mlir::dsdl::ArrayLengthOp,
                             mlir::dsdl::SetArrayLengthOp,
@@ -1293,7 +1803,11 @@ struct ConvertDSDLToLLVMPass : public mlir::PassWrapper<ConvertDSDLToLLVMPass, m
                             mlir::dsdl::BitWriteOp,
                             mlir::dsdl::BitReadOp,
                             mlir::dsdl::CallSerdesOp,
-                            mlir::dsdl::CallInitializeOp>();
+                            mlir::dsdl::CallInitializeOp,
+                            mlir::dsdl::StoreViewOp,
+                            mlir::dsdl::ClearViewOp,
+                            mlir::dsdl::LoadViewOp,
+                            mlir::dsdl::CopyBytesOp>();
         target.addDynamicallyLegalOp<mlir::func::FuncOp>(
             [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
         target.addDynamicallyLegalOp<mlir::func::ReturnOp>(
@@ -1326,10 +1840,11 @@ std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass()
     return std::make_unique<ConvertDSDLToLLVMPass>();
 }
 
-std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(const unsigned sizeBits)
+std::unique_ptr<mlir::Pass> createConvertDSDLToLLVMPass(const unsigned sizeBits, const bool littleEndian)
 {
-    auto pass            = std::make_unique<ConvertDSDLToLLVMPass>();
-    pass->sizeBitsOption = sizeBits;
+    auto pass                = std::make_unique<ConvertDSDLToLLVMPass>();
+    pass->sizeBitsOption     = sizeBits;
+    pass->littleEndianOption = littleEndian;
     return pass;
 }
 

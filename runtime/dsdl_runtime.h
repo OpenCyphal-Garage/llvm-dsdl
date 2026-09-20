@@ -255,6 +255,112 @@ extern "C"
         dsdl_runtime_copy_bits(output, 0U, sat_bits, buf, off_bits);
     }
 
+    // ----------------------------------------------------- IMAGE -----------------------------------------------------
+
+    /// @brief A run of a serialised buffer that an object holds in place of a decoded record.
+    ///
+    /// The bytes are the field's, from the buffer the holder was deserialised from, and the count
+    /// is how many of them that buffer held: a short buffer leaves a short view, which the record's
+    /// accessors zero-extend. An empty view holds no bytes and serialises as the record's width of
+    /// zeros.
+    typedef struct
+    {
+        const uint8_t* bytes;
+        size_t         size_bytes;
+    } dsdl_runtime_view_t;
+
+    /// @brief Clears `count` views: each then holds no bytes.
+    /// @param[out] views The first of the views.
+    /// @param[in] count How many of them.
+    static inline void dsdl_runtime_clear_views(dsdl_runtime_view_t* const views, const size_t count)
+    {
+        DSDL_RUNTIME_ASSERT(views != NULL);
+        for (size_t i = 0U; i < count; ++i)
+        {
+            views[i].bytes      = NULL;
+            views[i].size_bytes = 0U;
+        }
+    }
+
+    /// @brief Writes `bytes` bytes at `buf`: what `source` holds, up to `source_size_bytes`, and
+    ///        zeros for the rest.
+    /// @param[out] buf Destination.
+    /// @param[in] source The bytes to copy; unread when `source_size_bytes` is zero.
+    /// @param[in] source_size_bytes How many bytes `source` holds.
+    /// @param[in] bytes How many bytes to write.
+    ///
+    /// A view points into the buffer its holder was deserialised from, and that may be the buffer
+    /// being serialised into, so the two ranges may overlap: the bytes present are moved before the
+    /// remainder is zeroed, and they are moved with `memmove`.
+    static inline void dsdl_runtime_copy_bytes(void* const       buf,
+                                               const void* const source,
+                                               const size_t      source_size_bytes,
+                                               const size_t      bytes)
+    {
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        const size_t present = (source_size_bytes < bytes) ? source_size_bytes : bytes;
+        if (present > 0U)
+        {
+            (void) memmove(buf, source, present);
+        }
+        if (present < bytes)
+        {
+            (void) memset(((uint8_t*) buf) + present, 0, bytes - present);
+        }
+    }
+
+    /// @brief Fills an object from the wire in one move, where the two are the same bytes.
+    ///
+    /// Only for a type whose generated structure is byte-identical to its wire form; the compiler
+    /// decides that per type and emits this only where it holds. It keeps the tolerance a
+    /// deserialiser owes: a buffer shorter than `object_size_bytes` is a valid encoding, so what is
+    /// there is moved and the rest is zeroed, which is what reading each field would have produced.
+    /// `object_size_bytes` is a constant at every call site, so the common path is a fixed-length
+    /// copy the compiler folds to loads and stores.
+    /// @param[out] object Destination object.
+    /// @param[in] buf Source serialised buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] object_size_bytes The payload's size, which is the object's.
+    static inline void dsdl_runtime_image_read(void* const       object,
+                                               const void* const buf,
+                                               const size_t      buf_size_bytes,
+                                               const size_t      object_size_bytes)
+    {
+        DSDL_RUNTIME_ASSERT(object != NULL);
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        // The object and the buffer may be the same storage: a host image is the wire's bytes, so
+        // decoding in place over them is what the property invites. The bytes present move first,
+        // and with `memmove`, because zeroing first would zero the source; the field-wise body
+        // this replaces keeps them, and a fold that did not would be a change in behaviour.
+        if (buf_size_bytes >= object_size_bytes)
+        {
+            (void) memmove(object, buf, object_size_bytes);
+        }
+        else
+        {
+            (void) memmove(object, buf, buf_size_bytes);
+            (void) memset(((uint8_t*) object) + buf_size_bytes, 0, object_size_bytes - buf_size_bytes);
+        }
+    }
+
+    /// @brief Writes an object to the wire in one move, where the two are the same bytes.
+    ///
+    /// The counterpart of `dsdl_runtime_image_read`. The buffer has already been checked to hold
+    /// the payload by the time this runs. It cannot leak what the object does not hold, because
+    /// holding no padding is part of what allowed it.
+    /// @param[out] buf Destination serialised buffer.
+    /// @param[in] object Source object.
+    /// @param[in] object_size_bytes The payload's size, which is the object's.
+    static inline void dsdl_runtime_image_write(void* const       buf,
+                                                const void* const object,
+                                                const size_t      object_size_bytes)
+    {
+        DSDL_RUNTIME_ASSERT(buf != NULL);
+        DSDL_RUNTIME_ASSERT(object != NULL);
+        // `memmove` for the reason its counterpart takes one: the two may be the same storage.
+        (void) memmove(buf, object, object_size_bytes);
+    }
+
     // ---------------------------------------------------- INTEGER ----------------------------------------------------
 
     /// @brief Serialises a one-bit boolean value at `off_bits`.

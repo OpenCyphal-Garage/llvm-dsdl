@@ -57,6 +57,14 @@ struct Options final
     /// @brief Emits `go.mod` when true.
     bool emitGoMod{true};
 
+    /// @brief Whether the pipeline folded host-image bodies into byte moves, which hold only on a
+    ///        little-endian target. A folded type carries a build constraint refusing the others.
+    bool hostImageFolded{false};
+
+    /// @brief Emits the field accessors and neither the object type nor the serdes: what
+    ///        `--aliasable-only` asks for, over a module whose bodies were dropped.
+    bool accessorsOnly{false};
+
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 

@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "dsdl_runtime.h"
 #include "prefixguard/Prefix32_1_0.hpp"
 #include "prefixguard/Prefix64_1_0.hpp"
 

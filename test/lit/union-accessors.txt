@@ -1,0 +1,72 @@
+# A union whose options are all flat and of one length has its tag at offset nought and every
+# option at the offset after it, so it gets accessors as a wire-flat section does: the tag as a
+# member named `_tag_`, with a getter and a setter, and each option's accessors at that one offset.
+# An option's setter writes the value and not the tag; the tag's setter selects, with the option's
+# tag constant. A union of unequal lengths, of sub-byte options, or delimited gets none.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_union > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/plans.mlir > %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=TAG < %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=OPTION < %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=NONE < %t/bodies.mlir
+
+# The tag: one read of its width at offset nought, through the plan's own tag helper.
+# TAG-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get__tag__ir_(
+# TAG-SAME:  llvmdsdl.member = "_tag_", llvmdsdl.plan_body = "get"
+# TAG:       %[[OFF:.*]] = arith.constant 0 : i64
+# TAG:       dsdl.read_bits %{{.*}}[%[[OFF]]], size %{{.*}} {width = 8 : i64}
+# TAG:       call @llvmdsdl_plan_union_tag__fixtures_union_vendor_Choice_1_0__deser(
+# TAG-LABEL: func.func @fixtures_union_vendor_Choice_1_0__set__tag__ir_(
+# TAG-SAME:  llvmdsdl.member = "_tag_", llvmdsdl.plan_body = "set"
+
+# Every option at the offset after the tag: a scalar, an element, and a composite's bytes.
+# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_real_ir_(
+# OPTION:       %[[OFF:.*]] = arith.constant 8 : i64
+# OPTION:       dsdl.read_bits %{{.*}}[%[[OFF]]], size %{{.*}} {width = 32 : i64}
+# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_bytes_ir_(
+# OPTION-SAME:  %{{.*}}: i64, %{{.*}}: i64) -> i64
+# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_quad_ir_(
+# OPTION-SAME:  -> !dsdl.ptr<const !dsdl.byte>
+# OPTION:       %[[AT:.*]] = arith.constant 1 : i64
+# OPTION:       arith.cmpi uge, %{{.*}}, %[[AT]]
+
+# NONE-NOT: @fixtures_union_vendor_Ragged_1_0__get_
+# NONE-NOT: @fixtures_union_vendor_Narrow_1_0__get_
+# NONE-NOT: @fixtures_union_vendor_Open_1_0__get_
+
+# C wraps the tag as a member named `_tag_`, in the tag's own width, beside the options.
+# RUN: %dsdlc --target-language c %S/fixtures_union --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
+# GEN-NOT: error:
+# GEN: files generated
+# RUN: cat %t/c/fixtures_union/vendor/Choice_1_0.h | FileCheck %s --check-prefix=C
+# C: static inline uint8_t fixtures_union__vendor__Choice__get__tag__(const uint8_t* const buffer, const size_t buffer_size_bytes)
+# C: static inline int8_t fixtures_union__vendor__Choice__set__tag__(uint8_t* const buffer, const size_t buffer_size_bytes, const uint8_t value)
+# C: static inline uint32_t fixtures_union__vendor__Choice__get_word_(
+# C: static inline float fixtures_union__vendor__Choice__get_real_(
+# C: static inline uint8_t fixtures_union__vendor__Choice__get_bytes_(const uint8_t* const buffer, const size_t buffer_size_bytes, const size_t index)
+# C: static inline const uint8_t* fixtures_union__vendor__Choice__get_quad_(
+# RUN: cat %t/c/fixtures_union/vendor/Ragged_1_0.h | FileCheck %s --check-prefix=C_NONE
+# C_NONE-NOT: __get_
+
+# Each language names the tag's accessor after its own tag member.
+# RUN: %dsdlc --target-language cpp %S/fixtures_union --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/cpp/std/fixtures_union/vendor/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP: static std::uint8_t get_tag_(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)
+# CPP: static float get_real(
+# RUN: %dsdlc --target-language rust %S/fixtures_union --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/rust/src/fixtures_union/vendor/choice_1_0.rs | FileCheck %s --check-prefix=RUST
+# RUST: pub fn get__tag_(buffer: &[u8]) -> u8 {
+# RUST: pub fn get_quad(buffer: &[u8]) -> &[u8] {
+# RUN: %dsdlc --target-language go %S/fixtures_union --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/go/fixtures_union/vendor/choice_1_0.go | FileCheck %s --check-prefix=GO
+# GO: func ChoiceGetTag(buffer []byte) uint8 {
+# GO: func ChoiceGetReal(buffer []byte) float32 {
+# RUN: %dsdlc --target-language ts %S/fixtures_union --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/ts/fixtures_union/vendor/choice_1_0.ts | FileCheck %s --check-prefix=TS
+# TS: export function getChoice_tag(buffer: Uint8Array): number {
+# TS: export function getChoiceReal(buffer: Uint8Array): number {
+# RUN: %dsdlc --target-language python %S/fixtures_union --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/python/dsdl_gen/fixtures_union/vendor/choice_1_0.py | FileCheck %s --check-prefix=PY
+# PY: def get_tag_(buffer: memoryview) -> int:
+# PY: def get_real(buffer: memoryview) -> float:

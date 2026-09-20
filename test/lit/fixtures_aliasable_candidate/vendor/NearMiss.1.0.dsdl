@@ -1,0 +1,4 @@
+# One narrow field stands in the way, named while it is still cheap to widen.
+uint2 health
+uint8 code
+@extent 128

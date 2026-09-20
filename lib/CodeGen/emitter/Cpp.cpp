@@ -24,6 +24,8 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
+
+#include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -76,6 +78,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -179,10 +182,14 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
+                   const bool               hostImageFolded,
+                   const bool               accessorsOnly,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , hostImageFolded_(hostImageFolded)
+        , accessorsOnly_(accessorsOnly)
     {
     }
 
@@ -196,6 +203,18 @@ public:
     bool emitDeprecationAttributes() const
     {
         return emitDeprecationAttributes_;
+    }
+
+    /// @brief Whether a host-image section's bodies were folded into one move.
+    bool hostImageFolded() const
+    {
+        return hostImageFolded_;
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -296,6 +315,8 @@ private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
     bool               emitDeprecationAttributes_{false};
+    bool               hostImageFolded_{false};
+    bool               accessorsOnly_{false};
 };
 
 SourceWriter makeCppWriter(std::ostringstream& out)
@@ -331,6 +352,14 @@ bool isAutosarFlavor(const CppFlavor flavor)
 /// `i64` is spelled unsigned, which is what the wire arithmetic and the runtime primitives take;
 /// the few signed comparisons cast for the comparison alone. `i8` is spelled signed, as the
 /// runtime's error codes are.
+/// @brief The source name of a field's accessor: the kind and the field, joined by an underscore
+///        unless the field already starts with one, since a doubled underscore is reserved. Two
+///        fields can meet here, `foo` and `_foo`; the struct's scope keeps their accessors apart.
+std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
+{
+    return kind.str() + (field.starts_with("_") ? "" : "_") + field.str();
+}
+
 class CppSpelling final : public BodySpelling
 {
 public:
@@ -369,6 +398,7 @@ public:
                 (section.empty() ? std::string{} : renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, section));
             entry.declaredName = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            entry.hostImage    = plan.getHostImage();
 
             // The struct declares its fields, then the array metadata, then the constants, into
             // one scope; the same declarations in the same order name the same identifiers.
@@ -405,7 +435,23 @@ public:
             }
             for (mlir::dsdl::IOOp io : fields)
             {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
+                const std::string name = io.getName().str();
+                entry.members[io.getName()] =
+                    Member{scope.get(IdentifierRole::FieldName, io.getName()),
+                           io,
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", name)),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", name))};
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] =
+                    Member{"_tag_",
+                           tagSteps_.back().get(),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", "_tag_")),
+                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", "_tag_"))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -416,9 +462,14 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
+        accessor_            = Accessor::None;
         if (!direction)
         {
             return openHelper(w, fn);
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
         }
         const Plan&       plan      = planOf(fn.getArgument(0));
         const bool        serialize = *direction == "serialize";
@@ -429,7 +480,13 @@ public:
                plan.declaredName + "* const " + object + ", " + (serialize ? "" : "const ") +
                "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes" + resource + ")");
         w.open("{");
-        if (isPmrFlavor(flavor_))
+        if (isPmrFlavor(flavor_) && plan.hostImage)
+        {
+            // A host image holds no resource of its own; the one handed in reaches its nested calls.
+            w.line("::llvmdsdl::cpp::MemoryResource* const effective_memory_resource = memory_resource;");
+            w.line("(void)effective_memory_resource;");
+        }
+        else if (isPmrFlavor(flavor_))
         {
             // The plan tests its object for null before it reads it, so the resource it would be
             // read from is taken only when there is an object to take it from.
@@ -517,7 +574,69 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type.
+        if ((accessor_ == Accessor::Getter) && !returnCast_.empty())
+        {
+            w.line("return static_cast<" + returnCast_ + ">(" + expr.str() + ");");
+            return;
+        }
         w.line("return " + expr.str() + ";");
+    }
+
+    /// @brief Opens a getter or a setter: a static member defined inside the struct, since it
+    ///        reads the wire and not an object, speaking the member's own type. The plan holds an
+    ///        integer, and an index, in a `std::uint64_t`, so a setter rebinds its value at entry,
+    ///        an element accessor its index, and a getter casts at its return.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed    a         = accessed(fn);
+        const std::string storage   = scalarType(a.member->io);
+        const std::string name      = getter ? a.member->getterName : a.member->setterName;
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", const std::size_t element_index" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_                 = (getter && integer) ? storage : std::string{};
+        if (composite)
+        {
+            // The nested type's buffer and, through the pointer, what remains of this one.
+            w.line("static const std::uint8_t* " + name +
+                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index +
+                   ", std::size_t* const out_size)");
+        }
+        else if (getter)
+        {
+            w.line("static " + storage + " " + name +
+                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index + ")");
+        }
+        else
+        {
+            w.line("static std::int8_t " + name + "(std::uint8_t* const buffer, const std::size_t buffer_size_bytes" +
+                   index + ", const " + storage + (integer ? " member_value)" : " value)"));
+        }
+        w.open("{");
+        std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
+        if (indexed)
+        {
+            w.line("const std::uint64_t index = static_cast<std::uint64_t>(element_index);");
+            parameters.emplace_back("index");
+        }
+        if (composite)
+        {
+            parameters.emplace_back("out_size");
+        }
+        else if (!getter)
+        {
+            if (integer)
+            {
+                w.line("const std::uint64_t value = static_cast<std::uint64_t>(member_value);");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -826,7 +945,7 @@ public:
                "::llvmdsdl::cpp::default_memory_resource());");
         w.line(temporary + ".resize(" + count + ");");
         w.line(access + " = std::move(" + temporary + ");");
-        if (io.isComposite())
+        if (io.isComposite() && !io.getHeldAsView())
         {
             const std::string index = fresh("i");
             w.open("for (std::size_t " + index + " = 0U; " + index + " < " + access + ".size(); ++" + index + ") {");
@@ -931,6 +1050,60 @@ public:
                ");");
     }
 
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
+    {
+        // The same helper the C backend calls: a constant-length copy the compiler folds to loads
+        // and stores, zeroing what a short buffer does not supply.
+        w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", " +
+               asSize(names(op.getBufferSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+    }
+
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
+    {
+        w.line("dsdl_runtime_image_write(" + names(op.getBuffer()) + ", " + names(op.getObject()) + ", " +
+               std::to_string(op.getBytes()) + "U);");
+    }
+
+    // A view member is the runtime's pointer and count, or one element of an array of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".bytes";
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "static_cast<std::uint64_t>(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) +
+               ".size_bytes)";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string access = viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
+        w.line(access + ".bytes = " + names(op.getBytes()) + ";");
+        w.line(access + ".size_bytes = " + asSize(names(op.getSizeBytes())) + ";");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        // Value-initialised: a null pointer and a count of nought, in every element of an array.
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = {};");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) + ", " +
+               asSize(names(op.getSourceSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The callee is the nested type's own body, and the type is the schema that body belongs to.
@@ -954,13 +1127,20 @@ private:
     {
         std::string      cppName;
         mlir::dsdl::IOOp io;
+        /// @brief The accessors' names, claimed in the struct's scope after every field so that no
+        ///        field shares a name with one.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
     {
-        std::string             typeName;
-        std::string             declaredName;
-        std::int64_t            unionTagBits{0};
+        std::string  typeName;
+        std::string  declaredName;
+        std::int64_t unionTagBits{0};
+        /// @brief Whether the structure is the byte image of its wire form; under the PMR profile
+        ///        such a structure carries no memory resource.
+        bool                    hostImage{false};
         llvm::StringMap<Member> members;
     };
 
@@ -1087,6 +1267,10 @@ private:
 
     std::string containerElementType(mlir::dsdl::IOOp io) const
     {
+        if (io.getHeldAsView())
+        {
+            return "dsdl_runtime_view_t";
+        }
         return io.isComposite() ? nestedTypeName(io) : scalarType(io);
     }
 
@@ -1300,7 +1484,51 @@ private:
     CppFlavor             flavor_;
     TypeNameVersioning    versioning_;
     llvm::StringMap<Plan> plans_;
-    mutable std::size_t   counter_{0};
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("C++ spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable std::size_t counter_{0};
 };
 
 std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1367,12 +1595,6 @@ void emitFunctionPrototypes(SourceWriter&      w,
     w.line("inline std::int8_t " + typeName + "_deserialize_(" + declaredName +
            "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
            (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
-    w.line("inline std::int8_t " + typeName +
-           "_try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
-           "const std::uint8_t** out_view_bytes);");
-    w.line("inline std::int8_t " + typeName +
-           "_try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
-           "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     w.blank();
 }
 
@@ -1429,21 +1651,26 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
     case MemberDefault::Kind::FixedCompositeArray:
     case MemberDefault::Kind::BoolArray:
     case MemberDefault::Kind::Composite:
+    case MemberDefault::Kind::View:
         return "{}";
     }
     return "{}";
 }
 
-void emitSectionStruct(SourceWriter&                         w,
-                       const std::string&                    typeName,
-                       const std::string&                    declaredName,
-                       const SectionMetadata&                metadata,
-                       const InitializerShape&               init,
-                       const SemanticSection&                section,
-                       const EmitterContext&                 ctx,
-                       const CppFlavor                       flavor,
-                       const AttachedDoc&                    typeDoc,
-                       const mlir::dsdl::SerializationPlanOp plan)
+llvm::Error emitSectionStruct(SourceWriter&                         w,
+                              const std::string&                    typeName,
+                              const std::string&                    declaredName,
+                              const SectionMetadata&                metadata,
+                              const InitializerShape&               init,
+                              const SemanticSection&                section,
+                              const EmitterContext&                 ctx,
+                              const CppFlavor                       flavor,
+                              const AttachedDoc&                    typeDoc,
+                              const mlir::dsdl::SerializationPlanOp plan,
+                              const CppSpelling&                    spelling,
+                              llvm::ArrayRef<mlir::func::FuncOp>    accessors,
+                              PlanBodyLookups&                      lookups,
+                              const bool                            accessorsOnly)
 {
     const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
     // Every member's default is what the initialise body stores for it. A field the body does not
@@ -1465,137 +1692,157 @@ void emitSectionStruct(SourceWriter&                         w,
     emitAttachedDocCpp(w, typeDoc);
     w.open("struct " + declaredName + " {");
 
-    std::size_t              emitted = 0;
-    std::vector<std::string> variableArrayMembers;
-    std::vector<std::string> compositeScalarMembers;
-    std::vector<std::string> compositeFixedArrayMembers;
-    std::vector<std::string> compositeVariableArrayMembers;
-
-    for (const auto& field : section.fields)
+    if (!accessorsOnly)
     {
-        if (field.isPadding)
-        {
-            continue;
-        }
+        std::size_t              emitted = 0;
+        std::vector<std::string> variableArrayMembers;
+        std::vector<std::string> compositeScalarMembers;
+        std::vector<std::string> compositeFixedArrayMembers;
+        std::vector<std::string> compositeVariableArrayMembers;
 
-        const auto member   = fieldScope.get(IdentifierRole::FieldName, field.name);
-        const auto baseType = cppTypeFromFieldType(field.resolvedType, ctx);
-        emitAttachedDocCpp(w, field.doc);
-
-        const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
-        if (field.resolvedType.arrayKind == ArrayKind::None)
+        for (const auto& field : section.fields)
         {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            w.line(baseType + " " + member + init_ + ";");
-            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            if (field.isPadding)
             {
-                compositeScalarMembers.push_back(member);
+                continue;
             }
-            ++emitted;
-            continue;
-        }
 
-        if (field.resolvedType.arrayKind == ArrayKind::Fixed)
-        {
-            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+            const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+            // A view holds the field's bytes and their count, from the buffer the object was
+            // deserialised from; it allocates nothing and takes no memory resource.
+            const auto baseType =
+                field.heldAsView ? std::string{"dsdl_runtime_view_t"} : cppTypeFromFieldType(field.resolvedType, ctx);
+            emitAttachedDocCpp(w, field.doc);
+
+            const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
+            if (field.resolvedType.arrayKind == ArrayKind::None)
             {
-                w.line("std::array<std::uint8_t, (" + std::to_string(field.resolvedType.arrayCapacity) +
-                       "U + 7U) / 8U> " + member + "{};");
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                w.line(baseType + " " + member + init_ + ";");
+                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
+                    !field.heldAsView)
+                {
+                    compositeScalarMembers.push_back(member);
+                }
+                ++emitted;
+                continue;
+            }
+
+            if (field.resolvedType.arrayKind == ArrayKind::Fixed)
+            {
+                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                {
+                    w.line("std::array<std::uint8_t, (" + std::to_string(field.resolvedType.arrayCapacity) +
+                           "U + 7U) / 8U> " + member + "{};");
+                }
+                else
+                {
+                    // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                    w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
+                           member + init_ + ";");
+                    // NOLINTEND(performance-inefficient-string-concatenation)
+                }
+                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
+                    !field.heldAsView)
+                {
+                    compositeFixedArrayMembers.push_back(member);
+                }
+                ++emitted;
+                continue;
+            }
+
+            if (isPmrFlavor(flavor))
+            {
+                w.line(
+                    "std::pmr::vector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    "> " + member + "{};");
+                variableArrayMembers.push_back(member);
+                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
+                {
+                    compositeVariableArrayMembers.push_back(member);
+                }
+            }
+            else if (isAutosarFlavor(flavor))
+            {
+                w.line(
+                    "::llvmdsdl::cpp::autosar::BoundedVector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
             }
             else
             {
-                // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
-                       member + init_ + ";");
-                // NOLINTEND(performance-inefficient-string-concatenation)
-            }
-            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
-            {
-                compositeFixedArrayMembers.push_back(member);
+                w.line(
+                    "std::vector<" +
+                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
+                    "> " + member + "{};");
             }
             ++emitted;
-            continue;
         }
 
-        if (isPmrFlavor(flavor))
+        if (section.isUnion)
         {
-            w.line("std::pmr::vector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   "> " + member + "{};");
-            variableArrayMembers.push_back(member);
-            if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+            // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+            w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
+            ++emitted;
+        }
+
+        if (isPmrFlavor(flavor) && metadata.hostImage.holds)
+        {
+            // A host image allocates nothing, so it carries no resource: the pointer would widen the
+            // structure past the image and, inside a nested image, move every field after it. The
+            // resource-taking constructor and the setter stay, so a parent treats every member alike.
+            w.line(declaredName + "() = default;");
+            w.line("explicit " + declaredName + "(::llvmdsdl::cpp::MemoryResource*) {}");
+            w.line("void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}");
+        }
+        else if (isPmrFlavor(flavor))
+        {
+            w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
+            w.line(declaredName + "() = default;");
+            w.line("explicit " + declaredName +
+                   "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
+            w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
+            w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
+                   "::llvmdsdl::cpp::default_memory_resource();");
+            for (const auto& member : variableArrayMembers)
             {
-                compositeVariableArrayMembers.push_back(member);
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                w.line(member + " = decltype(" + member + ")(_memory_resource);");
             }
-        }
-        else if (isAutosarFlavor(flavor))
-        {
-            w.line("::llvmdsdl::cpp::autosar::BoundedVector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
-        }
-        else
-        {
-            w.line("std::vector<" +
-                   std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                   "> " + member + "{};");
-        }
-        ++emitted;
-    }
-
-    if (section.isUnion)
-    {
-        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
-        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
-        ++emitted;
-    }
-
-    if (isPmrFlavor(flavor))
-    {
-        w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
-        w.line(declaredName + "() = default;");
-        w.line("explicit " + declaredName +
-               "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
-        w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
-        w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
-               "::llvmdsdl::cpp::default_memory_resource();");
-        for (const auto& member : variableArrayMembers)
-        {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            w.line(member + " = decltype(" + member + ")(_memory_resource);");
-        }
-        for (const auto& member : compositeScalarMembers)
-        {
-            w.line(member + ".set_memory_resource(_memory_resource);");
-        }
-        for (const auto& member : compositeFixedArrayMembers)
-        {
-            const auto i =
-                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
-            // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
-            w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
-            // NOLINTEND(performance-inefficient-string-concatenation)
+            for (const auto& member : compositeScalarMembers)
+            {
+                w.line(member + ".set_memory_resource(_memory_resource);");
+            }
+            for (const auto& member : compositeFixedArrayMembers)
+            {
+                const auto i =
+                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                w.close("}");
+            }
+            for (const auto& member : compositeVariableArrayMembers)
+            {
+                const auto i =
+                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                w.close("}");
+            }
             w.close("}");
+            ++emitted;
         }
-        for (const auto& member : compositeVariableArrayMembers)
-        {
-            const auto i =
-                codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
-            // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
-            w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
-            // NOLINTEND(performance-inefficient-string-concatenation)
-            w.close("}");
-        }
-        w.close("}");
-        ++emitted;
-    }
 
-    if (emitted == 0)
-    {
-        w.line("std::uint8_t _dummy_{0U};");
+        if (emitted == 0)
+        {
+            w.line("std::uint8_t _dummy_{0U};");
+        }
     }
 
     w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
@@ -1605,8 +1852,20 @@ void emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
     w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
            std::to_string(metadata.serializationBufferSizeBytes) + "U;");
-    w.line(std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (metadata.alias.eligible ? "true;" : "false;"));
-    w.line("static constexpr const char* ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\";");
+    w.line(std::string("static constexpr bool WIRE_FLAT = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line("static constexpr const char* WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\";");
+    w.line(std::string("static constexpr bool HOST_IMAGE = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    w.line("static constexpr const char* HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\";");
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
+    {
+        // The same guard C carries, rendered once: generated C++ already includes the C runtime.
+        for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(typeName))
+        {
+            w.line(line);
+        }
+    }
     if (metadata.declaresPortId)
     {
         w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
@@ -1644,58 +1903,83 @@ void emitSectionStruct(SourceWriter&                         w,
                valueToCppExpr(c.type, c.value) + ";");
     }
 
-    emitArrayMetadata(w, section);
+    if (!accessorsOnly)
+    {
+        emitArrayMetadata(w, section);
 
-    w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
-           "inout_buffer_size_bytes) "
-           "const {");
-    if (isPmrFlavor(flavor))
-    {
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
-    }
-    else
-    {
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
-    }
-    w.close("}");
-
-    w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
-           "inout_buffer_size_bytes) {");
-    if (isPmrFlavor(flavor))
-    {
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, _memory_resource);");
-    }
-    else
-    {
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
-    }
-    w.close("}");
-
-    w.open("LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
-           "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
-    w.line("return " + typeName + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-    w.close("}");
-    w.open("LLVMDSDL_NODISCARD static inline std::int8_t try_serialize_view(const std::uint8_t* view_bytes, "
-           "std::size_t view_size_bytes, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
-    w.line("return " + typeName +
-           "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-
-    if (isPmrFlavor(flavor))
-    {
         w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
-               "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
-        w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+               "inout_buffer_size_bytes) "
+               "const {");
+        if (isPmrFlavor(flavor))
+        {
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, " +
+                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+        }
+        else
+        {
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
+        }
         w.close("}");
 
         w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
-               "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
-        w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+               "inout_buffer_size_bytes) {");
+        if (isPmrFlavor(flavor))
+        {
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, " +
+                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+        }
+        else
+        {
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
+        }
         w.close("}");
+
+        if (isPmrFlavor(flavor))
+        {
+            w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
+                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
+            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.close("}");
+
+            w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
+                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
+            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.close("}");
+        }
+    }
+    // A wire-flat section's field accessors, defined here as static members: each is one read
+    // or one write at the field's offset, and reads the wire rather than an object.
+    for (const mlir::func::FuncOp accessor : accessors)
+    {
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
     }
 
     w.close("};");
     w.blank();
+
+    // The verdict was decided under natural alignment; this pins the layout on the target the
+    // header is compiled for.
+    if (!accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("static_assert(std::is_standard_layout<" + declaredName + ">::value, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        w.line("static_assert(sizeof(" + declaredName +
+               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            const std::string cppMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("static_assert(offsetof(" + declaredName + ", " + cppMember +
+                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + declaredName + "." + cppMember +
+                   ": not at the offset its serialisation assumes\");");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
 
     if (section.deprecated)
     {
@@ -1703,67 +1987,7 @@ void emitSectionStruct(SourceWriter&                         w,
                ";");
         w.blank();
     }
-}
-
-void emitViewFunctions(SourceWriter& w, const std::string& typeName, const std::string& declaredName)
-{
-    w.line("inline std::int8_t " + typeName +
-           "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-           "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
-    w.open("{");
-    w.open("if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("*out_view_bytes = nullptr;");
-    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if (*inout_buffer_size_bytes < required) {");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#else");
-    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
-    w.line("*out_view_bytes = buffer;");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
-    w.line("inline std::int8_t " + typeName +
-           "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-           "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-    w.open("{");
-    w.open("if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("constexpr std::size_t required = " + declaredName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if (view_size_bytes != required) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.open("if (*inout_buffer_size_bytes < required) {");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#else");
-    w.open("if (" + declaredName + "::ZOH_ALIAS_ELIGIBLE) {");
-    w.line("std::memcpy(buffer, view_bytes, required);");
-    w.line("*inout_buffer_size_bytes = required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.close("}");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
+    return llvm::Error::success();
 }
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1772,6 +1996,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 llvm::Error emitSection(SourceWriter&                         w,
@@ -1788,32 +2014,50 @@ llvm::Error emitSection(SourceWriter&                         w,
                         PlanBodyLookups&                      lookups)
 {
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
-    emitFunctionPrototypes(w, typeName, declaredName, flavor);
-    if (!bodies.initialize)
+    // An accessors-only run has no bodies to declare or read: the struct holds the constants and
+    // the accessors, and nothing else.
+    InitializerShape init;
+    if (!ctx.accessorsOnly())
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no initialise body for %s in the lowered module",
-                                       metadata.fullName.c_str());
+        emitFunctionPrototypes(w, typeName, declaredName, flavor);
+        if (!bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no initialise body for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        auto read = readInitializer(bodies.initialize);
+        if (!read)
+        {
+            return read.takeError();
+        }
+        init = std::move(*read);
     }
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
+    if (auto err = emitSectionStruct(w,
+                                     typeName,
+                                     declaredName,
+                                     metadata,
+                                     init,
+                                     section,
+                                     ctx,
+                                     flavor,
+                                     docWithDeprecationNotice(typeDoc,
+                                                              section.deprecated,
+                                                              def.info.fullName,
+                                                              def.info.majorVersion,
+                                                              def.info.minorVersion),
+                                     plan,
+                                     spelling,
+                                     bodies.accessors,
+                                     lookups,
+                                     ctx.accessorsOnly()))
     {
-        return init.takeError();
+        return err;
     }
-    emitSectionStruct(w,
-                      typeName,
-                      declaredName,
-                      metadata,
-                      *init,
-                      section,
-                      ctx,
-                      flavor,
-                      docWithDeprecationNotice(typeDoc,
-                                               section.deprecated,
-                                               def.info.fullName,
-                                               def.info.majorVersion,
-                                               def.info.minorVersion),
-                      plan);
+    if (ctx.accessorsOnly())
+    {
+        return llvm::Error::success();
+    }
     if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1828,7 +2072,6 @@ llvm::Error emitSection(SourceWriter&                         w,
     {
         return err;
     }
-    emitViewFunctions(w, typeName, declaredName);
     return llvm::Error::success();
 }
 
@@ -1875,6 +2118,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -1892,6 +2140,10 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         {
             entry.initialize = fn;
         }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
+        }
         else
         {
             llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
@@ -1899,7 +2151,9 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     }
 
     std::ostringstream out;
-    SourceWriter       w            = makeCppWriter(out);
+    // The declarations are rendered first, so that the includes can be read off them.
+    std::ostringstream body;
+    SourceWriter       w            = makeCppWriter(body);
     const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cppTypeName(def);
 
@@ -1925,30 +2179,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         out << "#define " << anyVersion << "\n";
         out << "#define " << thisVersion << "\n\n";
     }
-
-    out << "#include <array>\n";
-    out << "#include <cstddef>\n";
-    out << "#include <cstdint>\n";
-    out << "#include <cstring>\n";
-    out << "#include <utility>\n";
-    if (!isAutosarFlavor(flavor))
-    {
-        out << "#include <vector>\n";
-    }
-    if (isPmrFlavor(flavor))
-    {
-        out << "#include <memory_resource>\n";
-    }
-    out << "#include \"dsdl_runtime.hpp\"\n";
-
-    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
-    {
-        if (const auto* dep = ctx.find(depRef))
-        {
-            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-        }
-    }
-    w.blank();
 
     emitNamespaceOpen(w, def.info.namespaceComponents);
 
@@ -2016,9 +2246,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         w.line("constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared + "::EXTENT_BYTES;");
         w.line("constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared +
                "::SERIALIZATION_BUFFER_SIZE_BYTES;");
-        w.line("constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestDeclared + "::ZOH_ALIAS_ELIGIBLE;");
-        w.line("constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestDeclared +
-               "::ZOH_ALIAS_REASON;");
         // The service-ID belongs to the service, and this alias is how the service is named.
         w.line(std::string("constexpr bool ") + baseTypeName +
                "_HAS_FIXED_PORT_ID = " + (def.info.fixedPortId ? "true;" : "false;"));
@@ -2029,41 +2256,29 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         }
         w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
-               "* const obj, std::uint8_t* const buffer, std::size_t* const "
-               "inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
-        w.open("{");
-        w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
-        w.close("}");
-        w.blank();
+        // The wrappers call the request's serialisation, which an accessors-only run does not emit.
+        if (!ctx.accessorsOnly())
+        {
+            w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
+                   "* const obj, std::uint8_t* const buffer, std::size_t* const "
+                   "inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+            w.open("{");
+            w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.close("}");
+            w.blank();
 
-        w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
-               "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
-               "inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
-        w.open("{");
-        w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
-        w.close("}");
-        w.blank();
-
-        w.line("inline std::int8_t " + baseTypeName +
-               "_try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
-               "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
-        w.open("{");
-        w.line("return " + requestType + "_try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
-        w.close("}");
-        w.blank();
-
-        w.line("inline std::int8_t " + baseTypeName +
-               "_try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
-               "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
-        w.open("{");
-        w.line("return " + requestType +
-               "_try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
-        w.close("}");
+            w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
+                   "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
+                   "inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+            w.open("{");
+            w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
+                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.close("}");
+            w.blank();
+        }
     }
     else
     {
@@ -2085,6 +2300,36 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     }
 
     emitNamespaceClose(w, def.info.namespaceComponents);
+
+    // Each header is included where the declarations take something from it. A nested type's
+    // header is included where this header names the type: a field held as a view names none,
+    // and an accessors-only header names none, since its composite getters answer bytes.
+    const std::string                         declarations = body.str();
+    static const std::vector<IncludeProvider> standardHeaders{
+        {"<algorithm>", {"std::min(", "std::max(", "std::copy(", "std::fill(", "std::equal("}},
+        {"<array>", {"std::array<"}},
+        {"<cstddef>", {"std::size_t", "std::ptrdiff_t", "offsetof("}},
+        {"<cstdint>", {"std::int", "std::uint"}},
+        {"<cstring>", {"std::memcpy(", "std::memset(", "std::memcmp(", "std::memmove("}},
+        {"<limits>", {"std::numeric_limits<"}},
+        {"<memory_resource>", {"std::pmr::"}},
+        {"<type_traits>", {"std::is_standard_layout<", "std::is_same<", "std::is_trivially"}},
+        {"<utility>", {"std::move(", "std::forward(", "std::swap(", "std::pair<", "std::exchange("}},
+        {"<vector>", {"std::vector<", "std::pmr::vector<"}},
+        {"\"dsdl_runtime.hpp\"", {"dsdl_runtime_", "::llvmdsdl::cpp::", "DSDL_RUNTIME_", "LLVMDSDL_"}},
+    };
+    out << includeLinesFor(declarations, standardHeaders);
+    if (!ctx.accessorsOnly())
+    {
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+        {
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
+        }
+    }
+    out << "\n" << declarations;
     out << "\n#endif /* " << guard << " */\n";
     return out.str();
 }
@@ -2137,7 +2382,12 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
     }
 
-    const EmitterContext ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    const EmitterContext ctx(semantic,
+                             options.emitDeprecationAttributes,
+                             options.hostImageFolded,
+
+                             options.accessorsOnly,
+                             options.typeNameVersioning);
     PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {

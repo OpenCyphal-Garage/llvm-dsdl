@@ -79,6 +79,10 @@ bool runSupportGenerationTests();
 /// @return True when every case in the suite passed.
 bool runAnalyzerTests();
 
+/// @brief Runs the layout-verdict tests.
+/// @return True when all cases pass.
+bool runAliasLayoutTests();
+
 /// @brief Runs the RuntimeTests suite.
 /// @return True when every case in the suite passed.
 bool runRuntimeTests();

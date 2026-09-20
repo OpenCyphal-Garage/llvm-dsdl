@@ -1,0 +1,8 @@
+# The request asserts; the response does not, and it is the only thing that names Inner. A
+# service's payloads assert independently, so the request speaks for nothing the response holds.
+@aliasable
+uint32 code
+@sealed
+---
+vendor.Inner.1.0 inner
+@sealed

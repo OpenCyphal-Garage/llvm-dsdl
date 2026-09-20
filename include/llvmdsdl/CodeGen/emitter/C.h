@@ -78,6 +78,17 @@ struct Options final
     /// deprecation notice and the metadata constant are emitted regardless of this setting.
     bool emitDeprecationAttributes{true};
 
+    /// @brief Whether a host-image section's bodies were folded into one move.
+    ///
+    /// The move is right only where the host orders bytes as the wire does. Source is compiled by
+    /// the consumer for a target this generator did not see, so a folded type's header refuses a
+    /// big-endian build rather than yield the wrong bytes.
+    bool hostImageFolded{false};
+
+    /// @brief Emits the field accessors and neither the object type nor the serdes: what
+    ///        `--aliasable-only` asks for, over a module whose bodies were dropped.
+    bool accessorsOnly{false};
+
     /// @brief Optional list of selected type keys to emit.
     std::vector<std::string> selectedTypeKeys;
 

@@ -48,6 +48,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -171,9 +172,13 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    const bool               emitDeprecationAttributes,
+                   const bool               hostImageFolded,
+                   const bool               accessorsOnly,
                    const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
+        , hostImageFolded_(hostImageFolded)
+        , accessorsOnly_(accessorsOnly)
         , typeNameVersioning_(typeNameVersioning)
     {
     }
@@ -188,6 +193,18 @@ public:
     bool emitDeprecationAttributes() const
     {
         return emitDeprecationAttributes_;
+    }
+
+    /// @brief Whether a host-image section's bodies were folded into one move.
+    bool hostImageFolded() const
+    {
+        return hostImageFolded_;
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -249,6 +266,8 @@ public:
 private:
     DefinitionIndex    index_;
     bool               emitDeprecationAttributes_{false};
+    bool               hostImageFolded_{false};
+    bool               accessorsOnly_{false};
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
@@ -392,12 +411,22 @@ void emitSectionTypedef(SourceWriter&                         w,
             continue;
         }
 
-        const auto cMember  = fieldScope.get(IdentifierRole::FieldName, field.name);
-        const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
+        const auto cMember    = fieldScope.get(IdentifierRole::FieldName, field.name);
+        const bool viewMember = std::ranges::find(metadata.viewMembers, field.name) != metadata.viewMembers.end();
+        const auto baseType =
+            viewMember ? std::string{"dsdl_runtime_view_t"} : cTypeFromFieldType(field.resolvedType, ctx);
+
+        emitAttachedDocC(w, field.doc);
+        if (viewMember)
+        {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            w.line("/* Held as a view: the bytes of the " + ctx.cTypeName(*field.resolvedType.compositeType) +
+                   " this field carries, and their count" +
+                   ((field.resolvedType.arrayKind == ArrayKind::None) ? "" : ", per element") + ". */");
+        }
 
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
-            emitAttachedDocC(w, field.doc);
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             w.line(baseType + " " + cMember + ";");
             ++emitted;
@@ -406,7 +435,6 @@ void emitSectionTypedef(SourceWriter&                         w,
 
         if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
-            emitAttachedDocC(w, field.doc);
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
                 w.line("uint8_t " + cMember + "[(" + std::to_string(field.resolvedType.arrayCapacity) +
@@ -422,7 +450,6 @@ void emitSectionTypedef(SourceWriter&                         w,
             continue;
         }
 
-        emitAttachedDocC(w, field.doc);
         w.open("struct {");
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
@@ -465,6 +492,27 @@ void emitSectionTypedef(SourceWriter&                         w,
         w.close("} " + typeName + ";");
     }
     w.blank();
+
+    // The verdict was decided under natural alignment; this pins the layout on the target the
+    // header is compiled for. Through the tag, as the typedef may be deprecated, and through the
+    // runtime's macro, as the header is included from C++ translation units too.
+    if (metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    {
+        const std::string tag = renderCTagSpelling(typeName);
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("DSDL_RUNTIME_STATIC_ASSERT(sizeof(" + tag +
+               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + typeName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            const std::string cMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("DSDL_RUNTIME_STATIC_ASSERT(offsetof(" + tag + ", " + cMember +
+                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + typeName + "." + cMember +
+                   ": not at the offset its serialisation assumes\");");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
+    }
 
     if (metadata.isUnion)
     {
@@ -557,117 +605,185 @@ void emitSection(SourceWriter&              w,
     const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
     const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
     emitSectionMetadata(w, typeName, metadata);
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
+    {
+        for (const auto& line : renderLittleEndianGuardLines(typeName))
+        {
+            w.line(line);
+        }
+        w.blank();
+    }
     emitSectionConstants(w, typeName, section);
-    emitArrayMacros(w, typeName, section);
-    emitUnionOptionTagMacros(w, typeName, section, metadata);
-    emitAttachedDocC(w,
-                     docWithDeprecationNotice(typeDoc,
-                                              section.deprecated,
-                                              def.info.fullName,
-                                              def.info.majorVersion,
-                                              def.info.minorVersion));
-    emitSectionTypedef(w,
-                       typeName,
-                       section,
-                       metadata,
-                       ctx,
-                       section.deprecated && ctx.emitDeprecationAttributes(),
-                       plan);
+    const auto irStem = sectionIRFunctionStem(def, sectionName);
+    // The object type and its serialisation, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
+        emitArrayMacros(w, typeName, section);
+        emitUnionOptionTagMacros(w, typeName, section, metadata);
+        emitAttachedDocC(w,
+                         docWithDeprecationNotice(typeDoc,
+                                                  section.deprecated,
+                                                  def.info.fullName,
+                                                  def.info.majorVersion,
+                                                  def.info.minorVersion));
+        emitSectionTypedef(w,
+                           typeName,
+                           section,
+                           metadata,
+                           ctx,
+                           section.deprecated && ctx.emitDeprecationAttributes(),
+                           plan);
 
-    const auto irStem     = sectionIRFunctionStem(def, sectionName);
-    const auto objectType = renderCTagSpelling(typeName);
-    w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
-           "* obj, uint8_t* buffer, size_t* "
-           "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
-           "* out_obj, const uint8_t* buffer, size_t* "
-           "inout_buffer_size_bytes);");
-    w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
-    w.blank();
+        const auto objectType = renderCTagSpelling(typeName);
+        w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
+               "* obj, uint8_t* buffer, size_t* "
+               "inout_buffer_size_bytes);");
+        w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
+               "* out_obj, const uint8_t* buffer, size_t* "
+               "inout_buffer_size_bytes);");
+        w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
-           "* const obj, uint8_t* const buffer, size_t* const "
-           "inout_buffer_size_bytes)");
-    w.open("{");
-    w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-    w.blank();
+        w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
+               "* const obj, uint8_t* const buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
-           "* const out_obj, const uint8_t* buffer, size_t* const "
-           "inout_buffer_size_bytes)");
-    w.open("{");
-    w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
-    w.close("}");
-    w.blank();
+        w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
+               "* const out_obj, const uint8_t* buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+        w.open("{");
+        w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+        w.close("}");
+        w.blank();
 
-    w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
-    w.open("{");
-    w.line("return " + irStem + "__initialize_ir_(out_obj);");
-    w.close("}");
-    w.blank();
+        w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
+        w.open("{");
+        w.line("return " + irStem + "__initialize_ir_(out_obj);");
+        w.close("}");
+        w.blank();
+    }
+    // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
+    // getter and a setter beside the bodies: one read or one write at the field's offset, through
+    // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
+    // as an int64_t and hold an integer in one; the wrappers speak the member's own type, and a
+    // getter reads a null buffer as an empty one.
+    // A union whose options are all flat and of one length has them too, at the offset after its
+    // tag, and the tag as a member named `_tag_`; the pass that builds the bodies decides which
+    // unions those are, and the tag's getter is the sign that it did.
+    auto       schemaModule = schema ? schema->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp{};
+    const bool unionFlat    = section.isUnion && schemaModule &&
+                              (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
+    if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
+    {
+        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+        struct Subject final
+        {
+            std::string       name;
+            std::string       cMember;
+            SemanticFieldType type;
+        };
+        std::vector<Subject> subjects;
+        if (unionFlat)
+        {
+            SemanticFieldType tag;
+            tag.scalarCategory = SemanticScalarCategory::UnsignedInt;
+            tag.bitLength      = metadata.unionTagBits;
+            subjects.push_back(Subject{"_tag_", "_tag_", tag});
+        }
+        for (const auto& field : section.fields)
+        {
+            if (!field.isPadding)
+            {
+                subjects.push_back(
+                    Subject{field.name, fieldScope.get(IdentifierRole::FieldName, field.name), field.resolvedType});
+            }
+        }
+        for (const auto& [name, cMember, type] : subjects)
+        {
+            const ArrayKind kind = type.arrayKind;
+            if ((kind != ArrayKind::None) && (kind != ArrayKind::Fixed))
+            {
+                continue;
+            }
+            const bool        indexed   = kind == ArrayKind::Fixed;
+            const std::string irIndex   = indexed ? ", int64_t index" : "";
+            const std::string cIndex    = indexed ? ", const size_t index" : "";
+            const std::string passIndex = indexed ? ", (int64_t) index" : "";
+            const std::string size      = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
+            if (type.scalarCategory == SemanticScalarCategory::Composite)
+            {
+                // A nested composite's getter answers the buffer from the field's offset and, through
+                // the pointer, what remains of this one, for the nested type's own accessors.
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                const std::string irGet = irStem + "__get_" + name + "_ir_";
+                w.line("const uint8_t* " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex +
+                       ", size_t* out_size);");
+                w.blank();
+                w.line("static inline const uint8_t* " + typeName + "__get_" + cMember +
+                       "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex +
+                       ", size_t* const out_size)");
+                w.open("{");
+                w.line("size_t               sub_size = 0;");
+                w.line("const uint8_t* const sub      = " + irGet + "(buffer, " + size + passIndex + ", &sub_size);");
+                w.line("if (out_size != NULL)");
+                w.open("{");
+                w.line("*out_size = sub_size;");
+                w.close("}");
+                w.line("return sub;");
+                w.close("}");
+                w.blank();
+                // NOLINTEND(performance-inefficient-string-concatenation)
+                continue;
+            }
+            const bool  isFloat = type.scalarCategory == SemanticScalarCategory::Float;
+            const bool  isBool  = type.scalarCategory == SemanticScalarCategory::Bool;
+            std::string irType  = "int64_t";
+            if (isFloat)
+            {
+                irType = (type.bitLength <= 32) ? "float" : "double";
+            }
+            const std::string cType = cTypeFromFieldType(type, ctx);
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
+            const std::string irGet = irStem + "__get_" + name + "_ir_";
+            const std::string irSet = irStem + "__set_" + name + "_ir_";
+            w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ");");
+            w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ", " + irType +
+                   " value);");
+            w.blank();
+            w.line("static inline " + cType + " " + typeName + "__get_" + cMember +
+                   "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ")");
+            w.open("{");
+            if (isBool)
+            {
+                w.line("return " + irGet + "(buffer, " + size + passIndex + ") != 0;");
+            }
+            else
+            {
+                w.line("return (" + cType + ") " + irGet + "(buffer, " + size + passIndex + ");");
+            }
+            w.close("}");
+            w.blank();
+            w.line("static inline int8_t " + typeName + "__set_" + cMember +
+                   "_(uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ", const " + cType + " value)");
+            w.open("{");
+            w.line("return " + irSet + "(buffer, (int64_t) buffer_size_bytes" + passIndex + ", (" + irType + ") " +
+                   (isBool ? std::string("(value ? 1 : 0)") : std::string("value")) + ");");
+            w.close("}");
+            w.blank();
+            // NOLINTEND(performance-inefficient-string-concatenation)
+        }
+    }
 
-    w.line("static inline int8_t " + typeName +
-           "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
-           "const uint8_t** const out_view_bytes)");
-    w.open("{");
-    w.open("if ((buffer == NULL) || (inout_buffer_size_bytes == NULL) || (out_view_bytes == NULL)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("*out_view_bytes = NULL;");
-    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    w.open("if (*inout_buffer_size_bytes < _required) {");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("(void)buffer;");
-    w.line("(void)_required;");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    w.line("*out_view_bytes = buffer;");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.midway("#else");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
-    w.line("static inline int8_t " + typeName +
-           "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
-           "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
-    w.open("{");
-    w.open("if ((view_bytes == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.line("const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
-    w.open("if (view_size_bytes != _required) {");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("}");
-    w.open("if (*inout_buffer_size_bytes < _required) {");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    w.close("}");
-    w.open("#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
-    w.line("(void)buffer;");
-    w.line("(void)view_bytes;");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.midway("#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
-    w.line("(void)memcpy(buffer, view_bytes, _required);");
-    w.line("*inout_buffer_size_bytes = _required;");
-    w.line("return DSDL_RUNTIME_SUCCESS;");
-    w.midway("#else");
-    w.line("*inout_buffer_size_bytes = 0U;");
-    w.line("return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    w.close("#endif");
-    w.close("}");
-    w.blank();
-
-    emitUnionOptionWrappers(w, typeName, section, metadata);
+    if (!ctx.accessorsOnly())
+    {
+        emitUnionOptionWrappers(w, typeName, section, metadata);
+    }
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -683,9 +799,11 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 {
     const mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     std::ostringstream         out;
-    SourceWriter               w            = makeCWriter(out);
-    const auto                 guard        = headerGuard(def.info);
-    const auto                 baseTypeName = ctx.cTypeName(def);
+    // The declarations are rendered first, so that the includes can be read off them.
+    std::ostringstream body;
+    SourceWriter       w            = makeCWriter(body);
+    const auto         guard        = headerGuard(def.info);
+    const auto         baseTypeName = ctx.cTypeName(def);
 
     out << generatedCommentLine("C backend") << "\n";
     out << "/* Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
@@ -710,21 +828,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         out << "#define " << anyVersion << "\n";
         out << "#define " << thisVersion << "\n\n";
     }
-
-    out << "#include <stddef.h>\n";
-    out << "#include <stdint.h>\n";
-    out << "#include <stdbool.h>\n";
-    out << "#include <string.h>\n";
-    out << "#include \"dsdl_runtime.h\"\n";
-
-    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
-    {
-        if (const auto* dep = ctx.find(depRef))
-        {
-            out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-        }
-    }
-    w.blank();
 
     if (def.isService)
     {
@@ -755,9 +858,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         }
         w.blank();
 
-        for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
+        // The wrappers call the request's serialisation, which an accessors-only run does not emit.
+        if (!ctx.accessorsOnly())
         {
-            w.line(line);
+            for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
+            {
+                w.line(line);
+            }
         }
     }
     else
@@ -765,6 +872,29 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         emitSection(w, ctx, def, baseTypeName, "", def.request, def.doc, schema);
     }
 
+    // Each header is included where the declarations take something from it. A nested type's
+    // header is included where this header names the type: a field held as a view names none,
+    // and an accessors-only header names none, since its composite getters answer bytes.
+    const std::string                         declarations = body.str();
+    static const std::vector<IncludeProvider> standardHeaders{
+        {"<stdbool.h>", {"bool", "true", "false"}},
+        {"<stddef.h>", {"size_t", "offsetof("}},
+        {"<stdint.h>", {"int8_t", "int16_t", "int32_t", "int64_t"}},
+        {"<string.h>", {"memcpy(", "memset(", "memcmp(", "memmove("}},
+        {"\"dsdl_runtime.h\"", {"dsdl_runtime_", "DSDL_RUNTIME_"}},
+    };
+    out << includeLinesFor(declarations, standardHeaders);
+    if (!ctx.accessorsOnly())
+    {
+        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+        {
+            if (const auto* dep = ctx.find(depRef))
+            {
+                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
+            }
+        }
+    }
+    out << "\n" << declarations;
     out << "#endif /* " << guard << " */\n";
     return out.str();
 }
@@ -917,7 +1047,12 @@ llvm::Error emit(const SemanticModule& semantic,
     }
 
     std::filesystem::path const outRoot(options.outDir);
-    EmitterContext const        ctx(semantic, options.emitDeprecationAttributes, options.typeNameVersioning);
+    EmitterContext const        ctx(semantic,
+                                    options.emitDeprecationAttributes,
+                                    options.hostImageFolded,
+
+                                    options.accessorsOnly,
+                                    options.typeNameVersioning);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
@@ -948,7 +1083,8 @@ llvm::Error emit(const SemanticModule& semantic,
                     std::to_string(op.getMinor())] = op.getOperation();
     }
 
-    unsigned objectSizeBits = 64U;
+    unsigned objectSizeBits     = 64U;
+    bool     objectLittleEndian = false;
     if (options.artifact == Artifact::Object)
     {
         auto width = targetSizeBits(options.targetTriple);
@@ -957,6 +1093,9 @@ llvm::Error emit(const SemanticModule& semantic,
             return width.takeError();
         }
         objectSizeBits = *width;
+        objectLittleEndian =
+            llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
+                .isLittleEndian();
     }
 
     for (const auto& def : semantic.definitions)
@@ -984,6 +1123,23 @@ llvm::Error emit(const SemanticModule& semantic,
         mlir::Operation* const schemaClone = targetIt->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
         stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
+        // The nested types whose entry points this definition's bodies may call, each as the C name
+        // the bodies call it by and the header that declares it, for the implementation file to
+        // include where a body does call. A field held as a view is decoded by no call.
+        {
+            llvm::SmallVector<mlir::Attribute, 8> nestedHeaders;
+            for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+            {
+                if (const auto* dep = ctx.find(depRef))
+                {
+                    nestedHeaders.push_back(
+                        mlir::StringAttr::get(perDefModule.getContext(),
+                                              ctx.cTypeName(*dep) + "=" + EmitterContext::relativeHeaderPath(*dep)));
+                }
+            }
+            perDefModule->setAttr("llvmdsdl.c_nested_headers",
+                                  mlir::ArrayAttr::get(perDefModule.getContext(), nestedHeaders));
+        }
         if (options.artifact == Artifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
@@ -996,7 +1152,7 @@ llvm::Error emit(const SemanticModule& semantic,
         mlir::PassManager pm(perDefModule.getContext());
         if (options.artifact == Artifact::Object)
         {
-            pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits));
+            pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits, objectLittleEndian));
             pm.addPass(createEmitDSDLRuntimePass());
             if (mlir::failed(pm.run(perDefModule)))
             {

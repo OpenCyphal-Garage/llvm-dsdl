@@ -75,6 +75,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <cmath>
 #include <functional>
 #include <iomanip>
@@ -177,11 +178,19 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule&    semantic,
                    std::vector<std::string> packageComponents,
-                   const TypeNameVersioning typeNameVersioning)
+                   const TypeNameVersioning typeNameVersioning,
+                   const bool               accessorsOnly)
         : packageComponents_(std::move(packageComponents))
         , index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
+        , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -294,6 +303,7 @@ private:
     std::vector<std::string> packageComponents_;
     DefinitionIndex          index_;
     TypeNameVersioning       typeNameVersioning_{TypeNameVersioning::Unversioned};
+    bool                     accessorsOnly_{false};
 };
 
 std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -376,6 +386,11 @@ std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault
         return "field(default_factory=list)";
     case MemberDefault::Kind::Composite:
         return "field(default_factory=lambda: " + pyElementDefaultExpr(type, ctx) + ")";
+    case MemberDefault::Kind::View:
+        return (type.arrayKind == ArrayKind::Fixed)
+                   ? "field(default_factory=lambda: [memoryview(b\"\") for _ in range(" +
+                         std::to_string(type.arrayCapacity) + ")])"
+                   : "field(default_factory=lambda: memoryview(b\"\"))";
     }
     return pyElementDefaultExpr(type, ctx);
 }
@@ -503,8 +518,11 @@ void emitStructSectionType(SourceWriter&           w,
             llvm::report_fatal_error(llvm::Twine("Python: the initialise body of ") + typeName + " does not set '" +
                                      field.name + "'");
         }
-        w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
-               pyDefaultFromBody(field.resolvedType, *entry, ctx));
+        w.line(fieldName + ": " +
+               (field.heldAsView
+                    ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "memoryview" : "list[memoryview]"}
+                    : pyFieldType(field.resolvedType, ctx)) +
+               " = " + pyDefaultFromBody(field.resolvedType, *entry, ctx));
     }
     if (emittedField)
     {
@@ -629,8 +647,22 @@ public:
             }
             for (mlir::dsdl::IOOp io : fields)
             {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
-                entry.order.push_back(io.getName().str());
+                const std::string name      = io.getName().str();
+                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()),
+                                                     io,
+                                                     scope.declare(IdentifierRole::FunctionName, "get_" + name),
+                                                     scope.declare(IdentifierRole::FunctionName, "set_" + name)};
+                entry.order.push_back(name);
+            }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"_tag",
+                                                tagSteps_.back().get(),
+                                                scope.declare(IdentifierRole::FunctionName, "get__tag_"),
+                                                scope.declare(IdentifierRole::FunctionName, "set__tag_")};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -654,6 +686,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
+        accessor_            = Accessor::None;
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -667,6 +700,10 @@ public:
                  "def " + functionName(fn.getSymName()) + "(" + list + ") -> " + typeName(fn.getResultTypes().front()) +
                      ":");
             return parameters;
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
         }
         open(w,
              "def " + (*direction == "serialize" ? serializeInto() : deserializeFrom()) +
@@ -781,8 +818,78 @@ public:
         line(w, expr.str());
     }
 
+    /// @brief Opens a getter or a setter: a static method of the class, speaking the member's
+    ///        own type. The plan holds an integer as an `int`, which a `bool` value is rebound to;
+    ///        an index is an `int` already.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed        a        = accessed(fn);
+        mlir::dsdl::IOOp      io       = a.member->io;
+        const llvm::StringRef category = io.getScalarCategory();
+        std::string           storage  = "int";
+        if (category == "bool")
+        {
+            storage = "bool";
+        }
+        else if (category == "float")
+        {
+            storage = "float";
+        }
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const std::string index     = indexed ? ", index: int" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_                 = (getter && storage == "bool") ? "bool" : std::string{};
+        line(w, "@staticmethod");
+        if (composite)
+        {
+            // The nested type's buffer, as a slice; the remaining size the plan stores lands in a
+            // local beside it.
+            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> memoryview:");
+            line(w, "out_size = 0");
+        }
+        else if (getter)
+        {
+            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> " + storage + ":");
+        }
+        else
+        {
+            open(w,
+                 "def " + a.member->setterName + "(buffer: memoryview" + index + ", value: " + storage + ") -> int:");
+        }
+        std::vector<std::string> parameters{"buffer", "len(buffer)"};
+        if (indexed)
+        {
+            parameters.emplace_back("index");
+        }
+        if (composite)
+        {
+            parameters.emplace_back("out_size");
+        }
+        else if (!getter)
+        {
+            if (storage != "float")
+            {
+                line(w, "value = int(value)");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
+    }
+
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code alone.
+        if (accessor_ == Accessor::Getter)
+        {
+            line(w, returnCast_.empty() ? "return " + expr.str() : "return bool(" + expr.str() + ")");
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            line(w, "return " + expr.str());
+            return;
+        }
         // A body answers the runtime's error code; its Python signature answers the size used
         // on success and the code, which is negative, on failure.
         if (inBody_)
@@ -1158,6 +1265,69 @@ public:
         closeBlock(w);
     }
 
+    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("Python spelling: a host-image move is not spelled here, and the fold that "
+                                 "produces one does not run for this target");
+    }
+
+    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("Python spelling: a host-image move is not spelled here, and the fold that "
+                                 "produces one does not run for this target");
+    }
+
+    // A view member is a slice of the buffer's memoryview, or one element of a list of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "len(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ")";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        line(w,
+             viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes + "[:min(" +
+                 names(op.getSizeBytes()) + ", len(" + bytes + "))]");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        // A fixed array of views is every element empty; a variable-length one is sized by the plan.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        line(w,
+             memberAccess(op.getObject(), op.getMember(), names) + " = " +
+                 ((io.getArrayKind() == "fixed")
+                      ? "[memoryview(b\"\") for _ in range(" + std::to_string(io.getArrayCapacity()) + ")]"
+                      : "memoryview(b\"\")"));
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes());
+        line(w, "_n = min(" + names(op.getSourceSizeBytes()) + ", len(" + source + "), " + width + ")");
+        line(w, destination + "[:_n] = " + source + "[:_n]");
+        line(w, destination + "[_n:" + width + "] = bytes(" + width + " - _n)");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("Python spelling: a nested call is a statement");
@@ -1207,6 +1377,10 @@ private:
     {
         std::string      pyName;
         mlir::dsdl::IOOp io;
+        /// @brief The accessors' names, claimed in the class's scope after every field so that no
+        ///        field shares a name with one.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
@@ -1318,6 +1492,10 @@ private:
     /// @brief The default value of one element of @p member, or of the member when it is no array.
     std::string elementDefault(const Member& member) const
     {
+        if (mlir::dsdl::IOOp{member.io}.getHeldAsView())
+        {
+            return "memoryview(b\"\")";
+        }
         switch (storageOf(member))
         {
         case Storage::Boolean:
@@ -1516,9 +1694,53 @@ private:
 
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
-    mutable bool          inBody_{false};
-    mutable bool          blockEmpty_{false};
-    mutable unsigned      fresh_{0};
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("Python spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Python spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("Python spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable bool        inBody_{false};
+    mutable bool        blockEmpty_{false};
+    mutable unsigned    fresh_{0};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1527,6 +1749,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 /// @brief One section: its class with the two bodies and the methods that wrap them, then its
@@ -1542,35 +1766,58 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    // An accessors-only run has no bodies: a bare class carries the accessors as static methods.
+    if (ctx.accessorsOnly())
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       def.info.fullName.c_str());
+        emitAttachedDocPy(w,
+                          docWithDeprecationNotice(typeDoc,
+                                                   section.deprecated,
+                                                   def.info.fullName,
+                                                   def.info.majorVersion,
+                                                   def.info.minorVersion));
+        w.open("class " + typeName + ":");
     }
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
+    else
     {
-        return init.takeError();
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           def.info.fullName.c_str());
+        }
+        auto init = readInitializer(bodies.initialize);
+        if (!init)
+        {
+            return init.takeError();
+        }
+        emitSectionType(w,
+                        *init,
+                        typeName,
+                        section,
+                        typeDoc,
+                        ctx,
+                        def.info.fullName,
+                        def.info.majorVersion,
+                        def.info.minorVersion);
+        w.blank();
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
     }
-    emitSectionType(w,
-                    *init,
-                    typeName,
-                    section,
-                    typeDoc,
-                    ctx,
-                    def.info.fullName,
-                    def.info.majorVersion,
-                    def.info.minorVersion);
-    w.blank();
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
-        return err;
-    }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-    {
-        return err;
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
     }
     w.dedent();
     if (metadata.isUnion)
@@ -1612,7 +1859,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     std::map<std::string, std::set<std::string>> importsByModule;
     const auto                                   addSectionImports = [&](const SemanticSection& section) {
-        const auto dependencies = collectCompositeDependencies(section, def.info);
+        const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
         const auto imports      = projectCompositeImports(
             dependencies,
             [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },
@@ -1629,7 +1876,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     w.line("from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime, error_message");
-    for (const auto& [modulePath, names] : importsByModule)
+    // An accessors-only file names no other type: a composite's getter answers its bytes.
+    for (const auto& [modulePath, names] : ctx.accessorsOnly() ? decltype(importsByModule){} : importsByModule)
     {
         std::string importNames;
         for (const auto& name : names)
@@ -1656,20 +1904,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         w.line("DSDL_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
     }
-    const auto [requestZohEligible, requestZohReason] =
-        aliasVerdict(sectionPlan(schema, def.isService ? "request" : ""));
-    w.line("DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " + std::string(requestZohEligible ? "True" : "False"));
-    w.line("DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\"");
-    if (def.response)
+    // Aliasability is a property of a payload, so a service answers for each of its two and a
+    // message answers once, under the name of the thing the verdict is about.
+    const auto emitLayoutVerdicts = [&w, schema](const std::string& prefix, const llvm::StringRef section) {
+        const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
+        const AliasVerdict                    flat = wireFlatVerdict(plan);
+        w.line(prefix + "WIRE_FLAT = " + std::string(flat.holds ? "True" : "False"));
+        w.line(prefix + "WIRE_FLAT_REASON = \"" + flat.reason + "\"");
+    };
+    if (def.isService)
     {
-        const auto [responseZohEligible, responseZohReason] = aliasVerdict(sectionPlan(schema, "response"));
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " + std::string(responseZohEligible ? "True" : "False"));
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_REASON = \"" + responseZohReason + "\"");
+        emitLayoutVerdicts("DSDL_REQUEST_", "request");
+        emitLayoutVerdicts("DSDL_RESPONSE_", "response");
     }
     else
     {
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = False");
-        w.line("DSDL_RESPONSE_ZOH_ALIAS_REASON = \"not-applicable\"");
+        emitLayoutVerdicts("DSDL_", "");
     }
     w.blank();
 
@@ -1702,6 +1952,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -1718,6 +1973,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         else if (*direction == "initialize")
         {
             entry.initialize = fn;
+        }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
         }
         else
         {
@@ -1948,7 +2207,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     }
 
     const auto           packageComponents = splitPackageName(options.packageName);
-    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning, options.accessorsOnly);
 
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);

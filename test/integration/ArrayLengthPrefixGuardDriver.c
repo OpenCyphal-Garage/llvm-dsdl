@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "dsdl_runtime.h"
 #include "prefixguard/Prefix32_1_0.h"
 #include "prefixguard/Prefix64_1_0.h"
 

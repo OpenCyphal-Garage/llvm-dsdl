@@ -172,3 +172,85 @@ names the struct. Compiling generated code is clean under `-Werror` or `-D warni
 own code naming a deprecated type is diagnosed.
 
 The `obj` backend never emits these attributes.
+
+## `@aliasable`
+
+`@aliasable` asserts that a section's serialised form is a contiguous byte image: fixed length,
+sealed, not a union, every field a whole number of bytes beginning on a byte boundary, and every
+composite field a type that holds the same. A definition that asserts it and does not hold it is an
+error, naming the field that blocked the layout.
+
+```dsdl
+@aliasable
+float32 x
+float32 y
+float32 z
+@sealed
+```
+
+It is a flag, like `@union` and `@sealed`, and takes no expression. It scopes to a section, so a
+service asserts for its request and its response independently. It requires `@sealed` rather than
+implying it: a directive that reads as an assertion should not change the wire format.
+
+Use it on a type whose decode cost is part of its design. Without it, a schema change that costs
+such a type its layout is silent — the code still generates, and the reader pays for a decode it
+was written not to need.
+
+Every generated type reports the same verdict whether or not it asserts it, as `WIRE_FLAT` and a
+`WIRE_FLAT_REASON` naming what blocked it. C, C++, Rust and Go carry `HOST_IMAGE` beside it, which
+answers a second question: whether the generated structure is that byte image on the target that
+compiles it. The two differ whenever a width the wire carries in five bytes is held in eight, or
+where a structure aligns a field the wire does not. A TypeScript or Python object has no byte image
+to compare, so those two report the wire verdict alone; the accessors are what the property buys
+them.
+
+A wire-flat type's scalar fields, and the elements of its fixed arrays of scalars, have
+accessors beside the serialisation functions: a getter that reads one field off a serialised
+buffer, and a setter that writes one into it, each at the field's fixed offset and in the member's
+own type. An element accessor takes the element's index after the buffer. A nested composite
+field has a getter alone, answering the buffer from the field's offset — with what remains through
+a size pointer in C and C++, as a slice elsewhere — for the nested type's own accessors to read.
+A getter answers what
+`deserialize_` puts in the field, on a short buffer too, where both zero-extend, and reads an
+index at or past the array's capacity as zero; a setter answers the runtime's error code, refusing
+such an index and a buffer too short for the field. C spells them `<type>__get_<field>_` and
+`<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
+functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
+`get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and
+`set_<field>`.
+
+A union whose options are all flat and of one length, sealed, has its tag at a fixed offset and
+every option at the offset after it, so it has the same accessors: the tag as a member named
+`_tag_`, with a getter and a setter in the tag's own width, and each option's accessors at that
+one offset. An option's setter writes the value and not the tag; the tag's setter selects, with the
+option's tag constant. Such a union is not wire-flat and cannot assert `@aliasable`.
+
+`--aliasable-only` emits the accessors and neither the object type nor the serialisation. Every
+targeted type must carry `@aliasable` or be nested by a type that does; each that is neither fails
+the run, named. The files keep their names; Go's endianness guard, which belongs to the folded
+bodies, is not among them.
+
+`--aliasable-views` holds each composite field of an `@aliasable` type as a view of the buffer the
+holder was deserialised from, in place of a decoded copy: the field's bytes and their count, for the
+nested type's accessors to read. The holder's deserialise skips the field and its serialise copies
+the view. A buffer that ends inside the field leaves a short view, which the accessors read as
+zeros past its end and which serialises zero-filled; an initialised object holds an empty view,
+which serialises as the nested type's default. An array of an `@aliasable` type is one view per
+element: a fixed array's held in place, a variable-length one's beside its count. A holder of a view
+is not a host image. A field of a union, and a field whose type is wire-flat without asserting it,
+are decoded as usual. C and C++ hold a view as `dsdl_runtime_view_t`, a pointer and a size; Rust as `&'a [u8]`, which
+gives the holder, and every type that holds one, a lifetime parameter and a deserialise that
+borrows the buffer for it; Go as `[]byte`; TypeScript as `Uint8Array`; Python as `memoryview`. A
+file names no type it holds only as a view.
+
+A host-image type asserts the verdict where it is compiled: the generated structure carries a
+static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,
+C++, Rust and Go — its serialise and deserialise are one move of the object's bytes when the target
+triple, the host's when none is given, is little-endian, and the generated code refuses a
+big-endian build with the reason and the fix. Under the C++ PMR profile a host image carries no
+memory resource: it allocates nothing, and the pointer would widen the structure past the image.
+
+> ⚠️ `@aliasable` is an llvm-dsdl extension. The reference implementation rejects an unknown
+> directive, so a namespace using it does not parse under pydsdl or generate under Nunavut. It is
+> kept out of the differential corpus for that reason. Proposing it upstream is the intent; until
+> then, a namespace meant to stay portable should not use it.

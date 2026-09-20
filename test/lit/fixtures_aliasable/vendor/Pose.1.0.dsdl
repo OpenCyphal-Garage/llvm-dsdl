@@ -1,0 +1,6 @@
+# Composed of byte-clean records. Without recursion into composites no type holding one could ever
+# assert this, which is most of what anyone writes.
+@aliasable
+vendor.Vec3.1.0 position
+vendor.Vec3.1.0 orientation
+@sealed

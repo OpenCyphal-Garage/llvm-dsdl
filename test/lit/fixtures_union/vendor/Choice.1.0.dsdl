@@ -1,0 +1,8 @@
+# A union whose options are all flat and of one length: a tag byte and then four bytes, whichever
+# option is selected, so an accessor set can read the tag and then the option at a fixed offset.
+@union
+uint32 word
+float32 real
+uint8[4] bytes
+vendor.Quad.1.0 quad
+@sealed

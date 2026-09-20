@@ -1,0 +1,74 @@
+# A wire-flat section's fields sit at offsets the schema fixes, so `build-dsdl-plan-bodies` builds
+# a getter and a setter for each scalar among them beside the three bodies. A getter is one read at
+# the field's offset through the plan's own normalising helper, answering the value alone: a read
+# cannot fail, and a short buffer zero-extends, so the answer is what `deserialize_` puts in the
+# field. A setter is one write of the saturated value, answering the runtime's error code.
+#
+# A section that is not wire-flat gets none.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_host_image > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/plans.mlir > %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=GET < %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=SET < %t/bodies.mlir
+# RUN: FileCheck %s --check-prefix=OFFSETS < %t/bodies.mlir
+# RUN: %dsdlc --target-language mlir %S/fixtures/vendor/DelimitedList.1.0.dsdl -I %S/fixtures > %t/other.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/other.mlir | FileCheck %s --check-prefix=NOT_FLAT
+
+# Two fields, a byte and a half-word: the second sits at bit eight.
+# GET-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# GET-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64) -> i64
+# GET-SAME:  llvmdsdl.member = "b", llvmdsdl.plan_body = "get"
+# GET:       %[[OFF:.*]] = arith.constant 8 : i64
+# GET:       %[[READABLE:.*]] = dsdl.buffer_or_empty %[[BUF]]
+# GET:       %[[RAW:.*]] = dsdl.read_bits %[[READABLE]][%[[OFF]]], size %[[SIZE]] {width = 16 : i64}
+# GET:       %[[VALUE:.*]] = call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__deser(%[[RAW]])
+# GET:       return %[[VALUE]] : i64
+
+# SET-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__set_b_ir_(
+# SET-SAME:  %[[BUF:.*]]: !dsdl.ptr<!dsdl.byte>, %[[SIZE:.*]]: i64, %[[VALUE:.*]]: i64) -> i8
+# SET-SAME:  llvmdsdl.member = "b", llvmdsdl.plan_body = "set"
+# SET:       %[[OFF:.*]] = arith.constant 8 : i64
+# SET:       dsdl.is_null %[[BUF]]
+# SET:       %[[CAP:.*]] = arith.muli %[[SIZE]], %{{.*}}
+# SET:       arith.cmpi uge, %[[CAP]], %{{.*}}
+# SET:       scf.if
+# SET:       %[[NORMALISED:.*]] = func.call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__ser(%[[VALUE]])
+# SET:       dsdl.write_bits %[[BUF]][%[[OFF]]], %[[NORMALISED]], size %[[SIZE]] {width = 16 : i64}
+
+# The offsets follow the steps: after a four-byte fixed array, and after an eight-byte nested record.
+# OFFSETS-LABEL: @fixtures_host_image_vendor_Arr_1_0__get_tail_ir_(
+# OFFSETS:       arith.constant 32 : i64
+# OFFSETS-LABEL: @fixtures_host_image_vendor_Nested_1_0__get_code_ir_(
+# OFFSETS:       arith.constant 64 : i64
+
+# An element of a fixed array takes an index. At or past the capacity it reads as zero, as bytes
+# past the buffer do: the read stays within the field, and the answer is selected after it, since a
+# slice read carries no size to clamp.
+# RUN: FileCheck %s --check-prefix=ELEMENT < %t/bodies.mlir
+# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__get_head_ir_(
+# ELEMENT-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[INDEX:.*]]: i64) -> i64
+# ELEMENT:       %[[IN:.*]] = arith.cmpi ult, %[[INDEX]], %{{.*}}
+# ELEMENT:       %[[OFF:.*]] = arith.muli %[[INDEX]], %{{.*}}
+# ELEMENT:       %[[AT:.*]] = arith.select %[[IN]], %[[OFF]], %{{.*}}
+# ELEMENT:       dsdl.read_bits %{{.*}}[%[[AT]]], size %[[SIZE]] {width = 8 : i64}
+# ELEMENT:       %[[VALUE:.*]] = call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Arr_1_0__0__deser(
+# ELEMENT:       %[[ANSWER:.*]] = arith.select %[[IN]], %[[VALUE]], %{{.*}}
+# ELEMENT:       return %[[ANSWER]]
+# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__set_head_ir_(
+# ELEMENT-SAME:  %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: i64, %[[INDEX:.*]]: i64, %{{.*}}: i64) -> i8
+# ELEMENT:       arith.cmpi ult, %[[INDEX]], %{{.*}}
+# ELEMENT:       dsdl.write_bits
+
+# A nested composite's getter answers the buffer from the field's byte offset and, through the size
+# pointer, what remains, clamped so a short buffer yields an empty one. It has no setter.
+# RUN: FileCheck %s --check-prefix=COMPOSITE < %t/bodies.mlir
+# COMPOSITE-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__get_inner_ir_(
+# COMPOSITE-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
+# COMPOSITE-DAG:   dsdl.store_scalar %[[OUT]]
+# COMPOSITE-DAG:   %[[SUB:.*]] = dsdl.buffer_at %{{.*}}[%{{.*}}]
+# COMPOSITE:       return %[[SUB]]
+# COMPOSITE-NOT:   @fixtures_host_image_vendor_Nested_1_0__set_inner_ir_
+
+# NOT_FLAT-NOT: __get_
+# NOT_FLAT-NOT: __set_

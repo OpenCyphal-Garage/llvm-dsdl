@@ -319,6 +319,9 @@ enum class DirectiveKind
     /// @brief `@print`.
     Print,
 
+    /// @brief `@aliasable`. An llvm-dsdl extension: the reference implementation rejects it.
+    Aliasable,
+
     /// @brief Unrecognized directive.
     Unknown,
 };

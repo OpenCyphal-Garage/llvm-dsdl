@@ -16,6 +16,8 @@
 
 #include "llvmdsdl/Semantics/Analyzer.h"
 
+#include "llvmdsdl/Semantics/AliasLayout.h"
+
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>
 #include <algorithm>
@@ -273,7 +275,56 @@ public:
                 out.definitions.push_back(*r);
             }
         }
+        // Layout verdicts read whole sections, including composites this module resolved through
+        // the catalogue, so they are decided once the model is complete.
+        annotateAliasLayout(out, options_.externalSemanticCatalog, options_.aliasableViews);
+        checkAliasableAssertions(out);
+        if (diagnostics_.hasErrors())
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), "semantic analysis failed");
+        }
         return out;
+    }
+
+    /// @brief Reports every `@aliasable` the layout does not honour, naming what blocked it.
+    void checkAliasableAssertions(const SemanticModule& module)
+    {
+        for (const SemanticDefinition& def : module.definitions)
+        {
+            checkOneAliasableAssertion(def.request, def.isService ? "request" : "");
+            if (def.response)
+            {
+                checkOneAliasableAssertion(*def.response, "response");
+            }
+        }
+    }
+
+    void checkOneAliasableAssertion(const SemanticSection& section, const llvm::StringRef sectionName)
+    {
+        if (!section.aliasableDirective || section.wireFlat.holds)
+        {
+            return;
+        }
+        const std::string scope = sectionName.empty() ? std::string{} : (" for the " + sectionName.str());
+        std::string message = "@aliasable does not hold" + scope + ": " + describeAliasLayoutVerdict(section.wireFlat);
+        // A field blocker outranks sealing, so an unsealed type reports its field. Sealing is still
+        // required, and saying so here spares the author a second round trip to find that out.
+        if (!section.sealed && (section.wireFlat.reason != AliasLayoutReason::NotSealed))
+        {
+            message += "; the type is also delimited, so it needs @sealed";
+        }
+        diagnostics_.error(*section.aliasableDirective, message);
+
+        // A nested refusal names a field in this file whose cause is in another one. Carry the cause
+        // across rather than leaving the author to go and find it.
+        if (section.wireFlat.reason == AliasLayoutReason::NestedNotFlat)
+        {
+            AliasLayoutVerdict nested;
+            nested.reason    = section.wireFlat.nestedReason;
+            nested.fieldName = section.wireFlat.nestedFieldName;
+            diagnostics_.note(*section.aliasableDirective,
+                              section.wireFlat.nestedTypeName + ": " + describeAliasLayoutVerdict(nested));
+        }
     }
 
 private:
@@ -973,6 +1024,24 @@ private:
                     }
                     section.isUnion        = true;
                     unionDirectiveLocation = d.location;
+                    continue;
+                }
+
+                // An llvm-dsdl extension: this asserts that the section's serialised form is a
+                // contiguous byte image, so a schema change that costs a performance-critical type
+                // its layout fails here rather than quietly costing the reader a decode. The
+                // verdict is decided once the whole module is resolved, so the check is there.
+                if (d.kind == DirectiveKind::Aliasable)
+                {
+                    if (d.expression)
+                    {
+                        diagnostics_.error(d.location, "@aliasable does not accept an expression");
+                    }
+                    if (section.aliasableDirective)
+                    {
+                        diagnostics_.error(d.location, "duplicated @aliasable directive");
+                    }
+                    section.aliasableDirective = d.location;
                     continue;
                 }
 

@@ -33,7 +33,7 @@ a particular language.
 ### Pass sequence
 
 1. `lower-dsdl-exec`
-2. `dsdl-annotate-aliasability` — conservative aliasability *annotator*; stamps metadata only
+2. `dsdl-verify-alias-layout` — checks each plan's layout verdicts against the steps it carries
 3. `build-dsdl-plan-bodies` — every plan becomes a serialise and a deserialise function of plan operations
 4. optional `optimize-dsdl-lowered-serdes` — the canonicaliser and common-subexpression elimination over
    the helpers and bodies, so every backend translates the simplified functions

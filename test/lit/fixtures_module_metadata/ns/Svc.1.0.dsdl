@@ -1,0 +1,8 @@
+# A service named DSDL would reach its payload's names through the payload's own prefix; this one
+# is named otherwise, so nothing of its module is in reach.
+uint8 WIRE_FLAT = 3
+uint8 v
+@sealed
+---
+uint8 w
+@sealed

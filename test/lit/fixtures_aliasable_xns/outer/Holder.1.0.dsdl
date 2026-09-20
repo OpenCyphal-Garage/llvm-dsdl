@@ -1,0 +1,5 @@
+# Asserts, and nests a record from another namespace: Go imports a package for a nested type, and
+# an accessors-only file names no nested type, so it must import none.
+@aliasable
+inner.Vec.1.0 v
+@sealed

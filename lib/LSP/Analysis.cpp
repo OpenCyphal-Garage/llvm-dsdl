@@ -932,17 +932,33 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
         lintConfig.fileDisabledRules = config.lintFileDisabledRules;
         lintConfig.pluginLibraries   = config.lintPluginLibraries;
 
+        // A rule that asks about layout needs the resolved model, so each document is paired with
+        // its analysed definition when analysis reached one.
+        std::unordered_map<std::string, const SemanticDefinition*> analysedByName;
+        if (semanticModule.has_value())
+        {
+            for (const SemanticDefinition& definition : semanticModule->definitions)
+            {
+                analysedByName[definition.info.fullName + "." + std::to_string(definition.info.majorVersion) + "." +
+                               std::to_string(definition.info.minorVersion)] = &definition;
+            }
+        }
+
         std::vector<LintDocument> lintDocuments;
         lintDocuments.reserve(sortedPaths.size());
         for (const std::string& path : sortedPaths)
         {
             const CachedDefinition& cached = cachedDefinitionsByPath_.at(path);
+            const auto              analysed =
+                analysedByName.find(cached.info.fullName + "." + std::to_string(cached.info.majorVersion) + "." +
+                                    std::to_string(cached.info.minorVersion));
             lintDocuments.push_back(LintDocument{
                 path,
                 cached.sourceUri,
                 cached.info,
                 cached.ast,
                 cached.sourceText,
+                (analysed == analysedByName.end()) ? nullptr : analysed->second,
             });
         }
 

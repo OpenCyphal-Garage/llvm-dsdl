@@ -279,6 +279,8 @@ set(required_directed_markers
   "INFO cpp-c directed marker heartbeat_empty_deserialize"
   "INFO cpp-c directed marker frame_bad_union_tag_deserialize"
   "INFO cpp-c directed marker execute_request_truncated_payload_roundtrip"
+  "INFO cpp-c directed marker real32_truncated_image_roundtrip"
+  "INFO cpp-c directed marker integer8_empty_image_roundtrip"
   "INFO cpp-c directed marker execute_response_truncated_payload_roundtrip"
   "INFO cpp-c directed marker execute_response_bad_array_length_deserialize"
   "INFO cpp-c directed marker list_bad_delimiter_header_deserialize"

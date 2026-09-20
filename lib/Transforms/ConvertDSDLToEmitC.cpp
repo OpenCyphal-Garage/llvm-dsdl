@@ -38,6 +38,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Support/LLVM.h>
 #include <cstdint>
+#include <algorithm>
 #include <set>
 #include <string>
 #include <cstddef>
@@ -58,6 +59,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/Pass.h>
@@ -85,6 +87,10 @@ struct CMember final
     std::string  category;
     std::int64_t bitLength{0};
     std::string  compositeCTypeName;
+    /// @brief The member is a `dsdl_runtime_view_t`, or an array of them: the field's bytes and
+    ///        their count, per element.
+    bool         heldAsView{false};
+    std::int64_t arrayCapacity{0};
 };
 
 struct CPlan final
@@ -169,6 +175,8 @@ CSpelling gatherCSpelling(mlir::ModuleOp module)
                     member.category           = io.getScalarCategory().str();
                     member.bitLength          = io.getBitLength();
                     member.compositeCTypeName = io.getCompositeCTypeName().value_or(llvm::StringRef{}).str();
+                    member.heldAsView         = io.getHeldAsView();
+                    member.arrayCapacity      = io.getArrayCapacity();
                     if (io.getCompositeFullName())
                     {
                         spelling.tags[planIdentity(*io.getCompositeFullName(),
@@ -315,6 +323,60 @@ struct BitReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::BitR
                                                                                 adaptor.getBufferSizeBytes(),
                                                                                 adaptor.getBitOffset(),
                                                                                 adaptor.getWidth()});
+        return mlir::success();
+    }
+};
+
+/// @brief One move for a whole payload, where the structure is the wire image.
+///
+/// The runtime helper takes the payload's size as a constant, so the host compiler folds the copy
+/// to loads and stores; the bit-granular primitives every other read goes through would keep their
+/// alignment and tail handling after inlining, and cost more than the field reads they replaced.
+struct ImageReadLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageReadOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageReadOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_image_read"),
+                                                               mlir::ValueRange{adaptor.getObject(),
+                                                                                adaptor.getBuffer(),
+                                                                                adaptor.getBufferSizeBytes(),
+                                                                                bytes});
+        return mlir::success();
+    }
+};
+
+struct ImageWriteLowering final : public mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::ImageWriteOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ImageWriteOp         op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_image_write"),
+                                                               mlir::ValueRange{adaptor.getBuffer(),
+                                                                                adaptor.getObject(),
+                                                                                bytes});
         return mlir::success();
     }
 };
@@ -835,6 +897,201 @@ mlir::Value addressOf(mlir::ConversionPatternRewriter& rewriter,
     return mlir::emitc::ApplyOp::create(rewriter, loc, pointerType, "&", lvalue);
 }
 
+/// @brief The two lvalues of a view member: its bytes and their count.
+struct ViewSlots final
+{
+    mlir::Value bytes;
+    mlir::Value size;
+};
+
+/// @brief The two lvalues of a view member, or of one element of an array of views when @p index
+///        names one.
+ViewSlots viewSlots(mlir::ConversionPatternRewriter& rewriter,
+                    mlir::Location                   loc,
+                    mlir::Value                      object,
+                    const CMember&                   member,
+                    mlir::Type                       bytesType,
+                    mlir::Type                       sizeType,
+                    mlir::Value                      index,
+                    const bool                       constObject)
+{
+    if (!index)
+    {
+        return ViewSlots{walkMemberPath(rewriter,
+                                        loc,
+                                        object,
+                                        rewriter.getStrArrayAttr({member.cName, "bytes"}),
+                                        bytesType),
+                         walkMemberPath(rewriter,
+                                        loc,
+                                        object,
+                                        rewriter.getStrArrayAttr({member.cName, "size_bytes"}),
+                                        sizeType)};
+    }
+    const std::string elementType = std::string(constObject ? "const " : "") + "dsdl_runtime_view_t";
+    const mlir::Value element = elementSlot(rewriter, loc, object, elementPath(rewriter, member), index, elementType);
+    return ViewSlots{mlir::emitc::MemberOp::create(rewriter,
+                                                   loc,
+                                                   mlir::emitc::LValueType::get(bytesType),
+                                                   rewriter.getStringAttr("bytes"),
+                                                   element),
+                     mlir::emitc::MemberOp::create(rewriter,
+                                                   loc,
+                                                   mlir::emitc::LValueType::get(sizeType),
+                                                   rewriter.getStringAttr("size_bytes"),
+                                                   element)};
+}
+
+struct StoreViewLowering final : public SpeltPattern<mlir::dsdl::StoreViewOp>
+{
+    using SpeltPattern<mlir::dsdl::StoreViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::StoreViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        const ViewSlots slots = viewSlots(rewriter,
+                                          op.getLoc(),
+                                          adaptor.getObject(),
+                                          *member,
+                                          adaptor.getBytes().getType(),
+                                          adaptor.getSizeBytes().getType(),
+                                          adaptor.getIndex(),
+                                          CSpelling::isConst(op.getObject()));
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, adaptor.getBytes());
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.size, adaptor.getSizeBytes());
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+struct ClearViewLowering final : public SpeltPattern<mlir::dsdl::ClearViewOp>
+{
+    using SpeltPattern<mlir::dsdl::ClearViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::ClearViewOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        auto*      ctx       = rewriter.getContext();
+        const auto bytesType = mlir::emitc::PointerType::get(mlir::emitc::OpaqueType::get(ctx, "const uint8_t"));
+        const auto sizeType  = mlir::emitc::OpaqueType::get(ctx, "size_t");
+        if (member->arrayKind == "fixed")
+        {
+            // Every element of a fixed array of views, through the runtime's clear, from the
+            // first element's address.
+            const mlir::Value first =
+                elementSlot(rewriter,
+                            op.getLoc(),
+                            adaptor.getObject(),
+                            elementPath(rewriter, *member),
+                            mlir::emitc::ConstantOp::create(rewriter,
+                                                            op.getLoc(),
+                                                            sizeType,
+                                                            mlir::emitc::OpaqueAttr::get(ctx, "0")),
+                            "dsdl_runtime_view_t");
+            const mlir::Value count =
+                mlir::emitc::ConstantOp::create(rewriter,
+                                                op.getLoc(),
+                                                sizeType,
+                                                mlir::emitc::OpaqueAttr::get(ctx,
+                                                                             std::to_string(member->arrayCapacity) +
+                                                                                 "U"));
+            mlir::emitc::CallOpaqueOp::
+                create(rewriter,
+                       op.getLoc(),
+                       mlir::TypeRange{},
+                       rewriter.getStringAttr("dsdl_runtime_clear_views"),
+                       mlir::ValueRange{addressOf(rewriter,
+                                                  op.getLoc(),
+                                                  first,
+                                                  mlir::emitc::PointerType::get(
+                                                      mlir::emitc::OpaqueType::get(ctx, "dsdl_runtime_view_t"))),
+                                        count},
+                       mlir::ArrayAttr{});
+            rewriter.eraseOp(op);
+            return mlir::success();
+        }
+        const ViewSlots slots =
+            viewSlots(rewriter, op.getLoc(), adaptor.getObject(), *member, bytesType, sizeType, {}, false);
+        const mlir::Value none = mlir::emitc::ConstantOp::create(rewriter,
+                                                                 op.getLoc(),
+                                                                 bytesType,
+                                                                 mlir::emitc::OpaqueAttr::get(ctx, "NULL"));
+        const mlir::Value zero =
+            mlir::emitc::ConstantOp::create(rewriter, op.getLoc(), sizeType, mlir::emitc::OpaqueAttr::get(ctx, "0U"));
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.bytes, none);
+        mlir::emitc::AssignOp::create(rewriter, op.getLoc(), slots.size, zero);
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+struct LoadViewLowering final : public SpeltPattern<mlir::dsdl::LoadViewOp>
+{
+    using SpeltPattern<mlir::dsdl::LoadViewOp>::SpeltPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::LoadViewOp           op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const CMember* member = spelling.memberFor(op.getObject(), op.getMember());
+        if ((member == nullptr) || !member->heldAsView)
+        {
+            return mlir::failure();
+        }
+        const mlir::Type  bytesType = getTypeConverter()->convertType(op.getBytes().getType());
+        const mlir::Type  sizeType  = op.getSizeBytes().getType();
+        const ViewSlots   slots     = viewSlots(rewriter,
+                                                op.getLoc(),
+                                                adaptor.getObject(),
+                                                *member,
+                                                bytesType,
+                                                sizeType,
+                                                adaptor.getIndex(),
+                                                CSpelling::isConst(op.getObject()));
+        const mlir::Value bytes     = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), bytesType, slots.bytes);
+        const mlir::Value size      = mlir::emitc::LoadOp::create(rewriter, op.getLoc(), sizeType, slots.size);
+        rewriter.replaceOp(op, {bytes, size});
+        return mlir::success();
+    }
+};
+
+struct CopyBytesLowering final : public mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>
+{
+    using mlir::OpConversionPattern<mlir::dsdl::CopyBytesOp>::OpConversionPattern;
+
+    mlir::LogicalResult matchAndRewrite(mlir::dsdl::CopyBytesOp          op,
+                                        OpAdaptor                        adaptor,
+                                        mlir::ConversionPatternRewriter& rewriter) const override
+    {
+        const mlir::Value bytes =
+            mlir::emitc::ConstantOp::create(rewriter,
+                                            op.getLoc(),
+                                            rewriter.getI64Type(),
+                                            mlir::emitc::OpaqueAttr::get(rewriter.getContext(),
+                                                                         std::to_string(op.getBytes()) + "U"));
+        rewriter.replaceOpWithNewOp<mlir::emitc::CallOpaqueOp>(op,
+                                                               mlir::TypeRange{},
+                                                               rewriter.getStringAttr("dsdl_runtime_copy_bytes"),
+                                                               mlir::ValueRange{adaptor.getDestination(),
+                                                                                adaptor.getSource(),
+                                                                                adaptor.getSourceSizeBytes(),
+                                                                                bytes});
+        return mlir::success();
+    }
+};
+
 struct MemberAddrLowering final : public SpeltPattern<mlir::dsdl::MemberAddrOp>
 {
     using SpeltPattern<mlir::dsdl::MemberAddrOp>::SpeltPattern;
@@ -1014,6 +1271,8 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         mlir::RewritePatternSet patterns(&getContext());
         patterns.add<BitWriteLowering,
                      BitReadLowering,
+                     ImageReadLowering,
+                     ImageWriteLowering,
                      WriteBitsLowering,
                      ReadBitsLowering,
                      BufferAtLowering,
@@ -1022,9 +1281,13 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      IndexHoldsLowering,
                      BufferOrEmptyLowering,
                      LoadScalarLowering,
-                     StoreScalarLowering>(converter, &getContext());
+                     StoreScalarLowering,
+                     CopyBytesLowering>(converter, &getContext());
         patterns.add<LoadMemberLowering,
                      StoreMemberLowering,
+                     StoreViewLowering,
+                     ClearViewLowering,
+                     LoadViewLowering,
                      LoadElementLowering,
                      StoreElementLowering,
                      MemberAddrLowering,
@@ -1036,6 +1299,9 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                      CallSerdesLowering,
                      CallInitializeLowering>(converter, &getContext(), spelling);
         mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, converter);
+        // An accessor answers a buffer, so a return and a call carry DSDL types as well as a signature.
+        mlir::populateReturnOpTypeConversionPattern(patterns, converter);
+        mlir::populateCallOpTypeConversionPattern(patterns, converter);
 
         mlir::ConversionTarget target(getContext());
         target.addLegalDialect<mlir::emitc::EmitCDialect,
@@ -1044,6 +1310,8 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                mlir::scf::SCFDialect>();
         target.addLegalDialect<mlir::dsdl::DSDLDialect>();
         target.addIllegalOp<mlir::dsdl::BitWriteOp,
+                            mlir::dsdl::ImageReadOp,
+                            mlir::dsdl::ImageWriteOp,
                             mlir::dsdl::BitReadOp,
                             mlir::dsdl::WriteBitsOp,
                             mlir::dsdl::ReadBitsOp,
@@ -1065,9 +1333,18 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             mlir::dsdl::IndexHoldsOp,
                             mlir::dsdl::BufferOrEmptyOp,
                             mlir::dsdl::LoadScalarOp,
-                            mlir::dsdl::StoreScalarOp>();
+                            mlir::dsdl::StoreScalarOp,
+                            mlir::dsdl::StoreViewOp,
+                            mlir::dsdl::ClearViewOp,
+                            mlir::dsdl::LoadViewOp,
+                            mlir::dsdl::CopyBytesOp>();
         target.addDynamicallyLegalOp<mlir::func::FuncOp>(
             [&converter](mlir::func::FuncOp fn) { return converter.isSignatureLegal(fn.getFunctionType()); });
+        target.addDynamicallyLegalOp<mlir::func::ReturnOp>(
+            [&converter](mlir::func::ReturnOp op) { return converter.isLegal(op.getOperandTypes()); });
+        target.addDynamicallyLegalOp<mlir::func::CallOp>([&converter](mlir::func::CallOp op) {
+            return converter.isLegal(op.getOperandTypes()) && converter.isLegal(op.getResultTypes());
+        });
 
         if (mlir::failed(mlir::applyPartialConversion(module, target, std::move(patterns))))
         {
@@ -1134,11 +1411,9 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
         std::set<std::string> arrayLengthPrefixHelperSymbols;
         std::set<std::string> arrayLengthValidateSymbols;
         std::set<std::string> delimiterValidateSymbols;
-        std::set<std::string> includedHeaders;
 
         for (mlir::dsdl::SchemaOp schema : schemaOps)
         {
-            const std::string headerPath = schema.getHeaderPath().value_or(llvm::StringRef{}).str();
             if (schema.getBody().empty())
             {
                 continue;
@@ -1326,16 +1601,13 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     }
                 }
                 capacityCheckSymbols.insert(capacityCheckSymbol);
-                if (!headerPath.empty())
-                {
-                    includedHeaders.insert(headerPath);
-                }
 
-                // The bodies are operations by the time this pass runs, or they are absent.
+                // The bodies are operations by the time this pass runs, or they are absent -- by
+                // design in an accessors-only module, by mistake anywhere else.
                 for (const char* direction : {"serialize", "deserialize"})
                 {
                     const std::string body = fnStem + "__" + direction + "_ir_";
-                    if (!module.lookupSymbol<mlir::func::FuncOp>(body))
+                    if (!module.lookupSymbol<mlir::func::FuncOp>(body) && !module->hasAttr("llvmdsdl.accessors_only"))
                     {
                         child.emitOpError(std::string("no ") + direction +
                                           " body was built for this plan; run build-dsdl-plan-bodies before "
@@ -1347,12 +1619,125 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             }
         }
 
+        // Each header is included where the file takes something from it: a standard header
+        // where one of its types is spelled, the runtime where a body calls a primitive, a type's
+        // own header where its bodies are defined here, and a nested type's where a body calls its
+        // entry points. An include the file does not use is a lint diagnostic in the consumer's
+        // build.
+        bool                  usesBool    = false;
+        bool                  usesSizeT   = false;
+        bool                  usesInts    = false;
+        bool                  usesRuntime = false;
+        std::set<std::string> callees;
+        const auto            note = [&](mlir::Type type) {
+            while (auto pointer = mlir::dyn_cast<mlir::emitc::PointerType>(type))
+            {
+                type = pointer.getPointee();
+            }
+            if (auto lvalue = mlir::dyn_cast<mlir::emitc::LValueType>(type))
+            {
+                type = lvalue.getValueType();
+            }
+            if (auto integer = mlir::dyn_cast<mlir::IntegerType>(type))
+            {
+                (integer.getWidth() == 1 ? usesBool : usesInts) = true;
+            }
+            if (auto opaque = mlir::dyn_cast<mlir::emitc::OpaqueType>(type))
+            {
+                usesSizeT = usesSizeT || opaque.getValue().contains("size_t");
+                usesInts  = usesInts || opaque.getValue().contains("int");
+                usesBool  = usesBool || opaque.getValue().contains("bool");
+            }
+        };
+        module.walk([&](mlir::Operation* op) {
+            for (const mlir::Type type : op->getOperandTypes())
+            {
+                note(type);
+            }
+            for (const mlir::Type type : op->getResultTypes())
+            {
+                note(type);
+            }
+            if (auto fn = mlir::dyn_cast<mlir::func::FuncOp>(op))
+            {
+                for (const mlir::Type type : fn.getArgumentTypes())
+                {
+                    note(type);
+                }
+                for (const mlir::Type type : fn.getResultTypes())
+                {
+                    note(type);
+                }
+            }
+            if (auto call = mlir::dyn_cast<mlir::emitc::CallOpaqueOp>(op))
+            {
+                const llvm::StringRef callee = call.getCallee();
+                usesRuntime                  = usesRuntime || callee.starts_with("dsdl_runtime_");
+                callees.insert(callee.str());
+            }
+        });
+        std::set<std::string> definedSchemas;
+        for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+        {
+            if (const auto owner = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym"))
+            {
+                definedSchemas.insert(owner.getValue().str());
+            }
+        }
+        // A C type name holds `__` itself, so a callee is matched on the whole name.
+        const auto calls = [&](const llvm::StringRef cTypeName) {
+            const std::string entryPrefix = cTypeName.str() + "__";
+            return std::ranges::any_of(callees, [&](const std::string& callee) {
+                return llvm::StringRef(callee).starts_with(entryPrefix);
+            });
+        };
+        std::set<std::string> includedHeaders;
+        for (mlir::dsdl::SchemaOp schema : module.getOps<mlir::dsdl::SchemaOp>())
+        {
+            const std::string headerPath = schema.getHeaderPath().value_or(llvm::StringRef{}).str();
+            if (headerPath.empty())
+            {
+                continue;
+            }
+            if (definedSchemas.contains(schema.getSymName().str()) ||
+                calls(schema.getCTypeName().value_or(llvm::StringRef{})))
+            {
+                includedHeaders.insert(headerPath);
+            }
+        }
+        // The nested types the C backend named for this module, as `name=header`; the module holds
+        // no schema for them.
+        if (const auto nested = module->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.c_nested_headers"))
+        {
+            for (const mlir::Attribute entry : nested)
+            {
+                const auto [cTypeName, headerPath] = mlir::cast<mlir::StringAttr>(entry).getValue().split('=');
+                if (!headerPath.empty() && calls(cTypeName))
+                {
+                    includedHeaders.insert(headerPath.str());
+                }
+            }
+        }
+
         mlir::OpBuilder builder(module.getContext());
         builder.setInsertionPointToStart(&body);
         const mlir::Location loc = builder.getUnknownLoc();
-        mlir::emitc::VerbatimOp::create(builder, loc, "#include <stddef.h>");
-        mlir::emitc::VerbatimOp::create(builder, loc, "#include <stdint.h>");
-        mlir::emitc::VerbatimOp::create(builder, loc, "#include \"dsdl_runtime.h\"");
+        if (usesBool)
+        {
+            mlir::emitc::VerbatimOp::create(builder, loc, "#include <stdbool.h>");
+        }
+        if (usesSizeT)
+        {
+            mlir::emitc::VerbatimOp::create(builder, loc, "#include <stddef.h>");
+        }
+        if (usesInts)
+        {
+            mlir::emitc::VerbatimOp::create(builder, loc, "#include <stdint.h>");
+        }
+        if (usesRuntime)
+        {
+            mlir::emitc::VerbatimOp::create(builder, loc, "#include \"dsdl_runtime.h\"");
+        }
         if (headersAvailable)
         {
             for (const auto& headerPath : includedHeaders)

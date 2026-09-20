@@ -853,6 +853,115 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER AND EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
+  # A wire-flat section's field accessors in every language against the bodies they stand in for:
+  # a getter answers what deserialise puts in the field, a setter writes what deserialise reads.
+  add_test(
+    NAME llvmdsdl-accessor-equivalence
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/accessor-equivalence-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAccessorEquivalence.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-accessor-equivalence
+    PROPERTIES
+      LABELS "integration;differential;alias-layout;c;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # An accessors-only run's output compiles standalone in every language and on the object target,
+  # and reads a buffer through the outer type's composite getter and the inner type's field getter.
+  add_test(
+    NAME llvmdsdl-aliasable-only
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/aliasable-only-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasableOnly.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-aliasable-only
+    PROPERTIES
+      LABELS "integration;alias-layout;c;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # A container holding a view of an @aliasable record, in every language: the view points into
+  # the buffer, the record's accessors read it, and serialising reproduces the wire.
+  add_test(
+    NAME llvmdsdl-container-views
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/container-views-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunContainerViews.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-container-views
+    PROPERTIES
+      LABELS "integration;alias-layout;c;object;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  # The accessors of an equal-length union, in every language: the tag and the selected option read
+  # what the decode holds, and the tag setter selects an option for it.
+  add_test(
+    NAME llvmdsdl-union-accessors
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/union-accessors-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUnionAccessors.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-union-accessors
+    PROPERTIES
+      LABELS "integration;alias-layout;c;object;cpp;rust;go;ts;python;release-blocking"
+  )
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND GO_EXECUTABLE)
   # Runtime forward/backward compatibility across two versions of a delimited composite. Exercises the
   # version-skew skip that same-version round-trip tests structurally cannot reach (see the C-backend
@@ -3588,6 +3697,46 @@ foreach(backend c obj cpp rust go ts python)
   )
 endforeach()
 
+# The two layout verdicts, counted and then checked against the compiler. The counts are the
+# feature's size: a predicate change moves one, and has to move this registration with it.
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-alias-layout-census
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/alias-layout-census
+        -DMODE=census
+        -DEXPECTED_SECTIONS=181
+        -DEXPECTED_WIRE_FLAT=107
+        -DEXPECTED_HOST_IMAGE=54
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasLayoutCensus.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-alias-layout-census
+    PROPERTIES
+      LABELS "integration;uavcan;alias-layout"
+  )
+
+  if(CMAKE_C_COMPILER)
+    add_test(
+      NAME llvmdsdl-alias-layout-reality
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/alias-layout-reality
+          -DMODE=reality
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunAliasLayoutCensus.cmake
+    )
+    set_tests_properties(
+      llvmdsdl-alias-layout-reality
+      PROPERTIES
+        LABELS "integration;uavcan;alias-layout;c"
+    )
+  endif()
+endif()
+
 # Acceptance gates for direct MLIR-to-object lowering. Each asserts a property that a lowering
 # through LLVM IR has and a generator that writes C and drives a host compiler does not. All of
 # them hold, so a gate reporting the lowering absent is a regression rather than a gap.
@@ -3780,6 +3929,33 @@ if(PYTHON_EXECUTABLE AND LLVMDSDL_CLANG)
         LABELS "integration;object;abi;release-blocking"
     )
   endforeach()
+endif()
+
+# The folded host-image bodies, held to their instruction counts on two pinned triples. A static
+# count of an entry point's instructions is exact and host-independent, so this gates where the
+# cachegrind lanes skip.
+find_program(LLVMDSDL_LLVM_OBJDUMP NAMES llvm-objdump HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
+if(LLVMDSDL_LLVM_OBJDUMP)
+  add_test(
+    NAME llvmdsdl-host-image-instruction-counts
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/host-image-instruction-counts-out
+        -DLLVM_OBJDUMP=${LLVMDSDL_LLVM_OBJDUMP}
+        -DFIXTURE_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_host_image/vendor
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/test/integration/host_image_instruction_counts.json
+        -DLLVM_VERSION_MAJOR=${LLVM_VERSION_MAJOR}
+        -DVIEW_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_views
+        -DVIEW_INCLUDE=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures_aliasable
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunHostImageInstructionCounts.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-host-image-instruction-counts
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      LABELS "integration;object;alias-layout;instructions;release-blocking"
+  )
 endif()
 
 # The serialisation primitives are `static inline` in the runtime header, so an object has no

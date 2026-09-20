@@ -1,0 +1,4 @@
+# Byte-clean already, and still evolving. Sealing is all that stands between it and @aliasable.
+uint32 a
+uint16 b
+@extent 128

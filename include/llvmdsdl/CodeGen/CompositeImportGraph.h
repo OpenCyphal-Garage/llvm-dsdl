@@ -41,7 +41,8 @@ struct CompositeImportSpec final
 /// @param[in] owner Owning definition used for self-dependency filtering.
 /// @return Deterministically ordered composite type references.
 std::vector<SemanticTypeRef> collectCompositeDependencies(const SemanticSection&      section,
-                                                          const DiscoveredDefinition& owner);
+                                                          const DiscoveredDefinition& owner,
+                                                          bool                        referencedOnly = false);
 
 /// @brief Projects collected dependencies into deterministic import entries.
 /// @param[in] dependencies Composite dependencies from

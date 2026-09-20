@@ -1,0 +1,4 @@
+@aliasable
+@aliasable
+uint32 a
+@sealed

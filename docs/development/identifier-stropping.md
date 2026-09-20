@@ -214,9 +214,13 @@ prefix, so `<Type>_BREAK` is fine; a header stem is a file name, not an identifi
 `runtimeOwned` holds two kinds of name, both of which a DSDL attribute must miss because something
 else in that scope answers to them already.
 
-Most are emitted for every type: the seven per-type metadata constants (`FULL_NAME`,
+Most are emitted for every type: the nine per-type metadata constants (`FULL_NAME`,
 `FULL_NAME_AND_VERSION`, `IS_DEPRECATED`, `EXTENT_BYTES`, `SERIALIZATION_BUFFER_SIZE_BYTES`,
-`ZOH_ALIAS_ELIGIBLE`, `ZOH_ALIAS_REASON`) and the generated method names in Go, C++ and Python.
+`WIRE_FLAT`, `WIRE_FLAT_REASON`, `HOST_IMAGE`, `HOST_IMAGE_REASON`) and the generated method names in
+Go, C++ and Python. `HOST_IMAGE` and its reason are written by C, C++, Rust and Go alone — a
+TypeScript or Python object has no byte image to report one about — and are claimed in all six for
+the reason the conditional names below are: a constant's spelling should not depend on which
+language it was generated for.
 TypeScript's `constructor` and `prototype` are the other kind, claimed by the language runtime rather
 than by anything we write.
 
@@ -247,9 +251,9 @@ is worth copying into any backend that grows a new generated name, but it separa
 names from *most* DSDL names rather than from all of them: `ConstantName` in C is a macro token —
 preserve case, escape, upper-case, no strop — so it passes a source name's own trailing underscore
 straight through, and DSDL reserves only names that both start and end with one. `full_name_` is a
-conformant DSDL constant that reaches `FULL_NAME_`, and `<Type>_ZOH_ALIAS_ELIGIBLE_` is tested by the
-generated `try_deserialize_view_` in an `#elif`, so redefining it changes what the generated code
-does. `ConstantName` and `MacroName` are one thing in C and are claimed alike.
+conformant DSDL constant that reaches `FULL_NAME_`, and an unescaped one redefines the macro beside
+it, so the type reports the constant's value as its own metadata. `ConstantName` and `MacroName` are
+one thing in C and are claimed alike.
 
 TypeScript and Python constants need nothing, prefixing theirs with `DSDL_` while DSDL constants take
 a type prefix.

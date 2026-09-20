@@ -107,17 +107,19 @@ void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, 
 /// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
 llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage language)
 {
-    static constexpr std::array<llvm::StringRef, 11> kNames = {"LLVMDSDL_GENERATOR_VERSION",
+    static constexpr std::array<llvm::StringRef, 13> kNames = {"LLVMDSDL_GENERATOR_VERSION",
                                                                "DSDL_FULL_NAME",
                                                                "DSDL_IS_DEPRECATED",
                                                                "DSDL_VERSION_MAJOR",
                                                                "DSDL_VERSION_MINOR",
                                                                "DSDL_HAS_FIXED_PORT_ID",
                                                                "DSDL_FIXED_PORT_ID",
-                                                               "DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE",
-                                                               "DSDL_REQUEST_ZOH_ALIAS_REASON",
-                                                               "DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE",
-                                                               "DSDL_RESPONSE_ZOH_ALIAS_REASON"};
+                                                               "DSDL_WIRE_FLAT",
+                                                               "DSDL_WIRE_FLAT_REASON",
+                                                               "DSDL_REQUEST_WIRE_FLAT",
+                                                               "DSDL_REQUEST_WIRE_FLAT_REASON",
+                                                               "DSDL_RESPONSE_WIRE_FLAT",
+                                                               "DSDL_RESPONSE_WIRE_FLAT_REASON"};
     static constexpr std::array<llvm::StringRef, 0>  kNone  = {};
     const bool                                       moduleScoped =
         (language == CodegenNamingLanguage::Python) || (language == CodegenNamingLanguage::TypeScript);
@@ -148,7 +150,17 @@ std::vector<std::string> reachableModuleMetadata(const CodegenNamingLanguage lan
         if (name.starts_with(typeConstantPrefix) && (name.size() > typeConstantPrefix.size()) &&
             (name[typeConstantPrefix.size()] == '_'))
         {
-            out.push_back(name.substr(typeConstantPrefix.size() + 1).str());
+            const llvm::StringRef remainder = name.substr(typeConstantPrefix.size() + 1);
+            // A name the module writes for one payload of a service is reached through that
+            // payload's own prefix, which carries the qualifier: `DSDL_REQUEST` reaches
+            // `DSDL_REQUEST_WIRE_FLAT` as `WIRE_FLAT`. Reaching the same name from the bare type
+            // name would reserve `REQUEST_WIRE_FLAT` on a message, whose module writes no such
+            // name, and rename a constant that collides with nothing.
+            if (remainder.starts_with("REQUEST_") || remainder.starts_with("RESPONSE_"))
+            {
+                continue;
+            }
+            out.push_back(remainder.str());
         }
     }
     return out;

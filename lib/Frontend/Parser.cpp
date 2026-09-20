@@ -621,6 +621,10 @@ std::optional<DirectiveAST> Parser::parseDirective()
     {
         out.kind = DirectiveKind::Print;
     }
+    else if (name == "aliasable")
+    {
+        out.kind = DirectiveKind::Aliasable;
+    }
     else
     {
         out.kind = DirectiveKind::Unknown;

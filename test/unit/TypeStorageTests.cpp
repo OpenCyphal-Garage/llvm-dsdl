@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Support/ScalarStorage.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
 

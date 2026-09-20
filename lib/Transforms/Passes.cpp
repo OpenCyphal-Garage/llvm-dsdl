@@ -18,6 +18,8 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <memory>
@@ -30,6 +32,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -38,7 +41,9 @@
 #include <cassert>
 #include <cstdint>
 #include <set>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -53,6 +58,7 @@
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/ScalarStorage.h"
 
 namespace llvmdsdl
 {
@@ -1200,27 +1206,456 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
     }
 };
 
-struct AnnotateDSDLAliasabilityPass
-    : public mlir::PassWrapper<AnnotateDSDLAliasabilityPass, mlir::OperationPass<mlir::ModuleOp>>
+/// @brief Marks every helper no function of the module calls with `llvmdsdl.unreferenced`.
+///
+/// A helper stays in the module whatever calls it: the plan's steps name it, and the lowered
+/// contract requires a named helper to exist. The translating backends leave a marked one out, as a
+/// compiler that refuses an unused private function would; the C lowering keeps it, for the contract.
+void markUnreferencedHelpers(mlir::ModuleOp module)
+{
+    mlir::OpBuilder builder(module.getContext());
+    for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+    {
+        const bool isHelper = fn->hasAttr("llvmdsdl.schema_sym") && !fn->hasAttr("llvmdsdl.plan_body");
+        if (isHelper && mlir::SymbolTable::symbolKnownUseEmpty(fn, module))
+        {
+            fn->setAttr("llvmdsdl.unreferenced", builder.getUnitAttr());
+        }
+    }
+}
+
+/// @brief Keeps the field accessors and drops the three bodies of every plan.
+///
+/// `--aliasable-only` emits the accessors and neither the object type nor the serdes. The
+/// serialise, deserialise and initialise bodies are erased here, once, so that every backend
+/// translates a module that holds only what the mode emits and the object target defines only
+/// that; the helpers those bodies alone called are marked, as the fold marks them. The module is
+/// stamped `llvmdsdl.accessors_only` so a later pass that expects the bodies knows why they are
+/// absent.
+struct KeepDSDLAccessorsPass : public mlir::PassWrapper<KeepDSDLAccessorsPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     llvm::StringRef getArgument() const final
     {
-        return "dsdl-annotate-aliasability";
+        return "dsdl-keep-accessors";
     }
     llvm::StringRef getDescription() const final
     {
-        // Conservative annotator: stamps aliasability metadata only. It does not
-        // prove anything about emitted-code overhead and does not switch the
-        // serialiser onto a zero-copy path.
-        return "Annotate serialisation plans with conservative zero-overhead aliasability facts";
+        return "Drop every plan's serialise, deserialise and initialise body, keeping the field accessors";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
     {
-        auto            module = getOperation();
-        mlir::OpBuilder builder(module.getContext());
+        auto                            module = getOperation();
+        std::vector<mlir::func::FuncOp> bodies;
+        for (const mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+        {
+            const auto kind = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (kind && ((kind.getValue() == "serialize") || (kind.getValue() == "deserialize") ||
+                         (kind.getValue() == "initialize")))
+            {
+                bodies.push_back(fn);
+            }
+        }
+        for (const mlir::func::FuncOp fn : bodies)
+        {
+            fn->erase();
+        }
+        markUnreferencedHelpers(module);
+        module->setAttr("llvmdsdl.accessors_only", mlir::UnitAttr::get(module.getContext()));
+    }
+};
 
+/// @brief Replaces a host-image section's field-wise body with one move.
+///
+/// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
+/// are worked through, and the consumed count is stored. Only the middle is replaced, so this does
+/// not care whether the field work was scalars, a loop over a fixed array, or a call into a nested
+/// type -- all three are the same bytes once the verdict holds.
+///
+/// It declines anything it does not recognise, and a declined body is the one every backend
+/// already translates, so declining is free.
+struct FoldDSDLHostImageBodiesPass
+    : public mlir::PassWrapper<FoldDSDLHostImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-host-image-bodies";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Fold a host-image section's serdes bodies into a single move";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto module = getOperation();
+
+        // The verdict lives on the plan; the bodies are functions beside it. They are paired by the
+        // schema symbol the lowering stamps on both.
+        llvm::StringMap<std::int64_t> foldableBytes;
+        for (mlir::dsdl::SchemaOp schema : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+        {
+            if (schema.getBody().empty())
+            {
+                continue;
+            }
+            for (mlir::dsdl::SerializationPlanOp plan :
+                 schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                if (!plan.getHostImage())
+                {
+                    continue;
+                }
+                const std::int64_t bits = plan.getMaxBits();
+                if ((bits <= 0) || ((bits % 8) != 0))
+                {
+                    continue;
+                }
+                foldableBytes[sectionBodyKey(schema.getSymName(), plan.getSection())] = bits / 8;
+            }
+        }
+        if (foldableBytes.empty())
+        {
+            return;
+        }
+
+        for (const mlir::func::FuncOp body : module.getOps<mlir::func::FuncOp>())
+        {
+            const auto kind = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            const auto sym  = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+            if (!kind || !sym)
+            {
+                continue;
+            }
+            const auto section = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            const auto found   = foldableBytes.find(
+                sectionBodyKey(sym.getValue(),
+                               section ? std::optional<llvm::StringRef>(section.getValue()) : std::nullopt));
+            if (found == foldableBytes.end())
+            {
+                continue;
+            }
+            if (kind.getValue() == "deserialize")
+            {
+                (void) foldDeserialize(body, found->second);
+            }
+            else if (kind.getValue() == "serialize")
+            {
+                (void) foldSerialize(body, found->second);
+            }
+        }
+
+        // A folded body no longer calls the per-field helpers built beside it. They stay: the
+        // plan's steps still name them, and the lowered contract requires a named helper to exist.
+        // They are marked instead, and a backend whose compiler refuses an unused private function
+        // -- Rust's, under warnings-as-errors -- skips a marked one. C and C++ carry theirs as
+        // `static inline`, which the compiler drops.
+        markUnreferencedHelpers(module);
+    }
+
+private:
+    static std::string sectionBodyKey(const llvm::StringRef schemaSym, const std::optional<llvm::StringRef> section)
+    {
+        return schemaSym.str() + "/" + section.value_or(llvm::StringRef{}).str();
+    }
+
+    /// @brief Folds a read body: everything between taking the buffer and keeping the consumed
+    ///        count becomes one move.
+    ///
+    /// What survives the fold is the consumed count and the way it is kept -- a store, or a store
+    /// under a guard -- and the code the block yields. Everything those are built from within the
+    /// block stays; everything else after the buffer is taken is the field work, and goes.
+    ///
+    /// A nested type's own deserialise returns an error code, and the guard and the yield read it.
+    /// After the fold that call is gone, and an image read cannot fail, so the code becomes zero.
+    /// Any other value crossing from the field work to what survives means this is not a shape
+    /// the fold knows, and it declines.
+    static mlir::LogicalResult foldDeserialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    {
+        mlir::dsdl::BufferOrEmptyOp buffer;
+        body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
+        if (!buffer)
+        {
+            return mlir::failure();
+        }
+        mlir::Block& block = *buffer->getBlock();
+
+        // The available byte count: loaded before the buffer is taken, read by the move.
+        mlir::Value size;
+        for (mlir::Operation& op : block)
+        {
+            if (auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(op))
+            {
+                size = load.getResult();
+                break;
+            }
+        }
+        if (!size)
+        {
+            return mlir::failure();
+        }
+
+        llvm::SmallPtrSet<mlir::Operation*, 32> keep;
+        std::vector<mlir::Value>                pending;
+        const auto                              seed = [&pending](mlir::Operation* op) {
+            pending.insert(pending.end(), op->getOperands().begin(), op->getOperands().end());
+        };
+        for (mlir::Operation& op : block)
+        {
+            if (mlir::isa<mlir::dsdl::StoreScalarOp>(op))
+            {
+                keep.insert(&op);
+                seed(&op);
+                continue;
+            }
+            // A guarded store: the guard, its condition, and all it holds are kept.
+            if (auto guard = mlir::dyn_cast<mlir::scf::IfOp>(op))
+            {
+                bool keepsConsumed = false;
+                guard.walk([&](mlir::dsdl::StoreScalarOp) { keepsConsumed = true; });
+                if (keepsConsumed)
+                {
+                    keep.insert(&op);
+                    guard.walk([&](mlir::Operation* inner) { seed(inner); });
+                }
+            }
+        }
+        keep.insert(block.getTerminator());
+        seed(block.getTerminator());
+        while (!pending.empty())
+        {
+            const mlir::Value value = pending.back();
+            pending.pop_back();
+            mlir::Operation* const definer = value.getDefiningOp();
+            // A definer under a kept guard has had its operands seeded already; only block-level
+            // ops are kept by name. A nested type's own deserialise is field work, not something
+            // the survivors are built from: the guard reads its error code, and that code is what
+            // the fold replaces. Following into it would keep the call, and the fold would then
+            // add a move beside the work it was meant to replace.
+            if ((definer == nullptr) || (definer->getBlock() != &block) ||
+                mlir::isa<mlir::dsdl::CallSerdesOp>(definer) || !keep.insert(definer).second)
+            {
+                continue;
+            }
+            seed(definer);
+        }
+
+        std::vector<mlir::Operation*>           run;
+        llvm::SmallPtrSet<mlir::Operation*, 32> inRun;
+        bool                                    collecting = false;
+        for (mlir::Operation& op : block)
+        {
+            if (&op == buffer.getOperation())
+            {
+                collecting = true;
+                continue;
+            }
+            if (collecting && !keep.contains(&op))
+            {
+                run.push_back(&op);
+                inRun.insert(&op);
+            }
+        }
+        if (run.empty())
+        {
+            return mlir::failure();
+        }
+
+        // Values the field work defines that something surviving reads.
+        std::vector<mlir::Value> nestedCodes;
+        for (mlir::Operation* const op : run)
+        {
+            for (const mlir::Value result : op->getResults())
+            {
+                bool crosses = false;
+                for (mlir::Operation* user : result.getUsers())
+                {
+                    // Climb to the block-level op the user sits under.
+                    while ((user != nullptr) && (user->getBlock() != &block))
+                    {
+                        user = user->getParentOp();
+                    }
+                    if ((user == nullptr) || !inRun.contains(user))
+                    {
+                        crosses = true;
+                        break;
+                    }
+                }
+                if (!crosses)
+                {
+                    continue;
+                }
+                if (!mlir::isa<mlir::dsdl::CallSerdesOp>(op) || !result.getType().isInteger(8))
+                {
+                    return mlir::failure();
+                }
+                nestedCodes.push_back(result);
+            }
+        }
+
+        mlir::OpBuilder builder(run.front());
+        if (!nestedCodes.empty())
+        {
+            const mlir::Value zero =
+                mlir::arith::ConstantIntOp::create(builder, body.getLoc(), static_cast<std::int64_t>(0), 8);
+            for (mlir::Value code : nestedCodes)
+            {
+                code.replaceAllUsesWith(zero);
+            }
+        }
+        mlir::dsdl::ImageReadOp::create(builder,
+                                        body.getLoc(),
+                                        body.getArgument(0),
+                                        buffer.getResult(),
+                                        size,
+                                        builder.getI64IntegerAttr(bytes));
+        for (mlir::Operation* const op : llvm::reverse(run))
+        {
+            op->erase();
+        }
+        return mlir::success();
+    }
+
+    /// @brief Replaces the per-field write chain with one move.
+    ///
+    /// The chain threads an error code: each field's `scf.if` runs when the one before it
+    /// succeeded, and yields that earlier code when it did not. Every code in the chain is the
+    /// capacity check's once the fields are gone, because a field write cannot fail when the buffer
+    /// is known to hold the payload -- which is what the capacity check answered. So every step's
+    /// result is redirected to it, not only the last one's: the guard between two steps reads the
+    /// earlier step's result, and erasing that step while the guard still reads it leaves the guard
+    /// pointing at freed memory. A release build does not check for that on erase.
+    static mlir::LogicalResult foldSerialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    {
+        std::vector<mlir::scf::IfOp> candidates;
+        body.walk([&](mlir::scf::IfOp step) {
+            const auto roles = step->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles");
+            if (!roles || (step->getNumResults() != 1))
+            {
+                return;
+            }
+            bool writesAField = false;
+            step.walk([&](mlir::Operation* inner) {
+                if (mlir::isa<mlir::dsdl::WriteBitsOp, mlir::dsdl::BitWriteOp, mlir::dsdl::CallSerdesOp>(inner))
+                {
+                    writesAField = true;
+                }
+            });
+            if (writesAField)
+            {
+                candidates.push_back(step);
+            }
+        });
+        // A chain step forwards the code before it: its else-branch is a lone yield. The body's own
+        // accepted region threads an error too, but its else-branch holds the whole chain, so this
+        // tells the two apart.
+        const auto isChainStep = [](mlir::scf::IfOp op) {
+            mlir::Block* const elseBlock = op.elseBlock();
+            return (elseBlock != nullptr) && (elseBlock->getOperations().size() == 1) &&
+                   (elseBlock->getTerminator()->getNumOperands() == 1);
+        };
+        std::vector<mlir::scf::IfOp> steps;
+        for (const mlir::scf::IfOp candidate : candidates)
+        {
+            if (isChainStep(candidate))
+            {
+                steps.push_back(candidate);
+            }
+        }
+        // A step nested inside another step is that step's own structure -- the loop a fixed array
+        // lowers to threads an error the same way -- and goes with it. The chain is the outermost.
+        llvm::SmallPtrSet<mlir::Operation*, 8> outermost;
+        for (mlir::scf::IfOp step : steps)
+        {
+            const bool nested = std::ranges::any_of(steps, [&](mlir::scf::IfOp other) {
+                return (other != step) && other->isProperAncestor(step);
+            });
+            if (!nested)
+            {
+                outermost.insert(step.getOperation());
+            }
+        }
+        if (outermost.empty())
+        {
+            return mlir::failure();
+        }
+        // In block order, so the first is the chain's head.
+        std::vector<mlir::scf::IfOp> fieldSteps;
+        mlir::Block* const           block = (*outermost.begin())->getBlock();
+        for (mlir::Operation& op : *block)
+        {
+            if (outermost.contains(&op))
+            {
+                fieldSteps.push_back(mlir::cast<mlir::scf::IfOp>(op));
+            }
+        }
+        if (fieldSteps.size() != outermost.size())
+        {
+            // Not all in one block: not one chain.
+            return mlir::failure();
+        }
+
+        // The first step's else-branch yields the code the capacity check produced, and it has to
+        // outlive the chain: if it is one of the steps being removed, this is not the chain's head.
+        mlir::Block* const firstElse = fieldSteps.front().elseBlock();
+        if ((firstElse == nullptr) || (firstElse->getTerminator()->getNumOperands() != 1))
+        {
+            return mlir::failure();
+        }
+        const mlir::Value capacityResult = firstElse->getTerminator()->getOperand(0);
+        if ((capacityResult.getDefiningOp() == nullptr) || std::ranges::any_of(fieldSteps, [&](mlir::scf::IfOp step) {
+                return step.getOperation() == capacityResult.getDefiningOp();
+            }))
+        {
+            return mlir::failure();
+        }
+
+        mlir::OpBuilder   builder(fieldSteps.front());
+        const mlir::Value zero =
+            mlir::arith::ConstantIntOp::create(builder, body.getLoc(), static_cast<std::int64_t>(0), 8);
+        const mlir::Value fits =
+            mlir::arith::CmpIOp::create(builder, body.getLoc(), mlir::arith::CmpIPredicate::eq, capacityResult, zero);
+        auto guard = mlir::scf::IfOp::create(builder, body.getLoc(), fits, /*withElseRegion=*/false);
+        builder.setInsertionPointToStart(guard.thenBlock());
+        mlir::dsdl::ImageWriteOp::create(builder,
+                                         body.getLoc(),
+                                         body.getArgument(1),
+                                         body.getArgument(0),
+                                         builder.getI64IntegerAttr(bytes));
+
+        for (mlir::scf::IfOp step : fieldSteps)
+        {
+            step.getResult(0).replaceAllUsesWith(capacityResult);
+        }
+        for (const mlir::scf::IfOp step : llvm::reverse(fieldSteps))
+        {
+            step->erase();
+        }
+        return mlir::success();
+    }
+};
+
+struct VerifyDSDLAliasLayoutPass
+    : public mlir::PassWrapper<VerifyDSDLAliasLayoutPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-verify-alias-layout";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Check each plan's layout verdicts against the steps it carries";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto module = getOperation();
+        // A nested composite's own extent is what the holder's alignment turns on, and the module
+        // carries every type the holder names, so the plans are indexed before the walk.
+        llvm::StringMap<mlir::dsdl::SerializationPlanOp> messagePlans;
         for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
         {
             if (op.getBody().empty())
@@ -1229,107 +1664,325 @@ struct AnnotateDSDLAliasabilityPass
             }
             for (mlir::dsdl::SerializationPlanOp child : op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                const bool fixedSize = child.getFixedSize();
-                const bool sealed    = child.getSealed();
-
-                std::string  reason;
-                bool         hasPayloadFields = false;
-                std::int64_t offsetBits       = 0;
-
-                if (!child.getBody().empty())
+                if (!child.getSection())
                 {
-                    for (mlir::Operation& stepOp : child.getBody().front())
-                    {
-                        if (auto align = mlir::dyn_cast<mlir::dsdl::AlignOp>(stepOp))
-                        {
-                            const std::int64_t alignBits = align.getBits();
-                            if (alignBits > 1)
-                            {
-                                const auto rem = offsetBits % alignBits;
-                                if (rem != 0)
-                                {
-                                    offsetBits += (alignBits - rem);
-                                }
-                            }
-                            continue;
-                        }
-                        auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
-                        if (!step)
-                        {
-                            continue;
-                        }
-                        const std::int64_t bitLength = step.getBitLength();
-                        if (step.isPadding())
-                        {
-                            offsetBits += bitLength;
-                            continue;
-                        }
+                    messagePlans[compositeKey(op.getFullName(), op.getMajor(), op.getMinor())] = child;
+                }
+            }
+        }
 
-                        hasPayloadFields = true;
-                        if ((offsetBits % 8) != 0)
-                        {
-                            reason = "unaligned-field";
-                            break;
-                        }
-                        if (bitLength <= 0)
-                        {
-                            reason = "invalid-bit-length";
-                            break;
-                        }
-                        if ((bitLength % 8) != 0)
-                        {
-                            reason = "sub-byte-field";
-                            break;
-                        }
-                        if (step.isVariableArray())
-                        {
-                            reason = "variable-array";
-                            break;
-                        }
-                        if (step.isComposite())
-                        {
-                            reason = "composite-field";
-                            break;
-                        }
-                        if (step.getScalarCategory() == "float" && bitLength != 16 && bitLength != 32 &&
-                            bitLength != 64)
-                        {
-                            reason = "unsupported-float-width";
-                            break;
-                        }
-                        offsetBits += bitLength;
-                    }
-                }
-
-                if (reason.empty() && !fixedSize)
+        for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
+        {
+            if (op.getBody().empty())
+            {
+                continue;
+            }
+            for (const mlir::dsdl::SerializationPlanOp child :
+                 op.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+            {
+                if (mlir::failed(verifyPlan(child, messagePlans)))
                 {
-                    reason = "not-fixed-size";
+                    signalPassFailure();
+                    return;
                 }
-                if (reason.empty() && !sealed)
-                {
-                    reason = "not-sealed";
-                }
-                if (reason.empty() && child.getIsUnion())
-                {
-                    reason = "union-type";
-                }
-                if (reason.empty() && !hasPayloadFields)
-                {
-                    reason = "empty-layout";
-                }
-
-                const bool eligible = reason.empty();
-                child.setZohAliasEligible(eligible);
-                child.setZohAliasReasonAttr(eligible ? mlir::StringAttr{} : builder.getStringAttr(reason));
             }
         }
     }
+
+    static std::string compositeKey(const llvm::StringRef fullName, const std::int64_t major, const std::int64_t minor)
+    {
+        return fullName.str() + "." + std::to_string(major) + "." + std::to_string(minor);
+    }
+
+private:
+    /// @brief Re-derives from the steps what the analysis recorded, and reports a disagreement.
+    ///
+    /// The steps say less than the schema did -- a composite's own verdict is not among them -- so
+    /// this checks what they can decide: a plan whose steps are not a flat byte run cannot be
+    /// `wire_flat`, and `host_image` never holds where `wire_flat` does not.
+    static mlir::LogicalResult verifyPlan(mlir::dsdl::SerializationPlanOp                         plan,
+                                          const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans)
+    {
+        const bool wireFlat  = plan.getWireFlat();
+        const bool hostImage = plan.getHostImage();
+
+        if (wireFlat && plan.getWireFlatReason())
+        {
+            return plan.emitError("wire_flat holds and carries a reason");
+        }
+        if (hostImage && plan.getHostImageReason())
+        {
+            return plan.emitError("host_image holds and carries a reason");
+        }
+        if (plan.getAliasable() && !wireFlat)
+        {
+            return plan.emitError("aliasable is asserted where wire_flat does not hold");
+        }
+        if (mlir::failed(verifyViews(plan, messagePlans)))
+        {
+            return mlir::failure();
+        }
+        // Lowering states exactly one of the pair, so neither means the plan states no verdict --
+        // hand-written IR, which `dsdl-opt` takes. There is then nothing to disagree with. A plan
+        // claiming `host_image` has stated a verdict whatever it says about the wire, and H cannot
+        // hold where W does not, so it is held to that below rather than passing as unstamped.
+        if (!wireFlat && !plan.getWireFlatReason() && !hostImage)
+        {
+            return mlir::success();
+        }
+        if (hostImage && !wireFlat)
+        {
+            return plan.emitError("host_image holds where wire_flat does not");
+        }
+        if (!wireFlat)
+        {
+            return mlir::success();
+        }
+
+        if (!plan.getSealed())
+        {
+            return plan.emitError("wire_flat holds for a delimited plan");
+        }
+        if (!plan.getFixedSize())
+        {
+            return plan.emitError("wire_flat holds for a plan whose length varies");
+        }
+        if (plan.getIsUnion())
+        {
+            return plan.emitError("wire_flat holds for a union plan");
+        }
+        if (plan.getBody().empty())
+        {
+            return plan.emitError("wire_flat holds for a plan with no steps");
+        }
+
+        std::int64_t offsetBits = 0;
+        bool         hasPayload = false;
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step)
+            {
+                continue;
+            }
+            // A composite step carries its width here; a scalar carries it in `bit_length`.
+            const std::int64_t bits = step.isComposite() ? step.getMinBits() : step.getBitLength();
+            if (step.isPadding())
+            {
+                offsetBits += bits;
+                continue;
+            }
+            hasPayload = true;
+            if ((offsetBits % 8) != 0)
+            {
+                return step.emitError("wire_flat holds but this field does not begin on a byte boundary");
+            }
+            if (step.isVariableArray())
+            {
+                return step.emitError("wire_flat holds but this field is a variable-length array");
+            }
+            // W recurses: a flat run of bytes holds a composite only where that type's own form is
+            // one. The width the step states says nothing about it -- a union states a width too.
+            // A type this module does not carry is left to the analysis, which had the whole model.
+            if (step.isComposite())
+            {
+                const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(""),
+                                                                   step.getCompositeMajor().value_or(0),
+                                                                   step.getCompositeMinor().value_or(0)));
+                if (nested != messagePlans.end())
+                {
+                    mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
+                    if (!nestedPlan.getWireFlat())
+                    {
+                        return step.emitError("wire_flat holds but this field's type is not itself wire-flat");
+                    }
+                }
+            }
+            // The wire carries a fixed array as a contiguous run, so the run is what has to land on
+            // a byte boundary, not each element: `bool[8]` is one byte and `bool[4]` is not.
+            //
+            // A composite step states the whole field in `min_bits`, its elements included, where a
+            // scalar states one element in `bit_length`. Only the scalar's is multiplied.
+            const std::int64_t count =
+                (step.isArray() && !step.isComposite()) ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            const std::int64_t total = bits * count;
+            if (bits <= 0 || (total % 8) != 0)
+            {
+                return step.emitError("wire_flat holds but this field is not a whole number of bytes");
+            }
+            offsetBits += total;
+        }
+        if (!hasPayload)
+        {
+            return plan.emitError("wire_flat holds for a plan with no payload field");
+        }
+        // Each field was held to starting on a byte boundary, which says nothing about what follows
+        // the last one: trailing padding can leave the payload part of a byte.
+        if ((offsetBits % 8) != 0)
+        {
+            return plan.emitError("wire_flat holds but the payload is not a whole number of bytes");
+        }
+        // A fixed length is one number, so a plan stating a range states no length the steps can
+        // add up to -- and what reads the plan is free to take either bound. The fold takes the
+        // upper one, so a plan whose bounds differ moves bytes its object does not have.
+        if (plan.getMinBits() != plan.getMaxBits())
+        {
+            return plan.emitError("wire_flat holds but the plan's declared length is a range");
+        }
+        // The steps are the payload, so they add up to the length the plan states. What reads the
+        // plan takes that length at its word -- the fold moves it -- so a plan stating more than
+        // its steps hold moves bytes the object does not have.
+        if (offsetBits != plan.getMinBits())
+        {
+            return plan.emitError("wire_flat holds but the steps do not add up to the plan's length");
+        }
+        if (!hostImage)
+        {
+            return mlir::success();
+        }
+        return verifyHostImage(plan, messagePlans).first;
+    }
+
+    /// @brief Holds each view step to what a view needs: a scalar composite of an asserted type,
+    ///        in a plan whose structure is then not the wire's image.
+    static mlir::LogicalResult verifyViews(mlir::dsdl::SerializationPlanOp                         plan,
+                                           const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans)
+    {
+        if (plan.getBody().empty())
+        {
+            return mlir::success();
+        }
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step || !step.getHeldAsView())
+            {
+                continue;
+            }
+            if (plan.getIsUnion())
+            {
+                return step.emitError("held_as_view on an option of a union");
+            }
+            if (plan.getHostImage())
+            {
+                return step.emitError("host_image holds for a plan that holds a view");
+            }
+            if (!step.getCompositeSealed().value_or(true))
+            {
+                return step.emitError("held_as_view on a delimited composite");
+            }
+            const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(llvm::StringRef{}),
+                                                               step.getCompositeMajor().value_or(0),
+                                                               step.getCompositeMinor().value_or(0)));
+            if (nested == messagePlans.end())
+            {
+                return step.emitError("held_as_view on a composite whose plan is not in the module");
+            }
+            mlir::dsdl::SerializationPlanOp nestedPlan = nested->second;
+            if (!nestedPlan.getAliasable())
+            {
+                return step.emitError("held_as_view on a composite whose type does not assert aliasable");
+            }
+        }
+        return mlir::success();
+    }
+
+    /// @brief Re-derives a plan's host extent, reporting a step the `host_image` claim contradicts.
+    ///
+    /// The structure holds no member for padding and holds each scalar in a whole-byte storage
+    /// width, so a step that is padding, or whose width the host would widen, contradicts the claim.
+    /// The offsets are then walked under natural alignment, which is what decided the verdict.
+    /// @return Success or the error, paired with the plan's size and alignment in bytes.
+    static std::pair<mlir::LogicalResult, std::pair<std::int64_t, std::int64_t>> verifyHostImage(
+        mlir::dsdl::SerializationPlanOp                         plan,
+        const llvm::StringMap<mlir::dsdl::SerializationPlanOp>& messagePlans,
+        const unsigned                                          depth = 0)
+    {
+        const std::pair<std::int64_t, std::int64_t> unknown{0, 0};
+        // A cycle is not expressible in DSDL, so this bounds a malformed module rather than a schema.
+        if (depth > 64U)
+        {
+            return {plan.emitError("host_image verification recursed too deeply"), unknown};
+        }
+
+        std::int64_t offsetBytes = 0;
+        std::int64_t alignBytes  = 1;
+        for (mlir::Operation& stepOp : plan.getBody().front())
+        {
+            auto step = mlir::dyn_cast<mlir::dsdl::IOOp>(stepOp);
+            if (!step)
+            {
+                continue;
+            }
+            if (step.isPadding())
+            {
+                return {step.emitError("host_image holds but this step is wire padding the structure does not hold"),
+                        unknown};
+            }
+            // The structure holds a pointer and a size where the wire holds the record. Asked of
+            // this plan's own steps by `verifyViews`; asked here so it is asked of a nested plan
+            // too, whose extent this walk is re-deriving for the claim above it.
+            if (step.getHeldAsView())
+            {
+                return {step.emitError("host_image holds but this field is held as a view"), unknown};
+            }
+
+            std::int64_t elementSize  = 0;
+            std::int64_t elementAlign = 1;
+            if (step.isComposite())
+            {
+                const auto nested = messagePlans.find(compositeKey(step.getCompositeFullName().value_or(""),
+                                                                   step.getCompositeMajor().value_or(0),
+                                                                   step.getCompositeMinor().value_or(0)));
+                // A type this module does not carry cannot be re-derived here; the analysis decided
+                // it with the whole model in hand, and the reality lane measures the result.
+                if (nested == messagePlans.end())
+                {
+                    return {mlir::success(), unknown};
+                }
+                const auto resolved = verifyHostImage(nested->second, messagePlans, depth + 1);
+                if (mlir::failed(resolved.first))
+                {
+                    return {step.emitError("host_image holds but a nested type is not a byte image"), unknown};
+                }
+                if (resolved.second.second == 0)
+                {
+                    return {mlir::success(), unknown};
+                }
+                elementSize  = resolved.second.first;
+                elementAlign = resolved.second.second;
+            }
+            else
+            {
+                const auto bits = static_cast<std::uint32_t>(step.getBitLength());
+                const auto storage =
+                    (step.getScalarCategory() == "float") ? floatStorageBits(bits) : scalarStorageBits(bits);
+                if (storage != bits)
+                {
+                    return {step.emitError("host_image holds but the host stores this field wider than the wire "
+                                           "carries it"),
+                            unknown};
+                }
+                elementSize  = bits / 8;
+                elementAlign = elementSize;
+            }
+
+            if ((elementAlign == 0) || ((offsetBytes % elementAlign) != 0))
+            {
+                return {step.emitError("host_image holds but the structure would pad before this field"), unknown};
+            }
+            const std::int64_t count = step.isArray() ? std::max<std::int64_t>(step.getArrayCapacity(), 0) : 1;
+            offsetBytes += elementSize * count;
+            alignBytes = std::max(alignBytes, elementAlign);
+        }
+        if ((offsetBytes % alignBytes) != 0)
+        {
+            return {plan.emitError("host_image holds but the structure would pad after its last field"), unknown};
+        }
+        return {mlir::success(), {offsetBytes, alignBytes}};
+    }
 };
 
-// Validation-only pass: it checks the target-endianness attribute and stamps a
-// legalized marker. It performs no byte reordering. The DSDL wire format is always
-// little-endian, so per-target endianness handling lives in the emitted code (the
-// `LLVMDSDL_TARGET_ENDIANNESS_BIG` conditional gates only the zero-copy view helpers).
 }  // namespace
 
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()
@@ -1342,9 +1995,19 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
     return std::make_unique<LowerDSDLExecPass>();
 }
 
-std::unique_ptr<mlir::Pass> createDSDLAnnotateAliasabilityPass()
+std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass()
 {
-    return std::make_unique<AnnotateDSDLAliasabilityPass>();
+    return std::make_unique<VerifyDSDLAliasLayoutPass>();
+}
+
+std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
+{
+    return std::make_unique<FoldDSDLHostImageBodiesPass>();
+}
+
+std::unique_ptr<mlir::Pass> createKeepDSDLAccessorsPass()
+{
+    return std::make_unique<KeepDSDLAccessorsPass>();
 }
 
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
@@ -1354,11 +2017,25 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm, const bool optimizeLoweredSerDes)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
+                                const bool           optimizeLoweredSerDes,
+                                const bool           targetObjectsAreByteImages,
+                                const bool           accessorsOnly)
 {
     pm.addPass(createLowerDSDLExecPass());
-    pm.addPass(createDSDLAnnotateAliasabilityPass());
+    pm.addPass(createDSDLVerifyAliasLayoutPass());
     pm.addPass(createBuildDSDLPlanBodiesPass());
+    // Its own stage, under the target's capability. Folding inside the optimise stage would make
+    // the fast path turn on a flag about simplification, which is a different question.
+    if (targetObjectsAreByteImages)
+    {
+        pm.addPass(createFoldDSDLHostImageBodiesPass());
+    }
+    // After the fold, which the accessors take no part in: the bodies go, the accessors stay.
+    if (accessorsOnly)
+    {
+        pm.addPass(createKeepDSDLAccessorsPass());
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
@@ -1374,9 +2051,11 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
-    static mlir::PassRegistration<AnnotateDSDLAliasabilityPass> const regAlias;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const  reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const           regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const   regAlias;
+    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const regFold;
+    static mlir::PassRegistration<KeepDSDLAccessorsPass> const       regKeep;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

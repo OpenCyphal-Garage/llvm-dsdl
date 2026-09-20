@@ -306,12 +306,12 @@ FULL_NAME_            yes    rust     FULL_NAME_             full_name_         
 FULL_NAME_            yes    go       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
 FULL_NAME_            yes    ts       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
 FULL_NAME_            yes    python   FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
-zoh_alias_eligible_   yes    c        zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    -                      -
-zoh_alias_eligible_   yes    cpp      zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    -                      -
-zoh_alias_eligible_   yes    rust     zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible__1_0-
-zoh_alias_eligible_   yes    go       zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible__1_0ZohAliasEligible_1_0
-zoh_alias_eligible_   yes    ts       zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible__1_0ZohAliasEligible_1_0
-zoh_alias_eligible_   yes    python   zoh_alias_eligible_    zoh_alias_eligible_    ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible__1_0ZohAliasEligible_1_0
+wire_flat_            yes    c        wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             -                      -
+wire_flat_            yes    cpp      wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             -                      -
+wire_flat_            yes    rust     wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         -
+wire_flat_            yes    go       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
+wire_flat_            yes    ts       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
+wire_flat_            yes    python   wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
 UNION_OPTION_COUNT    yes    c        UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     -                      -
 UNION_OPTION_COUNT    yes    cpp      UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     -                      -
 UNION_OPTION_COUNT    yes    rust     UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     union_option_count_1_0 -

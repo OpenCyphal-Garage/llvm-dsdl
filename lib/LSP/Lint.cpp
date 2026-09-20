@@ -13,6 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Lint.h"
+
+#include "llvmdsdl/Semantics/AliasLayout.h"
+#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Support/Rational.h"
@@ -674,6 +677,80 @@ public:
     }
 };
 
+/// @brief Says that sealing a delimited type would make it `@aliasable`, or what else stands in the
+///        way, while the field is still cheap to change.
+///
+/// A field that blocks the fast path -- a `uint2` health code, a `void4` -- is chosen early and
+/// would otherwise be discovered at the moment the type is sealed, which is the moment it is most
+/// expensive to change. The verdict is already known before sealing: it is the same walk with the
+/// sealing test skipped, which is what the layout verdict answers for a delimited type.
+///
+/// It stays quiet where the blocker is a design decision rather than an oversight. A variable-length
+/// array, a union and an empty type are all deliberate, and a nested type's own problem belongs to
+/// that type's own file.
+class AliasableCandidateRule final : public LintRule
+{
+public:
+    [[nodiscard]] std::string id() const override
+    {
+        return "layout.aliasable_candidate";
+    }
+
+    [[nodiscard]] std::string title() const override
+    {
+        return "A delimited type whose layout would allow @aliasable once sealed";
+    }
+
+    void run(const LintDocument& document, std::vector<LintFinding>& findings) const override
+    {
+        if (document.semantic == nullptr)
+        {
+            return;
+        }
+        report(document, document.semantic->request, document.semantic->isService ? "request" : "", findings);
+        if (document.semantic->response)
+        {
+            report(document, *document.semantic->response, "response", findings);
+        }
+    }
+
+private:
+    static void report(const LintDocument&       document,
+                       const SemanticSection&    section,
+                       const std::string&        sectionName,
+                       std::vector<LintFinding>& findings)
+    {
+        // A sealed type has already made its choice, and `@aliasable` is how it states it.
+        if (section.sealed || section.wireFlat.holds)
+        {
+            return;
+        }
+        const std::string subject = sectionName.empty() ? std::string{"this type"} : ("this type's " + sectionName);
+
+        std::string message;
+        switch (section.wireFlat.reason)
+        {
+        case AliasLayoutReason::NotSealed:
+            // Nothing but the sealing stands in the way.
+            message = subject + " would be @aliasable once sealed: its fields are already a contiguous byte run";
+            break;
+        case AliasLayoutReason::SubByteField:
+        case AliasLayoutReason::UnalignedField:
+            message = subject + " would be @aliasable once sealed, except that " +
+                      describeAliasLayoutVerdict(section.wireFlat);
+            break;
+        default:
+            // A variable-length array, a union, an empty type, or a nested type's own problem.
+            return;
+        }
+        findings.push_back(makeFinding(std::string("layout.aliasable_candidate"),
+                                       document,
+                                       document.ast.location,
+                                       message,
+                                       LintSeverity::Info));
+    }
+};
+
 void registerBuiltinRules(LintRegistry& registry)
 {
     registry.registerRuleFactory([]() { return std::make_unique<TypePascalCaseRule>(); });
@@ -688,6 +765,7 @@ void registerBuiltinRules(LintRegistry& registry)
     registry.registerRuleFactory([]() { return std::make_unique<MaxDirectiveCountRule>(); });
     registry.registerRuleFactory([]() { return std::make_unique<LargeFixedArrayBoundRule>(); });
     registry.registerRuleFactory([]() { return std::make_unique<LargeVariableArrayBoundRule>(); });
+    registry.registerRuleFactory([]() { return std::make_unique<AliasableCandidateRule>(); });
 }
 
 }  // namespace

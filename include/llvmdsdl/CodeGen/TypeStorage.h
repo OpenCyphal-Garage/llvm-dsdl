@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/ScalarStorage.h"
 
 namespace llvmdsdl
 {
@@ -26,11 +27,6 @@ enum class ArrayKind;
 
 /// @file
 /// @brief Scalar storage and saturation helper utilities for codegen.
-
-/// @brief Returns storage width used by runtime helpers for a scalar width.
-/// @param[in] bitLength Scalar bit width.
-/// @return Storage width in bits.
-std::uint32_t scalarStorageBits(std::uint32_t bitLength);
 
 /// @brief Returns width suffix used in helper symbol names.
 /// @param[in] bitLength Scalar bit width.

@@ -16,6 +16,8 @@
 
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 
+#include "llvmdsdl/Semantics/AliasLayout.h"
+
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Attributes.h>
@@ -339,6 +341,26 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 planState.addAttribute("fixed_size", builder.getUnitAttr());
             }
+            // Decided during analysis, where the fields still carry their source locations. The
+            // pass over lowered IR checks this answer rather than reaching a second one.
+            const auto addVerdict = [&](const llvm::StringRef               holdsName,
+                                        const llvm::StringRef               reasonName,
+                                        const llvmdsdl::AliasLayoutVerdict& verdict) {
+                if (verdict.holds)
+                {
+                    planState.addAttribute(holdsName, builder.getUnitAttr());
+                }
+                else
+                {
+                    planState.addAttribute(reasonName, builder.getStringAttr(aliasLayoutReasonToken(verdict.reason)));
+                }
+            };
+            addVerdict("wire_flat", "wire_flat_reason", section.wireFlat);
+            addVerdict("host_image", "host_image_reason", section.hostImage);
+            if (section.aliasableDirective)
+            {
+                planState.addAttribute("aliasable", builder.getUnitAttr());
+            }
             planState.addRegion();
             auto* plan       = builder.create(planState);
             auto& planRegion = plan->getRegion(0);
@@ -396,6 +418,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));
+                    if (field.heldAsView)
+                    {
+                        ioState.addAttribute("held_as_view", builder.getUnitAttr());
+                    }
                 }
                 ioState.addAttribute("min_bits", builder.getI64IntegerAttr(field.resolvedType.bitLengthSet.min()));
                 ioState.addAttribute("max_bits", builder.getI64IntegerAttr(field.resolvedType.bitLengthSet.max()));

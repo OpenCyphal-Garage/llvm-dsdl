@@ -1,0 +1,7 @@
+# A message whose constant prefix is its module's own, so its constants can reach the names the
+# module writes for itself. WIRE_FLAT is one of them; REQUEST_WIRE_FLAT is written only for a
+# service, and this is a message.
+uint8 WIRE_FLAT = 1
+uint8 REQUEST_WIRE_FLAT = 2
+uint8 v
+@sealed

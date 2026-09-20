@@ -1,0 +1,3 @@
+# Four whole bytes: a wire-flat record an option can hold.
+uint8[4] bytes
+@sealed

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "dsdl_runtime.h"
 #include "uavcan/node/Heartbeat_1_0.h"
 #include "uavcan/metatransport/can/Frame_0_2.h"
 #include "uavcan/primitive/array/Real32_1_0.h"

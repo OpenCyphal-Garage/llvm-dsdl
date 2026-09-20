@@ -271,6 +271,22 @@ public:
         return {};
     }
     void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override {}
+    void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override {}
+
+    void imageWrite(SourceWriter& /*w*/, mlir::dsdl::ImageWriteOp /*op*/, const ValueNames& /*names*/) const override {}
+
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
+    void storeView(SourceWriter& /*w*/, mlir::dsdl::StoreViewOp /*op*/, const ValueNames& /*names*/) const override {}
+    void clearView(SourceWriter& /*w*/, mlir::dsdl::ClearViewOp /*op*/, const ValueNames& /*names*/) const override {}
+    void copyBytes(SourceWriter& /*w*/, mlir::dsdl::CopyBytesOp /*op*/, const ValueNames& /*names*/) const override {}
+
     void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override {}
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {

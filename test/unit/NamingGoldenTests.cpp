@@ -137,7 +137,7 @@ const std::vector<std::string>& corpus()
         // macros with a trailing `_`, which is a name a DSDL constant can carry.
         "FULL_NAME",
         "FULL_NAME_",
-        "zoh_alias_eligible_",
+        "wire_flat_",
         "UNION_OPTION_COUNT",
         "Efoo",
         "EFOO",
@@ -509,7 +509,7 @@ const std::vector<ScopeScenario>& scopeScenarios()
         // way. `FULL_NAME_` is C's metadata macro and `FULL_NAME` is everyone else's constant.
         {"constants_claimed",
          IdentifierRole::ConstantName,
-         {"FULL_NAME", "FULL_NAME_", "full_name_", "zoh_alias_eligible_"},
+         {"FULL_NAME", "FULL_NAME_", "full_name_", "wire_flat_"},
          {}},
     };
     return scenarios;

@@ -319,6 +319,8 @@ set(required_directed_markers
   "INFO c/rust directed marker heartbeat_empty_deserialize"
   "INFO c/rust directed marker frame_bad_union_tag_deserialize"
   "INFO c/rust directed marker execute_request_truncated_payload_roundtrip"
+  "INFO c/rust directed marker real32_truncated_image_roundtrip"
+  "INFO c/rust directed marker integer8_empty_image_roundtrip"
   "INFO c/rust directed marker execute_response_truncated_payload_roundtrip"
   "INFO c/rust directed marker execute_response_bad_array_length_deserialize"
   "INFO c/rust directed marker list_bad_delimiter_header_deserialize"

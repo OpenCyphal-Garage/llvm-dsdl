@@ -1,0 +1,28 @@
+# `dsdl-keep-accessors` erases every plan's serialise, deserialise and initialise body once
+# `build-dsdl-plan-bodies` has built them, marks the helpers those bodies alone called, and stamps
+# the module `llvmdsdl.accessors_only`. The accessors stay, with the helpers they call.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_host_image > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies,dsdl-keep-accessors)' %t/plans.mlir > %t/kept.mlir
+# RUN: FileCheck %s --check-prefix=KEPT < %t/kept.mlir
+# RUN: FileCheck %s --check-prefix=GONE < %t/kept.mlir
+
+# KEPT: module attributes {llvmdsdl.accessors_only,
+# A helper an accessor calls carries no mark, so its signature closes on the body.
+# KEPT: func.func @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__deser(%{{.*}}: i64) -> i64 attributes {
+# KEPT-NOT: llvmdsdl.unreferenced
+# KEPT: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# KEPT-SAME: llvmdsdl.plan_body = "get"
+# KEPT: func.func @fixtures_host_image_vendor_Padded_1_0__set_b_ir_(
+# KEPT-SAME: llvmdsdl.plan_body = "set"
+
+# The three bodies are gone, and the capacity check only they called is marked.
+# GONE-NOT: llvmdsdl.plan_body = "serialize"
+# GONE-NOT: llvmdsdl.plan_body = "deserialize"
+# GONE-NOT: llvmdsdl.plan_body = "initialize"
+# GONE: func.func @llvmdsdl_plan_capacity_check__fixtures_host_image_vendor_Padded_1_0(
+# GONE-SAME: llvmdsdl.unreferenced
+# GONE-NOT: llvmdsdl.plan_body = "serialize"
+# GONE-NOT: llvmdsdl.plan_body = "deserialize"
+# GONE-NOT: llvmdsdl.plan_body = "initialize"

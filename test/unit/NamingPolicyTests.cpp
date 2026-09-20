@@ -212,10 +212,10 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "extent_bytes", "EXTENT_BYTES_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "serialize", "serialize_"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "try_deserialize_view", "try_deserialize_view_"},
+        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "deserialize", "deserialize_"},
         {CodegenNamingLanguage::Go, IdentifierRole::ConstantName, "full_name", "FULL_NAME_"},
         {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "serialize", "Serialize_"},
-        {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "zoh_alias_reason", "ZOH_ALIAS_REASON_"},
+        {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "host_image_reason", "HOST_IMAGE_REASON_"},
         {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
         {CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
         // C spells its metadata macros with a trailing underscore, so `FULL_NAME` is free and
@@ -224,9 +224,9 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME_", "FULL_NAME__"},
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "full_name_", "FULL_NAME__"},
-        // The generated `try_deserialize_view_` tests this one in an `#elif`, so a redefinition
-        // changes what the generated code does rather than only what it reports.
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "zoh_alias_eligible_", "ZOH_ALIAS_ELIGIBLE__"},
+        // An unescaped constant here would redefine the macro beside it, and the type would then
+        // report this constant's value as its own layout verdict.
+        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "wire_flat_", "WIRE_FLAT__"},
         // `MacroName` and `ConstantName` name the same thing in C and are claimed alike.
         {CodegenNamingLanguage::C, IdentifierRole::MacroName, "union_option_count_", "UNION_OPTION_COUNT__"},
         // A C macro token is not an identifier in the language namespace, so keywords are left alone.

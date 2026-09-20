@@ -1,0 +1,17 @@
+# A catalogue type reached through the compiled-in catalogue carries the same layout assertions as
+# one read from a checkout: the verdicts and the members' offsets are decided by the analyser, and
+# the embedded catalogue's model is analysed too, not only parsed.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c %S/fixtures_embedded_layout/demo --outdir %t/c >/dev/null 2>&1
+# RUN: cat %t/c/uavcan/si/unit/angle/Quaternion_1_0.h | FileCheck %s --check-prefix=C
+# C: #define uavcan__si__unit__angle__Quaternion_HOST_IMAGE_ true
+# C: DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct uavcan__si__unit__angle__Quaternion) == 16U,
+# C: DSDL_RUNTIME_STATIC_ASSERT(offsetof(struct uavcan__si__unit__angle__Quaternion, wxyz) == 0U,
+
+# RUN: %dsdlc --target-language cpp %S/fixtures_embedded_layout/demo --outdir %t/cpp >/dev/null 2>&1
+# RUN: cat %t/cpp/std/uavcan/si/unit/angle/Quaternion_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP: static constexpr bool HOST_IMAGE = true;
+# CPP: static_assert(std::is_standard_layout<Quaternion>::value,
+# CPP: static_assert(sizeof(Quaternion) == 16U,
+# CPP: static_assert(offsetof(Quaternion, wxyz) == 0U,

@@ -1,0 +1,4 @@
+@aliasable
+uint2 health
+uint8 code
+@sealed

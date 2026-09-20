@@ -33,6 +33,17 @@ namespace llvmdsdl::emitter::c
 /// @return Ordered macro lines.
 std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata);
 
+/// @brief Renders the guard a folded body carries, refusing a host that does not order bytes as
+///        the wire does.
+///
+/// It refuses a host it cannot place as well as one it places as big-endian: a compiler stating no
+/// byte order says nothing about the target, and the fold is only correct where the two orders
+/// agree. MSVC states none and every target it compiles for is little-endian, so it is named.
+/// C and C++ carry the same guard, which is why it is rendered once.
+/// @param[in] typeName Generated type name, which the refusal names.
+/// @return Ordered preprocessor lines.
+std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeName);
+
 /// @brief Renders service alias identity metadata macro lines.
 /// @param[in] baseTypeName Alias base type name.
 /// @param[in] fullName Service full DSDL name.

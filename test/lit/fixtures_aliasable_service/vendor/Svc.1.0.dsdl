@@ -1,0 +1,8 @@
+# A service's two payloads have independent layouts, so each asserts for itself.
+@aliasable
+uint32 a
+@sealed
+---
+@aliasable
+uint2 flags
+@sealed

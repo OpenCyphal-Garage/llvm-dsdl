@@ -10,10 +10,14 @@
 /// @file
 /// The facts a backend declares beside a section's generated type.
 ///
-/// Every backend emits the same set: the type's identity, how much of a buffer it needs, whether it
-/// is deprecated, the aliasing verdict, its fixed port-ID, and for a union its options. Each one
-/// spells them in its own syntax, and each one used to derive them itself. This is where they are
-/// derived, once, so that the six spellings are six renderings of one answer.
+/// Every backend is handed the same set: the type's identity, how much of a buffer it needs, whether
+/// it is deprecated, its two layout verdicts, its fixed port-ID, and for a union its options. Each
+/// one spells them in its own syntax, and each one used to derive them itself. This is where they
+/// are derived, once, so that the six spellings are six renderings of one answer.
+///
+/// What a backend does with one is its own: C, C++, Rust and Go write the host-image verdict, and
+/// TypeScript and Python write the wire verdict alone, because an object there has no byte image
+/// for the second to be about.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_TYPE_METADATA_H
@@ -66,8 +70,19 @@ struct SectionMetadata final
     /// @brief True when the definition carries `@deprecated`.
     bool deprecated{false};
 
-    /// @brief The zero-overhead alias verdict.
-    AliasVerdict alias;
+    /// @brief Whether the serialised form is a contiguous byte image.
+    AliasVerdict wireFlat;
+
+    /// @brief Whether the generated structure is that same byte image.
+    AliasVerdict hostImage;
+
+    /// @brief The image's members in declaration order with the byte offset each has; empty unless
+    ///        @ref hostImage holds.
+    std::vector<HostImageMember> hostImageMembers;
+
+    /// @brief The fields held as a view of the buffer, in declaration order: what `--aliasable-views`
+    ///        asked for, read from the plan's steps so the type and its bodies agree.
+    std::vector<std::string> viewMembers;
 
     /// @brief True when the section is a tagged union.
     bool isUnion{false};

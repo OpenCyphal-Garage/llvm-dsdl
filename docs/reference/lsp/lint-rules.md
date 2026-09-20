@@ -23,6 +23,23 @@ For rule implementation workflow, see `docs/development/lint-rule-authoring.md`.
 10. `complexity.max_directives_per_type`
 11. `arrays.large_fixed_bound`
 12. `arrays.large_variable_bound`
+13. `layout.aliasable_candidate`
+
+## `layout.aliasable_candidate`
+
+Reports a delimited definition that sealing would make `@aliasable`, and one that a single narrow or
+misaligned field still stands in the way of, naming the field.
+
+A field that blocks the zero-decode path — a `uint2` health code, a `void4` — is chosen early and
+would otherwise surface at the moment the type is sealed, which is when it is most expensive to
+change. The verdict is known before then: it is the layout walk with the sealing test skipped.
+
+The rule stays quiet where the blocker is a design decision rather than an oversight. A
+variable-length array, a union and an empty type are all deliberate, and a nested type's own problem
+belongs to that type's own file. It also says nothing about a sealed type, which has already made
+its choice — `@aliasable` is how such a type states it.
+
+`dsdlc --warn-aliasable-candidates` reports the same thing for a batch or a CI audit.
 
 ## Configuration Schema
 

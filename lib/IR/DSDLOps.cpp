@@ -418,6 +418,24 @@ LogicalResult AlignOp::verify()
     return success();
 }
 
+LogicalResult ImageReadOp::verify()
+{
+    if (getBytes() <= 0)
+    {
+        return emitOpError("a payload of no bytes has nothing to move");
+    }
+    return success();
+}
+
+LogicalResult ImageWriteOp::verify()
+{
+    if (getBytes() <= 0)
+    {
+        return emitOpError("a payload of no bytes has nothing to move");
+    }
+    return success();
+}
+
 LogicalResult FieldOp::verify()
 {
     // Padding fields (e.g. void8) are anonymous by construction; only named fields
@@ -542,6 +560,10 @@ LogicalResult IOOp::verify()
     if (getAlignmentBits() <= 0)
     {
         return emitOpError("invalid alignment_bits metadata");
+    }
+    if (getHeldAsView() && !isComposite())
+    {
+        return emitOpError("held_as_view on a step that is not a composite");
     }
     if (getUnionOptionIndex() < 0)
     {

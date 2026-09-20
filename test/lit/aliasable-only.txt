@@ -1,0 +1,148 @@
+# `--aliasable-only` emits each type's field accessors and neither its object type nor its
+# serialisation. Every type it emits carries `@aliasable` or is nested by a type that does: the
+# outer type's composite getter answers the nested record's bytes for the nested type's accessors.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --aliasable-only %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language rust --aliasable-only %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language go --aliasable-only %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language ts --aliasable-only %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language python --aliasable-only %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# GEN-NOT: error:
+# GEN: files generated
+
+# C: the accessors over their lowered entry points, and no object type.
+# RUN: cat %t/c/fixtures_aliasable/vendor/Vec3_1_0.h | FileCheck %s --check-prefix=C_VEC3
+# C_VEC3-NOT: typedef struct
+# C_VEC3-NOT: serialize_
+# C_VEC3: static inline float fixtures_aliasable__vendor__Vec3__get_x_(const uint8_t* const buffer, const size_t buffer_size_bytes)
+# C_VEC3: static inline int8_t fixtures_aliasable__vendor__Vec3__set_x_(uint8_t* const buffer, const size_t buffer_size_bytes, const float value)
+# C_VEC3-NOT: typedef struct
+# C_VEC3-NOT: serialize_
+
+# The header names no nested type, so it includes none; a reader includes what it uses.
+# RUN: cat %t/c/fixtures_aliasable/vendor/Pose_1_0.h | FileCheck %s --check-prefix=C_POSE
+# C_POSE-NOT: #include "fixtures_aliasable/vendor/Vec3_1_0.h"
+# C_POSE-NOT: #include <string.h>
+# C_POSE-NOT: typedef struct
+# C_POSE: static inline const uint8_t* fixtures_aliasable__vendor__Pose__get_position_(const uint8_t* const buffer, const size_t buffer_size_bytes, size_t* const out_size)
+# C_POSE-NOT: typedef struct
+
+# C++: the struct holds the constants and the accessors, and no member; the header includes what
+# those use and nothing else.
+# RUN: cat %t/cpp/std/fixtures_aliasable/vendor/Pose_1_0.hpp | FileCheck %s --check-prefix=CPP_POSE
+# CPP_POSE: #include <cstddef>
+# CPP_POSE-NEXT: #include <cstdint>
+# CPP_POSE-NOT: #include
+# A file of scalar accessors reads through the runtime; one of composite getters does not.
+# CPP_VEC3: #include "dsdl_runtime.hpp"
+# RUN: cat %t/cpp/std/fixtures_aliasable/vendor/Vec3_1_0.hpp | FileCheck %s --check-prefix=CPP_VEC3
+# CPP_VEC3-NOT: deserialize
+# CPP_VEC3: struct Vec3 {
+# CPP_VEC3-NOT: float x{
+# CPP_VEC3-NOT: static_assert
+# CPP_VEC3: static float get_x(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)
+# CPP_VEC3-NOT: deserialize
+# CPP_VEC3: };
+
+# Rust: a unit struct, no layout attribute, no Default, no import of the nested type.
+# RUN: cat %t/rust/src/fixtures_aliasable/vendor/vec3_1_0.rs | FileCheck %s --check-prefix=RUST_VEC3
+# RUST_VEC3-NOT: #[repr(C)]
+# RUST_VEC3: pub struct fixtures_aliasable_vendor_Vec3;
+# RUST_VEC3-NOT: impl Default
+# RUST_VEC3-NOT: pub fn serialize
+# RUST_VEC3: pub fn get_x(buffer: &[u8]) -> f32 {
+# RUST_VEC3: pub fn set_x(buffer: &mut [u8], value: f32) -> core::result::Result<(), i8> {
+# RUST_VEC3-NOT: pub fn serialize
+# RUN: cat %t/rust/src/fixtures_aliasable/vendor/pose_1_0.rs | FileCheck %s --check-prefix=RUST_POSE
+# RUST_POSE-NOT: use crate::
+# RUST_POSE-NOT: compile_error!
+# RUST_POSE: pub fn get_position(buffer: &[u8]) -> &[u8] {
+# RUST_POSE-NOT: use crate::
+
+# Go: package-level accessors and no struct.
+# RUN: cat %t/go/fixtures_aliasable/vendor/vec3_1_0.go | FileCheck %s --check-prefix=GO_VEC3
+# GO_VEC3-NOT: type Vec3 struct
+# GO_VEC3-NOT: func (obj *Vec3) Serialize(
+# GO_VEC3: func Vec3GetX(buffer []byte) float32 {
+# GO_VEC3: func Vec3SetX(buffer []byte, value float32) int8 {
+# GO_VEC3-NOT: type Vec3 struct
+# GO_VEC3-NOT: func (obj *Vec3) Deserialize(
+
+# The endianness guard belongs to the folded bodies, so the mode's file set has no `_host_image.go`.
+# RUN: %dsdlc --target-language go --list-outputs %S/fixtures_aliasable --outdir %t/go-all 2>&1 | FileCheck %s --check-prefix=GO_ALL
+# GO_ALL: pose_1_0_host_image.go
+# RUN: %dsdlc --target-language go --aliasable-only --list-outputs %S/fixtures_aliasable --outdir %t/go-only 2>&1 | FileCheck %s --check-prefix=GO_ONLY
+# GO_ONLY-NOT: host_image
+# GO_ONLY: pose_1_0.go
+# GO_ONLY-NOT: host_image
+
+# TypeScript: exported accessors and no interface, factory or entry point. A file of composite
+# getters refers to nothing in the runtime and imports nothing.
+# RUN: cat %t/ts/fixtures_aliasable/vendor/vec3_1_0.ts | FileCheck %s --check-prefix=TS_VEC3
+# TS_VEC3: import * as dsdlRuntime from "../../dsdl_runtime";
+# TS_VEC3-NOT: export interface Vec3
+# TS_VEC3-NOT: export function makeVec3
+# TS_VEC3: export function getVec3X(buffer: Uint8Array): number {
+# TS_VEC3-NOT: export function serializeVec3Into
+# RUN: cat %t/ts/fixtures_aliasable/vendor/pose_1_0.ts | FileCheck %s --check-prefix=TS_POSE
+# TS_POSE-NOT: import
+# TS_POSE: export function getPosePosition(buffer: Uint8Array): Uint8Array {
+# TS_POSE-NOT: import
+
+# Python: a bare class of static methods, and no import of the nested type.
+# RUN: cat %t/python/dsdl_gen/fixtures_aliasable/vendor/vec3_1_0.py | FileCheck %s --check-prefix=PY_VEC3
+# PY_VEC3-NOT: @dataclass
+# PY_VEC3: class Vec3:
+# PY_VEC3-EMPTY:
+# PY_VEC3-NEXT: @staticmethod
+# PY_VEC3-NEXT: def get_x(buffer: memoryview) -> float:
+# PY_VEC3-NOT: def serialize
+# RUN: cat %t/python/dsdl_gen/fixtures_aliasable/vendor/pose_1_0.py | FileCheck %s --check-prefix=PY_POSE
+# PY_POSE-NOT: import Vec3
+# PY_POSE: class Pose:
+# PY_POSE-NOT: import Vec3
+
+# A targeted type that is neither `@aliasable` nor nested by one fails the run; each is named.
+# RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_host_image --outdir %t/unasserted 2>&1 | FileCheck %s --check-prefix=UNASSERTED
+# UNASSERTED: Arr.1.0.dsdl:1:1: error: --aliasable-only: fixtures_host_image.vendor.Arr.1.0 is not @aliasable, and no @aliasable type nests it; add the directive or leave the type out of the run
+# UNASSERTED: Flat.1.0.dsdl:1:1: error: --aliasable-only: fixtures_host_image.vendor.Flat.1.0 is not @aliasable, and no @aliasable type nests it; add the directive or leave the type out of the run
+
+# A type that is not wire-flat is named with the field that blocked it.
+# RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/Unasserted --outdir %t/narrow 2>&1 | FileCheck %s --check-prefix=NARROW
+# NARROW: Narrow.1.0.dsdl:1:1: error: --aliasable-only: {{.*}}Narrow.1.0 is not aliasable: field 'value' is not a whole number of bytes wide
+
+# The directive's own check stands.
+# RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/SubByte --outdir %t/subbyte 2>&1 | FileCheck %s --check-prefix=SUB_BYTE
+# SUB_BYTE: error: @aliasable does not hold: field 'health' is not a whole number of bytes wide
+
+# A service is reached through an alias of its request, whose wrappers call the request's
+# serialisation. The mode emits no serialisation, so the wrappers go with it or the output names
+# functions that were never emitted.
+# RUN: %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/csvc 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/cppsvc 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_HAS
+# C_SVC_HAS: fixtures_aliasable_service_flat__vendor__Probe__Request__get_code_
+# RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_NONE
+# C_SVC_NONE-NOT: __serialize_
+# C_SVC_NONE-NOT: __deserialize_
+# C_SVC_NONE-NOT: __initialize_
+# RUN: cat %t/cppsvc/std/fixtures_aliasable_service_flat/vendor/Probe_1_0.hpp | FileCheck %s --check-prefix=CPP_SVC_HAS
+# CPP_SVC_HAS: get_code
+# RUN: cat %t/cppsvc/std/fixtures_aliasable_service_flat/vendor/Probe_1_0.hpp | FileCheck %s --check-prefix=CPP_SVC_NONE
+# CPP_SVC_NONE-NOT: _serialize_
+# CPP_SVC_NONE-NOT: _deserialize_
+
+# A service's payloads assert independently, so a type named only by the section that does not
+# assert is spoken for by nothing, and is named alongside that section rather than after it.
+# RUN: not %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_bad/ResponseOnly --outdir %t/respond 2>&1 | FileCheck %s --check-prefix=RESPONSE_ONLY
+# RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Inner.1.0 is not @aliasable, and no @aliasable type nests it
+# RESPONSE_ONLY-DAG: error: --aliasable-only: {{.*}}Svc.1.0's response is not @aliasable, and no @aliasable type nests it
+
+# A nested type in another namespace is a package import in Go, and Go refuses an import nothing
+# uses. An accessors-only file names no nested type, so it imports none.
+# RUN: %dsdlc --target-language go --aliasable-only %S/fixtures_aliasable_xns --outdir %t/goxns 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/goxns/fixtures_aliasable_xns/outer/holder_1_0.go | FileCheck %s --check-prefix=GO_XNS
+# GO_XNS-NOT: fixtures_aliasable_xns/inner
+# GO_XNS: func HolderGetV(buffer []byte)

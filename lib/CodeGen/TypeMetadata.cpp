@@ -54,11 +54,24 @@ SectionMetadata sectionMetadata(const DiscoveredDefinition& info,
     out.deprecated                   = section.deprecated;
     // Both readers answer for a null plan, which is what a null schema gives them.
     const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, sectionName);
-    out.alias                                  = aliasVerdict(plan);
+    out.wireFlat                               = wireFlatVerdict(plan);
+    out.hostImage                              = hostImageVerdict(plan);
+    out.hostImageMembers                       = section.hostImageMembers;
     out.unionTagBits                           = unionTagBits(plan);
     out.isUnion                                = section.isUnion;
     out.declaresPortId                         = sectionName.empty();
     out.fixedPortId                            = out.declaresPortId ? info.fixedPortId : std::nullopt;
+    mlir::dsdl::SerializationPlanOp steps      = plan;
+    if (steps && !steps.getBody().empty())
+    {
+        for (mlir::dsdl::IOOp io : steps.getBody().front().getOps<mlir::dsdl::IOOp>())
+        {
+            if (io.getHeldAsView())
+            {
+                out.viewMembers.push_back(io.getName().str());
+            }
+        }
+    }
 
     if (!out.isUnion || !schema || schema.getBody().empty())
     {

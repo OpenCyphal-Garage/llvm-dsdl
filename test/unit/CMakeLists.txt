@@ -14,6 +14,7 @@ add_executable(llvmdsdl-unit-tests
   TargetResolutionTests.cpp
   SupportGenerationTests.cpp
   AnalyzerTests.cpp
+  AliasLayoutTests.cpp
   RuntimeTests.cpp
   CHeaderRenderTests.cpp
   CodegenDiagnosticTextTests.cpp

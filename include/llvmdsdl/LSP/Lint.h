@@ -20,6 +20,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 #include <cstdint>
 #include <functional>
@@ -107,6 +108,13 @@ struct LintDocument final
 
     /// @brief Full source text.
     std::string sourceText;
+
+    /// @brief The analysed definition, when analysis reached it.
+    ///
+    /// A rule that asks about layout needs the resolved model rather than the AST: whether a field
+    /// is a whole number of bytes, and whether a type it names is, are answered there. Null when
+    /// analysis failed, and a rule that reads it says nothing then.
+    const SemanticDefinition* semantic{nullptr};
 };
 
 /// @brief Rule execution options and suppression model.

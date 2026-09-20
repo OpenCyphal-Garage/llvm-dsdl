@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "what": "Instructions in each generated serialise and deserialise entry point of the host-image fixtures, read off llvm-objdump for the object target on a pinned triple.",
+    "why_this_unit": "A static count of a function's instructions is a property of the emitted code: exact, host-independent, and readable without a simulator, so it gates where the cachegrind lanes skip. The fold's worth was first measured this way, by hand.",
+    "keys": "counts[llvm-<major>][<triple>][<symbol>]. The count moves when the compiler moves, so the LLVM major is part of the key; a key with no entry skips and prints the values to paste. Re-baseline in the commit that changes the lowering.",
+    "control": "Padded is not a host image and does not fold; its counts pin the field-wise body beside the folded ones.",
+    "triples": [
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "symbols": [
+      "vendor_Flat_1_0__deserialize_ir_",
+      "vendor_Flat_1_0__serialize_ir_",
+      "vendor_Arr_1_0__deserialize_ir_",
+      "vendor_Arr_1_0__serialize_ir_",
+      "vendor_Nested_1_0__deserialize_ir_",
+      "vendor_Nested_1_0__serialize_ir_",
+      "vendor_Padded_1_0__deserialize_ir_",
+      "vendor_Padded_1_0__serialize_ir_",
+      "vendor_Flat_1_0__get_a_ir_",
+      "vendor_Flat_1_0__set_a_ir_",
+      "vendor_Padded_1_0__get_b_ir_",
+      "vendor_Arr_1_0__get_head_ir_",
+      "vendor_Nested_1_0__get_inner_ir_",
+      "views:fixtures_views_vendor_Frame_1_0__deserialize_ir_",
+      "views:fixtures_views_vendor_Frame_1_0__serialize_ir_",
+      "plain:fixtures_views_vendor_Frame_1_0__deserialize_ir_",
+      "plain:fixtures_views_vendor_Frame_1_0__serialize_ir_",
+      "plain:fixtures_aliasable_vendor_Pose_1_0__deserialize_ir_",
+      "plain:fixtures_aliasable_vendor_Pose_1_0__serialize_ir_"
+    ],
+    "measured": {
+      "llvm-22": "LLVM 22.1.8, 2026-09-18, aligned load/store fast path"
+    },
+    "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A getter is the runtime's read primitive with its clamps, not yet one load; see ZERO_OVERHEAD.md.",
+    "views": "A container holding a view of an @aliasable record, under --aliasable-views (`views:`) and as a decoded copy (`plain:`). A static count is per function, and the plain path's nested decode is a call, so the holder's own count does not show what the view removes: that is the callee, baselined beside it under `plain:`."
+  },
+  "counts": {
+    "llvm-22": {
+      "aarch64-unknown-linux-gnu": {
+        "vendor_Flat_1_0__deserialize_ir_": 38,
+        "vendor_Flat_1_0__serialize_ir_": 16,
+        "vendor_Arr_1_0__deserialize_ir_": 42,
+        "vendor_Arr_1_0__serialize_ir_": 19,
+        "vendor_Nested_1_0__deserialize_ir_": 42,
+        "vendor_Nested_1_0__serialize_ir_": 19,
+        "vendor_Padded_1_0__deserialize_ir_": 39,
+        "vendor_Padded_1_0__serialize_ir_": 33,
+        "vendor_Flat_1_0__get_a_ir_": 19,
+        "vendor_Flat_1_0__set_a_ir_": 20,
+        "vendor_Padded_1_0__get_b_ir_": 16,
+        "vendor_Arr_1_0__get_head_ir_": 15,
+        "vendor_Nested_1_0__get_inner_ir_": 6,
+        "views:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 75,
+        "views:fixtures_views_vendor_Frame_1_0__serialize_ir_": 60,
+        "plain:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 75,
+        "plain:fixtures_views_vendor_Frame_1_0__serialize_ir_": 49,
+        "plain:fixtures_aliasable_vendor_Pose_1_0__deserialize_ir_": 61,
+        "plain:fixtures_aliasable_vendor_Pose_1_0__serialize_ir_": 19
+      },
+      "x86_64-unknown-linux-gnu": {
+        "vendor_Flat_1_0__deserialize_ir_": 47,
+        "vendor_Flat_1_0__serialize_ir_": 21,
+        "vendor_Arr_1_0__deserialize_ir_": 49,
+        "vendor_Arr_1_0__serialize_ir_": 23,
+        "vendor_Nested_1_0__deserialize_ir_": 49,
+        "vendor_Nested_1_0__serialize_ir_": 23,
+        "vendor_Padded_1_0__deserialize_ir_": 44,
+        "vendor_Padded_1_0__serialize_ir_": 22,
+        "vendor_Flat_1_0__get_a_ir_": 20,
+        "vendor_Flat_1_0__set_a_ir_": 20,
+        "vendor_Padded_1_0__get_b_ir_": 16,
+        "vendor_Arr_1_0__get_head_ir_": 17,
+        "vendor_Nested_1_0__get_inner_ir_": 6,
+        "views:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 86,
+        "views:fixtures_views_vendor_Frame_1_0__serialize_ir_": 72,
+        "plain:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 88,
+        "plain:fixtures_views_vendor_Frame_1_0__serialize_ir_": 58,
+        "plain:fixtures_aliasable_vendor_Pose_1_0__deserialize_ir_": 69,
+        "plain:fixtures_aliasable_vendor_Pose_1_0__serialize_ir_": 23
+      }
+    }
+  }
+}

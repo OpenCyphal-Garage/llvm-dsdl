@@ -21,12 +21,13 @@ bool runCHeaderRenderTests()
     metadata.minorVersion                 = 0;
     metadata.extentBytes                  = 7;
     metadata.serializationBufferSizeBytes = 12;
-    metadata.alias                        = {true, "eligible"};
+    metadata.wireFlat                     = {true, "flat"};
+    metadata.hostImage                    = {false, "storage-width"};
 
     const auto metadataLines = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
-    if (metadataLines.size() != 8U)
+    if (metadataLines.size() != 10U)
     {
-        std::cerr << "renderTypeMetadataMacros expected 8 lines\n";
+        std::cerr << "renderTypeMetadataMacros expected 10 lines\n";
         return false;
     }
     if (metadataLines[0] != "#define uavcan__node__Heartbeat_FULL_NAME_ \"uavcan.node.Heartbeat\"")
@@ -39,17 +40,28 @@ bool runCHeaderRenderTests()
         std::cerr << "renderTypeMetadataMacros extent line mismatch\n";
         return false;
     }
-    if (metadataLines[4] != "#define uavcan__node__Heartbeat_ZOH_ALIAS_ELIGIBLE_ true")
+    // The two verdicts are independent: a flat wire form does not make the structure its image.
+    if (metadataLines[4] != "#define uavcan__node__Heartbeat_WIRE_FLAT_ true")
     {
-        std::cerr << "renderTypeMetadataMacros alias line mismatch\n";
+        std::cerr << "renderTypeMetadataMacros wire-flat line mismatch\n";
         return false;
     }
-    if (metadataLines[6] != "#define uavcan__node__Heartbeat_IS_DEPRECATED_ false")
+    if (metadataLines[6] != "#define uavcan__node__Heartbeat_HOST_IMAGE_ false")
+    {
+        std::cerr << "renderTypeMetadataMacros host-image line mismatch\n";
+        return false;
+    }
+    if (metadataLines[7] != "#define uavcan__node__Heartbeat_HOST_IMAGE_REASON_ \"storage-width\"")
+    {
+        std::cerr << "renderTypeMetadataMacros host-image reason mismatch\n";
+        return false;
+    }
+    if (metadataLines[8] != "#define uavcan__node__Heartbeat_IS_DEPRECATED_ false")
     {
         std::cerr << "renderTypeMetadataMacros deprecation line mismatch\n";
         return false;
     }
-    if (metadataLines[7] != "#define uavcan__node__Heartbeat_HAS_FIXED_PORT_ID_ false")
+    if (metadataLines[9] != "#define uavcan__node__Heartbeat_HAS_FIXED_PORT_ID_ false")
     {
         std::cerr << "renderTypeMetadataMacros port-ID line mismatch\n";
         return false;
@@ -58,7 +70,7 @@ bool runCHeaderRenderTests()
     // A message that has a subject-ID declares it beside the flag that says it has one.
     metadata.fixedPortId  = 7509U;
     const auto withPortId = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
-    if ((withPortId.size() != 9U) || (withPortId[8] != "#define uavcan__node__Heartbeat_FIXED_PORT_ID_ 7509U"))
+    if ((withPortId.size() != 11U) || (withPortId[10] != "#define uavcan__node__Heartbeat_FIXED_PORT_ID_ 7509U"))
     {
         std::cerr << "renderTypeMetadataMacros port-ID value mismatch\n";
         return false;
@@ -66,7 +78,7 @@ bool runCHeaderRenderTests()
 
     // A service's request is not the type the service is reached through, so it declares neither.
     metadata.declaresPortId = false;
-    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata).size() != 7U)
+    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata).size() != 9U)
     {
         std::cerr << "renderTypeMetadataMacros emitted a port-ID for a section that declares none\n";
         return false;
@@ -114,10 +126,20 @@ bool runCHeaderRenderTests()
     const auto aliasBridge = llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
                                                                                  "uavcan__srv__NodeInfo__Request",
                                                                                  false);
-    if (aliasBridge.size() != 5U)
+    // The typedef and the two size macros. Aliasability is per payload, so it is stated on the
+    // request and the response, each under its own name.
+    if (aliasBridge.size() != 3U)
     {
-        std::cerr << "renderServiceAliasBridgeLines expected 5 lines\n";
+        std::cerr << "renderServiceAliasBridgeLines expected 3 lines\n";
         return false;
+    }
+    for (const auto& line : aliasBridge)
+    {
+        if (line.contains("WIRE_FLAT") || line.contains("HOST_IMAGE"))
+        {
+            std::cerr << "renderServiceAliasBridgeLines states an aliasability verdict on the service name\n";
+            return false;
+        }
     }
     // The alias names the request type through its tag: the typedef is what carries a deprecation
     // attribute, and a tag never does.
@@ -139,9 +161,10 @@ bool runCHeaderRenderTests()
 
     const auto wrappers =
         llvmdsdl::emitter::c::renderServiceAliasWrapperLines("uavcan__srv__NodeInfo", "uavcan__srv__NodeInfo__Request");
-    if (wrappers.size() != 20U)
+    // Serialise, deserialise and initialise, four lines each.
+    if (wrappers.size() != 12U)
     {
-        std::cerr << "renderServiceAliasWrapperLines expected 20 lines\n";
+        std::cerr << "renderServiceAliasWrapperLines expected 12 lines\n";
         return false;
     }
     if (wrappers[0] != "static inline int8_t uavcan__srv__NodeInfo__serialize_(const struct "

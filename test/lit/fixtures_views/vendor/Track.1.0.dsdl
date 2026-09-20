@@ -1,0 +1,7 @@
+# A holder of arrays of an asserted record: a fixed pair and a bounded trail. Under
+# --aliasable-views each element is a view of the buffer, and the trail keeps its count.
+uint8 kind
+fixtures_aliasable.vendor.Pose.1.0[2] pair
+fixtures_aliasable.vendor.Pose.1.0[<=3] trail
+uint8 status
+@extent 128 * 8

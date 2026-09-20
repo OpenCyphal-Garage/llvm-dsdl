@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "dsdl_runtime.h"
 #include "lanyard/health/SystemHealth_1_0.h"
 
 #define CHECK(cond, ...)                         \

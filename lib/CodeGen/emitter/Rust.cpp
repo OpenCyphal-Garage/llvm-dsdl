@@ -70,6 +70,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include <limits>
 #include "mlir/IR/BuiltinOps.h"
@@ -224,6 +225,8 @@ private:
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
+std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
+
 std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
 {
     switch (type.scalarCategory)
@@ -243,11 +246,58 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType);
+            return ctx.rustDeclaredTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
         }
         return "u8";
     }
     return "u8";
+}
+
+/// @brief Whether @p section holds a view, directly or through a type it holds.
+///
+/// A view borrows the buffer, so the struct carries a lifetime, and so does every struct that
+/// holds one. DSDL forbids a type reaching itself, so the walk ends.
+bool sectionHoldsView(const SemanticSection&            section,
+                      const EmitterContext&             ctx,
+                      std::set<const SemanticSection*>& visiting)
+{
+    if (!visiting.insert(&section).second)
+    {
+        return false;
+    }
+    bool holds = false;
+    for (const auto& field : section.fields)
+    {
+        if (field.heldAsView)
+        {
+            holds = true;
+            break;
+        }
+        if (field.resolvedType.compositeType)
+        {
+            const auto* nested = ctx.find(*field.resolvedType.compositeType);
+            if ((nested != nullptr) && sectionHoldsView(nested->request, ctx, visiting))
+            {
+                holds = true;
+                break;
+            }
+        }
+    }
+    visiting.erase(&section);
+    return holds;
+}
+
+bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx)
+{
+    std::set<const SemanticSection*> visiting;
+    return sectionHoldsView(section, ctx, visiting);
+}
+
+/// @brief The lifetime a type carries when it holds a view: `<'a>`, or nothing.
+std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx)
+{
+    const auto* nested = ctx.find(ref);
+    return ((nested != nullptr) && sectionHoldsView(nested->request, ctx)) ? "<'a>" : "";
 }
 
 std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -262,6 +312,26 @@ std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& c
         return "[" + base + "; " + std::to_string(type.arrayCapacity) + "]";
     }
     return "crate::dsdl_runtime::DsdlVec<" + base + ">";
+}
+
+/// @brief The type a member is held as: a view of the buffer, one per element of an array, where
+///        the field is held so; otherwise the field's own.
+std::string rustMemberType(const SemanticField& field, const EmitterContext& ctx)
+{
+    const SemanticFieldType& type = field.resolvedType;
+    if (!field.heldAsView)
+    {
+        return rustFieldType(type, ctx);
+    }
+    if (type.arrayKind == ArrayKind::None)
+    {
+        return "&'a [u8]";
+    }
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        return "[&'a [u8]; " + std::to_string(type.arrayCapacity) + "]";
+    }
+    return "crate::dsdl_runtime::DsdlVec<&'a [u8]>";
 }
 
 std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -331,6 +401,8 @@ std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefau
         return scalarDefaultExpr(type, ctx);
     case MemberDefault::Kind::VariableArrayEmpty:
         return "crate::dsdl_runtime::DsdlVec::new()";
+    case MemberDefault::Kind::View:
+        return (type.arrayKind == ArrayKind::Fixed) ? "[&[]; " + std::to_string(type.arrayCapacity) + "]" : "&[]";
     }
     return scalarDefaultExpr(type, ctx);
 }
@@ -383,8 +455,10 @@ std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const st
 /// to the buffer's end.
 class RustSpelling final : public BodySpelling
 {
+    struct Member;
+
 public:
-    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
+    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const std::set<std::string>& lifetimeSections)
         : symbols_(module)
     {
         if (schema.getBody().empty())
@@ -395,6 +469,7 @@ public:
         {
             Plan entry;
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            entry.lifetime     = lifetimeSections.contains(plan.getSection().value_or(llvm::StringRef{}).str());
             NamingScope                   scope(CodegenNamingLanguage::Rust);
             std::vector<mlir::dsdl::IOOp> fields;
             std::vector<std::string>      variableArrays;
@@ -422,6 +497,13 @@ public:
             {
                 entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
             }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"_tag_", tagSteps_.back().get()};
+            }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
     }
@@ -432,6 +514,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
+        accessor_            = Accessor::None;
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -445,12 +528,111 @@ public:
                    typeName(fn.getResultTypes().front()) + " {");
             return parameters;
         }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
+        }
         const bool serialize = *direction == "serialize";
-        w.open(serialize ? "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"
-                         : "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
+        // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
+        const bool lifetime = planOf(fn.getArgument(0)).lifetime;
+        w.open(serialize
+                   ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
+                   : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
+                         "[u8]) -> core::result::Result<usize, i8> {");
         // The size a plan is handed by pointer, read at entry and written back at the end.
         w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
         return {"self", "buffer", "inout_buffer_size_bytes"};
+    }
+
+    /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
+    ///        a slice and speaking the member's own storage type. The plan holds the size, an index
+    ///        and the value in a `u64`: the size is the slice's own length, bound under a name the
+    ///        compiler does not expect to be read, since a slice read needs no size beside it; an
+    ///        index and a value are rebound at entry.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Member&     member    = accessorMember(fn);
+        const std::string storage   = scalarType(member.io);
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", index: usize" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (composite)
+        {
+            // The nested type's buffer, as a slice: its length is what the plan stores through the
+            // size pointer, which a slice carries itself, so the store lands in a local nothing
+            // reads, named so the compiler expects that.
+            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.line("let mut _out_size: usize = 0;");
+        }
+        else if (getter)
+        {
+            if (storage == "bool")
+            {
+                returnCast_ = " != 0";
+            }
+            else if (integer)
+            {
+                returnCast_ = " as " + storage;
+            }
+            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
+        }
+        else
+        {
+            w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8]" + index + ", value: " + storage +
+                   ") -> core::result::Result<(), i8> {");
+        }
+        w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
+        std::vector<std::string> parameters{"buffer", "_buffer_size_bytes"};
+        if (indexed)
+        {
+            w.line("let index = index as u64;");
+            parameters.emplace_back("index");
+        }
+        if (composite)
+        {
+            parameters.emplace_back("_out_size");
+        }
+        else if (!getter)
+        {
+            if (integer)
+            {
+                w.line("let value = value as u64;");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
+    }
+
+    /// @brief The member an accessor reaches, through the plan its schema and section name.
+    const Member& accessorMember(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("Rust spelling: an accessor of a member the plan does not declare");
+        }
+        return member->second;
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -511,6 +693,17 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code as a result.
+        if (accessor_ == Accessor::Getter)
+        {
+            w.line(expr.str() + returnCast_);
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            w.line("if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
+            return;
+        }
         // A body answers the runtime's error code; its Rust signature answers the size or the code.
         if (inBody_)
         {
@@ -962,6 +1155,97 @@ public:
         w.close("}");
     }
 
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
+    {
+        // The object is `repr(C)` and every field is an integer, a float, a fixed array of those or
+        // a nested type that is the same, so any bytes are a valid value of it: the view of it as
+        // bytes is sound to write through. A short buffer is a valid encoding, so what is there is
+        // moved and the rest zeroed, which is what reading each field would have produced.
+        const std::string bytes = std::to_string(op.getBytes()) + "usize";
+        w.open("{");
+        w.line("let _image = unsafe { core::slice::from_raw_parts_mut(" + names(op.getObject()) +
+               " as *mut Self as *mut u8, " + bytes + ") };");
+        w.line("let _avail = core::cmp::min(" + asSize(names(op.getBufferSizeBytes())) + ", " + names(op.getBuffer()) +
+               ".len());");
+        // The object and the buffer may be the same storage, so the bytes present move before what
+        // follows them is zeroed -- zeroing first would zero the source -- and they move with
+        // `copy`, which is `memmove`: `copy_from_slice` is defined only for slices that do not
+        // overlap.
+        w.line("let _take = core::cmp::min(_avail, " + bytes + ");");
+        w.open("if _take > 0usize {");
+        w.line("unsafe { core::ptr::copy(" + names(op.getBuffer()) + ".as_ptr(), _image.as_mut_ptr(), _take) };");
+        w.close("}");
+        w.open("if _take < " + bytes + " {");
+        w.line("_image[_take..].fill(0u8);");
+        w.close("}");
+        w.close("}");
+    }
+
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
+    {
+        // The buffer has been checked to hold the payload by the time this runs.
+        const std::string bytes = std::to_string(op.getBytes()) + "usize";
+        w.open("{");
+        w.line("let _image = unsafe { core::slice::from_raw_parts(" + names(op.getObject()) +
+               " as *const Self as *const u8, " + bytes + ") };");
+        // A move for the reason its counterpart takes one: the two may be the same storage.
+        w.line("unsafe { core::ptr::copy(_image.as_ptr(), " + names(op.getBuffer()) + ".as_mut_ptr(), " + bytes +
+               ") };");
+        w.close("}");
+    }
+
+    // A view member is a slice of the buffer, or one element of an array of them. Its bytes are
+    // the member itself, a `Copy` slice; a store bounds the slice the plan addressed by the count
+    // it bounded.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".len() as u64";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = { let _len = core::cmp::min(" +
+               asSize(names(op.getSizeBytes())) + ", " + bytes + ".len()); &" + bytes + "[.._len] };");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        // A fixed array of views is every element empty; a variable-length one is sized by the plan.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               ((io.getArrayKind() == "fixed") ? "[&[]; " + std::to_string(io.getArrayCapacity()) + "]" : "&[]") + ";");
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes()) + "usize";
+        // A view is a slice of a buffer, which may be the buffer being written, so the bytes move
+        // with `copy`: `copy_from_slice` is defined only for slices that do not overlap. The zero
+        // fill follows the move, and covers only what the move did not reach.
+        w.line("{ let _n = core::cmp::min(core::cmp::min(" + asSize(names(op.getSourceSizeBytes())) + ", " + source +
+               ".len()), " + width + "); if _n > 0usize { unsafe { core::ptr::copy(" + source + ".as_ptr(), " +
+               destination + ".as_mut_ptr(), _n) }; } " + destination + "[_n.." + width + "].fill(0u8); }");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The nested value serialises itself into the slice from the buffer's offset, bounded by
@@ -989,6 +1273,8 @@ private:
         std::int64_t                 unionTagBits{0};
         llvm::StringMap<Member>      members;
         llvm::StringMap<std::string> poolClass;
+        /// @brief Whether the type holds a view and so carries a lifetime.
+        bool lifetime{false};
     };
 
     /// @brief The plan the object a pointer names belongs to.
@@ -1202,8 +1488,20 @@ private:
 
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
-    mutable std::size_t   counter_{0};
-    mutable bool          inBody_{false};
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
+    mutable std::size_t                              counter_{0};
+    mutable bool                                     inBody_{false};
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
 };
 
 std::string rustConstType(const TypeExprAST& type)
@@ -1248,6 +1546,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 llvm::Error emitSectionType(SourceWriter&                         w,
@@ -1263,18 +1563,23 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const SectionBodies&                  bodies,
                             PlanBodyLookups&                      lookups)
 {
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+    // An accessors-only run has no bodies: a unit struct carries the constants and the accessors.
+    InitializerShape init;
+    if (!options.accessorsOnly)
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        auto initRead = readInitializer(bodies.initialize);
+        if (!initRead)
+        {
+            return initRead.takeError();
+        }
+        init = std::move(*initRead);
     }
-    auto initRead = readInitializer(bodies.initialize);
-    if (!initRead)
-    {
-        return initRead.takeError();
-    }
-    const InitializerShape&  init       = *initRead;
     const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
     std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
@@ -1294,100 +1599,149 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
 
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
+    // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
+    // entry points that read a buffer take it for that lifetime.
+    const bool        holdsView = sectionHoldsView(section, ctx);
+    const std::string generics  = holdsView ? "<'a>" : "";
+    const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
+    const std::string borrowed  = holdsView ? "&'a [u8]" : "&[u8]";
     emitAttachedDocRust(w,
                         docWithDeprecationNotice(typeDoc,
                                                  section.deprecated,
                                                  definitionFullName,
                                                  metadata.majorVersion,
                                                  metadata.minorVersion));
-    w.line("#[derive(Clone, Debug, PartialEq)]");
-    w.open("pub struct " + declaredName + " {");
-
     std::size_t fieldCount = 0;
     for (const auto& field : section.fields)
     {
-        if (field.isPadding)
+        if (!field.isPadding)
         {
-            continue;
+            ++fieldCount;
         }
-        ++fieldCount;
-        emitAttachedDocRust(w, field.doc);
-        w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-               rustFieldType(field.resolvedType, ctx) + ",");
     }
-
-    if (section.isUnion)
+    if (options.accessorsOnly)
     {
-        // The tag storage must match the wire tag width (8 bits for <=256 options,
-        // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-        w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
+        w.line("#[derive(Clone, Debug, PartialEq)]");
+        w.line("pub struct " + declaredName + ";");
+        w.blank();
     }
-
-    if (fieldCount == 0 && !section.isUnion)
+    else
     {
-        w.line("pub _dummy_: u8,");
-    }
-    w.close("}");
-    w.blank();
+        // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
+        // decided under: fields in order, each at its natural alignment. Only such types get it -- the
+        // default representation may reorder a non-image type's fields to pack it, and that is worth
+        // keeping there.
+        if (metadata.hostImage.holds)
+        {
+            w.line("#[repr(C)]");
+        }
+        w.line("#[derive(Clone, Debug, PartialEq)]");
+        w.open("pub struct " + declaredName + generics + " {");
 
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            emitAttachedDocRust(w, field.doc);
+            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + rustMemberType(field, ctx) +
+                   ",");
+        }
+
+        if (section.isUnion)
+        {
+            // The tag storage must match the wire tag width (8 bits for <=256 options,
+            // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
+            w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
+        }
+
+        if (fieldCount == 0 && !section.isUnion)
+        {
+            w.line("pub _dummy_: u8,");
+        }
+        w.close("}");
+        w.blank();
+    }
     if (section.deprecated)
     {
         if (options.emitDeprecationAttributes)
         {
             w.line(rustDeprecatedAttribute(definitionFullName, metadata.majorVersion, metadata.minorVersion));
         }
-        w.line("pub type " + typeName + " = " + declaredName + ";");
+        w.line("pub type " + typeName + generics + " = " + declaredName + generics + ";");
         w.blank();
     }
 
-    // Every member's default is what the initialise body stores for it.
-    llvm::StringMap<const MemberDefault*> defaults;
-    for (const auto& entry : init.members)
+    // The verdict was decided under natural alignment, which `repr(C)` follows; this pins the
+    // layout on the target the crate is compiled for.
+    if (!options.accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
-        defaults[entry.member] = &entry;
-    }
-    w.open("impl Default for " + declaredName + " {");
-    w.open("fn default() -> Self {");
-    w.open("Self {");
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("const _: () = assert!(core::mem::size_of::<" + declaredName +
+               ">() == " + std::to_string(metadata.serializationBufferSizeBytes) + "usize, \"" + declaredName +
+               ": the structure is not the byte image its serialisation assumes\");");
+        for (const auto& member : metadata.hostImageMembers)
         {
-            continue;
+            const std::string rustMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            w.line("const _: () = assert!(core::mem::offset_of!(" + declaredName + ", " + rustMember +
+                   ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." + rustMember +
+                   ": not at the offset its serialisation assumes\");");
         }
-        const auto found = defaults.find(field.name);
-        if (found == defaults.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
-                                     field.name + "'");
-        }
-        if (isVariableArray(field.resolvedType.arrayKind))
-        {
-            w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
-                   ": crate::dsdl_runtime::DsdlVec::with_contract("
-                   "crate::dsdl_runtime::VarArrayMemoryContract::new("
-                   "Self::__LLVMDSDL_MEMORY_MODE, "
-                   "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                   poolClassConstExprByField.at(field.name) + ")),");
-            continue;
-        }
-        w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-               rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
     }
-    if (section.isUnion)
-    {
-        w.line("_tag_: " + std::to_string(init.unionTag) + ",");
-    }
-    if (fieldCount == 0 && !section.isUnion)
-    {
-        w.line("_dummy_: 0,");
-    }
-    w.close("}");
-    w.close("}");
-    w.close("}");
-    w.blank();
 
-    w.open("impl " + declaredName + " {");
+    if (!options.accessorsOnly)
+    {
+        // Every member's default is what the initialise body stores for it.
+        llvm::StringMap<const MemberDefault*> defaults;
+        for (const auto& entry : init.members)
+        {
+            defaults[entry.member] = &entry;
+        }
+        w.open(implHead + "Default for " + declaredName + generics + " {");
+        w.open("fn default() -> Self {");
+        w.open("Self {");
+        for (const auto& field : section.fields)
+        {
+            if (field.isPadding)
+            {
+                continue;
+            }
+            const auto found = defaults.find(field.name);
+            if (found == defaults.end())
+            {
+                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
+                                         field.name + "'");
+            }
+            if (isVariableArray(field.resolvedType.arrayKind))
+            {
+                w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
+                       ": crate::dsdl_runtime::DsdlVec::with_contract("
+                       "crate::dsdl_runtime::VarArrayMemoryContract::new("
+                       "Self::__LLVMDSDL_MEMORY_MODE, "
+                       "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
+                       poolClassConstExprByField.at(field.name) + ")),");
+                continue;
+            }
+            w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+                   rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
+        }
+        if (section.isUnion)
+        {
+            w.line("_tag_: " + std::to_string(init.unionTag) + ",");
+        }
+        if (fieldCount == 0 && !section.isUnion)
+        {
+            w.line("_dummy_: 0,");
+        }
+        w.close("}");
+        w.close("}");
+        w.close("}");
+        w.blank();
+    }
+    w.open(implHead + declaredName + generics + " {");
     w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
     w.line(std::string("pub const IS_DEPRECATED: bool = ") + (metadata.deprecated ? "true;" : "false;"));
     w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + metadata.fullName + "." +
@@ -1395,8 +1749,19 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     w.line("pub const EXTENT_BYTES: usize = " + std::to_string(metadata.extentBytes) + ";");
     w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
            std::to_string(metadata.serializationBufferSizeBytes) + ";");
-    w.line(std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (metadata.alias.eligible ? "true;" : "false;"));
-    w.line("pub const ZOH_ALIAS_REASON: &'static str = \"" + metadata.alias.reason + "\";");
+    w.line(std::string("pub const WIRE_FLAT: bool = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line("pub const WIRE_FLAT_REASON: &'static str = \"" + metadata.wireFlat.reason + "\";");
+    w.line(std::string("pub const HOST_IMAGE: bool = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    // A folded body moves the object as the wire's bytes, which holds only where the host orders
+    // them as the wire does. This source is compiled for a target the generator did not see.
+    if (options.hostImageFolded && metadata.hostImage.holds && !options.accessorsOnly)
+    {
+        w.line("#[cfg(target_endian = \"big\")]");
+        w.line("compile_error!(\"" + declaredName +
+               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
+               "host. Regenerate with --target-triple naming this target.\");");
+    }
+    w.line("pub const HOST_IMAGE_REASON: &'static str = \"" + metadata.hostImage.reason + "\";");
     w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
            rustMemoryModeVariantPath(options) + ";");
     w.line("pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
@@ -1443,67 +1808,51 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
     w.blank();
 
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+    if (!options.accessorsOnly)
     {
-        return err;
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
+        w.open("match self.deserialize(buffer) {");
+        w.line("Ok(consumed) => (0, consumed),");
+        w.line("Err(rc) => (rc, buffer.len()),");
+        w.close("}");
+        w.close("}");
+        w.blank();
+
+        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
+        w.line("let mut buffer = "
+               "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
+        w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
+        w.line("let used = self.serialize(&mut buffer)?;");
+        w.line("buffer.truncate(used);");
+        w.line("Ok(buffer)");
+        w.close("}");
+        w.blank();
+
+        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
+        w.line("let mut out = Self::default();");
+        w.line("let used = out.deserialize(buffer)?;");
+        w.line("Ok((out, used))");
+        w.close("}");
     }
-    w.blank();
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
-        return err;
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
     }
-    w.blank();
-    w.open("pub fn deserialize_with_consumed(&mut self, buffer: &[u8]) -> (i8, usize) {");
-    w.open("match self.deserialize(buffer) {");
-    w.line("Ok(consumed) => (0, consumed),");
-    w.line("Err(rc) => (rc, buffer.len()),");
-    w.close("}");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn try_deserialize_view<'a>(buffer: &'a [u8]) -> core::result::Result<(&'a [u8], usize), i8> {");
-    w.open("if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.line("let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if buffer.len() < required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
-    w.close("}");
-    w.line("Ok((&buffer[..required], required))");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn try_serialize_view(view_bytes: &[u8], buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
-    w.open("if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.line("let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
-    w.open("if view_bytes.len() != required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-    w.close("}");
-    w.open("if buffer.len() < required {");
-    w.line("return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
-    w.close("}");
-    w.line("buffer[..required].copy_from_slice(&view_bytes[..required]);");
-    w.line("Ok(required)");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
-    w.line("let mut buffer = "
-           "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
-    w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
-    w.line("let used = self.serialize(&mut buffer)?;");
-    w.line("buffer.truncate(used);");
-    w.line("Ok(buffer)");
-    w.close("}");
-    w.blank();
-
-    w.open("pub fn from_bytes(buffer: &[u8]) -> core::result::Result<(Self, usize), i8> {");
-    w.line("let mut out = Self::default();");
-    w.line("let used = out.deserialize(buffer)?;");
-    w.line("Ok((out, used))");
-    w.close("}");
     w.close("}");
     w.blank();
     return llvm::Error::success();
@@ -1522,7 +1871,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    const RustSpelling                   spelling(module, schema);
+    std::set<std::string> lifetimeSections;
+    if (sectionHoldsView(def.request, ctx))
+    {
+        lifetimeSections.insert(def.isService ? "request" : "");
+    }
+    if (def.response && sectionHoldsView(*def.response, ctx))
+    {
+        lifetimeSections.insert("response");
+    }
+    const RustSpelling                   spelling(module, schema, lifetimeSections);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -1530,6 +1888,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper the fold left nothing calling would be an unused private function, which the
+            // compiler refuses under warnings-as-errors.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -1547,6 +1911,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             entry.initialize = fn;
         }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
+        }
         else
         {
             llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
@@ -1563,7 +1931,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line("#![allow(non_upper_case_globals)]");
     out << "\n";
 
-    const auto deps = collectDefinitionCompositeDependencies(def);
+    // An accessors-only file names no other type: a composite's getter answers its bytes.
+    // A composite's getter answers its bytes, and a view holds them: neither names the type.
+    const auto deps = options.accessorsOnly ? std::vector<SemanticTypeRef>{}
+                                            : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const auto selfKey = definitionTypeKey(def.info);
 
@@ -1668,7 +2039,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
     }
-    w.line("pub type " + baseType + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) + ";");
+    // The alias names the request, so it carries the request's lifetime when the request holds a
+    // view.
+    const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+    w.line("pub type " + baseType + baseGenerics + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) +
+           baseGenerics + ";");
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
     const auto baseConstPrefix =

@@ -21,6 +21,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
 
@@ -36,14 +37,26 @@ mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& d
 /// "response" for a service; null when the schema holds none.
 mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, llvm::StringRef section);
 
-/// @brief The zero-overhead alias verdict `dsdl-annotate-aliasability` stamps on a plan.
+/// @brief A union's tag as a step named `_tag_`: an unsigned field of the tag's width, which the
+///        wire holds ahead of the option and the plan does not list among its steps.
+///
+/// The accessors of an equal-length union reach the tag as they reach a member, and a spelling
+/// reads a member's shape off its step. The step is detached, belonging to no plan, and lives as
+/// long as the reference; no DSDL field can be named `_tag_`, so it collides with none.
+mlir::OwningOpRef<mlir::dsdl::IOOp> unionTagStep(mlir::MLIRContext* context, std::int64_t tagBits);
+
+/// @brief One of the layout verdicts a plan carries, as the generated constants state it.
 struct AliasVerdict final
 {
-    bool        eligible{false};
-    std::string reason{"not-proven"};
+    bool        holds{false};
+    std::string reason{"unknown"};
 };
 
-AliasVerdict aliasVerdict(mlir::dsdl::SerializationPlanOp plan);
+/// @brief Whether the plan's serialised form is a contiguous byte image.
+AliasVerdict wireFlatVerdict(mlir::dsdl::SerializationPlanOp plan);
+
+/// @brief Whether the generated structure is that same byte image.
+AliasVerdict hostImageVerdict(mlir::dsdl::SerializationPlanOp plan);
 
 /// @brief The width of the tag a union's plan writes, in bits.
 std::uint32_t unionTagBits(mlir::dsdl::SerializationPlanOp plan);

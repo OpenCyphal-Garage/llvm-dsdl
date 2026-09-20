@@ -362,12 +362,12 @@ FULL_NAME_            rust     FULL_NAME_             FULL_NAME_             FUL
 FULL_NAME_            go       FULLNAME               FULLNAME               FULL_NAME_             full_name_             full_name_             FULL_NAME_
 FULL_NAME_            ts       FULLNAME               full_name_             FULL_NAME_             full_name_             full_name_             FULL_NAME_
 FULL_NAME_            python   FULLNAME               full_name_             FULL_NAME_             full_name_             full_name_             FULL_NAME_
-zoh_alias_eligible_   c        zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE__   zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE__
-zoh_alias_eligible_   cpp      zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_
-zoh_alias_eligible_   rust     zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_
-zoh_alias_eligible_   go       ZohAliasEligible       ZohAliasEligible       ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_
-zoh_alias_eligible_   ts       ZohAliasEligible       zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_
-zoh_alias_eligible_   python   ZohAliasEligible       zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_    zoh_alias_eligible_    zoh_alias_eligible_    ZOH_ALIAS_ELIGIBLE_
+wire_flat_            c        wire_flat_             wire_flat_             WIRE_FLAT__            wire_flat_             wire_flat_             WIRE_FLAT__
+wire_flat_            cpp      wire_flat_             wire_flat_             WIRE_FLAT_             wire_flat_             wire_flat_             WIRE_FLAT_
+wire_flat_            rust     wire_flat_             wire_flat_             WIRE_FLAT_             wire_flat_             wire_flat_             WIRE_FLAT_
+wire_flat_            go       WireFlat               WireFlat               WIRE_FLAT_             wire_flat_             wire_flat_             WIRE_FLAT_
+wire_flat_            ts       WireFlat               wire_flat_             WIRE_FLAT_             wire_flat_             wire_flat_             WIRE_FLAT_
+wire_flat_            python   WireFlat               wire_flat_             WIRE_FLAT_             wire_flat_             wire_flat_             WIRE_FLAT_
 UNION_OPTION_COUNT    c        UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT
 UNION_OPTION_COUNT    cpp      UNION_OPTION_COUNT     UNION_OPTION_COUNT_    UNION_OPTION_COUNT_    UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT
 UNION_OPTION_COUNT    rust     UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNION_OPTION_COUNT_    UNION_OPTION_COUNT     union_option_count     UNION_OPTION_COUNT
@@ -539,24 +539,24 @@ constants             python   FOO_BAR               FOO_BAR_3
 constants_claimed     c        FULL_NAME             FULL_NAME
 constants_claimed     c        FULL_NAME_            FULL_NAME__
 constants_claimed     c        full_name_            FULL_NAME__2
-constants_claimed     c        zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE__
+constants_claimed     c        wire_flat_            WIRE_FLAT__
 constants_claimed     cpp      FULL_NAME             FULL_NAME_
 constants_claimed     cpp      FULL_NAME_            FULL_NAME_2
 constants_claimed     cpp      full_name_            FULL_NAME_3
-constants_claimed     cpp      zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE_
+constants_claimed     cpp      wire_flat_            WIRE_FLAT_
 constants_claimed     rust     FULL_NAME             FULL_NAME_
 constants_claimed     rust     FULL_NAME_            FULL_NAME_2
 constants_claimed     rust     full_name_            FULL_NAME_3
-constants_claimed     rust     zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE_
+constants_claimed     rust     wire_flat_            WIRE_FLAT_
 constants_claimed     go       FULL_NAME             FULL_NAME_
 constants_claimed     go       FULL_NAME_            FULL_NAME_2
 constants_claimed     go       full_name_            FULL_NAME_3
-constants_claimed     go       zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE_
+constants_claimed     go       wire_flat_            WIRE_FLAT_
 constants_claimed     ts       FULL_NAME             FULL_NAME
 constants_claimed     ts       FULL_NAME_            FULL_NAME_
 constants_claimed     ts       full_name_            FULL_NAME_2
-constants_claimed     ts       zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE_
+constants_claimed     ts       wire_flat_            WIRE_FLAT_
 constants_claimed     python   FULL_NAME             FULL_NAME
 constants_claimed     python   FULL_NAME_            FULL_NAME_
 constants_claimed     python   full_name_            FULL_NAME_2
-constants_claimed     python   zoh_alias_eligible_   ZOH_ALIAS_ELIGIBLE_
+constants_claimed     python   wire_flat_            WIRE_FLAT_

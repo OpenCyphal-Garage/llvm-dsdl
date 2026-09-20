@@ -78,6 +78,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
@@ -379,10 +380,19 @@ void emitAlignedStructMembers(SourceWriter& w, const std::vector<GoStructMember>
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
+    EmitterContext(const SemanticModule&    semantic,
+                   const TypeNameVersioning typeNameVersioning,
+                   const bool               accessorsOnly)
         : index_(semantic)
         , typeNameVersioning_(typeNameVersioning)
+        , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
+    bool accessorsOnly() const
+    {
+        return accessorsOnly_;
     }
 
     /// @brief Whether generated type names carry the definition's version.
@@ -442,14 +452,33 @@ public:
                ".go";
     }
 
+    /// @brief The file beside a folded type's own that refuses a big-endian architecture.
+    static std::string goHostImageGuardFileName(const DiscoveredDefinition& info)
+    {
+        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion) +
+               "_host_image.go";
+    }
+
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+    bool               accessorsOnly_{false};
 };
 
 std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
 {
-    const auto deps = collectDefinitionCompositeDependencies(def);
+    // An accessors-only file names no nested type: there is no object type to hold one and a
+    // composite getter answers the field's bytes, so nothing here reaches that type's package. Go
+    // refuses an import nothing uses, so the file would not build.
+    if (ctx.accessorsOnly())
+    {
+        return {};
+    }
+    // A view holds a field's bytes and names no type, so its package is not imported for it.
+    const auto deps = collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const std::string                  currentPath = EmitterContext::packagePath(def.info);
     std::map<std::string, std::string> out;
@@ -529,6 +558,20 @@ std::string goBaseFieldType(const SemanticFieldType&                  type,
     return "uint8";
 }
 
+/// @brief The type a member held as a view is: a slice of the buffer, or an array of them.
+std::string goViewType(const SemanticFieldType& type)
+{
+    if (type.arrayKind == ArrayKind::None)
+    {
+        return "[]byte";
+    }
+    if (type.arrayKind == ArrayKind::Fixed)
+    {
+        return "[" + std::to_string(type.arrayCapacity) + "][]byte";
+    }
+    return "[][]byte";
+}
+
 std::string goFieldType(const SemanticFieldType&                  type,
                         const EmitterContext&                     ctx,
                         const std::string&                        currentPackagePath,
@@ -587,6 +630,13 @@ public:
             {
                 entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
             }
+            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
+            // of the option, and no field can be named `_tag_`.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members["_tag_"] = Member{"Tag", tagSteps_.back().get()};
+            }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
     }
@@ -597,6 +647,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
+        accessor_            = Accessor::None;
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -609,6 +660,10 @@ public:
             w.open("func " + functionName(fn.getSymName()) + "(" + list + ") " + typeName(fn.getResultTypes().front()) +
                    " {");
             return parameters;
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return openAccessor(w, fn, *direction == "get");
         }
         const Plan& plan = planOf(fn.getArgument(0));
         w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
@@ -726,8 +781,99 @@ public:
         w.line("_ = " + expr.str());
     }
 
+    /// @brief Opens a getter or a setter: a package-level function named after the type and the
+    ///        member, taking the buffer as a slice and speaking the member's own type. The plan
+    ///        holds the size, an index and an integer in a `uint64`: the size is the slice's own
+    ///        length, an expression rather than a local, since a slice read needs no size beside
+    ///        it; an index and a value are bound at entry.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed    a         = accessed(fn);
+        const std::string storage   = scalarType(a.member->io);
+        const std::string name      = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
+        const mlir::Type  answer    = fn.getResultTypes().front();
+        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string index     = indexed ? ", elementIndex int" : "";
+        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (composite)
+        {
+            // The nested type's buffer, as a slice: its length is what the plan stores through the
+            // size pointer, which a slice carries itself, so the store lands in a local the
+            // function must be seen to use.
+            w.open("func " + name + "(buffer []byte" + index + ") []byte {");
+            w.line("var outSize int");
+            w.line("_ = outSize");
+        }
+        else if (getter)
+        {
+            if (storage == "bool")
+            {
+                returnCast_ = " != 0";
+            }
+            else if (integer)
+            {
+                returnCast_ = storage;
+            }
+            w.open("func " + name + "(buffer []byte" + index + ") " + storage + " {");
+        }
+        else
+        {
+            w.open("func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
+                   ") int8 {");
+        }
+        std::vector<std::string> parameters{"buffer", "uint64(len(buffer))"};
+        if (indexed)
+        {
+            w.line("index := uint64(elementIndex)");
+            parameters.emplace_back("index");
+        }
+        if (composite)
+        {
+            parameters.emplace_back("outSize");
+        }
+        else if (!getter)
+        {
+            if (storage == "bool")
+            {
+                w.line("value := dsdlruntime.BoolToUint64(memberValue)");
+            }
+            else if (integer)
+            {
+                w.line("value := uint64(memberValue)");
+            }
+            parameters.emplace_back("value");
+        }
+        return parameters;
+    }
+
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
+        // A getter answers the value in the member's own type; a setter answers the code alone.
+        if (accessor_ == Accessor::Getter)
+        {
+            if (returnCast_ == " != 0")
+            {
+                w.line("return " + expr.str() + " != 0");
+            }
+            else if (!returnCast_.empty())
+            {
+                w.line("return " + returnCast_ + "(" + expr.str() + ")");
+            }
+            else
+            {
+                w.line("return " + expr.str());
+            }
+            return;
+        }
+        if (accessor_ == Accessor::Setter)
+        {
+            w.line("return " + expr.str());
+            return;
+        }
         // A body answers the runtime's error code; its Go signature answers the code and the
         // size, which is the size used on success and nothing on failure.
         if (inBody_)
@@ -1126,6 +1272,88 @@ public:
         w.close("}");
     }
 
+    void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
+    {
+        // The object's bytes, viewed in place: every field of a host image is an integer, a float,
+        // a fixed array of those or a nested host image, so any bytes are a valid value of it. A
+        // short buffer is a valid encoding, so what is there is moved and the rest zeroed, which is
+        // what reading each field would have produced.
+        const std::string bytes = std::to_string(op.getBytes());
+        const std::string image = fresh("image");
+        const std::string avail = fresh("avail");
+        w.line(image + " := unsafe.Slice((*byte)(unsafe.Pointer(" + names(op.getObject()) + ")), " + bytes + ")");
+        w.line(avail + " := dsdlruntime.ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
+               names(op.getBuffer()) + "))");
+        // The object and the buffer may be the same storage, so the bytes present are copied before
+        // what follows them is cleared: clearing first would clear the source. `copy` is defined
+        // for overlapping slices, so the copy itself needs nothing else.
+        w.open("if " + avail + " >= " + bytes + " {");
+        w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + bytes + "])");
+        w.midway("} else {");
+        w.line("copy(" + image + ", " + names(op.getBuffer()) + "[:" + avail + "])");
+        w.line("clear(" + image + "[" + avail + ":])");
+        w.close("}");
+    }
+
+    void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
+    {
+        // The buffer has been checked to hold the payload by the time this runs.
+        const std::string bytes = std::to_string(op.getBytes());
+        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], unsafe.Slice((*byte)(unsafe.Pointer(" +
+               names(op.getObject()) + ")), " + bytes + "))");
+    }
+
+    // A view member is a slice of the buffer, or one element of an array of them.
+    /// @brief A view member, or the element of an array of views that @p index names.
+    std::string viewTarget(const mlir::Value     object,
+                           const llvm::StringRef member,
+                           const mlir::Value     index,
+                           const ValueNames&     names) const
+    {
+        return index ? elementAccess(object, member, names(index), names) : memberAccess(object, member, names);
+    }
+
+    [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
+    }
+
+    [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + "))";
+    }
+
+    void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
+               "[:dsdlruntime.ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
+    }
+
+    void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
+    {
+        // A fixed array of views is its zero value, every element nil; a slice is nil.
+        mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
+               ((io.getArrayKind() == "fixed") ? "[" + std::to_string(io.getArrayCapacity()) + "][]byte{}" : "nil"));
+    }
+
+    void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
+    {
+        // What the view holds, up to the width, then zeros to the width. The plan's capacity check
+        // established the width at the destination.
+        const std::string destination = names(op.getDestination());
+        const std::string source      = names(op.getSource());
+        const std::string width       = std::to_string(op.getBytes());
+        const std::string copied      = fresh("copied");
+        const std::string index       = fresh("i");
+        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:dsdlruntime.ChooseMin(" +
+               asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
+        w.open("for " + index + " := " + copied + "; " + index + " < " + width + "; " + index + "++ {");
+        w.line(destination + "[" + index + "] = 0");
+        w.close("}");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
         llvm::report_fatal_error("Go spelling: a nested call is a statement");
@@ -1430,8 +1658,52 @@ private:
     }
 
     llvm::StringMap<Plan> plans_;
-    mutable std::size_t   counter_{0};
-    mutable bool          inBody_{false};
+    /// @brief The tag steps of the union plans, which belong to no plan and live here.
+    std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
+
+    /// @brief The plan and the member an accessor reaches, through its schema and section name.
+    struct Accessed final
+    {
+        const Plan*   plan;
+        const Member* member;
+    };
+    Accessed accessed(mlir::func::FuncOp fn) const
+    {
+        auto       module     = fn->getParentOfType<mlir::ModuleOp>();
+        const auto schemaSym  = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        const auto section    = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        const auto memberName = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.member");
+        auto       schema =
+            schemaSym ? module.lookupSymbol<mlir::dsdl::SchemaOp>(schemaSym.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || !memberName)
+        {
+            llvm::report_fatal_error("Go spelling: an accessor that names no schema or no member");
+        }
+        const auto plan  = sectionPlan(schema, section ? section.getValue() : llvm::StringRef{});
+        const auto found = plans_.find(planIdentity(schema, plan));
+        if (found == plans_.end())
+        {
+            llvm::report_fatal_error("Go spelling: an accessor of a plan this schema does not describe");
+        }
+        const auto member = found->second.members.find(memberName.getValue());
+        if (member == found->second.members.end())
+        {
+            llvm::report_fatal_error("Go spelling: an accessor of a member the plan does not declare");
+        }
+        return Accessed{&found->second, &member->second};
+    }
+
+    /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
+    enum class Accessor : std::uint8_t
+    {
+        None,
+        Getter,
+        Setter
+    };
+    mutable Accessor    accessor_{Accessor::None};
+    mutable std::string returnCast_;
+    mutable std::size_t counter_{0};
+    mutable bool        inBody_{false};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1440,6 +1712,8 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
 };
 
 /// @brief Whether a stored constant is its type's zero. No constant -- a length of nought, a bool
@@ -1516,6 +1790,7 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
             break;
         case MemberDefault::Kind::VariableArrayEmpty:
         case MemberDefault::Kind::BoolArray:
+        case MemberDefault::Kind::View:
             break;
         case MemberDefault::Kind::Composite:
         case MemberDefault::Kind::FixedCompositeArray: {
@@ -1567,9 +1842,10 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
     w.line("const " + typeConstPrefix +
            "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + typeConstPrefix +
-           "_ZOH_ALIAS_ELIGIBLE = " + std::string(metadata.alias.eligible ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + metadata.alias.reason + "\"");
+    w.line("const " + typeConstPrefix + "_WIRE_FLAT = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\"");
+    w.line("const " + typeConstPrefix + "_HOST_IMAGE = " + std::string(metadata.hostImage.holds ? "true" : "false"));
+    w.line("const " + typeConstPrefix + "_HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\"");
 
     if (metadata.declaresPortId)
     {
@@ -1613,159 +1889,202 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     }
     w.blank();
 
-    emitAttachedDocGo(w,
-                      docWithDeprecationNotice(typeDoc,
-                                               section.deprecated,
-                                               definitionFullName,
-                                               metadata.majorVersion,
-                                               metadata.minorVersion));
-    w.open("type " + typeName + " struct {");
     const NamingScope fieldIdents = makeExportedFieldIdents(section);
+    // The object type, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
+        emitAttachedDocGo(w,
+                          docWithDeprecationNotice(typeDoc,
+                                                   section.deprecated,
+                                                   definitionFullName,
+                                                   metadata.majorVersion,
+                                                   metadata.minorVersion));
+        w.open("type " + typeName + " struct {");
 
-    // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
-    // one: the members are collected first so each run's width is known before any of
-    // it is written.
-    std::vector<GoStructMember> members;
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding)
-        {
-            continue;
-        }
-        members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
-                                         goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
-                                         field.doc});
-    }
-    if (section.isUnion)
-    {
-        // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
-        // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-        members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
-    }
-    if (section.fields.empty())
-    {
-        members.push_back(GoStructMember{"_", "uint8", {}});
-    }
-    emitAlignedStructMembers(w, members);
-    w.close("}");
-    w.blank();
-
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
-    }
-    // Go's zero value is the language's, and it is the rendering of the initialise body wherever
-    // every store in that body, and in every nested body it calls, is its type's zero -- which is
-    // decidable from the bodies, so nothing is emitted on that decision rather than on an
-    // assumption. A body that stores anything else has no zero value to lean on and gets a
-    // constructor that sets what the body sets, member by member and element by element.
-    auto init = readInitializer(bodies.initialize);
-    if (!init)
-    {
-        return init.takeError();
-    }
-    const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
-        auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
-        if (!body)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "the initialise body of %s calls %s, which the lowered module does not hold",
-                                           metadata.fullName.c_str(),
-                                           callee.c_str());
-        }
-        auto nested = readInitializer(body);
-        if (!nested)
-        {
-            return nested.takeError();
-        }
-        return goInitializerIsZero(*nested, module);
-    };
-    auto allZero = goInitializerIsZero(*init, module);
-    if (!allZero)
-    {
-        return allZero.takeError();
-    }
-    if (!*allZero)
-    {
-        w.open("func New" + typeName + "() " + typeName + " {");
-        w.line("var obj " + typeName);
+        // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
+        // one: the members are collected first so each run's width is known before any of
+        // it is written.
+        std::vector<GoStructMember> members;
         for (const auto& field : section.fields)
         {
             if (field.isPadding)
             {
                 continue;
             }
-            for (const auto& entry : init->members)
-            {
-                if (entry.member != field.name)
-                {
-                    continue;
-                }
-                const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
-                const auto stored = goStoredLiteral(entry.value, field.resolvedType);
-                switch (entry.kind)
-                {
-                case MemberDefault::Kind::Scalar:
-                    if (!goStoredValueIsZero(entry.value))
-                    {
-                        w.line(goAssignment(member, " = ", stored));
-                    }
-                    break;
-                case MemberDefault::Kind::FixedScalarArray:
-                    if (!goStoredValueIsZero(entry.value))
-                    {
-                        w.open("for i := range " + member + " {");
-                        w.line(goAssignment(member, "[i] = ", stored));
-                        w.close("}");
-                    }
-                    break;
-                case MemberDefault::Kind::Composite:
-                case MemberDefault::Kind::FixedCompositeArray: {
-                    auto zero = nestedIsZero(entry.callee);
-                    if (!zero)
-                    {
-                        return zero.takeError();
-                    }
-                    if (*zero)
-                    {
-                        break;
-                    }
-                    const auto made =
-                        goConstructorOf(goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
-                    if (entry.kind == MemberDefault::Kind::Composite)
-                    {
-                        w.line(goAssignment(member, " = ", made));
-                    }
-                    else
-                    {
-                        w.open("for i := range " + member + " {");
-                        w.line(goAssignment(member, "[i] = ", made));
-                        w.close("}");
-                    }
-                    break;
-                }
-                case MemberDefault::Kind::VariableArrayEmpty:
-                case MemberDefault::Kind::BoolArray:
-                    break;
-                }
-            }
+            members.push_back(
+                GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+                               field.heldAsView
+                                   ? goViewType(field.resolvedType)
+                                   : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
+                               field.doc});
         }
-        if (init->isUnion && init->unionTag != 0)
+        if (section.isUnion)
         {
-            w.line("obj.Tag = " + std::to_string(init->unionTag));
+            // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+            // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+            members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
         }
-        w.line("return obj");
+        if (section.fields.empty())
+        {
+            members.push_back(GoStructMember{"_", "uint8", {}});
+        }
+        emitAlignedStructMembers(w, members);
         w.close("}");
         w.blank();
     }
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+
+    // The verdict was decided under natural alignment; this pins the layout on the architecture the
+    // package is compiled for. A mismatch is an index out of bounds, or a uintptr overflow, here.
+    if (!ctx.accessorsOnly() && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
-        return err;
+        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+        w.line("var _ = [1]struct{}{}[unsafe.Sizeof(" + typeName + "{})-" +
+               std::to_string(metadata.serializationBufferSizeBytes) + "]");
+        for (const auto& member : metadata.hostImageMembers)
+        {
+            w.line("var _ = [1]struct{}{}[unsafe.Offsetof(" + typeName + "{}." +
+                   fieldIdents.get(IdentifierRole::FieldName, member.fieldName) + ")-" +
+                   std::to_string(member.offsetBytes) + "]");
+        }
+        // NOLINTEND(performance-inefficient-string-concatenation)
+        w.blank();
     }
-    w.blank();
-    return translateFunction(bodies.deserialize, spelling, w, lookups);
+
+    // The initialiser and the serdes, which an accessors-only run leaves out.
+    if (!ctx.accessorsOnly())
+    {
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        // Go's zero value is the language's, and it is the rendering of the initialise body wherever
+        // every store in that body, and in every nested body it calls, is its type's zero -- which is
+        // decidable from the bodies, so nothing is emitted on that decision rather than on an
+        // assumption. A body that stores anything else has no zero value to lean on and gets a
+        // constructor that sets what the body sets, member by member and element by element.
+        auto init = readInitializer(bodies.initialize);
+        if (!init)
+        {
+            return init.takeError();
+        }
+        const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
+            auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
+            if (!body)
+            {
+                return llvm::
+                    createStringError(llvm::inconvertibleErrorCode(),
+                                      "the initialise body of %s calls %s, which the lowered module does not hold",
+                                      metadata.fullName.c_str(),
+                                      callee.c_str());
+            }
+            auto nested = readInitializer(body);
+            if (!nested)
+            {
+                return nested.takeError();
+            }
+            return goInitializerIsZero(*nested, module);
+        };
+        auto allZero = goInitializerIsZero(*init, module);
+        if (!allZero)
+        {
+            return allZero.takeError();
+        }
+        if (!*allZero)
+        {
+            w.open("func New" + typeName + "() " + typeName + " {");
+            w.line("var obj " + typeName);
+            for (const auto& field : section.fields)
+            {
+                if (field.isPadding)
+                {
+                    continue;
+                }
+                for (const auto& entry : init->members)
+                {
+                    if (entry.member != field.name)
+                    {
+                        continue;
+                    }
+                    const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
+                    const auto stored = goStoredLiteral(entry.value, field.resolvedType);
+                    switch (entry.kind)
+                    {
+                    case MemberDefault::Kind::Scalar:
+                        if (!goStoredValueIsZero(entry.value))
+                        {
+                            w.line(goAssignment(member, " = ", stored));
+                        }
+                        break;
+                    case MemberDefault::Kind::FixedScalarArray:
+                        if (!goStoredValueIsZero(entry.value))
+                        {
+                            w.open("for i := range " + member + " {");
+                            w.line(goAssignment(member, "[i] = ", stored));
+                            w.close("}");
+                        }
+                        break;
+                    case MemberDefault::Kind::Composite:
+                    case MemberDefault::Kind::FixedCompositeArray: {
+                        auto zero = nestedIsZero(entry.callee);
+                        if (!zero)
+                        {
+                            return zero.takeError();
+                        }
+                        if (*zero)
+                        {
+                            break;
+                        }
+                        const auto made = goConstructorOf(
+                            goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                        if (entry.kind == MemberDefault::Kind::Composite)
+                        {
+                            w.line(goAssignment(member, " = ", made));
+                        }
+                        else
+                        {
+                            w.open("for i := range " + member + " {");
+                            w.line(goAssignment(member, "[i] = ", made));
+                            w.close("}");
+                        }
+                        break;
+                    }
+                    case MemberDefault::Kind::VariableArrayEmpty:
+                    case MemberDefault::Kind::BoolArray:
+                    case MemberDefault::Kind::View:
+                        break;
+                    }
+                }
+            }
+            if (init->isUnion && init->unionTag != 0)
+            {
+                w.line("obj.Tag = " + std::to_string(init->unionTag));
+            }
+            w.line("return obj");
+            w.close("}");
+            w.blank();
+        }
+        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        {
+            return err;
+        }
+        w.blank();
+        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
+        {
+            return err;
+        }
+    }
+    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    {
+        w.blank();
+        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        {
+            return err;
+        }
+    }
+    return llvm::Error::success();
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
@@ -1789,6 +2108,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
+            // A helper nothing calls is left out; an accessors-only run has many.
+            if (fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
             helpers.push_back(fn);
             continue;
         }
@@ -1805,6 +2129,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         else if (*direction == "initialize")
         {
             entry.initialize = fn;
+        }
+        else if (*direction == "get" || *direction == "set")
+        {
+            entry.accessors.push_back(fn);
         }
         else
         {
@@ -1897,16 +2225,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             }
             w.blank();
         }
-        w.line("type " + baseType + " = " + reqType);
+        if (!ctx.accessorsOnly())
+        {
+            w.line("type " + baseType + " = " + reqType);
+        }
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
         w.blank();
         const auto baseConstPrefix =
             codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
-        const auto reqConstPrefix =
-            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, reqType);
-        w.line("const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
-        w.line("const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
         // The service-ID belongs to the service, and this alias is how the service is named.
         w.line("const " + baseConstPrefix +
                "_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false"));
@@ -1925,9 +2252,20 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.line("package " + packageName);
     head.blank();
     const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
-    if (usesRuntime || !imports.empty())
+    const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
+    if (usesRuntime || usesUnsafe || !imports.empty())
     {
         head.open("import (");
+        // gofmt sorts the imports within a group, so the standard library's sit in a group of
+        // their own, ahead of the module's, and a blank line keeps the two apart.
+        if (usesUnsafe)
+        {
+            head.line("\"unsafe\"");
+            if (usesRuntime || !imports.empty())
+            {
+                head.blank();
+            }
+        }
         if (usesRuntime)
         {
             head.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
@@ -1960,6 +2298,42 @@ std::string renderGoMod(const Options& options)
     out << generatedCommentLine("Go backend module metadata") << "\n";
     out << "module " << options.moduleName << "\n\n";
     out << "go 1.22\n";
+    return out.str();
+}
+
+}  // namespace
+
+/// @brief A file that fails to compile on a big-endian architecture, naming the reason.
+///
+/// A folded body moves the object as the wire's bytes, which holds only where the host orders them
+/// as the wire does. Go decides the architecture when the package is built, so the refusal is a
+/// build constraint. The list is the standard library's own, from `encoding/binary`'s native
+/// order, and it is the little-endian list rather than its complement: an architecture on neither
+/// is refused, not trusted.
+namespace
+{
+
+std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterContext& ctx)
+{
+    const std::string version =
+        def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
+    const std::string ident =
+        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, ctx.goTypeName(def.info));
+    std::ostringstream out;
+    SourceWriter       w = makeGoWriter(out);
+    w.line(generatedCommentLine("Go backend"));
+    w.line("// Source: " + version);
+    w.line("//go:build !(386 || amd64 || amd64p32 || alpha || arm || arm64 || loong64 || mipsle || mips64le || "
+           "mips64p32le || nios2 || ppc64le || riscv || riscv64 || sh || wasm)");
+    w.blank();
+    w.line("package " + packageNameFromPath(EmitterContext::packagePath(def.info)));
+    w.blank();
+    w.line("// " + version + ": its serialisation moves the object as the wire's bytes, which holds only on a");
+    w.line("// little-endian target. Regenerate with --target-triple naming this target.");
+    // A field of the empty struct rather than a package-scope name: the type has no fields and no
+    // declaration can give it one, whereas a package-scope name is one a definition's own constant
+    // can spell, which would leave this file compiling and the refusal gone.
+    w.line("var _ = struct{}{}." + ident + "_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET");
     return out.str();
 }
 
@@ -2059,7 +2433,7 @@ llvm::Error emit(const SemanticModule& semantic,
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
 
     PlanBodyLookups lookups(module);
     for (const auto& def : semantic.definitions)
@@ -2087,6 +2461,18 @@ llvm::Error emit(const SemanticModule& semantic,
                                           requiredTypeKeys))
         {
             return err;
+        }
+        const bool folded = options.hostImageFolded && !options.accessorsOnly &&
+                            (def.request.hostImage.holds || (def.response && def.response->hostImage.holds));
+        if (folded)
+        {
+            if (auto err = writeGeneratedFile(dir / EmitterContext::goHostImageGuardFileName(def.info),
+                                              renderHostImageGuard(def, ctx),
+                                              options.writePolicy,
+                                              requiredTypeKeys))
+            {
+                return err;
+            }
         }
     }
 

@@ -31,7 +31,7 @@ flowchart LR
   E --> F["lowerToMLIR"]
   F --> G["dsdl.schema + dsdl.serialization_plan\n(dsdl.align/dsdl.io)"]
   G --> H["lower-dsdl-exec\n(contract stamping + helper synthesis)"]
-  H --> I["dsdl-annotate-aliasability"]
+  H --> I["dsdl-verify-alias-layout"]
   I --> P["build-dsdl-plan-bodies\n(serialise/deserialise functions\nof dialect operations)"]
   P --> K{"Translation"}
   K --> J["C: convert-dsdl-to-emitc\n+ EmitC translation"]
@@ -113,7 +113,7 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 
 - `lower-dsdl-serialization`
 - `lower-dsdl-exec` (executable-contract alias for lowering)
-- `dsdl-annotate-aliasability`
+- `dsdl-verify-alias-layout`
 - `build-dsdl-plan-bodies`
 - optional `optimize-dsdl-lowered-serdes` pipeline: the canonicaliser and common-subexpression elimination over the helpers and bodies
 - `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of
@@ -140,7 +140,7 @@ The backend emitters live in [`include/llvmdsdl/CodeGen/emitter`](./include/llvm
 
 ## 4. Backend Contract
 
-A backend is a translation of MLIR. One pass pipeline runs over the module, regardless of target — `lower-dsdl-exec`, `dsdl-annotate-aliasability`, `build-dsdl-plan-bodies` — and produces, for each serialisation plan, a serialise function, a deserialise function and an initialise function whose bodies are dialect operations. A backend receives those functions and spells them in its language. The body translator's input is the `func.func`; it has no access to the `SemanticModule`, to lowered-facts maps, or to any codegen-side plan structure. Type declarations, module layout, manifests and runtime support are outside the body contract and may consult the semantic model.
+A backend is a translation of MLIR. One pass pipeline runs over the module, regardless of target — `lower-dsdl-exec`, `dsdl-verify-alias-layout`, `build-dsdl-plan-bodies` — and produces, for each serialisation plan, a serialise function, a deserialise function and an initialise function whose bodies are dialect operations. A backend receives those functions and spells them in its language. The body translator's input is the `func.func`; it has no access to the `SemanticModule`, to lowered-facts maps, or to any codegen-side plan structure. Type declarations, module layout, manifests and runtime support are outside the body contract and may consult the semantic model.
 
 An emitter that decides what a body does from any other source is not a backend of this compiler. This architecture has three times been delivered as shared planners over lowered facts with per-language rendering, and each time the result read as the real thing because every emitter consumed the dialect. Consuming lowered facts is not translating lowered operations. The planners are what this contract removes; there is one body source.
 

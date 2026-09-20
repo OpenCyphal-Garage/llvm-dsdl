@@ -14,6 +14,7 @@
 
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Semantics/AliasLayout.h"
 #include <mlir/Support/LLVM.h>
 
 #include <llvm/ADT/SmallVector.h>
@@ -661,6 +662,11 @@ llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContex
                           }
                           return lhs.info.minorVersion < rhs.info.minorVersion;
                       });
+
+    // The embedded schemas carry the verdicts, and the emitters read those off the plans; the
+    // members' offsets the layout assertions name are decided here, from the model, as they are
+    // for a definition read from a checkout.
+    annotateAliasLayout(catalog.semantic);
 
     return catalog;
 }

@@ -1,0 +1,5 @@
+# A sealed holder of an asserted record: wire-flat, so it has accessors; not a host image under
+# --aliasable-views, since a view is a pointer where the wire has the record.
+uint32 sequence
+fixtures_aliasable.vendor.Pose.1.0 pose
+@sealed

@@ -1,0 +1,4 @@
+# A byte-clean record in a namespace of its own.
+float32 x
+float32 y
+@sealed

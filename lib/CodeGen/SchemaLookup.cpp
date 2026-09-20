@@ -14,11 +14,17 @@
 
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 
+#include <optional>
 #include <cstdint>
 #include <string>
 
 #include <llvm/ADT/StringRef.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Semantics/Model.h"
@@ -56,25 +62,66 @@ mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, const l
     return {};
 }
 
-AliasVerdict aliasVerdict(mlir::dsdl::SerializationPlanOp plan)
+mlir::OwningOpRef<mlir::dsdl::IOOp> unionTagStep(mlir::MLIRContext* const context, const std::int64_t tagBits)
+{
+    mlir::OpBuilder      builder(context);
+    mlir::OperationState state(builder.getUnknownLoc(), mlir::dsdl::IOOp::getOperationName());
+    state.addAttribute("kind", builder.getStringAttr("field"));
+    state.addAttribute("name", builder.getStringAttr("_tag_"));
+    state.addAttribute("c_name", builder.getStringAttr("_tag_"));
+    state.addAttribute("type_name", builder.getStringAttr("saturated uint" + std::to_string(tagBits)));
+    state.addAttribute("scalar_category", builder.getStringAttr("unsigned"));
+    state.addAttribute("cast_mode", builder.getStringAttr("saturated"));
+    state.addAttribute("array_kind", builder.getStringAttr("none"));
+    state.addAttribute("bit_length", builder.getI64IntegerAttr(tagBits));
+    state.addAttribute("array_capacity", builder.getI64IntegerAttr(0));
+    state.addAttribute("array_length_prefix_bits", builder.getI64IntegerAttr(0));
+    state.addAttribute("alignment_bits", builder.getI64IntegerAttr(8));
+    state.addAttribute("min_bits", builder.getI64IntegerAttr(tagBits));
+    state.addAttribute("max_bits", builder.getI64IntegerAttr(tagBits));
+    state.addAttribute("union_option_index", builder.getI64IntegerAttr(0));
+    state.addAttribute("union_tag_bits", builder.getI64IntegerAttr(0));
+    return mlir::OwningOpRef<mlir::dsdl::IOOp>(mlir::cast<mlir::dsdl::IOOp>(mlir::Operation::create(state)));
+}
+
+namespace
+{
+
+AliasVerdict readVerdict(const bool holds, const std::optional<llvm::StringRef> reason)
 {
     AliasVerdict verdict;
-    if (!plan)
+    verdict.holds = holds;
+    if (holds)
     {
+        verdict.reason = "flat";
         return verdict;
     }
-    verdict.eligible = plan.getZohAliasEligible();
-    if (verdict.eligible)
+    const std::string text = reason.value_or(llvm::StringRef{}).str();
+    if (!text.empty())
     {
-        verdict.reason = "eligible";
-        return verdict;
-    }
-    const std::string reason = plan.getZohAliasReason().value_or(llvm::StringRef{}).str();
-    if (!reason.empty())
-    {
-        verdict.reason = reason;
+        verdict.reason = text;
     }
     return verdict;
+}
+
+}  // namespace
+
+AliasVerdict wireFlatVerdict(mlir::dsdl::SerializationPlanOp plan)
+{
+    if (!plan)
+    {
+        return {};
+    }
+    return readVerdict(plan.getWireFlat(), plan.getWireFlatReason());
+}
+
+AliasVerdict hostImageVerdict(mlir::dsdl::SerializationPlanOp plan)
+{
+    if (!plan)
+    {
+        return {};
+    }
+    return readVerdict(plan.getHostImage(), plan.getHostImageReason());
 }
 
 std::uint32_t unionTagBits(mlir::dsdl::SerializationPlanOp plan)

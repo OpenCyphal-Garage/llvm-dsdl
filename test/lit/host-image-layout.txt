@@ -1,0 +1,91 @@
+# A host-image type's generated structure is asserted to be the byte image its serialisation
+# assumes, on the target the generated code is compiled for: its size, and each member's offset.
+# The verdict was decided under natural alignment, and the assertions are where the target's
+# compiler confirms it. A type that is not a host image gets none.
+#
+# Go carries the fold's endianness refusal as a build constraint in a file beside the type's, and
+# its folded bodies view the object as bytes through `unsafe`.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c %S/fixtures_host_image --outdir %t/c > /dev/null
+# RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_NESTED
+# RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.h | FileCheck %s --check-prefix=C_PADDED
+# RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.c | FileCheck %s --check-prefix=C_FOLDED
+# RUN: cat %t/c/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_GUARD
+# RUN: %dsdlc --target-language c --target-triple powerpc64-unknown-linux-gnu %S/fixtures_host_image --outdir %t/c-be > /dev/null
+# RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.c | FileCheck %s --check-prefix=C_BIG_ENDIAN_BODY
+# RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_BIG_ENDIAN_HEADER
+# RUN: %dsdlc --target-language cpp %S/fixtures_host_image --outdir %t/cpp > /dev/null
+# RUN: cat %t/cpp/std/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_NESTED
+# RUN: cat %t/cpp/pmr/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_NESTED
+# RUN: cat %t/cpp/pmr/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
+# RUN: %dsdlc --target-language rust %S/fixtures_host_image --rust-crate-name host_image --outdir %t/rust > /dev/null
+# RUN: cat %t/rust/src/fixtures_host_image/vendor/nested_1_0.rs | FileCheck %s --check-prefix=RUST_NESTED
+# RUN: %dsdlc --target-language go %S/fixtures_host_image --outdir %t/go > /dev/null
+# RUN: cat %t/go/fixtures_host_image/vendor/nested_1_0.go | FileCheck %s --check-prefix=GO_NESTED
+# RUN: cat %t/go/fixtures_host_image/vendor/nested_1_0_host_image.go | FileCheck %s --check-prefix=GO_GUARD
+# RUN: cat %t/go/fixtures_host_image/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO_PADDED
+# RUN: test ! -e %t/go/fixtures_host_image/vendor/padded_1_0_host_image.go
+
+# C_NESTED:      DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct fixtures_host_image__vendor__Nested) == 12U,
+# C_NESTED-NEXT: DSDL_RUNTIME_STATIC_ASSERT(offsetof(struct fixtures_host_image__vendor__Nested, inner) == 0U,
+# C_NESTED-NEXT: DSDL_RUNTIME_STATIC_ASSERT(offsetof(struct fixtures_host_image__vendor__Nested, code) == 8U,
+
+# C_PADDED-NOT: DSDL_RUNTIME_STATIC_ASSERT
+
+# C_FOLDED: dsdl_runtime_image_read(
+
+# The guard refuses a host it cannot place as well as one it places as big-endian: a compiler
+# stating no byte order says nothing about the target. MSVC states none and every target it
+# compiles for orders bytes as the wire does, so it is named rather than refused.
+# C_GUARD:      #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+# C_GUARD-NEXT: #  if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+# C_GUARD-NEXT: #    error
+# C_GUARD-NEXT: #  endif
+# C_GUARD-NEXT: #elif !(defined(_MSC_VER) && (defined(_M_IX86)
+# C_GUARD-NEXT: #  error
+
+# The fold is gated on the target triple being little-endian: for a big-endian one the bodies stay
+# field-wise, there is no guard to emit, and the layout assertions still hold.
+# C_BIG_ENDIAN_BODY-NOT:   dsdl_runtime_image_read(
+# C_BIG_ENDIAN_HEADER-NOT: __ORDER_LITTLE_ENDIAN__
+# C_BIG_ENDIAN_HEADER:     DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct fixtures_host_image__vendor__Nested) == 12U,
+
+# CPP_NESTED:      static_assert(std::is_standard_layout<Nested>::value,
+# CPP_NESTED-NEXT: static_assert(sizeof(Nested) == 12U,
+# CPP_NESTED-NEXT: static_assert(offsetof(Nested, inner) == 0U,
+# CPP_NESTED-NEXT: static_assert(offsetof(Nested, code) == 8U,
+
+# A host image allocates nothing, so under the PMR profile it carries no memory resource: the
+# pointer would make the structure wider than the image, and inside a nested image it would move
+# every field after it.
+# CPP_PMR-NOT: _memory_resource{
+# CPP_PMR:     void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}
+# CPP_PMR-NOT: _memory_resource{
+
+# RUST_NESTED:      #[repr(C)]
+# RUST_NESTED:      const _: () = assert!(core::mem::size_of::<fixtures_host_image_vendor_Nested>() == 12usize,
+# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(fixtures_host_image_vendor_Nested, inner) == 0usize,
+# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(fixtures_host_image_vendor_Nested, code) == 8usize,
+
+# GO_NESTED:      var _ = [1]struct{}{}[unsafe.Sizeof(Nested{})-12]
+# GO_NESTED-NEXT: var _ = [1]struct{}{}[unsafe.Offsetof(Nested{}.Inner)-0]
+# GO_NESTED-NEXT: var _ = [1]struct{}{}[unsafe.Offsetof(Nested{}.Code)-8]
+# GO_NESTED:      func (obj *Nested) Serialize(
+# GO_NESTED-NOT:  dsdlruntime.Set
+# GO_NESTED:      copy(buffer[:12], unsafe.Slice((*byte)(unsafe.Pointer(obj)), 12))
+# GO_NESTED-NOT:  dsdlruntime.Set
+# GO_NESTED:      func (obj *Nested) Deserialize(
+# GO_NESTED-NOT:  dsdlruntime.Get
+# GO_NESTED:      unsafe.Slice((*byte)(unsafe.Pointer(obj)), 12)
+# GO_NESTED-NOT:  dsdlruntime.Get
+# GO_NESTED:      func NestedGetCode(buffer []byte)
+
+# GO_GUARD:      //go:build !(386 || amd64 ||
+# GO_GUARD:      package vendor
+# The name is a field of the empty struct, which has none and can be given none. A package-scope
+# name would be one a definition's own constant can spell, which would leave the file compiling on
+# a big-endian target and the refusal gone.
+# GO_GUARD:      var _ = struct{}{}.NESTED_SERIALISATION_HOLDS_ONLY_ON_A_LITTLE_ENDIAN_TARGET
+
+# GO_PADDED-NOT: unsafe.

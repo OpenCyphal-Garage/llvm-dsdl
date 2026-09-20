@@ -7,7 +7,8 @@
 # preserve the raw DSDL name and were already safe. See the naming/identifier sanitization audit.
 
 # RUN: rm -rf %t && mkdir -p %t/dsdl/cx
-# RUN: printf 'uint8 barBaz = 1\nuint8 bar_baz = 2\nuint8 fooBar\nuint8 foo_bar\n@sealed\n' > %t/dsdl/cx/C.1.0.dsdl
+# The void keeps the bodies field-wise: a host image folds to one move and names no member.
+# RUN: printf 'uint8 barBaz = 1\nuint8 bar_baz = 2\nuint8 fooBar\nvoid8\nuint8 foo_bar\n@sealed\n' > %t/dsdl/cx/C.1.0.dsdl
 
 # Go: two distinct exported fields, each referenced by the matching (de)serialise step.
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module cx
