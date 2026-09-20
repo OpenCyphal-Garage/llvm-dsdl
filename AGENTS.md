@@ -180,3 +180,15 @@ This pollutes a higher-level API with knowledge of identifiers that may or may n
 
 "Bites" is a flippant metaphor too often used where the developer should be careful. We should never be
 flippant when providing a caution.
+
+# Anaphor rules
+
+In code comments, the use of anaphors must consider the value of paragraphs that are internally complete as readers are often using searches for specific knowledge that does not require the full context of the text above it. Technical writing is not BuzzFeed.
+
+> ❌ There is no affordance for it.
+
+There is no antecedent in the previous sentence. It might be in a title but we probably grepped for this using newlines as a delimiter.
+
+> ✅ There is no affordance for the menu item.
+
+In this version, the real subject survives delineation. Prefer this.
