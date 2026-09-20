@@ -30,9 +30,10 @@ blocked it where it does not:
 #define q__ns__Narrow_WIRE_FLAT_REASON_ "sub-byte-field"
 ```
 
-C, C++, Rust and Go report `HOST_IMAGE` and `HOST_IMAGE_REASON` beside them. A TypeScript or Python
-object has no byte image, so those two report the wire verdict alone; the accessors are what W buys
-them.
+A backend that lays its objects out in memory reports `HOST_IMAGE` and `HOST_IMAGE_REASON` beside
+them. Where a generated object has no byte layout of its own, there is nothing for the second
+verdict to be about: such a backend reports the wire verdict alone, and the accessors are what W
+buys it.
 
 The generated reason is a category, because it is a constant a consumer reads. The field is named
 where an author is the reader — `dsdlc` refusing a type that asserts the property and does not hold
@@ -47,19 +48,19 @@ author is not sent to another file to find out why.
 
 ## What each property buys
 
-**H — the bodies become one move.** A host-image type's `serialize_` and `deserialize_` collapse to
-a single move of the object's bytes on C, the object target, C++, Rust and Go, in place of the call
-and the mask a field-wise body spends per field. Emitted for `aarch64-unknown-linux-gnu`,
+**H — the bodies become one move.** Where a backend lays its objects out in memory, a host-image
+type's `serialize_` and `deserialize_` collapse to a single move of the object's bytes, in place of
+the call and the mask a field-wise body spends per field. Emitted for `aarch64-unknown-linux-gnu`,
 `uavcan.si.unit.angle.Quaternion` — sixteen bytes of `float32[4]` — reads in 38 instructions and
 writes in 16. Most of the read is the entry point's own work, the null checks and the consumed
 count, which the move does not touch; that is why an eight-byte record costs the same 38. A type
 that is not a host image keeps the field-wise body.
 
 **W — the fields are readable without a decode.** A wire-flat type's scalar fields, and the elements
-of its fixed arrays, have a getter and a setter beside the serialisation functions in all six
-languages: one read or one write at the field's fixed offset. A nested composite has a getter
-answering its bytes, so accessors compose to any depth. A getter answers what `deserialize_` puts in
-the field, on a short buffer too, where both zero-extend.
+of its fixed arrays, have a getter and a setter beside the serialisation functions in every
+generated language: one read or one write at the field's fixed offset. A nested composite has a
+getter answering its bytes, so accessors compose to any depth. A getter answers what `deserialize_`
+puts in the field, on a short buffer too, where both zero-extend.
 
 `--aliasable-only` emits the accessors and neither the object type nor the serialisation.
 `--aliasable-views` holds a composite field of an `@aliasable` type as a view of the buffer the
@@ -122,7 +123,7 @@ are what keeps the property useful there.
 | `llvmdsdl-alias-layout-census` | either count moving without the test moving with it |
 | `llvmdsdl-alias-layout-reality` | a host-image section whose compiled structure is not a byte image |
 | `dsdl-verify-alias-layout` | a verdict the lowered steps contradict |
-| `llvmdsdl-accessor-equivalence` | an accessor disagreeing with `deserialize_`, in any of the six languages |
+| `llvmdsdl-accessor-equivalence` | an accessor disagreeing with `deserialize_`, in any generated language |
 | `llvmdsdl-aliasable-only` | the mode's output failing to compile alone on any target |
 | `llvmdsdl-container-views` | a view not pointing into the buffer, or a short or empty view mishandled |
 | `llvmdsdl-union-accessors` | a tag or option read disagreeing with the decode |
