@@ -37,8 +37,7 @@ flowchart LR
   K --> N["obj: convert-dsdl-to-llvm\n+ LLVM code generation"]
   K --> O["C, C++, Rust, Go, TS and Python:\ntranslateFunction + a spelling per language"]
   E --> L["Declarations, module layout,\nmanifests, runtime support"]
-  J --> M["Generated sources and objects"]
-  N --> M
+  N --> M["Generated sources and objects"]
   O --> M
   L --> M
 ```
@@ -334,7 +333,7 @@ This yields:
 - A clear IR boundary (`dsdl` dialect) between semantic analysis and backend rendering.
 - Pass-managed normalisation/hardening (`lower-dsdl-serialization`) rather than ad-hoc per-backend logic.
 - Contract versioning/producer checks across pipeline stages.
-- A concrete C emission path via [EmitC](https://mlir.llvm.org/docs/Dialects/EmitC/).
+- One body IR that every backend translates, and object emission through the LLVM dialect.
 
 ## 11. Deliberate Tradeoffs and Current Boundaries
 

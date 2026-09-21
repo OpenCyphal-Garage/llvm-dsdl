@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 //
-// Formal control-flow / round-trip model of Cyphal DSDL serialise/deserialize.
+// Formal control-flow / round-trip model of Cyphal DSDL serialise/deserialise.
 //
 // SCOPE (deliberate): models the SEQUENCE of wire operations and the structural
-// invertibility of serialise/deserialize -- NOT bit-exact byte layout. The wire is
+// invertibility of serialise/deserialise -- NOT bit-exact byte layout. The wire is
 // an ordered stream of typed *tokens*; a scalar's value is an opaque tag that must
 // survive the round trip. Tokens are ATOMIC: effects that split a field mid-way
 // (byte-level truncation inside a scalar) are below this abstraction -- exact for
@@ -13,7 +13,7 @@
 //
 // WHAT IS PROVEN (unbounded -- for all conforming values, by structural induction):
 //   RoundTrip     : De(t, SerWire(v) + suffix) == Some((v, suffix)) for v conforming
-//                   to t. Serialise/deserialize are genuine inverses; the reader
+//                   to t. Serialise/deserialise are inverses; the reader
 //                   consumes exactly what the writer produced.
 //   DeCanonical   : the converse -- every wire De accepts decodes to a conforming
 //                   value whose re-serialization is exactly the consumed prefix, so
@@ -35,15 +35,16 @@
 //                   (truncated, adversarial, empty) on which De is undefined.
 //   Order oracle  : CanonicalTracesOrderOK -- SerOps/DeOps satisfy SerOrderOK/DeOrderOK
 //                   for ALL values, so the canonical traces can never disagree with
-//                   the ordering predicates B1 applies to backend traces.
+//                   the ordering predicates.
 //
-// SerOps(v) / DeOps(v) are the emit-order oracle -- the accepted op orderings the B1
-// verifier checks each generated backend against. SerOrderOK / DeOrderOK are those
-// ordering constraints; docs/reference/codegen/emit-order.md is the prose projection.
+// SerOps(v) / DeOps(v) are the emit-order oracle -- the accepted op orderings the
+// generated serialisation must follow. SerOrderOK / DeOrderOK are those ordering
+// constraints.
 //
-// ASSURANCE SCOPE: this proves the abstract model, not the emitted C++/Rust/Go code.
-// The link from model to code is B1 (testing each backend's op-trace against the
-// orderings here), not a refinement proof.
+// ASSURANCE SCOPE: this proves the abstract model, not the emitted code. The link from
+// model to code is not a refinement proof: build-dsdl-plan-bodies builds one set of
+// bodies, every backend translates them, and that those bodies follow the orderings
+// here rests on review of that pass and on the round-trip harnesses.
 
 module CyphalSerdes {
 
@@ -79,7 +80,7 @@ module CyphalSerdes {
     | TokLen(pb: nat, val: nat)
     | TokDelim(len: nat)
 
-  // The emit-order op alphabet (mirrors EmitTrace.h's EmitTraceOp).
+  // The emit-order op alphabet.
   datatype Op =
     | ValidateTag | MaskTag | WriteTag | ReadTag | StoreTag
     | Switch | Case | DefaultBadTag | Align | PadOp
@@ -256,7 +257,7 @@ module CyphalSerdes {
     else [Align] + DeOps(vs[0]) + DeOpsSeq(vs[1..])
   }
 
-  // ---- Ordering constraints (the equivalence class B1 checks) --------------
+  // ---- Ordering constraints (the accepted equivalence class) ---------------
 
   predicate SerOrderOK(ops: seq<Op>) {
     (forall i | 0 <= i < |ops| ::
@@ -1481,10 +1482,9 @@ module CyphalSerdes {
 
   // ==========================================================================
   // PROOF: the canonical traces satisfy the ordering predicates, for ALL values
-  // (unbounded). B1 applies SerOrderOK/DeOrderOK to real *backend* traces; these
-  // lemmas guarantee the model's own SerOps/DeOps can never disagree with those
-  // predicates, so the two halves of the oracle stay consistent by machine check
-  // rather than by sampling representative shapes.
+  // (unbounded). These lemmas guarantee the model's own SerOps/DeOps can never disagree
+  // with the predicates, so the two halves of the oracle stay consistent by machine
+  // check rather than by sampling representative shapes.
   //
   // Shape of the proof: the predicates only ever constrain an op against
   // neighbours at fixed offsets, and every constrained op is emitted inside one

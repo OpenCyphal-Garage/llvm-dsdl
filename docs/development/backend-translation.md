@@ -15,7 +15,7 @@ width and the alias flag. It holds no operations. The serialise and deserialise 
 Rust and Go came from `SerDesStatementPlan` and `NativeEmitterTraversal`; those of TypeScript and
 Python from `RuntimeLoweredPlan` and `ScriptedOperationPlan` — planners in `lib/CodeGen` that
 walked the semantic module and decided the control flow themselves. C and obj translated the
-output of `build-dsdl-plan-bodies`: through the LLVM dialect for objects.
+output of `build-dsdl-plan-bodies` rather than planning their own.
 
 The gates measure exactly this. Perturb a `dsdl.io` operation's width with the semantic module
 held constant and a planned body does not change; perturb the semantic module's cast mode with
@@ -29,14 +29,14 @@ dialect. Consuming lowered facts is not translating lowered operations.
 `build-dsdl-plan-bodies`, defined once in `lib/Transforms` as `addLowerDSDLBodiesPipeline` and
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
 receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
-`build-dsdl-plan-bodies`, so it acts on every backend alike. The C lane takes each definition's schema, and the functions built for it, from that
-module; stamps C names on the schema; and converts them.
+`build-dsdl-plan-bodies`, so it acts on every backend alike. The C and object lanes take each definition's schema, and the functions built for it, from that
+module, and stamp C names on the schema before spelling or converting them.
 
 ## The body IR is target-neutral
 
 A body spells nothing the way C does:
 
-| in the body | the C conversions spell it as |
+| in the body | in C |
 |---|---|
 | `!dsdl.ptr<!dsdl.object<"vendor.Msg.1.0">>`, `!dsdl.ptr<!dsdl.byte>`, `!dsdl.ptr<!dsdl.size>`, `const` carried on the pointer | `struct vendor__Msg*`, `uint8_t*`, `size_t*` |
 | `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's `c_name` from the schema |
@@ -242,6 +242,35 @@ deserialised object has the storage the plan addresses; a union's option is crea
 plan sets the tag. Python has no empty block, so a block that spelled no statement closes with
 `pass`. The C↔Python parity lanes and their variants, the malformed-input and decode-fuzz lanes,
 the runtime parity and smoke lanes, and the generation lane accept it.
+
+**C** came last, having already translated the bodies by another route: through
+`convert-dsdl-to-emitc` and MLIR's `translateToCpp`, which names every value `v<N>` and, having
+no spelling for the plan's signed arithmetic, wrote each operation as four statements — cast to
+unsigned, cast, operate, cast back — which CSE could not merge, `emitc.cast` carrying no `Pure`
+trait. `CSpelling`, in
+[`lib/CodeGen/emitter/C.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/C.cpp),
+spells the plan's `i64` unsigned, which is the wire arithmetic and the runtime's argument, so
+each operation is one statement. A member or element address is spelled where it is used: a
+declaration would sit in the block the plan formed it in, and C ends that scope before the value
+is read again. A local holds what its address points at, so the slot a nested call takes the size
+by is a `size_t`. An accessor's signature is the header's, which declares the offsets signed, and
+the body takes each into the type it operates in once rather than at every use. The file opens
+with the includes its bodies reach for, and a nested type's C name comes from the field that
+refers to it, its schema not being cloned into a source build's module. C is the first backend to
+translate an initialise body as a function, which `BodySpelling::declareCallInitialize` is the
+hook for. Over the regulated corpus the generated C is 38% smaller, 67,835 lines to 42,039, and
+570 anonymous values fall to 115. The parity lanes against every other language, the sanitizer
+and fuzz lanes, the object lane, which compares its wire bytes against this one transcript for
+transcript, and the generation lane accept it.
+
+Two dead comparisons surfaced in the port, both of them `-Werror=type-limits` under GCC and both
+in the plan rather than in a spelling. A plan whose type needs no bits fits whatever buffer it is
+given, and the capacity helper synthesised for it compared a constant against an unsigned
+quantity. A plan states its need in `max_bits`; where that is nought the helper is not built, the
+attribute naming it is not set, and a body begins from success. A composite field
+the buffer starts with is within whatever buffer there is, and its accessor's guard is the answer
+it gives, so at offset nought the comparison is not built. The generated Rust and Go had carried
+the first of the two, ten of each, their compilers not treating it as a defect.
 
 ## Acceptance
 

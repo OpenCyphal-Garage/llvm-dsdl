@@ -15,29 +15,12 @@
 > - **Behavioural gates:** the parity, malformed-input, and determinism scorecards now
 >   consume **executed ctest pass/fail** (JUnit), not `ctest -N` test-name presence — a
 >   cell is `covered` only if a matching test ran and passed (fail/skip/absent ⇒ uncovered).
->   The convergence scorecard is **relabeled** as an infrastructure-consistency lint (it is
->   inherently a marker check and cannot be made behavioural cheaply). See §5 P0.
-> - **Passes renamed/redescribed:** `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability`
->   (drops "proof" language; it is a conservative annotator); `dsdl-legalize-endianness`
->   documented as validation-only (no byte reordering).
+>   See §5 P0.
 > - **Big-endian is NOT "unimplemented".** The original G5/G6/§3 "big-endian absent /
 >   needs byte-swap" claim is **overstated** — see the corrected notes below. DSDL wire is
 >   always little-endian and the field-wise `serialize_`/`deserialize_` are host-endianness-agnostic.
 >   A host-image type's folded bodies (P1, phase 3) are little-endian only: they are generated
 >   only for a little-endian target triple, and the generated code refuses a big-endian build.
-
-> **Update 2026-09-17 — G6's aliasability strand re-audited, verdict corrected.**
-> Measured against `49b8883` by generating and running code from the embedded catalogue.
-> - **The 2026-07-03 note that the flag "flows out only as a generated boolean constant" is
->   stale.** `ZOH_ALIAS_ELIGIBLE` also gates `try_deserialize_view_` / `try_serialize_view_` in
->   C, C++ and Rust, present since `71dbebe` (2026-02-25). `serialize_`/`deserialize_` are
->   untouched, so the sentence is defensible, but it reads as "the flag is inert" and it is not.
-> - **The criticism was too soft.** `dsdl-annotate-aliasability` decides a wire-layout property;
->   the API it gates needs a host-memory-layout property; nothing connects the two. The flag is
->   wrong for 9 of the 63 eligible catalogue types on arm64. See G6 in §2 and the P1 entry.
-> - **`try_deserialize_view_` returns the pointer it was given** after a bounds check, and
->   `try_serialize_view_` `memcpy`s the whole payload. Neither is called by any test, and the
->   API appears in no page under `docs/reference/`.
 
 **Scope reviewed:** ~45k LOC C++ (`lib/`, `include/`, `tools/`), ~3.6k LOC multi-language runtime, ~17k LOC tests, the MLIR `dsdl` dialect, 6 codegen backends, the LSP, and the build/CI/convergence tooling. Method: docs read first (DESIGN.md, the design pages under `docs/`, the four matrix docs), then implementation, then **adversarial verification of every headline claim** against the actual code. Version under review: **`0.1.0`**.
 
@@ -59,37 +42,75 @@ Claim audit tally across the review: **28 holds · 32 partial · 5 overstated ·
 
 | # | Stated goal | Verdict | Grade |
 |---|-------------|---------|------:|
-| G1 | "Shared semantics, multiple syntaxes" | **Partial → holds (2026-09-11)** — every backend's bodies are translations of one plan-body IR; spellings carry surface idiom only | C+→A− |
+| G1 | "Shared semantics, multiple syntaxes" | **Partial → holds** — every backend's bodies are translations of one plan-body IR, C among them; declarations are authored per backend | C+→A− |
 | G2 | LLVM/MLIR as real infrastructure | **Holds** — operational | A− |
 | G3 | Contract boundaries / drift detection | **Overstated** — presence/identity guard, not drift detection | C |
-| G4 | Backend parity / convergence = 100 | **Overstated → addressed (2026-07-03)** — parity/malformed/determinism now behavioural (executed pass/fail); convergence relabeled as a lint | C−→B |
+| G4 | Backend parity / convergence = 100 | **Overstated → addressed** — parity/malformed/determinism behavioural (executed pass/fail); the convergence score is withdrawn and its property is the backend-contract gate | C−→B |
 | G5 | Malformed safety + determinism + release-blocking gates | **Partial → improved (2026-07-03)** — real read-path safety; gates now behavioural; big-endian present (not "absent") | C |
 | G6 | Zero-overhead proof / verifier-first / fallback-free | **Partial** — verifier-first closed (2026-07-12); aliasability closed (2026-09-20): the wire and host-memory properties are decided separately, and the host one is confirmed by the consumer's own compiler; fallback-free still a lint | B− |
-| G7 | DSDL v1.0 spec conformance | **Partial** — grammar strong; primitive widths unenforced; parity narrow | C+ |
+| G7 | DSDL v1.0 spec conformance | **Partial** — grammar strong; primitive widths enforced; peer corroboration over ten types | C+ |
 | G8 | Reproducible/deterministic builds | **Partial → holds (2026-08-20)** — per-backend determinism lanes; hashed-iteration lint; catalogue integrity gated | B−→B+ |
 
-### G1 — "Shared semantics, multiple syntaxes" → **Partial (shared planning, per-backend rendering)**
-This is the load-bearing claim, and the truth is in the middle. A **substantial shared layer exists**: `lib/CodeGen/MlirLoweredFacts.cpp`, `lib/CodeGen/RuntimeLoweredPlan.cpp`, `LoweredRenderIR`, `NativeHelperContract`/`HelperSymbolResolver`, and one traversal (`lib/CodeGen/NativeEmitterTraversal.cpp`) drive field ordering, union dispatch, and helper-binding requirements uniformly. The C backend delegates to MLIR (`convert-dsdl-to-emitc` + EmitC), reimplementing nothing.
+### G1 — "Shared semantics, multiple syntaxes" → **Holds**
+This is the load-bearing claim, and the code carries it. `lower-dsdl-bodies` — `lower-dsdl-exec`,
+`dsdl-verify-alias-layout`, `build-dsdl-plan-bodies`, and `optimize-dsdl-lowered-serdes` under
+`--optimize-lowered-serdes` — runs once over the module every backend receives, and turns each
+serialisation plan into serialise, deserialise and initialise functions of `dsdl`, `arith`, `scf`
+and `func` operations. Field order, union dispatch, array-length validation and the bit cursor are
+decided there.
 
-But the actual **control-flow emission is hand-written per backend.** `emitSerializeUnion` is independently coded in `lib/CodeGen/emitter/Rust.cpp:559` and `lib/CodeGen/emitter/Go.cpp:585` — same intended behaviour, six separate hand-written renderings. A bug like "mask-before-validate vs validate-before-mask" in one backend would not be caught by the convergence machinery. So G1 is *aspirationally true and structurally partial*: the semantics are **planned once and rendered six times**, with cross-language agreement enforced by tests rather than by construction.
+A backend is a translation of those functions. The six source backends spell them through
+`translateFunction` (`lib/CodeGen/BodyTranslator.cpp`) and one `BodySpelling` per language —
+`CSpelling`, `CppSpelling`, `RustSpelling`, `GoSpelling`, `TsSpelling` and `PythonSpelling`, each in
+its own emitter. The object backend converts the same functions with `convert-dsdl-to-llvm` and
+`emit-dsdl-runtime` and assembles them in-process. A spelling carries surface idiom — the type a
+plan's `i64` is spelled in, whether an address is formed inline or declared, how a container is
+sized — and decides no order.
 
-> **Update 2026-09-11 — addressed.** Every backend's serialise and deserialise bodies are
-> translations of the `build-dsdl-plan-bodies` IR through one translator
-> (`lib/CodeGen/BodyTranslator.cpp`), so the order is correct *by construction*; a spelling
-> per language carries surface idiom only. `ctest -L backend-contract` perturbs the bodies
-> and fails a backend whose output does not follow. See
-> `docs/development/backend-translation.md`.
+`ctest -L backend-contract` holds each backend to that, with three gates per backend over
+`test/integration/backend_contract`: perturbing one `dsdl.io` operation with the semantic module
+held constant must change the bodies; perturbing the semantic module with the operations held
+constant must leave them identical; and two runs of the same input must agree.
+`LLVMDSDL_BACKEND_CONTRACT_ENFORCED` holds all seven backends, so a gap fails the test rather than
+reporting it, and each gate was shown to fail the backends before any spelling was written. The
+divergence this review looked for — mask-before-validate in one backend, validate-before-mask in
+another — would now be a defect in the plan or in the translator, where one test covers every
+language.
+
+Declarations are where the goal stops. Struct layout, container choice, module layout, manifests,
+constants, deprecation notices and runtime embedding are authored per backend against the semantic
+module, and a defect there is caught by the parity, naming and constant lanes rather than by
+construction. UT-1 (§5, P2) was one: a union tag stored in eight bits in six places while the
+compiler computed a sixteen-bit wire tag. That width now reaches a declaration from the plan
+operation through `include/llvmdsdl/CodeGen/SchemaLookup.h`, which is the shape the rest of the
+declaration surface would need for the argument above to cover it. The grade withholds an A for
+that reason.
+
+[Backend Translation](backend-translation.md) is the record of the work, backend by backend.
 
 ### G2 — MLIR as real infrastructure → **Holds**
-This is the project's strongest claim and it is **true**. There is a proper ODS dialect (`include/llvmdsdl/IR/DSDLOps.td`, `DSDLTypes.td`, `DSDLAttrs.td`), ops with **real verifiers** (`SerializationPlanOp::verify()`, `IOOp::verify()` reject malformed union/array/cast metadata), a working pass pipeline, and an EmitC lowering path producing C. MLIR is operational infrastructure here, not scaffolding. (Minor: `dsdl.field`/`dsdl.constant` ops appear to be dead — defined but unconsumed — and should be removed or documented.)
+This is the project's strongest claim and it is **true**. There is a proper ODS dialect (`include/llvmdsdl/IR/DSDLOps.td`, `DSDLTypes.td`, `DSDLAttrs.td`), ops with **real verifiers** (`SerializationPlanOp::verify()`, `IOOp::verify()` reject malformed union/array/cast metadata), and a pass pipeline that carries a plan from the semantic module to serialise, deserialise and initialise functions and on to object code. `lowerToMLIR` verifies its own output, so every backend consumes verified IR. MLIR is operational infrastructure here, not scaffolding.
 
 ### G3 — Contract boundaries / drift detection → **Overstated**
 The contract mechanism is real and enforced at the consumer (codegen aborts on a missing/unsupported contract, with negative tests). **But it is not drift detection.** Producer stamp and consumer check both read the *same* constant `kLoweredSerDesContractMajor = 2` (`include/llvmdsdl/Transforms/LoweredSerDesContract.h:28`); within a build they cannot disagree. `lib/Transforms/LoweredSerDesContractValidation.cpp:46` checks version-equality and producer-string-equality. So it detects *"the lowering pass didn't run / raw IR was fed to a backend"* — a useful guard — but the docs' "detects producer/consumer drift early" implies semantic-compatibility checking that doesn't exist (no field-level compatibility rules, no payload divergence detection).
 
-### G4 — Convergence / parity = 100 → **Overstated (the number measures markers, not behaviour)**
-Verified in the source directly. `tools/convergence/convergence_report.py:180-282` computes the "14/14 shared" score by **`re.search`-ing each emitter's `.cpp` for call-string markers** like `collectLoweredFactsFromMlir(`, `renderSectionHelperBindings(`, `unionTagValidate`. A backend scores 100 by *mentioning* the shared helpers; it would still score 100 after weakening a validation step, as long as the marker strings remain. The same pattern holds for the **parity** scorecard (`tools/convergence/parity_matrix_report.py`: a cell is "covered" if a `ctest -N` *test name* matches a regex — it never runs the harness) and the **malformed** scorecard (`tools/convergence/malformed_contract_matrix_report.py:237`: same `ctest -N` name-presence).
+### G4 — Convergence / parity = 100 → **Overstated → addressed**
+The convergence score was a marker check: it `re.search`ed each emitter's `.cpp` for call-string
+markers and a backend scored 100 by *mentioning* the shared helpers, so it would have scored 100
+after a weakened validation step as long as the marker strings remained. The score is withdrawn,
+and the property it claimed — that every backend runs the same serialisation logic — is now the
+backend-contract gate in G1, which perturbs the IR and fails a backend whose bodies do not
+follow.
 
-Real behavioural testing *does* exist and is good — e.g. C↔Go generated, compiled, CGO-linked, round-tripped over 128 random + 265 directed cases with hard-fail on byte mismatch. The problem is purely that the **published "100" scores certify label presence, not the behaviour the docs imply.** They should be relabeled as infrastructure-consistency lints.
+The three scorecards that remain — parity (`tools/convergence/parity_matrix_report.py`), malformed
+input (`malformed_contract_matrix_report.py`) and determinism (`determinism_matrix_report.py`) —
+read `ctest -N` test names by default and executed JUnit results when handed `--ctest-junit`, where
+a cell counts as covered only if a matching test ran and passed. `--check-regressions` against a
+baseline requires the JUnit input, so the release-blocking gate is the behavioural one. Each page
+carries a gating mode banner.
+
+The behavioural testing underneath is good: C↔Go generated, compiled, CGO-linked and round-tripped
+over 128 random + 265 directed cases, with a byte mismatch failing the lane.
 
 ### G5 — Malformed safety + determinism + release-blocking gates → **Partial**
 The generated C **read path is bounds-safe**: it inherits the Nunavut/libcanard `copy_bits` primitive that clamps each read window to the buffer via `saturate_fragment_bits`/`choose_min` (`runtime/dsdl_runtime.h:98+`), and variable-array decode validates the length prefix *before* the element loop (no OOB writes from inflated counts).
@@ -114,7 +135,7 @@ Two of the three strands are closed; the third is scored by searching generated 
 ### G7 — DSDL v1.0 conformance → **Partial**
 Strong: the lexer/parser went through **6 documented rounds of grammar conformance** and reserved-identifier enforcement; all six directives (`@union/@sealed/@extent/@assert/@print/@deprecated`) are parsed and semantically checked; **delimited (non-sealed) bit-length sets are modeled correctly** (32-bit delimiter header + 0..extent), matching pydsdl/Nunavut.
 
-Real conformance bug found and verified live ~~**primitive bit-width constraints are not enforced.** `uint100` and `float8` pass parse + semantic analysis and emit structurally-valid MLIR~~ **(fixed 2026-07-10:** the frontend parser and the `dsdl.io` verifier now reject out-of-range primitive widths — int/uint [1,64], float {16,32,64}, void [1,64] — with pydsdl-style diagnostics; see P0). *(Originally: `lib/Frontend/Parser.cpp:725` only checked uint32 fit; no range check in `lib/Semantics/Analyzer.cpp` or the scalar IR verifier.)* The reference compiler rejects these with diagnostics. And the **differential parity vs Nunavut covers exactly 5 files** (`test/integration/RunDifferentialParity.cmake:99`), **disables byte comparison for the union and float cases**, and **is skipped in CI** (the workflow never provisions `nunavut`/`pydsdl`).
+Real conformance bug found and verified live ~~**primitive bit-width constraints are not enforced.** `uint100` and `float8` pass parse + semantic analysis and emit structurally-valid MLIR~~ **(fixed 2026-07-10:** the frontend parser and the `dsdl.io` verifier now reject out-of-range primitive widths — signed [2,64], unsigned [1,64], float {16,32,64}, void [1,64] — with pydsdl-style diagnostics; see P0). *(Originally: `lib/Frontend/Parser.cpp:725` only checked uint32 fit; no range check in `lib/Semantics/Analyzer.cpp` or the scalar IR verifier.)* The reference compiler rejects these with diagnostics. Differential parity against Nunavut covers ten types, compares bytes on all of them, and is required in CI: `-DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON` turns a missing `nunavut`/`pydsdl` checkout into a configure error. §5 P0 records why that lane is corroboration by a pinned peer rather than an oracle, and what the remaining conformance evidence rests on.
 
 ### G8 — Reproducible builds → **Holds**
 Good preset/workflow discipline and depfile support. Seven per-backend determinism lanes compare
@@ -138,15 +159,15 @@ library implementations rests on the lint rather than on a differential build.
 | Subsystem | Score | One-line assessment |
 |-----------|:----:|---------------------|
 | Frontend (lexer/parser/discovery) | **8** | Hardened: fuzzed, crash-fixed, grammar-conformant. Add recursion/element caps. |
-| Codegen Rust/Go/TS/Python emitters | **8** | High-quality, idiomatic output; ~200–500 LOC duplicated control-flow. |
-| IR dialect + lowering | **7.5** | Real ODS dialect + verifiers; dead ops; lowering lacks proactive verifiers. |
+| Codegen Rust/Go/TS/Python emitters | **8** | High-quality, idiomatic output; bodies translated from one IR, declarations authored per backend. |
+| IR dialect + lowering | **7.5** | Real ODS dialect + verifiers; lowering verifies its own output before a backend sees it. |
 | Semantics | **7** | Solid BitLengthSet algebra; **unchecked `Rational` int64 overflow**, unbounded `repeatRange` expansion. |
 | Runtime (multi-language) | **7** | Read-path bounds-safe; **empty semantic-wrapper allowlist**; no isolated cross-language primitive tests. |
-| Codegen C/C++/Object | **6.5** | Clean C-via-EmitC; object backend exec is shell-safe; `targetTriple` input under-validated. |
+| Codegen C/C++/Object | **6.5** | C and C++ are body spellings; objects are assembled in-process from the same bodies, with `--target-triple` resolved through LLVM's target registry. |
 | Transforms | **6** | Real contract enforcement; big-endian **implemented** — wire is LE, the field-wise `serialize_`/`deserialize_` host-agnostic; a host image's folded bodies are little-endian only and refuse a big-endian build. `dsdl-verify-alias-layout` re-derives the wire-flat and host-image verdicts the analyser stamps, and `dsdl-fold-host-image-bodies` rewrites a host image's bodies to one move (2026-09-18; P1). |
-| Codegen shared layer | **6** | Shared planning; semantics still re-rendered per backend. |
+| Codegen shared layer | **6** | One translator over the plan bodies; declarations authored per backend. |
 | LSP (`dsdld`) | **6** | Reuses compiler core (good); ~~unbounded `Content-Length` allocation (OOM DoS)~~ **capped + overflow-safe (2026-07-10)**; ~~DocumentStore thread-safety still open~~ **verified thread-safe (2026-07-15): every method locks `mutex_` and `lookup` returns a snapshot copy, so no reference escapes to a concurrent scheduler-worker request.** |
-| Tools / CLI | **6** | Good arg/exit discipline; embedded-catalog freshness & integrity ungated. |
+| Tools / CLI | **6** | Good arg/exit discipline; embedded-catalogue freshness and integrity gated. |
 | Build / CI / test infra | **6→8** | 206 tests, 8 guard selftests, 15 release-blocking; gates consume executed results; seven CI workflows tracked. A gate that skips half of itself for a missing toolchain still reports a pass. |
 | **Headline-claim integrity** | **5** | The dominant production risk: docs promise proofs the code doesn't deliver. |
 
@@ -156,14 +177,14 @@ library implementations rests on the lint rather than on a differential build.
 
 **Highest leverage — make the claims true or relabel them:**
 
-1. **Re-found the three scorecards on behaviour, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** (`docs/development/convergence-scorecard.md`) rather than made behavioural (it is inherently a marker check). Deriving convergence from generated-output/AST equivalence remains a worthwhile P1 deepening.
-2. ⚠️ **Reopened 2026-09-17** (was ✅ Done 2026-07-03). Renamed `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` and dropped "proof" language; documented `dsdl-legalize-endianness` as validation-only (no byte reordering). ~~mark `--target-endianness big` EXPERIMENTAL/unsupported until byte-swap logic exists~~ — **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement; `serialize_`/`deserialize_` are host-endianness-agnostic and byte-parity-tested against little-endian in the `-l obj` smoke test. Only the zero-copy *view* fast-path is disabled on BE (returns an error), which is correct, not missing. The rename settled the pass's name, not its meaning — the verdict it stamps is about the wire and the API it gates is about host memory. Tracked under P1.
+1. **Re-found the three scorecards on behaviour, not markers.** ✅ **Done (2026-07-03) for parity/malformed/determinism** — they consume `ctest` **pass/fail** (JUnit) via `tools/convergence/ctest_results.py`; a cell is covered only if a matching test ran and passed. Convergence relabeled as an **infrastructure-consistency lint** rather than made behavioural (it is inherently a marker check), and withdrawn with the markers it searched once the backend-contract gate decided the same property from the IR.
+2. ✅ **Closed (2026-09-20).** "Proof" language is gone from the passes that proved nothing, and the renaming that first answered this — which settled a pass's name and not its meaning — was followed by separating the two layout properties it had conflated; see the P1 aliasability entry and [Layout Guarantees](../reference/guarantees/layout.md). The original recommendation to mark big-endian experimental until byte-swap logic exists is **withdrawn as overstated:** DSDL wire is always little-endian, so there is no byte-swap to implement, and `serialize_`/`deserialize_` are host-endianness-agnostic. A host-image type's folded bodies are the little-endian path: the generated header refuses a build it cannot place as little-endian, and `--target-triple` naming a big-endian target emits the field-wise body instead.
 3. **Build the verification the docs already promise:** ✅ **Nunavut differential parity now runs in CI (2026-07-10)** — provisioned + loudly required; byte comparison always-on (non-float byte-exact, float byte-exact except NaN payloads); coverage broadened 6 → 10 cases incl. a byte-exact non-float union, fixed+variable arrays, nested composites, and a narrow scalar. **Reframed and closed (2026-07-12):** Nunavut is a *pinned peer implementation used for corroboration*, not the oracle — the Cyphal Specification is the truth and `spec/dafny/CyphalSerdes.dfy` is the machine-checked oracle. Further coverage expansion is retired by decision; see the P0 entry for the authority hierarchy and rationale.
 
 **Safety / high-assurance:**
 
 4. ✅ **Done (2026-07-03).** Added the `sanitizers` CI lane (linux/toolshed, Clang): ASan+UBSan over the generated native C/C++/Go decoders (via the parity harnesses recompiled instrumented) and a coverage-guided **libFuzzer lane over the generated C deserialisers** on the real UAVCAN corpus, covering the nested-delimited / unions-of-composites / variable-array shapes. See the P0 entry below for the components. *(Remaining P1 deepening: expand the fuzzed type set beyond the curated 7 and enable byte-for-byte serialise re-check assertions inside the fuzz round-trip.)* ✅ **Extended to every runtime (2026-07-12): decoder fuzzing now spans all five languages.** Each memory-safe runtime gets a dedicated decoder-fuzz lane matched to its failure class — **Go** (`llvmdsdl-go-decoder-fuzz`, Go-native `go test -fuzz` over the adversarial UAVCAN set; a slice-bounds panic fails it; seed replay in CI, `LLVMDSDL_GO_FUZZTIME` for the deep run), **Rust** (`llvmdsdl-rust-decoder-fuzz`, deterministic byte stream through each `deserialize` under `catch_unwind`; a panic fails it), and **TS** (`llvmdsdl-ts-decoder-fuzz`, tsc+node over a compact adversarial fixture set; a `RangeError`/`TypeError` escaping `deserialize`, or a hang caught by the harness timeout, fails it) — alongside the existing C libFuzzer lane and the Python malformed-decode-fuzz. All accept-then-round-trip through `serialize`. Result: arbitrary wire bytes into **any** generated decoder produce a decoded object or a clean rejection, never a panic / uncaught fault / hang — verified at 8M (Go), 300k (Rust), 100k (TS) executions with zero faults. This closes the G5 "only the Python runtime is fuzzed" gap.
-5. ✅ **Done (2026-07-10).** Primitive bit-length constraints are now enforced in the frontend parser *and* the `dsdl.io` IR verifier, with per-kind diagnostics. Per the Cyphal Specification these are **signed int [2,64]** (not 1 — `int1` is invalid), **unsigned int [1,64]**, **float ∈ {16,32,64}**, **void [1,64]**. See the P0 entry below. *(This corrects the earlier "int/uint 1..64" shorthand — signed and unsigned have different minimums.)*
+5. ✅ **Done (2026-07-10).** Primitive bit-length constraints are now enforced in the frontend parser *and* the `dsdl.io` IR verifier, with per-kind diagnostics. Per the Cyphal Specification these are **signed int [2,64]** (not 1 — `int1` is invalid), **unsigned int [1,64]**, **float ∈ {16,32,64}**, **void [1,64]**. See the P0 entry below.
 6. **Bound the LSP:** ✅ **`Content-Length` cap done (2026-07-10)** — bounded + overflow-safe before allocation (`lib/LSP/JsonRpcIO.cpp`; see P0). Remaining: make `DocumentStore` access thread-safe (tracked under P1).
 7. **Harden semantics:** checked/`__int128` `Rational` multiply; bound `BitLengthSet` expansion against adversarial `repeatRange`; cap array capacity.
 
@@ -181,7 +202,7 @@ library implementations rests on the lint rather than on a differential build.
 
 ### P0 — Release-blocking (must close before any "high-assurance" claim)
 
-- [x] **Truthful assurance docs.** *(Done 2026-07-03.)* Convergence relabeled as an infrastructure-consistency lint; parity/malformed carry explicit structural-vs-behavioural mode banners; `dsdl-prove-zero-overhead` → `dsdl-annotate-aliasability` (drops "proof"); `dsdl-legalize-endianness` documented validation-only; big-endian docs corrected (`docs/reference/codegen/object.md`). Big-endian **not** marked unsupported — that premise was overstated (big-endian is implemented; see the 2026-07-03 update note).
+- [x] **Truthful assurance docs.** *(Done 2026-07-03.)* Convergence relabeled as an infrastructure-consistency lint; parity/malformed carry explicit structural-vs-behavioural mode banners; "proof" dropped from the name of a pass that annotates, and the endianness pass documented as validation-only; big-endian docs corrected (`docs/reference/codegen/object.md`). Big-endian **not** marked unsupported — that premise was overstated (big-endian is implemented; see the 2026-07-03 update note).
 - [x] **Behavioural gates.** *(Done 2026-07-03.)* Parity/malformed/determinism scorecards consume executed ctest pass/fail via JUnit (`tools/convergence/ctest_results.py`); a cell is `covered` only if a matching test ran and passed (fail/skip/absent ⇒ uncovered). Gates hard-fail on regression (already did) and now on behavioural coverage loss. CI feeds the suite's JUnit into `release-blocking-report-gates` via the `LLVMDSDL_REPORT_GATE_JUNIT` cache var; missing results fail loudly (no silent "no data = pass"). Red-team verified: flipping one parity test to fail breaks the gate. *(Remaining nuance: the in-suite ctest coverage tests still run structurally as a fast pre-check; the authoritative behavioural gate is the post-suite target.)*
 - [x] **Sanitizers + native decoder fuzzing in CI.** *(Done 2026-07-03.)* New `ci-asan`
   preset + `sanitizers` CI job (linux/toolshed, Clang-forced): ASan/UBSan over the
@@ -245,14 +266,10 @@ library implementations rests on the lint rather than on a differential build.
   than promoting to `double` and narrowing back; that round-trip was
   canonicalising signalling-NaN mantissa payloads and was the *sole* source of
   divergence from the reference. Verified byte-exact clean to **1,000,000** random
-  iterations across all 10 cases. *(C/EmitC fix:
-  `lib/Transforms/Passes.cpp` helper type + `lib/Transforms/ConvertDSDLToEmitC.cpp`
-  casts/decl. The Cpp/Rust/Go emitters were width-matched the same day
-  (`lib/CodeGen/HelperBindingRender.cpp` helper + the serialise/deserialize callers
-  in `emitter/Cpp.cpp`/`emitter/Rust.cpp`/`emitter/Go.cpp`), so all four native
-  backends now keep floats native end-to-end and no longer canonicalise NaN via a
-  double round-trip. TS/Python are inherently double-typed and cannot preserve
-  float32 NaN payloads.)* **(d) Coverage broadened 6 → 10
+  iterations across all 10 cases. *(The Cpp/Rust/Go emitters'
+  shared float helper was width-matched the same day, so all four native backends
+  keep floats native end-to-end. TS/Python are inherently double-typed and cannot
+  preserve float32 NaN payloads.)* **(d) Coverage broadened 6 → 10
   cases (2026-07-10)** across new wire shapes, all byte-exact and verified clean
   to 300k iterations: `node.port.SubjectIDList.1.0` (a **byte-exact non-float
   tagged union** — sparse list / bool[8192] bitset / total, the union coverage
@@ -272,9 +289,9 @@ library implementations rests on the lint rather than on a differential build.
   non-conformant MLIR. **The spec gives signed and unsigned integers different
   minimums** — signed **[2, 64]** ("ranging from 2 to 64, inclusive"; the
   single-bit case is `bool`), unsigned **[1, 64]** — plus float ∈ **{16, 32, 64}**
-  and void **[1, 64]**. (The "int/uint 1..64" shorthand in rec 5 / G7 below was
-  imprecise; the spec text and its integer-type table are the authority, and
-  `int1` matches the lexical name pattern `int[1-9]\d*` but is out of range.)
+  and void **[1, 64]**. The spec text and its integer-type table are the
+  authority: `int1` matches the lexical name pattern `int[1-9]\d*` and is out
+  of range.
   Diagnostics read e.g. `invalid signed integer bit length 1; must be in the
   range [2, 64]`. As defense-in-depth, `IOOp::verify()` (`lib/IR/DSDLOps.cpp`)
   re-checks scalar `bit_length` against the same per-kind ranges (void also
@@ -400,7 +417,7 @@ library implementations rests on the lint rather than on a differential build.
   compares them byte-for-byte and fails with per-file detail. libstdc++ and libc++ implement
   different `std::hash`/bucket policies (and the hosts differ in arch and OS), so any future
   `unordered_*` iteration leak into emitted text diverges the manifests. The five string backends
-  compare strictly always; the MLIR/EmitC-routed C backend compares strictly too — the macOS job
+  compare strictly always; the C backend compares strictly too — the macOS job
   pins its Homebrew LLVM to the toolshed's major (llvm@22, asserted in-job so a Homebrew bump
   fails loudly instead of eroding coverage), and the join job passes `--require-c` so any major
   skew that slips through is itself a hard failure, never a silent skip. Bump both sides
@@ -408,46 +425,17 @@ library implementations rests on the lint rather than on a differential build.
   (`*.d`) are excluded (absolute host paths by design). Verified locally: generation is run-to-run
   and build-dir-to-build-dir deterministic on the libc++ side, the comparator's corrupted-manifest
   negative control fails with file-level detail, and the llvm-skew path warns and skips only C.
-- [x] Object backend: escape/validate `targetTriple` and staged paths.
-  ✅ **Done (2026-07-12).** First, the reassuring part: the object backend already invokes the
-  C/C++ compiler and archiver via **argv** (`llvm::sys::ExecuteAndWait`), never a shell, so there
-  was no shell-injection vector (a hostile `--target-triple` can only ever be an inert `--target=`
-  payload) — "escape" was moot; **validation** was the gap. Added: `--target-triple` is now checked
-  against a conservative charset (hyphen-separated `[A-Za-z0-9._-]`, no leading dash, ≤128 chars) so
-  whitespace/path/shell metacharacters are rejected up front with a clear diagnostic; `--obj-archive-name`
-  must be a single safe filename component (no path separators or `..`), closing an archive-path
-  traversal where `../../evil` would escape `--outdir`; and every derived object/archive path is
-  containment-checked (`isPathWithinRoot`) to refuse writes outside the output root as
-  defense-in-depth behind the input validation. New negative cases in `test/lit/cli.txt` prove the
-  malicious triple and traversal archive name are rejected while a valid triple still passes.
-
-- [x] **`obj --obj-abi-language cpp` publishes a header set that does not build from `-I<outdir>`.**
-  ✅ **Done (2026-08-25).** Both bugs had one cause: in this lane the C output is staged *under*
-  `c/` inside the C++ stage, and the generated ABI headers include it from there, but it was
-  published relative to the C stage root — which flattens the `c/` prefix away. One expression
-  (`cPublishStageRoot`) picks the C++ stage root in this lane, and the C headers land at
-  `c/<ns>/X.h` where the includes already point. The double-written `dsdl_runtime.h` falls out with
-  it: the real runtime now lands at `c/dsdl_runtime.h`, so the forwarder at the root no longer
-  overwrites anything. `--list-outputs` reports the new paths, and the published layout is now
-  documented in [object.md](../reference/codegen/object.md). The smoke test compiles against
-  `<outdir>` instead of `.obj_stage_cpp` and asserts the two runtime headers are the right way round
-  — a compile alone would not catch a missing forwarder, since a quoted include resolves against the
-  including file's own directory first. Verified load-bearing by reverting the fix and watching the
-  test fail.
-  Found 2026-08-23 while mapping the lane's C/C++ boundary for the identifier-naming work; reported
-  as two independent bugs in `publishStagedHeaders` (`lib/CodeGen/ObjectEmitter.cpp`), neither
-  covered by a test. They turned out to be one.
-  1. The C headers publish relative to the *C* stage root and the C++ headers relative to the *C++*
-     stage root, so the C headers land at `<outdir>/<ns>/X_1_0.h` while the published
-     `abi/<ns>/X_1_0_abi.hpp` includes them as `"c/<ns>/X_1_0.h"` — a path that exists only in
-     staging. A consumer given `-I<outdir>` cannot compile the artefact they were handed.
-  2. `<outdir>/dsdl_runtime.h` is written twice: first the real C runtime header
-     (`ObjectEmitter.cpp:516`), then overwritten by a forwarder reading `#include
-     "c/dsdl_runtime.h"` (`:641`), which dangles for the same reason.
-
-  `llvmdsdl-obj-cpp-backend-smoke` misses both because it compiles against
-  `<outdir>/.obj_stage_cpp` — the staging tree — rather than the published output. Fixing the test
-  to use the published tree is the part that keeps it fixed.
+- [x] Object backend: no C text, no staging tree, no host compiler.
+  ✅ **Done (2026-09-05, #22).** `--target-language obj` lowers each definition through
+  `convert-dsdl-to-llvm` and `emit-dsdl-runtime` and assembles it inside `dsdlc`, publishing the
+  headers `-l c` generates beside one object per definition. `--target-triple` is resolved through
+  LLVM's target registry, so an unknown target is a diagnostic naming it and every target the
+  build's LLVM carries is available. Six acceptance gates under `ctest -L direct-lowering-gate`
+  hold strictly, three of them mechanism gates: objects are produced with an empty `PATH` and `CC`
+  unset; no `.c` reaches the output tree or `TMPDIR`; and a 32-bit RISC-V ELF comes out on a host
+  with no toolchain for it. Gate 6 reads every published header's entry points against its own
+  object's symbol table, which is where a plan the builder had declined would otherwise reach the
+  user's build as a link error. See [Direct Object Lowering](direct-object-lowering.md).
 
 - [x] **Complete aliasability.** *(Found 2026-09-17; G6. Closed 2026-09-20 by #33.)*
   `dsdl-annotate-aliasability` decided a property of the **wire** and stamped it onto an API that
@@ -505,7 +493,7 @@ library implementations rests on the lint rather than on a differential build.
   `test/lit/dsdl-field-invalid-empty-name.mlir`. This closes the G2 "dead ops" note and the
   G6 "post-hoc verifier" critique.
 - [ ] Split the largest emitters (Ts ~2.1k, Cpp ~2.0k LOC) into syntax/planning/naming modules.
-- [x] LLVM-version lock + multi-version EmitC testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
+- [x] LLVM-version lock + multi-version MLIR testing; LSP logging for post-mortems; document the LSP "AI" surface's data flow.
   **LSP adversarial data-flow / robustness audit done (2026-07-12) — four DoS defects
   found and fixed** in code the review had rated as done. All are unbounded-growth on
   attacker-controlled JSON-RPC input: **(1)** `Telemetry` keyed `requestCounts_` by the raw
@@ -526,8 +514,9 @@ library implementations rests on the lint rather than on a differential build.
   dispatch and param parsers (position/range/uri) are optional-based and guarded (negatives
   rejected, empty-container guards present, fixed-size array indexing); the redaction/gate
   consistency holds. ✅ **LLVM-version-lock write-up done (2026-07-15)** — `docs/reference/guarantees/supply-chain.md`
-  records why the major is a semantic input to the output (MLIR/EmitC text may vary across MLIR
-  majors, so the lock is what makes the reproducibility guarantee meaningful), where it is
+  records why the major is a semantic input to the output (MLIR's canonicalisation and LLVM's code
+  generation both reach the emitted bytes, so the lock is what makes the reproducibility
+  guarantee meaningful), where it is
   enforced (CI pins on both hosts; `--require-c` turns a major skew into a hard failure rather
   than silently retiring C coverage), and that the build itself does not assert it.
   ✅ **The "MLIR verify diagnostics leak to stderr" concern was investigated and does not exist**
@@ -557,28 +546,28 @@ library implementations rests on the lint rather than on a differential build.
   network persistence — redacted *before* a 4096-byte cap so truncation cannot unmask a secret,
   ringed at 256 records for a ~1 MiB bound). Honest about the limit: redaction is pattern-based
   masking of known secret shapes, not a proof of absence.
-  ✅ **LLVM-version lock made authoritative + multi-version EmitC testing descoped (2026-07-17).**
+  ✅ **LLVM-version lock made authoritative + multi-version MLIR testing descoped (2026-07-17).**
   Maintainer decision: pin to LLVM 22 (23 is not yet stable). The lock is now enforced at configure
   time (`CMakeLists.txt` asserts `LLVM_VERSION_MAJOR == LLVMDSDL_REQUIRED_LLVM_MAJOR`, default 22, with
   a `-DLLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH=ON` escape hatch for evaluating a future major) rather than
   by CI alone, so an accidental build against another major fails loudly instead of silently producing
-  divergent EmitC. "Multi-version EmitC testing" is explicitly **descoped**: it competes with the lock
-  (the lock exists precisely because EmitC text may vary across MLIR majors), so guaranteeing
-  reproducibility against one major is the strategy, not chasing stability across several. Rationale
+  divergent output. "Multi-version MLIR testing" is explicitly **descoped**: it competes with the lock
+  (the lock exists precisely because the emitted bytes are downstream of MLIR's own machinery), so
+  guaranteeing reproducibility against one major is the strategy, not chasing stability across
+  several. Rationale
   and the path to revisit are recorded in `docs/reference/guarantees/supply-chain.md`. **This line item is now complete.**
 - [x] Security review of union-tag handling across backends; supply-chain/SBOM for release artifacts.
   ✅ **Union-tag review done (2026-07-12); SBOM done (2026-07-15).** The review was cheap because
-  the prologue is now single-source (`buildUnionSectionSteps` + five spellings + the C/EmitC
-  path). **One real defect found and fixed (UT-1, high — decode-time type confusion from
+  the union prologue is built once, in the plan bodies every backend translates. **One real defect found and fixed (UT-1, high — decode-time type confusion from
   untrusted bytes):** the union tag was stored in a hardcoded 8-bit field
-  (`u8`/`uint8`/`std::uint8_t`/`uint8_t`) in **every native backend (C string, C/EmitC, C++,
-  Rust, Go) and the object/ABI backend**, while the compiler computes a **16-bit wire tag**
+  (`u8`/`uint8`/`std::uint8_t`/`uint8_t`) in **every native backend (C, C++, Rust, Go) and the
+  object backend**, while the compiler computes a **16-bit wire tag**
   for unions with 257–65536 options (the mask helper is literally `& 65535`). Effect on a
   spec-legal >256-option union: serialise cannot represent options ≥256, and **deserialise
   truncated the 16-bit wire tag into the 8-bit store → wire tag 256 decoded as option 0**
-  (type confusion), or a corrupted round-trip (the C/EmitC path dispatched on the untruncated
-  value but stored a truncated `_tag_`). Fix: tag storage now tracks `resolveUnionTagBits`
-  (`unsignedStorageType(tagBits)` / the EmitC `(uint16_t)` store cast); a no-op for every
+  (type confusion), or a corrupted round-trip, dispatching on the untruncated value while
+  storing a truncated `_tag_`. Fix: tag storage tracks the computed tag width
+  through `unsignedStorageType`; a no-op for every
   ≤256-option union, so the **full UAVCAN corpus is byte-identical** across all six backends
   and the ABI/object lanes. Behaviourally verified: a 300-option union now round-trips
   option 256 in generated C (`tag=256` preserved; previously decoded as `tag=0`). Regression
@@ -608,7 +597,7 @@ library implementations rests on the lint rather than on a differential build.
   inputs, not shipped). The generator carries no wall-clock timestamp or random serial, so it
   regenerates byte-identically and does not undercut the reproducibility lanes. See
   `docs/reference/guarantees/supply-chain.md`.
-- [x] **Float serialisation: avoid the `float→double→float` round-trip.** ✅ **C/EmitC done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signalling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match is now applied to the shared float helper (`lib/CodeGen/HelperBindingRender.cpp`: `const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialise/deserialize caller (`emitter/Cpp.cpp`, `emitter/Rust.cpp`, `emitter/Go.cpp`), so all four native backends keep floats in native width end-to-end and no longer canonicalise signalling-NaN payloads via a double round-trip. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **Locked in by directed signalling-NaN payload regression cases** added to the cpp-c, c-rust, and c-go parity harnesses (feed the sNaN wire bytes `01 00 80 7F`, deserialise→reserialise, assert the quiet bit stays clear); a mutation reintroducing the round-trip makes them fail. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless. *(Open spec question about what "the original value will be preserved" means for a NaN at `float16` width is captured in github issue 39.)*
+- [x] **Float serialisation: avoid the `float→double→float` round-trip.** ✅ **C done (2026-07-10)** — the scalar-float helper is width-matched (f32 for 16/32-bit, f64 for 64-bit), so C keeps floats native end-to-end and preserves signalling-NaN payloads, giving byte-exact reference parity for all float-carrying types (`register.Value`, `Real32`) at 1M iterations. ✅ **Cpp/Rust/Go done (2026-07-10)** — the same width-match was applied to the shared float helper (`const float`/`f32`/`float32` for 16/32-bit, `double`/`f64`/`float64` for 64-bit) and every serialise/deserialise caller, so all four native backends keep floats in native width end-to-end. Verified against the uavcan-cpp-c-parity, uavcan-c-go-parity, uavcan-c-rust-parity, and generation suites. **Locked in by directed signalling-NaN payload regression cases** added to the cpp-c, c-rust, and c-go parity harnesses (feed the sNaN wire bytes `01 00 80 7F`, deserialise→reserialise, assert the quiet bit stays clear); a mutation reintroducing the round-trip makes them fail. **TS/Python are out of scope**: both are inherently double-typed and cannot preserve float32 NaN payloads, so full cross-language NaN byte-parity is not achievable regardless. *(Open spec question about what "the original value will be preserved" means for a NaN at `float16` width is captured in github issue 39.)*
 
 The MLIR pipeline, the hardened frontend, the runtime, and the differential-testing harness are built and largely sound. What stands between this and "high-assurance public release" is mostly **(a) making the verification as strong as the documentation already claims it is**, and **(b) relabeling the few claims that are inherently marketing.** That is a focused, weeks-not-years effort, and most of it is additive testing rather than rearchitecting.
 

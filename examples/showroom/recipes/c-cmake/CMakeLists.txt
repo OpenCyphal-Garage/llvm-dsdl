@@ -20,7 +20,7 @@ add_executable(roundtrip src/c/roundtrip.c)
 target_link_libraries(roundtrip PRIVATE lanyard)
 
 # --------------------------------------------------------------------------------------------------
-# The obj backend: the same types as a prebuilt archive rather than as sources.
+# The obj backend: the same types as prebuilt objects rather than as sources.
 #
 # `-l obj` lowers the schema to LLVM IR and assembles it, handing back the headers and the
 # objects. No C is written and no compiler is invoked, so the generated code is built once -- for a

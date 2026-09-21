@@ -108,7 +108,7 @@ Update or add tests in `test/unit/LspLintTests.cpp`:
 
 If diagnostics goldens are affected, update:
 
-- `test/unit/lint/golden/lint_fixture_diagnostics.golden`
+- `test/lint/golden/lint_fixture_diagnostics.golden`
 
 Run:
 

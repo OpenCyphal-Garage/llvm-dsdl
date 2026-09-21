@@ -4,21 +4,21 @@
 source and no host compiler. Six acceptance gates under `ctest -L direct-lowering-gate`,
 described in [Acceptance](#acceptance) below, hold strictly.
 
-## The serialisation is not in the IR
+## The serialisation was not in the IR
 
-The obvious reading of "lower to LLVM" is that an LLVM conversion is added beside the existing
-EmitC one. That is not the shape of the work, because the serialisation is not in the IR to
-convert.
+The obvious reading of "lower to LLVM" was that an LLVM conversion is added beside the EmitC one
+that then rendered C. That was not the shape of the work, because the serialisation was not in
+the IR to convert.
 
-`dsdlc --target-language c` over the UAVCAN corpus emits 362 serialise and deserialise function
-bodies, and every one of them is a string literal in an `emitc.verbatim` op — braces, `for`
+`dsdlc --target-language c` over the UAVCAN corpus emitted 362 serialise and deserialise function
+bodies, and every one of them was a string literal in an `emitc.verbatim` op — braces, `for`
 loops, runtime calls and all.
 
-What is real IR is the helper predicates: `capacity_check` is an `arith.cmpi` and an `scf.if`,
-and so are the saturation helpers, `validate_union_tag`, `validate_array_length` and
-`array_length_prefix`. The plan predicates are compiled. The plan execution is text.
+The real IR was the helper predicates: `capacity_check` is an `arith.cmpi` and an `scf.if`, and
+so are the saturation helpers, `validate_union_tag`, `validate_array_length` and
+`array_length_prefix`. The plan predicates were compiled. The plan execution was text.
 
-`DSDL_BitReadOp` and `DSDL_BitWriteOp` are declared in
+`DSDL_BitReadOp` and `DSDL_BitWriteOp` were declared in
 [`DSDLOps.td`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/IR/DSDLOps.td) and constructed nowhere in `lib/`. The
 vocabulary for representing bit-level serialisation was defined and never used.
 
@@ -28,8 +28,7 @@ guess.
 ## The serialisation becomes IR
 
 `lower-dsdl-exec` constructs `dsdl.bit_write`/`dsdl.bit_read` instead of formatting C, and those
-lower to `arith`/`scf` over a byte pointer. The C backend consumes the result through the
-existing EmitC conversion.
+lower to `arith`/`scf` over a byte pointer.
 
 No LLVM code is written in this phase, and that is the point. It carries essentially all of the
 risk and effort, and it can be finished and proven before any of the LLVM work starts.
@@ -40,7 +39,7 @@ Two properties make it tractable:
   [`spec/dafny/CyphalSerdes.dfy`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/spec/dafny/CyphalSerdes.dfy) pin the wire bytes, and no
   golden snapshot pins C source text. The C text being replaced is the specification of the
   behaviour, and the wire bytes must not move; the shape of the generated C is expected to
-  change, because EmitC renders it rather than a string formatter.
+  change, because the translator renders it rather than a string formatter.
 - **Progress is a number.** The count of `_ir_` function bodies rendered as text goes from 362
   towards 0, counted over `dsdlc --target-language c +uavcan` output. 332 are operations:
   scalars, arrays of scalars and of composites, alignment, void fields, nested composites
@@ -136,36 +135,18 @@ holds composites -- so the count does not move, but the fixture suites cover it.
 
 ### The pointer type
 
-The serdes signatures take pointers, and the helper predicates that exist today take only `i64`
-and `i8`, so the dialect has no pointer to reuse. Add `!dsdl.ptr<T>`, mapped by
-`convert-dsdl-to-emitc` to `!emitc.ptr<T>` and by `convert-dsdl-to-llvm` to `!llvm.ptr`.
+The serdes signatures take pointers, and the helper predicates take only `i64` and `i8`, so the
+dialect has no pointer to reuse. Add `!dsdl.ptr<T>`, spelled by each source backend in its own
+language and mapped by `convert-dsdl-to-llvm` to `!llvm.ptr`.
 [`DSDLTypes.td`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/IR/DSDLTypes.td) already carries parametric `TypeDef`s
 to follow.
 
-Building the bodies on `!emitc.ptr` directly would work for the C path and would have to be
-redone for the LLVM conversion, which is the failure this design avoids.
+Building the bodies on one target's own pointer type would work for that target and would have
+to be redone for every other, which is the failure this design avoids.
 
 `DSDL_BitReadOp` and `DSDL_BitWriteOp` as declared take a width and a saturating flag, with no
 operands and no results. They cannot express a bit write and are a redefinition rather than a
 starting point.
-
-### The existing lowering path
-
-[`emitter/C.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/C.cpp) already runs `createSCFToEmitC`,
-`createConvertArithToEmitC`, `createConvertFuncToEmitC` and `translateToCpp`, which is how the
-helper predicates become C today. Checked against upstream `mlir-opt`/`mlir-translate`, that
-path also renders everything the serdes bodies need:
-
-| IR | C |
-| --- | --- |
-| `func.func` argument of pointer type | `int8_t* v1` |
-| `emitc.subscript` + `emitc.load` | `v5 = v3[v4]` |
-| `emitc.assign` to a subscript lvalue | `v3[v4] = v7` |
-| `emitc.call` to a private declaration | `dsdl_runtime_copy_bits(v2, v4, v8, v1, v4)` |
-| `scf.if` yielding a value | `if/else` over a declared variable |
-
-`emitc.apply "*"` does not produce an lvalue and cannot be used to write through the in/out size
-pointer; `emitc.subscript` is the form that works.
 
 ### The operations the typed path needs
 
@@ -183,8 +164,8 @@ pointer-to-pointer bit copy is the rare bulk case rather than the shape to build
 
 So the operation set is a value write and a value read carrying buffer, capacity, bit offset,
 width and an error result, plus addressing for the struct member the value comes from --
-`emitc.member_of_ptr` on the C path, and a computed offset into the published struct layout for
-object emission.
+the member's own name for a source backend, and a computed offset into the published struct
+layout for object emission.
 
 ### Per-target resolution
 
@@ -206,7 +187,7 @@ So the object emission defines the primitives in the module and each object carr
 `convert-dsdl-to-llvm`, then the upstream conversions: `convert-scf-to-cf`,
 `convert-cf-to-llvm`, `convert-arith-to-llvm`, `convert-func-to-llvm`.
 
-Bodies are built by `build-dsdl-plan-bodies`, ahead of `convert-dsdl-to-emitc`, so that a
+Bodies are built by `build-dsdl-plan-bodies`, ahead of every target conversion, so that a
 plan becomes operations before a target is chosen. Its cleanup is scoped to the functions it
 built: a `dsdl.serialization_plan` holds a region, has no results and no memory effects, so a
 module-wide canonicalisation deletes the plans the next pass has to read.
@@ -249,10 +230,10 @@ reads it next.
 The C names are the conversions' to add. Lowering stamps the unscoped, unversioned spelling of
 every C name on the schema, because it does not know a backend's naming options; a backend
 rewrites them through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/SchemaNaming.cpp),
-using the same scopes and renderers it names its own output with, and `convert-dsdl-to-emitc`
-and `convert-dsdl-to-llvm` read the stamped schema when they spell a body.
+using the same scopes and renderers it names its own output with, and the C spelling and
+`convert-dsdl-to-llvm` read the stamped schema when they spell a body.
 `llvmdsdl.headers_available` says the generated header can be included, and gates the includes
-the C conversion emits.
+the C backend emits.
 
 `--target-language mlir` stamps the module it prints, which is what makes its symbols the ones
 a generated header declares. It refuses unless every schema was stamped, the embedded catalogue

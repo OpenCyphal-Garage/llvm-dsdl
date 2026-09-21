@@ -234,21 +234,18 @@ ctest --preset test-ci-release-blocking
 ```
 
 These lanes include runtime benchmark threshold gates by default.
-They also include execution-engine boundary validation (shared emitter orchestration guards).
 They also include hard-cut integrity validation (no-shim canonical-path guard).
 Threshold policy is 5% regression budget vs in-repo baselines in:
 - [`test/integration/python_runtime_bench_thresholds.json`](./test/integration/python_runtime_bench_thresholds.json)
 - [`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json)
 If an intentional performance shift is accepted, update these files in the same PR.
 
-Convergence/runtime validator self-tests:
+Guard self-tests. Each exercises its guard rather than the tree the guard runs over, so a guard
+that has stopped guarding fails here rather than passing quietly:
 
 ```bash
-ctest --preset test-dev-homebrew-full -R 'llvmdsdl-(convergence-scorecard-selftest|convergence-matrix-reports-selftest|runtime-semantic-wrapper-allowlist-selftest|execution-engine-boundary-guard-selftest|hard-cut-integrity-guard-selftest)'
+ctest --preset test-dev-homebrew-full -R 'llvmdsdl-.*-selftest'
 ```
-
-Convergence scorecards include helper-binding completeness classification
-alongside verifier-first, contract-v2, and fallback-free dimensions.
 
 CI accelerator-required lane:
 
@@ -291,13 +288,12 @@ Formatting rewrite:
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target format-source
 ```
 
-Convergence/parity/contract report targets. Each writes two things: the JSON the gate consumes, into
-the build tree, and the markdown *page* it produces, into `docs/` — `parity-matrix.md`,
-`malformed-input.md`, and `determinism.md` under `docs/reference/guarantees/`, and
-`docs/development/convergence-scorecard.md`. Those pages are generated and gitignored.
+Parity/contract/determinism report targets. Each writes two things: the JSON the gate consumes,
+into the build tree, and the markdown *page* it produces, into `docs/` — `parity-matrix.md`,
+`malformed-input.md` and `determinism.md` under `docs/reference/guarantees/`. Those pages are
+generated and gitignored.
 
 ```bash
-cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target convergence-report
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target parity-matrix-report
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target malformed-contract-report
 cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target determinism-matrix-report
@@ -519,9 +515,9 @@ checks out without submodules has none of that, and the failure is not subtle �
 therefore checks out with `submodules: recursive`; if you touch a `checkout` step, re-read this
 paragraph before trusting a green local run.
 
-The repository's [`.actrc`](./.actrc) already pins `--container-architecture` and `--pull=false`, so
-the toolshed image has to be present locally; `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once
-if it is not.
+`act` takes `--container-architecture` for your host and `--pull=false` so it uses the image you
+already have; a `.actrc` at the repository root carries both. It is gitignored, so write your own,
+and `docker pull ghcr.io/opencyphal/toolshed:ts26.4.3` once if the image is not present.
 
 ### 11.7 How the site gets published
 
