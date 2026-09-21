@@ -259,9 +259,9 @@ with the includes its bodies reach for, and a nested type's C name comes from th
 refers to it, its schema not being cloned into a source build's module. C is the first backend to
 translate an initialise body as a function, which `BodySpelling::declareCallInitialize` is the
 hook for. Over the regulated corpus the generated C is 38% smaller, 67,835 lines to 42,039, and
-570 anonymous values fall to 115. The parity lanes against every other language, the sanitizer
-and fuzz lanes, the object lane, which compares its wire bytes against this one transcript for
-transcript, and the generation lane accept it.
+570 anonymous values fall to 115. The parity lanes against every other language accept it, as do the
+sanitizer, fuzz and generation lanes, and the object lane, which compares its wire bytes against
+this one, transcript for transcript.
 
 Two dead comparisons surfaced in the port, both of them `-Werror=type-limits` under GCC and both
 in the plan rather than in a spelling. A plan whose type needs no bits fits whatever buffer it is

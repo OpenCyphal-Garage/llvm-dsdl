@@ -1563,7 +1563,12 @@ public:
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
-        w.line(names(op.getObject()) + "->_tag_ = (uint8_t) " + names(op.getValue()) + ";");
+        // The width the declaration gave the tag: a union of more than 256 options carries it in
+        // more than a byte, and narrowing the write here would dispatch the wrong arm.
+        const CBodyMember* const found = memberOf(op.getObject(), "_tag_");
+        const std::string        storage =
+            unsignedStorageType(static_cast<std::uint32_t>((found == nullptr) ? 8 : found->bitLength));
+        w.line(names(op.getObject()) + "->_tag_ = (" + storage + ") " + names(op.getValue()) + ";");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
