@@ -95,14 +95,10 @@ target_link_libraries(llvmdsdlCodeGen
   llvmdsdlLowering
   llvmdsdlTransforms
   llvmdsdlSerDes
-  MLIRFuncToEmitC
-  MLIRArithToEmitC
-  MLIRSCFToEmitC
   MLIRReconcileUnrealizedCasts
   MLIRParser
-  MLIRTargetCpp
   MLIRTransforms
-  # The object lane finishes the lowering the C lane hands to EmitC, then assembles it. The
+  # The object lane finishes the lowering the plan bodies are built into, then assembles it. The
   # target backends are linked whole so that emitting for a target is a matter of naming it.
   MLIRSCFToControlFlow
   MLIRControlFlowToLLVM

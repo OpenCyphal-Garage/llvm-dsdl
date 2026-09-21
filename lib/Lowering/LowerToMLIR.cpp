@@ -256,7 +256,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 mlir::OperationState fieldState(loc, "dsdl.field");
                 fieldState.addAttribute("name", builder.getStringAttr(field.name));
                 // The unscoped default. The C backend stamps the scoped name over this before it
-                // converts to EmitC, because only it knows what the struct declaration spells; what
+                // spells the bodies, because only it knows what the struct declaration spells; what
                 // stays here is what keeps hand-driven `dsdl-opt` runs able to name a member at all.
                 fieldState.addAttribute("c_name",
                                         builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,

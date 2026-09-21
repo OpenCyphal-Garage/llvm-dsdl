@@ -74,7 +74,6 @@
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Target/Cpp/CppEmitter.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -1576,9 +1575,14 @@ public:
         const mlir::Type  valueType = op.getValue().getType();
         const std::string primitive =
             runtimePrimitive(true, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
+        const bool integral = !mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1);
+        // A signed field's primitive takes a signed carrier, and the plan's i64 is spelt unsigned;
+        // converting it implicitly is implementation-defined above INT64_MAX.
+        const std::string value =
+            (integral && op.getIsSigned()) ? ("(int64_t) " + names(op.getValue())) : names(op.getValue());
         std::string arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) + ", (size_t) " +
-                                names(op.getBitOffset()) + ", " + names(op.getValue());
-        if (!mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1))
+                                names(op.getBitOffset()) + ", " + value;
+        if (integral)
         {
             arguments += ", (uint8_t) " + std::to_string(op.getWidth());
         }

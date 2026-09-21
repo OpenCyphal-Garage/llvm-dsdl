@@ -34,7 +34,6 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -824,11 +823,8 @@ int runBackendContract(int argc, char** argv)
     }
 
     mlir::DialectRegistry registry;
-    registry.insert<mlir::dsdl::DSDLDialect,
-                    mlir::func::FuncDialect,
-                    mlir::arith::ArithDialect,
-                    mlir::scf::SCFDialect,
-                    mlir::emitc::EmitCDialect>();
+    registry
+        .insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
     mlir::MLIRContext context(registry);
     context.loadAllAvailableDialects();
 

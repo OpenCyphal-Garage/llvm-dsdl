@@ -17,7 +17,6 @@ target_link_libraries(llvmdsdlIR
   PUBLIC
   MLIRIR
   MLIRFuncDialect
-  MLIREmitCDialect
 )
 
 target_include_directories(llvmdsdlIR PUBLIC
