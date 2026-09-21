@@ -10,9 +10,9 @@
 /// @file
 /// Lowers DSDL plan operations into the LLVM dialect, for emission as objects.
 ///
-/// The counterpart of convert-dsdl-to-emitc over the same bodies. Where that one maps the
-/// dialect onto C's spellings, this one maps it onto addresses and calls. The two targets
-/// disagree there: a plan says "the member at index 2", and C answers
+/// The counterpart of a source backend's spelling over the same bodies. Where a spelling maps
+/// the dialect onto a language's own syntax, this one maps it onto addresses and calls. The two
+/// targets disagree there: a plan says "the member at index 2", and C answers
 /// with a name while LLVM answers with an offset.
 ///
 //===----------------------------------------------------------------------===//
@@ -656,7 +656,7 @@ mlir::Type structBehind(mlir::Type pointee, const llvm::StringMap<mlir::Type>& c
 
 /// @brief The runtime primitive a scalar access resolves to.
 ///
-/// The same selection convert-dsdl-to-emitc makes, on the same grounds: the runtime spells one
+/// The same selection the C spelling makes, on the same grounds: the runtime spells one
 /// primitive per value shape rather than one generic call.
 std::string runtimePrimitiveName(const bool write, mlir::Type valueType, const std::int64_t width, const bool isSigned)
 {

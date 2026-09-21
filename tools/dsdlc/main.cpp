@@ -19,7 +19,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/TargetParser/Triple.h>
-#include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -1640,17 +1639,13 @@ int runDsdlc(int argc, char** argv)
         !options.noEmbeddedUavcan && (options.targetLanguage == "mlir" || isCodegenLanguage(options.targetLanguage));
 
     mlir::DialectRegistry registry;
-    registry.insert<mlir::dsdl::DSDLDialect,
-                    mlir::func::FuncDialect,
-                    mlir::arith::ArithDialect,
-                    mlir::scf::SCFDialect,
-                    mlir::emitc::EmitCDialect>();
+    registry
+        .insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect, mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
     mlir::MLIRContext context(registry);
     context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
     context.getOrLoadDialect<mlir::func::FuncDialect>();
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::emitc::EmitCDialect>();
 
     std::optional<llvmdsdl::UavcanEmbeddedCatalog> embeddedCatalog;
     if (useEmbeddedUavcan)

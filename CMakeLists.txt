@@ -52,12 +52,13 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 
-# LLVM major-version lock. The C backend is routed through MLIR/EmitC, whose printed output can vary
-# across MLIR majors (which are released with LLVM), so the linked major is a semantic input to the
-# byte-reproducible generated code -- see docs/reference/guarantees/supply-chain.md. Pinning one major and testing across
-# many are competing strategies; this project takes the pin. Asserting it at configure time makes the
-# lock authoritative everywhere, so an accidental build against another major fails loudly instead of
-# silently producing divergent EmitC.
+# LLVM major-version lock. The object lane gives its module to LLVM's optimiser and code generator,
+# and every lane reaches MLIR's canonicaliser under `--optimize-lowered-serdes`, so the linked major
+# is a semantic input to the byte-reproducible generated code -- see
+# docs/reference/guarantees/supply-chain.md. Pinning one major and testing across many are competing
+# strategies; this project takes the pin. Asserting it at configure time makes the lock
+# authoritative everywhere, so an accidental build against another major fails loudly instead of
+# silently producing divergent output.
 #
 # Bumping the major is a one-line change here plus updating the CI pins together (both determinism
 # hosts must move at once). A maintainer evaluating another major
@@ -71,7 +72,7 @@ if(NOT LLVM_VERSION_MAJOR STREQUAL LLVMDSDL_REQUIRED_LLVM_MAJOR)
   if(LLVMDSDL_ALLOW_LLVM_MAJOR_MISMATCH)
     message(WARNING
       "LLVM major ${LLVM_VERSION_MAJOR} != locked major ${LLVMDSDL_REQUIRED_LLVM_MAJOR}; "
-      "byte-reproducibility of the C/EmitC backend is not guaranteed against this toolchain.")
+      "byte-reproducibility of the generated code is not guaranteed against this toolchain.")
   else()
     message(FATAL_ERROR
       "LLVM/MLIR major ${LLVM_VERSION_MAJOR} does not match the locked major "

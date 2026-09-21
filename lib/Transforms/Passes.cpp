@@ -251,6 +251,13 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp              
     const auto        schemaSym   = schema.getSymNameAttr();
     const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+    if (nonNegative(plan.getMaxBits()) == 0)
+    {
+        // A plan that needs no bits fits whatever it is given. There is no capacity to check, so
+        // there is no helper to call and none to build: `max_bits` is where a reader looks to see
+        // that the plan says so.
+        return mlir::success();
+    }
     const std::string funcName =
         "llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
     plan.setLoweredCapacityCheckHelperAttr(builder.getStringAttr(funcName));
@@ -2065,7 +2072,6 @@ void registerDSDLPasses()
                             "Lower serialisation plans to serialise and deserialise functions of dialect operations",
                             [](mlir::OpPassManager& pm) { addLowerDSDLBodiesPipeline(pm, false); });
     registerBuildDSDLPlanBodiesPass();
-    registerDSDLConvertPasses();
     registerEmitDSDLRuntimePass();
     registerDSDLToLLVMPasses();
 }

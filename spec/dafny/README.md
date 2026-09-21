@@ -1,16 +1,14 @@
 # CyphalSerdes — formal control-flow / round-trip model (Dafny)
 
-A Dafny model of Cyphal DSDL serialise/deserialize as functions over an abstract wire,
-with machine-checked proofs. It is the normative **oracle** for the emit-order verifier
-(B1): the op-orderings established here are what each generated backend
-(C/C++/Rust/Go/TS/Python) is checked against. The prose
-[canonical-emit-order.md](../../docs/reference/codegen/emit-order.md) is the
-human-readable projection of this module.
+A Dafny model of Cyphal DSDL serialise/deserialise as functions over an abstract wire,
+with machine-checked proofs. It is the **oracle** for the op orderings the generated
+serialisation must follow: the orderings established here are the ones
+`build-dsdl-plan-bodies` builds into the plan bodies every backend translates.
 
 ## Scope (deliberate)
 
 Models the **sequence of wire operations** and the **structural invertibility** of
-serialise/deserialize. The wire is an ordered stream of typed *tokens*; a scalar's value is
+serialise/deserialise. The wire is an ordered stream of typed *tokens*; a scalar's value is
 an opaque tag that must survive the round trip.
 
 **Token granularity:** tokens are atomic — the model never splits a field. This is exact for
@@ -34,9 +32,10 @@ pinned Nunavut lane as *corroboration*.
 1. **The Cyphal Specification is the truth.**
 2. **This model is the machine-checked oracle** for what it models (op ordering, structural
    round-trip, read-path bounds safety), re-verified in CI on every change.
-3. **Enforcement is spec-derived**: the emit-order verifier checks every string backend
-   against the ordering class proven here; the primitive golden vectors pin absolute wire
-   bytes at the primitive level; cross-backend parity pins self-consistency.
+3. **Enforcement is spec-derived**: every backend's bodies are translations of one plan-body
+   IR, held there by `ctest -L backend-contract`, so the ordering proven here has one
+   implementation to answer for rather than six; the primitive golden vectors pin absolute
+   wire bytes at the primitive level; cross-backend parity pins self-consistency.
 4. **Nunavut is a pinned peer implementation, not a reference.** Agreement corroborates;
    a mismatch is an investigation *adjudicated by the specification* — it is as likely to
    be a Nunavut defect as one of ours, and neither side wins by default.
@@ -50,7 +49,7 @@ pinned Nunavut lane as *corroboration*.
 | **Tolerant decoding** — DSDL implicit truncation + zero extension, at token granularity: exhausted wire reads as zeros, delimited sections consume exactly their declared length, present-but-wrong data still errors | `DeCompat`; `DeCompatConservative` — agrees with `De` on every wire `De` accepts; `DeCompatRoundTrip`; `ZeroExtension` + `ZeroValueConforms`; `DeCompatConforms`; concrete `CompatTolerates`/`CompatStillRejects` bounds | Conservative extension is **unbounded**; the tolerance shape is pinned by CI-enforced concrete checks |
 | **Version-skew compatibility** — the extensibility contract: for `Evolves(tNew, tOld)` (field append at *delimited* boundaries only), a new reader decodes an old wire to `Upgrade(v)` (appended fields read as zeros) and an old reader decodes a new wire to `Downgrade(v)` (appended fields skipped via the delimiter) | `lemma OldWireNewReader` / `lemma NewWireOldReader` (+ seq/elems/section-body lemmas and zero-footprint support); `UpgradeConforms`/`DowngradeConforms`; `VersionSkewExample` is the concrete CI-enforced bookend | **Unbounded**, both directions; sealed layouts admit **no** append rule — adding one breaks the proofs (mutation-tested) |
 | **Bounds safety** — `De` never reads past the buffer on any wire (truncated, empty, adversarial) | `De` is a **total** `function` with no precondition; Dafny rejects any unguarded token access | By construction |
-| **Emit-order oracle** — the accepted serialise/deserialize op orderings | `SerOrderOK` / `DeOrderOK` predicates; `SerOps` / `DeOps` are the canonical traces | Predicates are the definition B1 applies to real backend traces; `CanonicalTracesOrderOK` proves the canonical traces satisfy them — **unbounded**, for *all* values (concat-closure lemmas + structural induction) |
+| **Emit-order oracle** — the accepted serialise/deserialise op orderings | `SerOrderOK` / `DeOrderOK` predicates; `SerOps` / `DeOps` are the canonical traces | `CanonicalTracesOrderOK` proves the canonical traces satisfy the predicates — **unbounded**, for *all* values (concat-closure lemmas + structural induction). What the plan bodies build is held to them by review, not by a proof |
 
 This is the key upgrade over a bounded model checker: `RoundTrip`, `DeCanonical`, and
 `CanonicalTracesOrderOK` are **proofs for all inputs**, and bounds-safety is not tested but
@@ -69,10 +68,12 @@ The predicates are *ordering* constraints only: they say nothing about an op bei
 
 ## Assurance boundary (read before citing it)
 
-This proves the **abstract model**, *not* the emitted C++/Rust/Go/TS/Python code. The link
-from model to code is **B1** — testing each backend's recorded op-trace against the orderings
-here — not a refinement proof. Cite it precisely: *"the wire-format model is machine-checked;
-the generators are checked against it by B1."* Do not call it "proven serialisation." (The
+This proves the **abstract model**, *not* the emitted C/C++/Rust/Go/TS/Python code. The link
+from model to code is not a refinement proof: `build-dsdl-plan-bodies` builds one set of
+serialise and deserialise bodies, every backend translates them, and that those bodies follow
+the orderings proven here rests on review of that pass and on the round-trip harnesses. Cite it
+precisely: *"the wire-format model is machine-checked; the one IR every backend translates is
+held to it by review and by the harnesses."* Do not call it "proven serialisation." (The
 project's stated top risk is claiming proofs the code doesn't deliver.)
 
 `DeCanonical` is a statement about the **abstract token wire**: the model's wire grammar is
@@ -86,7 +87,7 @@ envelope is `DeCompatConservative`, `DeCompatConforms`, and the concrete `Compat
 (`OldWireNewReader`/`NewWireOldReader`), but note its scope: `Evolves` covers **field append
 at delimited boundaries** only — no union-option additions, no capacity or width changes.
 Cite it as *"the model's evolution rules are machine-checked"*; the generated decoders are
-still linked to the model only by B1 and the empirical harnesses.
+linked to the model by the one IR they translate and by the empirical harnesses.
 
 ## Run
 
@@ -105,9 +106,8 @@ Expected: `Dafny program verifier finished with N verified, 0 errors`. Needs Daf
   `Evolves`/`Upgrade`/`Downgrade` (+ the skew lemmas), and `SerOpsOrderOK`/`DeOpsOrderOK` —
   the proofs are by induction, so each new case is local: show the new head block satisfies
   the predicate, then stitch with the concat lemma.
-- Ordering differences that are **accepted** (e.g. Rust's optional fixed-array `LEN_CHECK`,
-  absent in Go/C++ because their fixed arrays are compile-time-sized — the D2/D3 entries in the
-  prose spec) are modeled by making the op optional in the predicate.
+- An op the orderings must accept in more than one position, or accept the absence of, is
+  modelled by making it optional in the predicate.
 
 ## Files
 

@@ -47,14 +47,11 @@ std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass();
 
-/// @brief Creates the pass that converts lowered DSDL IR to EmitC-oriented IR.
-/// @return Newly constructed pass instance.
-std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();
-
 /// @brief Builds serialisation plan bodies as dialect operations, before a target is chosen.
 ///
-/// Runs after the C member names are stamped and before any backend conversion, so that both
-/// the C path and object emission lower the same bodies rather than each producing its own.
+/// Runs after the C member names are stamped, so that every backend translates the same bodies
+/// rather than each producing its own.
+/// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createBuildDSDLPlanBodiesPass();
 
 /// @brief Creates the pass that folds a host-image section's bodies into one move.
@@ -123,8 +120,6 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm);
 
 /// @brief Registers the plan-body builder with the pass registry.
 void registerBuildDSDLPlanBodiesPass();
-/// @brief Registers conversion-oriented DSDL passes.
-void registerDSDLConvertPasses();
 
 /// @brief Registers all DSDL passes and pipelines.
 void registerDSDLPasses();

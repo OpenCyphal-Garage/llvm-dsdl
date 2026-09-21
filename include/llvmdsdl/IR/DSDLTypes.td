@@ -60,8 +60,8 @@ def DSDL_PtrType : TypeDef<DSDL_Dialect, "Ptr"> {
   let description = [{
     Addresses the storage a serialisation plan reads and writes: the object, the wire
     buffer, and the in/out size. The dialect carries its own pointer so that a plan body
-    is expressed once and mapped per target -- `!emitc.ptr` for the C path, `!llvm.ptr`
-    for object emission. `const` marks storage the plan only reads: the object a serialiser
+    is expressed once and mapped per target -- each source backend's own pointer syntax,
+    `!llvm.ptr` for object emission. `const` marks storage the plan only reads: the object a serialiser
     is handed, and the buffer a deserialiser is.
   }];
   let parameters = (ins "::mlir::Type":$pointee, "bool":$isConst);

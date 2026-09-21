@@ -81,16 +81,27 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
     }
 
     const auto capacityCheckHelper = plan.getLoweredCapacityCheckHelper();
-    if (!capacityCheckHelper || capacityCheckHelper->empty())
+    // A plan needing no bits constrains no capacity, so it names no helper and builds none. The
+    // rest of the plan is held to the contract either way.
+    if (plan.getMaxBits() > 0)
     {
-        return LoweredPlanContractViolation{operation,
-                                            "missing lowered capacity-check helper attribute '" +
-                                                plan.getLoweredCapacityCheckHelperAttrName().str() + "'"};
+        if (!capacityCheckHelper || capacityCheckHelper->empty())
+        {
+            return LoweredPlanContractViolation{operation,
+                                                "missing lowered capacity-check helper attribute '" +
+                                                    plan.getLoweredCapacityCheckHelperAttrName().str() + "'"};
+        }
+        if (!module.lookupSymbol<mlir::func::FuncOp>(*capacityCheckHelper))
+        {
+            return LoweredPlanContractViolation{operation,
+                                                "missing lowered capacity-check helper symbol: " +
+                                                    capacityCheckHelper->str()};
+        }
     }
-    if (!module.lookupSymbol<mlir::func::FuncOp>(*capacityCheckHelper))
+    else if (capacityCheckHelper && !capacityCheckHelper->empty())
     {
         return LoweredPlanContractViolation{operation,
-                                            "missing lowered capacity-check helper symbol: " +
+                                            "lowered capacity-check helper named by a plan that needs no bits: " +
                                                 capacityCheckHelper->str()};
     }
 

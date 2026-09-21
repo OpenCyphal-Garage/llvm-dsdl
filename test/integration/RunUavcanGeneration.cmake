@@ -72,6 +72,7 @@ endif()
 file(GLOB_RECURSE generated_impls "${OUT_DIR}/*.c")
 set(generic_lowering_hits "")
 set(missing_capacity_call_hits "")
+set(unexpected_capacity_hits "")
 set(missing_capacity_helper_hits "")
 set(found_union_tag_call 0)
 set(found_union_tag_helper 0)
@@ -103,18 +104,38 @@ foreach(c_file IN LISTS generated_impls)
   if(NOT hit_pos EQUAL -1)
     list(APPEND generic_lowering_hits "${c_file}")
   endif()
-  # Matched as an assignment from the call rather than by the variable's name, which EmitC
-  # assigns. Keeping the `= ` anchors this to the call, so the helper's own declaration cannot
-  # satisfy it.
-  string(FIND "${impl_text}" "= llvmdsdl_plan_capacity_check__"
-         capacity_call_pos)
-  if(capacity_call_pos EQUAL -1)
-    list(APPEND missing_capacity_call_hits "${c_file}")
+  # A plan that needs no bits constrains no capacity, so it names no helper and calls none. The
+  # header says which those are: every section of the type serialises into nothing.
+  string(REPLACE ".c" ".h" header_for_impl "${c_file}")
+  set(constrains_capacity TRUE)
+  if(EXISTS "${header_for_impl}")
+    file(READ "${header_for_impl}" header_for_impl_text)
+    string(REGEX MATCHALL "SERIALIZATION_BUFFER_SIZE_BYTES_ [0-9]+UL" buffer_sizes "${header_for_impl_text}")
+    string(REGEX MATCHALL "SERIALIZATION_BUFFER_SIZE_BYTES_ 0UL" zero_buffer_sizes "${header_for_impl_text}")
+    list(LENGTH buffer_sizes buffer_size_count)
+    list(LENGTH zero_buffer_sizes zero_buffer_size_count)
+    if((buffer_size_count GREATER 0) AND (buffer_size_count EQUAL zero_buffer_size_count))
+      set(constrains_capacity FALSE)
+    endif()
   endif()
-  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_capacity_check__"
-         capacity_helper_pos)
-  if(capacity_helper_pos EQUAL -1)
-    list(APPEND missing_capacity_helper_hits "${c_file}")
+  # Matched as an assignment from the call rather than by the variable's name. Keeping the `= `
+  # anchors this to the call, so the helper's own declaration cannot satisfy it.
+  if(constrains_capacity)
+    string(FIND "${impl_text}" "= llvmdsdl_plan_capacity_check__"
+           capacity_call_pos)
+    if(capacity_call_pos EQUAL -1)
+      list(APPEND missing_capacity_call_hits "${c_file}")
+    endif()
+    string(FIND "${impl_text}" "int8_t llvmdsdl_plan_capacity_check__"
+           capacity_helper_pos)
+    if(capacity_helper_pos EQUAL -1)
+      list(APPEND missing_capacity_helper_hits "${c_file}")
+    endif()
+  else()
+    string(FIND "${impl_text}" "llvmdsdl_plan_capacity_check__" capacity_present_pos)
+    if(NOT capacity_present_pos EQUAL -1)
+      list(APPEND unexpected_capacity_hits "${c_file}")
+    endif()
   endif()
   string(FIND "${impl_text}" "= llvmdsdl_plan_validate_union_tag__"
          union_tag_call_pos)
@@ -262,6 +283,10 @@ endforeach()
 if(generic_lowering_hits)
   message(FATAL_ERROR
     "generated C implementations unexpectedly used generic lowering: ${generic_lowering_hits}")
+endif()
+if(unexpected_capacity_hits)
+  message(FATAL_ERROR
+    "generated C implementations check a capacity their plan does not constrain: ${unexpected_capacity_hits}")
 endif()
 if(missing_capacity_call_hits)
   message(FATAL_ERROR

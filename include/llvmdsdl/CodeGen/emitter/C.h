@@ -64,9 +64,6 @@ struct Options final
     /// @brief Output directory root for generated files.
     std::string outDir;
 
-    /// @brief Emits C89-style top-of-block variable declarations when true.
-    bool declareVariablesAtTop{false};
-
     /// @brief Emits a language-native deprecation attribute on `@deprecated` definitions.
     ///
     /// @details

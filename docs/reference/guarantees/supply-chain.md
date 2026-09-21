@@ -37,10 +37,13 @@ commit is recorded as `unknown` and submodule entries are omitted.
 
 ### Rationale
 
-The C backend is routed through MLIR/EmitC, whose printed output can legitimately vary across MLIR
-majors. The same DSDL compiled against two different MLIR majors may produce C that differs textually
-while remaining semantically equivalent, which makes the LLVM major a semantic input to the output
-rather than a build detail.
+The emitted bytes are downstream of MLIR and LLVM, in different measure for source and for
+objects. A source backend spells the plan bodies as they were built, and `--optimize-lowered-serdes`
+hands them to MLIR's canonicaliser and common-subexpression elimination first, so what a spelling
+receives is MLIR's answer as much as ours. `-l obj` gives the module to LLVM's optimiser and code
+generator, which settle the object's bytes outright. The same DSDL compiled against two MLIR majors
+may therefore produce output that differs while remaining semantically equivalent, which makes the
+LLVM major a semantic input to the output rather than a build detail.
 
 ### Enforcement
 

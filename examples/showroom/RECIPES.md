@@ -98,16 +98,17 @@ that gives each namespace its own output tree never collides and never needs the
 what the [Bazel](recipes/c-bazel.md) fetch-time path does, one external repository per namespace.
 The split is what you need when several runs write into one tree.
 
-### Prebuilt archives
+### Prebuilt objects
 
-`-l obj` is the other shape: it runs the C backend and then compiles it, handing back objects and a
-`.a`. Use it when the generated code should be built once -- for a target triple that is not the
-host, or by a party who ships the archive rather than the schema. The archive then only links into a
-build using that same toolchain.
+`-l obj` is the other shape: it lowers each definition through LLVM IR and assembles it inside
+`dsdlc`, handing back one object per definition. No C is written and no compiler is invoked. Use it
+when the generated code should be built once -- for a target triple that is not the host, named
+with `--target-triple`, or by a party who ships the objects rather than the schema. The objects
+then only link into a build for that same target.
 
-The headers are published beside the archive, in the same layout the `c` backend uses, so one
-invocation gives a complete interface -- add the output directory to your include path and link the
-archive. The [CMake](recipes/c-cmake.md) and [Bazel](recipes/c-bazel.md) recipes both build one.
+The headers are published beside them, in the same layout the `c` backend uses, so one invocation
+gives a complete interface -- add the output directory to your include path and link the objects.
+The [CMake](recipes/c-cmake.md) and [Bazel](recipes/c-bazel.md) recipes both do.
 
 ### Deleting a definition
 
