@@ -64,8 +64,10 @@ std::string renderVersionedTypeName(const CodegenNamingLanguage language,
                                     const std::uint32_t         majorVersion,
                                     const std::uint32_t         minorVersion)
 {
-    return codegenProjectIdentifier(language, IdentifierRole::TypeName, shortName) + "_" +
-           std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
+    // Composed the way the emitters compose it rather than by appending the version regardless:
+    // whether the version belongs in a type name is the naming policy's answer, and Rust's is no,
+    // since it reaches a definition through a module named for it and its version.
+    return renderDefinitionTypeName(language, {}, shortName, majorVersion, minorVersion, TypeNameVersioning::Versioned);
 }
 
 std::string renderVersionedFileStem(const CodegenNamingLanguage language,

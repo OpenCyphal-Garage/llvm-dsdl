@@ -359,10 +359,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // a namespace cannot share a name with a function. POSIX declares `index` in `<strings.h>`,
     // which the generated headers reach through `<cstring>`, so `namespace index` is a redefinition.
     //
+    // `std` is here for a reason a compiler does not give: [namespace.std] reserves it for the
+    // implementation, and a declaration added to it is undefined behaviour rather than a
+    // diagnostic. The adversarial gate compiles what it is given, so this is a member of the set
+    // that gate cannot find.
+    //
     // This set grows by what the adversarial corpus finds on the platforms the gate runs, rather
     // than by enumerating a standard library at a desk; see
     // `test/integration/generate_naming_adversarial_corpus.py`.
-    static constexpr std::array<llvm::StringRef, 1> kCppGlobalNames = {"index"};
+    static constexpr std::array<llvm::StringRef, 2> kCppGlobalNames = {"index", "std"};
 
     static constexpr std::array<llvm::StringRef, 6> kRustCrateModules =
         {"dsdl_runtime", "dsdl_runtime_semantic_wrappers", "lib", "alloc", "core", "std"};

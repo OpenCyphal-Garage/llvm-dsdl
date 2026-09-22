@@ -83,7 +83,16 @@ KEYWORD_TYPES = [
 # Namespace components that reach a name the generated root already declares: the Rust crate root
 # carries `extern crate alloc` under no_std and declares its runtime modules, and the bodies of
 # every language are written in terms of paths rooted at these.
-ROOT_NAMESPACES = ["alloc", "core", "std", "lib", "dsdlRuntime", "dsdlGen", "index"]
+ROOT_NAMESPACES = [
+    "alloc",
+    "core",
+    "std",
+    "lib",
+    "dsdlRuntime",
+    "dsdlRuntimeSemanticWrappers",
+    "dsdlGen",
+    "index",
+]
 
 # Names the backends emit beside a section's own, as constants or as members.
 CLAIMED_MEMBERS = [

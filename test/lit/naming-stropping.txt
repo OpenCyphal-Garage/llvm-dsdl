@@ -365,6 +365,20 @@
 # CPP_OPTION_TAGS: static constexpr std::uint8_t OTHER_OPTION_TAG = 2U;
 
 # ---------------------------------------------------------------------------------------------
+# A namespace the standard reserves.
+# ---------------------------------------------------------------------------------------------
+
+# [namespace.std] reserves `std` for the implementation, and a declaration added to it is undefined
+# behaviour rather than a diagnostic: a compiler accepts it, so the adversarial gate cannot find it
+# and the name emitted is what has to be asserted.
+# RUN: rm -rf %t/stdns && mkdir -p %t/stdns/std
+# RUN: printf 'uint8 a\n@sealed\n' > %t/stdns/std/Held.1.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/stdns/std --outdir %t/stdns/cpp
+# RUN: cat %t/stdns/cpp/std/Held_1_0.hpp | FileCheck %s --check-prefix=STDNS
+# STDNS: namespace std_ {
+# STDNS-NOT: namespace std {
+
+# ---------------------------------------------------------------------------------------------
 # The naming manifest and the path-level rename note.
 # ---------------------------------------------------------------------------------------------
 
